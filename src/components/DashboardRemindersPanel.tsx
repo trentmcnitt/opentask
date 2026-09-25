@@ -214,10 +214,11 @@ export function DashboardRemindersPanel({
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
   // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
   // No leaving animation here, like the reminder rows (see the docblock).
-  const { considerPrompt, didPrompt } = reminders
+  const { considerPrompt, didPrompt, movePrompt } = reminders
   const prompts = usePromptRows({
     considerPrompt,
     didPrompt,
+    movePrompt,
     refresh,
     onUndo,
     onCompleted,

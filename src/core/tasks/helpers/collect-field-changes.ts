@@ -11,6 +11,7 @@ import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
 import { isTracked } from '@/lib/track'
+import { assertPromptSlotsOwned } from '@/core/time-slots'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -344,6 +345,10 @@ function collectQuotaPromptFields(
     input.quota_prompt_config !== undefined &&
     JSON.stringify(input.quota_prompt_config) !== JSON.stringify(task.quota_prompt_config)
   ) {
+    // Against the quota's OWNER's periods — prompts are computed per owner —
+    // so a shared-project edit cannot point a partner's quota at the editor's
+    // own slots. Here rather than in updateTask so bulk edit is held to it too.
+    assertPromptSlotsOwned(task.user_id, input.quota_prompt_config, task.quota_prompt_config)
     trackField(
       data,
       'quota_prompt_config',

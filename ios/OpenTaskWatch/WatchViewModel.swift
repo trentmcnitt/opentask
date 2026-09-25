@@ -338,6 +338,55 @@ final class WatchViewModel: ObservableObject {
         }
     }
 
+    /// The periods a prompt can be moved to — every slot, in start order
+    /// (the server sends one group per slot, already ordered, plus the
+    /// un-slotted group last, which has no slot and is skipped).
+    var promptPeriods: [TimeSlotDTO] { reminderGroups.compactMap(\.slot) }
+
+    /// Whether a prompt can be moved from here. A DAILY row (it has a
+    /// `number`) needs the server's `numbers` to know which of the quota's
+    /// numbers it stands for; a server that predates that field would make
+    /// the move fall through to `slot_id` and drag every number along, so
+    /// such a row offers no list rather than the wrong move.
+    func canMove(_ prompt: QuotaPromptDTO) -> Bool {
+        !promptPeriods.isEmpty && (prompt.number == nil || prompt.numbers != nil)
+    }
+
+    /// Move a quota PROMPT to another period for good (2026-09-25, the
+    /// press-and-hold list on the Reminders page). The web quota editor's
+    /// own write: read the quota's stored `quota_prompt_config`, merge the
+    /// move over it (`WatchPromptMove` — a daily row moves only its own
+    /// numbers), `PATCH /api/tasks/{id}` (one server undo entry, so the
+    /// toolbar Undo takes it back). Not optimistic — the row belongs to
+    /// another slot afterwards, and `load()` puts it there from the server's
+    /// answer; the line under the header says where it went meanwhile.
+    /// `currentSlotId` is where the row is drawn now (the server's `slot_id`,
+    /// else its group's slot); a "move" there is no move at all.
+    func movePrompt(_ prompt: QuotaPromptDTO, from currentSlotId: Int?, to slot: TimeSlotDTO) {
+        guard canMove(prompt), currentSlotId != slot.id else { return }
+        WKInterfaceDevice.current().play(.click)
+        Task {
+            do {
+                let stored = try await api.fetchQuotaPromptConfig(taskId: prompt.taskId)
+                let config = WatchPromptMove.movedConfig(
+                    stored: stored, numbers: prompt.numbers, toSlotId: slot.id
+                )
+                try await api.setQuotaPromptConfig(taskId: prompt.taskId, config: config)
+                WKInterfaceDevice.current().play(.success)
+                canUndo = true
+                let note = "Moved to \(slot.label)"
+                lastActionDescription = note
+                WidgetCenter.shared.reloadAllTimelines()
+                await load()
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                if lastActionDescription == note { lastActionDescription = nil }
+            } catch {
+                WKInterfaceDevice.current().play(.failure)
+                await load()
+            }
+        }
+    }
+
     /// Re-fetch ONLY the reminders payload — after a Quotas-page `+1`/`−1`,
     /// whose quota's prompts (count, and whether still waiting today) live
     /// in it. Not a full `load()`: that refetches `/api/tasks` too, which

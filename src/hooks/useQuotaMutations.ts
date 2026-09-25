@@ -32,7 +32,7 @@ export function useQuotaMutations({
    *  offers the Undo — the same contract `useReminders` keeps. */
   const undoAction = useCallback(() => ({ label: 'Undo', onClick: () => onUndo() }), [onUndo])
   const saveQuotas = useCallback(
-    async (ids: number[], changes: QuotaChanges) => {
+    async (ids: number[], changes: QuotaChanges, options: { message?: string } = {}) => {
       // One quota is a PATCH; several is the bulk endpoint — one request, one
       // undo entry — exactly as the Reminders editor does it.
       const res =
@@ -52,7 +52,10 @@ export function useQuotaMutations({
         throw new Error(`save quotas ${res.status}`)
       }
       showToast({
-        message: ids.length === 1 ? 'Quota updated' : `Updated ${ids.length} quotas`,
+        // A caller whose one change has a better name says so (a prompt's
+        // period chips: "Moved … to Evening"); the write itself is the same.
+        message:
+          options.message ?? (ids.length === 1 ? 'Quota updated' : `Updated ${ids.length} quotas`),
         type: 'success',
         action: undoAction(),
       })

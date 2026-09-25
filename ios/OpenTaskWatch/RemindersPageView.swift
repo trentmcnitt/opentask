@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchKit
 
 /// Reminders page: the current time slot's reminders (`GET /api/reminders`,
 /// same payload the phone widgets render — read-only aside from checking
@@ -8,6 +9,8 @@ import SwiftUI
 /// has started is finished.
 struct RemindersPageView: View {
     @ObservedObject var model: WatchViewModel
+    /// The prompt whose touch-and-hold period list is open (2026-09-25).
+    @State private var moveTarget: QuotaPromptDTO?
 
     private var group: ReminderGroupDTO? { model.displayedGroup }
 
@@ -63,6 +66,58 @@ struct RemindersPageView: View {
         }
         .refreshable {
             await model.load()
+        }
+        // Touch and hold a quota prompt: move it to another period for good
+        // (2026-09-25) — the Tasks page's touch-and-hold chooser, same shape.
+        // A chooser, not a confirmation: each button IS the move, and the
+        // toolbar Undo takes it back (Trent's "undo over confirm"). The
+        // period it is in now is marked with a ✓.
+        .confirmationDialog(
+            moveTarget?.title ?? "Move",
+            isPresented: Binding(
+                get: { moveTarget != nil },
+                set: { if !$0 { moveTarget = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: moveTarget
+        ) { prompt in
+            let current = prompt.slotId ?? group?.slot?.id
+            ForEach(model.promptPeriods) { slot in
+                // Marked, not `.disabled`: a watchOS confirmationDialog
+                // DROPS disabled buttons (seen in the 26.5 simulator), and
+                // the list reads as "where is it now?" without the current
+                // one. Tapping it just closes the list (`movePrompt` skips a
+                // move to where the prompt already is).
+                Button(slot.id == current ? "\(slot.label) ✓" : slot.label) {
+                    model.movePrompt(prompt, from: current, to: slot)
+                }
+            }
+        } message: { prompt in
+            Text(Self.moveMessage(for: prompt))
+        }
+    }
+
+    /// What the list moves. A daily row that stands for only some of the
+    /// quota's numbers says which — the web bubble's label, same rule.
+    static func moveMessage(for prompt: QuotaPromptDTO) -> String {
+        guard let numbers = prompt.numbers, !numbers.isEmpty, numbers.count < prompt.target else {
+            return "Move to"
+        }
+        let names = numbers.map(ordinal)
+        let list = names.count == 1
+            ? names[0]
+            : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+        return "Move the \(list) of \(prompt.target) to"
+    }
+
+    private static func ordinal(_ n: Int) -> String {
+        let tens = n % 100
+        if (11...13).contains(tens) { return "\(n)th" }
+        switch n % 10 {
+        case 1: return "\(n)st"
+        case 2: return "\(n)nd"
+        case 3: return "\(n)rd"
+        default: return "\(n)th"
         }
     }
 
@@ -128,7 +183,11 @@ struct RemindersPageView: View {
                     PromptRowView(
                         prompt: prompt,
                         consider: { model.actOnPrompt(prompt, did: false) },
-                        didIt: { model.actOnPrompt(prompt, did: true) }
+                        didIt: { model.actOnPrompt(prompt, did: true) },
+                        hold: !model.canMove(prompt) ? nil : {
+                            WKInterfaceDevice.current().play(.click)
+                            moveTarget = prompt
+                        }
                     )
                 }
             }
@@ -197,6 +256,13 @@ private struct SlotProgressStrip: View {
 /// for its RARE action (snooze). A mis-tap logs +1, which the toolbar Undo
 /// takes back.
 ///
+/// HOLD = MOVE TO ANOTHER PERIOD (2026-09-25), the prompt's rare action, as
+/// snooze is a task's: touch and hold the title opens the page's period
+/// list. The title area is therefore a tap + long-press gesture pair (the
+/// Tasks page's `TaskRow` pattern), not a `Button` — a Button fires its
+/// action on the release that ends a hold, so the hold would ALSO consider
+/// the prompt. The square stays a real `Button`, a sibling, never nested.
+///
 /// WHY THE COUNT AND SQUARE SIT ON THEIR OWN LINE: the first build put the
 /// square in a column beside the title, and on the 44mm SE simulator that
 /// left his real titles one or two words per line ("certifica-tions"
@@ -209,6 +275,8 @@ struct PromptRowView: View {
     let prompt: QuotaPromptDTO
     let consider: () -> Void
     let didIt: () -> Void
+    /// Touch and hold: the period list. `nil` = no periods to offer.
+    var hold: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -217,22 +285,26 @@ struct PromptRowView: View {
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 0) {
-                Button(action: consider) {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "circle")
-                            .foregroundStyle(WatchTheme.accent)
-                            .font(.caption)
-                            .padding(.top, 3)
-                        Text(prompt.title)
-                            .font(.body)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .contentShape(Rectangle())
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "circle")
+                        .foregroundStyle(WatchTheme.accent)
+                        .font(.caption)
+                        .padding(.top, 3)
+                    Text(prompt.title)
+                        .font(.body)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: consider)
+                // 0.4s, the Tasks page's: a tap still considers, a scroll
+                // never triggers it.
+                .onLongPressGesture(minimumDuration: 0.4) { hold?() }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+                .accessibilityAction(named: Text("Move to another period")) { hold?() }
 
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)

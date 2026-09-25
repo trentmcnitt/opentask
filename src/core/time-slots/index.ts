@@ -95,11 +95,54 @@ export {
 } from '@/lib/time-slot-assign'
 
 import { DEFAULT_TIME_SLOTS, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import type { QuotaPromptConfig } from '@/types'
 
 export function listTimeSlots(userId: number): TimeSlot[] {
   return getDb()
     .prepare('SELECT * FROM time_slots WHERE user_id = ? ORDER BY start_time')
     .all(userId) as TimeSlot[]
+}
+
+/**
+ * The slot ids a quota's prompt config names (`slot_id` and every per-number
+ * override), nulls dropped.
+ */
+function promptSlotIds(config: QuotaPromptConfig | null | undefined): number[] {
+  if (!config) return []
+  const ids = [config.slot_id, ...Object.values(config.numbers ?? {})]
+  return ids.filter((id): id is number => typeof id === 'number')
+}
+
+/**
+ * Refuse a quota prompt config that names a period the quota's OWNER does not
+ * have (2026-09-25, the prompt popover's period chips).
+ *
+ * Prompts are computed per owner from the owner's slots, so a foreign id — a
+ * typo, another user's slot, a slot of a partner's that a shared-project edit
+ * carried over — would silently resolve to the fallback and the move would
+ * look like it did nothing. `users.quota_prompt_slot_id` has had the same
+ * check since it shipped (PATCH /api/user/preferences).
+ *
+ * Only ids NEW to this write are checked. An id the stored config already
+ * names may belong to a slot deleted since (read time falls back past it,
+ * `resolvePromptSlot`), and the quota editor re-sends the whole config on
+ * every save that touches it — refusing the stale id would make that quota
+ * uneditable until the user noticed and re-picked every number. Undo writes
+ * the column directly and never reaches here, so restoring a config that
+ * names a since-deleted slot still works.
+ */
+export function assertPromptSlotsOwned(
+  ownerId: number,
+  next: QuotaPromptConfig | null | undefined,
+  previous: QuotaPromptConfig | null | undefined,
+): void {
+  const known = new Set(promptSlotIds(previous))
+  const fresh = [...new Set(promptSlotIds(next))].filter((id) => !known.has(id))
+  if (fresh.length === 0) return
+  const owned = new Set(listTimeSlots(ownerId).map((s) => s.id))
+  if (fresh.some((id) => !owned.has(id))) {
+    throw new ValidationError('quota_prompt_config must name your own reminder periods')
+  }
 }
 
 /**

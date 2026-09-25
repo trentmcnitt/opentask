@@ -25,6 +25,14 @@ export interface QuotaPrompt {
    * quota, which prompts once a day.
    */
   number: number | null
+  /**
+   * Daily quotas: EVERY number this row stands for, ascending (`number` is the
+   * last of them) — what moving the row to another period moves, so the
+   * quota's other numbers stay where they are. `null` for every other quota.
+   */
+  numbers: number[] | null
+  /** The period this row sits in (`time_slots.id`), `null` = un-slotted. */
+  slot_id: number | null
   title: string
   /** Today's count — 0 once the period has ended, even before the cron runs. */
   current: number
@@ -198,6 +206,94 @@ export function assignDailyNumbers(
     out.push(
       overrideIndex >= 0 ? overrideIndex : base < 0 ? -1 : Math.min(base + k - 1, slots.length - 1),
     )
+  }
+  return out
+}
+
+/**
+ * The config that moves one prompt ROW to `toSlotId` (2026-09-25, the period
+ * chips in a prompt's bubble; the watch's hold list does the same in Swift).
+ *
+ * - A daily row moves only the numbers it stands for (`prompt.numbers`), as
+ *   per-number overrides; the quota's other numbers keep their places.
+ * - Every other quota moves as a whole: `slot_id`.
+ *
+ * Merged over the stored config, never replacing it: a PATCH replaces the
+ * whole object, so dropping `enabled` or another number's override here would
+ * silently undo a choice the user made in the editor.
+ */
+export function movedPromptConfig(
+  config: QuotaPromptConfig | null | undefined,
+  prompt: Pick<QuotaPrompt, 'numbers'>,
+  toSlotId: number,
+): QuotaPromptConfig {
+  const base = config ?? {}
+  if (prompt.numbers && prompt.numbers.length > 0) {
+    const moved = Object.fromEntries(prompt.numbers.map((k) => [String(k), toSlotId]))
+    return { ...base, numbers: { ...(base.numbers ?? {}), ...moved } }
+  }
+  return { ...base, slot_id: toSlotId }
+}
+
+/** The part of a reminder group a prompt move touches. */
+export interface PromptGroup {
+  slot: { id: number } | null
+  prompts: QuotaPrompt[]
+}
+
+/**
+ * Groups with each prompt in `moves` (prompt_key → slot id) shown in its new
+ * period — the optimistic half of a move; the server's next payload replaces
+ * it. Idempotent: a prompt already in its target (or no longer in the payload
+ * under that key, as after a daily merge) is left alone, so re-applying a move
+ * to a payload that already has it changes nothing.
+ *
+ * A daily row landing in a period that already holds a row of the same quota
+ * MERGES into it, as the server would: one row per quota per period, keyed and
+ * judged by its highest number.
+ */
+export function applyPromptMoves<G extends PromptGroup>(
+  groups: G[],
+  moves: Map<string, number>,
+): G[] {
+  let out = groups
+  for (const [key, toSlotId] of moves) {
+    const fromIndex = out.findIndex(
+      (g) => (g.slot?.id ?? null) !== toSlotId && g.prompts.some((p) => p.prompt_key === key),
+    )
+    const toIndex = out.findIndex((g) => g.slot?.id === toSlotId)
+    if (fromIndex < 0 || toIndex < 0) continue
+    const moving = out[fromIndex].prompts.find((p) => p.prompt_key === key)!
+    const target = out[toIndex].prompts
+    const sibling = target.find((p) => p.task_id === moving.task_id)
+    let prompts: QuotaPrompt[]
+    if (sibling && sibling.numbers && moving.numbers) {
+      const numbers = [...new Set([...sibling.numbers, ...moving.numbers])].sort((a, b) => a - b)
+      const number = numbers[numbers.length - 1]
+      const top = (sibling.number ?? 0) >= (moving.number ?? 0) ? sibling : moving
+      const date = parsePromptKey(top.prompt_key)?.date ?? ''
+      const merged: QuotaPrompt = {
+        ...top,
+        slot_id: toSlotId,
+        numbers,
+        number,
+        prompt_key: promptKey(moving.task_id, number, date),
+        done: top.current >= number,
+      }
+      prompts = target.map((p) => (p === sibling ? merged : p))
+    } else {
+      prompts = [...target.filter((p) => p !== sibling), { ...moving, slot_id: toSlotId }]
+      prompts.sort(
+        (a, b) =>
+          a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
+          a.task_id - b.task_id,
+      )
+    }
+    out = out.map((g, i) => {
+      if (i === fromIndex) return { ...g, prompts: g.prompts.filter((p) => p !== moving) }
+      if (i === toIndex) return { ...g, prompts }
+      return g
+    })
   }
   return out
 }
