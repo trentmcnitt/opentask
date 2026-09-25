@@ -34,7 +34,7 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
-import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logAction, createQuotaSnapshot } from '@/core/undo'
 import { nowUtc } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
@@ -121,7 +121,7 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
       'progress',
       `Logged ${applied > 0 ? '+' : ''}${applied} on "${task.title}" (${next}/${task.progress_target})`,
       ['progress_current'],
-      [createTaskSnapshot(task, after, ['progress_current'])],
+      [createQuotaSnapshot(task, after, ['progress_current'])],
     )
     return { updated: after, next, task }
   })

@@ -11,6 +11,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot, RedoResult, SlotUndoState } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
+import { periodMoved } from './log-action'
 import { applySlotRow, parseSlotState } from './slot-row'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 
@@ -45,6 +46,9 @@ export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
   } else {
     // Re-apply each task's after_state for the changed fields only
     for (const snapshot of entry.snapshots) {
+      // Same guard as undo: re-applying a count into a later period would
+      // plant last period's number in this one (see `createQuotaSnapshot`).
+      if (periodMoved(tx, snapshot)) continue
       applyFieldsToTask(snapshot.task_id, snapshot.after_state, entry.fieldsChanged)
 
       // A completion's row comes back; a put-back's row goes again.
