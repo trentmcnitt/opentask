@@ -11,7 +11,22 @@
 
 import { EventEmitter } from 'events'
 
-export type SyncListener = (userId: number) => void
+/**
+ * What a sync event says about the change, beyond "user N's data changed".
+ *
+ * `widgets: false` marks a change no widget can show (a notes-only edit, an
+ * `ai-*` label shuffle), so the WidgetKit push listener skips it — widget
+ * pushes are budgeted by iOS, and one spent on an invisible change is one
+ * fewer for a real one (`@/core/notifications/widget-push`). Open browser tabs
+ * still refresh either way. Omitted means visible: an unmarked emit costs at
+ * most a push, a wrongly-marked one leaves a widget stale, so only opt out
+ * where the change is provably invisible to every widget.
+ */
+export interface SyncEventInfo {
+  widgets?: boolean
+}
+
+export type SyncListener = (userId: number, info: SyncEventInfo) => void
 
 export interface EnrichmentCompletePayload {
   taskId: number
@@ -46,11 +61,11 @@ const ENRICHMENT_COMPLETE_EVENT = 'enrichment_complete'
 const TASK_CREATED_EVENT = 'task_created'
 
 /** Emit a sync event for a user. Call after any data mutation. */
-export function emitSyncEvent(userId: number): void {
-  emitter.emit(SYNC_EVENT, userId)
+export function emitSyncEvent(userId: number, info: SyncEventInfo = {}): void {
+  emitter.emit(SYNC_EVENT, userId, info)
 }
 
-/** Subscribe to sync events. Listener receives the userId that changed. */
+/** Subscribe to sync events. Listener receives the userId that changed and the event's info. */
 export function onSyncEvent(listener: SyncListener): void {
   emitter.on(SYNC_EVENT, listener)
 }
