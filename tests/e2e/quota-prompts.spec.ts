@@ -55,7 +55,7 @@ async function holdOpen(page: Page, row: ReturnType<typeof promptRow>) {
   return page.locator('[data-track-popover]')
 }
 
-async function userSlots(page: Page): Promise<{ id: number; label: string }[]> {
+async function userSlots(page: Page): Promise<{ id: number; label: string; start_time: string }[]> {
   const res = await page.request.get('/api/time-slots')
   const slots = (await res.json()).data.time_slots as {
     id: number
@@ -121,7 +121,7 @@ test.describe('Quota prompts', () => {
     expect(await progressOf(page, id)).toBe(0)
   })
 
-  test('a prompt is not selectable; its hold opens the quota, whose switch turns it off', async ({
+  test("a prompt's hold opens its quota's bubble, whose switch turns it off", async ({
     authenticatedPage: page,
   }) => {
     await makeQuota(page, 'E2E prompt editor')
@@ -129,7 +129,7 @@ test.describe('Quota prompts', () => {
     const row = promptRow(page, 'E2E prompt editor')
     await expect(row).toBeVisible()
 
-    // Press and hold: the quota's bubble, never a selection bar.
+    // Press and hold: the quota's bubble — on a prompt the hold never selects.
     const box = (await row.boundingBox())!
     await page.mouse.move(box.x + 120, box.y + box.height / 2)
     await page.mouse.down()
@@ -512,5 +512,206 @@ test.describe('Quota prompts — multi-edit on the Quotas page', () => {
     expect((await res.json()).data.tasks_affected).toBe(1)
     expect(await configOf(page, off)).toEqual({ enabled: false, slot_id: last.id })
     expect(await configOf(page, on)).toEqual({ slot_id: last.id, enabled: false })
+  })
+})
+
+/** A daily reminder at the start of this period, so it shares the prompt's card. */
+async function makeReminder(page: Page, title: string, slot: { start_time: string }) {
+  const [h, m] = slot.start_time.split(':').map(Number)
+  const res = await page.request.post('/api/tasks', {
+    data: { title, is_reminder: true, rrule: `FREQ=DAILY;BYHOUR=${h};BYMINUTE=${m}` },
+  })
+  expect(res.ok()).toBeTruthy()
+  const id = (await res.json()).data.id as number
+  created.push(id)
+  return id
+}
+
+async function placeIn(page: Page, id: number, config: object) {
+  const res = await page.request.patch(`/api/tasks/${id}`, {
+    data: { quota_prompt_config: config },
+  })
+  expect(res.ok()).toBeTruthy()
+}
+
+function reminderRow(page: Page, title: string) {
+  return page.locator('li[data-reminder-id]', { hasText: title })
+}
+
+const bar = (page: Page) => page.locator('[data-selection-sheet]')
+
+/**
+ * Quota prompts in a multi-selection on /reminders (2026-09-25). Selected by
+ * `prompt_key` beside reminders; the bar's Considered covers both in one
+ * request and one Undo, Details opens the quota editor only for a
+ * prompts-only selection, and Trash is never offered with a prompt selected.
+ */
+test.describe('Quota prompts — selection', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('a mixed selection is considered in one request, with one Undo', async ({
+    authenticatedPage: page,
+  }) => {
+    const [slot] = await userSlots(page)
+    const reminder = await makeReminder(page, 'E2E select thought', slot)
+    const quota = await makeQuota(page, 'E2E select quota')
+    await placeIn(page, quota, { slot_id: slot.id })
+    await page.goto('/reminders')
+    const thought = reminderRow(page, 'E2E select thought')
+    const prompt = promptRow(page, 'E2E select quota')
+    await expect(thought).toBeVisible()
+    await expect(prompt).toBeVisible()
+    const key = await prompt.getAttribute('data-prompt-key')
+
+    await thought.click({ modifiers: ['ControlOrMeta'] })
+    await prompt.click({ modifiers: ['ControlOrMeta'] })
+    await expect(prompt).toHaveAttribute('aria-selected', 'true')
+    await expect(bar(page)).toContainText('2 selected')
+
+    const completions: string[] = []
+    page.on('request', (r) => {
+      if (/\/done$|\/bulk\/(done|complete)$|\/quota-prompts\//.test(r.url())) {
+        completions.push(r.url())
+      }
+    })
+    const sent = page.waitForResponse((r) => r.url().includes('/api/tasks/bulk/complete'))
+    await bar(page).getByRole('button', { name: 'Considered' }).click()
+    const res = await sent
+    expect(res.ok()).toBeTruthy()
+    expect(res.request().postDataJSON()).toEqual({
+      ids: [reminder],
+      prompts: [{ key, did: false }],
+    })
+    await expect(thought).toHaveCount(0)
+    await expect(prompt).toHaveCount(0)
+    expect(completions).toHaveLength(1)
+    // Considered, never +1.
+    expect(await progressOf(page, quota)).toBe(0)
+
+    // One Undo brings both back.
+    const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
+    await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+    await undone
+    await expect(reminderRow(page, 'E2E select thought')).toBeVisible()
+    await expect(promptRow(page, 'E2E select quota')).toBeVisible()
+  })
+
+  test('a mixed selection (a Shift-click range) disables Details and offers no Trash', async ({
+    authenticatedPage: page,
+  }) => {
+    const [slot] = await userSlots(page)
+    await makeReminder(page, 'E2E range thought', slot)
+    const quota = await makeQuota(page, 'E2E range quota')
+    await placeIn(page, quota, { slot_id: slot.id })
+    await page.goto('/reminders')
+    const thought = reminderRow(page, 'E2E range thought')
+    const prompt = promptRow(page, 'E2E range quota')
+    await expect(prompt).toBeVisible()
+
+    // Reminders only: Details and Trash, as always.
+    await thought.click({ modifiers: ['ControlOrMeta'] })
+    await expect(bar(page).getByRole('button', { name: 'Details' })).toBeEnabled()
+    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(1)
+
+    // Shift-click runs the range from the reminder across to the prompt.
+    await prompt.click({ modifiers: ['Shift'] })
+    await expect(prompt).toHaveAttribute('aria-selected', 'true')
+    // While selecting, the row offers only its checkbox — no "did it" square.
+    await expect(prompt.locator('[data-prompt-did]')).toBeHidden()
+    await expect(thought).toHaveAttribute('aria-selected', 'true')
+    await expect(bar(page).getByRole('button', { name: 'Details' })).toBeDisabled()
+    await expect(bar(page).locator('[data-selection-hint]')).toHaveText(
+      'Details: pick only reminders or only quotas',
+    )
+    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(0)
+
+    // The prompt alone: still no Trash; Details is back (for the quota).
+    await thought.click()
+    await expect(thought).toHaveAttribute('aria-selected', 'false')
+    await expect(bar(page).getByRole('button', { name: 'Details' })).toBeEnabled()
+    await expect(bar(page).locator('[data-selection-hint]')).toHaveCount(0)
+    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(0)
+    // A selection-mode tap never considered either of them.
+    await expect(prompt).toBeVisible()
+    await expect(thought).toBeVisible()
+    expect(await progressOf(page, quota)).toBe(0)
+  })
+
+  test('a prompts-only selection opens Details on its quotas, deduped', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await userSlots(page)
+    const [first, second] = slots
+    const last = slots[slots.length - 1]
+    const weekly = await makeQuota(page, 'E2E details weekly')
+    const other = await makeQuota(page, 'E2E details untouched')
+    const daily = await makeQuota(page, 'E2E details daily', 'FREQ=DAILY', 2)
+    await placeIn(page, weekly, { slot_id: first.id })
+    await placeIn(page, other, { slot_id: first.id })
+    await placeIn(page, daily, { slot_id: first.id, numbers: { '2': second.id } })
+    await page.goto('/reminders')
+
+    const dailyFirst = promptIn(page, first.label, 'E2E details daily')
+    const dailySecond = promptIn(page, second.label, 'E2E details daily')
+    await expect(promptRow(page, 'E2E details untouched')).toBeVisible()
+    await promptRow(page, 'E2E details weekly').click({ modifiers: ['ControlOrMeta'] })
+    await dailyFirst.click({ modifiers: ['ControlOrMeta'] })
+    await dailySecond.click({ modifiers: ['ControlOrMeta'] })
+    await expect(bar(page)).toContainText('3 selected')
+    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(0)
+
+    await bar(page).getByRole('button', { name: 'Details' }).click()
+    const dialog = page.getByRole('dialog')
+    // Three prompts, two quotas: the daily one's two rows are one quota.
+    await expect(dialog).toContainText('Editing 2 quotas')
+    const field = dialog.locator('[data-quota-prompt-field="many"]')
+    await field.locator(`[data-quota-prompt-slot="${last.id}"]`).click()
+    const saved = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().includes('/api/tasks/bulk/edit'),
+    )
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    const res = await saved
+    expect(res.ok()).toBeTruthy()
+    const ids = res.request().postDataJSON().ids as number[]
+    expect([...ids].sort((a, b) => a - b)).toEqual([weekly, daily].sort((a, b) => a - b))
+  })
+
+  test("a daily quota's two prompts select separately", async ({ authenticatedPage: page }) => {
+    const [first, second] = await userSlots(page)
+    const daily = await makeQuota(page, 'E2E select daily', 'FREQ=DAILY', 2)
+    await placeIn(page, daily, { slot_id: first.id, numbers: { '2': second.id } })
+    await page.goto('/reminders')
+    const one = promptIn(page, first.label, 'E2E select daily')
+    const two = promptIn(page, second.label, 'E2E select daily')
+    await expect(one).toBeVisible()
+    await expect(two).toBeVisible()
+    const keys = [
+      await one.getAttribute('data-prompt-key'),
+      await two.getAttribute('data-prompt-key'),
+    ]
+    expect(keys[0]).not.toBe(keys[1])
+
+    await one.click({ modifiers: ['ControlOrMeta'] })
+    await expect(one).toHaveAttribute('aria-selected', 'true')
+    await expect(two).toHaveAttribute('aria-selected', 'false')
+    // In selection mode a plain tap adds the other: its own row, its own key.
+    await two.click()
+    await expect(two).toHaveAttribute('aria-selected', 'true')
+    await expect(bar(page)).toContainText('2 selected')
+    await one.click()
+    await expect(one).toHaveAttribute('aria-selected', 'false')
+    await expect(two).toHaveAttribute('aria-selected', 'true')
+    await one.click()
+    await expect(bar(page)).toContainText('2 selected')
+
+    // Both, considered together: the prompts' own endpoint, both keys, no +1.
+    const sent = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/consider'))
+    await bar(page).getByRole('button', { name: 'Considered' }).click()
+    const res = await sent
+    expect(res.ok()).toBeTruthy()
+    expect([...res.request().postDataJSON().keys].sort()).toEqual([...keys].sort())
+    await expect(one).toHaveCount(0)
+    await expect(two).toHaveCount(0)
+    expect(await progressOf(page, daily)).toBe(0)
   })
 })
