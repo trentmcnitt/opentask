@@ -92,7 +92,7 @@ private struct ReminderCardView: View {
                             .frame(width: 3)
                         FittingTitle(title: ReminderStackMetrics.promptCardShowsDidIt
                             ? card.title
-                            : "\(card.title)\u{00A0}·\u{00A0}\(card.countText ?? "")")
+                            : "\(card.title)\(QuotaPromptDTO.countSeparator)\(card.countText ?? "")")
                     }
                 } else {
                     FittingTitle(title: card.title)
@@ -107,11 +107,15 @@ private struct ReminderCardView: View {
                     // The count, level with ⏭ and right above ☐ — its own
                     // line so it is never cut off with a long title (the
                     // title's last rung truncates; the count must not).
-                    Text(card.countText ?? "")
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    // Two lines since the period joined it (2026-09-25):
+                    // "0/2" over "today" — one line truncated to "0/2 tod…"
+                    // in this 30pt column.
+                    Text(card.columnCountText ?? "")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
                         .frame(width: ReminderStackMetrics.didColumn, height: 24)
                     Spacer(minLength: 0)
                     Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: true)) {

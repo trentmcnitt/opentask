@@ -8,10 +8,17 @@ import WidgetKit
 /// - Interactive widgets are `AppIntent` buttons. On a locked device they are
 ///   inert until authentication, which is why the Lock Screen accessory
 ///   families below are glanceable-only and carry no buttons at all.
-/// - Timeline reloads *triggered by a widget's own intent* are budget-free.
-///   Every mutating intent below reloads the ACTING kind alone, both rounds
-///   (2026-09-22, the macOS lag fix) — see `reloadOpenTaskWidget(kind:)`'s
-///   doc for the invariant that makes this correct, not just fast.
+/// - On iOS, only ONE reload per tap is budget-free: WidgetKit's own reload
+///   of the tapped widget's kind after `perform()` returns (chronod logs it
+///   as `interaction-immediate-free`). Every `reloadTimelines(ofKind:)` this
+///   extension issues is an `externalRequest … budgeted` reload, charged to
+///   that kind's daily budget — see `reloadTappedWidget(kind:)` for the bug
+///   that taught this (2026-09-25). So intents never ask for their own kind
+///   on iOS, and ask for another kind only when the tap changed what that
+///   kind shows (the partition in `reloadOpenTaskWidget(kind:)`'s doc).
+///   macOS has no interaction reload and its extension reloads are free, so
+///   there the tapped kind is still reloaded explicitly, both rounds
+///   (2026-09-22, the macOS lag fix).
 /// - There are no swipe gestures in widgets, so paging between slots/projects
 ///   is done with explicit chevron intents rather than a gesture.
 ///
@@ -57,6 +64,47 @@ import WidgetKit
 @MainActor
 func reloadOpenTaskWidget(kind: String) {
     WidgetCenter.shared.reloadTimelines(ofKind: kind)
+}
+
+/// Reload the kind whose button fired the intent — on macOS only.
+///
+/// "Quotas still 0/2 after did-it" (2026-09-25): the did-it square on the
+/// Reminders widget's "Daily Walks · 0/2" prompt landed (prod: `POST
+/// /api/quota-prompts/did` 200, Daily Walks 1/2, widget push sent 2s later),
+/// the intent wrote the returned quota into the shared cache, and still the
+/// phone's Quotas widget drew 0/2 until the app was opened. The same taps on
+/// the iOS 27 simulator redraw Quotas every time (idb HID taps; no fetch, the
+/// cache already held the new count), so the data path was sound: the Quotas
+/// timeline simply wasn't rebuilt on the phone. chronod's log says why. The
+/// only free reload of a tap is `interaction-immediate-free`, and it goes to
+/// the TAPPED kind, after `perform()` returns. Every `reloadTimelines(ofKind:)`
+/// from this extension — including ones for the tapped kind — is logged as
+/// `externalRequest(… WidgetCenterServer …)-immediate-budgeted`, and the
+/// server's widget push is budgeted too. Every intent here used to ask for
+/// its own kind twice (before and after the server call), so every chevron,
+/// toggle and `+1` spent budget on reloads WidgetKit was about to do for free
+/// (the pre-call one is not even run: chronod logs "Delaying reload … because
+/// entry is paused" until `perform()` returns, then replaces it). Once a
+/// kind's budget is spent, its budgeted reloads are not run — and the only
+/// way Quotas learns about a Reminders did-it is exactly such a reload (this
+/// intent's cross-kind request, or the push). Trent's phone, read with
+/// `idevicesyslog -p chronod` the same morning: Track's DAS budget -0.357
+/// (Reminders 22.3), a queued Track reload left unrun, the widget-push
+/// budget at -17. The simulator doesn't enforce
+/// budgets, which is why it could never reproduce this, nor PR #82's "Quotas
+/// stuck at 1/2 after Undo" (the same shape: the tapped Reminders repainted,
+/// the cross-kind Quotas never did).
+///
+/// So on iOS this is a no-op, left at each call site to mark where the
+/// tapped kind's repaint comes from. macOS is different: its chronod logs no
+/// interaction reload at all (the Mac's reloads on 2026-09-23/24 were
+/// `externalRequest … free`, `push … free`, `initial`), so there the explicit
+/// reload IS the repaint, and both rounds stay.
+@MainActor
+func reloadTappedWidget(kind: String) {
+    #if os(macOS)
+    WidgetCenter.shared.reloadTimelines(ofKind: kind)
+    #endif
 }
 
 /// Reload all three widget kinds, unordered. NOT used by any ROUTINE mutating
@@ -135,7 +183,7 @@ struct CompleteTaskIntent: AppIntent {
         if kind.isEmpty {
             await reloadOpenTaskWidgets()
         } else {
-            await reloadOpenTaskWidget(kind: kind)
+            await reloadTappedWidget(kind: kind)
         }
     }
 
@@ -274,10 +322,12 @@ struct IncrementProgressIntent: AppIntent {
         // ONLY Track, both rounds (2026-09-22 — see `reloadOpenTaskWidget(kind:)`
         // for the partition argument: a progress delta cannot change what
         // Reminders or Tasks show, in either round, so this was never a
-        // latency-vs-correctness tradeoff). Round 1 is the reload that has to
-        // win a chronod queue slot before `perform()` returns for the
-        // optimistic repaint to exist at all.
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        // latency-vs-correctness tradeoff). On macOS, round 1 is the reload
+        // that has to win a chronod queue slot before `perform()` returns for
+        // the optimistic repaint to exist at all. On iOS both rounds are
+        // no-ops: WidgetKit's free interaction reload of Track after
+        // `perform()` draws the confirmed count (`reloadTappedWidget(kind:)`).
+        await reloadTappedWidget(kind: TrackWidget.kind)
 
         // Every outcome retires THIS call's staged delta and nothing else — a
         // sibling tap still in flight keeps its own (see
@@ -314,7 +364,7 @@ struct IncrementProgressIntent: AppIntent {
         // success, or the untouched pre-tap count on failure — so it draws
         // the same number round 1 did (success) or the honest revert
         // (failure), never a stale one in between.
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: TrackWidget.kind)
         // Quota reminders (2026-09-24): this quota's prompts on the Reminders
         // widget carry its count ("Daily Walks · 1/2") and whether it is
         // still waiting today — both server-computed, so Reminders fetches
@@ -358,8 +408,11 @@ struct IncrementProgressIntent: AppIntent {
 ///    Reminders stale — the likeliest failure is a key from before midnight
 ///    (400: the server refuses another day's key), where the cache itself is
 ///    what's wrong.
-/// 5. Round 2 reloads Reminders AND Track (see `reloadOpenTaskWidget`'s
-///    amendment).
+/// 5. Round 2 asks for Track (see `reloadOpenTaskWidget`'s amendment) —
+///    the one reload this intent spends budget on. Reminders, the tapped
+///    kind, is repainted by WidgetKit's free interaction reload on iOS
+///    (`reloadTappedWidget(kind:)`), so round 1 and Reminders' round 2 only
+///    run on macOS.
 struct ActOnPromptIntent: AppIntent {
     static var title: LocalizedStringResource = "Quota Reminder"
     static var isDiscoverable: Bool { false }
@@ -392,7 +445,7 @@ struct ActOnPromptIntent: AppIntent {
             WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
             RemindersTimeline.autoAdvanceSlot(in: cached, now: mutationInstant)
         }
-        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
 
         do {
             let result = did
@@ -420,9 +473,10 @@ struct ActOnPromptIntent: AppIntent {
             WidgetStore.requireRemindersFetch()
         }
         // Both repaint from the confirmed caches on success; on a failure
-        // Reminders fetches.
+        // Reminders fetches. Track is the other kind, so it must be asked
+        // for; Reminders is the tapped one (free on iOS, explicit on macOS).
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
-        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
         return .result()
     }
 }
@@ -462,7 +516,7 @@ struct ShiftReminderSlotIntent: AppIntent {
         // View-state only: fast path + single-kind reload, so the flip paints
         // from cache instead of waiting out a network fetch.
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
         return .result()
     }
 }
@@ -498,7 +552,7 @@ struct JumpToReminderSlotIntent: AppIntent {
         WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: groups[natural].slotKey)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
         return .result()
     }
 }
@@ -538,7 +592,7 @@ struct ShiftProjectScopeIntent: AppIntent {
         WidgetStore.projectScope = ring[((current + offset) % count + count) % count]
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -577,7 +631,7 @@ struct ShiftReminderPageIntent: AppIntent {
         WidgetStore.setRemindersPage(current + offset, for: slotKey)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
         return .result()
     }
 }
@@ -605,7 +659,7 @@ struct ShiftTasksPageIntent: AppIntent {
         WidgetStore.setTasksPage(current + offset, for: scope)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -671,7 +725,7 @@ struct ShiftTrackItemIntent: AppIntent {
         WidgetStore.trackPageStart = steppedId
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: TrackWidget.kind)
         return .result()
     }
 }
@@ -702,7 +756,7 @@ struct ShiftQuotasPageIntent: AppIntent {
         WidgetStore.quotasPage += offset
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: TrackWidget.kind)
         return .result()
     }
 }
@@ -728,7 +782,7 @@ struct ToggleQuotasShowMetIntent: AppIntent {
         // only ever needs to move it, view clamps" idiom every other pager
         // in this file follows.
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: TrackWidget.kind)
         return .result()
     }
 }
@@ -751,7 +805,7 @@ struct ToggleQuotasTakebackModeIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         WidgetStore.quotasTakebackMode.toggle()
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: TrackWidget.kind)
         return .result()
     }
 }
@@ -976,13 +1030,21 @@ private func refetchTasks() async {
 /// (there is nothing new to draw), then one request per kind with the kinds
 /// the system will NOT reload by itself first — on the phone the first build
 /// in line (Reminders, at XXX Large) was the only one that happened.
+///
+/// Why it happened (found 2026-09-25 — see `reloadTappedWidget(kind:)`):
+/// the tapped kind's repaint was WidgetKit's free interaction reload, and
+/// every request this extension makes is a BUDGETED reload, the other kinds'
+/// included; with Track's budget spent, the Quotas request was not run. So
+/// the tapped kind is no longer requested here on iOS (it is reloaded for
+/// free, and a request would only spend its budget), and the other kinds are
+/// requested once each.
 @MainActor
 private func reloadAfterUndoRedo(tappedKind: String) async {
     let all = [RemindersWidget.kind, TasksWidget.kind, TrackWidget.kind]
-    let ordered = all.filter { $0 != tappedKind } + all.filter { $0 == tappedKind }
-    for kind in ordered {
+    for kind in all where kind != tappedKind {
         reloadOpenTaskWidget(kind: kind)
     }
+    reloadTappedWidget(kind: tappedKind)
 }
 
 // MARK: - Show completed (2026-09-23)
@@ -1013,7 +1075,7 @@ struct ToggleShowCompletedIntent: AppIntent {
         // already do when a check-off shrinks the open list out from under
         // a stale page.
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: kind)
+        await reloadTappedWidget(kind: kind)
         return .result()
     }
 }
@@ -1061,7 +1123,7 @@ struct UncompleteTaskIntent: AppIntent {
         // fetch instead of painting the tombstone instantly.
         WidgetStore.stagePendingRestore(taskId)
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: kind)
+        await reloadTappedWidget(kind: kind)
 
         do {
             try await APIClient.shared.markUndone(taskId: taskId)
@@ -1097,7 +1159,7 @@ struct UncompleteTaskIntent: AppIntent {
         // interaction stamp was too (see the catch block above), so this
         // also takes the network path and the item honestly reappears in
         // DONE (never stuck hidden behind a tombstone the server rejected).
-        await reloadOpenTaskWidget(kind: kind)
+        await reloadTappedWidget(kind: kind)
         return .result()
     }
 }
@@ -1159,7 +1221,7 @@ struct ToggleTasksSnoozeModeIntent: AppIntent {
         }
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1185,7 +1247,7 @@ struct EnterTasksSelectModeIntent: AppIntent {
         // this makes the invariant explicit rather than assumed).
         WidgetStore.clearTasksSelection()
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1201,7 +1263,7 @@ struct CancelTasksSelectModeIntent: AppIntent {
         WidgetStore.tasksSelectMode = false
         WidgetStore.clearTasksSelection()
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1234,7 +1296,7 @@ struct ToggleTaskSelectionIntent: AppIntent {
         }
         WidgetStore.setSelectedTaskIds(ids, for: scope)
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1295,7 +1357,7 @@ struct SnoozeSelectedTasksIntent: AppIntent {
             WidgetStore.setSelectedTaskIds(remaining, for: scope)
         }
         WidgetStore.clearInteraction(kind: TasksWidget.kind)
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1321,7 +1383,7 @@ struct CompleteSelectedTasksIntent: AppIntent {
 
         for id in ids { WidgetStore.stagePendingCompletion(id) }
         WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
 
         do {
             let affected = try await APIClient.shared.completeTasks(ids: ids)
@@ -1340,7 +1402,7 @@ struct CompleteSelectedTasksIntent: AppIntent {
         // (90s TTL), so this fast-paths from the now-edited cache; on
         // failure the tombstones were just cleared, so this takes the
         // network path and the tasks honestly reappear.
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1379,7 +1441,7 @@ struct SnoozeTaskRowIntent: AppIntent {
         )
         _ = await sendSnoozeRequests(requests)
         WidgetStore.clearInteraction(kind: TasksWidget.kind)
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -1417,7 +1479,7 @@ struct SnoozeAllOverdueIntent: AppIntent {
             print("[OpenTaskWidgets] Snooze all overdue failed: \(error)")
         }
         WidgetStore.clearInteraction(kind: TasksWidget.kind)
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
