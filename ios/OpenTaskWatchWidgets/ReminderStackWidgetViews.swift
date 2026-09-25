@@ -73,7 +73,7 @@ private struct ReminderCardView: View {
     let card: WatchWidgetEntry.ReminderCard
 
     /// ⏭ is pointless with one item left (it would just wrap back to itself).
-    private var canSkip: Bool { card.remainingIds.count > 1 }
+    private var canSkip: Bool { card.remainingKeys.count > 1 }
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -82,14 +82,56 @@ private struct ReminderCardView: View {
                 if card.urgentOverdue > 0 {
                     UrgentLine(count: card.urgentOverdue)
                 }
-                FittingTitle(title: card.title)
+                if card.promptKey != nil {
+                    // A quota prompt (2026-09-24): the label-color stripe
+                    // beside its label ("Daily Walks · 1/2"), as on every
+                    // other surface.
+                    HStack(alignment: .top, spacing: 4) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(WatchTheme.labelColor(card.stripeColor))
+                            .frame(width: 3)
+                        FittingTitle(title: ReminderStackMetrics.promptCardShowsDidIt
+                            ? card.title
+                            : "\(card.title)\u{00A0}·\u{00A0}\(card.countText ?? "")")
+                    }
+                } else {
+                    FittingTitle(title: card.title)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if let promptKey = card.promptKey, ReminderStackMetrics.promptCardShowsDidIt {
+                // ☐ DID IT, its own column beside ✓'s, bottom-aligned with
+                // it — see `ReminderStackMetrics.promptCardShowsDidIt`.
+                VStack(spacing: 0) {
+                    // The count, level with ⏭ and right above ☐ — its own
+                    // line so it is never cut off with a long title (the
+                    // title's last rung truncates; the count must not).
+                    Text(card.countText ?? "")
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(width: ReminderStackMetrics.didColumn, height: 24)
+                    Spacer(minLength: 0)
+                    Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: true)) {
+                        Image(systemName: "square")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(WatchTheme.accent)
+                            .widgetAccentable()
+                            .frame(width: ReminderStackMetrics.didColumn, height: ReminderStackMetrics.buttonColumn)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Did it")
+                }
+                .frame(width: ReminderStackMetrics.didColumn)
+            }
 
             VStack(spacing: 0) {
                 if canSkip {
                     Button(intent: SkipReminderIntent(
-                        taskId: card.taskId, slotKey: card.slotKey, remainingIds: card.remainingIds
+                        itemKey: card.itemKey, slotKey: card.slotKey, remainingKeys: card.remainingKeys
                     )) {
                         Image(systemName: "forward.fill")
                             .font(.system(size: 11, weight: .semibold))
@@ -100,15 +142,7 @@ private struct ReminderCardView: View {
                     .accessibilityLabel("Skip for now")
                 }
                 Spacer(minLength: 2)
-                Button(intent: ConsiderReminderIntent(taskId: card.taskId)) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: ReminderStackMetrics.buttonColumn, height: ReminderStackMetrics.buttonColumn)
-                        .background(Circle().fill(WatchTheme.accent).widgetAccentable())
-                        .contentShape(Circle())
-                }
-                .accessibilityLabel("Check off")
+                considerButton
             }
             .buttonStyle(.plain)
             .frame(width: ReminderStackMetrics.buttonColumn)
@@ -129,8 +163,29 @@ private struct ReminderCardView: View {
     /// smallest rung (`.caption`) in the Smart Stack card, and a header
     /// louder than the reminder cost the title a whole line in the first
     /// render (2026-09-24 RenderPreview).
+    /// ✓ — CONSIDERED, for a reminder and a quota prompt alike (the same
+    /// verb on both). A prompt goes through its own endpoint by key; a done
+    /// on a quota is refused server-side.
+    private var considerButton: some View {
+        let label = Image(systemName: "checkmark")
+            .font(.system(size: 17, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: ReminderStackMetrics.buttonColumn, height: ReminderStackMetrics.buttonColumn)
+            .background(Circle().fill(WatchTheme.accent).widgetAccentable())
+            .contentShape(Circle())
+        return Group {
+            if let promptKey = card.promptKey {
+                Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: false)) { label }
+                    .accessibilityLabel("Considered")
+            } else {
+                Button(intent: ConsiderReminderIntent(taskId: card.taskId)) { label }
+                    .accessibilityLabel("Check off")
+            }
+        }
+    }
+
     private var header: some View {
-        Text("\(card.slotLabel) · \(card.remainingIds.count) left")
+        Text("\(card.slotLabel) · \(card.remainingKeys.count) left")
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(WatchTheme.accent)
             .widgetAccentable()
@@ -214,11 +269,12 @@ private struct CaughtUpCardView: View {
 
     private var nextLine: String {
         guard let label = card.nextSlotLabel else { return "Nothing left today" }
-        let noun = card.nextSlotCount == 1 ? "reminder" : "reminders"
+        // "waiting", not "reminders": the count includes quota prompts
+        // (2026-09-25), the same "N left" the reminder card's header uses.
         if let start = card.nextSlotStart {
-            return "Next: \(label) at \(DateHelpers.formatShortTime(start)) · \(card.nextSlotCount) \(noun)"
+            return "Next: \(label) at \(DateHelpers.formatShortTime(start)) · \(card.nextSlotCount) waiting"
         }
-        return "Next: \(label) · \(card.nextSlotCount) \(noun)"
+        return "Next: \(label) · \(card.nextSlotCount) waiting"
     }
 }
 
@@ -320,6 +376,18 @@ enum ReminderStackMetrics {
     /// The trailing button column / ✓ disc diameter — a finger target on a
     /// ~44mm screen; smaller and the ✓ becomes a mis-tap machine.
     static let buttonColumn: CGFloat = 36
+    /// A quota prompt card's ☐ (did-it) column, beside ✓'s.
+    static let didColumn: CGFloat = 30
+    /// Whether a quota prompt card draws ☐ DID IT (with the count above it)
+    /// beside ✓ CONSIDERED — quota reminders, 2026-09-24, decided on
+    /// RenderPreview of his real prompts (`ReminderStackPreviewData`'s
+    /// "Prompt —" previews). It fits: the column costs the title ~36pt, and
+    /// the only title that doesn't fit with it ("Check for new certifications
+    /// — …", 120 characters) doesn't fit without it either — the card's last
+    /// rung truncates it either way, as it does his paragraph reminders. The
+    /// count sits in the column's top slot, level with ⏭, so it is never
+    /// cut off with the title. Off = consider only (count back in the title).
+    static let promptCardShowsDidIt = true
 }
 
 // MARK: - Circular / Corner (glanceable rings)
