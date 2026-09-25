@@ -356,6 +356,11 @@ paths:
         completion counts roll back one. Refuses (400) when the task's due date
         has changed since that completion, or when there is nothing to put back.
         Logged as an undoable action either way.
+
+        Refuses (400) a quota (2026-09-24): a quota's completions are the period
+        rollover's record of a met period, and putting one back deleted that
+        record while the period stayed closed. Correct a count with
+        `POST /api/tasks/{id}/progress` and `delta: -1` instead.
       responses:
         '200':
           description: Reopened task
@@ -384,6 +389,12 @@ paths:
         A sub-target increment is NOT a completion: it dispatches
         `task.progressed`, never `task.completed`, and the task stays open until
         its period boundary. Returns 400 if the task is not tracked.
+
+        If the quota's period has ended but the rollover job has not run yet
+        (it runs every few minutes), the period is closed first, so a +1 just
+        after midnight counts for the new day. Progress logged today is also
+        recorded in the quota's `quota_day_state` (it clears a weekly/monthly
+        quota prompt for the day); undo restores both.
       requestBody:
         required: false
         content:
@@ -1067,14 +1078,21 @@ paths:
         the same core bulk-done path — one transaction, ONE undo entry.
 
         Quotas are skipped unless `close_period: true`, as for
-        `/api/tasks/bulk/done`.
+        `/api/tasks/bulk/done` (and refused when nothing else is in the batch).
+
+        Quota prompts (2026-09-24): `prompts` acts on quota prompts in the SAME
+        transaction and undo entry — a checklist commit or a slot's "Considered
+        all" mixing reminders and prompts is one Undo. Each entry is a
+        `prompt_key` string (consider it) or `{ key, did }` (`did: true` = the
+        square checkbox: log progress and consider it). A quota is acted on
+        through its prompt, never completed by id. `ids` may be empty when
+        `prompts` is not. A stale-date or foreign key refuses the whole batch.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [ids]
               properties:
                 ids:
                   type: array
@@ -1083,6 +1101,14 @@ paths:
                 close_period:
                   type: boolean
                   description: Also complete quotas in the batch, closing each period early.
+                prompts:
+                  type: array
+                  maxItems: 500
+                  items:
+                    oneOf:
+                      - type: string
+                        description: A prompt_key to consider.
+                      - $ref: '#/components/schemas/PromptAction'
       responses:
         '200':
           description: Completion result
@@ -1103,6 +1129,65 @@ paths:
                       quota_skipped:
                         type: integer
                         description: Quotas left alone because close_period was not set.
+                      prompts_considered:
+                        type: integer
+                        description: Prompts considered (no progress) in this batch.
+                      prompts_did:
+                        type: integer
+                        description: Prompts done ("did it") in this batch.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Quota prompts (quota reminders, 2026-09-24) ---
+
+  /api/quota-prompts/consider:
+    post:
+      summary: Consider quota prompts (no progress)
+      operationId: considerQuotaPrompts
+      tags: [Reminders]
+      description: |
+        The round circle on a quota prompt: handled for today, nothing logged.
+        One transaction and one undo entry for every key; idempotent. Keys come
+        from `GET /api/reminders` `groups[].prompts[].prompt_key`; a key for
+        another local day, or for a quota that is not the caller's own, refuses
+        the whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptKeys'
+      responses:
+        '200':
+          $ref: '#/components/responses/PromptActionResult'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/quota-prompts/did:
+    post:
+      summary: Did it — log progress on quota prompts
+      operationId: didQuotaPrompts
+      tags: [Reminders]
+      description: |
+        The square checkbox on a quota prompt: logs progress AND considers the
+        prompt. Idempotent per key, so a double tap or a retry logs once: a
+        daily quota's prompt `k` raises today's count to at least `k`; any
+        other quota gets +1 unless that key was already done today. One
+        transaction, one undo entry; undo restores the count and the prompt.
+        Dispatches `task.progressed` for each quota whose count moved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptKeys'
+      responses:
+        '200':
+          $ref: '#/components/responses/PromptActionResult'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1175,6 +1260,18 @@ paths:
         debt: never counted in overdue, never in the badge, never notified
         individually — the time slot notifies. A reminder completed today
         drops out of its group and returns with its next occurrence.
+
+        QUOTA PROMPTS (2026-09-24). Every unmet quota also appears as a prompt
+        in a period each day, in the SEPARATE `groups[].prompts` array.
+        `reminders`, `count`, `considered`, `total` and `considered_total` stay
+        reminder-only, exactly as before, so clients that predate prompts are
+        unaffected. `prompts` holds every prompt assigned to the slot today,
+        handled ones included; a prompt is waiting while `!considered &&
+        !done`, and a client counts it like a reminder (waiting, then
+        considered). Act on one with `POST /api/quota-prompts/consider`,
+        `/did`, or `prompts` in `POST /api/tasks/bulk/complete`. The user's
+        `quota_prompts_enabled` preference and the server's
+        `OPENTASK_QUOTA_PROMPTS=off` each make every `prompts` array empty.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -1196,12 +1293,19 @@ paths:
                         description: Reminders with no occurrence today (e.g. a weekly one on its off day), so they stay reachable. Not counted in total.
                         items:
                           $ref: '#/components/schemas/Task'
+                      prompts_total:
+                        type: integer
+                        description: Quota prompts still waiting today, all slots.
+                      prompts_considered_total:
+                        type: integer
+                        description: Quota prompts handled today, all slots.
                       has_any:
                         type: boolean
                         description: |
                           Whether the user has any reminders at all, today or
-                          otherwise. Lets a client tell "finished for today" apart
-                          from "has never made a reminder" when `groups` is empty.
+                          otherwise, or any quota prompt today. Lets a client
+                          tell "finished for today" apart from "has never made a
+                          reminder" when `groups` is empty.
                       groups:
                         type: array
                         items:
@@ -1236,6 +1340,18 @@ paths:
                                 back with `POST /api/tasks/{id}/undone`.
                               items:
                                 $ref: '#/components/schemas/Task'
+                            prompts:
+                              type: array
+                              description: |
+                                Quota prompts assigned to this slot today,
+                                alphabetical. Never listed in considered_items
+                                (a quota refuses /undone); undo is the way back.
+                              items:
+                                $ref: '#/components/schemas/QuotaPrompt'
+                            prompts_waiting:
+                              type: integer
+                            prompts_considered:
+                              type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1917,7 +2033,99 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
 
+    PromptActionResult:
+      description: What the prompt action did, and the quotas it touched
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  considered:
+                    type: integer
+                  did:
+                    type: integer
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+
   schemas:
+    PromptKeys:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: string
+            example: 'q:42:0:2026-09-24'
+
+    PromptAction:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          example: 'q:42:2:2026-09-24'
+        did:
+          type: boolean
+          default: false
+          description: true = did it (log progress + consider); false = consider only.
+
+    QuotaPrompt:
+      type: object
+      description: |
+        One quota prompt (quota reminders, 2026-09-24): an unmet quota shown in
+        a reminder period. Not a task — key rows by `prompt_key`, act on it with
+        the quota-prompt endpoints; `task_id` is the quota (for opening it).
+      properties:
+        prompt_key:
+          type: string
+          description: >
+            `q:<taskId>:<k>:<date>` — k is the prompt's number for a daily quota
+            (the highest number assigned to this slot), 0 otherwise; date is the
+            user's local date.
+          example: 'q:42:0:2026-09-24'
+        task_id:
+          type: integer
+        number:
+          type: integer
+          nullable: true
+          description: >
+            Daily quotas: the row is done once today's count reaches this.
+            Null for every other quota (one prompt a day).
+        title:
+          type: string
+        current:
+          type: integer
+          description: Today's count (0 once the period ended, even before the rollover job runs).
+        target:
+          type: integer
+        period:
+          type: string
+          nullable: true
+          enum: [DAILY, WEEKLY, MONTHLY, YEARLY]
+        stripe_color:
+          type: string
+          nullable: true
+          enum: [red, orange, yellow, blue, purple, pink, gray]
+          description: >
+            The quota's label colour for its stripe, resolved server-side. Null
+            is neutral (no label or colour); green is never sent — it means
+            "met" on quota chips.
+        considered:
+          type: boolean
+        done:
+          type: boolean
+          description: >
+            Daily: today's count reached `number`. Others: progress was logged
+            today from anywhere (or "did it" on this prompt).
+
     Error:
       type: object
       properties:
@@ -2037,6 +2245,50 @@ components:
             the quota, and null on anything that is not a quota. USE THIS, NOT
             due_at, for anything that needs to know how far through its period a
             quota is (a pace indicator, for example): a quota has no due_at.
+        quota_prompt_config:
+          type: object
+          nullable: true
+          description: >
+            Quota reminders (2026-09-24): whether and where this quota prompts
+            on the Reminders surface. Null = the defaults (on for daily, weekly
+            and monthly quotas; off for yearly and period-less; in the user's
+            default period). Writable on create and PATCH; `null` resets it.
+            Slot ids are resolved when read — a deleted period falls back to the
+            user's default, then the first period of the day.
+          properties:
+            enabled:
+              type: boolean
+            slot_id:
+              type: integer
+              nullable: true
+            numbers:
+              type: object
+              description: Daily quotas — the period for prompt number k, keyed "1".."N".
+              additionalProperties:
+                type: integer
+                nullable: true
+        quota_day_state:
+          type: object
+          nullable: true
+          readOnly: true
+          description: >
+            Server-owned record of the owner's local day for this quota's
+            prompts; restored by undo. A date other than today means nothing
+            happened today.
+          properties:
+            date:
+              type: string
+              example: '2026-09-24'
+            logged:
+              type: integer
+            did:
+              type: array
+              items:
+                type: string
+            considered:
+              type: array
+              items:
+                type: string
         completion_count:
           type: integer
         snooze_count:
