@@ -9,7 +9,10 @@ import Foundation
 /// slot-snooze action list (`slotSnoozeActions()` in `NotificationConstants.swift`)
 /// without a network round trip. The main app, watch app and Mac app write
 /// this cache via `refreshSlotActions()` on launch and on foreground; the
-/// extension only ever reads it.
+/// phone/Mac Tasks widget (`TaskFeed.snapshot`) and the watch Smart Stack
+/// widget also write it on each timeline reload, since slots are editable in
+/// Settings (2026-09-24) and an edit triggers a widget push. The notification
+/// content extension only ever reads it.
 ///
 /// Same App Group suite `WidgetStore` and `KeychainHelper` use, and the same
 /// macOS team-ID-prefix split documented on both of those: a macOS

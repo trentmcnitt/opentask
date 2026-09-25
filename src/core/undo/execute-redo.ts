@@ -8,9 +8,10 @@ import Database from 'better-sqlite3'
 import { reinsertCompletion } from './completion-row'
 import { getDb, withTransaction } from '@/core/db'
 import { emitSyncEvent } from '@/lib/sync-events'
-import type { UndoSnapshot, RedoResult } from '@/types'
+import type { UndoSnapshot, RedoResult, SlotUndoState } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
+import { applySlotRow, parseSlotState } from './slot-row'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 
 /** Parsed undo_log entry ready for redoEntry() */
@@ -20,6 +21,8 @@ export interface ParsedRedoEntry {
   description: string | null
   fieldsChanged: string[]
   snapshots: UndoSnapshot[]
+  /** Set only on time_slot_edit / time_slot_delete entries. */
+  slotState?: SlotUndoState | null
 }
 
 /**
@@ -27,6 +30,9 @@ export interface ParsedRedoEntry {
  * Used by both executeRedo (single) and executeBatchRedo (batch).
  */
 export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
+  // A slot edit/delete: re-apply the slot change alongside its reminders.
+  if (entry.slotState) applySlotRow(tx, entry.slotState.before, entry.slotState.after)
+
   // Handle special case: redoing a 'create' means restoring the task from trash
   if (entry.action === 'create') {
     const now = nowUtc()
@@ -70,7 +76,7 @@ export function executeRedo(userId: number): RedoResult | null {
   const entry = db
     .prepare(
       `
-    SELECT id, user_id, action, description, fields_changed, snapshot, undone
+    SELECT id, user_id, action, description, fields_changed, snapshot, slot_state, undone
     FROM undo_log
     WHERE user_id = ? AND undone = 1
     ORDER BY id ASC
@@ -85,6 +91,7 @@ export function executeRedo(userId: number): RedoResult | null {
         description: string | null
         fields_changed: string
         snapshot: string
+        slot_state: string | null
         undone: number
       }
     | undefined
@@ -99,6 +106,7 @@ export function executeRedo(userId: number): RedoResult | null {
     description: entry.description,
     fieldsChanged: JSON.parse(entry.fields_changed),
     snapshots: JSON.parse(entry.snapshot),
+    slotState: parseSlotState(entry.slot_state),
   }
 
   const result = withTransaction((tx) => {

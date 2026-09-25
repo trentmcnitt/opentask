@@ -5,7 +5,7 @@
  */
 
 import { getDb } from '@/core/db'
-import type { UndoAction, UndoSnapshot, Task } from '@/types'
+import type { UndoAction, UndoSnapshot, Task, SlotUndoState } from '@/types'
 
 /**
  * Log an action to the undo log
@@ -15,6 +15,8 @@ import type { UndoAction, UndoSnapshot, Task } from '@/types'
  * @param description Human-readable description (e.g., "Marked 63 tasks done")
  * @param fieldsChanged Array of field names that were changed
  * @param snapshots Array of task snapshots (before/after state)
+ * @param slotState The time slot row a time_slot_edit / time_slot_delete changed
+ *   (see `SlotUndoState`); omitted by every task-only action
  */
 export function logAction(
   userId: number,
@@ -22,6 +24,7 @@ export function logAction(
   description: string | null,
   fieldsChanged: string[],
   snapshots: UndoSnapshot[],
+  slotState?: SlotUndoState,
 ): number {
   const db = getDb()
 
@@ -40,11 +43,18 @@ export function logAction(
   const result = db
     .prepare(
       `
-    INSERT INTO undo_log (user_id, action, description, fields_changed, snapshot)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO undo_log (user_id, action, description, fields_changed, snapshot, slot_state)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
     )
-    .run(userId, action, description, JSON.stringify(fieldsChanged), JSON.stringify(snapshots))
+    .run(
+      userId,
+      action,
+      description,
+      JSON.stringify(fieldsChanged),
+      JSON.stringify(snapshots),
+      slotState ? JSON.stringify(slotState) : null,
+    )
 
   return Number(result.lastInsertRowid)
 }

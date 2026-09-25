@@ -181,7 +181,12 @@ CREATE TABLE IF NOT EXISTS undo_log (
   fields_changed TEXT NOT NULL,
   snapshot       TEXT NOT NULL,
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-  undone         INTEGER NOT NULL DEFAULT 0
+  undone         INTEGER NOT NULL DEFAULT 0,
+  -- JSON { before, after } of ONE time_slots row, or NULL. Only the
+  -- time_slot_edit / time_slot_delete actions set it: changing a slot's start
+  -- or removing it moves that slot's reminders, and undo must put the slot
+  -- back together with them (see src/core/time-slots/edit.ts).
+  slot_state     TEXT DEFAULT NULL
 );
 
 -- User daily stats table (aggregate stats with daily granularity)

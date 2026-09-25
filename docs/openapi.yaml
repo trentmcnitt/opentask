@@ -621,9 +621,10 @@ paths:
                 sort_order:
                   type: integer
                   default: 0
+                  description: Vestigial - slots are always ordered by start_time.
       responses:
         '200':
-          description: The created slot
+          description: The created slot (start_time must be unique among the user's slots)
           content:
             application/json:
               schema:
@@ -631,6 +632,96 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/TimeSlot'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/time-slots/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Time slot ID. Another user's slot is a 404, like a missing one.
+    patch:
+      summary: Rename a time slot and/or move its start
+      operationId: updateTimeSlot
+      tags: [Time slots]
+      description: |
+        Settings → Reminder periods. A reminder belongs to a slot only through
+        its time of day, so moving a slot's `start_time` also moves that slot's
+        reminders to keep them in it: reminders on the old start move to the new
+        start, reminders inside the slot keep their time unless the new
+        boundaries would put them in another slot (then they move to the new
+        start). Other slots' reminders and ordinary tasks are never touched.
+        The slot change and the reminder moves are one atomic undo entry
+        (`time_slot_edit`) that also restores the slot; `undo_id` names it.
+        A rename alone moves nothing and returns `undo_id: null`.
+
+        `start_time` must be unique among the user's slots. There is no
+        reordering: slots are always ordered by `start_time`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              additionalProperties: false
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                start_time:
+                  type: string
+                  pattern: '^([01]\\d|2[0-3]):([0-5]\\d)$'
+                  description: HH:MM, 24-hour, local
+      responses:
+        '200':
+          description: The slot after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TimeSlotChange'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Remove a time slot
+      operationId: deleteTimeSlot
+      tags: [Time slots]
+      description: |
+        Removes the slot and moves each of its reminders to the start of the
+        remaining slot nearest the reminder's own time of day (a tie goes to the
+        earlier slot), so none drop out of every slot. The last remaining slot
+        cannot be removed (400). Always an undo entry (`time_slot_delete`,
+        `undo_id`): undo restores the slot under its original id together with
+        its reminders.
+      responses:
+        '200':
+          description: The removed slot, as it was
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TimeSlotChange'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/tasks/{id}/snooze:
     parameters:
@@ -2090,9 +2181,24 @@ components:
           description: HH:MM, 24-hour, local
         sort_order:
           type: integer
+          description: Vestigial - every reader orders slots by start_time.
         created_at:
           type: string
           format: date-time
+
+    TimeSlotChange:
+      type: object
+      description: Result of PATCH/DELETE /api/time-slots/{id}.
+      properties:
+        slot:
+          $ref: '#/components/schemas/TimeSlot'
+        reminders_moved:
+          type: integer
+          description: Reminders rewritten to stay in (or find) a slot.
+        undo_id:
+          type: integer
+          nullable: true
+          description: The undo_log entry for this change (POST /api/undo/batch with through_id undoes exactly it); null for a rename.
 
     TaskUpdate:
       type: object
