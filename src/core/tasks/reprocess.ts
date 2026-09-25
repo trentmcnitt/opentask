@@ -82,6 +82,7 @@ export function reprocessTask(options: ReprocessTaskOptions): Task {
     return result
   })
 
-  emitSyncEvent(userId)
+  // Only `ai-failed` → `ai-to-process` changed; widgets ignore `ai-*` labels.
+  emitSyncEvent(userId, { widgets: false })
   return updatedTask
 }

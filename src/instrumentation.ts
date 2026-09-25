@@ -20,7 +20,9 @@
  * - 3:30 AM UTC daily: Insights generation (§7.4)
  *
  * Also registers the WidgetKit push sync listener (not a cron — reacts to
- * emitSyncEvent, debounced 2s per user). See src/core/notifications/widget-push.ts.
+ * emitSyncEvent, coalesced per widget push token: 2s settle, then at most one
+ * push per 5 min window on iOS/watchOS, held through quiet hours). See
+ * src/core/notifications/widget-push.ts.
  */
 
 import { log } from '@/lib/logger'
