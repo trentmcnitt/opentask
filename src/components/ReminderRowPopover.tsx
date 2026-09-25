@@ -16,9 +16,10 @@ import type { Task } from '@/types'
  * and then press Open to trigger the modal? I feel like there are some times
  * I'm going to want notes."
  *
- * NOTES ARE THE POINT. A panel row carries no note indicator at all, so
- * before this the only way to read a thought's note from the dashboard was to
- * open the full editor and then close it again. (Rows used to truncate too,
+ * NOTES ARE THE POINT. Before this the only way to read a thought's note
+ * from the dashboard was to open the full editor and then close it again.
+ * (Since 2026-09-25 a panel row wears the surface's `NotesMarker` when it has
+ * notes, so the row says there is one; this is still where it is read.) (Rows used to truncate too,
  * which gave this a second job; they wrap in full as of 2026-09-21, so notes
  * are now the whole reason it exists.) This reads and does not edit, exactly
  * as the quota bubble does; Open is the way through to `ReminderDetailModal`,

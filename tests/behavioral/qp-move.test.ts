@@ -230,6 +230,7 @@ describe('Quota prompt moves — the optimistic helper', () => {
     target: 3,
     period: 'WEEKLY',
     stripe_color: null,
+    has_notes: false,
     considered: false,
     done: false,
     ...over,

@@ -159,6 +159,7 @@ export function getQuotaPromptsBySlot(
       target,
       period: quotaPeriodOf(task.rrule)?.freq ?? null,
       stripe_color: stripeColor(task, settings.labelConfig),
+      has_notes: !!task.notes?.trim(),
     }
 
     if (isDailyQuota(task)) {

@@ -11,6 +11,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
+import { NotesMarker } from '@/components/NotesMarker'
 import { usePromptRows } from '@/components/QuotaPromptRow'
 import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -38,8 +39,9 @@ import type { Task } from '@/types'
  *   two steps, exactly as a quota chip has worked since 2026-09-06. Trent
  *   asked for the parity on 2026-09-21 ("the same thing that we do for
  *   quotas... I feel like there are some times I'm going to want notes"),
- *   and the bubble is the only way to read a note from this panel, since a
- *   row carries no note indicator at all. The editor remains
+ *   and the bubble is the only way to read a note from this panel (a row
+ *   only marks that one exists, with the Reminders page's `NotesMarker`,
+ *   since 2026-09-25). The editor remains
  *   the only place this panel can edit or delete a reminder from. That, a
  *   tap, paging and Show more/less are the whole interaction set; multi-select
  *   and a floating action bar remain the real page's job.
@@ -752,7 +754,12 @@ function PanelRow({
             taller panel; accepted deliberately ("maybe we should just not care
             about it") over a height-based cap, which would make the number of
             visible rows change with the length of their text. */}
-        <p className="min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">{reminder.title}</p>
+        <p className="min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">
+          {reminder.title}
+          {/* The Reminders surface's own notes mark (2026-09-25): without it
+              the only way to learn a thought had a note was to hold it. */}
+          {!!reminder.notes?.trim() && <NotesMarker />}
+        </p>
       </li>
     </ReminderRowPopover>
   )

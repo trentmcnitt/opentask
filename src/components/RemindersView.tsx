@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb, StickyNote } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn, fromRowControl } from '@/lib/utils'
 import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
@@ -10,7 +10,8 @@ import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summa
 import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
-import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
+import { scrollRowIntoView, scrollSectionIntoView } from '@/lib/scroll-row-into-view'
+import { NotesMarker } from '@/components/NotesMarker'
 import { showToast } from '@/lib/toast'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useReminders, type ReminderCreateInput, type ReminderGroup } from '@/hooks/useReminders'
@@ -21,6 +22,7 @@ import { useSyncStream } from '@/hooks/useSyncStream'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { usePromptRows } from '@/components/QuotaPromptRow'
+import { MIN_SEGMENT_PX } from '@/components/ReminderSlotBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { QuickAdd } from '@/components/QuickAdd'
 import type { ReminderBulkChanges, ReminderCreateDraft } from '@/components/ReminderDetail'
@@ -388,8 +390,30 @@ export function RemindersView({
    * Deletes only its own `slot` param (not the whole query string) when
    * consuming it — unlike a full-path `replaceState`, this can't clobber an
    * unrelated param a future caller adds alongside it.
+   *
+   * `goToSlot` is the whole move — open, show everything, scroll — and the
+   * headline's day bar calls it too (2026-09-25): tapping a segment goes to
+   * that period's section, the way the dashboard card's slot bar pages to it.
+   *
+   * The request is ONE-SHOT. It carries a sequence number, so tapping the
+   * same segment again (after scrolling away) is a new request, and the slot
+   * group reports it served (`slotScrollServed`), which clears it. Left
+   * standing, a request would replay whenever the slot list remounts — a
+   * search typed and cleared, say — and yank the page back to a slot nobody
+   * asked for; the row highlight clears itself for the same reason.
    */
-  const [scrollToSlotKey, setScrollToSlotKey] = useState<string | null>(null)
+  const [slotScroll, setSlotScroll] = useState<{ key: string; seq: number } | null>(null)
+  const goToSlot = useCallback(
+    (key: string) => {
+      setOpen(key, true)
+      setExpanded(key, true)
+      setSlotScroll((prev) => ({ key, seq: (prev?.seq ?? 0) + 1 }))
+    },
+    [setOpen, setExpanded],
+  )
+  const slotScrollServed = useCallback((seq: number) => {
+    setSlotScroll((prev) => (prev?.seq === seq ? null : prev))
+  }, [])
   const slotDeepLinkDone = useRef(false)
   useEffect(() => {
     if (slotDeepLinkDone.current || !hydrated || error) return
@@ -400,13 +424,9 @@ export function RemindersView({
       return
     }
     slotDeepLinkDone.current = true
-    const group = groups.find((g) => groupKey(g) === raw)
-    if (group) {
-      const key = groupKey(group)
-      setOpen(key, true)
-      setExpanded(key, true)
-      setScrollToSlotKey(key)
-    }
+    // Among the slots on screen: an empty slot has no section to go to.
+    const group = visibleGroups.find((g) => groupKey(g) === raw)
+    if (group) goToSlot(groupKey(group))
     params.delete('slot')
     const query = params.toString()
     window.history.replaceState(
@@ -414,7 +434,7 @@ export function RemindersView({
       '',
       window.location.pathname + (query ? `?${query}` : ''),
     )
-  }, [hydrated, error, groups, setOpen, setExpanded])
+  }, [hydrated, error, visibleGroups, goToSlot])
 
   // Rows actually rendered, in DOM order — the universe for range selection.
   const renderedRows = useMemo(() => {
@@ -695,6 +715,7 @@ export function RemindersView({
             summary={summary}
             allWaitingDone={total === 0}
             onConsiderSoFar={() => considerAll.askSoFar(summary)}
+            onGoToSlot={goToSlot}
           />
           {/* The slot cards stay once the day is clear (Trent, 2026-09-05:
               "once everything is clear there's no way to expand it… in case I
@@ -709,7 +730,8 @@ export function RemindersView({
                   <ReminderSlotGroup
                     key={key}
                     slotKey={key}
-                    scrollIntoView={scrollToSlotKey === key}
+                    scrollRequest={slotScroll?.key === key ? slotScroll.seq : undefined}
+                    onScrollServed={slotScrollServed}
                     group={group}
                     started={summary.started.includes(group)}
                     open={
@@ -902,10 +924,13 @@ function RemindersHeadline({
   summary,
   allWaitingDone,
   onConsiderSoFar,
+  onGoToSlot,
 }: {
   summary: RemindersSummary<ReminderGroup>
   allWaitingDone: boolean
   onConsiderSoFar: () => void
+  /** A segment was tapped: open that slot and scroll to it (`goToSlot`). */
+  onGoToSlot: (key: string) => void
 }) {
   let line: React.ReactNode
   if (allWaitingDone) {
@@ -952,46 +977,71 @@ function RemindersHeadline({
       </div>
 
       <div className="mt-3 flex items-center">
-        <div
-          className="flex h-2 w-full items-stretch gap-[3px]"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={summary.dayTotal}
-          aria-valuenow={summary.consideredTotal}
-          aria-label={`${summary.consideredTotal} of ${summary.dayTotal} considered today`}
-        >
+        {/* EACH SEGMENT GOES TO ITS PERIOD (2026-09-25) — the dashboard card's
+            `ReminderSlotBar` pages to a slot on a tap, and this is the same
+            idea on a page that scrolls: open the section if it was folded,
+            then bring its header up under the top bar (`goToSlot`, the
+            `?slot=` deep link's own move). So the segments are buttons in a
+            group, and the day's progressbar semantics moved to the count
+            beside them — a progressbar's children are presentational, so it
+            cannot hold anything a keyboard or a screen reader can press.
+            Every segment is at least the card bar's `MIN_SEGMENT_PX` wide (it
+            was 6px while the bar was only a picture): a period holding 1 of
+            the day's 60 must still be something a thumb can hit, Trent's own
+            worry about that bar. The hit area is also taller than the 8px bar (padding, cancelled by the
+            negative margin) so a thumb can land on it; hover only darkens the
+            track a shade, since the fill is the thing to read. */}
+        <div className="-my-1.5 flex w-full gap-[3px]" role="group" aria-label="Go to a period">
           {segments.map((g) => {
             const considered = groupConsidered(g)
             const slotTotal = groupWaiting(g) + considered
             const done = slotTotal > 0 && considered >= slotTotal
             const label = g.slot?.label ?? UNSLOTTED_LABEL
             const started = summary.started.includes(g)
+            const key = groupKey(g)
             return (
-              <div
-                key={groupKey(g)}
-                aria-hidden="true"
+              <button
+                key={key}
+                type="button"
+                onClick={() => onGoToSlot(key)}
+                data-day-segment={key}
+                aria-label={`Go to ${label}, ${considered} of ${slotTotal} considered`}
                 title={`${label} · ${considered} of ${slotTotal} considered`}
-                style={{ flexGrow: slotTotal }}
-                className={cn(
-                  'relative min-w-[6px] overflow-hidden rounded-full',
-                  started ? 'bg-muted' : 'bg-muted/50',
-                )}
+                style={{ flexGrow: slotTotal, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
+                className="group rounded-full py-1.5 focus-visible:outline-none"
               >
-                <div
+                <span
                   className={cn(
-                    'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-                    // Blue while still filling, green the moment it's done —
-                    // matches the dashboard's `ReminderSlotBar` (2026-09-22),
-                    // so a slot reads the same way on both surfaces.
-                    done ? 'bg-green-600' : 'bg-indigo-600',
+                    'relative block h-2 overflow-hidden rounded-full transition-colors',
+                    'group-focus-visible:ring-ring group-focus-visible:ring-offset-background group-focus-visible:ring-2 group-focus-visible:ring-offset-1',
+                    started
+                      ? 'bg-muted group-hover:bg-foreground/15'
+                      : 'bg-muted/50 group-hover:bg-foreground/10',
                   )}
-                  style={{ width: `${slotTotal > 0 ? (considered / slotTotal) * 100 : 0}%` }}
-                />
-              </div>
+                >
+                  <span
+                    className={cn(
+                      'block h-full rounded-full transition-[width,background-color] duration-500 ease-out',
+                      // Blue while still filling, green the moment it's done —
+                      // matches the dashboard's `ReminderSlotBar` (2026-09-22),
+                      // so a slot reads the same way on both surfaces.
+                      done ? 'bg-green-600' : 'bg-indigo-600',
+                    )}
+                    style={{ width: `${slotTotal > 0 ? (considered / slotTotal) * 100 : 0}%` }}
+                  />
+                </span>
+              </button>
             )
           })}
         </div>
-        <span className="ml-3 shrink-0 text-xs tabular-nums">
+        <span
+          className="ml-3 shrink-0 text-xs tabular-nums"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={summary.dayTotal}
+          aria-valuenow={summary.consideredTotal}
+          aria-label={`${summary.consideredTotal} of ${summary.dayTotal} considered today`}
+        >
           {dayDone ? (
             <span className="text-green-700 dark:text-green-400">
               All {summary.dayTotal} considered today
@@ -1053,9 +1103,10 @@ function useSlotDisclosure() {
     [isOpen],
   )
   // Both setters return the previous state untouched when nothing would
-  // change. The deep-link effect below asks for a slot to be open and expanded
-  // while reading `expandedKeys`; a fresh Set every call would re-render, re-run
-  // the effect, and ask again forever.
+  // change. `goToSlot` (the deep link, the day bar) asks for a slot to be open
+  // and expanded, the deep link from an effect; a fresh Set on every call
+  // would re-render for nothing, and an effect that read the result would ask
+  // again forever.
   const setOpen = useCallback((key: string, open: boolean) => {
     setOpenOverrides((prev) => {
       if ((prev.get(key) ?? true) === open) return prev
@@ -1112,9 +1163,23 @@ function SlotRowCountToggle({
   return null
 }
 
-/** The `?slot=<slotId>` deep link's scroll-into-view ref, or none. */
-function slotScrollRef(scrollIntoView: boolean | undefined) {
-  return scrollIntoView ? scrollRowIntoView : undefined
+/**
+ * Carry out a `goToSlot` request for this slot: scroll its section into view,
+ * then report the request served (see `goToSlot` for why it is one-shot).
+ * An effect, so it runs after the commit that opened and expanded the slot and
+ * the section is at its full height when it is scrolled to.
+ */
+function useSlotScroll(
+  scrollRequest: number | undefined,
+  onScrollServed: ((seq: number) => void) | undefined,
+) {
+  const sectionRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (scrollRequest === undefined) return
+    scrollSectionIntoView(sectionRef.current)
+    onScrollServed?.(scrollRequest)
+  }, [scrollRequest, onScrollServed])
+  return sectionRef
 }
 
 function ReminderSlotGroup({
@@ -1124,7 +1189,8 @@ function ReminderSlotGroup({
   expanded,
   locked = false,
   slotKey,
-  scrollIntoView,
+  scrollRequest,
+  onScrollServed,
   onToggle,
   onExpand,
   completingIds,
@@ -1144,8 +1210,11 @@ function ReminderSlotGroup({
   locked?: boolean
   /** Identity for the `?slot=<slotId>` deep link (`groupKey`'s value) and E2E targeting. */
   slotKey?: string
-  /** This is the `?slot=<slotId>` deep link's target — scroll it into view once mounted. */
-  scrollIntoView?: boolean
+  /** A pending `goToSlot` request for THIS slot (its sequence number) — the
+   *  `?slot=<slotId>` deep link or a tap on the day bar. Scrolls it into view. */
+  scrollRequest?: number
+  /** The request has been carried out — clear it, so a remount cannot replay it. */
+  onScrollServed?: (seq: number) => void
   onToggle: () => void
   onExpand: (expanded: boolean) => void
   completingIds: Set<number | string>
@@ -1171,6 +1240,7 @@ function ReminderSlotGroup({
   const visible = showsEverything ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = group.reminders.length - visible.length
   const { renderPrompt, ...reminderHandlers } = rowHandlers
+  const sectionRef = useSlotScroll(scrollRequest, onScrollServed)
 
   const headerRow = (
     <SlotHeaderRow
@@ -1185,7 +1255,7 @@ function ReminderSlotGroup({
 
   return (
     <div
-      ref={slotScrollRef(scrollIntoView)}
+      ref={sectionRef}
       className={cn(
         // Bottom padding in every state, so the hairline sits inside the card
         // rather than flush with its edge when folded.
@@ -1196,8 +1266,8 @@ function ReminderSlotGroup({
       data-slot-group={label}
       data-slot-started={started}
       data-slot-key={slotKey}
-      // Clears the fixed top bar when scrollIntoView lands on this card
-      // (`?slot=<slotId>` deep link — see the `scrollToSlotKey` effect above).
+      // Clears the sticky top bar when `goToSlot` lands this card at the top
+      // (the `?slot=<slotId>` deep link, or a tap on the headline's day bar).
       style={{ scrollMarginTop: '4.5rem' }}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
@@ -1890,9 +1960,7 @@ function ReminderRow({
         onSelect={onSelect}
         onComplete={onComplete}
       />
-      {/* The notes marker sits inline after the title rather than pinned to
-          the right edge: on a wide screen a lone icon across the row reads as
-          an unrelated control, and this one is only ever a footnote. */}
+      {/* The notes marker sits inline after the title — see `NotesMarker`. */}
       <p className={cn('min-w-0 flex-1 text-[16px] leading-6', completing && 'line-through')}>
         <span
           className={cn(
@@ -1912,11 +1980,7 @@ function ReminderRow({
             {mark.short}
           </span>
         )}
-        {hasNotes && (
-          <span className="text-muted-foreground/50 ml-1.5 inline-flex align-[-2px]">
-            <StickyNote className="size-3.5" aria-label="Has notes" />
-          </span>
-        )}
+        {hasNotes && <NotesMarker />}
         {aiFailed && (
           <span className="text-muted-foreground mt-0.5 block text-xs" data-ai-failed>
             The AI didn&rsquo;t read this. It&rsquo;s daily in this slot until you edit it.
