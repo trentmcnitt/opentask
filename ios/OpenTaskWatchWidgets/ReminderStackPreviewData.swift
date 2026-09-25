@@ -186,6 +186,16 @@ enum ReminderStackPreviewData {
         groups(considered: [11: 8]), at: at(8, 52),
         skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24", "q:276:0:2026-09-24"]
     )
+    /// Skipped to "Clean the car seats" — a MONTHLY count ("0/1 mo").
+    static let promptMonthly = entry(
+        groups(considered: [11: 8]), at: at(8, 52),
+        skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24"]
+    )
+    /// Skipped to "Daily Walks" #1 — a DAILY count ("0/2 today").
+    static let promptDaily = entry(
+        groups(considered: [11: 8]), at: at(8, 52),
+        skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24", "q:276:0:2026-09-24", "q:255:0:2026-09-24"]
+    )
     /// A short one: Morning just opened.
     static let shortReminder = entry(groups(considered: [11: 8]), at: at(9, 2))
     /// Last item in a slot: Midday with three of four considered.
@@ -237,6 +247,18 @@ enum ReminderStackPreviewData {
     ReminderStackWidget()
 } timeline: {
     ReminderStackPreviewData.promptVegetables
+}
+
+#Preview("Prompt — monthly", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.promptMonthly
+}
+
+#Preview("Prompt — daily", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.promptDaily
 }
 
 #Preview("Short reminder", as: .accessoryRectangular) {
