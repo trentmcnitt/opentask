@@ -104,9 +104,16 @@ private struct TasksSmallView: View {
                         // Day-naming (2026-09-23) — see `WidgetTheme.
                         // dueLabelText`'s doc; "anywhere a task time shows"
                         // includes this 2×2's "next up" line.
-                        WidgetTheme.dueLabelText(for: next, now: entry.date)
+                        // Stacked like every row (2026-09-25: a day word
+                        // always sits above the time).
+                        WidgetTheme.dueLabelText(for: next, now: entry.date, stacked: true)
                             .font(.caption2)
                             .monospacedDigit()
+                            // Both lines always show ("Yesterday" /
+                            // "12:00 pm"); the title above yields its room
+                            // (it already shrinks, then truncates).
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
                     }
                     Spacer(minLength: 0)
                 } else {
@@ -795,9 +802,9 @@ private struct TaskRow: View {
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
-                // AM" (further), "Oct 2" (date-only). Overdue is
-                // unchanged — plain time, red — see
-                // `WidgetTheme.dueLabelText`'s doc.
+                // AM" (further), "Oct 2" (date-only). Overdue (2026-09-25):
+                // red, with "Yesterday"/"Wed"/"Sep 12" over the time unless
+                // it was due earlier today — see `DueLabel.parts`.
                 //
                 // `fixedSize` (2026-09-24): exactly the lines it was built
                 // with (one, or two when `dueStacked` — an explicit break,

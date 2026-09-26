@@ -50,6 +50,7 @@
 		5692A461B1813A3BD713547E /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4BA37EA1BFACF97944D4A4E /* WatchSlotLogic.swift */; };
 		57F9EC8914D8E01DE7893C91 /* QuotasPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D89051467E11E8109DC1304F /* QuotasPageView.swift */; };
 		5BC4E254AB252148F78EBF4F /* NotificationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FD21B7CC5A3B1E775338E0 /* NotificationViewController.swift */; };
+		5D948F2336DBDB3B71925E84 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */; };
 		5E30CAF6BE99186935757A5D /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */; };
 		63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
 		6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
@@ -220,6 +221,7 @@
 		9080749DBD681AAA6C5C8BD4 /* WatchWidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchWidgetIntents.swift; sourceTree = "<group>"; };
 		955351AED16FD834316AB1EA /* OpenTaskApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskApp.swift; sourceTree = "<group>"; };
 		9AA310D3214806920A653F67 /* WatchFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchFormatting.swift; sourceTree = "<group>"; };
+		9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueLabel.swift; sourceTree = "<group>"; };
 		A0878BC1DF19A90C9D6DA829 /* WatchWidgetPushHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchWidgetPushHandler.swift; sourceTree = "<group>"; };
 		A0C90FA651ABD2058B84858C /* ReminderStackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderStackWidget.swift; sourceTree = "<group>"; };
 		A44BF1E5D3EAA30D3259E9BE /* RemindersWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidget.swift; sourceTree = "<group>"; };
@@ -362,6 +364,7 @@
 		3EA882A58A27F524AD96763C /* OpenTaskWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */,
 				B0BA880E80F8E982F77B4147 /* NotesGlyphPreviews.swift */,
 				5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */,
 				A44BF1E5D3EAA30D3259E9BE /* RemindersWidget.swift */,
@@ -667,6 +670,7 @@
 			files = (
 				ECB0FD5F24B460DCF051564A /* APIClient.swift in Sources */,
 				EACE06C9E8EB63FF815818AD /* DateHelpers.swift in Sources */,
+				5D948F2336DBDB3B71925E84 /* DueLabel.swift in Sources */,
 				4D721AFB724370814CF5D477 /* KeychainHelper.swift in Sources */,
 				917AA65E43D8A46805B4E674 /* NotesGlyphPreviews.swift in Sources */,
 				2B8635ACDF698F724D100E26 /* NotificationConstants.swift in Sources */,

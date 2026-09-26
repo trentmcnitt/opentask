@@ -53,8 +53,10 @@
 		932B4699D3B795BB16459BE5 /* QuotaPromptDTOTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */; };
 		9556B8E8A59E161239E3988F /* RemindersWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */; };
 		97469992D329A225F1120702 /* NotesGlyphPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */; };
+		A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		A957F5A3429D50204CAFBAB2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 607A3ED0E07D6E9308774294 /* Info.plist */; };
 		AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
+		ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370309049F393EDDAD8042C0 /* DueLabelTests.swift */; };
 		B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
 		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
 		B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
@@ -67,6 +69,7 @@
 		D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */; };
 		D473788D4B4379B10D45B709 /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */; };
 		D69FFE9776386998102E6583 /* undo-status.json in Resources */ = {isa = PBXBuildFile; fileRef = 8F19FED31D51A4F31E33C37B /* undo-status.json */; };
+		D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		DBCA794BCC63F980AE658F47 /* tasks.json in Resources */ = {isa = PBXBuildFile; fileRef = 6676B0D8909B96B0AAA98C71 /* tasks.json */; };
 		DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
@@ -120,6 +123,7 @@
 		31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSlotLogic.swift; sourceTree = "<group>"; };
 		32C45DA1904EB29E34155A58 /* OpenTaskLogicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenTaskLogicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStoreCacheTests.swift; sourceTree = "<group>"; };
+		370309049F393EDDAD8042C0 /* DueLabelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueLabelTests.swift; sourceTree = "<group>"; };
 		37C29187973C3150F91CA3B7 /* reminders-initial.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-initial.json"; sourceTree = "<group>"; };
 		38BA76FEFE40A03A2F3E709E /* MenuActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuActions.swift; sourceTree = "<group>"; };
 		3EBEF5EED37D51458C482AC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -128,6 +132,7 @@
 		456B0402D3211FEEE9D56F67 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksScopeTests.swift; sourceTree = "<group>"; };
 		54BBA7157D64D84DE2038504 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueLabel.swift; sourceTree = "<group>"; };
 		5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
 		606B27B10869F5EC627043D9 /* NotificationConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationConstants.swift; sourceTree = "<group>"; };
 		607A3ED0E07D6E9308774294 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -252,6 +257,7 @@
 			isa = PBXGroup;
 			children = (
 				4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */,
+				370309049F393EDDAD8042C0 /* DueLabelTests.swift */,
 				81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */,
 				AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */,
 				47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */,
@@ -275,6 +281,7 @@
 		96821342944D576012D93C23 /* OpenTaskWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */,
 				607A3ED0E07D6E9308774294 /* Info.plist */,
 				1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */,
 				B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */,
@@ -515,6 +522,8 @@
 				4ABEC9743D9F16FBA470924F /* APIClient.swift in Sources */,
 				2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */,
 				909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */,
+				D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */,
+				ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */,
 				F4A48262758480B2362DE1B0 /* Fixtures.swift in Sources */,
 				B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */,
 				DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */,
@@ -539,6 +548,7 @@
 			files = (
 				21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */,
 				2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */,
+				A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */,
 				4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */,
 				97469992D329A225F1120702 /* NotesGlyphPreviews.swift in Sources */,
 				AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */,
