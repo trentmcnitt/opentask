@@ -169,11 +169,12 @@ private struct ReminderCardView: View {
     /// render (2026-09-24 RenderPreview).
     /// CONSIDERED, for a reminder and a quota prompt alike (the same verb on
     /// both). A prompt goes through its own endpoint by key; a done on a
-    /// quota is refused server-side. The glyph differs: ✓ on a reminder, an
-    /// EYE on a prompt (2026-09-25) — for a prompt the button means "seen",
-    /// not "done", as on every other prompt surface. Same disc, same size.
+    /// quota is refused server-side. The glyph differs: ✓ on a reminder, a
+    /// DASHED circle on a prompt (2026-09-25; briefly an eye) — for a prompt
+    /// the button means "seen", not "done", as on every other prompt surface.
+    /// Same disc, same size.
     private var considerButton: some View {
-        let label = Image(systemName: card.promptKey == nil ? "checkmark" : "eye")
+        let label = Image(systemName: card.promptKey == nil ? "checkmark" : "circle.dashed")
             .font(.system(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: ReminderStackMetrics.buttonColumn, height: ReminderStackMetrics.buttonColumn)

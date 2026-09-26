@@ -64,3 +64,37 @@ export function waitForPreferenceSave(page: Page, field: string) {
     }
   })
 }
+
+/**
+ * /quotas opened on its DETAILED list (`QuotasView`: rows, selection, the
+ * multi-quota editor) rather than the summary it opens on by default
+ * (2026-09-25). Presses the page's own Details switch, the way a user does,
+ * and waits for the save so a later reload cannot race it.
+ *
+ * The choice is the SERVER preference `quotas_details` on the one test user
+ * every spec shares, so it outlives the test. Nothing depends on it staying
+ * off: a test about the default view sets it explicitly first
+ * (`track.spec.ts`, "Quotas page — summary and details").
+ */
+export async function gotoQuotasDetails(page: Page, path = '/quotas'): Promise<void> {
+  await page.goto(path)
+  const details = page
+    .getByRole('group', { name: 'Quotas view' })
+    .getByRole('button', { name: 'Details', exact: true })
+  await page.locator('[data-quotas-view], [data-quotas-summary]').first().waitFor()
+  if ((await details.count()) === 0) {
+    // No quotas at all: both views are the same empty state, so the page
+    // offers no switch (see `QuotasHeaderRow`). Set the preference directly;
+    // the list is what a quota made next will land in.
+    const res = await page.request.patch('/api/user/preferences', {
+      data: { quotas_details: true },
+    })
+    if (!res.ok()) throw new Error(`PATCH quotas_details: ${res.status()}`)
+    await page.goto(path)
+  } else if ((await details.getAttribute('aria-pressed')) !== 'true') {
+    const saved = waitForPreferenceSave(page, 'quotas_details')
+    await details.click()
+    await saved
+  }
+  await page.locator('[data-quotas-view]').waitFor()
+}

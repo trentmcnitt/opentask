@@ -374,6 +374,21 @@ interface TrackPanelProps {
    *  panel does not own its data the way `/quotas` owns its own fetch; `tasks`
    *  is a prop, so the mutation's own success is not enough to update it. */
   onRefresh: () => Promise<void>
+  /**
+   * On its own page (/quotas' default view, 2026-09-25) rather than above the
+   * task list. The panel is the same — chips/rows, "Show met", tap/hold — but
+   * the parts that only exist to get it out of the task list's way go:
+   *
+   * - the phone's SECTION FOLD. It shuts the card so the first task of the day
+   *   is reachable; on /quotas there is no task list beneath, and a fold shut
+   *   on the dashboard (it is stored in the shared fold state) would otherwise
+   *   open this page onto one line and nothing else. The card is always shown.
+   * - the "QUOTAS" heading — the top bar and the page's own h1 already say it.
+   * - the phone-only foot link. With no fold button in the header there is
+   *   room for the header's chips/rows switch at every width, so the one
+   *   switch serves both, as it does on a desktop.
+   */
+  standalone?: boolean
 }
 
 /**
@@ -392,7 +407,13 @@ function useTrackNow(): Date {
   return now
 }
 
-export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanelProps) {
+export function TrackPanel({
+  tasks,
+  onUndo,
+  onCompleted,
+  onRefresh,
+  standalone = false,
+}: TrackPanelProps) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
@@ -417,8 +438,9 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
   const overall = quotaGroupSummary(quotas)
 
   return (
-    <section aria-label="Quotas" data-track-panel className="mb-6">
+    <section aria-label="Quotas" data-track-panel className={cn(!standalone && 'mb-6')}>
       <TrackHeader
+        standalone={standalone}
         section={section}
         open={open}
         onToggleView={() => setOpen(!open)}
@@ -428,7 +450,10 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
 
       <div
         id="track-card"
-        className={cn('bg-muted/30 rounded-2xl p-2', foldClass(section.state, SECTION_CARD))}
+        className={cn(
+          'bg-muted/30 rounded-2xl p-2',
+          !standalone && foldClass(section.state, SECTION_CARD),
+        )}
       >
         <TrackSectionsList
           sections={sections}
@@ -445,16 +470,18 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
             opposite number, and without this one a `track_expanded` pinned on a
             desktop was unreachable on a phone. Right-aligned and muted — it is
             a way out of a view, not a thing to press on the way in. */}
-        <div className="mt-1 flex justify-end sm:hidden">
-          <button
-            type="button"
-            data-track-view-toggle
-            onClick={() => setOpen(!open)}
-            className="text-muted-foreground hover:text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
-          >
-            {open ? 'Show as chips' : 'Show as rows'}
-          </button>
-        </div>
+        {!standalone && (
+          <div className="mt-1 flex justify-end sm:hidden">
+            <button
+              type="button"
+              data-track-view-toggle
+              onClick={() => setOpen(!open)}
+              className="text-muted-foreground hover:text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
+            >
+              {open ? 'Show as chips' : 'Show as rows'}
+            </button>
+          </div>
+        )}
       </div>
 
       {detail.modal}
@@ -793,13 +820,25 @@ const MET_COUNT: FoldClasses = {
  * differs from the foot link's `data-track-view-toggle` for the same reason
  * — each width's tests find exactly one.
  */
-function TrackViewSwitch({ open, onToggleView }: { open: boolean; onToggleView: () => void }) {
+function TrackViewSwitch({
+  open,
+  onToggleView,
+  everyWidth,
+}: {
+  open: boolean
+  onToggleView: () => void
+  /** Standalone (/quotas): no foot link, so this is the switch at every width. */
+  everyWidth: boolean
+}) {
   return (
     <button
       type="button"
       data-track-view-switch
       onClick={onToggleView}
-      className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground hidden shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap transition-colors sm:inline-flex"
+      className={cn(
+        'text-muted-foreground hover:bg-foreground/5 hover:text-foreground shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap transition-colors',
+        everyWidth ? 'inline-flex' : 'hidden sm:inline-flex',
+      )}
     >
       {open ? 'Show as chips' : 'Show as rows'}
     </button>
@@ -819,12 +858,15 @@ function TrackViewSwitch({ open, onToggleView }: { open: boolean; onToggleView: 
  * something is met; otherwise a plain readout that must not look pressable.
  */
 function TrackHeader({
+  standalone,
   section,
   open,
   onToggleView,
   overall,
   showMet,
 }: {
+  /** On /quotas: no section fold, no heading — see `TrackPanelProps.standalone`. */
+  standalone: boolean
   section: { state: FoldState; open: boolean; toggle: () => void }
   open: boolean
   onToggleView: () => void
@@ -832,7 +874,15 @@ function TrackHeader({
   showMet: { shown: boolean; toggle: () => void }
 }) {
   const shortfall = quotaShortfall(overall)
-  const countText = `${overall.met} of ${overall.count}`
+  if (standalone) {
+    // The met count is never folded away here, because the card never folds.
+    return (
+      <div className="mb-2 flex min-h-7 items-center justify-end gap-2">
+        <TrackViewSwitch open={open} onToggleView={onToggleView} everyWidth />
+        <TrackMetCount overall={overall} showMet={showMet} foldClassName="flex" />
+      </div>
+    )
+  }
   return (
     <div className="mb-2 flex items-center gap-2">
       {/* Phone: the section fold. One line when shut, and the line carries the
@@ -883,37 +933,59 @@ function TrackHeader({
         </span>
       </div>
 
-      <TrackViewSwitch open={open} onToggleView={onToggleView} />
+      <TrackViewSwitch open={open} onToggleView={onToggleView} everyWidth={false} />
 
-      {overall.met > 0 ? (
-        <button
-          type="button"
-          data-track-met-toggle
-          onClick={showMet.toggle}
-          aria-expanded={showMet.shown}
-          aria-label={`${countText} met — ${showMet.shown ? 'hide' : 'show'} the met ones`}
-          className={cn(
-            'hover:bg-foreground/5 shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
-            showMet.shown && 'bg-foreground/5',
-            foldClass(section.state, MET_COUNT),
-          )}
-        >
-          <span className={cn(showMet.shown ? 'text-foreground' : 'text-muted-foreground')}>
-            {countText}
-          </span>
-        </button>
-      ) : (
-        <span
-          aria-label={`${countText} met`}
-          className={cn(
-            'text-muted-foreground shrink-0 px-1.5 text-xs whitespace-nowrap tabular-nums',
-            foldClass(section.state, MET_COUNT),
-          )}
-        >
-          {countText}
-        </span>
-      )}
+      <TrackMetCount
+        overall={overall}
+        showMet={showMet}
+        foldClassName={foldClass(section.state, MET_COUNT)}
+      />
     </div>
+  )
+}
+
+/**
+ * The header's "X of Y" met count — a button that shows and hides the met
+ * quotas when something is met, otherwise a plain readout. See `TrackHeader`.
+ */
+function TrackMetCount({
+  overall,
+  showMet,
+  foldClassName,
+}: {
+  overall: { count: number; met: number }
+  showMet: { shown: boolean; toggle: () => void }
+  /** Display classes: `MET_COUNT`'s fold on the dashboard, always shown standalone. */
+  foldClassName: string
+}) {
+  const countText = `${overall.met} of ${overall.count}`
+  return overall.met > 0 ? (
+    <button
+      type="button"
+      data-track-met-toggle
+      onClick={showMet.toggle}
+      aria-expanded={showMet.shown}
+      aria-label={`${countText} met — ${showMet.shown ? 'hide' : 'show'} the met ones`}
+      className={cn(
+        'hover:bg-foreground/5 shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+        showMet.shown && 'bg-foreground/5',
+        foldClassName,
+      )}
+    >
+      <span className={cn(showMet.shown ? 'text-foreground' : 'text-muted-foreground')}>
+        {countText}
+      </span>
+    </button>
+  ) : (
+    <span
+      aria-label={`${countText} met`}
+      className={cn(
+        'text-muted-foreground shrink-0 px-1.5 text-xs whitespace-nowrap tabular-nums',
+        foldClassName,
+      )}
+    >
+      {countText}
+    </span>
   )
 }
 

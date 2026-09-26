@@ -65,6 +65,7 @@ export interface Prefs {
   defaultSortReversed: boolean
   filtersExpanded: boolean
   trackExpanded: boolean
+  quotasDetails: boolean
   notificationsEnabled: boolean
   criticalAlertVolume: number
   aiContext: string | null
@@ -104,6 +105,7 @@ export const DEFAULT_PREFS: Prefs = {
   defaultSortReversed: false,
   filtersExpanded: false,
   trackExpanded: false,
+  quotasDetails: false,
   notificationsEnabled: true,
   criticalAlertVolume: 1.0,
   aiContext: null,
@@ -190,6 +192,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'defaultSortReversed', data.default_sort_reversed)
   take(out, 'filtersExpanded', data.filters_expanded)
   take(out, 'trackExpanded', data.track_expanded)
+  take(out, 'quotasDetails', data.quotas_details)
   take(out, 'notificationsEnabled', data.notifications_enabled)
   take(out, 'criticalAlertVolume', data.critical_alert_volume)
   take(out, 'aiContext', data.ai_context)

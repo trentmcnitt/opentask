@@ -234,8 +234,10 @@ targets:
   #     xcodebuild test -scheme OpenTaskLogicTests -destination 'platform=macOS'
   #
   # It compiles the SAME source files the phone/watch/Mac targets do (by
-  # path, never copies): ios/Shared, the widget extension's WidgetStore, and
-  # the watch's two pure-logic files. All Foundation-only. Left out:
+  # path, never copies): ios/Shared, the widget extension's WidgetStore and
+  # TasksTimeline (the Tasks widget's lists and scope ring/default) and
+  # DueLabel (its due-label words), and the
+  # watch's two pure-logic files. All Foundation-only. Left out:
   #   - NotificationConstants.swift — UserNotifications registration, no
   #     logic worth testing, and it would pull the framework into the bundle.
   #   - everything else in OpenTaskWidgets/WatchShared (SwiftUI/WidgetKit).
@@ -259,6 +261,8 @@ targets:
         excludes:
           - NotificationConstants.swift
       - path: ../ios/OpenTaskWidgets/WidgetStore.swift
+      - path: ../ios/OpenTaskWidgets/TasksTimeline.swift
+      - path: ../ios/OpenTaskWidgets/DueLabel.swift
       - path: ../ios/WatchShared/WatchQuotaLogic.swift
       - path: ../ios/WatchShared/WatchSlotLogic.swift
       - path: ../ios/Tests/Logic
