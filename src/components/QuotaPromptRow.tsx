@@ -338,8 +338,9 @@ function usePromptRowGestures({
  * SF Symbols' `circle.dashed.inset.filled`, the native surfaces' glyph.
  * (Lucide's dashes are open arcs, so `fill` on the icon itself would paint
  * slivers, not a disc; the disc is its own element.) Lucide draws the ring at
- * r=10 in its 24-unit box, so the glyph is scaled 120% to meet the reminder
- * circle's full-box ring; the button itself — the tap target — keeps its size.
+ * r=10 in its 24-unit box, a touch smaller than the reminder circle's ring. It
+ * is NOT scaled up to match: scaling pushed the dashes past the box into the
+ * label-colour stripe on its left (Trent, 2026-09-25).
  */
 function PromptDashedCircle({
   prompt,
@@ -363,7 +364,7 @@ function PromptDashedCircle({
         aria-hidden
         className={cn('relative flex shrink-0 items-center justify-center text-green-600', size)}
       >
-        <CircleDashed className={cn(glyph, 'scale-120')} strokeWidth={1.75} />
+        <CircleDashed className={glyph} strokeWidth={1.75} />
         <span className="absolute inset-[22%] rounded-full bg-green-600" />
       </span>
     )
@@ -397,7 +398,7 @@ function PromptDashedCircle({
         size,
       )}
     >
-      <CircleDashed className={cn(glyph, 'scale-120')} strokeWidth={1.5} />
+      <CircleDashed className={glyph} strokeWidth={1.5} />
     </button>
   )
 }
