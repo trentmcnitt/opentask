@@ -13,7 +13,7 @@
  * is put back, so other specs' counts are untouched.
  */
 
-import { test, expect, waitForPreferenceSave } from './fixtures'
+import { test, expect, waitForPreferenceSave, gotoQuotasDetails } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const created: number[] = []
@@ -405,7 +405,7 @@ test.describe('Quota prompts — multi-edit on the Quotas page', () => {
 
   /** Select exactly these rows on /quotas and open Details. */
   async function openDetails(page: Page, ids: number[]) {
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     await page.locator(`[data-quota-row="${ids[0]}"]`).click()
     for (const id of ids.slice(1)) {
       await page.locator(`[data-quota-row="${id}"]`).click({ modifiers: ['ControlOrMeta'] })

@@ -406,6 +406,8 @@ describe('round trip: every remaining preference', () => {
   }[] = [
     { field: 'filters_expanded', initial: false, next: true, invalid: 'yes' },
     { field: 'track_expanded', initial: false, next: true, invalid: 1 },
+    // /quotas opens on the summary panel for a user who never chose.
+    { field: 'quotas_details', initial: false, next: true, invalid: 'yes' },
     {
       field: 'bulk_snooze_default',
       initial: 'next_period',

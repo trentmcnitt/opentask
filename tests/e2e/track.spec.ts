@@ -3,7 +3,7 @@
  * count, bar, +1 and −1 — and reaching the target reads as "met" without
  * closing the task.
  */
-import { test, expect, waitForPreferenceSave } from './fixtures'
+import { test, expect, waitForPreferenceSave, gotoQuotasDetails } from './fixtures'
 import { request as apiRequest, type Page, type Response } from '@playwright/test'
 
 /**
@@ -1086,7 +1086,7 @@ test.describe('Quotas page', () => {
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     const view = page.locator('[data-quotas-view]')
     await expect(view).toBeVisible()
     const before = await view.locator('[data-quota-row]').count()
@@ -1206,7 +1206,7 @@ test.describe('Quotas page', () => {
       progress_target: 2,
       rrule: 'FREQ=WEEKLY',
     })
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     await expect(page.locator('[data-quotas-view]')).toBeVisible()
     await expect(page.locator(`[data-quota-row="${retireId}"]`)).toBeVisible()
 
@@ -1256,7 +1256,7 @@ test.describe('Quotas page', () => {
       progress_target: 5,
       rrule: 'FREQ=WEEKLY',
     })
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     const row = page.locator(`[data-quota-row="${id}"]`)
     await expect(row.locator('[data-quota-count]')).toHaveText('0 / 5')
 
@@ -1279,8 +1279,13 @@ test.describe('Quotas page', () => {
    * still opens up the full detail menu when really it should just
    * highlight it in the Quotas tab." Mirrors `?reminder=<id>` on
    * `/reminders` and `?task=<id>&highlight=1` on `/`.
+   *
+   * Since /quotas opens on the summary (2026-09-25), the link opens the
+   * DETAILED list for that visit — where a row can always be scrolled to,
+   * unlike a chip that was put away as met — without saving that choice.
+   * Started from the summary on purpose, so the switch is what is proven.
    */
-  test('?quota=<id> brings that quota into view without opening it', async ({
+  test('?quota=<id> opens the details, brings that quota into view, and saves nothing', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, {
@@ -1289,14 +1294,169 @@ test.describe('Quotas page', () => {
       rrule: 'FREQ=WEEKLY',
     })
     // `createTask` registers it for the afterEach cleanup.
-    await page.goto(`/quotas?quota=${id}`)
-    const row = page.locator(`[data-quota-row="${id}"]`)
-    await expect(row).toHaveAttribute('data-quota-highlight', '')
-    await expect(row).toBeInViewport()
-    // A link is a place to look, not an edit. Nothing opens.
-    await expect(page.getByRole('dialog')).toHaveCount(0)
-    // The param is spent, so a reload does not flash the same row again.
-    await expect(page).toHaveURL('/quotas')
+    await withQuotasView(page, false, async () => {
+      await page.goto(`/quotas?quota=${id}`)
+      const row = page.locator(`[data-quota-row="${id}"]`)
+      await expect(row).toHaveAttribute('data-quota-highlight', '')
+      await expect(row).toBeInViewport()
+      await expect(quotasViewButton(page, 'Details')).toHaveAttribute('aria-pressed', 'true')
+      // A link is a place to look, not an edit. Nothing opens.
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      // The param is spent, so a reload does not flash the same row again.
+      await expect(page).toHaveURL('/quotas')
+      // Following a link is not choosing a view: the preference is untouched,
+      // so the next plain visit opens on the summary again.
+      expect(await readQuotasDetails(page)).toBe(false)
+      await page.reload()
+      await expect(page.locator('[data-quotas-summary]')).toBeVisible()
+      await expect(page.locator('[data-quotas-view]')).toHaveCount(0)
+    })
+  })
+})
+
+/** The page's Summary / Details switch. */
+function quotasViewButton(page: Page, name: 'Summary' | 'Details') {
+  return page.getByRole('group', { name: 'Quotas view' }).getByRole('button', { name, exact: true })
+}
+
+async function readQuotasDetails(page: Page): Promise<unknown> {
+  const res = await page.request.get('/api/user/preferences')
+  return (await res.json()).data.quotas_details
+}
+
+/**
+ * Run `body` with /quotas' view preference set — and the Quotas panel in
+ * chips, which the summary shares with the dashboard — then put back what was
+ * there. Server preferences on the one user every spec shares, read rather
+ * than assumed. No `expect` in the restore: it runs from `finally`, and a
+ * failing cleanup would hide the real failure.
+ */
+async function withQuotasView(page: Page, details: boolean, body: () => Promise<void>) {
+  const before = (await (await page.request.get('/api/user/preferences')).json()).data
+  const res = await page.request.patch('/api/user/preferences', {
+    data: { quotas_details: details, track_expanded: false },
+  })
+  expect(res.ok()).toBeTruthy()
+  try {
+    await body()
+  } finally {
+    await page.request
+      .patch('/api/user/preferences', {
+        data: { quotas_details: before.quotas_details, track_expanded: before.track_expanded },
+      })
+      .catch(() => {})
+  }
+}
+
+/**
+ * /quotas opens on the dashboard's Quotas panel (Trent, 2026-09-25: "the
+ * default view when I go to the quotas screen to be the dashboard version of
+ * quotas, with an option to expand it to the view … where it shows how many
+ * have been met"). The detailed list is one press away, and the choice sticks.
+ */
+test.describe('Quotas page — summary and details', () => {
+  test('opens on the Quotas panel, whose chips count, subtract and hold open as on the dashboard', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: `Probe summary chip ${Date.now()}`,
+      progress_target: 3,
+      rrule: 'FREQ=WEEKLY',
+    })
+    await withQuotasView(page, false, async () => {
+      await page.goto('/quotas')
+      const summary = page.locator('[data-quotas-summary]')
+      await expect(summary).toBeVisible()
+      await expect(page.locator('[data-quotas-view]')).toHaveCount(0)
+      await expect(quotasViewButton(page, 'Summary')).toHaveAttribute('aria-pressed', 'true')
+      await expect(summary.getByRole('button', { name: 'New quota' })).toBeVisible()
+
+      // The dashboard's panel itself, not a copy — one "Quotas" region, its
+      // chips/rows switch, and none of what only the dashboard needs (the
+      // phone's section fold, the redundant heading).
+      const panel = page.getByRole('region', { name: 'Quotas' })
+      await expect(panel).toHaveCount(1)
+      await expect(panel.locator('[data-track-view-switch]')).toBeVisible()
+      await expect(panel.locator('[data-track-section-toggle]')).toHaveCount(0)
+      await expect(panel.locator('[data-track-heading]')).toHaveCount(0)
+
+      // Tap +1, right-click −1, hold for the bubble — nothing logged by the hold.
+      const chip = panel.locator(`[data-track-chip="${id}"]`)
+      const count = chip.locator('[data-track-count]')
+      await expect(count).toHaveText('0/3')
+      await chip.click()
+      await expect(count).toHaveText('1/3')
+      await chip.click({ button: 'right' })
+      await expect(count).toHaveText('0/3')
+      const pop = await holdChipOpen(page, chip)
+      await expect(pop).toContainText('Periods met')
+      await page.keyboard.press('Escape')
+      await expect(pop).toHaveCount(0)
+      await expect(count).toHaveText('0/3')
+
+      // Chips/rows is the panel's own switch, shared with the dashboard.
+      const saved = waitForPreferenceSave(page, 'track_expanded')
+      await panel.getByRole('button', { name: 'Show as rows' }).click()
+      await saved
+      await expect(panel.locator(`[data-track-row="${id}"]`)).toBeVisible()
+    })
+  })
+
+  test('Details swaps in the detailed list, and the choice survives a reload', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: `Probe summary switch ${Date.now()}`,
+      progress_target: 2,
+      rrule: 'FREQ=WEEKLY',
+    })
+    await withQuotasView(page, false, async () => {
+      await page.goto('/quotas')
+      await expect(page.locator(`[data-track-chip="${id}"]`)).toBeVisible()
+
+      let saved = waitForPreferenceSave(page, 'quotas_details')
+      await quotasViewButton(page, 'Details').click()
+      expect((await saved).request().postDataJSON()).toEqual({ quotas_details: true })
+      const row = page.locator(`[data-quota-row="${id}"]`)
+      await expect(row).toContainText('never met')
+      await expect(page.locator('[data-quotas-summary]')).toHaveCount(0)
+
+      await page.reload()
+      await expect(row).toBeVisible()
+      await expect(quotasViewButton(page, 'Details')).toHaveAttribute('aria-pressed', 'true')
+
+      saved = waitForPreferenceSave(page, 'quotas_details')
+      await quotasViewButton(page, 'Summary').click()
+      expect((await saved).request().postDataJSON()).toEqual({ quotas_details: false })
+      await page.reload()
+      await expect(page.locator(`[data-track-chip="${id}"]`)).toBeVisible()
+      await expect(page.locator('[data-quotas-view]')).toHaveCount(0)
+    })
+  })
+
+  test('New quota works from the summary', async ({ authenticatedPage: page }) => {
+    await withQuotasView(page, false, async () => {
+      // One quota already there, so the page is the panel, not the empty state.
+      await createTask(page, {
+        title: `Probe summary anchor ${Date.now()}`,
+        progress_target: 1,
+        rrule: 'FREQ=WEEKLY',
+      })
+      await page.goto('/quotas')
+      const summary = page.locator('[data-quotas-summary]')
+      await summary.getByRole('button', { name: 'New quota' }).click()
+      const form = page.getByRole('dialog')
+      await expect(form).toBeVisible()
+      const title = `Probe summary new ${Date.now()}`
+      await form.getByRole('textbox').first().fill(title)
+      const created = page.waitForResponse(
+        (r) => r.url().endsWith('/api/tasks') && r.request().method() === 'POST',
+      )
+      await form.getByRole('button', { name: 'Create' }).click()
+      const newId = (await (await created).json()).data.id as number
+      cleanUpLater(newId)
+      await expect(page.locator(`[data-track-chip="${newId}"]`)).toBeVisible()
+    })
   })
 })
 
@@ -1334,7 +1494,7 @@ test.describe('Quota labels', () => {
       }),
     )
 
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     const view = page.locator('[data-quotas-view]')
     await expect(view).toBeVisible()
 
@@ -1416,7 +1576,7 @@ test.describe('Quota labels', () => {
       ids.push(await createTask(page, { title, progress_target: 2, rrule: 'FREQ=WEEKLY' }))
     }
 
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     const view = page.locator('[data-quotas-view]')
     await expect(view).toBeVisible()
 
