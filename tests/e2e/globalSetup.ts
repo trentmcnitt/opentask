@@ -2,7 +2,12 @@
  * Global setup for E2E tests
  *
  * Seeds a dedicated E2E database with known tasks.
- * The dev server started by Playwright will use this DB.
+ * The production server Playwright starts (`next start`, see
+ * playwright.config.ts) will use this DB.
+ *
+ * No route warm-up is needed here: a production build compiles every route up
+ * front, so there is no first-visit compile for a spec to pay for inside its
+ * own timeouts (the cause of the old dev-server "first visit" flakes).
  */
 
 import Database from 'better-sqlite3'
