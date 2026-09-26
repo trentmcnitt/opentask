@@ -211,7 +211,9 @@ describe('createWidgetPushCoalescer', () => {
     const coalescer = createWidgetPushCoalescer<number>({
       settleMs: SETTLE,
       minIntervalMs: options.interval ?? (() => INTERVAL),
-      flush: (key) => flushes.push({ key, at: Date.now() }),
+      flush: (key) => {
+        flushes.push({ key, at: Date.now() })
+      },
     })
     return { coalescer, flushes }
   }
@@ -322,7 +324,9 @@ describe('createWidgetPushCoalescer', () => {
       settleMs: SETTLE,
       minIntervalMs: () => INTERVAL,
       deferUntil: (_key, now) => (now < wakeAt ? wakeAt : null),
-      flush: () => flushes.push(Date.now()),
+      flush: () => {
+        flushes.push(Date.now())
+      },
     })
     vi.setSystemTime(new Date('2026-09-26T04:00:00Z')) // 23:00 Chicago
 
@@ -338,6 +342,111 @@ describe('createWidgetPushCoalescer', () => {
     vi.advanceTimersByTime(wakeAt - Date.now())
     expect(flushes).toEqual([wakeAt])
     expect(coalescer.pendingCount()).toBe(0)
+  })
+})
+
+describe('createWidgetPushCoalescer — failed sends', () => {
+  const SETTLE = 2000
+  const INTERVAL = 300_000
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-25T16:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * A flush whose send fails (resolves false) must not use up the window:
+   * the next change goes out after the settle, not 5 minutes later.
+   */
+  function makeFailingCoalescer(results: boolean[]) {
+    const flushes: number[] = []
+    const coalescer = createWidgetPushCoalescer<number>({
+      settleMs: SETTLE,
+      minIntervalMs: () => INTERVAL,
+      flush: () => {
+        flushes.push(Date.now())
+        return Promise.resolve(results.shift() ?? true)
+      },
+    })
+    return { coalescer, flushes }
+  }
+
+  test('a failed send does not consume the window: the next change goes out after the settle', async () => {
+    const { coalescer, flushes } = makeFailingCoalescer([false])
+    const start = Date.now()
+
+    coalescer.schedule(1)
+    await vi.advanceTimersByTimeAsync(SETTLE) // push #1 fails
+
+    vi.advanceTimersByTime(10_000)
+    coalescer.schedule(1)
+    await vi.advanceTimersByTimeAsync(SETTLE)
+    expect(flushes).toEqual([start + SETTLE, start + SETTLE + 10_000 + SETTLE])
+  })
+
+  test('a successful send, by contrast, holds the next change to the window end', async () => {
+    const { coalescer, flushes } = makeFailingCoalescer([true])
+    const start = Date.now()
+
+    coalescer.schedule(1)
+    await vi.advanceTimersByTimeAsync(SETTLE)
+    vi.advanceTimersByTime(10_000)
+    coalescer.schedule(1)
+    await vi.advanceTimersByTimeAsync(SETTLE)
+    expect(flushes).toEqual([start + SETTLE])
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    expect(flushes).toEqual([start + SETTLE, start + SETTLE + INTERVAL])
+  })
+
+  test('a change made while a failing send is in flight is moved up to the settle', async () => {
+    let resolveSend: (ok: boolean) => void = () => {}
+    const flushes: number[] = []
+    const coalescer = createWidgetPushCoalescer<number>({
+      settleMs: SETTLE,
+      minIntervalMs: () => INTERVAL,
+      flush: () => {
+        flushes.push(Date.now())
+        return new Promise<boolean>((resolve) => {
+          resolveSend = resolve
+        })
+      },
+    })
+    const start = Date.now()
+
+    coalescer.schedule(1)
+    vi.advanceTimersByTime(SETTLE) // send #1 starts, still in flight
+    coalescer.schedule(1) // queued for the window end (start + SETTLE + INTERVAL)
+    expect(coalescer.pendingCount()).toBe(1)
+
+    resolveSend(false)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(SETTLE)
+    // Re-timed from "now + settle" instead of waiting the whole window.
+    expect(flushes).toEqual([start + SETTLE, start + 2 * SETTLE])
+    expect(coalescer.pendingCount()).toBe(0)
+  })
+
+  test('a rejected send is treated as a failure too', async () => {
+    const flushes: number[] = []
+    const coalescer = createWidgetPushCoalescer<number>({
+      settleMs: SETTLE,
+      minIntervalMs: () => INTERVAL,
+      flush: () => {
+        flushes.push(Date.now())
+        return flushes.length === 1 ? Promise.reject(new Error('boom')) : Promise.resolve(true)
+      },
+    })
+    const start = Date.now()
+
+    coalescer.schedule(1)
+    await vi.advanceTimersByTimeAsync(SETTLE)
+    coalescer.schedule(1)
+    await vi.advanceTimersByTimeAsync(SETTLE)
+    expect(flushes).toEqual([start + SETTLE, start + 2 * SETTLE])
   })
 })
 

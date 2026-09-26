@@ -260,6 +260,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'track_expanded')) {
     database.exec('ALTER TABLE users ADD COLUMN track_expanded INTEGER NOT NULL DEFAULT 0')
   }
+  // §5: /quotas opens on the summary (the dashboard's Quotas panel) unless the
+  // user chose the detailed list (Trent, 2026-09-25).
+  if (!hasColumn(database, 'users', 'quotas_details')) {
+    database.exec('ALTER TABLE users ADD COLUMN quotas_details INTEGER NOT NULL DEFAULT 0')
+  }
   // What a plain press of the bulk-snooze clock does (Trent, 2026-09-22): to
   // the next time slot by default, or the user's default snooze option. A
   // setting so he can flip between the two while deciding.

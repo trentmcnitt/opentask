@@ -247,9 +247,12 @@ private struct SlotProgressStrip: View {
 }
 
 /// One waiting quota PROMPT (quota reminders, 2026-09-24) — drawn as a
-/// reminder row (the circle, the full-width wrapped title, tap to consider),
-/// plus the three things a prompt adds everywhere: a thin leading stripe in
-/// the quota's label color, the count ("1/2"), and a SQUARE for "did it".
+/// reminder row (the full-width wrapped title, tap to consider), plus the
+/// four things a prompt adds everywhere: a thin leading stripe in the
+/// quota's label color, the count ("1/2"), a SQUARE for "did it", and a
+/// DASHED circle where a reminder has its solid one (2026-09-25 — the verb is
+/// still "considered", but Trent read the solid circle as "done"; an eye came
+/// first and read as creepy, so the dashed circle is his pick).
 ///
 /// WHY A SQUARE BUTTON, NOT PRESS-AND-HOLD (the judgment call): "did it" is
 /// the prompt's success action — the one Trent is meant to reach for when he
@@ -292,10 +295,13 @@ struct PromptRowView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "circle")
+                    Image(systemName: "circle.dashed")
                         .foregroundStyle(WatchTheme.accent)
                         .font(.caption)
                         .padding(.top, 3)
+                        // The row is the control ("Considered: …"); the
+                        // symbol's own "Show" label would only add noise.
+                        .accessibilityHidden(true)
                     // The notes glyph goes after the TITLE here, not after
                     // the count as on the phone and web: this row's count
                     // sits on its own line below, beside the did-it square.
@@ -382,7 +388,7 @@ struct LoadErrorView: View {
 
 #if DEBUG
 // Quota prompts (2026-09-24) on Trent's real data: two reminders, then the
-// sixteen prompts — stripe, count, the circle (tap = considered) and the
+// sixteen prompts — stripe, count, the dashed circle (tap = considered) and the
 // square (did it). The second preview has three handled, so they're gone.
 #Preview("Reminders — prompts") {
     NavigationStack {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check } from 'lucide-react'
+import { Check, CircleDashed } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
 import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
@@ -25,17 +25,23 @@ import type { Task } from '@/types'
  * An unmet quota also shows up in a reminder period each day, so it gets the
  * attention a reminder gets. It is drawn AS a reminder row — the sibling is
  * `ReminderRow` in RemindersView.tsx (and `PanelRow` in the dashboard panel),
- * and everything not listed here is copied from it: the circle, the whole-row
- * tap, the struck-through collapse, the 16px (panel: 13.5px) wrapping title,
- * never truncated.
+ * and everything not listed here is copied from it: the whole-row tap, the
+ * struck-through collapse, the 16px (panel: 13.5px) wrapping title, never
+ * truncated.
  *
  * WHAT DIFFERS, AND WHY
  * - TWO ACTIONS. Ticking a reminder means "considered", not "did it" (Trent's
- *   final decision). So the circle and a tap on the row CONSIDER it — handled
- *   for today, nothing logged — and a SQUARE checkbox on the right, beside the
- *   count, is "did it": progress, and considered too. Square because it is a
- *   different verb from the circle, and a checkbox is what "I did this" looks
- *   like everywhere else.
+ *   final decision). So the DASHED CIRCLE and a tap on the row CONSIDER it —
+ *   handled for today, nothing logged — and a SQUARE checkbox on the right,
+ *   beside the count, is "did it": progress, and considered too. Square because it is a
+ *   different verb, and a checkbox is what "I did this" looks like everywhere
+ *   else.
+ * - A DASHED CIRCLE WHERE A REMINDER HAS ITS SOLID ONE (2026-09-25). Same
+ *   place, size and tap target, same verb. Trent habitually tapped the solid
+ *   circle meaning "done", but on a prompt it means "seen". An eye came first
+ *   (#96) and read as creepy; the dashed circle is his pick — still a circle,
+ *   visibly not the reminder's. Outline and muted while waiting; green and
+ *   filled (the circle's considered look) as the row collapses.
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
@@ -169,8 +175,8 @@ export function QuotaPromptRow({
       className={promptRowClasses({ panel, selected, hiddenWhenNarrow, completing })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
-          In the row's gutter (the panel's in the list's), so the circle lines
-          up with the reminder rows' circles. */}
+          In the row's gutter (the panel's in the list's), so the dashed
+          circle lines up with the reminder rows' circles. */}
       <span
         aria-hidden="true"
         className={cn(
@@ -194,7 +200,7 @@ export function QuotaPromptRow({
           {bubble(<span aria-hidden="true" className="pointer-events-none absolute inset-0" />)}
         </span>
       )}
-      <PromptCircle
+      <PromptDashedCircle
         prompt={prompt}
         panel={panel}
         completing={completing}
@@ -260,7 +266,7 @@ function PromptDidButton({
       disabled={selecting}
       className={cn(
         selecting && 'invisible',
-        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
+        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors disabled:cursor-default',
         panel ? 'size-[19px]' : 'mt-[3px] size-6',
       )}
     >
@@ -323,10 +329,20 @@ function usePromptRowGestures({
 }
 
 /**
- * The circle — "considered" — exactly the reminder row's, including its
- * selection-mode checkbox (`ReminderRowMarker`).
+ * The dashed circle — "considered" (seen) — in the reminder row's circle's
+ * exact box: same size, same place, same tap target, and the same
+ * selection-mode checkbox (`ReminderRowMarker`). Only the glyph differs (see
+ * the docblock). Waiting: lucide `CircleDashed` in the circle's muted tone.
+ * Considered (the collapse): the dashed ring in green around a filled green
+ * disc — the reminder circle's green disc, kept inside the dashes — which is
+ * SF Symbols' `circle.dashed.inset.filled`, the native surfaces' glyph.
+ * (Lucide's dashes are open arcs, so `fill` on the icon itself would paint
+ * slivers, not a disc; the disc is its own element.) Lucide draws the ring at
+ * r=10 in its 24-unit box, a touch smaller than the reminder circle's ring. It
+ * is NOT scaled up to match: scaling pushed the dashes past the box into the
+ * label-colour stripe on its left (Trent, 2026-09-25).
  */
-function PromptCircle({
+function PromptDashedCircle({
   prompt,
   panel,
   completing,
@@ -341,16 +357,15 @@ function PromptCircle({
   onConsider: (prompt: QuotaPrompt) => void
 }) {
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
+  const glyph = panel ? 'size-[19px]' : 'size-6'
   if (completing) {
     return (
       <span
         aria-hidden
-        className={cn(
-          'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
-          size,
-        )}
+        className={cn('relative flex shrink-0 items-center justify-center text-green-600', size)}
       >
-        <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
+        <CircleDashed className={glyph} strokeWidth={1.75} />
+        <span className="absolute inset-[22%] rounded-full bg-green-600" />
       </span>
     )
   }
@@ -362,7 +377,7 @@ function PromptCircle({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         aria-label={`Select "${prompt.title}"`}
-        className={cn('shrink-0', size)}
+        className={cn('shrink-0 cursor-pointer', size)}
       />
     )
   }
@@ -379,16 +394,11 @@ function PromptCircle({
       title="Considered"
       data-prompt-consider
       className={cn(
-        'border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors',
+        'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',
         size,
       )}
     >
-      {!panel && (
-        <Check
-          className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
-          strokeWidth={3}
-        />
-      )}
+      <CircleDashed className={glyph} strokeWidth={1.5} />
     </button>
   )
 }

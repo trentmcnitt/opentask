@@ -559,9 +559,10 @@ struct JumpToReminderSlotIntent: AppIntent {
 
 // MARK: - Tasks project paging
 
-/// Cycle the Tasks widget's scope: Today → Up next → each project the server
-/// returned → Today (2026-09-23, item 4 — two unified pages up front, then
-/// the per-project pages as before).
+/// Cycle the Tasks widget's scope: Overdue (while anything is, 2026-09-25) →
+/// Today → Up next → each project with something due today → back to the
+/// start (2026-09-23, item 4 — the unified pages up front, then the
+/// per-project pages as before). The ring is `TasksTimeline.scopeRing`.
 ///
 /// The project list comes entirely from the cached payload. Nothing here knows
 /// any project's name or how many there are (§7.1 leaves the project set open).
@@ -579,17 +580,21 @@ struct ShiftProjectScopeIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        guard let cache = WidgetStore.loadTasks()?.value else { return .result() }
+        // The ring and the page on screen come from the same resolution the
+        // provider draws with (`TasksTimeline.scopeState` — Overdue first
+        // while anything is overdue, then Today, Up next, each project with
+        // something due today), so "one step from here" is one step from what
+        // the user is looking at, not from a stale stored choice.
+        guard let state = TasksTimeline.currentScopeState(), state.ring.count > 1 else { return .result() }
 
-        // Scope ring: Today, then Up next, then one entry per project that
-        // actually has something in today's set.
-        let ring = [WidgetStore.allProjects, WidgetStore.upNextScope]
-            + TasksTimeline.scopedProjects(tasks: cache.tasks, projects: cache.projects).map(\.id)
-        guard ring.count > 1 else { return .result() }
-
-        let current = ring.firstIndex(of: WidgetStore.projectScope) ?? 0
+        let ring = state.ring
+        let current = ring.firstIndex(of: state.scope) ?? 0
         let count = ring.count
-        WidgetStore.projectScope = ring[((current + offset) % count + count) % count]
+        // Stored WITH the natural default it was chosen against, so it lapses
+        // when that changes — see `WidgetStore.TasksScopeChoice`.
+        WidgetStore.setTasksScopeChoice(
+            ring[((current + offset) % count + count) % count], naturalScope: state.natural
+        )
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadTappedWidget(kind: TasksWidget.kind)
@@ -654,7 +659,7 @@ struct ShiftTasksPageIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         let current = WidgetStore.tasksPage(for: scope)
         WidgetStore.setTasksPage(current + offset, for: scope)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
@@ -1287,7 +1292,7 @@ struct ToggleTaskSelectionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         var ids = WidgetStore.selectedTaskIds(for: scope)
         if ids.contains(taskId) {
             ids.remove(taskId)
@@ -1335,7 +1340,7 @@ struct SnoozeSelectedTasksIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         let selected = WidgetStore.selectedTaskIds(for: scope)
         guard !selected.isEmpty else { return .result() }
 
@@ -1377,7 +1382,7 @@ struct CompleteSelectedTasksIntent: AppIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         let ids = Array(WidgetStore.selectedTaskIds(for: scope))
         guard !ids.isEmpty else { return .result() }
 

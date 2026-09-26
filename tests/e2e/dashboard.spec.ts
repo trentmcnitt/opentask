@@ -216,6 +216,72 @@ test.describe('Dashboard filter section', () => {
 })
 
 /**
+ * `?filter=overdue` — the Tasks widget's header link while it shows its
+ * Overdue page (`opentask://overdue`), and the overdue Web Push. It seeds the
+ * ordinary Overdue date chip (not a parallel filter), applies once, and is
+ * stripped from the URL so a reload after "Clear filter" stays cleared.
+ * See `DashboardClient.tsx`'s `?filter=` handling.
+ */
+test.describe('?filter=overdue deep link', () => {
+  test('opens the dashboard filtered to Overdue, visibly, and clears for good', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    // ESTABLISH THE PRECONDITION RATHER THAN INHERIT IT — see the filter
+    // section tests above. Collapsed chips prove the link opens them itself.
+    const written = await page.request.patch('/api/user/preferences', {
+      data: { filters_expanded: false },
+    })
+    expect(written.ok()).toBeTruthy()
+
+    const ids: number[] = []
+    try {
+      for (const body of [
+        {
+          title: 'Overdue deep-link task',
+          due_at: new Date(Date.now() - 30 * 24 * 3600_000).toISOString(),
+        },
+        {
+          title: 'Not-yet-due deep-link task',
+          due_at: new Date(Date.now() + 3600_000).toISOString(),
+        },
+      ]) {
+        const res = await page.request.post('/api/tasks', { data: body })
+        expect(res.ok()).toBeTruthy()
+        ids.push((await res.json()).data.id as number)
+      }
+      const [overdueId, upcomingId] = ids
+
+      await page.goto('/?filter=overdue')
+
+      // Visibly on: the chips auto-expand with Overdue selected, and the
+      // banner says the list is narrowed.
+      const chips = page.locator('#dashboard-filter-chips')
+      await expect(chips).toBeVisible()
+      await expect(chips.locator('[data-date-chip="overdue"]')).toHaveClass(/bg-foreground/)
+      await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toBeVisible()
+      await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('1')
+      await expect(page.locator(`#task-row-${overdueId}`)).toBeVisible()
+      await expect(page.locator(`#task-row-${upcomingId}`)).toHaveCount(0)
+      // The param is spent.
+      await expect(page).toHaveURL('/')
+
+      // Easy to clear, and clearing sticks — nothing re-applies it.
+      await page.getByRole('button', { name: 'Clear filter' }).click()
+      await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toHaveCount(0)
+      // Nothing active any more, so the auto-expand lets go (useFilterSection rule 4).
+      await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+      await page.reload()
+      await expect(page.getByRole('button', { name: /^Filters/ })).toHaveText('Filters')
+      await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toHaveCount(0)
+      await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+    } finally {
+      for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+})
+
+/**
  * `?task=<id>` has two shapes sharing one URL (Trent, 2026-09-22): the
  * widget's deep link adds `&highlight=1` and brings the row into view without
  * opening it (mirrors `/reminders?reminder=<id>`); the bare param — a

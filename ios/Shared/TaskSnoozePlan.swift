@@ -23,9 +23,8 @@ enum TaskSnoozeTarget: String {
 /// Where a per-row or bulk-select snooze sends each task, and how that
 /// becomes `POST /api/tasks/bulk/snooze` requests. Pure — no store, no
 /// network (except `send`, below) — so the rules can be exercised outside a
-/// widget process (verified 2026-09-24 by compiling this file with
-/// `ios/Shared/` into a throwaway `swiftc` harness; there is no Swift test
-/// target).
+/// widget process: `TaskSnoozePlanTests` (`OpenTaskLogicTests`, 2026-09-25 —
+/// see ios/CLAUDE.md § Tests).
 ///
 /// THE RULE (Trent, 2026-09-24 — replacing 2026-09-23's "one hour from now
 /// for everything", which was the wrong instruction): a snooze counts from

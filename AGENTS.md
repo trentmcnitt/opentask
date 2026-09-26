@@ -101,7 +101,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' | 'slot', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and the default a new/invalid value coerces to (`coerceGrouping` in `PreferencesProvider.tsx`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot".
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' | 'slot', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and the default a new/invalid value coerces to (`coerceGrouping` in `src/lib/preferences-state.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot".
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 
@@ -284,15 +284,15 @@ Follow the pattern above, and verify:
 
 If a change spans multiple rows in this table, combine the test suites from all matching rows. If a change affects what the user sees on screen (even via a shared utility like `format-task.ts`), treat it as a UI change.
 
-| Change type                                   | What to run                                                                                                                         |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Every change (always run)                     | The quick check (`npm run type-check && npm run lint && npm test`)                                                                  |
-| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                            |
-| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                |
-| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                     |
-| iOS app (Swift, project.yml)                  | Build with `xcodegen` + `xcodebuild`. Manual testing on device. No automated test suite.                                            |
-| Refactoring / code reorganization             | All test suites                                                                                                                     |
-| Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed) |
+| Change type                                   | What to run                                                                                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every change (always run)                     | The quick check (`npm run type-check && npm run lint && npm test`)                                                                                  |
+| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                            |
+| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                                |
+| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                                     |
+| iOS app (Swift, project.yml)                  | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/CLAUDE.md` § Tests), then manual testing on device. |
+| Refactoring / code reorganization             | All test suites                                                                                                                                     |
+| Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed)                 |
 
 During rapid iteration (deploy, verify in browser, fix, re-deploy), the quick check between deploys is sufficient. Run the full checklist on the final version before reporting results.
 
@@ -460,7 +460,7 @@ The demo account showcases OpenTask with curated portfolio-style tasks. Each use
 
 ## iOS App (`ios/`)
 
-Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with APNs push notifications. Five targets: `OpenTask` (main app), `OpenTaskNotification` (content extension), `OpenTaskWidgets` (WidgetKit extension), `OpenTaskWatch` (watchOS companion, with its own real UI — Reminders, Tasks and Quotas pages, swiped between horizontally, not just notification handling), `OpenTaskWatchWidgets` (watchOS Smart Stack widget extension, embedded in `OpenTaskWatch`). No automated tests — testing is manual. Build with `cd ios && xcodegen`. Source shared across iOS targets lives in `ios/Shared/`; code shared only between the two watchOS targets (`OpenTaskWatch` and `OpenTaskWatchWidgets`) lives in `ios/WatchShared/` instead — not duplicated into either target, and not folded into `ios/Shared/`, which iOS targets also compile.
+Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with APNs push notifications. Five targets: `OpenTask` (main app), `OpenTaskNotification` (content extension), `OpenTaskWidgets` (WidgetKit extension), `OpenTaskWatch` (watchOS companion, with its own real UI — Reminders, Tasks and Quotas pages, swiped between horizontally, not just notification handling), `OpenTaskWatchWidgets` (watchOS Smart Stack widget extension, embedded in `OpenTaskWatch`). Pure logic (wire DTOs, `WidgetStore`'s optimistic cache, `TaskSnoozePlan`, the watch's quota/slot logic) has a macOS unit-test target, `OpenTaskLogicTests` (`ios/Tests/Logic/`, run from `macos/` — see `ios/CLAUDE.md` § Tests); UI and device behavior are tested manually. Build with `cd ios && xcodegen`. Source shared across iOS targets lives in `ios/Shared/`; code shared only between the two watchOS targets (`OpenTaskWatch` and `OpenTaskWatchWidgets`) lives in `ios/WatchShared/` instead — not duplicated into either target, and not folded into `ios/Shared/`, which iOS targets also compile.
 
 **Server API endpoints used by the iOS app** (changes to these require manual iOS testing):
 
@@ -476,5 +476,13 @@ Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with
 - `POST /api/tasks/{id}/undone` — restore a completed item to open, from a widget's "show completed" DONE row (2026-09-23). Refuses a quota with 400 since 2026-09-24 — a quota completion is a closed period, so a DONE row for a quota should not offer put-back
 - `POST /api/tasks/bulk/snooze` — Tasks widget snooze mode's per-row and bulk-select "⏭ Next period"/"+1h" (2026-09-23, Phase 2; per-task targets 2026-09-24 — `until`, or `delta_minutes: 60` for an upcoming task's "+1h"), with `include_task_ids` mirroring `ids` so explicit picks bypass the P3/P4 sweep filter; the watch Tasks page's touch-and-hold "Next period"/"+1 hour" uses the same endpoint and the same shared plan (`ios/Shared/TaskSnoozePlan.swift`, 2026-09-24). `POST /api/tasks/bulk/complete` (pre-existing, previously undocumented here) is the same endpoint bulk select's "Done" and the SLOT_REMINDER notification checklist both use; since quota reminders (2026-09-25) it also carries `prompts` (a bare `prompt_key` = considered, `{key, did: true}` = did it) from the checklist and from every "Complete all" (which only ever considers).
 - `GET /api/reminders`' `groups[].prompts` and `POST /api/quota-prompts/consider` / `POST /api/quota-prompts/did` (`{keys}` → `{considered, did, tasks}`) — quota reminders (2026-09-25): prompt rows on the Reminders widget, the watch Reminders page and Smart Stack card, and the slot checklist. Keyed by `prompt_key`, never task id; a key from another day is refused (400).
+
+**Contract fixtures rule:** any change to one of the endpoints above — a field added, renamed, removed or re-typed, or a value's meaning changed — re-runs the fixture writer and commits the fixture diff in the same PR, so the contract change is visible in review:
+
+```bash
+CONTRACT_WRITE=1 npx vitest run --config vitest.integration.config.ts tests/integration/contract-fixtures.test.ts
+```
+
+The fixtures (`tests/fixtures/contract/*.json`) are the live responses of a fixed synthetic scenario, normalised (ids → integer placeholders, timestamps pinned). Without `CONTRACT_WRITE=1` that test fails on any drift, shape first. They are read by `tests/behavioral/contract-types.test.ts` (against the TS types) and by the Swift `ContractDecodeTests` (against the DTOs, asserting values) — re-run both after rewriting, and update the Swift assertions if a pinned value legitimately changed. Endpoints captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`. A new iOS-used endpoint should get a capture there too.
 
 See `ios/CLAUDE.md` for full details: targets, shared code, contributing, notification mechanisms, and XcodeBuildMCP workarounds.

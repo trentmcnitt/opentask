@@ -14,41 +14,73 @@
 		1493600E01F55BF186B4680D /* MacAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */; };
 		16E01EEDD0FF0DD9247D3962 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BBA7157D64D84DE2038504 /* SetupView.swift */; };
 		1A1131E268CC52CAA6F32234 /* TasksWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */; };
+		1C2F3B649D24FD3C87F57B03 /* TasksScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */; };
 		1E09B45CC465F173871345A1 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */; };
 		21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
+		25A22F2B7A429A5B77F9867A /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0431240DA3532D2272FDFAC /* TasksTimeline.swift */; };
 		2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		2ACFFF7B3CB81D12BFC9AC0D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */; };
 		317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
+		3315C7B7A79DBF3C82C6C7D9 /* WidgetStoreCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */; };
 		33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */; };
 		34B70C4530803D25110BE465 /* RemindersWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */; };
 		3F5F24E827B5E77749258D0F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79B196EB051C2A6103B3CB4E /* WidgetKit.framework */; };
+		40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */; };
 		44C5A3993A906B44D2AD2CE7 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */; };
 		4A71D0C3A619C2A06C85216F /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		4AAFC03D30E04FA841BE999D /* OpenTaskMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */; };
+		4ABEC9743D9F16FBA470924F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
+		4B1A0BA96C5C08ED15949CF1 /* TaskSnoozePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */; };
 		4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
 		4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124940586D73E6C268F9E443 /* AppConfig.swift */; };
+		51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */ = {isa = PBXBuildFile; fileRef = 37C29187973C3150F91CA3B7 /* reminders-initial.json */; };
 		52209900BB7B38B4D5C46CBE /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
 		555E58F6C1F1328E6D692AED /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8191D69C950AB5453FA795F7 /* WidgetTheme.swift */; };
+		5ACFC5419BA8178CCBDD0D35 /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */; };
 		5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D351611FEE1FDCC48702D /* SampleData.swift */; };
+		5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */ = {isa = PBXBuildFile; fileRef = F781F8F4FFD0805CBC5D5068 /* completions.json */; };
+		5CD4762477A148AB18B23334 /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0431240DA3532D2272FDFAC /* TasksTimeline.swift */; };
+		62886AC7F979636FE750C08E /* WatchQuotaLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */; };
+		64977AFF9CC42B0353EA7674 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
+		65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
+		6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */ = {isa = PBXBuildFile; fileRef = 225E098B934AE9962181E731 /* task-progress.json */; };
 		6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		8465F733F4E375E70C51CEA8 /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */; };
 		86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */; };
+		8C9F8E56346CBA5A1599E800 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
+		909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
+		932B4699D3B795BB16459BE5 /* QuotaPromptDTOTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */; };
 		9556B8E8A59E161239E3988F /* RemindersWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */; };
 		97469992D329A225F1120702 /* NotesGlyphPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */; };
+		A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		A957F5A3429D50204CAFBAB2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 607A3ED0E07D6E9308774294 /* Info.plist */; };
 		AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
+		ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370309049F393EDDAD8042C0 /* DueLabelTests.swift */; };
 		B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
+		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
 		B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		BA1AE60805F4D1809E194172 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
+		BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */ = {isa = PBXBuildFile; fileRef = 880F73DD5EB836E40BCA134A /* reminders.json */; };
+		BD681103236562BE55F338E1 /* WidgetKindShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203EF948683C146898ECCD57 /* WidgetKindShims.swift */; };
 		BE415267934330FE86282F6C /* OpenTaskCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */; };
+		CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */; };
 		CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */; };
 		D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */; };
 		D473788D4B4379B10D45B709 /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */; };
+		D69FFE9776386998102E6583 /* undo-status.json in Resources */ = {isa = PBXBuildFile; fileRef = 8F19FED31D51A4F31E33C37B /* undo-status.json */; };
+		D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
+		DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
+		DBCA794BCC63F980AE658F47 /* tasks.json in Resources */ = {isa = PBXBuildFile; fileRef = 6676B0D8909B96B0AAA98C71 /* tasks.json */; };
 		DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		E3DEAC0DDF5D70B663069797 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */; };
 		ED82B81A737BC79D08FFE378 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
+		EE5A06EF55B46C3132933303 /* time-slots.json in Resources */ = {isa = PBXBuildFile; fileRef = B7DD47E083E073FE32FA2C34 /* time-slots.json */; };
 		EEE628E522E5DF619FD5B933 /* OpenTaskMacWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EF9B9D541E938BB134EA1D78 /* bulk-complete.json in Resources */ = {isa = PBXBuildFile; fileRef = EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */; };
 		F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
+		F4A48262758480B2362DE1B0 /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93991B196F33DC054AF3D3C /* Fixtures.swift */; };
+		F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */; };
 		FA63DF44534D4DD08E7F4116 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -77,45 +109,69 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-after-did.json"; sourceTree = "<group>"; };
 		01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewManager.swift; sourceTree = "<group>"; };
 		063D351611FEE1FDCC48702D /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		124940586D73E6C268F9E443 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidget.swift; sourceTree = "<group>"; };
 		1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesGlyphPreviews.swift; sourceTree = "<group>"; };
+		203EF948683C146898ECCD57 /* WidgetKindShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetKindShims.swift; sourceTree = "<group>"; };
+		225E098B934AE9962181E731 /* task-progress.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-progress.json"; sourceTree = "<group>"; };
 		25EEEE55FFA907613ED3849C /* OpenTaskWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenTaskWidgets.entitlements; sourceTree = "<group>"; };
 		2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
 		2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
+		31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSlotLogic.swift; sourceTree = "<group>"; };
+		32C45DA1904EB29E34155A58 /* OpenTaskLogicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenTaskLogicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStoreCacheTests.swift; sourceTree = "<group>"; };
+		370309049F393EDDAD8042C0 /* DueLabelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueLabelTests.swift; sourceTree = "<group>"; };
+		37C29187973C3150F91CA3B7 /* reminders-initial.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-initial.json"; sourceTree = "<group>"; };
 		38BA76FEFE40A03A2F3E709E /* MenuActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuActions.swift; sourceTree = "<group>"; };
 		3EBEF5EED37D51458C482AC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeSlotStore.swift; sourceTree = "<group>"; };
+		4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContractDecodeTests.swift; sourceTree = "<group>"; };
 		456B0402D3211FEEE9D56F67 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksScopeTests.swift; sourceTree = "<group>"; };
 		54BBA7157D64D84DE2038504 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueLabel.swift; sourceTree = "<group>"; };
 		5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
 		606B27B10869F5EC627043D9 /* NotificationConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationConstants.swift; sourceTree = "<group>"; };
 		607A3ED0E07D6E9308774294 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6676B0D8909B96B0AAA98C71 /* tasks.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tasks.json; sourceTree = "<group>"; };
 		6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBootstrapper.swift; sourceTree = "<group>"; };
+		7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogicTests.swift; sourceTree = "<group>"; };
 		78F7579086893D2594E48169 /* OpenTaskMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenTaskMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-did.json"; sourceTree = "<group>"; };
 		79B196EB051C2A6103B3CB4E /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogic.swift; sourceTree = "<group>"; };
 		7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppDelegate.swift; sourceTree = "<group>"; };
 		7F814F05408288A5A627F9CC /* OpenTaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskModels.swift; sourceTree = "<group>"; };
+		81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPromptDTOTests.swift; sourceTree = "<group>"; };
 		8191D69C950AB5453FA795F7 /* WidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
 		86C87419D6853F3A661B2252 /* TaskFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFeed.swift; sourceTree = "<group>"; };
+		880F73DD5EB836E40BCA134A /* reminders.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = reminders.json; sourceTree = "<group>"; };
 		8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskMacApp.swift; sourceTree = "<group>"; };
 		8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidget.swift; sourceTree = "<group>"; };
+		8F19FED31D51A4F31E33C37B /* undo-status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "undo-status.json"; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
 		A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlan.swift; sourceTree = "<group>"; };
 		A535170EA850BA882099BFB1 /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidgetViews.swift; sourceTree = "<group>"; };
+		AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlanTests.swift; sourceTree = "<group>"; };
 		AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPushHandler.swift; sourceTree = "<group>"; };
+		B0431240DA3532D2272FDFAC /* TasksTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTimeline.swift; sourceTree = "<group>"; };
 		B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenTaskMacWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWidgetBundle.swift; sourceTree = "<group>"; };
+		B7DD47E083E073FE32FA2C34 /* time-slots.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "time-slots.json"; sourceTree = "<group>"; };
 		C605F50E331B33C23631EE81 /* DateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateHelpers.swift; sourceTree = "<group>"; };
 		C92C74F59E9D3BDE167E4172 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C93991B196F33DC054AF3D3C /* Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fixtures.swift; sourceTree = "<group>"; };
 		CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
+		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
 		F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidgetViews.swift; sourceTree = "<group>"; };
+		F781F8F4FFD0805CBC5D5068 /* completions.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = completions.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +187,24 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0A10E5179F65AD07D3C03291 /* contract */ = {
+			isa = PBXGroup;
+			children = (
+				EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */,
+				F781F8F4FFD0805CBC5D5068 /* completions.json */,
+				7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */,
+				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
+				37C29187973C3150F91CA3B7 /* reminders-initial.json */,
+				880F73DD5EB836E40BCA134A /* reminders.json */,
+				225E098B934AE9962181E731 /* task-progress.json */,
+				6676B0D8909B96B0AAA98C71 /* tasks.json */,
+				B7DD47E083E073FE32FA2C34 /* time-slots.json */,
+				8F19FED31D51A4F31E33C37B /* undo-status.json */,
+			);
+			name = contract;
+			path = ../tests/fixtures/contract;
+			sourceTree = "<group>";
+		};
 		19555242DC53C36C567AF6E3 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -149,11 +223,14 @@
 		217D6BBFB7D37AD82201C927 = {
 			isa = PBXGroup;
 			children = (
+				0A10E5179F65AD07D3C03291 /* contract */,
+				5407F5223E724D9F0B07B2E6 /* Logic */,
 				E888B3FF3F46FA08A09913EC /* OpenTask */,
 				F2C24CFD5C09DAC72A1A3ADD /* OpenTaskMac */,
 				37183BBC2E18BB339DA98888 /* OpenTaskMacWidgets */,
 				96821342944D576012D93C23 /* OpenTaskWidgets */,
 				19555242DC53C36C567AF6E3 /* Shared */,
+				49D3B6DD3D14C1FD336AF9A6 /* WatchShared */,
 				E129E87E000BE3A1E8726A84 /* Frameworks */,
 				D273C3C0ED4EC17C1340FAF4 /* Products */,
 			);
@@ -166,9 +243,45 @@
 			path = OpenTaskMacWidgets;
 			sourceTree = "<group>";
 		};
+		49D3B6DD3D14C1FD336AF9A6 /* WatchShared */ = {
+			isa = PBXGroup;
+			children = (
+				7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */,
+				31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */,
+			);
+			name = WatchShared;
+			path = ../ios/WatchShared;
+			sourceTree = "<group>";
+		};
+		5407F5223E724D9F0B07B2E6 /* Logic */ = {
+			isa = PBXGroup;
+			children = (
+				4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */,
+				370309049F393EDDAD8042C0 /* DueLabelTests.swift */,
+				81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */,
+				AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */,
+				47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */,
+				7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */,
+				347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */,
+				7D1B91948D7BC495356754C1 /* Support */,
+			);
+			name = Logic;
+			path = ../ios/Tests/Logic;
+			sourceTree = "<group>";
+		};
+		7D1B91948D7BC495356754C1 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				C93991B196F33DC054AF3D3C /* Fixtures.swift */,
+				203EF948683C146898ECCD57 /* WidgetKindShims.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
 		96821342944D576012D93C23 /* OpenTaskWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */,
 				607A3ED0E07D6E9308774294 /* Info.plist */,
 				1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */,
 				B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */,
@@ -177,6 +290,7 @@
 				A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */,
 				063D351611FEE1FDCC48702D /* SampleData.swift */,
 				86C87419D6853F3A661B2252 /* TaskFeed.swift */,
+				B0431240DA3532D2272FDFAC /* TasksTimeline.swift */,
 				16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */,
 				F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */,
 				5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */,
@@ -193,6 +307,7 @@
 		D273C3C0ED4EC17C1340FAF4 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				32C45DA1904EB29E34155A58 /* OpenTaskLogicTests.xctest */,
 				78F7579086893D2594E48169 /* OpenTaskMac.app */,
 				B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */,
 			);
@@ -257,6 +372,24 @@
 			productReference = B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		B7F8AE0C74222EF33D1D47DD /* OpenTaskLogicTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CDBF0D9A107CDF132C2C66BD /* Build configuration list for PBXNativeTarget "OpenTaskLogicTests" */;
+			buildPhases = (
+				9033DD8324328301A1CA22EC /* Sources */,
+				4F1367DB1F28D30D9BDE617F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OpenTaskLogicTests;
+			packageProductDependencies = (
+			);
+			productName = OpenTaskLogicTests;
+			productReference = 32C45DA1904EB29E34155A58 /* OpenTaskLogicTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		DF7283EFB956A2C33DF9EDB6 /* OpenTaskMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA003F5CED97FFED8E473286 /* Build configuration list for PBXNativeTarget "OpenTaskMac" */;
@@ -290,6 +423,10 @@
 						DevelopmentTeam = GEL3VGTUJX;
 						ProvisioningStyle = Automatic;
 					};
+					B7F8AE0C74222EF33D1D47DD = {
+						DevelopmentTeam = GEL3VGTUJX;
+						ProvisioningStyle = Automatic;
+					};
 					DF7283EFB956A2C33DF9EDB6 = {
 						DevelopmentTeam = GEL3VGTUJX;
 						ProvisioningStyle = Automatic;
@@ -310,6 +447,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				B7F8AE0C74222EF33D1D47DD /* OpenTaskLogicTests */,
 				DF7283EFB956A2C33DF9EDB6 /* OpenTaskMac */,
 				68497C39859B00F7D9018B79 /* OpenTaskMacWidgets */,
 			);
@@ -317,6 +455,23 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4F1367DB1F28D30D9BDE617F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EF9B9D541E938BB134EA1D78 /* bulk-complete.json in Resources */,
+				5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */,
+				CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */,
+				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,
+				51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */,
+				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
+				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
+				DBCA794BCC63F980AE658F47 /* tasks.json in Resources */,
+				EE5A06EF55B46C3132933303 /* time-slots.json in Resources */,
+				D69FFE9776386998102E6583 /* undo-status.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		971E4AA7CB6FA5A58E2E9216 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -360,12 +515,40 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9033DD8324328301A1CA22EC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4ABEC9743D9F16FBA470924F /* APIClient.swift in Sources */,
+				2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */,
+				909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */,
+				D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */,
+				ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */,
+				F4A48262758480B2362DE1B0 /* Fixtures.swift in Sources */,
+				B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */,
+				DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */,
+				932B4699D3B795BB16459BE5 /* QuotaPromptDTOTests.swift in Sources */,
+				64977AFF9CC42B0353EA7674 /* TaskSnoozePlan.swift in Sources */,
+				4B1A0BA96C5C08ED15949CF1 /* TaskSnoozePlanTests.swift in Sources */,
+				1C2F3B649D24FD3C87F57B03 /* TasksScopeTests.swift in Sources */,
+				25A22F2B7A429A5B77F9867A /* TasksTimeline.swift in Sources */,
+				65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */,
+				62886AC7F979636FE750C08E /* WatchQuotaLogic.swift in Sources */,
+				40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */,
+				5ACFC5419BA8178CCBDD0D35 /* WatchSlotLogic.swift in Sources */,
+				BD681103236562BE55F338E1 /* WidgetKindShims.swift in Sources */,
+				8C9F8E56346CBA5A1599E800 /* WidgetStore.swift in Sources */,
+				3315C7B7A79DBF3C82C6C7D9 /* WidgetStoreCacheTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CB2D7FC9B4274402718EECE4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */,
 				2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */,
+				A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */,
 				4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */,
 				97469992D329A225F1120702 /* NotesGlyphPreviews.swift in Sources */,
 				AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */,
@@ -376,6 +559,7 @@
 				5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */,
 				B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */,
 				317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */,
+				5CD4762477A148AB18B23334 /* TasksTimeline.swift in Sources */,
 				33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */,
 				1A1131E268CC52CAA6F32234 /* TasksWidgetViews.swift in Sources */,
 				B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */,
@@ -417,6 +601,23 @@
 			};
 			name = Release;
 		};
+		1D5827D8E277765B7BF87D92 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.logictests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
 		697DB7C1A022B76CF105A4C9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -453,6 +654,23 @@
 				SDKROOT = macosx;
 			};
 			name = Debug;
+		};
+		7E10EE9D0AA80EBDD6D00C38 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.logictests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
 		};
 		9CEA6BDAE6D830AB129921F1 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -617,6 +835,15 @@
 			buildConfigurations = (
 				697DB7C1A022B76CF105A4C9 /* Debug */,
 				097D76B01863D2EB7CA9F983 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CDBF0D9A107CDF132C2C66BD /* Build configuration list for PBXNativeTarget "OpenTaskLogicTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1D5827D8E277765B7BF87D92 /* Debug */,
+				7E10EE9D0AA80EBDD6D00C38 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

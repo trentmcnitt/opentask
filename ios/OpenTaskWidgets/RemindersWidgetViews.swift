@@ -1005,20 +1005,22 @@ enum PromptRowMetrics {
 
 /// One waiting quota PROMPT — drawn AS a reminder row (`ReminderRow` is the
 /// sibling, and everything not listed here is copied from it: the title
-/// `Link`, the full wrap, the trailing circle with its bleed).
+/// `Link`, the full wrap, the trailing marker with its bleed).
 ///
 /// WHAT DIFFERS (Trent's final decisions, 2026-09-24):
 /// - A thin LEADING stripe in the quota's label color — the quota chip's own
 ///   stripe.
 /// - The label carries the count, "Daily Walks · 1/2" — one `Text` built from
 ///   `QuotaPromptDTO.labelText`, the exact string the pager measured.
-/// - TWO controls at the trailing edge. The circle is where every reminder's
-///   circle is (the outermost column, thumb reach) and means the same thing:
-///   CONSIDERED for today, nothing logged. The SQUARE, just inside it and
-///   beside the count, is DID IT: +1 and considered. Square because it is a
-///   different verb from the circle, and a checkbox is what "I did this"
-///   looks like everywhere else. Both are `ActOnPromptIntent`, keyed by
-///   `prompt_key`.
+/// - TWO controls at the trailing edge. The DASHED circle is where every
+///   reminder's solid circle is (the outermost column, thumb reach) and means
+///   the same thing: CONSIDERED ("seen") for today, nothing logged. Dashed,
+///   not solid (2026-09-25): Trent habitually tapped the circle meaning
+///   "done", but on a prompt it means "seen" (an eye came first; creepy). The
+///   SQUARE, just inside it and beside the
+///   count, is DID IT: +1 and considered. Square because it is a different
+///   verb, and a checkbox is what "I did this" looks like everywhere else.
+///   Both are `ActOnPromptIntent`, keyed by `prompt_key`.
 /// - The title links to the quota on the Quotas surface
 ///   (`opentask://quota/<id>`), not a reminder editor: a prompt is not a
 ///   task.
@@ -1069,7 +1071,7 @@ private struct PromptRow: View {
                 )
                 control(
                     intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: false),
-                    symbol: "circle", label: "Considered: \(spokenLabel)"
+                    symbol: "circle.dashed", label: "Considered: \(spokenLabel)"
                 )
             }
         }
@@ -1100,7 +1102,9 @@ private struct PromptRow: View {
 /// reminder's DONE marker restores it (`POST /api/tasks/:id/undone`); a
 /// prompt has no such endpoint (it is not a task, and /undone refuses
 /// quotas), so its marker is a plain, inert glyph — a filled square for a
-/// did-it, a filled circle for a consider — and Undo is the way back, as on
+/// did-it, a filled dashed circle for a consider (`PromptRow`'s
+/// `circle.dashed` as `circle.dashed.inset.filled`, filled the way a
+/// reminder's DONE circle is) — and Undo is the way back, as on
 /// the web ("the toast's Undo is the way back", `QuotaPromptRow`).
 private struct DonePromptRow: View {
     let prompt: QuotaPromptDTO
@@ -1132,7 +1136,7 @@ private struct DonePromptRow: View {
                 }
             }
 
-            Image(systemName: prompt.done ? "checkmark.square.fill" : "checkmark.circle.fill")
+            Image(systemName: prompt.done ? "checkmark.square.fill" : "circle.dashed.inset.filled")
                 .font(.system(size: 19, weight: .light))
                 .foregroundStyle(.secondary)
                 .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)

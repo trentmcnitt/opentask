@@ -475,18 +475,8 @@ enum WidgetTheme {
 
     // MARK: - Formatting
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        f.amSymbol = "am"
-        f.pmSymbol = "pm"
-        return f
-    }()
-
-    /// "9:30am". Widgets are narrow; the lowercase meridiem buys a character
-    /// and reads quieter next to the task title.
     static func shortTime(_ date: Date) -> String {
-        timeFormatter.string(from: date)
+        DueLabel.shortTime(date)
     }
 
     /// The staleness note shown when the widget is rendering from cache.
@@ -499,9 +489,11 @@ enum WidgetTheme {
     // "Anywhere a task time shows" now reads a day word ahead of the time:
     // "8:30 PM" (today, unchanged), "Tomorrow 9:00 AM", "Sun 9:00 AM" (2-6
     // days out), "Oct 1 9:00 AM" (7+ days out), "Oct 2" (date-only, no time
-    // at all). Overdue is DELIBERATELY UNCHANGED — always the plain time in
-    // red, never a day word (an overdue item is "late", not "coming up",
-    // and the red already carries that meaning).
+    // at all). Overdue (changed 2026-09-25): the same ladder backwards —
+    // the red time alone when due earlier today, else "Yesterday" / a
+    // weekday / a date over the red time, so an old overdue row is never
+    // mistaken for today's. The words themselves live in `DueLabel`
+    // (Foundation-only, logic-tested); this section styles them.
     //
     // Date-only detection is an INVENTED convention, not something the wire
     // format states: `TaskDTO.dueAt`/the server schema carry no date-only
@@ -519,99 +511,12 @@ enum WidgetTheme {
     // SAME string it renders, or the pager mismeasures and a title clips or
     // gets an extra blank line.
 
-    struct DueLabelParts {
-        /// nil when the due date is today or overdue (no day word in either
-        /// case — see this section's header comment).
-        let dayWord: String?
-        /// nil when the due date is date-only (local time-of-day exactly
-        /// midnight).
-        let time: String?
+    typealias DueLabelParts = DueLabel.Parts
 
-        /// The exact string shown — `"\(dayWord) \(time)"`, or whichever
-        /// half is present alone, or "" if somehow both are nil (a
-        /// date-only task due exactly today: no day word because it's
-        /// today, no time because it's date-only — nothing to say).
-        var plainString: String {
-            switch (dayWord, time) {
-            case let (.some(d), .some(t)): return "\(d) \(t)"
-            case let (.some(d), nil): return d
-            case let (nil, .some(t)): return t
-            case (nil, nil): return ""
-            }
-        }
-
-        /// Both halves present ("Tomorrow" + "4:00 pm") — the only shape that
-        /// can STACK onto two lines (see `dueLabelText(for:now:stacked:)`).
-        var hasTwoParts: Bool { dayWord != nil && time != nil }
-    }
-
-    private static let dueWeekdayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE"
-        return f
-    }()
-
-    private static let dueMonthDayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return f
-    }()
-
-    /// The single source of truth for a due date's day word + time — see
-    /// this section's header comment. `isOverdue` is passed in rather than
-    /// recomputed here (`TaskDTO.isOverdue(now:)` already exists and every
-    /// call site already has it or an equivalent `now` to compute it from),
-    /// so this function has exactly one clock-reading job (bucketing days
-    /// away), not two.
+    /// See `DueLabel.parts(for:now:isOverdue:)` — the one rule for which
+    /// words a due label says.
     static func dueLabelParts(for due: Date, now: Date = Date(), isOverdue: Bool) -> DueLabelParts {
-        let calendar = Calendar.current
-        let isDateOnly =
-            calendar.component(.hour, from: due) == 0 && calendar.component(.minute, from: due) == 0
-
-        if isOverdue {
-            // A date-only task has no time to show — "12:00 am" would read
-            // as a real due TIME, not the absence of one (Trent's review of
-            // the first cut). Show the date instead, in the SAME red the
-            // time would otherwise draw in (`dueLabelText` below): "Sep 22",
-            // or "Yesterday" specifically for exactly one day past — the one
-            // relative word worth the recognition win, per Trent's ask.
-            // Anything further back is just the date; there is no "3 days
-            // ago" ladder here the way `DateHelpers.formatRelativeTime` has
-            // for notifications, because a widget row has no room for it
-            // and the day-naming feature this belongs to is about WHEN,
-            // not HOW LONG AGO.
-            guard isDateOnly else {
-                return DueLabelParts(dayWord: nil, time: shortTime(due))
-            }
-            let startOfToday = calendar.startOfDay(for: now)
-            let startOfDue = calendar.startOfDay(for: due)
-            let daysAgo = calendar.dateComponents([.day], from: startOfDue, to: startOfToday).day ?? 0
-            let word = daysAgo == 1 ? "Yesterday" : dueMonthDayFormatter.string(from: due)
-            return DueLabelParts(dayWord: word, time: nil)
-        }
-
-        let time = isDateOnly ? nil : shortTime(due)
-
-        let startOfToday = calendar.startOfDay(for: now)
-        let startOfDue = calendar.startOfDay(for: due)
-        let daysAway = calendar.dateComponents([.day], from: startOfToday, to: startOfDue).day ?? 0
-
-        let dayWord: String?
-        switch daysAway {
-        case ..<1:
-            // Today (0) or, in principle, still-negative-but-not-overdue
-            // (never reached in practice — `isOverdue` already caught every
-            // past instant — kept as a safe fallback rather than an
-            // unreachable-crash).
-            dayWord = nil
-        case 1:
-            dayWord = "Tomorrow"
-        case 2...6:
-            dayWord = dueWeekdayFormatter.string(from: due)
-        default:
-            dayWord = dueMonthDayFormatter.string(from: due)
-        }
-        return DueLabelParts(dayWord: dayWord, time: time)
+        DueLabel.parts(for: due, now: now, isOverdue: isOverdue)
     }
 
     /// Subtle indigo for the day word — built on `indigoAccent` (the same
@@ -642,14 +547,17 @@ enum WidgetTheme {
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
         if overdue {
-            // `plainString` is safe here even though it's normally the
-            // MEASUREMENT-only accessor: for an overdue task `dueLabelParts`
-            // always populates exactly ONE of `dayWord`/`time` (never both),
-            // so it resolves to whichever one is set — the plain time for
-            // an ordinary overdue task, or "Yesterday"/"Sep 22" for a
-            // date-only one — with no day-word/time split to color
-            // differently, unlike the non-overdue branch below.
-            return Text(parts.plainString).foregroundStyle(Color.red.opacity(0.9))
+            // All red (2026-09-25): the day word ("Yesterday", "Wed",
+            // "Sep 12") is part of what's late, so it wears the same red as
+            // the time, stacked over it exactly like an upcoming label.
+            let red = Color.red.opacity(0.9)
+            var text: Text?
+            if let dayWord = parts.dayWord { text = Text(dayWord).foregroundStyle(red) }
+            if let time = parts.time {
+                let timeText = Text(time).foregroundStyle(red)
+                text = text.map { $0 + Text(stacked ? "\n" : " ") + timeText } ?? timeText
+            }
+            return text ?? Text("")
         }
         var text: Text?
         if let dayWord = parts.dayWord {
@@ -1025,14 +933,19 @@ enum WidgetLink {
     }
 
     /// The Tasks header title link when scoped to one project (2026-09-23) —
-    /// the project-page twin of `reminders(slot:)`. "Up next" (the unified
-    /// `allProjects` scope) still links to the bare `dashboard` above; only a
-    /// project-scoped header uses this, resolving to `/?project=<id>` so the
-    /// app opens scoped to that project instead of landing back on the
-    /// unified list.
+    /// the project-page twin of `reminders(slot:)`. Today and Up next still
+    /// link to the bare `dashboard` above; only a project-scoped header uses
+    /// this, resolving to `/?project=<id>` so the app opens scoped to that
+    /// project instead of landing back on the unified list.
     static func project(_ id: Int) -> URL {
         URL(string: "\(scheme)://project/\(id)") ?? dashboard
     }
+
+    /// The Tasks header title link on the Overdue page (2026-09-25) —
+    /// resolves to `/?filter=overdue`, the dashboard with its Overdue chip
+    /// already on (`DashboardClient.tsx`'s `?filter=` handling), so the
+    /// overdue items are right there to handle.
+    static var overdue: URL { URL(string: "\(scheme)://overdue")! }
 
     /// One reminder, ON the Reminders surface.
     ///

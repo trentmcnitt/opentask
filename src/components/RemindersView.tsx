@@ -935,7 +935,7 @@ function useReminderActions({
     (prompt: QuotaPrompt) => rangeSelect(prompt.prompt_key, orderedIds),
     [rangeSelect, orderedIds],
   )
-  // A prompt's own circle and "did it" square act on that one row, and it
+  // A prompt's own dashed circle and "did it" square act on that one row, and it
   // leaves the selection as it goes — `completeOne`'s rule for a reminder.
   const considerOnePrompt = useCallback(
     (prompt: QuotaPrompt) => {
@@ -1935,7 +1935,7 @@ function ReminderRowMarker({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         aria-label={`Select "${reminder.title}"`}
-        className="mt-[3px] size-6 shrink-0"
+        className="mt-[3px] size-6 shrink-0 cursor-pointer"
       />
     )
   }
@@ -1953,7 +1953,7 @@ function ReminderRowMarker({
       tabIndex={-1}
       aria-label={`Mark "${reminder.title}" as considered`}
       title="Considered"
-      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors"
     >
       <Check
         className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"

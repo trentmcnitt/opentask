@@ -28,8 +28,23 @@ enum WidgetStore {
     #endif
 
     private static var defaults: UserDefaults? {
-        UserDefaults(suiteName: appGroup)
+        #if DEBUG
+        if let suiteOverride { return suiteOverride }
+        #endif
+        return UserDefaults(suiteName: appGroup)
     }
+
+    #if DEBUG
+    /// Test seam (`OpenTaskLogicTests`, `ios/Tests/Logic/`): when set, every
+    /// read and write goes here instead of the App Group suite. On macOS the
+    /// App Group is the REAL `GEL3VGTUJX.group.io.mcnitt.opentask` — the
+    /// installed Mac app's widget cache — so a test that used it would
+    /// overwrite what the desktop widgets draw. Tests set a throwaway
+    /// `UserDefaults(suiteName: "test.<UUID>")` in `setUp` and remove its
+    /// persistent domain in `tearDown`. DEBUG-only: a Release build has no
+    /// way to point the store anywhere else.
+    static var suiteOverride: UserDefaults?
+    #endif
 
     // MARK: - Cached payloads
 
@@ -1267,11 +1282,14 @@ enum WidgetStore {
     // MARK: - Tasks project scope
 
     private static let projectScopeKey = "widget.tasks.projectId"
+    /// The natural default a stored scope was chosen against (2026-09-25) —
+    /// see `TasksScopeChoice`.
+    private static let projectScopeAnchorKey = "widget.tasks.projectId.naturalScope"
 
-    /// Project id the Tasks widget is scoped to, or `allProjects`/`upNextScope`
-    /// for one of the two unified pages. Persisted as an id rather than an
-    /// index so renaming or reordering projects doesn't silently move the
-    /// user to a different one.
+    /// Project id the Tasks widget is scoped to, or `overdueScope`/
+    /// `allProjects`/`upNextScope` for one of the unified pages. Persisted as
+    /// an id rather than an index so renaming or reordering projects doesn't
+    /// silently move the user to a different one.
     static let allProjects = -1
 
     /// The "Up next" unified page (2026-09-23, item 4) — see
@@ -1282,14 +1300,45 @@ enum WidgetStore {
     /// sentinel additionally drops `todaysTasks`' end-of-day cutoff.
     static let upNextScope = -2
 
-    static var projectScope: Int {
-        get {
-            guard let defaults, defaults.object(forKey: projectScopeKey) != nil else {
-                return allProjects
-            }
-            return defaults.integer(forKey: projectScopeKey)
-        }
-        set { defaults?.set(newValue, forKey: projectScopeKey) }
+    /// The "Overdue" unified page (2026-09-25) — `TasksTimeline.overdueTasks`.
+    /// In the ring only while something is overdue, and the default page
+    /// whenever it is (`TasksTimeline.naturalScope`).
+    static let overdueScope = -3
+
+    /// The user's explicit chevron choice, paired with the natural default
+    /// (`TasksTimeline.naturalScope`: Overdue while anything is overdue, else
+    /// Today) that was showing when they made it — the same "pair a value
+    /// with the state it was set against" trick `SlotOverride` uses, and for
+    /// the same reason: the pairing makes the choice self-expiring.
+    /// `TasksTimeline.resolveScope` honors it only while the natural default
+    /// is unchanged, so overdue appearing takes the widget to Overdue, and
+    /// the last overdue task going takes it back to Today, whatever was
+    /// chosen before.
+    struct TasksScopeChoice: Equatable {
+        let scope: Int
+        let naturalScope: Int
+    }
+
+    /// Nil when the user has never chevroned. A scope stored before the
+    /// anchor existed (an upgraded install) reads as chosen against Today —
+    /// the only default there was — so it survives the upgrade until overdue
+    /// next appears.
+    static func tasksScopeChoice() -> TasksScopeChoice? {
+        guard let defaults, defaults.object(forKey: projectScopeKey) != nil else { return nil }
+        let natural = defaults.object(forKey: projectScopeAnchorKey) != nil
+            ? defaults.integer(forKey: projectScopeAnchorKey)
+            : allProjects
+        return TasksScopeChoice(scope: defaults.integer(forKey: projectScopeKey), naturalScope: natural)
+    }
+
+    static func setTasksScopeChoice(_ scope: Int, naturalScope: Int) {
+        defaults?.set(scope, forKey: projectScopeKey)
+        defaults?.set(naturalScope, forKey: projectScopeAnchorKey)
+    }
+
+    static func clearTasksScopeChoice() {
+        defaults?.removeObject(forKey: projectScopeKey)
+        defaults?.removeObject(forKey: projectScopeAnchorKey)
     }
 
     // MARK: - Tasks list paging
