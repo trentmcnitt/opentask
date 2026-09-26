@@ -405,8 +405,8 @@ function PromptDashedCircle({
 /**
  * The dashed ring, drawn to the reminder circle's exact geometry: the same box
  * (24px in the list, 19px in the dashboard panel) and the same 1.5px stroke
- * sitting just inside the box edge, like the circle's `border-[1.5px]`. Twelve
- * even dashes. Deliberately NOT lucide's `CircleDashed`: that icon draws its
+ * sitting just inside the box edge, like the circle's `border-[1.5px]`. Eight
+ * even dashes (the count lucide's icon had). Deliberately NOT lucide's `CircleDashed`: that icon draws its
  * ring at r=10 of 24, so it reads smaller than the circle beside it, and
  * scaling it up pushed the dashes out of the box into the label stripe
  * (Trent, 2026-09-25: "different-size circles is not good").
@@ -414,7 +414,7 @@ function PromptDashedCircle({
 function DashedRing({ px }: { px: number }) {
   const stroke = 1.5
   const r = (px - stroke) / 2
-  const segment = (2 * Math.PI * r) / 12
+  const segment = (2 * Math.PI * r) / 8
   return (
     <svg
       aria-hidden="true"
@@ -430,7 +430,7 @@ function DashedRing({ px }: { px: number }) {
         r={r}
         stroke="currentColor"
         strokeWidth={stroke}
-        strokeDasharray={`${segment * 0.6} ${segment * 0.4}`}
+        strokeDasharray={`${segment * 0.65} ${segment * 0.35}`}
         strokeLinecap="butt"
       />
     </svg>
