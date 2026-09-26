@@ -377,7 +377,7 @@ export function restorePrompts(options: {
       'quota_prompt',
       single && planned.length === 1
         ? `Put back "${single.title}"`
-        : `Quota reminders: put back ${planned.length}`,
+        : `Quota reminders: put back ${restored}`,
       [...fields],
       snapshots,
     )

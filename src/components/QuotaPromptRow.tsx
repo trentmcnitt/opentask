@@ -70,9 +70,12 @@ import type { Task } from '@/types'
  *   moves the prompt there for good — the editor's own PATCH, with Undo. The
  *   hold is the way in on desktop too; right-click stays unbound here, since
  *   on a quota chip it means −1 and Trent keeps that meaning.
- * - NO PUT-BACK. A handled prompt counts toward the slot but never joins its
- *   considered list, whose put-back is /undone (which a quota refuses). The
- *   toast's Undo is the way back.
+ * - PUT BACK (2026-09-25; before that there was none). A handled prompt
+ *   leaves the waiting list and joins its slot's considered list, after the
+ *   reminders, as `ConsideredPromptRow` below: the filled dashed circle puts
+ *   it back, exactly as a considered reminder's filled circle does — through
+ *   POST /api/quota-prompts/restore, never /undone (a quota refuses it). A
+ *   did-it's progress comes off with it.
  */
 
 export interface QuotaPromptRowProps {
@@ -233,6 +236,75 @@ export function QuotaPromptRow({
     </li>
   )
   return row
+}
+
+/**
+ * A HANDLED prompt in a slot's considered list (2026-09-25) — the prompt twin
+ * of the considered reminder row (`ConsideredRow` in RemindersView,
+ * `ConsideredList` in the dashboard panel), in both sizes. Dim, and it does
+ * one thing: the filled dashed circle — the prompt's own "considered" glyph,
+ * the one it collapsed with — puts it back (`useReminders().putBackPrompt`).
+ * It keeps the label-colour stripe and the count, so it reads as the quota
+ * it is; the count shows what a did-it logged, which putting it back takes
+ * off.
+ */
+export function ConsideredPromptRow({
+  prompt,
+  variant = 'surface',
+  onPutBack,
+}: {
+  prompt: QuotaPrompt
+  variant?: 'surface' | 'panel'
+  onPutBack: (prompt: QuotaPrompt) => void
+}) {
+  const panel = variant === 'panel'
+  const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
+  const glyph = panel ? 'size-[19px]' : 'size-6'
+  return (
+    <li
+      data-considered-prompt={prompt.prompt_key}
+      className={cn(
+        'relative flex items-start rounded-xl',
+        panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'absolute w-[3px] rounded-full',
+          panel ? 'inset-y-1.5 -left-1' : 'inset-y-2.5 left-0.5',
+          trackStripeClass(prompt.stripe_color),
+        )}
+      />
+      <button
+        type="button"
+        onClick={() => onPutBack(prompt)}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={`Put back "${prompt.title}"`}
+        title="Put back"
+        data-prompt-put-back
+        className={cn(
+          'group/putback relative flex shrink-0 cursor-pointer items-center justify-center text-green-600 transition-colors hover:text-green-600/50',
+          size,
+        )}
+      >
+        <CircleDashed className={glyph} strokeWidth={1.75} />
+        <span className="absolute inset-[22%] rounded-full bg-green-600 transition-colors group-hover/putback:bg-green-600/50" />
+      </button>
+      <p
+        className={cn(
+          'text-muted-foreground min-w-0 flex-1 text-pretty',
+          panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
+        )}
+      >
+        {prompt.title}
+        <span className="ml-1.5 text-[0.85em] whitespace-nowrap tabular-nums">
+          &middot; {countText(prompt)}
+        </span>
+        {prompt.has_notes && <NotesMarker />}
+      </p>
+    </li>
+  )
 }
 
 /** The square — "did it": logs one, and considers the prompt too. */

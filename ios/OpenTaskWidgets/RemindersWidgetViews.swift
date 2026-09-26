@@ -211,7 +211,7 @@ private struct RemindersListView: View {
     /// Quota prompts (2026-09-24): waiting ones follow the open reminders;
     /// handled ones follow the considered reminders in DONE and count in its
     /// "DONE · N" (a prompt counts exactly like a reminder). A handled
-    /// prompt's DONE row offers no put-back — see `DonePromptRow`.
+    /// prompt's DONE row puts it back (2026-09-25) — see `DonePromptRow`.
     private var combinedItems: [ReminderListItem] {
         let openItems = reminders.map(ReminderListItem.open)
             + (entry.group?.waitingPrompts ?? []).map(ReminderListItem.prompt)
@@ -1098,14 +1098,17 @@ private struct PromptRow: View {
 }
 
 /// A quota prompt handled today, in the DONE section — `DoneReminderRow`'s
-/// look (struck through, muted), with ONE difference: NO PUT-BACK. A
-/// reminder's DONE marker restores it (`POST /api/tasks/:id/undone`); a
-/// prompt has no such endpoint (it is not a task, and /undone refuses
-/// quotas), so its marker is a plain, inert glyph — a filled square for a
-/// did-it, a filled dashed circle for a consider (`PromptRow`'s
-/// `circle.dashed` as `circle.dashed.inset.filled`, filled the way a
-/// reminder's DONE circle is) — and Undo is the way back, as on
-/// the web ("the toast's Undo is the way back", `QuotaPromptRow`).
+/// look (struck through, muted) AND its put-back (2026-09-25): the marker is
+/// a `Button` running `RestorePromptIntent` (`POST
+/// /api/quota-prompts/restore`, never `/undone`, which refuses quotas), so
+/// the prompt waits again and a did-it's progress comes off. Before this it
+/// was an inert glyph, and a tap there fell through to the row's `Link` and
+/// opened the app (Trent: "for reminders, tapping the filled circle puts
+/// them back"). The glyph is the prompt's own "considered" circle, filled —
+/// `PromptRow`'s `circle.dashed` as `circle.dashed.inset.filled`, as a
+/// reminder's DONE circle is its circle filled — for a did-it too (the count
+/// beside it says what was logged); the web's `ConsideredPromptRow` draws
+/// the same.
 private struct DonePromptRow: View {
     let prompt: QuotaPromptDTO
     let lines: Int
@@ -1136,12 +1139,18 @@ private struct DonePromptRow: View {
                 }
             }
 
-            Image(systemName: prompt.done ? "checkmark.square.fill" : "circle.dashed.inset.filled")
-                .font(.system(size: 19, weight: .light))
-                .foregroundStyle(.secondary)
-                .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
-                .frame(width: WidgetTheme.rowMarkerSize, height: height, alignment: .top)
-                .accessibilityLabel(Text(prompt.done ? "Done today" : "Considered today"))
+            // `DoneReminderRow`'s button, verbatim: the whole marker column
+            // is the target, so a tap on it never reaches the row's `Link`.
+            Button(intent: RestorePromptIntent(promptKey: prompt.promptKey)) {
+                Image(systemName: "circle.dashed.inset.filled")
+                    .font(.system(size: 19, weight: .light))
+                    .foregroundStyle(.secondary)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: height, alignment: .top)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Put back: \(prompt.title), \(prompt.countText)"))
         }
     }
 }

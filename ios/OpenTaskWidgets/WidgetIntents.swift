@@ -481,6 +481,66 @@ struct ActOnPromptIntent: AppIntent {
     }
 }
 
+// MARK: - Put back a quota prompt (2026-09-25)
+
+/// The filled dashed circle on a handled prompt in the Reminders widget's
+/// DONE section: PUT IT BACK — it waits for today again, and a did-it's
+/// progress comes off (`POST /api/quota-prompts/restore`; never `/undone`,
+/// which a quota refuses). Before this the marker was an inert glyph and a
+/// tap on the row fell through to its `Link` and opened the app (Trent,
+/// 2026-09-25).
+///
+/// `ActOnPromptIntent`'s shape, minus the auto-advance (a put-back adds a
+/// waiting row; there is nothing to advance away from):
+/// 1. Stage a put-back tombstone by `prompt_key`, so the row leaves DONE and
+///    is drawn waiting at once (macOS repaints here; iOS on the free
+///    interaction reload after `perform()`).
+/// 2. On success the server's answer goes into BOTH caches — the returned
+///    quotas into Tasks/Quotas (`confirmTasks`: the Quotas widget's count may
+///    have dropped), and the prompt un-handled plus every sibling re-counted
+///    into Reminders (`confirmPromptRestore`, which retires the tombstone and
+///    marks Reminders fetch-required where only the server knows the answer).
+/// 3. On failure the tombstone goes and Reminders fetches — the likeliest
+///    failure is a key from before midnight (400).
+/// 4. Round 2 asks for Track, the OTHER kind (budget rules, `ios/CLAUDE.md`);
+///    Reminders is the tapped kind — free on iOS, explicit on macOS.
+struct RestorePromptIntent: AppIntent {
+    static var title: LocalizedStringResource = "Put Back Quota Reminder"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Prompt Key")
+    var promptKey: String
+
+    init() {}
+
+    init(promptKey: String) {
+        self.promptKey = promptKey
+    }
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.stagePendingPromptRestore(promptKey)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+
+        do {
+            let result = try await APIClient.shared.restorePrompts(keys: [promptKey])
+            WidgetStore.confirmTasks(result.tasks)
+            WidgetStore.confirmPromptRestore(promptKey, tasks: result.tasks)
+            if !result.decoded {
+                WidgetStore.requireRemindersFetch()
+                WidgetStore.requireTasksFetch()
+            }
+            WidgetStore.recordLocalMutationForUndoCount()
+        } catch {
+            print("[OpenTaskWidgets] Prompt \(promptKey) put back failed: \(error)")
+            WidgetStore.clearPendingPromptRestore(promptKey)
+            WidgetStore.requireRemindersFetch()
+        }
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+        return .result()
+    }
+}
+
 // MARK: - Reminders slot paging
 
 /// Move the Reminders widget one slot earlier or later.

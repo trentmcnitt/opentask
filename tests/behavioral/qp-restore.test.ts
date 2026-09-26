@@ -96,7 +96,7 @@ afterEach(() => {
   teardownTestDb()
 })
 
-describe('Put back', () => {
+describe('Put back — consider, weekly and daily did-its', () => {
   test('QPR-001: after consider — waiting again, nothing logged, one undo entry', () => {
     const q = quota('Stretch the hamstrings', 'FREQ=WEEKLY', 3)
     const key = promptKey(q.id, 0, TODAY)
@@ -191,7 +191,9 @@ describe('Put back', () => {
     expect(prompt(one)).toMatchObject({ considered: false, done: true })
     expect(getTaskById(q.id)!.quota_day_state).toMatchObject({ did: [], considered: [] })
   })
+})
 
+describe('Put back — daily numbers and edge cases', () => {
   test('QPR-007: a repeat did-it (which adds 0) keeps the first one’s record', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 2)

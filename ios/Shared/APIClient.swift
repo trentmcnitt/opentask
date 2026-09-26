@@ -296,6 +296,43 @@ final class APIClient {
         try await promptAction(path: "/api/quota-prompts/did", keys: keys)
     }
 
+    /// What `POST /api/quota-prompts/restore` answers (2026-09-25): how many
+    /// keys were handled and now wait again, and every quota touched AS THE
+    /// SERVER LEFT IT — a did-it's progress taken back — for the caches.
+    struct PromptRestoreResult: Decodable {
+        let restored: Int
+        let tasks: [TaskDTO]
+        /// See `PromptActionResult.decoded`.
+        let decoded: Bool
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            restored = try c.decodeIfPresent(Int.self, forKey: .restored) ?? 0
+            tasks = try c.decodeIfPresent([TaskDTO].self, forKey: .tasks) ?? []
+            decoded = true
+        }
+
+        init(restored: Int, tasks: [TaskDTO], decoded: Bool = true) {
+            self.restored = restored
+            self.tasks = tasks
+            self.decoded = decoded
+        }
+
+        enum CodingKeys: String, CodingKey { case restored, tasks }
+    }
+
+    /// PUT BACK a handled prompt (the filled dashed circle in the Reminders
+    /// widget's DONE section, 2026-09-25): it waits for today again, and a
+    /// did-it's progress comes off — exactly what it added. One transaction,
+    /// one undo entry. Never `/undone`, which a quota refuses.
+    @discardableResult
+    func restorePrompts(keys: [String]) async throws -> PromptRestoreResult {
+        guard !keys.isEmpty else { return PromptRestoreResult(restored: 0, tasks: []) }
+        let data = try await post(path: "/api/quota-prompts/restore", body: ["keys": keys])
+        return (try? JSONDecoder().decode(APIEnvelope<PromptRestoreResult>.self, from: data).data)
+            ?? PromptRestoreResult(restored: 0, tasks: [], decoded: false)
+    }
+
     private func promptAction(path: String, keys: [String]) async throws -> PromptActionResult {
         guard !keys.isEmpty else { return PromptActionResult(considered: 0, did: 0, tasks: []) }
         let data = try await post(path: path, body: ["keys": keys])
