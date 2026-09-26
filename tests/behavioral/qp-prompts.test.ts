@@ -413,12 +413,14 @@ describe('Quota prompts — batches and refusals', () => {
     expect(() => bulkDone({ ...base, taskIds: [weekly.id] })).toThrow(/quota/i)
   })
 
-  test('QP-038: a did-it taken back with a −1 brings the weekly prompt back, and can be done again', () => {
+  test('QP-038: a did-it taken back with a −1 brings the weekly prompt back WAITING, and can be done again', () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
     const key = promptKey(q.id, 0, TODAY)
     act(key, true)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id, delta: -1 })
-    expect(prompts()[0]).toMatchObject({ done: false, current: 0 })
+    // Waiting, not just not-done: the −1 took back what the did-it logged,
+    // so its implied "considered" goes too (Trent, 2026-09-25).
+    expect(prompts()[0]).toMatchObject({ done: false, considered: false, current: 0 })
     act(key, true)
     expect(getTaskById(q.id)!.progress_current).toBe(1)
   })

@@ -311,6 +311,67 @@ describe('POST /api/quota-prompts/consider and /did', () => {
   })
 })
 
+describe('POST /api/quota-prompts/restore', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  test('requires auth', async () => {
+    expect((await apiAnon('/api/quota-prompts/restore', { method: 'POST', body: {} })).status).toBe(
+      401,
+    )
+  })
+
+  test('puts a did-it back: the +1 comes off, the prompt waits; one undo reverses it', async () => {
+    const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    expect((await post('/api/quota-prompts/did', { keys: [prompt.prompt_key] })).status).toBe(200)
+
+    const res = await post('/api/quota-prompts/restore', { keys: [prompt.prompt_key] })
+    expect(res.status).toBe(200)
+    const body = (await res.json()).data
+    expect(body.restored).toBe(1)
+    expect(body.tasks[0]).toMatchObject({ id: quota.id, progress_current: 0 })
+    expect((await allPrompts())[0]).toMatchObject({ considered: false, done: false, current: 0 })
+
+    expect((await apiFetch('/api/undo', { method: 'POST' })).status).toBe(200)
+    expect((await allPrompts())[0]).toMatchObject({ considered: true, done: true, current: 1 })
+  })
+
+  test('puts a considered prompt back without touching the count', async () => {
+    await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    await post('/api/quota-prompts/consider', { keys: [prompt.prompt_key] })
+    const res = await post('/api/quota-prompts/restore', { keys: [prompt.prompt_key] })
+    expect((await res.json()).data).toMatchObject({ restored: 1 })
+    expect((await allPrompts())[0]).toMatchObject({ considered: false, done: false, current: 0 })
+  })
+
+  test("a stale key, a malformed key and another user's key are refused", async () => {
+    const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    await post('/api/quota-prompts/did', { keys: [prompt.prompt_key] })
+    const stale = `q:${quota.id}:0:2020-01-01`
+    expect((await post('/api/quota-prompts/restore', { keys: [stale] })).status).toBe(400)
+    expect((await post('/api/quota-prompts/restore', { keys: ['nope'] })).status).toBe(400)
+    expect((await post('/api/quota-prompts/restore', { keys: [] })).status).toBe(400)
+    expect(
+      (await post('/api/quota-prompts/restore', { keys: [prompt.prompt_key] }, apiFetchB)).status,
+    ).toBe(400)
+    const task = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(task.progress_current).toBe(1)
+  })
+
+  test('a −1 after a did-it brings the prompt back waiting', async () => {
+    const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    await post('/api/quota-prompts/did', { keys: [prompt.prompt_key] })
+    const res = await post(`/api/tasks/${quota.id}/progress`, { delta: -1 })
+    expect(res.status).toBe(200)
+    expect((await allPrompts())[0]).toMatchObject({ considered: false, done: false, current: 0 })
+  })
+})
+
 describe('POST /api/tasks/bulk/complete with prompts', () => {
   beforeEach(async () => {
     await resetTestData()

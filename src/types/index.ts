@@ -52,6 +52,12 @@ export interface QuotaDayState {
   did: string[]
   /** prompt_keys considered today (the circle, or "did it", which implies it). */
   considered: string[]
+  /**
+   * What each key in `did` added to the count (2026-09-25) — so putting the
+   * prompt back takes away exactly that. A daily #k did-it adds only what was
+   * missing up to k, possibly 0, which nothing else records.
+   */
+  did_applied: Record<string, number>
 }
 
 export interface Task {
