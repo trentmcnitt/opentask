@@ -259,7 +259,6 @@ export function ConsideredPromptRow({
 }) {
   const panel = variant === 'panel'
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
-  const glyph = panel ? 'size-[19px]' : 'size-6'
   return (
     <li
       data-considered-prompt={prompt.prompt_key}
@@ -272,7 +271,7 @@ export function ConsideredPromptRow({
         aria-hidden="true"
         className={cn(
           'absolute w-[3px] rounded-full',
-          panel ? 'inset-y-1.5 -left-1' : 'inset-y-2.5 left-0.5',
+          panel ? 'inset-y-1.5 -left-1.5' : 'inset-y-2.5 left-0',
           trackStripeClass(prompt.stripe_color),
         )}
       />
@@ -288,7 +287,7 @@ export function ConsideredPromptRow({
           size,
         )}
       >
-        <CircleDashed className={glyph} strokeWidth={1.75} />
+        <DashedRing px={panel ? 19 : 24} />
         <span className="absolute inset-[22%] rounded-full bg-green-600 transition-colors group-hover/putback:bg-green-600/50" />
       </button>
       <p

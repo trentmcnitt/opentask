@@ -749,7 +749,7 @@ test.describe('Quota prompts — put back', () => {
     const handled = slotCard.locator('li[data-considered-prompt]', { hasText: title })
     await expect(handled).toContainText('1/3 this week')
     const putBack = handled.getByRole('button', { name: `Put back "${title}"` })
-    await expect(putBack.locator('svg.lucide-circle-dashed')).toBeVisible()
+    await expect(putBack.locator('svg[data-dashed-ring]')).toBeVisible()
 
     const restore = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/restore'))
     await putBack.click()
