@@ -760,12 +760,9 @@ test.describe('Quota prompts — put back', () => {
     await expect(handled).toHaveCount(0)
     expect(await progressOf(page, id)).toBe(0)
 
-    // The toast's Undo reverses the put-back: handled again, with its +1.
+    // Undo reverses the put-back — one entry: handled again, with its +1.
     const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
-    await page
-      .locator('[data-sonner-toast]', { hasText: 'Put back' })
-      .getByRole('button', { name: 'Undo' })
-      .click()
+    await page.getByRole('banner').getByRole('button', { name: /^Undo/ }).click()
     await undone
     await expect(promptRow(page, title)).toHaveCount(0)
     expect(await progressOf(page, id)).toBe(1)

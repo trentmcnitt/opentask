@@ -140,7 +140,12 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
   if (Array.isArray(value)) return value.map((v) => normalise(v, ids, key, parent))
   if (value !== null && typeof value === 'object') {
     const out: Record<string, Json> = {}
-    for (const [k, v] of Object.entries(value)) out[k] = normalise(v, ids, k, value)
+    for (const [k, v] of Object.entries(value)) {
+      // A prompt key can be an object KEY too (`quota_day_state.did_applied`).
+      const pk = PROMPT_KEY.exec(k)
+      const name = pk ? `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}` : k
+      out[name] = normalise(v, ids, k, value)
+    }
     return out
   }
   if (typeof value === 'number' && Number.isInteger(value) && parent) {
