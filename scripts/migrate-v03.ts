@@ -103,13 +103,13 @@ const PREFIX_RE = /^\s*\[(M|A|E|N|EM|LM|EE|W|Weekly|Weekend|Monthly|Tri-Monthly)
 
 /**
  * Quota annotation inside the title: "Eggs (2x/week)", "Bean Soup 4x/week",
- * "High-fiber cereal (2x/week+)" — a trailing "+" ("at least") is swallowed
+ * "Home-cooked soup (2x/week+)" — a trailing "+" ("at least") is swallowed
  * with the annotation so the close-paren does not survive as a stray "+)".
- * "(4 times this week, yet?)". Only stripped for the quota population — the
+ * "(3 times this week, so far?)". Only stripped for the quota population — the
  * number moves into progress_target, so leaving it in the title would
  * double-state it.
  *
- * Global flag, learned the hard way: "Broccoli (3x/week) Avocado (2x/week)"
+ * Global flag, learned the hard way: "Oatmeal (3x/week) Berries (2x/week)"
  * carries TWO annotations (really two quotas in one task), and a single-pass
  * strip left the second one stranded next to a target that contradicted it.
  * Multiple annotations also get a loud plan warning — which number wins is a

@@ -1,0 +1,253 @@
+{
+  "data": {
+    "groups": [
+      {
+        "slot": {
+          "id": 11,
+          "user_id": 2,
+          "label": "Early morning",
+          "start_time": "07:00",
+          "sort_order": 0,
+          "created_at": "2026-01-15T16:00:00.000Z"
+        },
+        "reminders": [],
+        "count": 0,
+        "considered": 1,
+        "considered_items": [
+          {
+            "id": 104,
+            "user_id": 2,
+            "project_id": 1,
+            "title": "Stretch",
+            "original_title": "Stretch",
+            "short_title": null,
+            "done": false,
+            "done_at": null,
+            "priority": 0,
+            "due_at": "2026-01-15T16:00:00.000Z",
+            "rrule": "FREQ=DAILY;BYHOUR=8;BYMINUTE=0",
+            "recurrence_mode": "from_due",
+            "anchor_time": "08:00",
+            "anchor_dow": null,
+            "anchor_dom": null,
+            "original_due_at": "2026-01-15T16:00:00.000Z",
+            "last_notified_at": null,
+            "last_critical_alert_at": null,
+            "auto_snooze_minutes": null,
+            "deleted_at": null,
+            "archived_at": null,
+            "labels": [],
+            "progress_target": 1,
+            "progress_current": 0,
+            "progress_period_start": null,
+            "is_reminder": true,
+            "is_tracked": false,
+            "quota_prompt_config": null,
+            "quota_day_state": null,
+            "completion_count": 1,
+            "snooze_count": 0,
+            "skip_count": 0,
+            "first_completed_at": "2026-01-15T16:00:00.000Z",
+            "last_completed_at": "2026-01-15T16:00:00.000Z",
+            "notes": null,
+            "created_at": "2026-01-15T16:00:00.000Z",
+            "updated_at": "2026-01-15T16:00:00.000Z",
+            "is_recurring": true,
+            "is_snoozed": false
+          }
+        ],
+        "prompts": [
+          {
+            "task_id": 103,
+            "title": "Call a friend",
+            "current": 0,
+            "target": 2,
+            "period": "MONTHLY",
+            "stripe_color": null,
+            "has_notes": false,
+            "prompt_key": "q:103:0:2026-01-15",
+            "number": null,
+            "numbers": null,
+            "considered": false,
+            "done": false,
+            "slot_id": 11
+          },
+          {
+            "task_id": 101,
+            "title": "Drink water",
+            "current": 1,
+            "target": 2,
+            "period": "DAILY",
+            "stripe_color": "purple",
+            "has_notes": true,
+            "prompt_key": "q:101:1:2026-01-15",
+            "number": 1,
+            "numbers": [1],
+            "considered": true,
+            "done": true,
+            "slot_id": 11
+          },
+          {
+            "task_id": 102,
+            "title": "Go for a run",
+            "current": 1,
+            "target": 3,
+            "period": "WEEKLY",
+            "stripe_color": null,
+            "has_notes": false,
+            "prompt_key": "q:102:0:2026-01-15",
+            "number": null,
+            "numbers": null,
+            "considered": true,
+            "done": true,
+            "slot_id": 11
+          }
+        ],
+        "prompts_waiting": 1,
+        "prompts_considered": 2
+      },
+      {
+        "slot": {
+          "id": 12,
+          "user_id": 2,
+          "label": "Morning",
+          "start_time": "09:00",
+          "sort_order": 1,
+          "created_at": "2026-01-15T16:00:00.000Z"
+        },
+        "reminders": [],
+        "count": 0,
+        "considered": 0,
+        "considered_items": [],
+        "prompts": [
+          {
+            "task_id": 101,
+            "title": "Drink water",
+            "current": 1,
+            "target": 2,
+            "period": "DAILY",
+            "stripe_color": "purple",
+            "has_notes": true,
+            "prompt_key": "q:101:2:2026-01-15",
+            "number": 2,
+            "numbers": [2],
+            "considered": false,
+            "done": false,
+            "slot_id": 12
+          }
+        ],
+        "prompts_waiting": 1,
+        "prompts_considered": 0
+      },
+      {
+        "slot": {
+          "id": 13,
+          "user_id": 2,
+          "label": "Midday",
+          "start_time": "12:00",
+          "sort_order": 2,
+          "created_at": "2026-01-15T16:00:00.000Z"
+        },
+        "reminders": [],
+        "count": 0,
+        "considered": 0,
+        "considered_items": [],
+        "prompts": [],
+        "prompts_waiting": 0,
+        "prompts_considered": 0
+      },
+      {
+        "slot": {
+          "id": 14,
+          "user_id": 2,
+          "label": "Afternoon",
+          "start_time": "16:00",
+          "sort_order": 3,
+          "created_at": "2026-01-15T16:00:00.000Z"
+        },
+        "reminders": [
+          {
+            "id": 105,
+            "user_id": 2,
+            "project_id": 1,
+            "title": "Plan tomorrow",
+            "original_title": "Plan tomorrow",
+            "short_title": null,
+            "done": false,
+            "done_at": null,
+            "priority": 0,
+            "due_at": "2026-01-15T16:00:00.000Z",
+            "rrule": "FREQ=DAILY;BYHOUR=19;BYMINUTE=0",
+            "recurrence_mode": "from_due",
+            "anchor_time": "19:00",
+            "anchor_dow": null,
+            "anchor_dom": null,
+            "original_due_at": "2026-01-15T16:00:00.000Z",
+            "last_notified_at": null,
+            "last_critical_alert_at": null,
+            "auto_snooze_minutes": null,
+            "deleted_at": null,
+            "archived_at": null,
+            "labels": [],
+            "progress_target": 1,
+            "progress_current": 0,
+            "progress_period_start": null,
+            "is_reminder": true,
+            "is_tracked": false,
+            "quota_prompt_config": null,
+            "quota_day_state": null,
+            "completion_count": 0,
+            "snooze_count": 0,
+            "skip_count": 0,
+            "first_completed_at": null,
+            "last_completed_at": null,
+            "notes": null,
+            "created_at": "2026-01-15T16:00:00.000Z",
+            "updated_at": "2026-01-15T16:00:00.000Z",
+            "is_recurring": true,
+            "is_snoozed": false
+          }
+        ],
+        "count": 1,
+        "considered": 0,
+        "considered_items": [],
+        "prompts": [],
+        "prompts_waiting": 0,
+        "prompts_considered": 0
+      },
+      {
+        "slot": {
+          "id": 15,
+          "user_id": 2,
+          "label": "Evening",
+          "start_time": "20:30",
+          "sort_order": 4,
+          "created_at": "2026-01-15T16:00:00.000Z"
+        },
+        "reminders": [],
+        "count": 0,
+        "considered": 0,
+        "considered_items": [],
+        "prompts": [],
+        "prompts_waiting": 0,
+        "prompts_considered": 0
+      },
+      {
+        "slot": null,
+        "reminders": [],
+        "count": 0,
+        "considered": 0,
+        "considered_items": [],
+        "prompts": [],
+        "prompts_waiting": 0,
+        "prompts_considered": 0
+      }
+    ],
+    "not_today": [],
+    "total": 1,
+    "considered_total": 1,
+    "prompts_total": 2,
+    "prompts_considered_total": 2,
+    "has_any": true
+  }
+}

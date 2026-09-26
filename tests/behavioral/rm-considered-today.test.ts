@@ -26,7 +26,7 @@ function makeReminder(overrides: Record<string, unknown> = {}) {
     userId: TEST_USER_ID,
     userTimezone: TEST_TIMEZONE,
     input: {
-      title: 'Yesterday = Lesson, Tomorrow = Plan',
+      title: 'Morning = Focus, Afternoon = Meetings',
       is_reminder: true,
       rrule: 'FREQ=DAILY',
       due_at: localTime(7, 0),

@@ -15,6 +15,7 @@ import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { QUOTA_DUE_DATE_MESSAGE, QUOTA_PERIOD_MESSAGE } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
+import { normalizeDayState } from '@/lib/quota-prompts'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { getCurrentlyDueTaskIds } from './currently-due'
 import { isAIEnabled } from '@/core/ai'
@@ -486,7 +487,7 @@ function rowToTask(row: TaskRow): Task {
     is_reminder: (row.is_reminder ?? 0) === 1,
     is_tracked: (row.is_tracked ?? 0) === 1,
     quota_prompt_config: parseJsonColumn<QuotaPromptConfig>(row.quota_prompt_config),
-    quota_day_state: parseJsonColumn<QuotaDayState>(row.quota_day_state),
+    quota_day_state: normalizeDayState(parseJsonColumn<QuotaDayState>(row.quota_day_state)),
     completion_count: row.completion_count,
     snooze_count: row.snooze_count,
     skip_count: row.skip_count ?? 0,

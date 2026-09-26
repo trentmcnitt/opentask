@@ -1227,6 +1227,53 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/quota-prompts/restore:
+    post:
+      summary: Put back handled quota prompts
+      operationId: restoreQuotaPrompts
+      tags: [Reminders]
+      description: |
+        The filled dashed circle on a handled prompt in a "considered" / DONE
+        list (2026-09-25): the prompt waits for today again. Its key leaves
+        today's `considered` and `did`; if it was "did it", exactly the
+        progress that did-it added is taken back (`quota_day_state.did_applied`
+        — a daily prompt `k` done when the count was already at `k` added 0,
+        so it takes back 0). Any other did-it the lower count no longer
+        supports waits again too. A key that is already waiting changes
+        nothing. One transaction and one undo entry (always logged, so a
+        toast's Undo never reaches an older action). Keys for another local
+        day, or for a quota that is not the caller's own, refuse the whole
+        request (400). Quotas are never put back with `/api/tasks/{id}/undone`.
+        Dispatches `task.progressed` for each quota whose count moved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptKeys'
+      responses:
+        '200':
+          description: How many prompts now wait again, and the quotas touched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      restored:
+                        type: integer
+                        description: Keys that were handled and now wait again
+                      tasks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # --- Quotas (§5) ---
 
   /api/quotas:
@@ -1380,8 +1427,10 @@ paths:
                               type: array
                               description: |
                                 Quota prompts assigned to this slot today,
-                                alphabetical. Never listed in considered_items
-                                (a quota refuses /undone); undo is the way back.
+                                alphabetical, handled ones included. Never
+                                listed in considered_items (a quota refuses
+                                /undone): put a handled one back with
+                                `POST /api/quota-prompts/restore`.
                               items:
                                 $ref: '#/components/schemas/QuotaPrompt'
                             prompts_waiting:
@@ -2349,6 +2398,15 @@ components:
               type: array
               items:
                 type: string
+            did_applied:
+              type: object
+              additionalProperties:
+                type: integer
+              description: >
+                What each key in `did` added to the count — what putting that
+                prompt back takes away. A key with no entry (a did-it from
+                before 2026-09-25) reads as 1 for a once-a-day prompt and 0
+                for a daily numbered one.
         completion_count:
           type: integer
         snooze_count:

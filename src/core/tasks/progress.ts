@@ -103,13 +103,15 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     const applied = next - current
 
     // Quota reminders: progress logged today from ANYWHERE clears a weekly or
-    // monthly quota's prompt for the day. It is recorded here, in the same
-    // write, so undoing the +1 brings the prompt back. The owner's day, since
+    // monthly quota's prompt for the day, and a −1 that takes back a "did it"
+    // brings that prompt back as waiting (`withLogged`). It is recorded here,
+    // in the same write, so undoing the +1 brings the prompt back. The owner's day, since
     // prompts are the owner's (a shared quota is never prompted to others).
     const dayState = withLogged(
       task.quota_day_state,
       localDate(ownerTimezone(task.user_id)),
       applied,
+      next,
     )
 
     tx.prepare(

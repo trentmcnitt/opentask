@@ -1,0 +1,55 @@
+{
+  "data": {
+    "considered": 0,
+    "did": 1,
+    "tasks": [
+      {
+        "id": 101,
+        "user_id": 2,
+        "project_id": 1,
+        "title": "Drink water",
+        "original_title": "Drink water",
+        "short_title": null,
+        "done": false,
+        "done_at": null,
+        "priority": 0,
+        "due_at": null,
+        "rrule": "FREQ=DAILY",
+        "recurrence_mode": "from_due",
+        "anchor_time": null,
+        "anchor_dow": null,
+        "anchor_dom": null,
+        "original_due_at": null,
+        "last_notified_at": null,
+        "last_critical_alert_at": null,
+        "auto_snooze_minutes": null,
+        "deleted_at": null,
+        "archived_at": null,
+        "labels": ["personal"],
+        "progress_target": 2,
+        "progress_current": 1,
+        "progress_period_start": "2026-01-15T16:00:00.000Z",
+        "is_reminder": false,
+        "is_tracked": true,
+        "quota_prompt_config": null,
+        "quota_day_state": {
+          "date": "2026-01-15",
+          "logged": 1,
+          "did": ["q:101:1:2026-01-15"],
+          "considered": ["q:101:1:2026-01-15"],
+          "did_applied": { "q:101:1:2026-01-15": 1 }
+        },
+        "completion_count": 0,
+        "snooze_count": 0,
+        "skip_count": 0,
+        "first_completed_at": null,
+        "last_completed_at": null,
+        "notes": "A glass with breakfast, one with dinner.",
+        "created_at": "2026-01-15T16:00:00.000Z",
+        "updated_at": "2026-01-15T16:00:00.000Z",
+        "is_recurring": true,
+        "is_snoozed": false
+      }
+    ]
+  }
+}

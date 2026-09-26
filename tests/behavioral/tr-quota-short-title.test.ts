@@ -1,8 +1,8 @@
 /**
  * Optional short name for the quota widget chip (§5, Trent 2026-09-23).
  *
- * Quota titles are often long sentences ("Balloon breathing practice (teach
- * Mia slow exhale, relaxed shoulders, seated)"); the widget
+ * Quota titles are often long sentences ("Posture practice (tall spine,
+ * soft jaw, shoulders down and back, seated)"); the widget
  * shows every quota as a small tappable chip and needs something that fits.
  * `short_title` is validated the same way `notes` is (trim, cap, '' -> null),
  * and is an ordinary field for undo purposes — no special-casing anywhere in
@@ -29,7 +29,7 @@ describe('Quota short name (short_title)', () => {
 
   describe('validation', () => {
     test('trims surrounding whitespace', () => {
-      expect(validateTaskUpdate({ short_title: '  Balloon  ' }).short_title).toBe('Balloon')
+      expect(validateTaskUpdate({ short_title: '  Posture  ' }).short_title).toBe('Posture')
       expect(validateTaskCreate({ title: 'Eat beef', short_title: '  Beef  ' }).short_title).toBe(
         'Beef',
       )
@@ -79,17 +79,17 @@ describe('Quota short name (short_title)', () => {
         userId: TEST_USER_ID,
         userTimezone: TEST_TIMEZONE,
         taskId: quota.id,
-        input: { short_title: 'Balloon' },
+        input: { short_title: 'Posture' },
       })
       expect(result.fieldsChanged).toEqual(['short_title'])
       expect(result.description).toBe('Changed short name — "Blow up balloons"')
-      expect(getTaskById(quota.id)!.short_title).toBe('Balloon')
+      expect(getTaskById(quota.id)!.short_title).toBe('Posture')
 
       expect(() => executeUndo(TEST_USER_ID)).not.toThrow()
       expect(getTaskById(quota.id)!.short_title).toBeNull()
 
       expect(() => executeRedo(TEST_USER_ID)).not.toThrow()
-      expect(getTaskById(quota.id)!.short_title).toBe('Balloon')
+      expect(getTaskById(quota.id)!.short_title).toBe('Posture')
     })
 
     test('clearing a short_title back to null, and undoing that, restores the prior name', () => {

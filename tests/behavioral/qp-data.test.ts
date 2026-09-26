@@ -48,6 +48,7 @@ describe('Quota prompt columns', () => {
       logged: 1,
       did: [],
       considered: [],
+      did_applied: {},
     })
     executeUndo(TEST_USER_ID)
     const undone = getTaskById(q.id)!

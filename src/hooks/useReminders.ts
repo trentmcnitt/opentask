@@ -32,8 +32,9 @@ export interface ReminderGroup {
    * Quota prompts assigned to this slot today (2026-09-24) — every one, the
    * handled ones included with their flags, so the slot's size stays fixed
    * for the day. A row renders only while `promptWaiting`; handled ones count
-   * as considered (`groupConsidered`) but never join `consideredItems`, whose
-   * put-back is /undone, which a quota refuses. Undo is the way back.
+   * as considered (`groupConsidered`) and are listed after `consideredItems`
+   * in the considered list, but never join it: its put-back is /undone, which
+   * a quota refuses. A prompt's put-back is `putBackPrompt` (2026-09-25).
    */
   prompts: QuotaPrompt[]
 }
@@ -43,7 +44,7 @@ type PromptIntent = 'consider' | 'did'
 
 /**
  * A prompt after `intent`, and every sibling prompt of the same quota with the
- * count that implies — a did-it on "Daily Walks" in the morning moves the
+ * count that implies — a did-it on "Piano Scales" in the morning moves the
  * afternoon's row to 1/2 too. The server's own answer replaces this on the
  * next refresh; this is only what the screen shows until then.
  *
@@ -83,6 +84,26 @@ function applyPromptIntents(
       }),
     }
   })
+}
+
+/**
+ * Prompts being put back, shown waiting while the request is out — and kept
+ * so by a refresh that lands before the server has committed it. Only the
+ * row's state changes: the count is left for the server's answer, since what
+ * a did-it added (and so what comes off) is recorded only there.
+ */
+function applyPromptRestores(groups: ReminderGroup[], keys: Set<string>): ReminderGroup[] {
+  if (keys.size === 0) return groups
+  return groups.map((g) =>
+    g.prompts.some((p) => keys.has(p.prompt_key))
+      ? {
+          ...g,
+          prompts: g.prompts.map((p) =>
+            keys.has(p.prompt_key) ? { ...p, considered: false, done: false } : p,
+          ),
+        }
+      : g,
+  )
 }
 
 interface UseRemindersOptions {
@@ -164,6 +185,12 @@ export interface UseRemindersReturn {
   movePrompt: (prompt: QuotaPrompt, toSlotId: number, save: () => Promise<void>) => Promise<void>
   /** Reverse a consideration: the thought returns to waiting. */
   putBack: (task: Task) => Promise<void>
+  /**
+   * Put a handled quota prompt back (2026-09-25): it waits again, and a
+   * did-it's progress comes off. POST /api/quota-prompts/restore — never
+   * /undone, which a quota refuses.
+   */
+  putBackPrompt: (prompt: QuotaPrompt) => Promise<void>
   /** Move reminders to Trash (soft delete), with Undo. */
   remove: (tasks: Task[]) => Promise<void>
   refresh: () => Promise<void>
@@ -236,11 +263,15 @@ function reconcileInFlight(
   restoring: Set<number>,
   pendingPrompts: Map<string, PromptIntent>,
   pendingMoves: Map<string, number>,
+  restoringPrompts: Set<string>,
 ): ReminderGroup[] {
   // Prompts in flight: the same promise as for reminders — a refresh landing
   // mid-request must not bring a handled prompt back, nor a moved one back to
-  // the period it just left.
-  const withPrompts = applyPromptIntents(applyPromptMoves(incoming, pendingMoves), pendingPrompts)
+  // the period it just left, nor re-handle one being put back.
+  const withPrompts = applyPromptRestores(
+    applyPromptIntents(applyPromptMoves(incoming, pendingMoves), pendingPrompts),
+    restoringPrompts,
+  )
   if (pending.size === 0 && restoring.size === 0) return withPrompts
   return withPrompts.map((g) => {
     const leaving = g.reminders.filter((r) => pending.has(r.id))
@@ -334,6 +365,8 @@ export function useReminders({
   const pendingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
   // Prompt moves whose PATCH is still out (prompt_key → target slot id).
   const pendingMovesRef = useRef<Map<string, number>>(new Map())
+  // Prompt keys whose put-back is still out (`putBackPrompt`).
+  const restoringPromptsRef = useRef<Set<string>>(new Set())
   /**
    * IDs whose row is still on screen, collapsing. They are still in `groups`,
    * so a server payload — which no longer lists them — cannot be applied
@@ -355,6 +388,7 @@ export function useReminders({
       restoringIdsRef.current,
       pendingPromptsRef.current,
       pendingMovesRef.current,
+      restoringPromptsRef.current,
     )
 
   const refresh = useCallback(async () => {
@@ -694,6 +728,13 @@ export function useReminders({
   )
 
   const putBack = usePutBack({ setGroups, refresh, restoringIdsRef, callbacksRef })
+  const putBackPrompt = usePutBackPrompt({
+    setGroups,
+    groupsRef,
+    refresh,
+    restoringPromptsRef,
+    callbacksRef,
+  })
   const remove = useRemove({ setGroups, refresh, pendingIdsRef, callbacksRef })
 
   const complete = useCallback(
@@ -771,6 +812,7 @@ export function useReminders({
     registerRow,
     hydrated,
     putBack,
+    putBackPrompt,
     remove,
     refresh,
     notToday,
@@ -973,6 +1015,77 @@ function usePutBack({
       }
     },
     [refresh, setGroups, restoringIdsRef, callbacksRef],
+  )
+}
+
+/**
+ * Put a handled quota prompt back (POST /api/quota-prompts/restore,
+ * 2026-09-25) — `usePutBack`'s shape: the row returns to waiting at once, the
+ * toast's Undo waits for the request, a failure restores the snapshot. The
+ * count is the server's to change (a did-it's progress comes off, exactly
+ * what it added), so the refresh after the request brings the new count.
+ */
+function usePutBackPrompt({
+  setGroups,
+  groupsRef,
+  refresh,
+  restoringPromptsRef,
+  callbacksRef,
+}: {
+  setGroups: React.Dispatch<React.SetStateAction<ReminderGroup[]>>
+  groupsRef: React.MutableRefObject<ReminderGroup[]>
+  refresh: () => Promise<void>
+  restoringPromptsRef: React.MutableRefObject<Set<string>>
+  callbacksRef: React.MutableRefObject<UseRemindersOptions>
+}) {
+  return useCallback(
+    async (prompt: QuotaPrompt) => {
+      const key = prompt.prompt_key
+      if (restoringPromptsRef.current.has(key)) return
+      restoringPromptsRef.current.add(key)
+      // Computed here, not in a `setGroups` updater — see `movePrompt`.
+      const snapshot = groupsRef.current
+      const next = applyPromptRestores(snapshot, new Set([key]))
+      groupsRef.current = next
+      setGroups(next)
+      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+
+      const request = (async () => {
+        const res = await fetch('/api/quota-prompts/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: [key] }),
+        })
+        if (!res.ok) throw new Error('Failed to put back')
+        callbacksRef.current.onCompleted?.()
+      })()
+
+      showToast({
+        message: `Put back \u201c${prompt.title}\u201d`,
+        type: 'success',
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
+          },
+        },
+      })
+
+      try {
+        await request
+      } catch {
+        // Likeliest cause: a page left open over midnight, whose keys are
+        // yesterday's and are refused. Back to what the screen showed.
+        groupsRef.current = snapshot
+        setGroups(snapshot)
+        if (remindersCache) setRemindersCache({ ...remindersCache, groups: snapshot })
+        showToast({ message: 'Could not put it back', type: 'error' })
+      } finally {
+        restoringPromptsRef.current.delete(key)
+        void refresh()
+      }
+    },
+    [refresh, setGroups, groupsRef, restoringPromptsRef, callbacksRef],
   )
 }
 

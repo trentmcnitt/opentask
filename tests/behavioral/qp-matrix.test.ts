@@ -131,7 +131,7 @@ describe('Daily N>1 — actions on one number', () => {
     expect(deltas(q.id)).toEqual([])
   })
 
-  test('QPM-002: a −1 after did-it #2 makes #2 not done; its did-key is kept, so did-it #2 again tops up by one', () => {
+  test('QPM-002: a −1 after did-it #2 brings #2 back WAITING; did-it #2 again tops up by one', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 2)
     const two = promptKey(q.id, 2, TODAY)
@@ -147,13 +147,11 @@ describe('Daily N>1 — actions on one number', () => {
       [1, 1, true],
       [2, 1, false],
     ])
-    // PINNED AS-IS, OPEN FOR TRENT: #2 is no longer done (a daily row's
-    // done-ness is its count, which the −1 took back), but the did-it's
-    // implied `considered` stays, so the row reads handled, not waiting —
-    // Undo, not a −1, is the documented way back. Whether a −1 should also
-    // un-consider it is a product call (weekly behaves the same, QP-038).
-    expect(after[1].considered).toBe(true)
-    expect(getTaskById(q.id)!.quota_day_state!.did).toEqual([two])
+    // Waiting, not just not-done: the count no longer reaches 2, so the
+    // did-it it held goes, and its implied `considered` with it (Trent,
+    // 2026-09-25, PR #103; weekly behaves the same, QP-038).
+    expect(after[1].considered).toBe(false)
+    expect(getTaskById(q.id)!.quota_day_state!.did).toEqual([])
 
     act(two, true)
     expect(getTaskById(q.id)!.progress_current).toBe(2)

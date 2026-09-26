@@ -454,8 +454,8 @@ private struct QuotaChipRow: View {
 ///   tap is an unconditional `log(1)` and `trackState` never clamps
 ///   (`met: current >= target`), so "2/1" is a count the web will happily
 ///   make, and §5 keeps overflow observable (`TrackItem.doneFraction`).
-///   PR #65 had turned a met chip into a `−1` after Trent over-tapped "All
-///   Kids Kazoo" to 2/1 — but that over-tap happened because met chips
+///   PR #65 had turned a met chip into a `−1` after Trent over-tapped a
+///   once-a-week quota to 2/1 — but that over-tap happened because met chips
 ///   stayed visible with the "met" dot OFF, which #65 also fixed (they now
 ///   vanish on the tap that meets them). A met chip only shows now when he
 ///   asked to see met quotas, and the correction path is Takeback mode.
@@ -472,10 +472,10 @@ private struct QuotaChipRow: View {
 /// - **Fits a line** (`wrapWidth == nil`): one line, `.fixedSize()` at the
 ///   width `QuotaMetrics.chipWidth(for:)` measured.
 /// - **Too long for any line** (`wrapWidth` = the card's width, 2026-09-24):
-///   Trent's real quotas have no short names yet ("Balloon breathing practice
-///   (slow exhale, relaxed shoulath…", "Run the card maintenance skill
-///   (/maintenance:cards) in a fresh chat"), and a one-line chip ran straight
-///   past the card's edge. Now the chip is exactly the card's width, the
+///   realistic quotas have no short names yet ("Posture practice (tall
+///   spine, soft jaw, shoulders down…", "Run the weekly backup check on the
+///   external drive"), and a one-line chip ran straight past the card's
+///   edge. Now the chip is exactly the card's width, the
 ///   title wraps to at most TWO lines inside it with the count still
 ///   trailing, and only a title still too long after two lines is cut —
 ///   at the end of line 2. `QuotaFlow` gives the row the two-line height.

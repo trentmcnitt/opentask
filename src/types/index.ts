@@ -52,6 +52,12 @@ export interface QuotaDayState {
   did: string[]
   /** prompt_keys considered today (the circle, or "did it", which implies it). */
   considered: string[]
+  /**
+   * What each key in `did` added to the count (2026-09-25) — so putting the
+   * prompt back takes away exactly that. A daily #k did-it adds only what was
+   * missing up to k, possibly 0, which nothing else records.
+   */
+  did_applied: Record<string, number>
 }
 
 export interface Task {
@@ -63,7 +69,7 @@ export interface Task {
   /**
    * Short label for the quota widget chip (§5). Only meaningful on a tracked
    * task — the widget shows every quota as a small tappable chip, and a full
-   * quota title ("Balloon breathing practice (teach Mia...)") doesn't fit.
+   * quota title ("Posture practice (tall spine, soft jaw...)") doesn't fit.
    * Not rejected on an ordinary task, just unused there. Null unless set.
    */
   short_title: string | null

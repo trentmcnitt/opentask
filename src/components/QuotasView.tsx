@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSyncStream } from '@/hooks/useSyncStream'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuotasData } from '@/hooks/useQuotasData'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useRouter } from 'next/navigation'
 import { Gauge, Minus, Plus, Trash2, Pencil } from 'lucide-react'
@@ -12,10 +12,8 @@ import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { quotaGroupSummary, groupByLabel, periodLabel, periodShort } from '@/lib/track'
-import { trackedItems } from '@/lib/slot-view'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { log } from '@/lib/logger'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { cn, fromRowControl } from '@/lib/utils'
@@ -47,6 +45,7 @@ export function QuotasView({
   onUndo,
   onCompleted,
   refreshRef,
+  viewSwitch,
 }: {
   /** Undo the last action — wired to the toasts, as on every other surface. */
   onUndo: () => void
@@ -54,57 +53,18 @@ export function QuotasView({
   onCompleted: () => void
   /** Populated with this view's refresh, so the page's undo/redo can call it. */
   refreshRef?: React.MutableRefObject<(() => void) | null>
+  /** The page's Summary/Details switch, set into the header row. */
+  viewSwitch?: React.ReactNode
 }) {
   const router = useRouter()
   const { requestNavigation } = useNavigationGuard()
-  const [tasks, setTasks] = useState<Task[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { tasks, error, refresh } = useQuotasData(refreshRef)
   const selection = useSelectionMode()
   const { selectedIds, toggle, rangeSelect, selectOnly, clear } = selection
 
   /** A snapshot handed to the modal, so a refresh cannot move it underneath. */
   const [editing, setEditing] = useState<Task[] | null>(null)
   const [creating, setCreating] = useState<QuotaCreateDraft | null>(null)
-
-  const refresh = useCallback(async () => {
-    try {
-      // This surface's OWN endpoint, the way Reminders has one. It used to ask
-      // for `/api/tasks?done=false&limit=1000` and filter in the browser: 512
-      // tasks over the wire to render eight, on every sync event — and a +1
-      // emits a sync event, so the phone paid it for every tap.
-      const res = await fetch('/api/quotas')
-      if (!res.ok) throw new Error(`GET /api/quotas ${res.status}`)
-      const body = await res.json()
-      // Still trackedItems, not the server's order: the dashboard sorts quotas
-      // by title so the order cannot jump as counts change (commit 9bcf03d,
-      // "frozen order"), and the two views of the same eight things must agree.
-      setTasks(trackedItems(body.data.quotas as Task[]))
-      setError(null)
-    } catch (err) {
-      log.error('ui', 'Loading quotas failed:', err)
-      // A failed BACKGROUND refresh over data we already have is not an error
-      // state — the same rule useReminders keeps. This runs on every sync
-      // event, so a transient 500 used to replace the list AND an open editor,
-      // losing staged edits, with nothing to retry. Only a failure with
-      // nothing on screen is worth showing.
-      setTasks((current) => {
-        if (current === null) setError('Could not load quotas.')
-        return current
-      })
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  useEffect(() => {
-    if (!refreshRef) return
-    refreshRef.current = () => void refresh()
-    return () => {
-      refreshRef.current = null
-    }
-  }, [refreshRef, refresh])
 
   // `?quota=<id>` — the Track widget's deep link (`WidgetLink.quota` →
   // `opentask://quota/<id>` → `/quotas?quota=<id>`, resolved in
@@ -123,28 +83,20 @@ export function QuotasView({
   // comment: it keeps this component out of a Suspense boundary it would
   // otherwise need, and the param is stripped with a raw history rewrite
   // below regardless of how it was read.
-  const [highlightId, setHighlightId] = useState<number | null>(null)
+  //
+  // Read in `useState`'s initializer, on the first render, rather than in an
+  // effect once the list has loaded (2026-09-25): the page now reads the same
+  // param to open this view rather than the summary, and a `setState` in an
+  // effect is a second render for nothing. An id that is not a quota simply
+  // matches no row. The strip still waits for the list, so the param outlives
+  // a remount before the data arrives.
+  const [highlightId, setHighlightId] = useState<number | null>(readQuotaParam)
   const clearHighlight = useCallback(() => setHighlightId(null), [])
-  const deepLinkDone = useRef(false)
+  const loaded = tasks !== null
   useEffect(() => {
-    if (deepLinkDone.current || tasks === null) return
-    const raw = new URLSearchParams(window.location.search).get('quota')
-    if (!raw) {
-      deepLinkDone.current = true
-      return
-    }
-    deepLinkDone.current = true
-    const id = Number.parseInt(raw, 10)
-    if (!Number.isNaN(id) && tasks.some((t) => t.id === id)) {
-      setHighlightId(id)
-    }
+    if (!loaded || !new URLSearchParams(window.location.search).has('quota')) return
     window.history.replaceState(window.history.state, '', window.location.pathname)
-  }, [tasks])
-
-  // A quota is logged from the widget, the watch, a notification action and
-  // other tabs. Every one of those emits a sync event, and this surface has to
-  // hear them the way Reminders and the dashboard do.
-  useSyncStream({ onSync: () => void refresh() })
+  }, [loaded])
 
   // The sidebar's button and the phone's plus reach this surface through an
   // event, the way Reminders does, so "add" on /quotas makes a quota.
@@ -186,21 +138,11 @@ export function QuotasView({
 
   return (
     <section aria-label="Quotas" data-quotas-view className="space-y-3 pb-24">
-      <div className="flex items-center justify-between gap-2 px-1">
-        {/* The page's h1, exactly as the Reminders headline is: this one line
-            is the surface's summary, so it is the heading rather than a
-            paragraph sitting where a heading should be. Same size and colour
-            as before — the change is semantic, not visual. */}
-        <h1 className="text-muted-foreground text-sm">
-          {tasks.length === 0
-            ? 'No quotas yet.'
-            : `${tasks.length} quota${tasks.length === 1 ? '' : 's'}`}
-        </h1>
-        <Button size="sm" onClick={() => setCreating({ title: '' })}>
-          <Plus className="size-4" />
-          New quota
-        </Button>
-      </div>
+      <QuotasHeaderRow
+        count={tasks.length}
+        onNew={() => setCreating({ title: '' })}
+        viewSwitch={viewSwitch}
+      />
 
       {tasks.length === 0 ? (
         <EmptyState />
@@ -255,7 +197,55 @@ export function QuotasView({
   )
 }
 
-function EmptyState() {
+/** `?quota=<id>` as a number, or null — see `QuotasView`'s deep-link comment. */
+function readQuotaParam(): number | null {
+  if (typeof window === 'undefined') return null
+  const id = Number.parseInt(new URLSearchParams(window.location.search).get('quota') ?? '', 10)
+  return Number.isNaN(id) ? null : id
+}
+
+/**
+ * The page's header row, shared by both of its views (`QuotasView`, the
+ * detailed list, and `QuotasSummary`, the dashboard's panel) so switching
+ * between them never moves the count, the switch or "New quota".
+ *
+ * The switch is only offered when there is something to switch between views
+ * OF — with no quotas both views are the same empty state, and a control that
+ * changes nothing on screen is chrome for something that isn't there.
+ */
+export function QuotasHeaderRow({
+  count,
+  onNew,
+  viewSwitch,
+}: {
+  count: number
+  onNew: () => void
+  viewSwitch?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-1">
+      {/* The page's h1, exactly as the Reminders headline is: this one line
+          is the surface's summary, so it is the heading rather than a
+          paragraph sitting where a heading should be. */}
+      <h1 className="text-muted-foreground text-sm whitespace-nowrap">
+        {count === 0 ? 'No quotas yet.' : `${count} quota${count === 1 ? '' : 's'}`}
+      </h1>
+      <div className="flex shrink-0 items-center gap-2">
+        {count > 0 && viewSwitch}
+        {/* "New" on a phone: the count, the switch and "New quota" do not fit
+            one 375px line, and the count is the one thing that must never be
+            clipped. The accessible name stays "New quota" at every width. */}
+        <Button size="sm" onClick={onNew} aria-label="New quota">
+          <Plus className="size-4" />
+          <span className="sm:hidden">New</span>
+          <span className="hidden sm:inline">New quota</span>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+export function EmptyState() {
   return (
     <div className="flex flex-col items-center gap-3 py-16 text-center">
       <div className="bg-muted text-muted-foreground flex size-11 items-center justify-center rounded-full">

@@ -3,8 +3,8 @@
  *
  * An unmet quota also shows up as a prompt in a reminder period. The
  * behavioral suite (qp-prompts.test.ts) pins which prompts a day has; these
- * tests cover what only a browser shows: the row, its two actions (the circle
- * considers, the square checkbox logs one), the Undo, the quota editor's
+ * tests cover what only a browser shows: the row, its two actions (the dashed
+ * circle considers, the square checkbox logs one), the Undo, the quota editor's
  * "Remind me daily" switch, and the Settings switch.
  *
  * Time-agnostic: prompts render in every slot, started or not (a slot ahead
@@ -13,7 +13,7 @@
  * is put back, so other specs' counts are untouched.
  */
 
-import { test, expect, waitForPreferenceSave } from './fixtures'
+import { test, expect, waitForPreferenceSave, gotoQuotasDetails } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const created: number[] = []
@@ -88,6 +88,12 @@ test.describe('Quota prompts', () => {
     const row = promptRow(page, 'E2E prompt consider')
     await expect(row).toBeVisible()
     await expect(row).toContainText('0/3 this week')
+    // A dashed circle, not the reminder's solid one: on a prompt it means
+    // "seen", not "done".
+    await expect(row.locator('[data-prompt-consider] svg[data-dashed-ring]')).toBeVisible()
+    // Both of the row's controls wear the pointing hand.
+    await expect(row.locator('[data-prompt-consider]')).toHaveCSS('cursor', 'pointer')
+    await expect(row.locator('[data-prompt-did]')).toHaveCSS('cursor', 'pointer')
 
     await row.locator('[data-prompt-consider]').click()
     await expect(row).toHaveCount(0)
@@ -399,7 +405,7 @@ test.describe('Quota prompts — multi-edit on the Quotas page', () => {
 
   /** Select exactly these rows on /quotas and open Details. */
   async function openDetails(page: Page, ids: number[]) {
-    await page.goto('/quotas')
+    await gotoQuotasDetails(page)
     await page.locator(`[data-quota-row="${ids[0]}"]`).click()
     for (const id of ids.slice(1)) {
       await page.locator(`[data-quota-row="${id}"]`).click({ modifiers: ['ControlOrMeta'] })
@@ -713,5 +719,90 @@ test.describe('Quota prompts — selection', () => {
     await expect(one).toHaveCount(0)
     await expect(two).toHaveCount(0)
     expect(await progressOf(page, daily)).toBe(0)
+  })
+})
+
+test.describe('Quota prompts — put back', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('a handled prompt is put back from "Show N considered": the did-it comes off, and it waits again', async ({
+    authenticatedPage: page,
+  }) => {
+    const title = `E2E prompt put back ${Date.now()}`
+    const id = await makeQuota(page, title)
+    await page.goto('/reminders')
+    const row = promptRow(page, title)
+    await expect(row).toBeVisible()
+    const card = page.locator('[data-slot-group]', { has: row })
+    const slot = await card.getAttribute('data-slot-group')
+
+    const did = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/did'))
+    await row.locator('[data-prompt-did]').click()
+    expect((await did).ok()).toBeTruthy()
+    await expect(promptRow(page, title)).toHaveCount(0)
+    expect(await progressOf(page, id)).toBe(1)
+
+    // It is listed with the slot's considered reminders, wearing the filled
+    // dashed circle it collapsed with — and that circle puts it back.
+    const slotCard = page.locator(`[data-slot-group="${slot}"]`)
+    await slotCard.getByRole('button', { name: /^Show \d+ considered$/ }).click()
+    const handled = slotCard.locator('li[data-considered-prompt]', { hasText: title })
+    await expect(handled).toContainText('1/3 this week')
+    const putBack = handled.getByRole('button', { name: `Put back "${title}"` })
+    await expect(putBack.locator('svg[data-dashed-ring]')).toBeVisible()
+
+    const restore = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/restore'))
+    await putBack.click()
+    expect((await restore).ok()).toBeTruthy()
+    // Never /undone: a quota refuses it.
+    await expect(promptRow(page, title)).toBeVisible()
+    await expect(promptRow(page, title)).toContainText('0/3 this week')
+    await expect(handled).toHaveCount(0)
+    expect(await progressOf(page, id)).toBe(0)
+
+    // Undo reverses the put-back — one entry: handled again, with its +1.
+    const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
+    await page.getByRole('banner').getByRole('button', { name: /^Undo/ }).click()
+    await undone
+    await expect(promptRow(page, title)).toHaveCount(0)
+    expect(await progressOf(page, id)).toBe(1)
+  })
+
+  test('the dashboard card puts a considered prompt back from its considered list', async ({
+    authenticatedPage: page,
+  }) => {
+    const title = `E2E prompt card put back ${Date.now()}`
+    const id = await makeQuota(page, title)
+    await page.goto('/')
+    const panel = page.locator('section[data-reminders-panel]')
+    await expect(panel).toBeVisible()
+    const slotId = Number(await panel.getAttribute('data-reminders-slot'))
+    const moved = await page.request.patch(`/api/tasks/${id}`, {
+      data: { quota_prompt_config: { slot_id: slotId } },
+    })
+    expect(moved.ok()).toBeTruthy()
+    const [prompt] = (
+      (await (await page.request.get('/api/reminders')).json()).data.groups as {
+        prompts: { prompt_key: string; task_id: number }[]
+      }[]
+    )
+      .flatMap((g) => g.prompts)
+      .filter((p) => p.task_id === id)
+    const considered = await page.request.post('/api/quota-prompts/consider', {
+      data: { keys: [prompt.prompt_key] },
+    })
+    expect(considered.ok()).toBeTruthy()
+    await page.reload()
+
+    await panel.locator('[data-considered-toggle]').click()
+    const handled = panel.locator('li[data-considered-prompt]', { hasText: title })
+    await expect(handled).toContainText('0/3 this week')
+    const restore = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/restore'))
+    await handled.getByRole('button', { name: `Put back "${title}"` }).click()
+    expect((await restore).ok()).toBeTruthy()
+    const more = panel.getByRole('button', { name: /show more/i })
+    if (await more.isVisible()) await more.click()
+    await expect(panel.locator('li[data-prompt-key]', { hasText: title })).toBeVisible()
+    expect(await progressOf(page, id)).toBe(0)
   })
 })

@@ -45,7 +45,7 @@ function reminderAt(hour: number, minute = 0) {
   return createTask({
     ...base,
     input: {
-      title: 'Yesterday = Lesson, Tomorrow = Plan',
+      title: 'Morning = Focus, Afternoon = Meetings',
       is_reminder: true,
       due_at: DateTime.fromJSDate(at(hour, minute)).toUTC().toISO()!,
     },

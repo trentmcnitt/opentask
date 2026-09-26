@@ -148,7 +148,7 @@ enum DateHelpers {
     /// What a task-relative snooze counts FROM: the task's own due time when
     /// it is still upcoming, else now (overdue, due exactly now, or undated).
     /// Trent, 2026-09-24, at 10:04 AM: "+1 hour" on a task due 5 PM moved it
-    /// to 11 AM, and "Next" on Dark chocolate (due 8:30 PM) moved it to
+    /// to 11 AM, and "Next" on Order birdseed (due 8:30 PM) moved it to
     /// noon — "relative to when the task is due", i.e. `max(now, due)`.
     static func snoozeBase(dueAt: Date?, now: Date = Date()) -> Date {
         guard let dueAt, dueAt > now else { return now }

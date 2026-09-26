@@ -85,7 +85,9 @@ private struct TasksSmallView: View {
                             .monospacedDigit()
                             .minimumScaleFactor(0.6)
                             .lineLimit(1)
-                        Text("overdue")
+                        // On the Overdue page the label above already says
+                        // "Overdue" — don't say it twice.
+                        Text(entry.isOverdueScope ? taskNoun(entry.overdueCount(now: entry.date)) : "overdue")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -102,9 +104,16 @@ private struct TasksSmallView: View {
                         // Day-naming (2026-09-23) — see `WidgetTheme.
                         // dueLabelText`'s doc; "anywhere a task time shows"
                         // includes this 2×2's "next up" line.
-                        WidgetTheme.dueLabelText(for: next, now: entry.date)
+                        // Stacked like every row (2026-09-25: a day word
+                        // always sits above the time).
+                        WidgetTheme.dueLabelText(for: next, now: entry.date, stacked: true)
                             .font(.caption2)
                             .monospacedDigit()
+                            // Both lines always show ("Yesterday" /
+                            // "12:00 pm"); the title above yields its room
+                            // (it already shrinks, then truncates).
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
                     }
                     Spacer(minLength: 0)
                 } else {
@@ -116,9 +125,15 @@ private struct TasksSmallView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .widgetURL(WidgetLink.dashboard)
+            .widgetURL(entry.headerLink)
         }
     }
+}
+
+/// "1 task" / "N tasks" — the Overdue page's count, where the title already
+/// says what kind.
+private func taskNoun(_ count: Int) -> String {
+    count == 1 ? "task" : "tasks"
 }
 
 // MARK: - Home Screen list
@@ -617,14 +632,8 @@ private struct TasksListView: View {
         .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
     }
 
-    /// The header title `Link`'s destination (2026-09-23, item 2) — Trent:
-    /// "the header ... should scroll down to the actual afternoon section,"
-    /// applied here to Tasks: "Up next" (the unified scope) → `/`, a
-    /// project page → `/?project=<id>`.
-    private var headerDestination: URL {
-        guard !entry.isUnifiedScope else { return WidgetLink.dashboard }
-        return WidgetLink.project(entry.scope)
-    }
+    /// The header title `Link`'s destination — see `TasksEntry.headerLink`.
+    private var headerDestination: URL { entry.headerLink }
 
     /// The header subtitle — snooze/select mode override it entirely
     /// (mockup: "Snooze mode" / "N selected"), taking priority even over
@@ -646,11 +655,16 @@ private struct TasksListView: View {
     /// each part dropped when it's 0, and "N due · N overdue" collapses to
     /// "N overdue" when everything due is overdue ("300 due · 300 overdue"
     /// is pure noise).
+    ///
+    /// On the Overdue page (2026-09-25) it's "N tasks": the title already
+    /// says "Overdue", and "Overdue / 12 overdue" says it twice.
     private var countLabel: String {
         let overdue = entry.overdueCount(now: entry.date)
         var parts: [String] = []
         if !entry.tasks.isEmpty {
-            if overdue == entry.tasks.count {
+            if entry.isOverdueScope {
+                parts.append("\(entry.tasks.count) \(taskNoun(entry.tasks.count))")
+            } else if overdue == entry.tasks.count {
                 parts.append("\(overdue) overdue")
             } else {
                 parts.append("\(entry.tasks.count) due")
@@ -716,7 +730,7 @@ private struct TaskRow: View {
     /// where that made the row shorter, so neighbouring rows mixed "Tomorrow
     /// 9:00 am" on one line with "Tomorrow" over "12:00 pm" — Trent asked for
     /// one rule. On one line "Tomorrow 4:00 pm" also took half the row at
-    /// his text size and pushed titles like "Weekly allowance ($8)" to three
+    /// his text size and pushed titles like "Weekly plant food ($6)" to three
     /// narrow lines.
     let dueStacked: Bool
     /// See `TasksListView.markerBleed`. Zero outside normal mode: snooze
@@ -788,9 +802,9 @@ private struct TaskRow: View {
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
-                // AM" (further), "Oct 2" (date-only). Overdue is
-                // unchanged — plain time, red — see
-                // `WidgetTheme.dueLabelText`'s doc.
+                // AM" (further), "Oct 2" (date-only). Overdue (2026-09-25):
+                // red, with "Yesterday"/"Wed"/"Sep 12" over the time unless
+                // it was due earlier today — see `DueLabel.parts`.
                 //
                 // `fixedSize` (2026-09-24): exactly the lines it was built
                 // with (one, or two when `dueStacked` — an explicit break,
@@ -991,7 +1005,7 @@ private struct TasksRectangularView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .widgetURL(WidgetLink.dashboard)
+        .widgetURL(entry.headerLink)
     }
 }
 
@@ -1010,7 +1024,7 @@ private struct TasksCircularView: View {
                     .minimumScaleFactor(0.7)
             }
         }
-        .widgetURL(WidgetLink.dashboard)
+        .widgetURL(entry.headerLink)
     }
 }
 

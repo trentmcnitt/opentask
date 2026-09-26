@@ -21,7 +21,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
-import { usePromptRows } from '@/components/QuotaPromptRow'
+import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { MIN_SEGMENT_PX } from '@/components/ReminderSlotBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { QuickAdd } from '@/components/QuickAdd'
@@ -141,6 +141,8 @@ interface ReminderRowHandlers {
    * search view — and is not spread onto `ReminderRow`.
    */
   renderPrompt: (prompt: QuotaPrompt) => React.ReactNode
+  /** Put a handled quota prompt back (2026-09-25) — threaded the same way. */
+  onPutBackPrompt: (prompt: QuotaPrompt) => void
 }
 
 /** Stable identity for a group across refetches — slot id, or the un-slotted bucket. */
@@ -176,6 +178,7 @@ export function RemindersView({
     registerRow,
     hydrated,
     putBack,
+    putBackPrompt,
     remove,
     refresh,
     notToday,
@@ -209,11 +212,9 @@ export function RemindersView({
         ...group,
         reminders: group.reminders.filter(matchesQuery),
         consideredItems: group.consideredItems.filter(matchesQuery),
-        // A prompt matches on its title; only waiting ones are results (a
-        // handled one has no row to show).
-        prompts: group.prompts.filter(
-          (p) => promptWaiting(p) && p.title.toLowerCase().includes(query),
-        ),
+        // A prompt matches on its title — a waiting one as a row, a handled
+        // one in the considered list with its put-back, as a reminder does.
+        prompts: group.prompts.filter((p) => p.title.toLowerCase().includes(query)),
       }))
       .filter(
         (group) =>
@@ -660,6 +661,7 @@ export function RemindersView({
       onHighlightDone: clearHighlight,
       onRegister: registerRow,
       renderPrompt: prompts.renderPrompt,
+      onPutBackPrompt: putBackPrompt,
     }),
     [
       actions.selectRow,
@@ -671,6 +673,7 @@ export function RemindersView({
       clearHighlight,
       registerRow,
       prompts.renderPrompt,
+      putBackPrompt,
     ],
   )
 
@@ -733,9 +736,7 @@ export function RemindersView({
                     onScrollServed={slotScrollServed}
                     group={group}
                     started={summary.started.includes(group)}
-                    open={
-                      isOpen(key) && (groupWaiting(group) > 0 || group.consideredItems.length > 0)
-                    }
+                    open={isOpen(key) && (groupWaiting(group) > 0 || hasConsideredRows(group))}
                     expanded={expandedKeys.has(key)}
                     onToggle={() => toggleOpen(key)}
                     onExpand={(expanded) => setExpanded(key, expanded)}
@@ -935,7 +936,7 @@ function useReminderActions({
     (prompt: QuotaPrompt) => rangeSelect(prompt.prompt_key, orderedIds),
     [rangeSelect, orderedIds],
   )
-  // A prompt's own circle and "did it" square act on that one row, and it
+  // A prompt's own dashed circle and "did it" square act on that one row, and it
   // leaves the selection as it goes — `completeOne`'s rule for a reminder.
   const considerOnePrompt = useCallback(
     (prompt: QuotaPrompt) => {
@@ -1344,11 +1345,11 @@ function ReminderSlotGroup({
   const slotTotal = count + considered
   // A slot with nothing waiting can still open: its considered items live
   // behind the counter, and one of them may need putting back.
-  const canOpen = !locked && (count > 0 || group.consideredItems.length > 0)
+  const canOpen = !locked && (count > 0 || hasConsideredRows(group))
   const showsEverything = slotShowsEverything(started, expanded)
   const visible = showsEverything ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = group.reminders.length - visible.length
-  const { renderPrompt, ...reminderHandlers } = rowHandlers
+  const { renderPrompt, onPutBackPrompt, ...reminderHandlers } = rowHandlers
   const sectionRef = useSlotScroll(scrollRequest, onScrollServed)
 
   const headerRow = (
@@ -1445,14 +1446,13 @@ function ReminderSlotGroup({
               onExpand={onExpand}
             />
           )}
-          {group.consideredItems.length > 0 && (
-            <ConsideredDisclosure
-              items={group.consideredItems}
-              label={label}
-              onPutBack={onPutBack}
-              onOpenDetail={onOpenDetail}
-            />
-          )}
+          <ConsideredDisclosure
+            group={group}
+            label={label}
+            onPutBack={onPutBack}
+            onPutBackPrompt={onPutBackPrompt}
+            onOpenDetail={onOpenDetail}
+          />
         </>
       )}
     </div>
@@ -1622,17 +1622,23 @@ function SlotHairline({
  * there is still nothing here worth selecting in bulk.
  */
 function ConsideredDisclosure({
-  items,
+  group,
   label,
   onPutBack,
+  onPutBackPrompt,
   onOpenDetail,
 }: {
-  items: Task[]
+  /** Its considered reminders, then its handled quota prompts (2026-09-25). */
+  group: ReminderGroup
   label: string
   onPutBack: (task: Task) => void
+  onPutBackPrompt: (prompt: QuotaPrompt) => void
   onOpenDetail: (task: Task) => void
 }) {
   const [shown, setShown] = useState(false)
+  const items = group.consideredItems
+  const prompts = group.prompts.filter((p) => !promptWaiting(p))
+  if (items.length + prompts.length === 0) return null
   return (
     <>
       <button
@@ -1641,7 +1647,7 @@ function ConsideredDisclosure({
         aria-expanded={shown}
         className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
       >
-        {shown ? 'Hide' : 'Show'} {items.length} considered
+        {shown ? 'Hide' : 'Show'} {items.length + prompts.length} considered
       </button>
       {shown && (
         <ul className="space-y-0.5 px-1" aria-label={`Considered in ${label}`}>
@@ -1653,10 +1659,25 @@ function ConsideredDisclosure({
               onOpenDetail={onOpenDetail}
             />
           ))}
+          {prompts.map((prompt) => (
+            <ConsideredPromptRow
+              key={prompt.prompt_key}
+              prompt={prompt}
+              onPutBack={onPutBackPrompt}
+            />
+          ))}
         </ul>
       )}
     </>
   )
+}
+
+/**
+ * Anything behind a slot's "Show N considered": its considered reminders, or
+ * a handled quota prompt (which can be put back too, since 2026-09-25).
+ */
+function hasConsideredRows(group: ReminderGroup): boolean {
+  return group.consideredItems.length > 0 || group.prompts.some((p) => !promptWaiting(p))
 }
 
 /**
@@ -1935,7 +1956,7 @@ function ReminderRowMarker({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         aria-label={`Select "${reminder.title}"`}
-        className="mt-[3px] size-6 shrink-0"
+        className="mt-[3px] size-6 shrink-0 cursor-pointer"
       />
     )
   }
@@ -1953,7 +1974,7 @@ function ReminderRowMarker({
       tabIndex={-1}
       aria-label={`Mark "${reminder.title}" as considered`}
       title="Considered"
-      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors"
     >
       <Check
         className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"

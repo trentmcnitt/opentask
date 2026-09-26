@@ -27,13 +27,13 @@ const quota = (title: string, labels: string[], rrule = 'FREQ=WEEKLY'): Task =>
 /** The corpus as `trackedItems` hands it over: alphabetical, case-insensitive. */
 const CORPUS = [
   quota('Bean Soup', []),
-  quota('Check for new certifications', ['ideas']),
-  quota('Clean bedroom fans', ['house'], 'FREQ=MONTHLY'),
-  quota('Cook daily vegetables', ['health']),
-  quota('Daily Walks', ['health'], 'FREQ=DAILY'),
+  quota('Check for new courses', ['ideas']),
+  quota('Clean the gutters', ['house'], 'FREQ=MONTHLY'),
+  quota('Cook a new recipe', ['health']),
+  quota('Daily Stretch', ['health'], 'FREQ=DAILY'),
   quota('Eggs', []),
-  quota('Empty the dishwasher (chore)', ['kids']),
-  quota('Kids Smoothie', ['health', 'kids']),
+  quota('Empty the recycling (chore)', ['kids']),
+  quota('Family Smoothie', ['health', 'kids']),
 ]
 
 const CONFIG: LabelConfig[] = [
@@ -63,16 +63,16 @@ describe('the Track panel streams its quotas by label', () => {
     const items = trackStream(CORPUS, CONFIG)
     expect(shape(items)).toEqual([
       'health',
-      '· Cook daily vegetables',
-      '· Daily Walks',
+      '· Cook a new recipe',
+      '· Daily Stretch',
       // Two labels, filed under the FIRST — it is not in the kids cluster too.
-      '· Kids Smoothie',
+      '· Family Smoothie',
       'house',
-      '· Clean bedroom fans',
+      '· Clean the gutters',
       'ideas',
-      '· Check for new certifications',
+      '· Check for new courses',
       'kids',
-      '· Empty the dishwasher (chore)',
+      '· Empty the recycling (chore)',
       'Other',
       '· Bean Soup',
       '· Eggs',
@@ -92,8 +92,8 @@ describe('the Track panel streams its quotas by label', () => {
 
   test('a cluster keeps the order it was given — a tap never reshuffles it', () => {
     // `trackedItems` froze this order; grouping must not re-sort within it.
-    const given = [quota('Weight Lift', ['health']), quota('Cook', ['health'])]
-    expect(shape(trackStream(given, CONFIG))).toEqual(['health', '· Weight Lift', '· Cook'])
+    const given = [quota('Rowing Sets', ['health']), quota('Cook', ['health'])]
+    expect(shape(trackStream(given, CONFIG))).toEqual(['health', '· Rowing Sets', '· Cook'])
   })
 
   test('an empty corpus is an empty stream, not a lone title', () => {
@@ -103,10 +103,10 @@ describe('the Track panel streams its quotas by label', () => {
 
 describe('the colour a cluster is drawn in', () => {
   test('comes from label_config, and is copied onto its chips', () => {
-    const items = trackStream([quota('Daily Walks', ['health'])], CONFIG)
+    const items = trackStream([quota('Daily Stretch', ['health'])], CONFIG)
     expect(items).toEqual([
       { kind: 'title', name: 'health', label: 'health', color: 'blue' },
-      { kind: 'chip', task: expect.objectContaining({ title: 'Daily Walks' }), color: 'blue' },
+      { kind: 'chip', task: expect.objectContaining({ title: 'Daily Stretch' }), color: 'blue' },
     ])
   })
 

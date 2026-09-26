@@ -28,8 +28,23 @@ enum WidgetStore {
     #endif
 
     private static var defaults: UserDefaults? {
-        UserDefaults(suiteName: appGroup)
+        #if DEBUG
+        if let suiteOverride { return suiteOverride }
+        #endif
+        return UserDefaults(suiteName: appGroup)
     }
+
+    #if DEBUG
+    /// Test seam (`OpenTaskLogicTests`, `ios/Tests/Logic/`): when set, every
+    /// read and write goes here instead of the App Group suite. On macOS the
+    /// App Group is the REAL `GEL3VGTUJX.group.io.mcnitt.opentask` — the
+    /// installed Mac app's widget cache — so a test that used it would
+    /// overwrite what the desktop widgets draw. Tests set a throwaway
+    /// `UserDefaults(suiteName: "test.<UUID>")` in `setUp` and remove its
+    /// persistent domain in `tearDown`. DEBUG-only: a Release build has no
+    /// way to point the store anywhere else.
+    static var suiteOverride: UserDefaults?
+    #endif
 
     // MARK: - Cached payloads
 
@@ -170,6 +185,7 @@ enum WidgetStore {
         let stamps = Array(pendingMap(pendingCompletionsKey).values)
             + progressMap().values.map { $0[stampIndex] }
             + (latestPromptActionStamp().map { [$0] } ?? [])
+            + Array(pendingMap(pendingPromptRestoresKey).values)
         return stamps.contains { $0 >= cutoff }
     }
 
@@ -380,7 +396,7 @@ enum WidgetStore {
     /// cached payload and retire this call's staged delta — the progress twin
     /// of `confirmCompletion` (2026-09-24, the stale-count fix).
     ///
-    /// THE BUG (Trent's phone, 2026-09-24 11:53: Weight Lift taken 3/3 → 0/3
+    /// THE BUG (Trent's phone, 2026-09-24 11:53: Rowing Sets taken 3/3 → 0/3
     /// on the server over seven taps while the widget kept drawing the old
     /// count): success used to only SUBTRACT the staged delta, and nothing
     /// ever wrote the new count into the cache. That was right only if the
@@ -884,6 +900,9 @@ enum WidgetStore {
         // Quota prompt actions (2026-09-24): an undone did-it must bring its
         // prompt back, not stay hidden behind a tombstone.
         defaults?.removeObject(forKey: pendingPromptActionsKey)
+        // Prompt put-backs (2026-09-25): an undone put-back must show the
+        // prompt handled again.
+        defaults?.removeObject(forKey: pendingPromptRestoresKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -934,7 +953,8 @@ enum WidgetStore {
     ///
     /// Quota prompts (2026-09-24): a prompt with a live action tombstone
     /// (`pendingPromptActions`) is drawn HANDLED — `QuotaPromptDTO.handled(did:)`
-    /// — not removed. The server returns handled prompts too (flagged), so a
+    /// — not removed. One being put back (`pendingPromptRestores`, 2026-09-25)
+    /// is drawn WAITING (`putBack()`): out of DONE, back among the open rows. The server returns handled prompts too (flagged), so a
     /// slot's day total never shrinks; removing one here would shift both
     /// halves of the count at once. `considered` is NOT credited: it stays
     /// reminder-only, and a handled prompt already counts through
@@ -942,14 +962,18 @@ enum WidgetStore {
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
         let restoring = pendingRestores(now: now)
         let promptActions = pendingPromptActions(now: now)
+        let promptRestores = pendingPromptRestores(now: now)
         return groups.map { group in
             let remaining = filterPending(group.reminders, now: now)
             let consideredItems = restoring.isEmpty
                 ? group.consideredItems
                 : group.consideredItems.filter { !restoring.contains($0.id) }
-            let prompts = promptActions.isEmpty
+            let prompts = promptActions.isEmpty && promptRestores.isEmpty
                 ? group.prompts
                 : group.prompts.map { prompt in
+                    if promptRestores.contains(prompt.promptKey) {
+                        return prompt.isWaiting ? prompt : prompt.putBack()
+                    }
                     guard let did = promptActions[prompt.promptKey], prompt.isWaiting else { return prompt }
                     return prompt.handled(did: did)
                 }
@@ -992,6 +1016,11 @@ enum WidgetStore {
         var map = promptActionMap()
         map[key] = [now.timeIntervalSince1970, did ? 1 : 0]
         defaults?.set(map, forKey: pendingPromptActionsKey)
+        // The latest tap wins: a put-back still staged for this key would
+        // draw it waiting over the action just taken.
+        var restores = pendingMap(pendingPromptRestoresKey)
+        restores.removeValue(forKey: key)
+        defaults?.set(restores, forKey: pendingPromptRestoresKey)
     }
 
     static func clearPendingPromptAction(_ key: String) {
@@ -1021,6 +1050,113 @@ enum WidgetStore {
         return live
     }
 
+    // MARK: Put back (2026-09-25)
+    //
+    // `RestorePromptIntent`'s tombstone: the prompt leaves DONE and is drawn
+    // waiting the instant its filled dashed circle is tapped. Keyed by
+    // `prompt_key`, valued with its stamp; same 90s TTL. The intent clears it
+    // once the server's answer is in the cache (`confirmPromptRestore`) or
+    // the call failed — so a prompt the server leaves done (a daily row whose
+    // count still reaches it) is never drawn waiting for longer than the
+    // round trip.
+
+    private static let pendingPromptRestoresKey = "widget.pendingPromptRestores"
+
+    static func stagePendingPromptRestore(_ key: String, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingPromptRestoresKey)
+        map[key] = now.timeIntervalSince1970
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+        // The latest tap wins: an action still staged for this key would
+        // draw it handled over the put-back.
+        var actions = promptActionMap()
+        actions.removeValue(forKey: key)
+        defaults?.set(actions, forKey: pendingPromptActionsKey)
+    }
+
+    static func clearPendingPromptRestore(_ key: String) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingPromptRestoresKey)
+        map.removeValue(forKey: key)
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+    }
+
+    /// Live (un-expired) put-backs, pruning expired ones as a side effect.
+    static func pendingPromptRestores(now: Date = Date()) -> Set<String> {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingPromptRestoresKey)
+        let cutoff = now.timeIntervalSince1970 - pendingTTL
+        var live = Set<String>()
+        for (key, stamp) in map {
+            if stamp >= cutoff {
+                live.insert(key)
+            } else {
+                map.removeValue(forKey: key)
+            }
+        }
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+        return live
+    }
+
+    /// The server CONFIRMED a put-back: write it into the cached Reminders
+    /// payload (the put-back twin of `confirmPromptAction`) and retire the
+    /// tombstone.
+    ///
+    /// Every prompt of each returned quota takes the SERVER's count, and a
+    /// daily one is done exactly while that count reaches its number — the
+    /// server's rule, in both directions, since a put-back LOWERS the count.
+    /// The put-back prompt itself is un-considered.
+    ///
+    /// Marks Reminders fetch-required when the cache can't know the answer:
+    /// a once-a-day prompt is done while ANY progress was logged today, which
+    /// only the server knows (a `TaskDTO` carries no day record); and a
+    /// sibling daily row left considered above the new count may have been a
+    /// did-it the lower count no longer supports, which the server has made
+    /// waiting (`brokenDids`) — or a mere consider, which stays. Either way
+    /// the next reload fetches instead of trusting this guess.
+    static func confirmPromptRestore(_ key: String, tasks: [TaskDTO]) {
+        pendingLock.lock()
+        let counts = Dictionary(tasks.map { ($0.id, $0.progressCurrent) }, uniquingKeysWith: { _, last in last })
+        var needsFetch = false
+        if let cached = loadReminders() {
+            let groups = cached.value.groups.map { group in
+                group.replacingPrompts(group.prompts.map { prompt in
+                    let isTarget = prompt.promptKey == key
+                    guard let current = counts[prompt.taskId] else {
+                        return isTarget ? prompt.putBack() : prompt
+                    }
+                    let done: Bool
+                    if let number = prompt.number {
+                        done = current >= number
+                        if !isTarget && prompt.considered && current < number { needsFetch = true }
+                    } else {
+                        done = isTarget ? false : prompt.done
+                        if isTarget { needsFetch = true }
+                    }
+                    return QuotaPromptDTO(
+                        promptKey: prompt.promptKey, taskId: prompt.taskId, number: prompt.number,
+                        numbers: prompt.numbers, slotId: prompt.slotId, title: prompt.title,
+                        current: current, target: prompt.target, period: prompt.period,
+                        stripeColor: prompt.stripeColor,
+                        considered: isTarget ? false : prompt.considered, done: done,
+                        hasNotes: prompt.hasNotes
+                    )
+                })
+            }
+            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+        } else {
+            needsFetch = true
+        }
+        var map = pendingMap(pendingPromptRestoresKey)
+        map.removeValue(forKey: key)
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+        pendingLock.unlock()
+        if needsFetch { requireRemindersFetch() }
+    }
+
     /// The most recent prompt-action stamp, for `hasRecentInteraction`.
     private static func latestPromptActionStamp() -> Double? {
         promptActionMap().values.map { $0[0] }.max()
@@ -1032,7 +1168,7 @@ enum WidgetStore {
     ///
     /// Quota prompts made the Reminders payload depend on quota state
     /// (2026-09-24): a `+1` on the Quotas widget, or a prompt action, changes
-    /// prompts that only the server computes (a did-it on Daily Walks #1 can
+    /// prompts that only the server computes (a did-it on Piano Scales #1 can
     /// finish #2 in another slot). So those paths mark Reminders stale and
     /// let its reload fetch, rather than re-deriving the server's prompt
     /// rules here. `clearInteraction(kind: Reminders)` would also drop the
@@ -1059,7 +1195,7 @@ enum WidgetStore {
     /// The acted prompt is marked handled (`handled(did:)`). Then every
     /// prompt of each returned quota takes the SERVER's count, and a daily
     /// one is done once that count reaches its number — the server's own rule
-    /// (`getQuotaPromptsBySlot`), which is how a did-it on Daily Walks #1 can
+    /// (`getQuotaPromptsBySlot`), which is how a did-it on Piano Scales #1 can
     /// also finish #2 in another slot without a fetch. Nothing else is
     /// re-derived: a weekly prompt's "logged today" is only known server-side,
     /// and the next real fetch replaces this cache wholesale anyway.
@@ -1267,11 +1403,14 @@ enum WidgetStore {
     // MARK: - Tasks project scope
 
     private static let projectScopeKey = "widget.tasks.projectId"
+    /// The natural default a stored scope was chosen against (2026-09-25) —
+    /// see `TasksScopeChoice`.
+    private static let projectScopeAnchorKey = "widget.tasks.projectId.naturalScope"
 
-    /// Project id the Tasks widget is scoped to, or `allProjects`/`upNextScope`
-    /// for one of the two unified pages. Persisted as an id rather than an
-    /// index so renaming or reordering projects doesn't silently move the
-    /// user to a different one.
+    /// Project id the Tasks widget is scoped to, or `overdueScope`/
+    /// `allProjects`/`upNextScope` for one of the unified pages. Persisted as
+    /// an id rather than an index so renaming or reordering projects doesn't
+    /// silently move the user to a different one.
     static let allProjects = -1
 
     /// The "Up next" unified page (2026-09-23, item 4) — see
@@ -1282,14 +1421,45 @@ enum WidgetStore {
     /// sentinel additionally drops `todaysTasks`' end-of-day cutoff.
     static let upNextScope = -2
 
-    static var projectScope: Int {
-        get {
-            guard let defaults, defaults.object(forKey: projectScopeKey) != nil else {
-                return allProjects
-            }
-            return defaults.integer(forKey: projectScopeKey)
-        }
-        set { defaults?.set(newValue, forKey: projectScopeKey) }
+    /// The "Overdue" unified page (2026-09-25) — `TasksTimeline.overdueTasks`.
+    /// In the ring only while something is overdue, and the default page
+    /// whenever it is (`TasksTimeline.naturalScope`).
+    static let overdueScope = -3
+
+    /// The user's explicit chevron choice, paired with the natural default
+    /// (`TasksTimeline.naturalScope`: Overdue while anything is overdue, else
+    /// Today) that was showing when they made it — the same "pair a value
+    /// with the state it was set against" trick `SlotOverride` uses, and for
+    /// the same reason: the pairing makes the choice self-expiring.
+    /// `TasksTimeline.resolveScope` honors it only while the natural default
+    /// is unchanged, so overdue appearing takes the widget to Overdue, and
+    /// the last overdue task going takes it back to Today, whatever was
+    /// chosen before.
+    struct TasksScopeChoice: Equatable {
+        let scope: Int
+        let naturalScope: Int
+    }
+
+    /// Nil when the user has never chevroned. A scope stored before the
+    /// anchor existed (an upgraded install) reads as chosen against Today —
+    /// the only default there was — so it survives the upgrade until overdue
+    /// next appears.
+    static func tasksScopeChoice() -> TasksScopeChoice? {
+        guard let defaults, defaults.object(forKey: projectScopeKey) != nil else { return nil }
+        let natural = defaults.object(forKey: projectScopeAnchorKey) != nil
+            ? defaults.integer(forKey: projectScopeAnchorKey)
+            : allProjects
+        return TasksScopeChoice(scope: defaults.integer(forKey: projectScopeKey), naturalScope: natural)
+    }
+
+    static func setTasksScopeChoice(_ scope: Int, naturalScope: Int) {
+        defaults?.set(scope, forKey: projectScopeKey)
+        defaults?.set(naturalScope, forKey: projectScopeAnchorKey)
+    }
+
+    static func clearTasksScopeChoice() {
+        defaults?.removeObject(forKey: projectScopeKey)
+        defaults?.removeObject(forKey: projectScopeAnchorKey)
     }
 
     // MARK: - Tasks list paging
@@ -1516,8 +1686,8 @@ enum WidgetStore {
     /// only if the server rejects it). PR #58 kept a just-met chip visible
     /// for ~90s after any tap — the web panel's "put away at load, never
     /// under a finger" rule, ported — and Trent's phone showed what that
-    /// costs on a widget: "Weight Lift 3/3" and "Music Practice 2/1" still
-    /// showing with the dot off, and Kazoo over-tapped because its met chip
+    /// costs on a widget: "Rowing Sets 3/3" and "Sketchbook Time 2/1" still
+    /// showing with the dot off, and a met quota over-tapped because its chip
     /// stayed a live `+1` target. A widget has no session to "hold for", so
     /// the rule does not carry over. On: met chips show, green, and a tap
     /// on one is `+1` like any chip — over-target counts ("2/1") are allowed,

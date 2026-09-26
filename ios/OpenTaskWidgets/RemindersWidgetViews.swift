@@ -66,7 +66,7 @@ private struct RemindersSmallView: View {
     private var waitingCount: Int { entry.group?.waitingCount ?? 0 }
 
     /// The first waiting item's text and weight: the first reminder, else
-    /// the first waiting prompt ("Daily Walks · 0/2") — prompts come after
+    /// the first waiting prompt ("Piano Scales · 0/2") — prompts come after
     /// reminders in a slot, as on the web.
     private var firstItem: (text: String, weight: Font.Weight)? {
         if let reminder = entry.group?.reminders.first {
@@ -104,7 +104,7 @@ private struct RemindersSmallView: View {
                     // No line limit (2026-09-24, never truncate a reminder):
                     // the 2×2 has a fixed card, so a long title SHRINKS into
                     // what's left under the count instead of ending in "…"
-                    // ("Supplements ( Vitamin C, Zin…" at XXX Large).
+                    // ("Breakfast ( Oatmeal, Berri…" at XXX Large).
                     Text(firstItem.text)
                         .font(.caption2)
                         .fontWeight(firstItem.weight)
@@ -211,7 +211,7 @@ private struct RemindersListView: View {
     /// Quota prompts (2026-09-24): waiting ones follow the open reminders;
     /// handled ones follow the considered reminders in DONE and count in its
     /// "DONE · N" (a prompt counts exactly like a reminder). A handled
-    /// prompt's DONE row offers no put-back — see `DonePromptRow`.
+    /// prompt's DONE row puts it back (2026-09-25) — see `DonePromptRow`.
     private var combinedItems: [ReminderListItem] {
         let openItems = reminders.map(ReminderListItem.open)
             + (entry.group?.waitingPrompts ?? []).map(ReminderListItem.prompt)
@@ -394,7 +394,7 @@ private struct RemindersListView: View {
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
         case .done(let reminder):
             // Wraps in full too (2026-09-24) — a completed reminder is still
-            // a reminder, and "Yesterday = Lesson, Tomorrow…" struck through
+            // a reminder, and "Morning = Focus, Afternoon…" struck through
             // says nothing.
             let fit = metrics.titleLines(
                 reminder.title, width: width - WidgetTheme.rowMarkerSize - 10, weight: .regular, maxHeight: budget,
@@ -923,8 +923,8 @@ private struct ReminderRow: View {
 /// link live even while shown as done.
 ///
 /// Wraps in full like `ReminderRow` (2026-09-24 — it was `.lineLimit(1)`
-/// as "secondary content" until Trent's real data showed "Yesterday = Lesson,
-/// Tomorrow…" cut off; the never-truncate rule has no exception for done).
+/// as "secondary content" until realistic data showed "Morning = Focus,
+/// Afternoon…" cut off; the never-truncate rule has no exception for done).
 /// `lines`/`height`/`shrinks` are what the pager counted.
 private struct DoneReminderRow: View {
     let reminder: TaskDTO
@@ -1005,20 +1005,22 @@ enum PromptRowMetrics {
 
 /// One waiting quota PROMPT — drawn AS a reminder row (`ReminderRow` is the
 /// sibling, and everything not listed here is copied from it: the title
-/// `Link`, the full wrap, the trailing circle with its bleed).
+/// `Link`, the full wrap, the trailing marker with its bleed).
 ///
 /// WHAT DIFFERS (Trent's final decisions, 2026-09-24):
 /// - A thin LEADING stripe in the quota's label color — the quota chip's own
 ///   stripe.
-/// - The label carries the count, "Daily Walks · 1/2" — one `Text` built from
+/// - The label carries the count, "Piano Scales · 1/2" — one `Text` built from
 ///   `QuotaPromptDTO.labelText`, the exact string the pager measured.
-/// - TWO controls at the trailing edge. The circle is where every reminder's
-///   circle is (the outermost column, thumb reach) and means the same thing:
-///   CONSIDERED for today, nothing logged. The SQUARE, just inside it and
-///   beside the count, is DID IT: +1 and considered. Square because it is a
-///   different verb from the circle, and a checkbox is what "I did this"
-///   looks like everywhere else. Both are `ActOnPromptIntent`, keyed by
-///   `prompt_key`.
+/// - TWO controls at the trailing edge. The DASHED circle is where every
+///   reminder's solid circle is (the outermost column, thumb reach) and means
+///   the same thing: CONSIDERED ("seen") for today, nothing logged. Dashed,
+///   not solid (2026-09-25): Trent habitually tapped the circle meaning
+///   "done", but on a prompt it means "seen" (an eye came first; creepy). The
+///   SQUARE, just inside it and beside the
+///   count, is DID IT: +1 and considered. Square because it is a different
+///   verb, and a checkbox is what "I did this" looks like everywhere else.
+///   Both are `ActOnPromptIntent`, keyed by `prompt_key`.
 /// - The title links to the quota on the Quotas surface
 ///   (`opentask://quota/<id>`), not a reminder editor: a prompt is not a
 ///   task.
@@ -1034,7 +1036,7 @@ private struct PromptRow: View {
     /// quota has no notes. See `ReminderRow.notesGlyphSize`.
     let notesGlyphSize: CGFloat?
 
-    /// "Daily Walks, 1/2 today" (+ ", has notes") — what VoiceOver reads for
+    /// "Piano Scales, 1/2 today" (+ ", has notes") — what VoiceOver reads for
     /// the label and names each control by.
     private var spokenLabel: String {
         NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
@@ -1069,7 +1071,7 @@ private struct PromptRow: View {
                 )
                 control(
                     intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: false),
-                    symbol: "circle", label: "Considered: \(spokenLabel)"
+                    symbol: "circle.dashed", label: "Considered: \(spokenLabel)"
                 )
             }
         }
@@ -1096,12 +1098,17 @@ private struct PromptRow: View {
 }
 
 /// A quota prompt handled today, in the DONE section — `DoneReminderRow`'s
-/// look (struck through, muted), with ONE difference: NO PUT-BACK. A
-/// reminder's DONE marker restores it (`POST /api/tasks/:id/undone`); a
-/// prompt has no such endpoint (it is not a task, and /undone refuses
-/// quotas), so its marker is a plain, inert glyph — a filled square for a
-/// did-it, a filled circle for a consider — and Undo is the way back, as on
-/// the web ("the toast's Undo is the way back", `QuotaPromptRow`).
+/// look (struck through, muted) AND its put-back (2026-09-25): the marker is
+/// a `Button` running `RestorePromptIntent` (`POST
+/// /api/quota-prompts/restore`, never `/undone`, which refuses quotas), so
+/// the prompt waits again and a did-it's progress comes off. Before this it
+/// was an inert glyph, and a tap there fell through to the row's `Link` and
+/// opened the app (Trent: "for reminders, tapping the filled circle puts
+/// them back"). The glyph is the prompt's own "considered" circle, filled —
+/// `PromptRow`'s `circle.dashed` as `circle.dashed.inset.filled`, as a
+/// reminder's DONE circle is its circle filled — for a did-it too (the count
+/// beside it says what was logged); the web's `ConsideredPromptRow` draws
+/// the same.
 private struct DonePromptRow: View {
     let prompt: QuotaPromptDTO
     let lines: Int
@@ -1132,12 +1139,18 @@ private struct DonePromptRow: View {
                 }
             }
 
-            Image(systemName: prompt.done ? "checkmark.square.fill" : "checkmark.circle.fill")
-                .font(.system(size: 19, weight: .light))
-                .foregroundStyle(.secondary)
-                .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
-                .frame(width: WidgetTheme.rowMarkerSize, height: height, alignment: .top)
-                .accessibilityLabel(Text(prompt.done ? "Done today" : "Considered today"))
+            // `DoneReminderRow`'s button, verbatim: the whole marker column
+            // is the target, so a tap on it never reaches the row's `Link`.
+            Button(intent: RestorePromptIntent(promptKey: prompt.promptKey)) {
+                Image(systemName: "circle.dashed.inset.filled")
+                    .font(.system(size: 19, weight: .light))
+                    .foregroundStyle(.secondary)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: height, alignment: .top)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Put back: \(prompt.title), \(prompt.countText)"))
         }
     }
 }

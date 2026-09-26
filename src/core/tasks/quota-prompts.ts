@@ -4,7 +4,7 @@
  * Trent never opens the Quotas surface, so quotas go undone; reminders are
  * what he sees and gets nagged about. So every UNMET quota also appears as a
  * reminder-like PROMPT in a reminder period (time slot) each day, with its
- * progress on it: "Cook daily vegetables · 3/5".
+ * progress on it: "Water the herb garden · 3/5".
  *
  * Ticking a reminder means "considered" — seen and handled — not "did it". A
  * prompt therefore has TWO actions (Trent's final decision, 2026-09-24):
@@ -25,7 +25,7 @@
  *   wrapping back to early morning); each number's period can be overridden.
  *   At most ONE row per quota per period: the row stands for the highest
  *   number assigned there (`k`), is done once today's count reaches k, and its
- *   label shows progress ("Daily Walks · 1/2"), never "#1".
+ *   label shows progress ("Piano Scales · 1/2"), never "#1".
  * - Every other quota (weekly, monthly, yearly, daily with INTERVAL > 1):
  *   one prompt a day in its period. Done for today once ANY progress is
  *   logged today from anywhere; gone until the period resets once met.

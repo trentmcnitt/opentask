@@ -69,8 +69,8 @@ func reloadOpenTaskWidget(kind: String) {
 /// Reload the kind whose button fired the intent — on macOS only.
 ///
 /// "Quotas still 0/2 after did-it" (2026-09-25): the did-it square on the
-/// Reminders widget's "Daily Walks · 0/2" prompt landed (prod: `POST
-/// /api/quota-prompts/did` 200, Daily Walks 1/2, widget push sent 2s later),
+/// Reminders widget's "Piano Scales · 0/2" prompt landed (prod: `POST
+/// /api/quota-prompts/did` 200, Piano Scales 1/2, widget push sent 2s later),
 /// the intent wrote the returned quota into the shared cache, and still the
 /// phone's Quotas widget drew 0/2 until the app was opened. The same taps on
 /// the iOS 27 simulator redraw Quotas every time (idb HID taps; no fetch, the
@@ -366,7 +366,7 @@ struct IncrementProgressIntent: AppIntent {
         // (failure), never a stale one in between.
         await reloadTappedWidget(kind: TrackWidget.kind)
         // Quota reminders (2026-09-24): this quota's prompts on the Reminders
-        // widget carry its count ("Daily Walks · 1/2") and whether it is
+        // widget carry its count ("Piano Scales · 1/2") and whether it is
         // still waiting today — both server-computed, so Reminders fetches
         // rather than guessing. `requireRemindersFetch`, NOT
         // `clearInteraction`: the latter would also forget the interaction
@@ -481,6 +481,66 @@ struct ActOnPromptIntent: AppIntent {
     }
 }
 
+// MARK: - Put back a quota prompt (2026-09-25)
+
+/// The filled dashed circle on a handled prompt in the Reminders widget's
+/// DONE section: PUT IT BACK — it waits for today again, and a did-it's
+/// progress comes off (`POST /api/quota-prompts/restore`; never `/undone`,
+/// which a quota refuses). Before this the marker was an inert glyph and a
+/// tap on the row fell through to its `Link` and opened the app (Trent,
+/// 2026-09-25).
+///
+/// `ActOnPromptIntent`'s shape, minus the auto-advance (a put-back adds a
+/// waiting row; there is nothing to advance away from):
+/// 1. Stage a put-back tombstone by `prompt_key`, so the row leaves DONE and
+///    is drawn waiting at once (macOS repaints here; iOS on the free
+///    interaction reload after `perform()`).
+/// 2. On success the server's answer goes into BOTH caches — the returned
+///    quotas into Tasks/Quotas (`confirmTasks`: the Quotas widget's count may
+///    have dropped), and the prompt un-handled plus every sibling re-counted
+///    into Reminders (`confirmPromptRestore`, which retires the tombstone and
+///    marks Reminders fetch-required where only the server knows the answer).
+/// 3. On failure the tombstone goes and Reminders fetches — the likeliest
+///    failure is a key from before midnight (400).
+/// 4. Round 2 asks for Track, the OTHER kind (budget rules, `ios/CLAUDE.md`);
+///    Reminders is the tapped kind — free on iOS, explicit on macOS.
+struct RestorePromptIntent: AppIntent {
+    static var title: LocalizedStringResource = "Put Back Quota Reminder"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Prompt Key")
+    var promptKey: String
+
+    init() {}
+
+    init(promptKey: String) {
+        self.promptKey = promptKey
+    }
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.stagePendingPromptRestore(promptKey)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+
+        do {
+            let result = try await APIClient.shared.restorePrompts(keys: [promptKey])
+            WidgetStore.confirmTasks(result.tasks)
+            WidgetStore.confirmPromptRestore(promptKey, tasks: result.tasks)
+            if !result.decoded {
+                WidgetStore.requireRemindersFetch()
+                WidgetStore.requireTasksFetch()
+            }
+            WidgetStore.recordLocalMutationForUndoCount()
+        } catch {
+            print("[OpenTaskWidgets] Prompt \(promptKey) put back failed: \(error)")
+            WidgetStore.clearPendingPromptRestore(promptKey)
+            WidgetStore.requireRemindersFetch()
+        }
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+        return .result()
+    }
+}
+
 // MARK: - Reminders slot paging
 
 /// Move the Reminders widget one slot earlier or later.
@@ -559,9 +619,10 @@ struct JumpToReminderSlotIntent: AppIntent {
 
 // MARK: - Tasks project paging
 
-/// Cycle the Tasks widget's scope: Today → Up next → each project the server
-/// returned → Today (2026-09-23, item 4 — two unified pages up front, then
-/// the per-project pages as before).
+/// Cycle the Tasks widget's scope: Overdue (while anything is, 2026-09-25) →
+/// Today → Up next → each project with something due today → back to the
+/// start (2026-09-23, item 4 — the unified pages up front, then the
+/// per-project pages as before). The ring is `TasksTimeline.scopeRing`.
 ///
 /// The project list comes entirely from the cached payload. Nothing here knows
 /// any project's name or how many there are (§7.1 leaves the project set open).
@@ -579,17 +640,21 @@ struct ShiftProjectScopeIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        guard let cache = WidgetStore.loadTasks()?.value else { return .result() }
+        // The ring and the page on screen come from the same resolution the
+        // provider draws with (`TasksTimeline.scopeState` — Overdue first
+        // while anything is overdue, then Today, Up next, each project with
+        // something due today), so "one step from here" is one step from what
+        // the user is looking at, not from a stale stored choice.
+        guard let state = TasksTimeline.currentScopeState(), state.ring.count > 1 else { return .result() }
 
-        // Scope ring: Today, then Up next, then one entry per project that
-        // actually has something in today's set.
-        let ring = [WidgetStore.allProjects, WidgetStore.upNextScope]
-            + TasksTimeline.scopedProjects(tasks: cache.tasks, projects: cache.projects).map(\.id)
-        guard ring.count > 1 else { return .result() }
-
-        let current = ring.firstIndex(of: WidgetStore.projectScope) ?? 0
+        let ring = state.ring
+        let current = ring.firstIndex(of: state.scope) ?? 0
         let count = ring.count
-        WidgetStore.projectScope = ring[((current + offset) % count + count) % count]
+        // Stored WITH the natural default it was chosen against, so it lapses
+        // when that changes — see `WidgetStore.TasksScopeChoice`.
+        WidgetStore.setTasksScopeChoice(
+            ring[((current + offset) % count + count) % count], naturalScope: state.natural
+        )
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadTappedWidget(kind: TasksWidget.kind)
@@ -654,7 +719,7 @@ struct ShiftTasksPageIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         let current = WidgetStore.tasksPage(for: scope)
         WidgetStore.setTasksPage(current + offset, for: scope)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
@@ -1005,7 +1070,7 @@ private func refetchTasks() async {
 /// Undo/Redo's reload: every kind ONCE, after the refetch, the kinds OTHER
 /// than the tapped one first (2026-09-25, "Quotas stuck at 1/2 after Undo").
 ///
-/// The bug: did-it on the Reminders widget's "Daily Walks · 0/2" prompt
+/// The bug: did-it on the Reminders widget's "Piano Scales · 0/2" prompt
 /// (Quotas → 1/2), then Undo on the Reminders widget. The server undid it,
 /// Reminders put the prompt back, and Quotas stayed at 1/2. Prod's request
 /// log for Trent's tap (09:07:11) shows the whole story: the refetch below
@@ -1287,7 +1352,7 @@ struct ToggleTaskSelectionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         var ids = WidgetStore.selectedTaskIds(for: scope)
         if ids.contains(taskId) {
             ids.remove(taskId)
@@ -1335,7 +1400,7 @@ struct SnoozeSelectedTasksIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         let selected = WidgetStore.selectedTaskIds(for: scope)
         guard !selected.isEmpty else { return .result() }
 
@@ -1377,7 +1442,7 @@ struct CompleteSelectedTasksIntent: AppIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
+        let scope = TasksTimeline.currentScope()
         let ids = Array(WidgetStore.selectedTaskIds(for: scope))
         guard !ids.isEmpty else { return .result() }
 

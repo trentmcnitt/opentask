@@ -2,7 +2,8 @@
  * Quota reminders — acting on a prompt (2026-09-24). See `./quota-prompts.ts`
  * for what a prompt is.
  *
- * Two verbs, because ticking a reminder means "considered", not "did it":
+ * Two verbs, because ticking a reminder means "considered", not "did it" —
+ * and a way back from either (PUT BACK, below):
  *
  * - CONSIDER — the round circle. Handled for today; no progress. Writes the
  *   key into today's `quota_day_state.considered`. Consider-all (a slot's
@@ -15,6 +16,14 @@
  *                   ONLY then: a +1 logged elsewhere today (the widget, the
  *                   watch) does not block it, so a did-it from a screen loaded
  *                   before that +1 counts again (Trent, 2026-09-25; QPM-010).
+ *
+ * - PUT BACK — the filled dashed circle in a "considered"/DONE list
+ *   (2026-09-25; before that a handled prompt had no way back but Undo). The
+ *   prompt waits for today again: its key leaves `considered` and `did`, and
+ *   a did-it's progress is taken back — exactly what that did-it added
+ *   (`did_applied`), never a guessed −1. A daily did-it that found the count
+ *   already at k added 0, so its put-back takes 0. Any other did-it the lower
+ *   count no longer supports is dropped with it (`brokenDids`).
  *
  * Every action is one transaction and one undo entry — one entry for a whole
  * batch, including a mixed one from POST /api/tasks/bulk/complete (reminders
@@ -31,7 +40,15 @@ import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { formatTaskResponse } from '@/lib/format-task'
-import { dayStateFor, localDate, parsePromptKey, type ParsedPromptKey } from '@/lib/quota-prompts'
+import {
+  brokenDids,
+  dayStateFor,
+  didApplied,
+  localDate,
+  parsePromptKey,
+  withoutKeys,
+  type ParsedPromptKey,
+} from '@/lib/quota-prompts'
 import { isTracked } from '@/lib/track'
 import type { QuotaDayState, Task, UndoSnapshot } from '@/types'
 import { getTaskById } from './create'
@@ -131,6 +148,12 @@ function applyToQuota(
         logged: day.logged + delta,
         did: addOnce(day.did, action.key),
         considered: addOnce(day.considered, action.key),
+        // Accumulated, so a repeat did-it (which adds 0) keeps the first
+        // one's record — put-back takes back what the key really added.
+        did_applied: {
+          ...day.did_applied,
+          [action.key]: (day.did_applied[action.key] ?? 0) + delta,
+        },
       }
     } else {
       day = { ...day, considered: addOnce(day.considered, action.key) }
@@ -260,5 +283,114 @@ export function actOnPrompts(options: {
     considered: result.considered,
     did: result.did,
     tasks: ids.map((id) => getTaskById(id)).filter((t): t is Task => t !== null),
+  }
+}
+
+export interface RestorePromptsResult {
+  /** Keys that were handled and now wait again (a key already waiting is a no-op). */
+  restored: number
+  tasks: Task[]
+}
+
+/** One quota's put-back: the count and today's record after it. */
+function restoreOnQuota(
+  task: Task,
+  keys: string[],
+  today: string,
+): { current: number; day: QuotaDayState; taken: number; restored: number } {
+  let day = dayStateFor(task.quota_day_state, today)
+  const before = task.progress_current ?? 0
+  let current = before
+  const handled = new Set<string>()
+  for (const key of new Set(keys)) {
+    if (day.did.includes(key)) {
+      current = Math.max(0, current - didApplied(day, key))
+      handled.add(key)
+    } else if (day.considered.includes(key)) {
+      handled.add(key)
+    }
+  }
+  const taken = before - current
+  day = withoutKeys({ ...day, logged: Math.max(0, day.logged - taken) }, handled)
+  // A did-it the lower count no longer supports waits again too — the same
+  // rule a −1 follows (`withLogged`).
+  day = withoutKeys(day, brokenDids(day, current))
+  return { current, day, taken, restored: handled.size }
+}
+
+/**
+ * PUT BACK a set of handled prompts (POST /api/quota-prompts/restore): each
+ * waits for today again, and a did-it's progress is taken back. One
+ * transaction, one undo entry — logged even when every key was already
+ * waiting, because a client offers Undo on its toast for every tap and an
+ * Undo with no entry of its own would undo whatever came before it (the same
+ * reason `incrementProgress` logs a −1 at zero).
+ *
+ * Same refusals as consider/did (`planPromptActions`): a malformed key, a key
+ * for another day, a quota that is not the caller's own live one.
+ */
+export function restorePrompts(options: {
+  userId: number
+  userTimezone: string
+  keys: string[]
+  now?: Date
+}): RestorePromptsResult {
+  const { userId, userTimezone, keys, now = new Date() } = options
+  if (keys.length === 0) return { restored: 0, tasks: [] }
+  const planned = planPromptActions(
+    userId,
+    userTimezone,
+    keys.map((key) => ({ key, did: false })),
+    now,
+  )
+  const today = localDate(userTimezone, now)
+  const nowStr = now.toISOString()
+  const byTask = new Map<number, string[]>()
+  for (const p of planned) byTask.set(p.taskId, [...(byTask.get(p.taskId) ?? []), p.key])
+
+  const { restored, progressed } = withTransaction((tx) => {
+    const snapshots: UndoSnapshot[] = []
+    const fields = new Set<string>()
+    const progressed: Task[] = []
+    let restored = 0
+    for (const [taskId, taskKeys] of byTask) {
+      rolloverQuotaNow(taskId, now)
+      const task = getTaskById(taskId)
+      if (!task) continue
+      const { current, day, taken, restored: n } = restoreOnQuota(task, taskKeys, today)
+      restored += n
+      tx.prepare(
+        'UPDATE tasks SET progress_current = ?, quota_day_state = ?, updated_at = ? WHERE id = ?',
+      ).run(current, JSON.stringify(day), nowStr, taskId)
+      if (taken > 0) {
+        tx.prepare(
+          'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
+        ).run(taskId, userId, -taken, nowStr)
+      }
+      // A count only in the snapshot that moved one — see `executePromptActions`.
+      const taskFields = taken > 0 ? ['progress_current', 'quota_day_state'] : ['quota_day_state']
+      for (const f of taskFields) fields.add(f)
+      const after = { ...task, progress_current: current, quota_day_state: day }
+      snapshots.push(createQuotaSnapshot(task, after, taskFields))
+      if (taken > 0) progressed.push(after)
+    }
+    const single = byTask.size === 1 ? getTaskById(planned[0].taskId) : null
+    logAction(
+      userId,
+      'quota_prompt',
+      single && planned.length === 1
+        ? `Put back "${single.title}"`
+        : `Quota reminders: put back ${restored}`,
+      [...fields],
+      snapshots,
+    )
+    return { restored, progressed }
+  })
+
+  emitSyncEvent(userId)
+  dispatchProgressed(userId, progressed)
+  return {
+    restored,
+    tasks: [...byTask.keys()].map((id) => getTaskById(id)).filter((t): t is Task => t !== null),
   }
 }

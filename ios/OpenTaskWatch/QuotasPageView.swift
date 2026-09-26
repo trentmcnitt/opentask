@@ -88,7 +88,7 @@ struct QuotasPageView: View {
                 }
             }
         }
-        // A one-line quota ("Weight Lift 2/3") otherwise gets the watch
+        // A one-line quota ("Rowing Sets 2/3") otherwise gets the watch
         // list's tall default row — two lines of empty padding under a short
         // title. Still a comfortable finger target at this height.
         .environment(\.defaultMinListRowHeight, 36)
@@ -176,10 +176,10 @@ private struct QuotaRowButton: View {
 ///
 /// The title is never truncated (Trent's rule for reminders, extended here):
 /// the watch list scrolls, so a long quota name just takes more lines. Both
-/// caps tried on the 44mm simulator cut his real data — 4 lines ended
-/// "Balloon breathing practice (slow exhale, relaxed shoul…", 6 lines
-/// ended "Check for new certifications — … business aut…" — and a quota with
-/// its point cut off is one he can't tell apart from its neighbours. Setting
+/// caps tried on the 44mm simulator cut realistic titles — 4 lines ended
+/// "Posture practice (tall spine, soft jaw, shoulders do…", 6 lines ended
+/// "Look for new evening courses — … weekend wor…" — and a quota with its
+/// point cut off is one you can't tell apart from its neighbours. Setting
 /// a `short_title` on the quota is the way to make a row shorter.
 ///
 /// Met: the count turns green with a checkmark, the title dims — done for
@@ -232,8 +232,8 @@ private struct QuotaRow: View {
 }
 
 #if DEBUG
-// Trent's real prod quotas (`WatchPreviewData.quotas`, read-only snapshot) —
-// the long titles are the point: they're what a watch-width row has to wrap
+// Realistic sample quotas (`WatchPreviewData.quotas`, or local data via
+// `PreviewLocalData`) — the long titles are the point: they're what a watch-width row has to wrap
 // without eating the count.
 #Preview("Quotas — met hidden") {
     NavigationStack {

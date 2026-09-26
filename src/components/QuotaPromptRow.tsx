@@ -25,22 +25,28 @@ import type { Task } from '@/types'
  * An unmet quota also shows up in a reminder period each day, so it gets the
  * attention a reminder gets. It is drawn AS a reminder row — the sibling is
  * `ReminderRow` in RemindersView.tsx (and `PanelRow` in the dashboard panel),
- * and everything not listed here is copied from it: the circle, the whole-row
- * tap, the struck-through collapse, the 16px (panel: 13.5px) wrapping title,
- * never truncated.
+ * and everything not listed here is copied from it: the whole-row tap, the
+ * struck-through collapse, the 16px (panel: 13.5px) wrapping title, never
+ * truncated.
  *
  * WHAT DIFFERS, AND WHY
  * - TWO ACTIONS. Ticking a reminder means "considered", not "did it" (Trent's
- *   final decision). So the circle and a tap on the row CONSIDER it — handled
- *   for today, nothing logged — and a SQUARE checkbox on the right, beside the
- *   count, is "did it": progress, and considered too. Square because it is a
- *   different verb from the circle, and a checkbox is what "I did this" looks
- *   like everywhere else.
+ *   final decision). So the DASHED CIRCLE and a tap on the row CONSIDER it —
+ *   handled for today, nothing logged — and a SQUARE checkbox on the right,
+ *   beside the count, is "did it": progress, and considered too. Square because it is a
+ *   different verb, and a checkbox is what "I did this" looks like everywhere
+ *   else.
+ * - A DASHED CIRCLE WHERE A REMINDER HAS ITS SOLID ONE (2026-09-25). Same
+ *   place, size and tap target, same verb. Trent habitually tapped the solid
+ *   circle meaning "done", but on a prompt it means "seen". An eye came first
+ *   (#96) and read as creepy; the dashed circle is his pick — still a circle,
+ *   visibly not the reminder's. Outline and muted while waiting; green and
+ *   filled (the circle's considered look) as the row collapses.
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
- * - The label carries progress and the period it covers, "Daily Walks · 1/2
- *   today" — never "#1". Trent, 2026-09-25: "Clean bedroom fans · 0/1" did not
+ * - The label carries progress and the period it covers, "Piano Scales · 1/2
+ *   today" — never "#1". Trent, 2026-09-25: "Dust the bookshelf · 0/1" did not
  *   say whether that was today's one or this month's. The words are the Quotas
  *   panel's own section headings (`freqLabel`), so the two never disagree; a
  *   period-less quota shows the count alone.
@@ -64,9 +70,12 @@ import type { Task } from '@/types'
  *   moves the prompt there for good — the editor's own PATCH, with Undo. The
  *   hold is the way in on desktop too; right-click stays unbound here, since
  *   on a quota chip it means −1 and Trent keeps that meaning.
- * - NO PUT-BACK. A handled prompt counts toward the slot but never joins its
- *   considered list, whose put-back is /undone (which a quota refuses). The
- *   toast's Undo is the way back.
+ * - PUT BACK (2026-09-25; before that there was none). A handled prompt
+ *   leaves the waiting list and joins its slot's considered list, after the
+ *   reminders, as `ConsideredPromptRow` below: the filled dashed circle puts
+ *   it back, exactly as a considered reminder's filled circle does — through
+ *   POST /api/quota-prompts/restore, never /undone (a quota refuses it). A
+ *   did-it's progress comes off with it.
  */
 
 export interface QuotaPromptRowProps {
@@ -169,13 +178,13 @@ export function QuotaPromptRow({
       className={promptRowClasses({ panel, selected, hiddenWhenNarrow, completing })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
-          In the row's gutter (the panel's in the list's), so the circle lines
-          up with the reminder rows' circles. */}
+          In the row's gutter (the panel's in the list's), so the dashed
+          circle lines up with the reminder rows' circles. */}
       <span
         aria-hidden="true"
         className={cn(
           'absolute w-[3px] rounded-full',
-          panel ? 'inset-y-1.5 -left-1' : 'inset-y-2.5 left-0.5',
+          panel ? 'inset-y-1.5 -left-1.5' : 'inset-y-2.5 left-0',
           trackStripeClass(prompt.stripe_color),
         )}
       />
@@ -194,7 +203,7 @@ export function QuotaPromptRow({
           {bubble(<span aria-hidden="true" className="pointer-events-none absolute inset-0" />)}
         </span>
       )}
-      <PromptCircle
+      <PromptDashedCircle
         prompt={prompt}
         panel={panel}
         completing={completing}
@@ -229,6 +238,74 @@ export function QuotaPromptRow({
   return row
 }
 
+/**
+ * A HANDLED prompt in a slot's considered list (2026-09-25) — the prompt twin
+ * of the considered reminder row (`ConsideredRow` in RemindersView,
+ * `ConsideredList` in the dashboard panel), in both sizes. Dim, and it does
+ * one thing: the filled dashed circle — the prompt's own "considered" glyph,
+ * the one it collapsed with — puts it back (`useReminders().putBackPrompt`).
+ * It keeps the label-colour stripe and the count, so it reads as the quota
+ * it is; the count shows what a did-it logged, which putting it back takes
+ * off.
+ */
+export function ConsideredPromptRow({
+  prompt,
+  variant = 'surface',
+  onPutBack,
+}: {
+  prompt: QuotaPrompt
+  variant?: 'surface' | 'panel'
+  onPutBack: (prompt: QuotaPrompt) => void
+}) {
+  const panel = variant === 'panel'
+  const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
+  return (
+    <li
+      data-considered-prompt={prompt.prompt_key}
+      className={cn(
+        'relative flex items-start rounded-xl',
+        panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'absolute w-[3px] rounded-full',
+          panel ? 'inset-y-1.5 -left-1.5' : 'inset-y-2.5 left-0',
+          trackStripeClass(prompt.stripe_color),
+        )}
+      />
+      <button
+        type="button"
+        onClick={() => onPutBack(prompt)}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={`Put back "${prompt.title}"`}
+        title="Put back"
+        data-prompt-put-back
+        className={cn(
+          'group/putback relative flex shrink-0 cursor-pointer items-center justify-center text-green-600 transition-colors hover:text-green-600/50',
+          size,
+        )}
+      >
+        <DashedRing px={panel ? 19 : 24} />
+        <span className="absolute inset-[22%] rounded-full bg-green-600 transition-colors group-hover/putback:bg-green-600/50" />
+      </button>
+      <p
+        className={cn(
+          'text-muted-foreground min-w-0 flex-1 text-pretty',
+          panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
+        )}
+      >
+        {prompt.title}
+        <span className="ml-1.5 text-[0.85em] whitespace-nowrap tabular-nums">
+          &middot; {countText(prompt)}
+        </span>
+        {prompt.has_notes && <NotesMarker />}
+      </p>
+    </li>
+  )
+}
+
 /** The square — "did it": logs one, and considers the prompt too. */
 function PromptDidButton({
   prompt,
@@ -260,7 +337,7 @@ function PromptDidButton({
       disabled={selecting}
       className={cn(
         selecting && 'invisible',
-        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
+        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors disabled:cursor-default',
         panel ? 'size-[19px]' : 'mt-[3px] size-6',
       )}
     >
@@ -323,10 +400,20 @@ function usePromptRowGestures({
 }
 
 /**
- * The circle — "considered" — exactly the reminder row's, including its
- * selection-mode checkbox (`ReminderRowMarker`).
+ * The dashed circle — "considered" (seen) — in the reminder row's circle's
+ * exact box: same size, same place, same tap target, and the same
+ * selection-mode checkbox (`ReminderRowMarker`). Only the glyph differs (see
+ * the docblock). Waiting: a dashed ring (`DashedRing`) in the circle's muted tone.
+ * Considered (the collapse): the dashed ring in green around a filled green
+ * disc — the reminder circle's green disc, kept inside the dashes — which is
+ * SF Symbols' `circle.dashed.inset.filled`, the native surfaces' glyph.
+ * (Lucide's dashes are open arcs, so `fill` on the icon itself would paint
+ * slivers, not a disc; the disc is its own element.) Lucide draws the ring at
+ * r=10 in its 24-unit box, a touch smaller than the reminder circle's ring. It
+ * is NOT scaled up to match: scaling pushed the dashes past the box into the
+ * label-colour stripe on its left (Trent, 2026-09-25).
  */
-function PromptCircle({
+function PromptDashedCircle({
   prompt,
   panel,
   completing,
@@ -345,12 +432,10 @@ function PromptCircle({
     return (
       <span
         aria-hidden
-        className={cn(
-          'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
-          size,
-        )}
+        className={cn('relative flex shrink-0 items-center justify-center text-green-600', size)}
       >
-        <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
+        <DashedRing px={panel ? 19 : 24} />
+        <span className="absolute inset-[22%] rounded-full bg-green-600" />
       </span>
     )
   }
@@ -362,7 +447,7 @@ function PromptCircle({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         aria-label={`Select "${prompt.title}"`}
-        className={cn('shrink-0', size)}
+        className={cn('shrink-0 cursor-pointer', size)}
       />
     )
   }
@@ -379,17 +464,48 @@ function PromptCircle({
       title="Considered"
       data-prompt-consider
       className={cn(
-        'border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors',
+        'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',
         size,
       )}
     >
-      {!panel && (
-        <Check
-          className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
-          strokeWidth={3}
-        />
-      )}
+      <DashedRing px={panel ? 19 : 24} />
     </button>
+  )
+}
+
+/**
+ * The dashed ring, drawn to the reminder circle's exact geometry: the same box
+ * (24px in the list, 19px in the dashboard panel) and the same 1.5px stroke
+ * sitting just inside the box edge, like the circle's `border-[1.5px]`. Eight
+ * even dashes (the count lucide's icon had). Deliberately NOT lucide's `CircleDashed`: that icon draws its
+ * ring at r=10 of 24, so it reads smaller than the circle beside it, and
+ * scaling it up pushed the dashes out of the box into the label stripe
+ * (Trent, 2026-09-25: "different-size circles is not good").
+ */
+function DashedRing({ px }: { px: number }) {
+  const stroke = 1.5
+  const r = (px - stroke) / 2
+  const segment = (2 * Math.PI * r) / 8
+  return (
+    <svg
+      aria-hidden="true"
+      data-dashed-ring
+      width={px}
+      height={px}
+      viewBox={`0 0 ${px} ${px}`}
+      fill="none"
+      className="shrink-0"
+    >
+      <circle
+        cx={px / 2}
+        cy={px / 2}
+        r={r}
+        stroke="currentColor"
+        strokeWidth={stroke}
+        strokeDasharray={`${segment * 0.65} ${segment * 0.35}`}
+        strokeLinecap="butt"
+      />
+    </svg>
   )
 }
 

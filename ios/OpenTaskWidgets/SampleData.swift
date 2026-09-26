@@ -54,7 +54,7 @@ enum SampleData {
                 slot: TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
                 reminders: [
                     TaskDTO(id: 103, title: "Step away from the desk", priority: 2, anchorTime: "12:30", isReminder: true),
-                    TaskDTO(id: 104, title: "Present is peace", priority: 3, anchorTime: "12:45", isReminder: true),
+                    TaskDTO(id: 104, title: "Slow is smooth", priority: 3, anchorTime: "12:45", isReminder: true),
                     TaskDTO(id: 105, title: "Drink water", priority: 0, anchorTime: "13:00", isReminder: true),
                 ],
                 prompts: []
@@ -165,9 +165,9 @@ enum SampleData {
                     rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 3, labels: ["health"]),
             TaskDTO(id: 311, projectId: 3, title: "Supplements", priority: 1,
                     rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, labels: ["health"]),
-            TaskDTO(id: 312, projectId: 3, title: "Balloon", priority: 1,
+            TaskDTO(id: 312, projectId: 3, title: "Posture", priority: 1,
                     rrule: "FREQ=WEEKLY", progressTarget: 4, progressCurrent: 0, labels: ["health"]),
-            TaskDTO(id: 313, projectId: 3, title: "Weight lift", priority: 1,
+            TaskDTO(id: 313, projectId: 3, title: "Rowing", priority: 1,
                     rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, labels: ["health"]),
             TaskDTO(id: 314, projectId: 3, title: "Cardio", priority: 1,
                     rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 1, labels: ["health"]),
@@ -184,10 +184,10 @@ enum SampleData {
             // quota that never turned green in a render review (`isTracked
             // == false` makes `isProgressMet` permanently false) — caught
             // and fixed against the actual Xcode preview, not assumed.
-            TaskDTO(id: 320, projectId: 1, title: "Audiobook notes", priority: 0,
+            TaskDTO(id: 320, projectId: 1, title: "Podcast notes", priority: 0,
                     rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
                     trackedFlag: true, labels: ["hub"]),
-            TaskDTO(id: 321, projectId: 1, title: "Card maintenance", priority: 0,
+            TaskDTO(id: 321, projectId: 1, title: "Bike tune-up", priority: 0,
                     rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
                     trackedFlag: true, labels: ["hub"]),
             TaskDTO(id: 322, projectId: 1, title: "Inbox zero", priority: 0,
@@ -198,7 +198,7 @@ enum SampleData {
                     trackedFlag: true, labels: ["hub"]),
 
             // This week · ideas
-            TaskDTO(id: 330, projectId: 2, title: "Certifications", priority: 2,
+            TaskDTO(id: 330, projectId: 2, title: "Evening courses", priority: 2,
                     rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
                     trackedFlag: true, labels: ["ideas"]),
             TaskDTO(id: 331, projectId: 2, title: "Applications", priority: 2,

@@ -14,7 +14,7 @@
  * specs assert on.
  */
 
-import { test, expect } from './fixtures'
+import { test, expect, waitForGetsSettled } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -180,7 +180,7 @@ test.describe('Reminders surface', () => {
       }),
       await createReminder(page, { title: 'Morning supplements', due_at: todayAt(7), priority: 3 }),
       await createReminder(page, {
-        title: 'Yesterday = Lesson, Tomorrow = Plan',
+        title: 'Morning = Focus, Afternoon = Meetings',
         due_at: todayAt(7),
       }),
       await createReminder(page, { title: 'A thought with no hour' }),
@@ -1301,7 +1301,19 @@ test.describe('Reminder details', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     let id: number | null = null
     try {
-      await openReminders(page)
+      // The toast names the slot from the view's own `timeSlots`, which stay
+      // empty until `/api/time-slots` answers — and the box is live before
+      // that. Typing first gave `Added "…"` instead of `Added to <slot>` (a
+      // product race, flaky until 2026-09-25: `quickAdd` fetches the slots it
+      // needs itself, but `createReminder`'s toast doesn't use them; fixing
+      // that in RemindersView is a separate follow-up). The heading shows only
+      // once the view has mounted and started that fetch.
+      await waitForGetsSettled(
+        page,
+        '/api/time-slots',
+        () => page.goto('/reminders'),
+        page.getByRole('region', { name: 'Reminders' }).getByRole('heading').first(),
+      )
       const input = page.getByRole('textbox', { name: 'Add a reminder' })
       await input.fill('A thought typed in place')
       await input.press('Enter')
