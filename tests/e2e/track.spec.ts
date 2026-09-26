@@ -1439,7 +1439,7 @@ test.describe('Quotas page — summary and details', () => {
       // One quota already there, so the page is the panel, not the empty state.
       await createTask(page, {
         title: `Probe summary anchor ${Date.now()}`,
-        progress_target: 1,
+        progress_target: 2,
         rrule: 'FREQ=WEEKLY',
       })
       await page.goto('/quotas')

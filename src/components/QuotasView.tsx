@@ -227,14 +227,18 @@ export function QuotasHeaderRow({
       {/* The page's h1, exactly as the Reminders headline is: this one line
           is the surface's summary, so it is the heading rather than a
           paragraph sitting where a heading should be. */}
-      <h1 className="text-muted-foreground min-w-0 truncate text-sm">
+      <h1 className="text-muted-foreground text-sm whitespace-nowrap">
         {count === 0 ? 'No quotas yet.' : `${count} quota${count === 1 ? '' : 's'}`}
       </h1>
       <div className="flex shrink-0 items-center gap-2">
         {count > 0 && viewSwitch}
-        <Button size="sm" onClick={onNew}>
+        {/* "New" on a phone: the count, the switch and "New quota" do not fit
+            one 375px line, and the count is the one thing that must never be
+            clipped. The accessible name stays "New quota" at every width. */}
+        <Button size="sm" onClick={onNew} aria-label="New quota">
           <Plus className="size-4" />
-          New quota
+          <span className="sm:hidden">New</span>
+          <span className="hidden sm:inline">New quota</span>
         </Button>
       </div>
     </div>
