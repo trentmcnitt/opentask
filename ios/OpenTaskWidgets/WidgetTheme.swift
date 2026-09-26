@@ -1025,14 +1025,19 @@ enum WidgetLink {
     }
 
     /// The Tasks header title link when scoped to one project (2026-09-23) —
-    /// the project-page twin of `reminders(slot:)`. "Up next" (the unified
-    /// `allProjects` scope) still links to the bare `dashboard` above; only a
-    /// project-scoped header uses this, resolving to `/?project=<id>` so the
-    /// app opens scoped to that project instead of landing back on the
-    /// unified list.
+    /// the project-page twin of `reminders(slot:)`. Today and Up next still
+    /// link to the bare `dashboard` above; only a project-scoped header uses
+    /// this, resolving to `/?project=<id>` so the app opens scoped to that
+    /// project instead of landing back on the unified list.
     static func project(_ id: Int) -> URL {
         URL(string: "\(scheme)://project/\(id)") ?? dashboard
     }
+
+    /// The Tasks header title link on the Overdue page (2026-09-25) —
+    /// resolves to `/?filter=overdue`, the dashboard with its Overdue chip
+    /// already on (`DashboardClient.tsx`'s `?filter=` handling), so the
+    /// overdue items are right there to handle.
+    static var overdue: URL { URL(string: "\(scheme)://overdue")! }
 
     /// One reminder, ON the Reminders surface.
     ///

@@ -38,6 +38,7 @@
 		4878E2635134BD8DED88B74C /* ReminderChecklistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6933E944911C147430B2A615 /* ReminderChecklistView.swift */; };
 		499609D6583A23B9CC442901 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6B4551ACAEF40F8906C15079 /* SwiftUI.framework */; };
 		4A4BDDB42FF8A951E3F4BE4B /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2691657DEC3A30B3BCD14CA /* WidgetIntents.swift */; };
+		4C1BA9E22873F10B266275FA /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7217478BDB26B0487A7C05FF /* TasksTimeline.swift */; };
 		4D3B7444AB7105F8B579E5AC /* WatchFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA310D3214806920A653F67 /* WatchFormatting.swift */; };
 		4D721AFB724370814CF5D477 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
 		4EC4D907C7BE20C0D8B661A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E351757DF79BFD8A5FA11A08 /* Assets.xcassets */; };
@@ -208,6 +209,7 @@
 		683C420F16089F7B2D99FED2 /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
 		6933E944911C147430B2A615 /* ReminderChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderChecklistView.swift; sourceTree = "<group>"; };
 		6B4551ACAEF40F8906C15079 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		7217478BDB26B0487A7C05FF /* TasksTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTimeline.swift; sourceTree = "<group>"; };
 		769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeGridView.swift; sourceTree = "<group>"; };
 		78853DF57CF91B869B3AFBCB /* OpenTaskWatchWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWatchWidgetBundle.swift; sourceTree = "<group>"; };
 		796964A2DD4C8A80D223996C /* WatchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViewModel.swift; sourceTree = "<group>"; };
@@ -366,6 +368,7 @@
 				DD91DE11F4F065B831544415 /* RemindersWidgetViews.swift */,
 				B1A737E1E1E5CCDFBB3EAC37 /* SampleData.swift */,
 				38B3442BCD5D9D0C9A5EAECE /* TaskFeed.swift */,
+				7217478BDB26B0487A7C05FF /* TasksTimeline.swift */,
 				BC01B2E657B37EAE25114C60 /* TasksWidget.swift */,
 				B36A78664DC8E8AA2A1216F1 /* TasksWidgetViews.swift */,
 				683C420F16089F7B2D99FED2 /* TrackWidget.swift */,
@@ -674,6 +677,7 @@
 				966038B9656BF4F8140022D0 /* SampleData.swift in Sources */,
 				0066F0BAEF2F0E3A10C6D781 /* TaskFeed.swift in Sources */,
 				F0F52293DB52D0DBA364994F /* TaskSnoozePlan.swift in Sources */,
+				4C1BA9E22873F10B266275FA /* TasksTimeline.swift in Sources */,
 				94A7CE981B6DF30502A06A54 /* TasksWidget.swift in Sources */,
 				D6BB717248EF1776F81B8E28 /* TasksWidgetViews.swift in Sources */,
 				AB363025B6A55407760C15DF /* TimeSlotStore.swift in Sources */,
