@@ -135,7 +135,7 @@ describe('Quota prompts — placement', () => {
 
   test('QP-012: a daily quota spreads its numbers, one row per period, showing progress', () => {
     setUserDefault(slotId('Morning'))
-    const q = quota('Daily Walks', 'FREQ=DAILY', 2)
+    const q = quota('Daily Stretch', 'FREQ=DAILY', 2)
     const rows = prompts()
     expect(rows.map((p) => [p.slot, p.number, p.prompt_key])).toEqual([
       ['Morning', 1, promptKey(q.id, 1, TODAY)],
@@ -161,7 +161,7 @@ describe('Quota prompts — placement', () => {
   })
 
   test('QP-014: per-number overrides win; an override to a deleted slot falls back', () => {
-    const q = quota('Daily Walks', 'FREQ=DAILY', 2)
+    const q = quota('Daily Stretch', 'FREQ=DAILY', 2)
     configure(q.id, { numbers: { '1': slotId('Evening'), '2': slotId('Evening') } })
     expect(prompts().map((p) => [p.slot, p.number])).toEqual([['Evening', 2]])
 
@@ -279,7 +279,7 @@ describe('Quota prompts — which quotas prompt', () => {
   })
 
   test("QP-022: at 00:02, before the cron, yesterday's met daily reads 0 and is not done", () => {
-    const q = quota('Daily Walks', 'FREQ=DAILY', 1)
+    const q = quota('Daily Stretch', 'FREQ=DAILY', 1)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id }) // anchors + met Thursday
     const fri0002 = new Date('2026-01-16T06:02:00Z')
     vi.setSystemTime(fri0002)
@@ -322,7 +322,7 @@ describe('Quota prompts — actions', () => {
 
   test('QP-032: did-it on daily #k raises the count to at least k, never past it', () => {
     setUserDefault(slotId('Morning'))
-    const q = quota('Daily Walks', 'FREQ=DAILY', 3)
+    const q = quota('Daily Stretch', 'FREQ=DAILY', 3)
     act(promptKey(q.id, 2, TODAY), true)
     expect(getTaskById(q.id)!.progress_current).toBe(2)
     act(promptKey(q.id, 1, TODAY), true)
@@ -379,7 +379,7 @@ describe('Quota prompts — batches and refusals', () => {
       input: { title: 'Breathe', is_reminder: true, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
     })
     const weekly = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
-    const daily = quota('Daily Walks', 'FREQ=DAILY', 2)
+    const daily = quota('Daily Stretch', 'FREQ=DAILY', 2)
     const before = (getDb().prepare('SELECT COUNT(*) AS n FROM undo_log').get() as { n: number }).n
 
     const result = bulkDone({
@@ -425,7 +425,7 @@ describe('Quota prompts — batches and refusals', () => {
 
   test('QP-039: daily did-it adds only what is missing up to k', () => {
     setUserDefault(slotId('Morning'))
-    const q = quota('Daily Walks', 'FREQ=DAILY', 3)
+    const q = quota('Daily Stretch', 'FREQ=DAILY', 3)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
     act(promptKey(q.id, 3, TODAY), true)
     expect(getTaskById(q.id)!.progress_current).toBe(3)
@@ -452,7 +452,7 @@ describe('Quota prompts — batches and refusals', () => {
   })
 
   test("QP-037: undo of a did-it after the period rolled over leaves today's count alone", () => {
-    const q = quota('Daily Walks', 'FREQ=DAILY', 2)
+    const q = quota('Daily Stretch', 'FREQ=DAILY', 2)
     act(promptKey(q.id, 1, TODAY), true)
     const fri = new Date('2026-01-16T16:00:00Z')
     vi.setSystemTime(fri)

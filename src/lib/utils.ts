@@ -23,7 +23,7 @@ export function isMacPlatform(): boolean {
  * inside them stop the row's `click`. That is not enough: `dblclick` is a
  * SEPARATE event with its own trip up the tree, so stopping `click` leaves it
  * untouched and the row opens anyway. Trent, 2026-09-06, on a quota's +1:
- * "if I double-tap the +1 on Broccoli Avocado, then the modal pops up" — the
+ * "if I double-tap the +1 on Oatmeal Berries, then the modal pops up" — the
  * two clicks logged +2 (rapid-tapping a count is the point of that button) and
  * the dblclick behind them opened the editor on top.
  *

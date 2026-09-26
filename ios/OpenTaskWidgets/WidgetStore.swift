@@ -395,7 +395,7 @@ enum WidgetStore {
     /// cached payload and retire this call's staged delta — the progress twin
     /// of `confirmCompletion` (2026-09-24, the stale-count fix).
     ///
-    /// THE BUG (Trent's phone, 2026-09-24 11:53: Weight Lift taken 3/3 → 0/3
+    /// THE BUG (Trent's phone, 2026-09-24 11:53: Rowing Sets taken 3/3 → 0/3
     /// on the server over seven taps while the widget kept drawing the old
     /// count): success used to only SUBTRACT the staged delta, and nothing
     /// ever wrote the new count into the cache. That was right only if the
@@ -1047,7 +1047,7 @@ enum WidgetStore {
     ///
     /// Quota prompts made the Reminders payload depend on quota state
     /// (2026-09-24): a `+1` on the Quotas widget, or a prompt action, changes
-    /// prompts that only the server computes (a did-it on Daily Walks #1 can
+    /// prompts that only the server computes (a did-it on Piano Scales #1 can
     /// finish #2 in another slot). So those paths mark Reminders stale and
     /// let its reload fetch, rather than re-deriving the server's prompt
     /// rules here. `clearInteraction(kind: Reminders)` would also drop the
@@ -1074,7 +1074,7 @@ enum WidgetStore {
     /// The acted prompt is marked handled (`handled(did:)`). Then every
     /// prompt of each returned quota takes the SERVER's count, and a daily
     /// one is done once that count reaches its number — the server's own rule
-    /// (`getQuotaPromptsBySlot`), which is how a did-it on Daily Walks #1 can
+    /// (`getQuotaPromptsBySlot`), which is how a did-it on Piano Scales #1 can
     /// also finish #2 in another slot without a fetch. Nothing else is
     /// re-derived: a weekly prompt's "logged today" is only known server-side,
     /// and the next real fetch replaces this cache wholesale anyway.
@@ -1565,8 +1565,8 @@ enum WidgetStore {
     /// only if the server rejects it). PR #58 kept a just-met chip visible
     /// for ~90s after any tap — the web panel's "put away at load, never
     /// under a finger" rule, ported — and Trent's phone showed what that
-    /// costs on a widget: "Weight Lift 3/3" and "Music Practice 2/1" still
-    /// showing with the dot off, and Kazoo over-tapped because its met chip
+    /// costs on a widget: "Rowing Sets 3/3" and "Sketchbook Time 2/1" still
+    /// showing with the dot off, and a met quota over-tapped because its chip
     /// stayed a live `+1` target. A widget has no session to "hold for", so
     /// the rule does not carry over. On: met chips show, green, and a tap
     /// on one is `+1` like any chip — over-target counts ("2/1") are allowed,

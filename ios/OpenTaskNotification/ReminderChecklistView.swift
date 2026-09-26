@@ -22,7 +22,7 @@ import SwiftUI
 /// prompts are rows too, after its reminders (the web and the widgets put
 /// them there). A prompt row has a DASHED circle where the reminder row has
 /// its solid one — staging CONSIDERED ("seen") — plus a square beside its
-/// count ("Daily Walks · 1/2") staging DID IT (+1, and considered). The two are one choice per prompt: tapping
+/// count ("Piano Scales · 1/2") staging DID IT (+1, and considered). The two are one choice per prompt: tapping
 /// the other switches it, tapping the same one again un-stages it. The whole
 /// staged set, reminders and prompts, commits in ONE
 /// `POST /api/tasks/bulk/complete` (`ids` + `prompts`): one transaction, one

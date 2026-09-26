@@ -180,7 +180,7 @@ test.describe('Reminders surface', () => {
       }),
       await createReminder(page, { title: 'Morning supplements', due_at: todayAt(7), priority: 3 }),
       await createReminder(page, {
-        title: 'Yesterday = Lesson, Tomorrow = Plan',
+        title: 'Morning = Focus, Afternoon = Meetings',
         due_at: todayAt(7),
       }),
       await createReminder(page, { title: 'A thought with no hour' }),

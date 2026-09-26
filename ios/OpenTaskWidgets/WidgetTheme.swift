@@ -205,7 +205,7 @@ enum WidgetTheme {
     // ADDENDUM, 2026-09-23 (iOS gets the same measurement, capped): Trent's
     // iPhone screenshots showed the same family of complaints on the Home
     // Screen Large widgets — a visible gap between one-line titles ("Check
-    // GitHub issues" / "Do my mobility"), and text truncating at TWO lines when
+    // the team inbox" / "Do my stretches"), and text truncating at TWO lines when
     // he wanted three before an ellipsis, plus "at least one or two more"
     // reminders visible at once. `measuredLineCount`/`measuredWidth`/
     // `subheadlineFont`/`caption2Font` below, previously macOS-only, are now
@@ -272,8 +272,8 @@ enum WidgetTheme {
     // rows on its page (row caps count ITEMS, never lines). systemMedium
     // wraps too; it keeps its 36pt finger floor (no marker bleed there), and
     // since it has no pager it simply shows fewer rows under the same "N
-    // left" count. A single title taller than the whole list area (Trent's
-    // real "Learning a physical skill needs…" reminder at XXX Large text
+    // left" count. A single title taller than the whole list area (the
+    // sample paragraph reminder, "Practice the new song slowly…", at XXX Large text
     // needs ~13 lines on a systemLarge card with room for ~8) can't be
     // shown at full size anywhere: `WidgetTextMetrics.titleLines` flags it
     // `shrinks`, the row is framed to the whole budget (so `WidgetTheme.
@@ -281,12 +281,12 @@ enum WidgetTheme {
     // page (`minimumScaleFactor`, `WidgetTheme.overflowTitleScale`) rather
     // than ending in "…" — the whole thought, smaller. Tried first and
     // rejected on the render: clamping it to the lines that fit cut it off
-    // mid-sentence ("…connect the smart, thinking…"). The alternative of a
+    // mid-sentence ("…marking it on the sheet…"). The alternative of a
     // row taller than the card would be clipped hard by WidgetKit.
     //
     // Accepted side effect of keeping list ORDER: a short row followed by
     // one that can't share its page leaves that page part-empty (Early
-    // morning at XXX Large: "Supplements" alone on page 1, the long one on
+    // morning at XXX Large: "Breakfast" alone on page 1, the long one on
     // page 2). Reordering to pack pages would move reminders out of the
     // order Trent set them in.
 
@@ -598,7 +598,7 @@ enum WidgetTheme {
     /// 2. Each candidate sliced ITS OWN page from the stored page index, so
     ///    the winner — and with it the page size and the page count —
     ///    depended on which page was showing. The same 7 reminders read
-    ///    "1/4" on page 1 and "2/2" on page 2 (one row, Cold Shower, alone
+    ///    "1/4" on page 1 and "2/2" on page 2 (one row, Open blinds, alone
     ///    on an otherwise empty card): on page 2 the 6-row candidate's
     ///    slice was a single short row, which trivially "fit".
     ///
@@ -694,7 +694,7 @@ struct RenderedTextSample {
 /// The row-sizing numbers the Reminders/Tasks lists page with, at the text
 /// size the widget is ACTUALLY drawn at.
 ///
-/// TWO CORRECTIONS, both found by rendering Trent's real data at his text
+/// TWO CORRECTIONS, both found by rendering realistic data at Trent's text
 /// size (XXX Large) in the Xcode preview, 2026-09-24:
 ///
 /// 1. **The text size.** It is read from the view's `\.dynamicTypeSize`, never
@@ -710,7 +710,7 @@ struct RenderedTextSample {
 ///    SwiftUI draws in a widget: SwiftUI's line pitch there measured 24.13,
 ///    and its lines are correspondingly narrower — a title UIKit wrapped to
 ///    three lines rendered in two, and its row kept an empty third line
-///    ("Check if anyone is waiting on me", "Weekly allowance ($8)"). So
+///    ("Reply to the pending team messages", "Weekly plant food ($6)"). So
 ///    when a `RenderedTextSample` is supplied, the measuring font is SCALED
 ///    to SwiftUI's drawn width for the same sample line, and the line
 ///    height is SwiftUI's drawn pitch. UIKit still does the wrapping — the

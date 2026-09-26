@@ -730,7 +730,7 @@ private struct TaskRow: View {
     /// where that made the row shorter, so neighbouring rows mixed "Tomorrow
     /// 9:00 am" on one line with "Tomorrow" over "12:00 pm" — Trent asked for
     /// one rule. On one line "Tomorrow 4:00 pm" also took half the row at
-    /// his text size and pushed titles like "Weekly allowance ($8)" to three
+    /// his text size and pushed titles like "Weekly plant food ($6)" to three
     /// narrow lines.
     let dueStacked: Bool
     /// See `TasksListView.markerBleed`. Zero outside normal mode: snooze

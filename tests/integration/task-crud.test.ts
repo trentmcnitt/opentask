@@ -257,18 +257,18 @@ describe('Task clear due date', () => {
     test('PATCH round-trips it, and an empty string clears it to null', async () => {
       const createRes = await apiFetch('/api/tasks', {
         method: 'POST',
-        body: { title: 'Balloon breathing practice', project_id: 1 },
+        body: { title: 'Posture practice', project_id: 1 },
       })
       const created = (await createRes.json()).data
       expect(created.short_title).toBeNull()
 
       const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
         method: 'PATCH',
-        body: { short_title: 'Balloon' },
+        body: { short_title: 'Posture' },
       })
       expect(patchRes.status).toBe(200)
       const patched = (await patchRes.json()).data
-      expect(patched.short_title).toBe('Balloon')
+      expect(patched.short_title).toBe('Posture')
 
       const cleared = await apiFetch(`/api/tasks/${created.id}`, {
         method: 'PATCH',

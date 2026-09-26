@@ -2,7 +2,7 @@
  * Reminders surface queries (REDESIGN-V03 §6)
  *
  * Prompted thoughts — principles and considerations delivered by repetition
- * ("Yesterday = Lesson, Tomorrow = Plan, Today = Practice"). Not actions.
+ * ("Morning = Focus, Afternoon = Meetings, Evening = Rest"). Not actions.
  * Completing one means "I considered it", and that IS its completion.
  *
  * These differ BEHAVIOURALLY from tasks, which is why they get a surface rather

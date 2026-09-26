@@ -418,7 +418,7 @@ Bad: "This task might benefit from your attention." (too vague)
 
 Given tasks including:
 - [42] "Call Grandpa" | priority: 1 | due: Sun, Feb 8, 4:00 PM | created: Sat, Jan 18, 10:00 AM | labels: family | project: Inbox | one-off
-- [65] "Charge jump starter" | priority: 0 | due: Sat, Feb 8, 9:00 AM | created: Mon, Jan 27, 8:30 AM | labels: none | project: Inbox | one-off
+- [65] "Check the smoke alarm" | priority: 0 | due: Sat, Feb 8, 9:00 AM | created: Mon, Jan 27, 8:30 AM | labels: none | project: Inbox | one-off
 - [7] "Morning affirmation" | priority: 0 | due: Mon, Feb 9, 8:00 AM | created: Wed, Jan 1, 8:00 AM | labels: none | project: Inbox | rrule: FREQ=DAILY
 - [88] "File insurance claim" | priority: 3 | due: Sat, Feb 8, 5:00 PM | created: Thu, Feb 6, 9:00 AM | labels: none | project: Inbox | one-off | notes: 7-day filing window, claim #IN-4829
 
@@ -427,7 +427,7 @@ Given tasks including:
   "tasks": [
     { "task_id": 88, "reason": "The 7-day filing window for claim #IN-4829 is closing — priority 3 deadline that needs action soon." },
     { "task_id": 42, "reason": "A call to your granddad that's been on your list for 3 weeks — easy to keep putting off but always feels good once you do it." },
-    { "task_id": 65, "reason": "Been sitting for almost 2 weeks. Quick task — either charge it this week or let it go." }
+    { "task_id": 65, "reason": "Been sitting for almost 2 weeks. Quick task — either test it this week or let it go." }
   ],
   "summary": "An insurance claim has a hard deadline closing, a family call has been sitting for weeks, and a small maintenance task is gathering dust.",
   "generated_at": "2026-02-09T16:00:00Z"

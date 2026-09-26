@@ -986,12 +986,12 @@ describe('local→UTC timezone conversion', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      input: { title: 'weekly linkedin/x post thursdays 9am' },
+      input: { title: 'weekly newsletter post thursdays 9am' },
     })
 
     mockEnrichmentQuery.mockResolvedValueOnce(
       mockResult({
-        title: 'Weekly linkedin/x post',
+        title: 'Weekly newsletter post',
         due_at: '2026-04-17T09:00:00', // Friday — wrong weekday for BYDAY=TH
         rrule: 'FREQ=WEEKLY;BYDAY=TH',
       }),

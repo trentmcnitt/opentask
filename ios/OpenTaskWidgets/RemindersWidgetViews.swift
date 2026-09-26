@@ -66,7 +66,7 @@ private struct RemindersSmallView: View {
     private var waitingCount: Int { entry.group?.waitingCount ?? 0 }
 
     /// The first waiting item's text and weight: the first reminder, else
-    /// the first waiting prompt ("Daily Walks · 0/2") — prompts come after
+    /// the first waiting prompt ("Piano Scales · 0/2") — prompts come after
     /// reminders in a slot, as on the web.
     private var firstItem: (text: String, weight: Font.Weight)? {
         if let reminder = entry.group?.reminders.first {
@@ -104,7 +104,7 @@ private struct RemindersSmallView: View {
                     // No line limit (2026-09-24, never truncate a reminder):
                     // the 2×2 has a fixed card, so a long title SHRINKS into
                     // what's left under the count instead of ending in "…"
-                    // ("Supplements ( Vitamin C, Zin…" at XXX Large).
+                    // ("Breakfast ( Oatmeal, Berri…" at XXX Large).
                     Text(firstItem.text)
                         .font(.caption2)
                         .fontWeight(firstItem.weight)
@@ -394,7 +394,7 @@ private struct RemindersListView: View {
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
         case .done(let reminder):
             // Wraps in full too (2026-09-24) — a completed reminder is still
-            // a reminder, and "Yesterday = Lesson, Tomorrow…" struck through
+            // a reminder, and "Morning = Focus, Afternoon…" struck through
             // says nothing.
             let fit = metrics.titleLines(
                 reminder.title, width: width - WidgetTheme.rowMarkerSize - 10, weight: .regular, maxHeight: budget,
@@ -923,8 +923,8 @@ private struct ReminderRow: View {
 /// link live even while shown as done.
 ///
 /// Wraps in full like `ReminderRow` (2026-09-24 — it was `.lineLimit(1)`
-/// as "secondary content" until Trent's real data showed "Yesterday = Lesson,
-/// Tomorrow…" cut off; the never-truncate rule has no exception for done).
+/// as "secondary content" until realistic data showed "Morning = Focus,
+/// Afternoon…" cut off; the never-truncate rule has no exception for done).
 /// `lines`/`height`/`shrinks` are what the pager counted.
 private struct DoneReminderRow: View {
     let reminder: TaskDTO
@@ -1010,7 +1010,7 @@ enum PromptRowMetrics {
 /// WHAT DIFFERS (Trent's final decisions, 2026-09-24):
 /// - A thin LEADING stripe in the quota's label color — the quota chip's own
 ///   stripe.
-/// - The label carries the count, "Daily Walks · 1/2" — one `Text` built from
+/// - The label carries the count, "Piano Scales · 1/2" — one `Text` built from
 ///   `QuotaPromptDTO.labelText`, the exact string the pager measured.
 /// - TWO controls at the trailing edge. The DASHED circle is where every
 ///   reminder's solid circle is (the outermost column, thumb reach) and means
@@ -1036,7 +1036,7 @@ private struct PromptRow: View {
     /// quota has no notes. See `ReminderRow.notesGlyphSize`.
     let notesGlyphSize: CGFloat?
 
-    /// "Daily Walks, 1/2 today" (+ ", has notes") — what VoiceOver reads for
+    /// "Piano Scales, 1/2 today" (+ ", has notes") — what VoiceOver reads for
     /// the label and names each control by.
     private var spokenLabel: String {
         NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
