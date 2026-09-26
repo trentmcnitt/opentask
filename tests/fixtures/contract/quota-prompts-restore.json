@@ -1,7 +1,6 @@
 {
   "data": {
-    "considered": 0,
-    "did": 1,
+    "restored": 1,
     "tasks": [
       {
         "id": 101,
@@ -27,17 +26,17 @@
         "archived_at": null,
         "labels": ["personal"],
         "progress_target": 2,
-        "progress_current": 1,
+        "progress_current": 0,
         "progress_period_start": "2026-01-15T16:00:00.000Z",
         "is_reminder": false,
         "is_tracked": true,
         "quota_prompt_config": null,
         "quota_day_state": {
           "date": "2026-01-15",
-          "logged": 1,
-          "did": ["q:101:1:2026-01-15"],
-          "considered": ["q:101:1:2026-01-15"],
-          "did_applied": { "q:101:1:2026-01-15": 1 }
+          "logged": 0,
+          "did": [],
+          "considered": [],
+          "did_applied": {}
         },
         "completion_count": 0,
         "snooze_count": 0,

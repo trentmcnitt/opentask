@@ -67,6 +67,111 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
         XCTAssertTrue(WidgetStore.pendingPromptActions(now: now).isEmpty, "expired entries are pruned")
     }
 
+    // MARK: Put back (2026-09-25)
+
+    /// A tapped put-back draws the prompt WAITING at once — out of DONE —
+    /// with its count left alone (only the server knows what a did-it added).
+    func testStagedPutBackDrawsWaitingWithTheSameCount() throws {
+        let afterDid = try groups("reminders-after-did")
+        let key = Fixtures.promptKey(Fixtures.daily, 1)
+        XCTAssertFalse(try Fixtures.prompt(key, in: "reminders-after-did").isWaiting)
+        WidgetStore.stagePendingPromptRestore(key, now: now)
+
+        let drawn = WidgetStore.filterPending(afterDid, now: now)
+        let row = try XCTUnwrap(drawn.flatMap(\.prompts).first { $0.promptKey == key })
+        XCTAssertTrue(row.isWaiting)
+        XCTAssertEqual(row.current, 1)
+        XCTAssertEqual(drawn[0].waitingCount, afterDid[0].waitingCount + 1)
+        XCTAssertEqual(
+            drawn.map { $0.waitingCount + $0.consideredCount },
+            afterDid.map { $0.waitingCount + $0.consideredCount },
+            "a slot's day total never moves, only the split"
+        )
+        XCTAssertTrue(WidgetStore.hasRecentInteraction(now: now), "a put-back repaints from cache")
+
+        // A failed call clears it: the prompt is honestly handled again.
+        WidgetStore.clearPendingPromptRestore(key)
+        XCTAssertEqual(WidgetStore.filterPending(afterDid, now: now), afterDid)
+    }
+
+    /// The latest tap on a key wins — a put-back and an action never both
+    /// draw, whichever order they came in.
+    func testPutBackAndActionCrossClear() {
+        let key = Fixtures.promptKey(Fixtures.monthly, 0)
+        WidgetStore.stagePendingPromptAction(key, did: true, now: now)
+        WidgetStore.stagePendingPromptRestore(key, now: now)
+        XCTAssertTrue(WidgetStore.pendingPromptActions(now: now).isEmpty)
+        XCTAssertEqual(WidgetStore.pendingPromptRestores(now: now), [key])
+
+        WidgetStore.stagePendingPromptAction(key, did: false, now: now)
+        XCTAssertTrue(WidgetStore.pendingPromptRestores(now: now).isEmpty)
+        XCTAssertEqual(WidgetStore.pendingPromptActions(now: now), [key: false])
+    }
+
+    func testPutBackTombstoneExpiresAndUndoClearsIt() throws {
+        let key = Fixtures.promptKey(Fixtures.daily, 1)
+        WidgetStore.stagePendingPromptRestore(key, now: now)
+        XCTAssertEqual(WidgetStore.pendingPromptRestores(now: now.addingTimeInterval(89)).count, 1)
+        XCTAssertTrue(WidgetStore.pendingPromptRestores(now: now.addingTimeInterval(91)).isEmpty)
+
+        WidgetStore.stagePendingPromptRestore(key, now: now)
+        WidgetStore.clearAllPendingState()
+        XCTAssertTrue(WidgetStore.pendingPromptRestores(now: now).isEmpty, "an Undo must show it handled again")
+    }
+
+    /// The server lowered a daily 2/day quota from 2 to 0: BOTH rows take the
+    /// count, neither is done any more, the put-back row is un-considered,
+    /// and the tombstone retires (the cache is the truth now).
+    func testConfirmPromptRestoreRecountsDownAndRetiresTheTombstone() throws {
+        WidgetStore.saveReminders(try groups())
+        let one = Fixtures.promptKey(Fixtures.daily, 1)
+        WidgetStore.confirmPromptAction(one, did: true, tasks: [dailyQuota(current: 2)])
+        WidgetStore.stagePendingPromptRestore(one, now: now)
+
+        WidgetStore.confirmPromptRestore(one, tasks: [dailyQuota(current: 0)])
+        let rows = try XCTUnwrap(WidgetStore.loadReminders()).value.groups.flatMap(\.prompts)
+            .filter { $0.taskId == Fixtures.daily }
+        XCTAssertEqual(rows.map(\.current), [0, 0])
+        XCTAssertEqual(rows.map(\.done), [false, false])
+        XCTAssertEqual(rows.map(\.considered), [false, false])
+        XCTAssertTrue(WidgetStore.pendingPromptRestores(now: now).isEmpty)
+    }
+
+    /// A daily row whose count still reaches it stays done — the server
+    /// takes back only what a did-it added — and the cache says so rather
+    /// than keep drawing the optimistic "waiting".
+    func testConfirmPromptRestoreKeepsADailyRowTheCountStillReaches() throws {
+        WidgetStore.saveReminders(try groups("reminders-after-did"))
+        let one = Fixtures.promptKey(Fixtures.daily, 1)
+        WidgetStore.stagePendingPromptRestore(one, now: now)
+        WidgetStore.confirmPromptRestore(one, tasks: [dailyQuota(current: 1)])
+        let row = try XCTUnwrap(WidgetStore.loadReminders()).value.groups.flatMap(\.prompts)
+            .first { $0.promptKey == one }
+        XCTAssertEqual(row?.done, true)
+        XCTAssertEqual(row?.considered, false)
+        let drawn = WidgetStore.filterPending(try XCTUnwrap(WidgetStore.loadReminders()).value.groups, now: now)
+        XCTAssertEqual(drawn.flatMap(\.prompts).first { $0.promptKey == one }?.isWaiting, false)
+    }
+
+    /// A once-a-day prompt is done while anything was logged today — only
+    /// the server knows that — so its put-back makes the next pass fetch.
+    func testConfirmPromptRestoreOfAWeeklyPromptRequiresAFetch() throws {
+        WidgetStore.saveReminders(try groups("reminders"))
+        WidgetStore.markInteraction(now: now)
+        XCTAssertTrue(WidgetStore.canRepaintRemindersFromCache(now: now))
+        let weekly = try Fixtures.decode(TaskDTO.self, "task-progress")
+        WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.weekly, 0), tasks: [weekly])
+        XCTAssertFalse(WidgetStore.canRepaintRemindersFromCache(now: now))
+    }
+
+    /// Daily rows re-count WITHOUT a fetch when nothing is left in doubt.
+    func testConfirmPromptRestoreOfADailyPromptRepaintsFromCache() throws {
+        WidgetStore.saveReminders(try groups("reminders-after-did"))
+        WidgetStore.markInteraction(now: now)
+        WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.daily, 1), tasks: [dailyQuota(current: 0)])
+        XCTAssertTrue(WidgetStore.canRepaintRemindersFromCache(now: now))
+    }
+
     // MARK: confirmPromptAction
 
     /// A did-it that the server answered with count 2 finishes BOTH of a

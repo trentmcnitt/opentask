@@ -127,36 +127,90 @@ export function parsePromptKey(key: string): ParsedPromptKey | null {
  */
 export function dayStateFor(state: QuotaDayState | null | undefined, date: string): QuotaDayState {
   if (state && state.date === date) {
+    const applied = state.did_applied
     return {
       date,
       logged: Math.max(0, state.logged ?? 0),
       did: Array.isArray(state.did) ? state.did : [],
       considered: Array.isArray(state.considered) ? state.considered : [],
+      did_applied: applied && typeof applied === 'object' && !Array.isArray(applied) ? applied : {},
     }
   }
-  return { date, logged: 0, did: [], considered: [] }
+  return { date, logged: 0, did: [], considered: [], did_applied: {} }
+}
+
+/** A stored record as the API sends it: every field present (legacy rows lack `did_applied`). */
+export function normalizeDayState(state: QuotaDayState | null): QuotaDayState | null {
+  return state && typeof state.date === 'string' ? dayStateFor(state, state.date) : state
+}
+
+/**
+ * What a key in `did` added to the count, for taking it back. Recorded since
+ * 2026-09-25 (`did_applied`). A key "did" before then has no record: a
+ * once-a-day prompt's did-it always added exactly 1 (it adds nothing only
+ * when its key is already in `did`), so that is derived, not guessed; a daily
+ * #k added "whatever was missing up to k", which cannot be recovered, so it
+ * reads as 0 — putting it back then un-handles the row and leaves the count.
+ */
+export function didApplied(day: QuotaDayState, key: string): number {
+  const recorded = day.did_applied[key]
+  if (typeof recorded === 'number' && recorded >= 0) return recorded
+  return parsePromptKey(key)?.number === 0 ? 1 : 0
+}
+
+/** `day` without `keys` in `did`, `considered` or `did_applied` — the prompts are waiting again. */
+export function withoutKeys(day: QuotaDayState, keys: Set<string>): QuotaDayState {
+  if (keys.size === 0) return day
+  return {
+    ...day,
+    did: day.did.filter((k) => !keys.has(k)),
+    considered: day.considered.filter((k) => !keys.has(k)),
+    did_applied: Object.fromEntries(Object.entries(day.did_applied).filter(([k]) => !keys.has(k))),
+  }
+}
+
+/**
+ * The did-its that no longer hold after the count went down (Trent,
+ * 2026-09-25, settling PR #92's open question): a −1 that takes back what a
+ * "did it" logged brings its prompt back as WAITING, not left handled.
+ *
+ * - Daily #k: holds while today's count is at least k.
+ * - Every other quota (key number 0): holds while anything is still logged
+ *   today — the did-it was that progress.
+ *
+ * Only keys in `did`. A prompt that was only considered stays considered: the
+ * user looked at it and chose not to act, and a −1 does not change that.
+ */
+export function brokenDids(day: QuotaDayState, current: number): Set<string> {
+  const broken = new Set<string>()
+  for (const key of day.did) {
+    const number = parsePromptKey(key)?.number
+    if (number === undefined) continue
+    if (number === 0 ? day.logged === 0 : current < number) broken.add(key)
+  }
+  return broken
 }
 
 /**
  * Today's record after `applied` progress was logged from anywhere — the
- * widget, the watch, the web chips, a prompt's "did it". Net, and never below
- * zero: a +1 corrected by a −1 is "nothing logged today", so the prompt it hid
- * comes back.
+ * widget, the watch, the web chips, a prompt's "did it" — leaving the count at
+ * `current`. Net, and never below zero: a +1 corrected by a −1 is "nothing
+ * logged today". Any did-it the count no longer supports is dropped
+ * (`brokenDids`), so its prompt waits again — and a later "did it" on it
+ * counts afresh rather than being taken for a duplicate.
  */
 export function withLogged(
   state: QuotaDayState | null | undefined,
   date: string,
   applied: number,
+  current: number,
 ): QuotaDayState {
   const today = dayStateFor(state, date)
   const logged = Math.max(0, today.logged + applied)
-  // Back to nothing logged today: a non-daily "did it" (key number 0) was
-  // taken back too, so it must not keep the prompt done — nor block the next
-  // "did it" as a duplicate. A daily prompt's done-ness is its count, so its
-  // keys stay.
-  const did = logged === 0 ? today.did.filter((k) => !/^q:\d+:0:/.test(k)) : today.did
-  return { ...today, logged, did }
+  const next = { ...today, logged }
+  return withoutKeys(next, brokenDids(next, current))
 }
+
 /**
  * The one fallback rule (header of src/core/tasks/quota-prompts.ts): the chosen slot if it exists, else
  * the user's default if it exists, else the first period of the day. Returns

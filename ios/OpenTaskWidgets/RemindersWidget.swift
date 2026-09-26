@@ -576,7 +576,7 @@ private enum ReminderPreviewData {
 
     /// Early morning with three prompts handled today — Piano Scales #1 did
     /// (1/2), Oatmeal + Berries considered, Figs did (2/2) — for the DONE
-    /// section's prompt rows (no put-back marker).
+    /// section's prompt rows (each marker a put-back, 2026-09-25).
     static func promptsHandledEntry() -> RemindersEntry {
         var gs = groups
         let g = gs[0]
