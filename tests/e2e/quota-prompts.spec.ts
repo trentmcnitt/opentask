@@ -90,7 +90,7 @@ test.describe('Quota prompts', () => {
     await expect(row).toContainText('0/3 this week')
     // A dashed circle, not the reminder's solid one: on a prompt it means
     // "seen", not "done".
-    await expect(row.locator('[data-prompt-consider] svg.lucide-circle-dashed')).toBeVisible()
+    await expect(row.locator('[data-prompt-consider] svg[data-dashed-ring]')).toBeVisible()
     // Both of the row's controls wear the pointing hand.
     await expect(row.locator('[data-prompt-consider]')).toHaveCSS('cursor', 'pointer')
     await expect(row.locator('[data-prompt-did]')).toHaveCSS('cursor', 'pointer')
