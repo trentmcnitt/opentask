@@ -12,7 +12,7 @@ import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import { NotesMarker } from '@/components/NotesMarker'
-import { usePromptRows } from '@/components/QuotaPromptRow'
+import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
@@ -212,7 +212,7 @@ export function DashboardRemindersPanel({
   timezone,
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
-  const { groups, complete, completeGroup, putBack, remove, refresh } = reminders
+  const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
   // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
   // No leaving animation here, like the reminder rows (see the docblock).
@@ -382,11 +382,13 @@ export function DashboardRemindersPanel({
         />
       )}
 
-      {showConsidered && group.consideredItems.length > 0 && (
+      {showConsidered && considered > 0 && (
         <ConsideredList
           items={group.consideredItems}
+          prompts={group.prompts.filter((p) => !promptWaiting(p))}
           label={label}
           onPutBack={(task) => void putBack(task)}
+          onPutBackPrompt={(prompt) => void putBackPrompt(prompt)}
         />
       )}
 
@@ -819,18 +821,23 @@ function RowCountToggle({
  * stacked under "Show more" was the thing he rejected ("a big UX no-no").
  *
  * A row here is checked, dim, and does ONE thing: its circle puts the thought
- * back. No press-and-hold, no editor — a considered thought is done with, and
+ * back. Handled quota prompts follow the reminders (2026-09-25), their filled
+ * dashed circle putting them back the same way (`ConsideredPromptRow`). No press-and-hold, no editor — a considered thought is done with, and
  * the put-back is how you change your mind. (On `/reminders`, where a longer
  * sitting happens, those rows DO reach the editor; this panel is a glance.)
  */
 function ConsideredList({
   items,
+  prompts,
   label,
   onPutBack,
+  onPutBackPrompt,
 }: {
   items: Task[]
+  prompts: QuotaPrompt[]
   label: string
   onPutBack: (task: Task) => void
+  onPutBackPrompt: (prompt: QuotaPrompt) => void
 }) {
   return (
     <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
@@ -853,6 +860,14 @@ function ConsideredList({
             {reminder.title}
           </p>
         </li>
+      ))}
+      {prompts.map((prompt) => (
+        <ConsideredPromptRow
+          key={prompt.prompt_key}
+          prompt={prompt}
+          variant="panel"
+          onPutBack={onPutBackPrompt}
+        />
       ))}
     </ul>
   )

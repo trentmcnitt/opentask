@@ -52,6 +52,12 @@ export interface QuotaDayState {
   did: string[]
   /** prompt_keys considered today (the circle, or "did it", which implies it). */
   considered: string[]
+  /**
+   * What each key in `did` added to the count (2026-09-25) — so putting the
+   * prompt back takes away exactly that. A daily #k did-it adds only what was
+   * missing up to k, possibly 0, which nothing else records.
+   */
+  did_applied: Record<string, number>
 }
 
 export interface Task {
@@ -219,6 +225,13 @@ export type UndoAction =
 export interface SlotUndoState {
   before: SlotRow | null
   after: SlotRow | null
+  /**
+   * A time_slot_delete that repointed the user's default quota prompt period
+   * (`users.quota_prompt_slot_id`) from the removed slot to the nearest one
+   * (2026-09-25). Absent when the default did not name the removed slot, and
+   * on every entry logged before this existed.
+   */
+  prompt_default?: { before: number | null; after: number | null }
 }
 
 /** A time_slots row as stored — mirrors `TimeSlot` in `@/lib/time-slot-assign`. */

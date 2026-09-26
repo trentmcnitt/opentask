@@ -19,6 +19,24 @@ import Database from 'better-sqlite3'
 import type { SlotRow, SlotUndoState } from '@/types'
 import { ValidationError } from '@/core/errors'
 
+/**
+ * Write the user's default quota prompt period back to one side of a slot
+ * entry (`SlotUndoState.prompt_default`): `before` on undo, `after` on redo.
+ * Deleting a slot repoints the default, like the quotas' own stored periods,
+ * so the removed slot's prompts land where its reminders do
+ * (`src/core/time-slots/edit.ts`). No-op on entries without it.
+ */
+export function applyPromptDefault(
+  tx: Database.Database,
+  state: SlotUndoState,
+  side: 'before' | 'after',
+): void {
+  const change = state.prompt_default
+  const userId = state.before?.user_id ?? state.after?.user_id
+  if (!change || userId === undefined) return
+  tx.prepare('UPDATE users SET quota_prompt_slot_id = ? WHERE id = ?').run(change[side], userId)
+}
+
 export function parseSlotState(raw: string | null | undefined): SlotUndoState | null {
   if (!raw) return null
   return JSON.parse(raw) as SlotUndoState

@@ -57,9 +57,9 @@ describe('A quota has no due date', () => {
     })
     expect(getTaskById(byFlag.id)!.due_at).toBeNull()
 
-    // With no rule at all there is nothing to compute from either.
-    const ruleless = makeQuota({ title: 'Read', rrule: null })
-    expect(getTaskById(ruleless.id)!.due_at).toBeNull()
+    // A quota with no rule at all is refused outright now (QUOTA_PERIOD_MESSAGE,
+    // pinned in qp-matrix.test.ts), so there is no ruleless case left to date.
+    expect(() => makeQuota({ title: 'Read', rrule: null })).toThrow(ValidationError)
   })
 
   test('TR-011: an ordinary recurring task still gets its first occurrence', () => {

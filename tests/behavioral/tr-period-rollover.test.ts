@@ -155,11 +155,10 @@ describe('Track period rollover', () => {
       userTimezone: TEST_TIMEZONE,
       input: { title: 'Rent', rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' },
     })
-    const open = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'Read 10 books', progress_target: 10 },
-    })
+    // A period-less quota can no longer be created (QUOTA_PERIOD_MESSAGE);
+    // older data could still hold one, so it is made the way it arose.
+    const open = quota('Read 10 books', 10)
+    getDb().prepare('UPDATE tasks SET rrule = NULL WHERE id = ?').run(open.id)
     rolloverTrackedPeriods(THU)
     rolloverTrackedPeriods(new Date('2026-03-01T16:00:00Z'))
     expect(periods(plain.id)).toEqual([])
