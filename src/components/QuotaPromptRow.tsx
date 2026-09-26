@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CircleDashed } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
 import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
@@ -181,7 +181,7 @@ export function QuotaPromptRow({
         aria-hidden="true"
         className={cn(
           'absolute w-[3px] rounded-full',
-          panel ? 'inset-y-1.5 -left-1' : 'inset-y-2.5 left-0.5',
+          panel ? 'inset-y-1.5 -left-1.5' : 'inset-y-2.5 left-0',
           trackStripeClass(prompt.stripe_color),
         )}
       />
@@ -332,7 +332,7 @@ function usePromptRowGestures({
  * The dashed circle — "considered" (seen) — in the reminder row's circle's
  * exact box: same size, same place, same tap target, and the same
  * selection-mode checkbox (`ReminderRowMarker`). Only the glyph differs (see
- * the docblock). Waiting: lucide `CircleDashed` in the circle's muted tone.
+ * the docblock). Waiting: a dashed ring (`DashedRing`) in the circle's muted tone.
  * Considered (the collapse): the dashed ring in green around a filled green
  * disc — the reminder circle's green disc, kept inside the dashes — which is
  * SF Symbols' `circle.dashed.inset.filled`, the native surfaces' glyph.
@@ -357,14 +357,13 @@ function PromptDashedCircle({
   onConsider: (prompt: QuotaPrompt) => void
 }) {
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
-  const glyph = panel ? 'size-[19px]' : 'size-6'
   if (completing) {
     return (
       <span
         aria-hidden
         className={cn('relative flex shrink-0 items-center justify-center text-green-600', size)}
       >
-        <CircleDashed className={glyph} strokeWidth={1.75} />
+        <DashedRing px={panel ? 19 : 24} />
         <span className="absolute inset-[22%] rounded-full bg-green-600" />
       </span>
     )
@@ -398,8 +397,43 @@ function PromptDashedCircle({
         size,
       )}
     >
-      <CircleDashed className={glyph} strokeWidth={1.5} />
+      <DashedRing px={panel ? 19 : 24} />
     </button>
+  )
+}
+
+/**
+ * The dashed ring, drawn to the reminder circle's exact geometry: the same box
+ * (24px in the list, 19px in the dashboard panel) and the same 1.5px stroke
+ * sitting just inside the box edge, like the circle's `border-[1.5px]`. Twelve
+ * even dashes. Deliberately NOT lucide's `CircleDashed`: that icon draws its
+ * ring at r=10 of 24, so it reads smaller than the circle beside it, and
+ * scaling it up pushed the dashes out of the box into the label stripe
+ * (Trent, 2026-09-25: "different-size circles is not good").
+ */
+function DashedRing({ px }: { px: number }) {
+  const stroke = 1.5
+  const r = (px - stroke) / 2
+  const segment = (2 * Math.PI * r) / 12
+  return (
+    <svg
+      aria-hidden="true"
+      width={px}
+      height={px}
+      viewBox={`0 0 ${px} ${px}`}
+      fill="none"
+      className="shrink-0"
+    >
+      <circle
+        cx={px / 2}
+        cy={px / 2}
+        r={r}
+        stroke="currentColor"
+        strokeWidth={stroke}
+        strokeDasharray={`${segment * 0.6} ${segment * 0.4}`}
+        strokeLinecap="butt"
+      />
+    </svg>
   )
 }
 
