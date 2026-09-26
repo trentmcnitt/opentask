@@ -1012,11 +1012,12 @@ enum PromptRowMetrics {
 ///   stripe.
 /// - The label carries the count, "Daily Walks · 1/2" — one `Text` built from
 ///   `QuotaPromptDTO.labelText`, the exact string the pager measured.
-/// - TWO controls at the trailing edge. The EYE is where every reminder's
-///   circle is (the outermost column, thumb reach) and means the same thing:
-///   CONSIDERED ("seen") for today, nothing logged. An eye, not a circle
-///   (2026-09-25): Trent habitually tapped the circle meaning "done", but on
-///   a prompt it means "seen". The SQUARE, just inside it and beside the
+/// - TWO controls at the trailing edge. The DASHED circle is where every
+///   reminder's solid circle is (the outermost column, thumb reach) and means
+///   the same thing: CONSIDERED ("seen") for today, nothing logged. Dashed,
+///   not solid (2026-09-25): Trent habitually tapped the circle meaning
+///   "done", but on a prompt it means "seen" (an eye came first; creepy). The
+///   SQUARE, just inside it and beside the
 ///   count, is DID IT: +1 and considered. Square because it is a different
 ///   verb, and a checkbox is what "I did this" looks like everywhere else.
 ///   Both are `ActOnPromptIntent`, keyed by `prompt_key`.
@@ -1070,7 +1071,7 @@ private struct PromptRow: View {
                 )
                 control(
                     intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: false),
-                    symbol: "eye", label: "Considered: \(spokenLabel)"
+                    symbol: "circle.dashed", label: "Considered: \(spokenLabel)"
                 )
             }
         }
@@ -1101,7 +1102,8 @@ private struct PromptRow: View {
 /// reminder's DONE marker restores it (`POST /api/tasks/:id/undone`); a
 /// prompt has no such endpoint (it is not a task, and /undone refuses
 /// quotas), so its marker is a plain, inert glyph — a filled square for a
-/// did-it, a filled eye for a consider (`PromptRow`'s eye, filled the way a
+/// did-it, a filled dashed circle for a consider (`PromptRow`'s
+/// `circle.dashed` as `circle.dashed.inset.filled`, filled the way a
 /// reminder's DONE circle is) — and Undo is the way back, as on
 /// the web ("the toast's Undo is the way back", `QuotaPromptRow`).
 private struct DonePromptRow: View {
@@ -1134,7 +1136,7 @@ private struct DonePromptRow: View {
                 }
             }
 
-            Image(systemName: prompt.done ? "checkmark.square.fill" : "eye.fill")
+            Image(systemName: prompt.done ? "checkmark.square.fill" : "circle.dashed.inset.filled")
                 .font(.system(size: 19, weight: .light))
                 .foregroundStyle(.secondary)
                 .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)

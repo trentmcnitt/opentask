@@ -744,7 +744,7 @@ function PanelRow({
           // centre on their own. The `mt-0.5` this used to carry pushed the
           // circle ~2px below it — Trent, 2026-09-21: "the text is a little
           // higher than the center line of the circle."
-          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex size-[19px] shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors"
         />
         {/* NEVER TRUNCATED. Trent, 2026-09-21: "reminders can't be truncated.
             They have to show the full thing... It needs to line wrap somehow."

@@ -20,9 +20,9 @@ import SwiftUI
 ///
 /// QUOTA PROMPTS (quota reminders, 2026-09-24): the slot's waiting quota
 /// prompts are rows too, after its reminders (the web and the widgets put
-/// them there). A prompt row has an eye where the reminder row has its
-/// circle — staging CONSIDERED ("seen") — plus a square beside its count ("Daily Walks · 1/2") staging
-/// DID IT (+1, and considered). The two are one choice per prompt: tapping
+/// them there). A prompt row has a DASHED circle where the reminder row has
+/// its solid one — staging CONSIDERED ("seen") — plus a square beside its
+/// count ("Daily Walks · 1/2") staging DID IT (+1, and considered). The two are one choice per prompt: tapping
 /// the other switches it, tapping the same one again un-stages it. The whole
 /// staged set, reminders and prompts, commits in ONE
 /// `POST /api/tasks/bulk/complete` (`ids` + `prompts`): one transaction, one
@@ -312,9 +312,11 @@ struct ReminderChecklistView: View {
         .buttonStyle(.plain)
     }
 
-    /// A quota prompt: the reminder row's shape, with an EYE where its circle
-    /// is (tap the row = stage CONSIDERED — "seen", not "done"; 2026-09-25), plus the quota's label-color stripe on the leading
-    /// edge, the count after the title, and a square on the trailing edge
+    /// A quota prompt: the reminder row's shape, with a DASHED circle where
+    /// its solid one is (tap the row = stage CONSIDERED — "seen", not "done";
+    /// 2026-09-25: an eye first, which Trent found creepy; staged it fills in
+    /// green, `circle.dashed.inset.filled`, as the reminder's circle fills),
+    /// plus the quota's label-color stripe on the leading edge, the count after the title, and a square on the trailing edge
     /// (stage DID IT). The square is its own button beside the row's, not
     /// nested in it; both only stage (see the file doc).
     private func promptRow(_ prompt: QuotaPromptDTO) -> some View {
@@ -327,7 +329,7 @@ struct ReminderChecklistView: View {
                 model.choose(prompt: prompt.promptKey, did: false)
             } label: {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: staged && !did ? "eye.fill" : "eye")
+                    Image(systemName: staged && !did ? "circle.dashed.inset.filled" : "circle.dashed")
                         .font(.body)
                         .foregroundColor(staged && !did ? .green : .secondary)
 
