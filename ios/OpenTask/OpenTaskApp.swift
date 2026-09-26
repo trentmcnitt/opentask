@@ -140,6 +140,10 @@ struct OpenTaskApp: App {
             }
         case "quotas":
             WebViewManager.shared.navigate(path: "/quotas")
+        case "overdue":
+            // The Tasks widget's header on its Overdue page (2026-09-25) —
+            // the dashboard with its Overdue chip on. See `WidgetLink.overdue`.
+            WebViewManager.shared.navigate(path: "/?filter=overdue")
         default:
             WebViewManager.shared.navigate(path: "/")
         }

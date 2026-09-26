@@ -676,7 +676,26 @@ function HomeContent({
   const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
 
-  // Support ?filter=overdue from notification links — read once, then clear from URL
+  // `?filter=overdue` — the dashboard filtered to the Overdue chip. Two callers:
+  // the overdue Web Push (`overdue-checker.ts`) and the iOS/macOS Tasks
+  // widget's header while it shows its Overdue page (`opentask://overdue`,
+  // `handleWidgetLink`). Both arrive as a FULL page load (WKWebView `load`,
+  // the service worker's `client.navigate`), so the param only has to seed
+  // the initial state of the ordinary date-filter chips — the same state the
+  // Overdue chip toggles, not a parallel one. `useFilterSection` then
+  // auto-expands the chips and the "Showing N of M · Clear filter" banner
+  // shows, so the filter is visibly on and one tap clears it.
+  //
+  // Applied ONCE per mount: the ref stops a later render from re-seeding it,
+  // and the param is stripped from the URL straight away, so a reload after
+  // "Clear filter" stays cleared. Date filters are session state (never
+  // written to preferences), so nothing about this outlives the page.
+  //
+  // Strip with a raw history rewrite, NOT router.replace — same reason as the
+  // `?project=` and `?task=` effects below: a router navigation issues an RSC
+  // fetch, and losing that race (WebKit especially — the widget's path)
+  // remounts this component with a fresh ref and a URL that no longer carries
+  // the param, so the filter never visibly applied.
   const filterParamProcessed = useRef(false)
   const initialDateFilters = useMemo(() => {
     if (filterParamProcessed.current) return undefined
@@ -687,9 +706,9 @@ function HomeContent({
   }, [searchParams])
   useEffect(() => {
     if (searchParams.get('filter')) {
-      router.replace('/', { scroll: false })
+      window.history.replaceState(window.history.state, '', window.location.pathname)
     }
-  }, [searchParams, router])
+  }, [searchParams])
 
   const {
     selectedLabels,
