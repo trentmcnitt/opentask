@@ -2,21 +2,24 @@
 import SwiftUI
 import WidgetKit
 
-/// Trent's REAL data, for `#Preview`s only (DEBUG — never in a shipped
+/// Realistic sample data, for `#Preview`s only (DEBUG — never in a shipped
 /// binary, never in the widget gallery, which uses `ReminderStackPlaceholder`).
 ///
-/// Read-only snapshot of prod (user 1) taken 2026-09-24 ~08:55 CDT: his five
-/// time slots, today's reminders grouped the way `GET /api/reminders` groups
-/// them (`getRemindersBySlot`: by slot, priority desc then id), and his
-/// soonest-due open tasks. Nothing was overdue at snapshot time, so the
-/// overdue states use his two real High tasks due today (23533 at 9:00 AM,
-/// 22067 at 5:00 PM CDT) viewed from 5:30 PM, when both are.
+/// Invented titles with the shape of a real account at 2026-09-24 ~08:55
+/// CDT: five time slots, the day's reminders grouped the way
+/// `GET /api/reminders` groups them (`getRemindersBySlot`: by slot, priority
+/// desc then id) with the same counts and title lengths, and the soonest-due
+/// open tasks. The overdue states use the two High tasks due that day
+/// (23533 at 9:00 AM, 22067 at 5:00 PM CDT) viewed from 5:30 PM, when both
+/// are. With `ios/Previews.local/` present (`PreviewLocalData`, gitignored)
+/// the slots, groups and tasks come from that account data instead; the
+/// fixed clock and skip keys then only approximate the stories below.
 ///
 /// Each state is the REAL builder (`ReminderStackTimeline.entry`) run at a
 /// fixed instant, so a preview exercises the same slot/overdue/position logic
 /// the live widget does — not a hand-built entry that could drift from it.
 enum ReminderStackPreviewData {
-    static let slots: [TimeSlotDTO] = [
+    static let slots: [TimeSlotDTO] = PreviewLocalData.timeSlots ?? [
         TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
         TimeSlotDTO(id: 12, label: "Morning", startTime: "09:00"),
         TimeSlotDTO(id: 13, label: "Midday", startTime: "12:00"),
@@ -28,49 +31,49 @@ enum ReminderStackPreviewData {
         TaskDTO(id: id, title: title, priority: priority, isReminder: true)
     }
 
-    /// Leads with 24, which he had already considered at snapshot time — the
+    /// Leads with 24, already considered at the sample's moment — the
     /// `considered:` counts below take reminders off the FRONT of each list.
     static let earlyMorning: [TaskDTO] = [
-        reminder(24, "Yesterday = Lesson, Tomorrow = Plan, Today = Practice"),
-        reminder(604, "Supplements ( Vitamin C, Zinc, Magnesium )", priority: 2),
-        reminder(64, "Learning a physical skill needs a feedback loop: watch, listen and adjust while doing it, so the thinking part of the brain can guide the body. Record, review, repeat, and notice what changed each time. (That is how practice turns into progress, one small correction at a time.) Keep sessions short and specific."),
-        reminder(168, "Skin care (Cleanse, Moisturize, SPF)"),
-        reminder(208, "Think of improvement as fun to see what’s possible?"),
-        reminder(218, "Good form uses the full body to accomplish the task"),
-        reminder(223, "Walk and move in a way that keeps the whole body loose"),
-        reminder(23432, "Cold Shower (morning)"),
+        reminder(24, "Morning = Focus, Afternoon = Meetings, Evening = Rest"),
+        reminder(604, "Breakfast ( Oatmeal, Berries, Walnuts )", priority: 2),
+        reminder(64, "Practice the new song slowly, one phrase at a time, noticing where the breath runs short and marking it on the sheet before trying the whole verse again. Then play it once through without stopping, record it, and listen back with fresh ears. (Small daily corrections add up faster than one long weekend session.)"),
+        reminder(168, "Plant care (Water, Mist, Turn to sun)"),
+        reminder(208, "Treat each mistake as a clue to what’s worth learning?"),
+        reminder(218, "A calm start to the morning sets up the rest of it"),
+        reminder(223, "Sit tall at the desk and let the shoulders drop and relax"),
+        reminder(23432, "Open blinds (morning)"),
     ]
 
     static let morning: [TaskDTO] = [
-        reminder(2226, "Check GitHub issues", priority: 2),
-        reminder(126, "Do my mobility"),
-        reminder(183, "Mixed Nuts + Pumpkin Seeds"),
-        reminder(197, "Eye rest (Relax into it, hold it steady — good for presence)"),
-        reminder(215, "Wall pushups"),
+        reminder(2226, "Check the team inbox", priority: 2),
+        reminder(126, "Do my stretches"),
+        reminder(183, "Carrot Sticks + Hummus Cup"),
+        reminder(197, "Deep breath (Slow in, hold it gently — good for steady focus)"),
+        reminder(215, "Calf raises"),
     ]
 
     static let midday: [TaskDTO] = [
-        reminder(2247, "Check all public profile pages", priority: 2),
-        reminder(38, "Is the vinegar rinse still working"),
-        reminder(146, "Chess puzzle training"),
-        reminder(23393, "Stretch break (optional)"),
+        reminder(2247, "Check the community board posts", priority: 2),
+        reminder(38, "Is the new plant food still working"),
+        reminder(146, "Crossword puzzle time"),
+        reminder(23393, "Refill water (optional)"),
     ]
 
     static let afternoon: [TaskDTO] = [
-        reminder(12, "Being patient is a much happier way to live/be"),
-        reminder(127, "Remember to enjoy the day (“am I enjoying my day?”, “what am I going to do to enjoy my day?”)"),
-        reminder(150, "Make sure there is a team sport or a hand-eye coordination activity on the calendar"),
-        reminder(222, "“Do the small things well, and the big things take care of themselves.”"),
+        reminder(12, "Listening fully is a much kinder way to talk/be"),
+        reminder(127, "Remember to notice the day (“what did I notice today?”, “what am I going to look for tomorrow?”)"),
+        reminder(150, "Make sure there is a group hike or an outdoor weekend activity on the family calendar"),
+        reminder(222, "“Take care of the minutes, and the hours will take care of themselves.”"),
     ]
 
     static let evening: [TaskDTO] = [
-        reminder(41, "Laundry fold"),
-        reminder(44, "Journaling before bed might help clear the mind at night"),
-        reminder(70, "Timed breathing to slow down (use app)"),
-        reminder(94, "Neck stretch (posture)"),
-        reminder(136, "Surround myself with good books and thoughtful people. Read books, listen to podcasts, play strategy games — whatever it takes. Provides learning + mindset reinforcement"),
-        reminder(273, "Evening stretch routine (after mobility) (finish with a long hold)"),
-        reminder(3093, "Ask myself: “What went well today?”"),
+        reminder(41, "Pack lunches"),
+        reminder(44, "A short walk after dinner might help settle the mind at night"),
+        reminder(70, "Box breathing to wind down (use timer)"),
+        reminder(94, "Hip stretch (desk day)"),
+        reminder(136, "Fill the house with good music and curious people. Borrow books, try new recipes, play board games — whatever keeps it lively. Provides learning + a steady source of calm"),
+        reminder(273, "Evening wind-down routine (after dishes) (finish with a warm drink)"),
+        reminder(3093, "Ask myself: “What can I let go of?”"),
     ]
 
     private static func prompt(
@@ -84,35 +87,34 @@ enum ReminderStackPreviewData {
         )
     }
 
-    /// His REAL quota prompts (quota reminders, 2026-09-24 — read-only from
-    /// the dev server, his prod snapshot with PR #79 on): every unmet quota
-    /// prompts in Early morning there; Daily Walks (daily, target 2) has its
+    /// Sample quota prompts (quota reminders, 2026-09-24): every unmet quota
+    /// prompts in Early morning, the default period; Piano Scales (daily, target 2) has its
     /// #1 here and its #2 in Morning.
     static let earlyMorningPrompts: [QuotaPromptDTO] = [
-        prompt(116, nil, "Broccoli Avocado", 1, 3, "WEEKLY", nil),
-        prompt(3307, nil, "Check for new certifications — vendor academies, platform certs, automation credentials", 0, 1, "WEEKLY", "pink"),
-        prompt(276, nil, "Clean the car seats", 0, 1, "MONTHLY", "purple"),
-        prompt(255, nil, "Cook daily vegetables (incl. black beans)", 0, 5, "WEEKLY", "blue"),
-        prompt(83, 1, "Daily Walks", 0, 2, "DAILY", "blue"),
-        prompt(193, nil, "Eggs", 1, 2, "WEEKLY", nil),
-        prompt(129, nil, "Fiber food (ie bran cereal)", 1, 3, "WEEKLY", nil),
-        prompt(192, nil, "Empty the dishwasher (chore)", 0, 5, "WEEKLY", "purple"),
-        prompt(21400, nil, "Iron-Rich Meal (e.g. lentils, spinach)", 0, 2, "WEEKLY", nil),
-        prompt(163, nil, "Balloon breathing practice (slow exhale, relaxed shoulders, breathe into the upper back, seated)", 0, 4, "WEEKLY", "blue"),
-        prompt(239, nil, "High-fiber cereal (ie bran flakes)", 0, 2, "WEEKLY", nil),
-        prompt(258, nil, "Fruit smoothie (+omega-3)", 0, 2, "WEEKLY", "blue"),
-        prompt(132, nil, "Daily supplements ( Vitamin D, Omega-3 )", 1, 3, "WEEKLY", "blue"),
-        prompt(13, nil, "Park trip (+friends)", 1, 4, "WEEKLY", nil),
-        prompt(118, nil, "Swim lessons", 1, 2, "WEEKLY", nil),
-        prompt(160, nil, "Trail mix bites", 1, 3, "WEEKLY", nil),
+        prompt(116, nil, "Oatmeal + Berries", 1, 3, "WEEKLY", nil),
+        prompt(3307, nil, "Look for new evening courses — community colleges, library programs, weekend workshops", 0, 1, "WEEKLY", "pink"),
+        prompt(276, nil, "Vacuum the car mats", 0, 1, "MONTHLY", "purple"),
+        prompt(255, nil, "Bake bread from scratch (incl. sourdough)", 0, 5, "WEEKLY", "blue"),
+        prompt(83, 1, "Piano Scales", 0, 2, "DAILY", "blue"),
+        prompt(193, nil, "Figs", 1, 2, "WEEKLY", nil),
+        prompt(129, nil, "Whole grains (ie brown rice)", 1, 3, "WEEKLY", nil),
+        prompt(192, nil, "Sort the recycling (chore)", 0, 5, "WEEKLY", "purple"),
+        prompt(21400, nil, "Citrus Snack (e.g. oranges, clementines)", 0, 2, "WEEKLY", nil),
+        prompt(163, nil, "Posture practice (tall spine, soft jaw, shoulders down and back, feet flat on the floor, seated)", 0, 4, "WEEKLY", "blue"),
+        prompt(239, nil, "Home-cooked soup (ie minestrone)", 0, 2, "WEEKLY", nil),
+        prompt(258, nil, "Green smoothie (+ginger)", 0, 2, "WEEKLY", "blue"),
+        prompt(132, nil, "Evening tea ( Chamomile, Peppermint )", 1, 3, "WEEKLY", "blue"),
+        prompt(13, nil, "Bike ride (+neighbors)", 1, 4, "WEEKLY", nil),
+        prompt(118, nil, "Guitar class", 1, 2, "WEEKLY", nil),
+        prompt(160, nil, "Yogurt parfait", 1, 3, "WEEKLY", nil),
     ]
 
-    /// His soonest-due open tasks (not reminders, not quotas).
-    static let tasks: [TaskDTO] = [
-        TaskDTO(id: 23533, title: "Check if anyone is waiting on me", priority: 3, dueAt: "2026-09-24T14:00:00.000Z"),
-        TaskDTO(id: 22067, title: "Email the club leader about the youth program before the Oct 1 meeting", priority: 3, dueAt: "2026-09-24T22:00:00.000Z"),
-        TaskDTO(id: 22793, title: "Dark chocolate", priority: 2, dueAt: "2026-09-25T01:30:00.000Z"),
-        TaskDTO(id: 292, title: "Weekly allowance ($8)", priority: 2, dueAt: "2026-09-25T21:00:00.000Z"),
+    /// The soonest-due open tasks (not reminders, not quotas).
+    static let tasks: [TaskDTO] = PreviewLocalData.openTasks?.filter { $0.dueAt != nil && !$0.isReminder && !$0.isTracked } ?? [
+        TaskDTO(id: 23533, title: "Reply to the pending team messages", priority: 3, dueAt: "2026-09-24T14:00:00.000Z"),
+        TaskDTO(id: 22067, title: "Email the venue about the room booking before the Oct 1 planning meeting", priority: 3, dueAt: "2026-09-24T22:00:00.000Z"),
+        TaskDTO(id: 22793, title: "Order birdseed", priority: 2, dueAt: "2026-09-25T01:30:00.000Z"),
+        TaskDTO(id: 292, title: "Weekly plant food ($6)", priority: 2, dueAt: "2026-09-25T21:00:00.000Z"),
     ]
 
     /// Today's groups with the first `considered[slotId]` reminders of each
@@ -121,13 +123,24 @@ enum ReminderStackPreviewData {
     /// `promptsHandled`: every quota prompt already considered — for the
     /// states whose story predates prompts (caught up, overdue).
     static func groups(considered: [Int: Int] = [:], promptsHandled: Bool = false) -> [ReminderGroupDTO] {
+        if let local = PreviewLocalData.reminderGroups {
+            return local.map { g in
+                let done = min(considered[g.slot?.id ?? -1] ?? 0, g.reminders.count)
+                return ReminderGroupDTO(
+                    slot: g.slot, reminders: Array(g.reminders.dropFirst(done)),
+                    considered: g.considered + done,
+                    consideredItems: g.consideredItems + Array(g.reminders.prefix(done)),
+                    prompts: g.prompts.map { promptsHandled ? $0.handled(did: false) : $0 }
+                )
+            }
+        }
         let bySlot: [(TimeSlotDTO, [TaskDTO])] = [
             (slots[0], earlyMorning), (slots[1], morning), (slots[2], midday),
             (slots[3], afternoon), (slots[4], evening),
         ]
         let prompts: [Int: [QuotaPromptDTO]] = [
             11: earlyMorningPrompts,
-            12: [prompt(83, 2, "Daily Walks", 0, 2, "DAILY", "blue")],
+            12: [prompt(83, 2, "Piano Scales", 0, 2, "DAILY", "blue")],
         ]
         return bySlot.map { slot, all in
             let done = min(considered[slot.id] ?? 0, all.count)
@@ -140,7 +153,7 @@ enum ReminderStackPreviewData {
     }
 
     /// 2026-09-24 at `hour:minute`, device-local (the previews assume the
-    /// Mac is on Trent's Central time, as the snapshot was).
+    /// Mac is on Central time, as the sample is).
     static func at(_ hour: Int, _ minute: Int = 0) -> Date {
         Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: hour, minute: minute))
             ?? Date()
@@ -158,11 +171,11 @@ enum ReminderStackPreviewData {
 
     // MARK: The states
 
-    /// Trent's exact complaint screenshot, redone: Early morning, one
-    /// considered, "Supplements ( Vitamin C, Zinc, Magnesium )" next.
+    /// The complaint screenshot's state, redone: Early morning, one
+    /// considered, "Breakfast ( Oatmeal, Berries, Walnuts )" next.
     static let supplements = entry(groups(considered: [11: 1]), at: at(8, 47))
-    /// The very long one ("Learning a physical skill needs…") after ✓ on
-    /// Supplements.
+    /// The very long one ("Practice the new song slowly…") after ✓ on
+    /// Breakfast.
     static let longReminder = entry(groups(considered: [11: 2]), at: at(8, 50))
     /// The same long one as the slot's LAST item (no ⏭) — every other Early
     /// morning reminder considered, as if the rest were ✓'d or skipped past.
@@ -177,22 +190,22 @@ enum ReminderStackPreviewData {
     /// Quota prompts (2026-09-24). Every Early morning reminder considered,
     /// so the slot's prompts take the card in turn: the first, a short one.
     static let promptShort = entry(groups(considered: [11: 8]), at: at(8, 52))
-    /// Skipped along to his longest quota title ("Check for new
-    /// certifications — …"), the text-fit stress case with the ☐ column.
+    /// Skipped along to the longest quota title ("Look for new evening
+    /// courses — …"), the text-fit stress case with the ☐ column.
     static let promptLong = entry(
         groups(considered: [11: 8]), at: at(8, 52), skipped: ["q:116:0:2026-09-24"]
     )
-    /// Skipped to "Cook daily vegetables (incl. black beans) · 0/5".
+    /// Skipped to "Bake bread from scratch (incl. sourdough) · 0/5".
     static let promptVegetables = entry(
         groups(considered: [11: 8]), at: at(8, 52),
         skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24", "q:276:0:2026-09-24"]
     )
-    /// Skipped to "Clean the car seats" — a MONTHLY count ("0/1 mo").
+    /// Skipped to "Vacuum the car mats" — a MONTHLY count ("0/1 mo").
     static let promptMonthly = entry(
         groups(considered: [11: 8]), at: at(8, 52),
         skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24"]
     )
-    /// Skipped to "Daily Walks" #1 — a DAILY count ("0/2 today").
+    /// Skipped to "Piano Scales" #1 — a DAILY count ("0/2 today").
     static let promptDaily = entry(
         groups(considered: [11: 8]), at: at(8, 52),
         skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24", "q:276:0:2026-09-24", "q:255:0:2026-09-24"]
@@ -214,7 +227,7 @@ enum ReminderStackPreviewData {
     )
 }
 
-#Preview("Supplements (the complaint)", as: .accessoryRectangular) {
+#Preview("Breakfast (the complaint)", as: .accessoryRectangular) {
     ReminderStackWidget()
 } timeline: {
     ReminderStackPreviewData.supplements

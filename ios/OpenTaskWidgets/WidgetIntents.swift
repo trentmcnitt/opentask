@@ -69,8 +69,8 @@ func reloadOpenTaskWidget(kind: String) {
 /// Reload the kind whose button fired the intent — on macOS only.
 ///
 /// "Quotas still 0/2 after did-it" (2026-09-25): the did-it square on the
-/// Reminders widget's "Daily Walks · 0/2" prompt landed (prod: `POST
-/// /api/quota-prompts/did` 200, Daily Walks 1/2, widget push sent 2s later),
+/// Reminders widget's "Piano Scales · 0/2" prompt landed (prod: `POST
+/// /api/quota-prompts/did` 200, Piano Scales 1/2, widget push sent 2s later),
 /// the intent wrote the returned quota into the shared cache, and still the
 /// phone's Quotas widget drew 0/2 until the app was opened. The same taps on
 /// the iOS 27 simulator redraw Quotas every time (idb HID taps; no fetch, the
@@ -366,7 +366,7 @@ struct IncrementProgressIntent: AppIntent {
         // (failure), never a stale one in between.
         await reloadTappedWidget(kind: TrackWidget.kind)
         // Quota reminders (2026-09-24): this quota's prompts on the Reminders
-        // widget carry its count ("Daily Walks · 1/2") and whether it is
+        // widget carry its count ("Piano Scales · 1/2") and whether it is
         // still waiting today — both server-computed, so Reminders fetches
         // rather than guessing. `requireRemindersFetch`, NOT
         // `clearInteraction`: the latter would also forget the interaction
@@ -1005,7 +1005,7 @@ private func refetchTasks() async {
 /// Undo/Redo's reload: every kind ONCE, after the refetch, the kinds OTHER
 /// than the tapped one first (2026-09-25, "Quotas stuck at 1/2 after Undo").
 ///
-/// The bug: did-it on the Reminders widget's "Daily Walks · 0/2" prompt
+/// The bug: did-it on the Reminders widget's "Piano Scales · 0/2" prompt
 /// (Quotas → 1/2), then Undo on the Reminders widget. The server undid it,
 /// Reminders put the prompt back, and Quotas stayed at 1/2. Prod's request
 /// log for Trent's tap (09:07:11) shows the whole story: the refetch below

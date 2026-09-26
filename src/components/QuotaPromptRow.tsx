@@ -44,8 +44,8 @@ import type { Task } from '@/types'
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
- * - The label carries progress and the period it covers, "Daily Walks · 1/2
- *   today" — never "#1". Trent, 2026-09-25: "Clean bedroom fans · 0/1" did not
+ * - The label carries progress and the period it covers, "Piano Scales · 1/2
+ *   today" — never "#1". Trent, 2026-09-25: "Dust the bookshelf · 0/1" did not
  *   say whether that was today's one or this month's. The words are the Quotas
  *   panel's own section headings (`freqLabel`), so the two never disagree; a
  *   period-less quota shows the count alone.

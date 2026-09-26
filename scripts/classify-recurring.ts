@@ -87,8 +87,8 @@ const QUOTA_RE = /(\d+)\s*x\s*\/?\s*(day|daily|week|weekly|month|monthly)/i
  * [EM]=early morning. An earlier version of this script read [A] as
  * "considerations" and mislabelled all 28 afternoon tasks as thoughts.
  *
- * Worse, kind is MIXED WITHIN a prefix — "[A] Being patient is a much happier
- * way to live" and "[A] Gymnastics class" share a prefix and are different
+ * Worse, kind is MIXED WITHIN a prefix — "[A] Listening fully is a much kinder
+ * way to talk" and "[A] Pottery class" share a prefix and are different
  * populations. Kind is simply not derivable from structure here, which is
  * exactly why §9 specifies an AI classification pass. What follows is a
  * shape heuristic: it finds titles phrased as a statement rather than an

@@ -204,7 +204,12 @@ describe('generateWhatsNext', () => {
     const jsonBlock = JSON.stringify({
       generated_at: '2026-02-09T18:11:50.373Z',
       tasks: [
-        { task_id: 1, title: 'Charge jump starter', reason: 'Snoozed 3 times', summary: 'Overdue' },
+        {
+          task_id: 1,
+          title: 'Check the smoke alarm',
+          reason: 'Snoozed 3 times',
+          summary: 'Overdue',
+        },
         { task_id: 3, title: 'Call Grandpa', reason: 'Social obligation', summary: 'Delayed' },
       ],
       summary: 'Two tasks need decisions.',

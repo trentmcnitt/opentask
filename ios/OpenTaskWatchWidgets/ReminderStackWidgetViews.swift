@@ -84,7 +84,7 @@ private struct ReminderCardView: View {
                 }
                 if card.promptKey != nil {
                     // A quota prompt (2026-09-24): the label-color stripe
-                    // beside its label ("Daily Walks · 1/2"), as on every
+                    // beside its label ("Piano Scales · 1/2"), as on every
                     // other surface.
                     HStack(alignment: .top, spacing: 4) {
                         RoundedRectangle(cornerRadius: 1.5)
@@ -386,11 +386,12 @@ enum ReminderStackMetrics {
     static let didColumn: CGFloat = 30
     /// Whether a quota prompt card draws ☐ DID IT (with the count above it)
     /// beside ✓ CONSIDERED — quota reminders, 2026-09-24, decided on
-    /// RenderPreview of his real prompts (`ReminderStackPreviewData`'s
+    /// RenderPreview of realistic prompts (`ReminderStackPreviewData`'s
     /// "Prompt —" previews). It fits: the column costs the title ~36pt, and
-    /// the only title that doesn't fit with it ("Check for new certifications
-    /// — …", 120 characters) doesn't fit without it either — the card's last
-    /// rung truncates it either way, as it does his paragraph reminders. The
+    /// the only title that doesn't fit with it ("Look for new evening
+    /// courses — …", the longest quota title) doesn't fit without it either
+    /// — the card's last rung truncates it either way, as it does paragraph
+    /// reminders. The
     /// count sits in the column's top slot, level with ⏭, so it is never
     /// cut off with the title. Off = consider only (count back in the title).
     static let promptCardShowsDidIt = true

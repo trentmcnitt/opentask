@@ -61,7 +61,7 @@ Corollary of L1+L4: **completion data will be sparse and partially maintained fo
 The 217 recurring tasks are four distinct populations wearing one shape. The redesign gives each its own home; the migration (§9) sorts them.
 
 1. **Protocol (~half)** — real regimen items with times: supplements, skincare sequences, exercise, kid-care routines. Discrete actions, individually completable, time-of-day matters. _Home: standard tasks in time buckets (§7)._
-2. **Prompted thoughts (~40)** — principles and considerations delivered by repetition: _"Yesterday = Lesson, Tomorrow = Plan, Today = Practice."_ Not actions. Completing one means "I considered it" — that IS its completion (the user did exactly this in his pre-OpenTask app and valued it). _Home: the Reminders surface (§6)._
+2. **Prompted thoughts (~40)** — principles and considerations delivered by repetition: _"Morning = Focus, Afternoon = Meetings, Evening = Rest."_ Not actions. Completing one means "I considered it" — that IS its completion (the user did exactly this in his pre-OpenTask app and valued it). _Home: the Reminders surface (§6)._
 3. **Parked one-off obligations (~40–50)** — real errands (_Register the car_, _E-sign insurance_) given a fake daily rrule because recurrence was the only resurfacing mechanism. The user does this constantly and hates it. _Home: real tasks with real due dates; resurfacing is the notifier's job, not a fake schedule's._
 4. **Quotas (~a dozen, currently encoded in titles)** — _"Eggs (2x/week)"_, _"Bean Soup 4x/week"_. N-per-period targets, no time of day. _Home: Track (§5)._
 

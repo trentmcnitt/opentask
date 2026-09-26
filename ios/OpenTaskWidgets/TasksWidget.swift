@@ -456,26 +456,28 @@ struct TasksWidget: Widget {
 }
 
 #if DEBUG
-// MARK: - Previews (2026-09-24, real-data snapshot)
+// MARK: - Previews (2026-09-24, realistic sample data)
 //
-// Trent's REAL open tasks, read-only from production on 2026-09-24 when he
-// screenshotted "Up next · 26 due" paging as 13 pages of two rows — every
-// dated, non-reminder, non-quota task, soonest first, titles VERBATIM
-// (including the long school-forms and streaming-trial ones), with
-// his real projects and colors. See `RemindersWidget.swift`'s identical
-// preview header for why this is here and not in `SampleData.swift`, and
-// why each store state (page, toggle, mode) gets its own `#Preview` block.
+// Realistic sample open tasks with the shape of the account whose "Up next
+// · 26 due" paged as 13 pages of two rows: 26 dated, non-reminder,
+// non-quota tasks, soonest first, with the same title lengths (including
+// the long permit-forms and streaming-trial ones), priorities, due times and
+// project colors. The titles are invented. With `ios/Previews.local/`'s
+// `tasks.json`/`projects.json`/`time-slots.json` present
+// (`PreviewLocalData`, gitignored) they render that account data instead.
+// See `RemindersWidget.swift`'s preview header for why this is here and not
+// in `SampleData.swift`, and why each store state (page, toggle, mode) gets
+// its own `#Preview` block.
 private enum TasksPreviewData {
-    /// The snapshot's clock: 8:45 AM local today, when the screenshot was
-    /// taken.
+    /// The sample's clock: 8:45 AM local today.
     static var now: Date {
         Calendar.current.date(bySettingHour: 8, minute: 45, second: 0, of: Date()) ?? Date()
     }
 
-    /// A snapshot due date moved by however many whole days separate the
-    /// snapshot (2026-09-24) from today — so "today" stays today, "Tomorrow"
-    /// stays tomorrow, and the day-naming buckets render exactly as Trent
-    /// saw them whatever day the preview runs.
+    /// A sample due date moved by however many whole days separate the
+    /// sample's day (2026-09-24) from today — so "today" stays today,
+    /// "Tomorrow" stays tomorrow, and the day-naming buckets render the same
+    /// whatever day the preview runs.
     private static func shifted(_ iso: String) -> String {
         let calendar = Calendar.current
         var snapshot = DateComponents()
@@ -488,7 +490,7 @@ private enum TasksPreviewData {
     }
 
     static var projects: [ProjectDTO] {
-        [
+        PreviewLocalData.projects ?? [
             ProjectDTO(id: 1, name: "Inbox", color: nil),
             ProjectDTO(id: 6, name: "Work", color: "red"),
             ProjectDTO(id: 4434, name: "Personal", color: "blue"),
@@ -497,44 +499,44 @@ private enum TasksPreviewData {
     }
 
     static var tasks: [TaskDTO] {
-        [
-            TaskDTO(id: 23533, projectId: 6, title: "Check if anyone is waiting on me", priority: 3, dueAt: shifted("2026-09-24T14:00:00.000Z")),
-            TaskDTO(id: 22067, projectId: 4434, title: "Email the club leader about the youth program before the Oct 1 meeting", priority: 3, dueAt: shifted("2026-09-24T22:00:00.000Z")),
-            TaskDTO(id: 22793, projectId: 4434, title: "Dark chocolate", priority: 2, dueAt: shifted("2026-09-25T01:30:00.000Z")),
-            TaskDTO(id: 292, projectId: 4434, title: "Weekly allowance ($8)", priority: 2, dueAt: shifted("2026-09-25T21:00:00.000Z")),
-            TaskDTO(id: 308, projectId: 4434, title: "Check out the hardware store class", priority: 1, dueAt: shifted("2026-09-26T14:00:00.000Z")),
-            TaskDTO(id: 22586, projectId: 6, title: "Log client hours before the weekly cutoff", priority: 3, dueAt: shifted("2026-09-27T14:00:00.000Z")),
-            TaskDTO(id: 249, projectId: 4434, title: "Returns? (including books)", priority: 2, dueAt: shifted("2026-09-27T22:00:00.000Z")),
-            TaskDTO(id: 290, projectId: 4434, title: "Recycling bins", priority: 3, dueAt: shifted("2026-09-27T22:00:00.000Z")),
-            TaskDTO(id: 11160, projectId: 4434, title: "Take garbage out", priority: 3, dueAt: shifted("2026-09-27T22:30:00.000Z")),
-            TaskDTO(id: 23555, projectId: 4434, title: "Return the signed school forms by Oct 2 (the office says they never got them; the link was missing)", priority: 3, dueAt: shifted("2026-09-28T14:00:00.000Z")),
-            TaskDTO(id: 17931, projectId: 4799, title: "Check for a subagent instruction-inheritance off-switch", priority: 1, dueAt: shifted("2026-09-30T14:00:00.000Z")),
-            TaskDTO(id: 302, projectId: 4434, title: "Pay the monthly bill", priority: 3, dueAt: shifted("2026-10-01T12:00:00.000Z")),
-            TaskDTO(id: 8385, projectId: 4434, title: "Check if the policy renewal is finished", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 8870, projectId: 4434, title: "E-sign the new policy and the cancellation of the old one", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 9214, projectId: 4434, title: "Make sure the new policy is set up properly", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 9215, projectId: 6, title: "Make sure the old account is cancelled", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 9312, projectId: 4434, title: "Call the bank to limit data sharing on privacy preferences for the new checking account", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 12224, projectId: 4434, title: "Do something that improves savings", priority: 2, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 13256, projectId: 6, title: "Apply for the business charge card", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
-            TaskDTO(id: 11315, projectId: 4434, title: "Check the salt level", priority: 2, dueAt: shifted("2026-10-01T14:30:00.000Z")),
-            TaskDTO(id: 13490, projectId: 4434, title: "Add a second name to the bank account", priority: 2, dueAt: shifted("2026-10-01T20:00:00.000Z")),
-            TaskDTO(id: 16551, projectId: 4434, title: "Cancel the music streaming free trial before it auto-renews at $9.99/mo (90-day trial started ~7/1/26, ends ~9/29)", priority: 3, dueAt: shifted("2026-10-04T15:00:00.000Z")),
-            TaskDTO(id: 21853, projectId: 6, title: "Cancel the office suite trial before it renews", priority: 3, dueAt: shifted("2026-10-07T14:00:00.000Z")),
-            TaskDTO(id: 22794, projectId: 4434, title: "Use the restaurant coupons before October 11", priority: 1, dueAt: shifted("2026-10-10T14:00:00.000Z")),
-            TaskDTO(id: 12343, projectId: 4434, title: "Pull the annual account statements — verify the year-end balances match & flag any errors", priority: 3, dueAt: shifted("2026-10-12T23:00:00.000Z")),
-            TaskDTO(id: 296, projectId: 4434, title: "Replace house air filter", priority: 1, dueAt: shifted("2026-10-17T16:30:00.000Z")),
+        PreviewLocalData.openTasks ?? [
+            TaskDTO(id: 23533, projectId: 6, title: "Reply to the pending team messages", priority: 3, dueAt: shifted("2026-09-24T14:00:00.000Z")),
+            TaskDTO(id: 22067, projectId: 4434, title: "Email the venue about the room booking before the Oct 1 planning meeting", priority: 3, dueAt: shifted("2026-09-24T22:00:00.000Z")),
+            TaskDTO(id: 22793, projectId: 4434, title: "Order birdseed", priority: 2, dueAt: shifted("2026-09-25T01:30:00.000Z")),
+            TaskDTO(id: 292, projectId: 4434, title: "Weekly plant food ($6)", priority: 2, dueAt: shifted("2026-09-25T21:00:00.000Z")),
+            TaskDTO(id: 308, projectId: 4434, title: "Check out the library pottery class", priority: 1, dueAt: shifted("2026-09-26T14:00:00.000Z")),
+            TaskDTO(id: 22586, projectId: 6, title: "Submit timesheet before the weekly cutoff", priority: 3, dueAt: shifted("2026-09-27T14:00:00.000Z")),
+            TaskDTO(id: 249, projectId: 4434, title: "Donations? (including shoes)", priority: 2, dueAt: shifted("2026-09-27T22:00:00.000Z")),
+            TaskDTO(id: 290, projectId: 4434, title: "Compost bin out", priority: 3, dueAt: shifted("2026-09-27T22:00:00.000Z")),
+            TaskDTO(id: 11160, projectId: 4434, title: "Sweep the porch", priority: 3, dueAt: shifted("2026-09-27T22:30:00.000Z")),
+            TaskDTO(id: 23555, projectId: 4434, title: "Return the signed permit forms by Oct 2 (the office says they never arrived; the upload link was broken)", priority: 3, dueAt: shifted("2026-09-28T14:00:00.000Z")),
+            TaskDTO(id: 17931, projectId: 4799, title: "Look into a build-cache invalidation flag for the CI runner", priority: 1, dueAt: shifted("2026-09-30T14:00:00.000Z")),
+            TaskDTO(id: 302, projectId: 4434, title: "Pay the water bill", priority: 3, dueAt: shifted("2026-10-01T12:00:00.000Z")),
+            TaskDTO(id: 8385, projectId: 4434, title: "Check if the passport renewal is finished", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 8870, projectId: 4434, title: "E-sign the new lease and the move-out notice for the old one", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 9214, projectId: 4434, title: "Make sure the new thermostat is set up properly", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 9215, projectId: 6, title: "Make sure the old gym membership is cancelled", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 9312, projectId: 4434, title: "Call the utility company to set up paperless billing and autopay for the new apartment", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 12224, projectId: 4434, title: "Do something that improves the garden", priority: 2, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 13256, projectId: 6, title: "Apply for the community garden plot", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 11315, projectId: 4434, title: "Check the tire pressure", priority: 2, dueAt: shifted("2026-10-01T14:30:00.000Z")),
+            TaskDTO(id: 13490, projectId: 4434, title: "Add the new address to the library card", priority: 2, dueAt: shifted("2026-10-01T20:00:00.000Z")),
+            TaskDTO(id: 16551, projectId: 4434, title: "Cancel the video streaming free trial before it auto-renews at $7.99/mo (30-day trial started ~9/1/26, ends ~10/1)", priority: 3, dueAt: shifted("2026-10-04T15:00:00.000Z")),
+            TaskDTO(id: 21853, projectId: 6, title: "Cancel the photo editor trial before it renews", priority: 3, dueAt: shifted("2026-10-07T14:00:00.000Z")),
+            TaskDTO(id: 22794, projectId: 4434, title: "Use the museum guest passes before October 11", priority: 1, dueAt: shifted("2026-10-10T14:00:00.000Z")),
+            TaskDTO(id: 12343, projectId: 4434, title: "Pull the annual utility statements — verify the year-end totals match & flag any overcharges", priority: 3, dueAt: shifted("2026-10-12T23:00:00.000Z")),
+            TaskDTO(id: 296, projectId: 4434, title: "Clean out the dryer vent", priority: 1, dueAt: shifted("2026-10-17T16:30:00.000Z")),
         ]
     }
 
-    /// One real recent completion, stamped this morning so the "show
-    /// completed" DONE section has something to render.
+    /// One recent completion, stamped this morning so the "show completed"
+    /// DONE section has something to render.
     static var doneToday: [CompletionDTO] {
         let at = Calendar.current.date(bySettingHour: 8, minute: 15, second: 0, of: Date()) ?? Date()
         return [
             CompletionDTO(
                 id: -1286, taskId: 22852, completedAt: DateHelpers.formatISO(at),
-                taskTitle: "Select the next audiobook on Audible", projectId: 4434
+                taskTitle: "Pick the next book for the reading list", projectId: 4434
             )
         ]
     }
@@ -558,11 +560,11 @@ private enum TasksPreviewData {
         )
     }
 
-    /// "Up next" with the snapshot's rows PLUS every due-label shape his
+    /// "Up next" with the sample's rows PLUS every due-label shape an
     /// 11:55 screenshot mixed (2026-09-24, the one-rule fix): a "Tomorrow"
     /// at 12:00 pm, and two DATE-ONLY tasks (local midnight — one tomorrow,
     /// one three days out) whose label is a day word alone, one line. The
-    /// snapshot already carries today (time only), "Tomorrow 4:00 pm" and a
+    /// sample already carries today (time only), "Tomorrow 4:00 pm" and a
     /// weekday ("Sat 9:00 am").
     static func dayLabelsEntry() -> TasksEntry {
         let calendar = Calendar.current
@@ -572,7 +574,7 @@ private enum TasksPreviewData {
             return DateHelpers.formatISO(calendar.date(bySettingHour: hour, minute: 0, second: 0, of: base) ?? base)
         }
         let extra = [
-            TaskDTO(id: 900_001, projectId: 4434, title: "Pick up prescription", priority: 2, dueAt: day(1, hour: 12)),
+            TaskDTO(id: 900_001, projectId: 4434, title: "Drop off the parcel", priority: 2, dueAt: day(1, hour: 12)),
             TaskDTO(id: 900_002, projectId: 6, title: "Send invoice", priority: 1, dueAt: day(1)),
             TaskDTO(id: 900_003, projectId: 4434, title: "Library books due", priority: 1, dueAt: day(3)),
         ]
@@ -593,7 +595,7 @@ private enum TasksPreviewData {
         )
     }
 
-    /// Trent's "Personal" project page (4434) — his longest project name,
+    /// The "Personal" project page (4434) — the longest project name,
     /// for checking the header title beside the clock/Undo/Redo/‹ › cluster.
     /// Filtered the way a project page filters "Today" (`todaysTasks`).
     static func personalEntry() -> TasksEntry {
@@ -624,11 +626,11 @@ private func resetTasksPreviewState(page: Int = 0) {
     WidgetStore.setTasksSelectMode(false)
     WidgetStore.clearTasksSelection()
     WidgetStore.setShowCompleted(false, for: TasksWidget.kind)
-    // Seed `TimeSlotStore` with Trent's real slots — the widget extension
+    // Seed `TimeSlotStore` with the sample slots — the widget extension
     // only ever READS that cache (the main app populates it), so an
     // unseeded preview renders every "⏭ Next period" button disabled,
     // which a real device never shows.
-    TimeSlotStore.save([
+    TimeSlotStore.save(PreviewLocalData.timeSlots ?? [
         TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
         TimeSlotDTO(id: 12, label: "Morning", startTime: "09:00"),
         TimeSlotDTO(id: 13, label: "Midday", startTime: "12:00"),

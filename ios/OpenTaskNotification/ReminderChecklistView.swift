@@ -21,7 +21,7 @@ import SwiftUI
 /// QUOTA PROMPTS (quota reminders, 2026-09-24): the slot's waiting quota
 /// prompts are rows too, after its reminders (the web and the widgets put
 /// them there). A prompt row has an eye where the reminder row has its
-/// circle — staging CONSIDERED ("seen") — plus a square beside its count ("Daily Walks · 1/2") staging
+/// circle — staging CONSIDERED ("seen") — plus a square beside its count ("Piano Scales · 1/2") staging
 /// DID IT (+1, and considered). The two are one choice per prompt: tapping
 /// the other switches it, tapping the same one again un-stages it. The whole
 /// staged set, reminders and prompts, commits in ONE

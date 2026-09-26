@@ -118,7 +118,7 @@ struct WatchWidgetEntry: TimelineEntry {
 // MARK: - Builder
 
 /// Pure entry/relevance logic — no network, no WidgetKit context — so the
-/// provider, the `#Preview`s (real data, `ReminderStackPreviewData`) and the
+/// provider, the `#Preview`s (sample data, `ReminderStackPreviewData`) and the
 /// relevance hints all compute the card the same way.
 enum ReminderStackTimeline {
 

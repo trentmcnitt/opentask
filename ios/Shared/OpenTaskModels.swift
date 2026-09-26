@@ -531,7 +531,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     var isWaiting: Bool { !considered && !done }
 
     /// "1/2 today" — the count every prompt surface shows beside the title
-    /// ("Daily Walks · 1/2 today"): the count, then the period it covers
+    /// ("Piano Scales · 1/2 today"): the count, then the period it covers
     /// (2026-09-25, Trent: "0/1" alone doesn't say whether it's today's, the
     /// week's or the month's). The web uses the same words. Joined with
     /// non-breaking spaces, "this week" included, so the count and its period

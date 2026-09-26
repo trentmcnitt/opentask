@@ -311,7 +311,7 @@ final class WatchViewModel: ObservableObject {
     /// the Quotas page shows the server's count, and `load()`'s
     /// fetch-started-before-the-tap rule keeps a racing fetch from putting
     /// the old count back. Then `load()` re-fetches the reminders — a prompt's
-    /// state is the server's to compute (a did-it on Daily Walks #1 can finish
+    /// state is the server's to compute (a did-it on Piano Scales #1 can finish
     /// #2 in another slot).
     func actOnPrompt(_ prompt: QuotaPromptDTO, did: Bool) {
         guard prompt.isWaiting, pendingPromptActions[prompt.promptKey] == nil else { return }
@@ -642,7 +642,7 @@ final class WatchViewModel: ObservableObject {
 
 #if DEBUG
 extension WatchViewModel {
-    /// A model pre-filled with `WatchPreviewData` (Trent's real quotas) for
+    /// A model pre-filled with `WatchPreviewData` (realistic sample quotas) for
     /// `#Preview`s — no network, `hasLoadedOnce` already true so the page
     /// renders content instead of its first-launch spinner. Lives in this
     /// file because the properties it fills are `private(set)`. Setting
@@ -659,7 +659,7 @@ extension WatchViewModel {
         return model
     }
 
-    /// The Reminders page with his real Early morning prompts, the slot
+    /// The Reminders page with the sample Early morning prompts, the slot
     /// pinned to Early morning (`slotOverride`) so the preview doesn't
     /// depend on the clock.
     static func previewReminders(handled: [String: Bool] = [:]) -> WatchViewModel {
