@@ -418,6 +418,7 @@ function DashedRing({ px }: { px: number }) {
   return (
     <svg
       aria-hidden="true"
+      data-dashed-ring
       width={px}
       height={px}
       viewBox={`0 0 ${px} ${px}`}
