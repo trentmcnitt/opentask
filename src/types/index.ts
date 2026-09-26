@@ -69,7 +69,7 @@ export interface Task {
   /**
    * Short label for the quota widget chip (§5). Only meaningful on a tracked
    * task — the widget shows every quota as a small tappable chip, and a full
-   * quota title ("Balloon breathing practice (teach Mia...)") doesn't fit.
+   * quota title ("Posture practice (tall spine, soft jaw...)") doesn't fit.
    * Not rejected on an ordinary task, just unused there. Null unless set.
    */
   short_title: string | null

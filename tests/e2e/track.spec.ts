@@ -1246,7 +1246,7 @@ test.describe('Quotas page', () => {
    * land — but the dblclick riding behind them must not also open the editor.
    * The buttons stop the row's `click`; `dblclick` is a separate event that
    * ignored that, which is exactly what Trent hit (2026-09-06): "if I
-   * double-tap the +1 on Broccoli Avocado, then the modal pops up".
+   * double-tap the +1 on Oatmeal Berries, then the modal pops up".
    */
   test('double-tapping +1 counts twice and does not open the editor', async ({
     authenticatedPage: page,

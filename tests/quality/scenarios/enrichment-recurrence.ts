@@ -217,7 +217,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
     description:
       'Weekly recurrence — due_at weekday must match BYDAY (regression: model sometimes picks an adjacent day)',
     input: {
-      text: 'weekly linkedin/x post thursdays 9am',
+      text: 'weekly newsletter post thursdays 9am',
       timezone: 'America/Chicago',
       projects: [
         { id: 1, name: 'Inbox', shared: false },
@@ -229,7 +229,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
         labels: [],
       },
       quality_notes:
-        'Title: "Weekly linkedin/x post" or similar (recurrence phrase removed). ' +
+        'Title: "Weekly newsletter post" or similar (recurrence phrase removed). ' +
         'rrule must be FREQ=WEEKLY;BYDAY=TH. ' +
         "CRITICAL: due_at's weekday MUST be Thursday — not Friday, not Wednesday. " +
         'The model must correctly count forward from the Current local time to the NEXT Thursday ' +

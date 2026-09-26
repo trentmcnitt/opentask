@@ -44,7 +44,7 @@ type PromptIntent = 'consider' | 'did'
 
 /**
  * A prompt after `intent`, and every sibling prompt of the same quota with the
- * count that implies — a did-it on "Daily Walks" in the morning moves the
+ * count that implies — a did-it on "Piano Scales" in the morning moves the
  * afternoon's row to 1/2 too. The server's own answer replaces this on the
  * next refresh; this is only what the screen shows until then.
  *

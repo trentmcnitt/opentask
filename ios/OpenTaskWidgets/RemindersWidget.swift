@@ -410,18 +410,19 @@ struct RemindersWidget: Widget {
 }
 
 #if DEBUG
-// MARK: - Previews (2026-09-24, real-data snapshot)
+// MARK: - Previews (2026-09-24, realistic sample data)
 //
-// Trent's REAL reminders, read-only from production on 2026-09-24 at the
-// moment he screenshotted the widget ("Early morning · 7 left", page 1/4
-// showing only two rows — the list-fill bug this snapshot exists to
-// reproduce). Titles are VERBATIM, including the very long "Learning a
-// physical skill needs…" one: the fill bug only shows up with real
-// title lengths, and a tidy generic corpus is exactly what let it ship.
-// Deliberately NOT `SampleData.swift`, which ships in the app bundle and
-// backs the real widget gallery/placeholder — these previews are
-// `#if DEBUG`-only and never ship, and every title here already lives in
-// Trent's own app.
+// Realistic sample reminders with the shape of a real account at 8:44 AM
+// on the day the list-fill bug was reported ("Early morning · 7 left", page
+// 1/4 showing only two rows — the bug these previews exist to reproduce):
+// the same slots, row counts and title lengths, including one
+// paragraph-length reminder, because the fill bug only shows up with
+// realistic title lengths and a tidy short corpus is exactly what let it
+// ship. The titles are invented. Deliberately NOT `SampleData.swift`, which
+// ships in the app bundle and backs the real widget gallery/placeholder —
+// these previews are `#if DEBUG`-only and never ship. With
+// `ios/Previews.local/reminders.json` present (`PreviewLocalData`,
+// gitignored) they render that account data instead.
 //
 // ONE #Preview BLOCK PER STORE STATE (page, "show completed"), not several
 // timeline entries in one: the page index and the toggle are read live from
@@ -429,7 +430,7 @@ struct RemindersWidget: Widget {
 // built before any of them renders — so a store write made while building
 // one shared timeline would apply to every entry in it.
 private enum ReminderPreviewData {
-    /// The snapshot's clock: 8:44 AM local today — inside Early morning
+    /// The sample's clock: 8:44 AM local today — inside Early morning
     /// (07:00-09:00), where Trent's screenshots were taken.
     static var now: Date {
         Calendar.current.date(bySettingHour: 8, minute: 44, second: 0, of: Date()) ?? Date()
@@ -449,7 +450,7 @@ private enum ReminderPreviewData {
     }
 
     /// One quota prompt as the server sends it (quota reminders,
-    /// 2026-09-24). Keyed for the snapshot's day; previews never send it.
+    /// 2026-09-24). Keyed for the sample's day; previews never send it.
     private static func prompt(
         _ taskId: Int, _ number: Int?, _ title: String, _ current: Int, _ target: Int,
         _ period: String?, _ stripe: String?, considered: Bool = false, done: Bool = false
@@ -461,80 +462,80 @@ private enum ReminderPreviewData {
         )
     }
 
-    /// Trent's REAL quota prompts (2026-09-24, read-only from the dev
-    /// server, whose data is his prod snapshot, with PR #79's quota prompts
-    /// on): Early morning is the period every unmet quota prompts in by
-    /// default there, so it holds sixteen — the layout stress case, a slot
-    /// that is mostly prompt rows, with his longest titles ("Check for new
-    /// certifications — …", "Balloon breathing practice (…)"). Daily Walks is
-    /// daily with target 2, so its #1 is here and its #2 is in Morning.
+    /// Sample quota prompts (2026-09-24): Early morning is the period
+    /// every unmet quota prompts in by default, so it holds sixteen — the
+    /// layout stress case, a slot that is mostly prompt rows, with the
+    /// longest titles ("Look for new evening courses — …", "Posture practice
+    /// (…)"). Piano Scales is daily with target 2, so its #1 is here and its
+    /// #2 is in Morning.
     static var earlyMorningPrompts: [QuotaPromptDTO] {
         [
-            prompt(116, nil, "Broccoli Avocado", 1, 3, "WEEKLY", nil),
-            prompt(3307, nil, "Check for new certifications — vendor academies, platform certs, automation credentials", 0, 1, "WEEKLY", "pink"),
-            prompt(276, nil, "Clean the car seats", 0, 1, "MONTHLY", "purple"),
-            prompt(255, nil, "Cook daily vegetables (incl. black beans)", 0, 5, "WEEKLY", "blue"),
-            prompt(83, 1, "Daily Walks", 0, 2, "DAILY", "blue"),
-            prompt(193, nil, "Eggs", 1, 2, "WEEKLY", nil),
-            prompt(129, nil, "Fiber food (ie bran cereal)", 1, 3, "WEEKLY", nil),
-            prompt(192, nil, "Empty the dishwasher (chore)", 0, 5, "WEEKLY", "purple"),
-            prompt(21400, nil, "Iron-Rich Meal (e.g. lentils, spinach)", 0, 2, "WEEKLY", nil),
-            prompt(163, nil, "Balloon breathing practice (slow exhale, relaxed shoulders, breathe into the upper back, seated)", 0, 4, "WEEKLY", "blue"),
-            prompt(239, nil, "High-fiber cereal (ie bran flakes)", 0, 2, "WEEKLY", nil),
-            prompt(258, nil, "Fruit smoothie (+omega-3)", 0, 2, "WEEKLY", "blue"),
-            prompt(132, nil, "Daily supplements ( Vitamin D, Omega-3 )", 1, 3, "WEEKLY", "blue"),
-            prompt(13, nil, "Park trip (+friends)", 1, 4, "WEEKLY", nil),
-            prompt(118, nil, "Swim lessons", 1, 2, "WEEKLY", nil),
-            prompt(160, nil, "Trail mix bites", 1, 3, "WEEKLY", nil),
+            prompt(116, nil, "Oatmeal + Berries", 1, 3, "WEEKLY", nil),
+            prompt(3307, nil, "Look for new evening courses — community colleges, library programs, weekend workshops", 0, 1, "WEEKLY", "pink"),
+            prompt(276, nil, "Vacuum the car mats", 0, 1, "MONTHLY", "purple"),
+            prompt(255, nil, "Bake bread from scratch (incl. sourdough)", 0, 5, "WEEKLY", "blue"),
+            prompt(83, 1, "Piano Scales", 0, 2, "DAILY", "blue"),
+            prompt(193, nil, "Figs", 1, 2, "WEEKLY", nil),
+            prompt(129, nil, "Whole grains (ie brown rice)", 1, 3, "WEEKLY", nil),
+            prompt(192, nil, "Sort the recycling (chore)", 0, 5, "WEEKLY", "purple"),
+            prompt(21400, nil, "Citrus Snack (e.g. oranges, clementines)", 0, 2, "WEEKLY", nil),
+            prompt(163, nil, "Posture practice (tall spine, soft jaw, shoulders down and back, feet flat on the floor, seated)", 0, 4, "WEEKLY", "blue"),
+            prompt(239, nil, "Home-cooked soup (ie minestrone)", 0, 2, "WEEKLY", nil),
+            prompt(258, nil, "Green smoothie (+ginger)", 0, 2, "WEEKLY", "blue"),
+            prompt(132, nil, "Evening tea ( Chamomile, Peppermint )", 1, 3, "WEEKLY", "blue"),
+            prompt(13, nil, "Bike ride (+neighbors)", 1, 4, "WEEKLY", nil),
+            prompt(118, nil, "Guitar class", 1, 2, "WEEKLY", nil),
+            prompt(160, nil, "Yogurt parfait", 1, 3, "WEEKLY", nil),
         ]
     }
 
-    /// Every slot of the day, as `GET /api/reminders` returned them at 8:44.
+    /// Every slot of the day, as `GET /api/reminders` returns them at 8:44 —
+    /// or the local account data, when there is some.
     static var groups: [ReminderGroupDTO] {
-        [
+        PreviewLocalData.reminderGroups ?? [
             group(11, "Early morning", "07:00", [
-                TaskDTO(id: 604, title: "Supplements ( Vitamin C, Zinc, Magnesium )", priority: 2, isReminder: true),
-                TaskDTO(id: 64, title: "Learning a physical skill needs a feedback loop: watch, listen and adjust while doing it, so the thinking part of the brain can guide the body. Record, review, repeat, and notice what changed each time. (That is how practice turns into progress, one small correction at a time.) Keep sessions short and specific.", priority: 0, isReminder: true),
-                TaskDTO(id: 168, title: "Skin care (Cleanse, Moisturize, SPF)", priority: 0, isReminder: true),
-                TaskDTO(id: 208, title: "Think of improvement as fun to see what’s possible?", priority: 0, isReminder: true),
-                TaskDTO(id: 218, title: "Good form uses the full body to accomplish the task", priority: 0, isReminder: true),
-                TaskDTO(id: 223, title: "Walk and move in a way that keeps the whole body loose", priority: 0, isReminder: true),
-                TaskDTO(id: 23432, title: "Cold Shower (morning)", priority: 0, isReminder: true),
+                TaskDTO(id: 604, title: "Breakfast ( Oatmeal, Berries, Walnuts )", priority: 2, isReminder: true),
+                TaskDTO(id: 64, title: "Practice the new song slowly, one phrase at a time, noticing where the breath runs short and marking it on the sheet before trying the whole verse again. Then play it once through without stopping, record it, and listen back with fresh ears. (Small daily corrections add up faster than one long weekend session.)", priority: 0, isReminder: true),
+                TaskDTO(id: 168, title: "Plant care (Water, Mist, Turn to sun)", priority: 0, isReminder: true),
+                TaskDTO(id: 208, title: "Treat each mistake as a clue to what’s worth learning?", priority: 0, isReminder: true),
+                TaskDTO(id: 218, title: "A calm start to the morning sets up the rest of it", priority: 0, isReminder: true),
+                TaskDTO(id: 223, title: "Sit tall at the desk and let the shoulders drop and relax", priority: 0, isReminder: true),
+                TaskDTO(id: 23432, title: "Open blinds (morning)", priority: 0, isReminder: true),
             ], considered: [
-                TaskDTO(id: 24, title: "Yesterday = Lesson, Tomorrow = Plan, Today = Practice", priority: 0, isReminder: true),
+                TaskDTO(id: 24, title: "Morning = Focus, Afternoon = Meetings, Evening = Rest", priority: 0, isReminder: true),
             ], prompts: earlyMorningPrompts),
             group(12, "Morning", "09:00", [
-                TaskDTO(id: 2226, title: "Check GitHub issues", priority: 2, isReminder: true),
-                TaskDTO(id: 126, title: "Do my mobility", priority: 0, isReminder: true),
-                TaskDTO(id: 183, title: "Mixed Nuts + Pumpkin Seeds", priority: 0, isReminder: true),
-                TaskDTO(id: 197, title: "Eye rest (Relax into it, hold it steady — good for presence)", priority: 0, isReminder: true),
-                TaskDTO(id: 215, title: "Wall pushups", priority: 0, isReminder: true),
-                TaskDTO(id: 18050, title: "How has the assistant voice been (pleasant and effective to talk with?)", priority: 0, isReminder: true),
+                TaskDTO(id: 2226, title: "Check the team inbox", priority: 2, isReminder: true),
+                TaskDTO(id: 126, title: "Do my stretches", priority: 0, isReminder: true),
+                TaskDTO(id: 183, title: "Carrot Sticks + Hummus Cup", priority: 0, isReminder: true),
+                TaskDTO(id: 197, title: "Deep breath (Slow in, hold it gently — good for steady focus)", priority: 0, isReminder: true),
+                TaskDTO(id: 215, title: "Calf raises", priority: 0, isReminder: true),
+                TaskDTO(id: 18050, title: "How has the new morning routine felt (calm and useful to start the day?)", priority: 0, isReminder: true),
             ], considered: [
-            ], prompts: [prompt(83, 2, "Daily Walks", 0, 2, "DAILY", "blue")]),
+            ], prompts: [prompt(83, 2, "Piano Scales", 0, 2, "DAILY", "blue")]),
             group(13, "Midday", "12:00", [
-                TaskDTO(id: 2247, title: "Check all public profile pages", priority: 2, isReminder: true),
-                TaskDTO(id: 38, title: "Is the vinegar rinse still working", priority: 0, isReminder: true),
-                TaskDTO(id: 146, title: "Chess puzzle training", priority: 0, isReminder: true),
-                TaskDTO(id: 279, title: "Almonds", priority: 0, isReminder: true),
-                TaskDTO(id: 23393, title: "Stretch break (optional)", priority: 0, isReminder: true),
+                TaskDTO(id: 2247, title: "Check the community board posts", priority: 2, isReminder: true),
+                TaskDTO(id: 38, title: "Is the new plant food still working", priority: 0, isReminder: true),
+                TaskDTO(id: 146, title: "Crossword puzzle time", priority: 0, isReminder: true),
+                TaskDTO(id: 279, title: "Raisins", priority: 0, isReminder: true),
+                TaskDTO(id: 23393, title: "Refill water (optional)", priority: 0, isReminder: true),
             ], considered: [
             ]),
             group(14, "Afternoon", "16:00", [
-                TaskDTO(id: 12, title: "Being patient is a much happier way to live/be", priority: 0, isReminder: true),
-                TaskDTO(id: 127, title: "Remember to enjoy the day (“am I enjoying my day?”, “what am I going to do to enjoy my day?”)", priority: 0, isReminder: true),
-                TaskDTO(id: 150, title: "Make sure there is a team sport or a hand-eye coordination activity on the calendar", priority: 0, isReminder: true),
-                TaskDTO(id: 222, title: "“Do the small things well, and the big things take care of themselves.”", priority: 0, isReminder: true),
+                TaskDTO(id: 12, title: "Listening fully is a much kinder way to talk/be", priority: 0, isReminder: true),
+                TaskDTO(id: 127, title: "Remember to notice the day (“what did I notice today?”, “what am I going to look for tomorrow?”)", priority: 0, isReminder: true),
+                TaskDTO(id: 150, title: "Make sure there is a group hike or an outdoor weekend activity on the family calendar", priority: 0, isReminder: true),
+                TaskDTO(id: 222, title: "“Take care of the minutes, and the hours will take care of themselves.”", priority: 0, isReminder: true),
             ], considered: [
             ]),
             group(15, "Evening", "20:30", [
-                TaskDTO(id: 41, title: "Laundry fold", priority: 0, isReminder: true),
-                TaskDTO(id: 44, title: "Journaling before bed might help clear the mind at night", priority: 0, isReminder: true),
-                TaskDTO(id: 70, title: "Timed breathing to slow down (use app)", priority: 0, isReminder: true),
-                TaskDTO(id: 94, title: "Neck stretch (posture)", priority: 0, isReminder: true),
-                TaskDTO(id: 136, title: "Surround myself with good books and thoughtful people. Read books, listen to podcasts, play strategy games — whatever it takes. Provides learning + mindset reinforcement", priority: 0, isReminder: true),
-                TaskDTO(id: 273, title: "Evening stretch routine (after mobility) (finish with a long hold)", priority: 0, isReminder: true),
-                TaskDTO(id: 3093, title: "Ask myself: “What went well today?”", priority: 0, isReminder: true),
+                TaskDTO(id: 41, title: "Pack lunches", priority: 0, isReminder: true),
+                TaskDTO(id: 44, title: "A short walk after dinner might help settle the mind at night", priority: 0, isReminder: true),
+                TaskDTO(id: 70, title: "Box breathing to wind down (use timer)", priority: 0, isReminder: true),
+                TaskDTO(id: 94, title: "Hip stretch (desk day)", priority: 0, isReminder: true),
+                TaskDTO(id: 136, title: "Fill the house with good music and curious people. Borrow books, try new recipes, play board games — whatever keeps it lively. Provides learning + a steady source of calm", priority: 0, isReminder: true),
+                TaskDTO(id: 273, title: "Evening wind-down routine (after dishes) (finish with a warm drink)", priority: 0, isReminder: true),
+                TaskDTO(id: 3093, title: "Ask myself: “What can I let go of?”", priority: 0, isReminder: true),
             ], considered: [
             ]),
         ]
@@ -542,7 +543,7 @@ private enum ReminderPreviewData {
 
     /// Early morning's slot key — the on-screen slot, and what the stored
     /// page index is paired with (`WidgetStore.remindersPage(for:)`).
-    static let earlyMorningKey = 11
+    static var earlyMorningKey: Int { groups.first?.slot?.id ?? 11 }
 
     static func entry(slotIndex: Int = 0) -> RemindersEntry {
         RemindersEntry(
@@ -557,13 +558,13 @@ private enum ReminderPreviewData {
         )
     }
 
-    /// `entry()` with Early morning's first reminder (Supplements) gone,
+    /// `entry()` with Early morning's first reminder (Breakfast) gone,
     /// so the paragraph-long one is `reminders[0]`.
     static func paragraphFirstEntry() -> RemindersEntry {
         var gs = groups
         let g = gs[0]
         gs[0] = ReminderGroupDTO(
-            slot: TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
+            slot: g.slot,
             reminders: Array(g.reminders.dropFirst()), considered: g.considered, consideredItems: g.consideredItems,
             prompts: g.prompts
         )
@@ -573,8 +574,8 @@ private enum ReminderPreviewData {
         )
     }
 
-    /// Early morning with three prompts handled today — Daily Walks #1 did
-    /// (1/2), Broccoli Avocado considered, Eggs did (2/2) — for the DONE
+    /// Early morning with three prompts handled today — Piano Scales #1 did
+    /// (1/2), Oatmeal + Berries considered, Figs did (2/2) — for the DONE
     /// section's prompt rows (each marker a put-back, 2026-09-25).
     static func promptsHandledEntry() -> RemindersEntry {
         var gs = groups
@@ -610,9 +611,11 @@ private enum ReminderPreviewData {
         WidgetStore.setRemindersPage(page, for: slotKey)
     }
 
-    /// Evening — the slot with Trent's other paragraph-length reminder
-    /// ("Surround myself with good books and thoughtful people…").
-    static let eveningKey = 15
+    /// Evening — the slot with the other paragraph-length reminder ("Fill
+    /// the house with good music and curious people…"). Clamped, so local
+    /// data with fewer slots still renders.
+    static var eveningIndex: Int { max(0, min(4, groups.count - 1)) }
+    static var eveningKey: Int { groups[eveningIndex].slot?.id ?? -1 }
 }
 
 #Preview("Reminders Large — page 1", as: .systemLarge) {
@@ -650,7 +653,7 @@ private enum ReminderPreviewData {
     ReminderPreviewData.entry()
 }
 
-// Pages 6-10: with his sixteen real quota prompts after the reminders
+// Pages 6-10: with the sixteen sample quota prompts after the reminders
 // (2026-09-24), Early morning runs to ten pages at XXX Large text.
 #Preview("Reminders Large — page 6", as: .systemLarge) {
     RemindersWidget()
@@ -719,21 +722,21 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
-    ReminderPreviewData.entry(slotIndex: 4)
+    ReminderPreviewData.entry(slotIndex: ReminderPreviewData.eveningIndex)
 }
 
 #Preview("Reminders Large — Evening page 2", as: .systemLarge) {
     RemindersWidget()
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
-    ReminderPreviewData.entry(slotIndex: 4)
+    ReminderPreviewData.entry(slotIndex: ReminderPreviewData.eveningIndex)
 }
 
 #Preview("Reminders Large — Evening page 3", as: .systemLarge) {
     RemindersWidget()
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
-    ReminderPreviewData.entry(slotIndex: 4)
+    ReminderPreviewData.entry(slotIndex: ReminderPreviewData.eveningIndex)
 }
 
 #Preview("Reminders Large — completed on, last page", as: .systemLarge) {
@@ -755,10 +758,10 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
-    ReminderPreviewData.entry(slotIndex: 4)
+    ReminderPreviewData.entry(slotIndex: ReminderPreviewData.eveningIndex)
 }
 
-/// The 2×2 once "Supplements" is checked off: the paragraph-long reminder
+/// The 2×2 once "Breakfast" is checked off: the paragraph-long reminder
 /// becomes the one shown.
 #Preview("Reminders Small — paragraph first", as: .systemSmall) {
     RemindersWidget()

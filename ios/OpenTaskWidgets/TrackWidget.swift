@@ -1122,54 +1122,57 @@ struct TrackWidget: Widget {
 // MARK: - Previews
 
 #if DEBUG
-/// Trent's REAL quotas, read-only from production on 2026-09-24 when he
-/// screenshotted the Quotas widget ("2 of 24 met"): every open quota
-/// (`is_tracked` or `progress_target > 1`), titles VERBATIM — none has a
-/// `short_title` yet, which is exactly what made the long ones run off the
-/// card — with his real labels and label colors. See
-/// `RemindersWidget.swift`'s preview header for why this lives here and not
-/// in `SampleData.swift` (which stays generic: it backs the real gallery).
+/// Realistic sample quotas with the shape of the account whose Quotas
+/// widget read "2 of 24 met": 24 open quotas (`is_tracked` or
+/// `progress_target > 1`) with the same periods, counts, labels, label
+/// colors and title lengths — none has a `short_title`, which is exactly
+/// what made the long ones run off the card. The titles are invented. With
+/// `ios/Previews.local/`'s `tasks.json`/`label-config.json` present
+/// (`PreviewLocalData`, gitignored) they render that account data instead.
+/// See `RemindersWidget.swift`'s preview header for why this lives here and
+/// not in `SampleData.swift` (which stays generic: it backs the real
+/// gallery).
 private enum QuotasPreviewData {
     static var quotas: [TaskDTO] {
-        [
-            TaskDTO(id: 83, projectId: 4434, title: "Daily Walks", priority: 0, rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["health"]),
-            TaskDTO(id: 111, projectId: 4434, title: "Clean bedroom fans", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
-            TaskDTO(id: 152, projectId: 4434, title: "Charge jump starter", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house", "finance"]),
-            TaskDTO(id: 276, projectId: 4434, title: "Clean the car seats", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["kids", "house"]),
-            TaskDTO(id: 295, projectId: 4434, title: "Reset the router (power everything off for 10 sec)", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
-            TaskDTO(id: 309, projectId: 4434, title: "Clean earbuds + phone speakers", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
-            TaskDTO(id: 27, projectId: 4434, title: "Music Practice", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 1, trackedFlag: true, labels: ["kids"]),
-            TaskDTO(id: 103, projectId: 4434, title: "Say something kind to someone every day", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: true, labels: ["kids", "relationships"]),
-            TaskDTO(id: 114, projectId: 4434, title: "Evening Shower", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["kids"]),
-            TaskDTO(id: 116, projectId: 1, title: "Green Vegetables", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 1, trackedFlag: false, labels: []),
-            TaskDTO(id: 129, projectId: 1, title: "High-Fiber Food (e.g. Bran, Oats)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: false, labels: []),
-            TaskDTO(id: 132, projectId: 4434, title: "Daily Supplements (Vit. D, maybe Omega-3, etc.)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: true, labels: ["health", "kids"]),
-            TaskDTO(id: 160, projectId: 1, title: "Trail mix bites", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: false, labels: []),
-            TaskDTO(id: 163, projectId: 4434, title: "Balloon breathing practice (slow exhale, relaxed shoulders, breathe into the upper back, seated)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 4, progressCurrent: 0, trackedFlag: true, labels: ["health", "kids"]),
-            TaskDTO(id: 192, projectId: 4434, title: "Empty the dishwasher (chore)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 0, trackedFlag: true, labels: ["kids", "house"]),
-            TaskDTO(id: 193, projectId: 1, title: "Protein Breakfast", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: false, labels: []),
-            TaskDTO(id: 221, projectId: 4434, title: "Weight Lift", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: true, labels: ["health"]),
-            TaskDTO(id: 255, projectId: 4434, title: "Cook daily vegetables (incl. black beans)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 3, trackedFlag: true, labels: ["health"]),
-            TaskDTO(id: 605, projectId: 4434, title: "Play a card game after dinner", priority: 2, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["kids", "media"]),
-            TaskDTO(id: 3307, projectId: 6, title: "Check for new certifications — vendor academies, platform certs, automation credentials", priority: 2, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["ideas"]),
-            TaskDTO(id: 21771, projectId: 1, title: "Play Catch in the Backyard", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: []),
-            TaskDTO(id: 21829, projectId: 1, title: "Iron-Rich Meal (e.g. lentils, spinach)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 2, trackedFlag: true, labels: []),
-            TaskDTO(id: 23532, projectId: 1, title: "Review book highlights", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["hub"]),
-            TaskDTO(id: 23534, projectId: 1, title: "Run the weekly maintenance checklist in a fresh chat", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["hub", "ai-added"]),
-        ].filter(\.isTracked)
+        (PreviewLocalData.openTasks ?? [
+            TaskDTO(id: 83, projectId: 4434, title: "Piano Scales", priority: 0, rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["health"]),
+            TaskDTO(id: 111, projectId: 4434, title: "Dust the bookshelf", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
+            TaskDTO(id: 152, projectId: 4434, title: "Check the smoke alarm", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house", "finance"]),
+            TaskDTO(id: 276, projectId: 4434, title: "Vacuum the car mats", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["family", "house"]),
+            TaskDTO(id: 295, projectId: 4434, title: "Flush the water heater (drain a gallon from the valve)", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
+            TaskDTO(id: 309, projectId: 4434, title: "Wipe keyboard + mouse + screen", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
+            TaskDTO(id: 27, projectId: 4434, title: "Sketchbook Time", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 1, trackedFlag: true, labels: ["family"]),
+            TaskDTO(id: 103, projectId: 4434, title: "Send a thank-you note to someone this week", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: true, labels: ["family", "social"]),
+            TaskDTO(id: 114, projectId: 4434, title: "Evening Tidy-up", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["family"]),
+            TaskDTO(id: 116, projectId: 1, title: "Fresh Fruit Bowl", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 1, trackedFlag: false, labels: []),
+            TaskDTO(id: 129, projectId: 1, title: "Whole-Grain Meal (e.g. Rice, Barley)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: false, labels: []),
+            TaskDTO(id: 132, projectId: 4434, title: "Evening Herbal Tea (Chamomile, maybe Mint, etc.)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: true, labels: ["health", "family"]),
+            TaskDTO(id: 160, projectId: 1, title: "Yogurt parfait", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: false, labels: []),
+            TaskDTO(id: 163, projectId: 4434, title: "Posture practice (tall spine, soft jaw, shoulders down and back, feet flat on the floor, seated)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 4, progressCurrent: 0, trackedFlag: true, labels: ["health", "family"]),
+            TaskDTO(id: 192, projectId: 4434, title: "Sort the recycling (chore)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 0, trackedFlag: true, labels: ["family", "house"]),
+            TaskDTO(id: 193, projectId: 1, title: "Hearty Breakfast", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: false, labels: []),
+            TaskDTO(id: 221, projectId: 4434, title: "Rowing Sets", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: true, labels: ["health"]),
+            TaskDTO(id: 255, projectId: 4434, title: "Bake bread from scratch (incl. sourdough)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 3, trackedFlag: true, labels: ["health"]),
+            TaskDTO(id: 605, projectId: 4434, title: "Do a jigsaw puzzle after dinner", priority: 2, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["family", "media"]),
+            TaskDTO(id: 3307, projectId: 6, title: "Look for new evening courses — community colleges, library programs, weekend workshops", priority: 2, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["ideas"]),
+            TaskDTO(id: 21771, projectId: 1, title: "Frisbee Toss at the Park", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: []),
+            TaskDTO(id: 21829, projectId: 1, title: "Citrus Snack (e.g. oranges, clementines)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 2, trackedFlag: true, labels: []),
+            TaskDTO(id: 23532, projectId: 1, title: "Review saved articles", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["admin"]),
+            TaskDTO(id: 23534, projectId: 1, title: "Run the weekly backup check on the external drive", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["admin", "ai-added"]),
+        ]).filter(\.isTracked)
     }
 
     static var labelConfig: [LabelConfigDTO] {
-        [
+        PreviewLocalData.labelConfig ?? [
             LabelConfigDTO(name: "health", color: "blue"),
             LabelConfigDTO(name: "house", color: "orange"),
-            LabelConfigDTO(name: "kids", color: "purple"),
+            LabelConfigDTO(name: "family", color: "purple"),
             LabelConfigDTO(name: "ideas", color: "pink"),
         ]
     }
 }
 
-/// A real-data entry with `showMet`/`page` varied. This view is pure over
+/// A sample-data entry with `showMet`/`page` varied. This view is pure over
 /// its entry (`QuotasListView`'s doc), so one preview's timeline can step
 /// through every page and both toggle states.
 ///
@@ -1242,10 +1245,10 @@ private func previewEntry(
     previewEntry(showMet: true, page: 4)
 }
 
-/// Right after "Weight Lift" (id 221, 0/3 in the snapshot) is tapped to its
-/// target. Indexes 0-2: met dot OFF, pages 1-3 — Weight Lift is gone, and
-/// so is "Music Practice" (1/1, already met). Indexes 3-5: met dot ON, pages
-/// 1-3 — both show green, plain `+1` chips (Weight Lift sorts last in THIS
+/// Right after "Rowing Sets" (id 221, 0/3 in the sample) is tapped to its
+/// target. Indexes 0-2: met dot OFF, pages 1-3 — Rowing Sets is gone, and
+/// so is "Sketchbook Time" (1/1, already met). Indexes 3-5: met dot ON, pages
+/// 1-3 — both show green, plain `+1` chips (Rowing Sets sorts last in THIS
 /// WEEK's HEALTH cluster, so it lands on page 2).
 #Preview("Quotas — Large, just met", as: .systemLarge) {
     TrackWidget()
@@ -1260,11 +1263,11 @@ private func previewEntry(
 
 /// Takeback mode (2026-09-24), met dot OFF throughout. Indexes 0-3: mode
 /// ON, pages 1-4 — every chip with progress carries a red "−1", chips at 0
-/// are dimmed, and the met chips ("Music Practice" 1/1, "Iron-Rich Meal"
+/// are dimmed, and the met chips ("Sketchbook Time" 1/1, "Citrus Snack"
 /// 2/2) are back even though the dot is off. Index 4-5: right after ONE
-/// takeback on Music Practice — the mode STILL ON (2026-09-24; it used to
-/// exit here), Kazoo at 0/1 and so dimmed/inert, pages 1 and 3 (Kazoo
-/// lands on page 3 at XXX Large, page 2 at the default text size).
+/// takeback on Sketchbook Time — the mode STILL ON (2026-09-24; it used to
+/// exit here), Sketchbook Time at 0/1 and so dimmed/inert, pages 1 and 3
+/// (it lands on page 3 at XXX Large, page 2 at the default text size).
 #Preview("Quotas — Large, takeback", as: .systemLarge) {
     TrackWidget()
 } timeline: {
@@ -1277,8 +1280,9 @@ private func previewEntry(
 }
 
 /// The stale-count fix (2026-09-24), drawn THROUGH THE REAL STORE rather
-/// than a hand-built entry: the App Group cache is seeded with the snapshot
-/// (Weight Lift, id 221, at 3/3 — where Trent started his 11:53 taps), and
+/// than a hand-built entry: the App Group cache is seeded with the sample
+/// (Rowing Sets, id 221, at 3/3 — where the 11:53 taps that found the bug
+/// started), and
 /// every entry is built from `WidgetStore.loadTasks()` +
 /// `applyPendingProgress`, exactly what `TaskFeed`'s fast path draws.
 /// Takeback mode is armed once and never re-armed.
@@ -1298,13 +1302,13 @@ private func storeEntry(page: Int) -> TrackEntry {
     )
 }
 
-/// One takeback `−1` on Weight Lift, the way `IncrementProgressIntent`
+/// One takeback `−1` on Rowing Sets, the way `IncrementProgressIntent`
 /// runs it, with the server's answer written back (`confirmProgress`).
 private func previewTakeback(from current: Int) {
     WidgetStore.markInteraction()
     WidgetStore.stagePendingProgress(221, delta: -1)
     let serverTask = TaskDTO(
-        id: 221, projectId: 4434, title: "Weight Lift", rrule: "FREQ=WEEKLY", progressTarget: 3,
+        id: 221, projectId: 4434, title: "Rowing Sets", rrule: "FREQ=WEEKLY", progressTarget: 3,
         progressCurrent: current - 1, trackedFlag: true, labels: ["health"]
     )
     WidgetStore.confirmProgress(serverTask, delta: -1)
@@ -1314,7 +1318,7 @@ private func seedQuotasStore() {
     let seeded = QuotasPreviewData.quotas.map { task -> TaskDTO in
         guard task.id == 221 else { return task }
         return TaskDTO(
-            id: 221, projectId: 4434, title: "Weight Lift", rrule: "FREQ=WEEKLY", progressTarget: 3,
+            id: 221, projectId: 4434, title: "Rowing Sets", rrule: "FREQ=WEEKLY", progressTarget: 3,
             progressCurrent: 3, trackedFlag: true, labels: ["health"]
         )
     }
@@ -1324,8 +1328,8 @@ private func seedQuotasStore() {
     WidgetStore.markInteraction()
 }
 
-/// Indexes 0-2: pages 1-3 before any tap (Weight Lift 3/3, mode on).
-/// Indexes 3-5: pages 1-3 after TWO takebacks — Weight Lift 1/3 from the
+/// Indexes 0-2: pages 1-3 before any tap (Rowing Sets 3/3, mode on).
+/// Indexes 3-5: pages 1-3 after TWO takebacks — Rowing Sets 1/3 from the
 /// confirmed cache, the mode still on (no re-arm between the taps).
 #Preview("Quotas — Large, after takeback taps (store path)", as: .systemLarge) {
     TrackWidget()

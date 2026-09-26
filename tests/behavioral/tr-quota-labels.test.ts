@@ -26,8 +26,8 @@ const quota = (title: string, labels: string[], progress?: [number, number]): Ta
 describe('a quota has one label', () => {
   test('the first label wins when a quota still carries two', () => {
     // Six quotas on the real corpus look like this — e.g. ["health","kids"].
-    expect(quotaLabelOf(quota('Kids Smoothie', ['health', 'kids']))).toBe('health')
-    const groups = groupByLabel([quota('Kids Smoothie', ['health', 'kids'])])
+    expect(quotaLabelOf(quota('Family Smoothie', ['health', 'kids']))).toBe('health')
+    const groups = groupByLabel([quota('Family Smoothie', ['health', 'kids'])])
     expect(groups.map((g) => g.label)).toEqual(['health'])
     expect(groups).toHaveLength(1)
   })
@@ -41,12 +41,12 @@ describe('a quota has one label', () => {
 describe('grouping quotas by label', () => {
   test('groups are alphabetical and the unlabelled one is last', () => {
     const groups = groupByLabel([
-      quota('Weight Lift', ['health']),
+      quota('Rowing Sets', ['health']),
       quota('Eggs', []),
-      quota('Clean bedroom fans', ['house']),
-      quota('Check for certifications', ['ideas']),
-      quota('Clean car seat', ['kids', 'house']),
-      quota('Broccoli Avocado', []),
+      quota('Clean the gutters', ['house']),
+      quota('Check for courses', ['ideas']),
+      quota('Vacuum car mats', ['kids', 'house']),
+      quota('Oatmeal Berries', []),
     ])
     // Not sorted-with-null-in-place: "unlabelled" is the leftovers, so it goes
     // last however the names happen to sort.
@@ -113,16 +113,16 @@ describe('grouping quotas by label', () => {
     // that order is FROZEN: a +1 must never move a row under the user's finger
     // (commit 9bcf03d). Grouping is not allowed to re-sort them.
     const groups = groupByLabel([
-      quota('Cook daily vegetables', ['health'], [5, 5]),
-      quota('Daily Walks', ['health'], [0, 2]),
-      quota('Kids Smoothie', ['health', 'kids']),
-      quota('Weight Lift', ['health'], [1, 3]),
+      quota('Cook a new recipe', ['health'], [5, 5]),
+      quota('Daily Stretch', ['health'], [0, 2]),
+      quota('Family Smoothie', ['health', 'kids']),
+      quota('Rowing Sets', ['health'], [1, 3]),
     ])
     expect(groups[0].tasks.map((t) => t.title)).toEqual([
-      'Cook daily vegetables',
-      'Daily Walks',
-      'Kids Smoothie',
-      'Weight Lift',
+      'Cook a new recipe',
+      'Daily Stretch',
+      'Family Smoothie',
+      'Rowing Sets',
     ])
   })
 
@@ -134,9 +134,9 @@ describe('grouping quotas by label', () => {
 describe("a label group's header numbers", () => {
   test('counts quotas and met quotas, and never sums mixed targets', () => {
     const group = [
-      quota('Cook daily vegetables', ['health'], [5, 5]), // met
-      quota('Daily Walks', ['health'], [3, 2]), // met, and over
-      quota('Weight Lift', ['health'], [1, 3]),
+      quota('Cook a new recipe', ['health'], [5, 5]), // met
+      quota('Daily Stretch', ['health'], [3, 2]), // met, and over
+      quota('Rowing Sets', ['health'], [1, 3]),
     ]
     // "3 quotas · 2 met" — not "9 of 10", which would add a weekly target to a
     // daily one and to a monthly one and mean nothing.

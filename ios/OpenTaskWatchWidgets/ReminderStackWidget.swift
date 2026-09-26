@@ -138,8 +138,8 @@ struct ReminderStackProvider: TimelineProvider {
 }
 
 /// Non-identifying placeholder content for the widget gallery and
-/// redaction — deliberately NOT Trent's real data (that is DEBUG preview
-/// data only, `ReminderStackPreviewData`), since the gallery ships.
+/// redaction — deliberately NOT the realistic preview corpus (that is DEBUG
+/// preview data only, `ReminderStackPreviewData`), since the gallery ships.
 enum ReminderStackPlaceholder {
     static let entry = WatchWidgetEntry(
         date: Date(),

@@ -53,7 +53,7 @@ function makeReminder(hour: number, minute = 0, userId = TEST_USER_ID, zone = TE
     userId,
     userTimezone: zone,
     input: {
-      title: 'Yesterday = Lesson, Tomorrow = Plan',
+      title: 'Morning = Focus, Afternoon = Meetings',
       is_reminder: true,
       due_at: DateTime.fromJSDate(at(hour, minute, 15, zone))
         .toUTC()

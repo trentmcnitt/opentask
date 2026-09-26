@@ -269,7 +269,7 @@ private struct SlotProgressStrip: View {
 ///
 /// WHY THE COUNT AND SQUARE SIT ON THEIR OWN LINE: the first build put the
 /// square in a column beside the title, and on the 44mm SE simulator that
-/// left his real titles one or two words per line ("certifica-tions"
+/// left realistic titles one or two words per line ("commu-nity"
 /// hyphenated) with the count wrapping away from its "·". Under the title,
 /// right-aligned, the title keeps a reminder's full width, and the square is
 /// literally "next to the count": `1/3 ☐`. It costs one short line per
@@ -282,7 +282,7 @@ struct PromptRowView: View {
     /// Touch and hold: the period list. `nil` = no periods to offer.
     var hold: (() -> Void)?
 
-    /// "Daily Walks, 1/2 today" (+ ", has notes") — both buttons' label.
+    /// "Piano Scales, 1/2 today" (+ ", has notes") — both buttons' label.
     private var spokenLabel: String {
         NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
     }
@@ -387,7 +387,7 @@ struct LoadErrorView: View {
 }
 
 #if DEBUG
-// Quota prompts (2026-09-24) on Trent's real data: two reminders, then the
+// Quota prompts (2026-09-24) on realistic sample data: two reminders, then the
 // sixteen prompts — stripe, count, the dashed circle (tap = considered) and the
 // square (did it). The second preview has three handled, so they're gone.
 #Preview("Reminders — prompts") {
@@ -412,14 +412,15 @@ struct LoadErrorView: View {
 }
 
 // A preview can't scroll, so the page previews above only show the first
-// rows. These draw every one of his sixteen real prompt rows, five or six at
-// a time, as the page lists them.
+// rows. These draw every one of the sixteen sample prompt rows, five or six
+// at a time, as the page lists them (clamped, for local data with fewer).
 private struct PromptRowsPreview: View {
     let range: Range<Int>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(WatchPreviewData.earlyMorningPrompts[range]) { prompt in
+            let prompts = WatchPreviewData.earlyMorningPrompts
+            ForEach(prompts[range.clamped(to: prompts.indices)]) { prompt in
                 PromptRowView(prompt: prompt, consider: {}, didIt: {})
             }
         }
@@ -438,7 +439,7 @@ private struct PromptRowsPreview: View {
     PromptRowsPreview(range: 0..<4).dynamicTypeSize(.xxxLarge)
 }
 #Preview("Prompt rows 3-5, XXX Large") {
-    // The longest count: "0/1 this month" (Clean car seat) and "0/2 today".
+    // The longest count: "0/1 this month" (Vacuum the car mats) and "0/2 today".
     PromptRowsPreview(range: 2..<5).dynamicTypeSize(.xxxLarge)
 }
 #endif

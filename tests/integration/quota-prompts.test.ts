@@ -188,7 +188,7 @@ describe('GET /api/reminders — prompts', () => {
       method: 'PATCH',
       body: { quota_prompt_slot_id: id('Morning') },
     })
-    const quota = await makeQuota('Daily Walks', 'FREQ=DAILY', 2)
+    const quota = await makeQuota('Daily Stretch', 'FREQ=DAILY', 2)
     const before = await allPrompts()
     expect(before.map((p) => [p.slot, p.slot_id, p.numbers])).toEqual([
       ['Morning', id('Morning'), [1]],
@@ -229,7 +229,7 @@ describe('GET /api/reminders — prompts', () => {
     }[]
     const id = (label: string) => slots.find((s) => s.label === label)!.id
     const weekly = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 3)
-    const daily = await makeQuota('Daily Walks', 'FREQ=DAILY', 2)
+    const daily = await makeQuota('Daily Stretch', 'FREQ=DAILY', 2)
     const patch = (taskId: number, config: object) =>
       apiFetch(`/api/tasks/${taskId}`, { method: 'PATCH', body: { quota_prompt_config: config } })
     await patch(weekly.id, { enabled: false })
@@ -387,7 +387,7 @@ describe('POST /api/tasks/bulk/complete with prompts', () => {
       ).json()
     ).data
     const weekly = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
-    const daily = await makeQuota('Daily Walks', 'FREQ=DAILY', 2)
+    const daily = await makeQuota('Daily Stretch', 'FREQ=DAILY', 2)
     const prompts = await allPrompts()
     const weeklyKey = prompts.find((p) => p.task_id === weekly.id)!.prompt_key
     const dailyKey = prompts.find((p) => p.task_id === daily.id && p.number === 1)!.prompt_key
