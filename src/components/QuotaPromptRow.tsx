@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Eye } from 'lucide-react'
+import { Check, CircleDashed } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
 import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
@@ -31,16 +31,17 @@ import type { Task } from '@/types'
  *
  * WHAT DIFFERS, AND WHY
  * - TWO ACTIONS. Ticking a reminder means "considered", not "did it" (Trent's
- *   final decision). So the EYE and a tap on the row CONSIDER it — handled
- *   for today, nothing logged — and a SQUARE checkbox on the right, beside the
- *   count, is "did it": progress, and considered too. Square because it is a
+ *   final decision). So the DASHED CIRCLE and a tap on the row CONSIDER it —
+ *   handled for today, nothing logged — and a SQUARE checkbox on the right,
+ *   beside the count, is "did it": progress, and considered too. Square because it is a
  *   different verb, and a checkbox is what "I did this" looks like everywhere
  *   else.
- * - AN EYE WHERE A REMINDER HAS ITS CIRCLE (2026-09-25). Same place, size and
- *   tap target, same verb. Trent habitually tapped the left circle meaning
- *   "done", but on a prompt it means "seen" — the eye says so. Outline and
- *   muted while waiting; filled green (the circle's considered look) as the
- *   row collapses.
+ * - A DASHED CIRCLE WHERE A REMINDER HAS ITS SOLID ONE (2026-09-25). Same
+ *   place, size and tap target, same verb. Trent habitually tapped the solid
+ *   circle meaning "done", but on a prompt it means "seen". An eye came first
+ *   (#96) and read as creepy; the dashed circle is his pick — still a circle,
+ *   visibly not the reminder's. Outline and muted while waiting; green and
+ *   filled (the circle's considered look) as the row collapses.
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
@@ -174,8 +175,8 @@ export function QuotaPromptRow({
       className={promptRowClasses({ panel, selected, hiddenWhenNarrow, completing })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
-          In the row's gutter (the panel's in the list's), so the eye lines
-          up with the reminder rows' circles. */}
+          In the row's gutter (the panel's in the list's), so the dashed
+          circle lines up with the reminder rows' circles. */}
       <span
         aria-hidden="true"
         className={cn(
@@ -199,7 +200,7 @@ export function QuotaPromptRow({
           {bubble(<span aria-hidden="true" className="pointer-events-none absolute inset-0" />)}
         </span>
       )}
-      <PromptEye
+      <PromptDashedCircle
         prompt={prompt}
         panel={panel}
         completing={completing}
@@ -265,7 +266,7 @@ function PromptDidButton({
       disabled={selecting}
       className={cn(
         selecting && 'invisible',
-        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
+        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors disabled:cursor-default',
         panel ? 'size-[19px]' : 'mt-[3px] size-6',
       )}
     >
@@ -328,14 +329,19 @@ function usePromptRowGestures({
 }
 
 /**
- * The eye — "considered" (seen) — in the reminder row's circle's exact box:
- * same size, same place, same tap target, and the same selection-mode
- * checkbox (`ReminderRowMarker`). Only the glyph differs (see the docblock).
- * Waiting: an outline eye in the circle's muted tone. Considered (the
- * collapse): a filled green eye — the circle's green disc, as an eye — with
- * its pupil ring knocked out in white, like SF Symbols' `eye.fill`.
+ * The dashed circle — "considered" (seen) — in the reminder row's circle's
+ * exact box: same size, same place, same tap target, and the same
+ * selection-mode checkbox (`ReminderRowMarker`). Only the glyph differs (see
+ * the docblock). Waiting: lucide `CircleDashed` in the circle's muted tone.
+ * Considered (the collapse): the dashed ring in green around a filled green
+ * disc — the reminder circle's green disc, kept inside the dashes — which is
+ * SF Symbols' `circle.dashed.inset.filled`, the native surfaces' glyph.
+ * (Lucide's dashes are open arcs, so `fill` on the icon itself would paint
+ * slivers, not a disc; the disc is its own element.) Lucide draws the ring at
+ * r=10 in its 24-unit box, so the glyph is scaled 120% to meet the reminder
+ * circle's full-box ring; the button itself — the tap target — keeps its size.
  */
-function PromptEye({
+function PromptDashedCircle({
   prompt,
   panel,
   completing,
@@ -355,9 +361,10 @@ function PromptEye({
     return (
       <span
         aria-hidden
-        className={cn('flex shrink-0 items-center justify-center text-green-600', size)}
+        className={cn('relative flex shrink-0 items-center justify-center text-green-600', size)}
       >
-        <Eye className={cn(glyph, 'fill-green-600 [&>circle]:stroke-white')} strokeWidth={1.75} />
+        <CircleDashed className={cn(glyph, 'scale-120')} strokeWidth={1.75} />
+        <span className="absolute inset-[22%] rounded-full bg-green-600" />
       </span>
     )
   }
@@ -369,7 +376,7 @@ function PromptEye({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         aria-label={`Select "${prompt.title}"`}
-        className={cn('shrink-0', size)}
+        className={cn('shrink-0 cursor-pointer', size)}
       />
     )
   }
@@ -386,11 +393,11 @@ function PromptEye({
       title="Considered"
       data-prompt-consider
       className={cn(
-        'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-md transition-colors',
+        'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',
         size,
       )}
     >
-      <Eye className={glyph} strokeWidth={1.5} />
+      <CircleDashed className={cn(glyph, 'scale-120')} strokeWidth={1.5} />
     </button>
   )
 }
