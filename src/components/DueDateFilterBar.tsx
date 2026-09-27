@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { EXCLUDED_CHIP_CLASSES } from '@/lib/priority'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { countChipDueBadges } from '@/lib/chip-due-badges'
+import { hasDebtDueDate, isOverdue } from '@/lib/task-counts'
 import { ChipDueBadges, describeChipDueBadges } from '@/components/ChipDueBadges'
 import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task } from '@/types'
@@ -47,20 +48,27 @@ const FILTER_ORDER: DueDateFilter[] = [
  * - Calendar period (at most one): today, this_week, later
  * A task can appear in both a time-urgency and calendar-period bucket
  * (e.g., a task due today at 9 AM when it's now 3 PM is both "overdue" and "today").
+ *
+ * "Overdue" and "has a due date" come from `isOverdue`/`hasDebtDueDate` in
+ * `@/lib/task-counts` — the same predicates the top bar's red/gray pills count
+ * with — so the Overdue chip and the red pill share one definition. A quota
+ * (tracked) row therefore lands in "No Due Date" here, matching `countTasks`,
+ * which never counts it as overdue or due today. The dashboard already strips
+ * quotas before this runs; the guard only matters for a legacy row.
  */
 export function classifyTaskDueDate(
   task: Task,
   now: Date,
   boundaries: ReturnType<typeof getTimezoneDayBoundaries>,
 ): DueDateFilter[] {
-  if (!task.due_at) return ['no_due_date']
+  if (!hasDebtDueDate(task)) return ['no_due_date']
 
   const due = new Date(task.due_at)
   const soonBoundary = new Date(now.getTime() + 2 * 60 * 60 * 1000)
   const buckets: DueDateFilter[] = []
 
   // Time urgency (at most one)
-  if (due < now) buckets.push('overdue')
+  if (isOverdue(task, now)) buckets.push('overdue')
   else if (due < soonBoundary) buckets.push('soon')
 
   // Calendar period (at most one)

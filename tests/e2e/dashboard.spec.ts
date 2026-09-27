@@ -220,6 +220,8 @@ test.describe('Dashboard filter section', () => {
  * Overdue page (`opentask://overdue`), and the overdue Web Push. It seeds the
  * ordinary Overdue date chip (not a parallel filter), applies once, and is
  * stripped from the URL so a reload after "Clear filter" stays cleared.
+ * Since 2026-09-26 the chip section stays shut for it: the pinned Overdue chip
+ * in the control row shows the filter (see overdue-chip.spec.ts).
  * See `DashboardClient.tsx`'s `?filter=` handling.
  */
 test.describe('?filter=overdue deep link', () => {
@@ -254,11 +256,14 @@ test.describe('?filter=overdue deep link', () => {
 
       await page.goto('/?filter=overdue')
 
-      // Visibly on: the chips auto-expand with Overdue selected, and the
-      // banner says the list is narrowed.
-      const chips = page.locator('#dashboard-filter-chips')
-      await expect(chips).toBeVisible()
-      await expect(chips.locator('[data-date-chip="overdue"]')).toHaveClass(/bg-foreground/)
+      // Visibly on: the pinned Overdue chip is selected (the chip section
+      // stays shut — the pinned chip is the visible state), and the banner
+      // says the list is narrowed.
+      await expect(page.locator('[data-pinned-date-chip="overdue"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
       await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toBeVisible()
       await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('1')
       await expect(page.locator(`#task-row-${overdueId}`)).toBeVisible()
@@ -269,7 +274,6 @@ test.describe('?filter=overdue deep link', () => {
       // Easy to clear, and clearing sticks — nothing re-applies it.
       await page.getByRole('button', { name: 'Clear filter' }).click()
       await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toHaveCount(0)
-      // Nothing active any more, so the auto-expand lets go (useFilterSection rule 4).
       await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
       await page.reload()
       await expect(page.getByRole('button', { name: /^Filters/ })).toHaveText('Filters')
@@ -666,8 +670,9 @@ test.describe('Top bar total', () => {
 
   /** The number in the pill's popover ("N total tasks"), then shut it again. */
   async function readTotal(page: Page): Promise<number> {
-    const counts = page.getByRole('group', { name: 'Task counts' })
-    await counts.click()
+    // The total pill is the popover trigger; the overdue and today pills
+    // beside it are filter buttons, so the group itself is not clicked.
+    await page.getByRole('button', { name: /total tasks? — show breakdown$/ }).click()
     const line = page.getByText(/^\d+ total tasks$/)
     await expect(line).toBeVisible()
     const n = parseInt((await line.innerText()).trim(), 10)

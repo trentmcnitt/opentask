@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useCallback } from 'react'
-import { ChevronDown, Filter, Loader2, Sparkles } from 'lucide-react'
+import { AlertCircle, ChevronDown, Filter, Loader2, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
@@ -40,10 +40,10 @@ function getSignalSelectedClass(key: string): string {
  * filter chips beneath it (REDESIGN-V03 §7.3).
  *
  * Collapsed (the default — see `useFilterSection` for the full collapse rules):
- *   Control: [⌄ Filters] │ [What's Next 6] [Insights] [Stale 4] [Quick Win 1]
+ *   Control: [⌄ Filters] [Overdue 9] │ [What's Next 6] [Insights] [Stale 4] [Quick Win 1]
  *
  * Expanded:
- *   Control: [⌃ Filters · 2] │ [What's Next 6] [Insights] [Stale 4]  ← scrollable
+ *   Control: [⌃ Filters · 2] [Overdue 9] │ [What's Next 6] [Insights]  ← scrollable
  *            ─────────────────────────────────────────────────────    ← subtle border
  *   Projects: [●Work 42] [●Personal 18] [●Side 6]                    ← wrapping (if 2+ projects)
  *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                          ← scrollable
@@ -56,6 +56,19 @@ function getSignalSelectedClass(key: string): string {
  * due date, priority, label, attribute — collapse, and those are exactly the
  * ones `activeFilterCount` counts.
  *
+ * The one exception is the pinned **Overdue** chip (Trent, 2026-09-26: one tap
+ * to "just the overdue tasks" without opening the filter stack). It sits right
+ * after the Filters toggle — before the AI chips, so it never scrolls away —
+ * whenever anything is overdue, or while the Overdue filter is on (so it can
+ * always be turned off from where it was turned on). It is NOT a second
+ * filter: it drives the same `selectedDateFilters` state as the expanded
+ * Overdue chip (the two always agree on selected/unselected), and its number
+ * is the same date-facet count the top bar's red pill shows
+ * (`useDateFacetCounts`, passed in as `pinnedOverdueCount`). See
+ * `PinnedOverdueChip` for the tap rules. Because it shows the Overdue
+ * selection on its own, an Overdue selection does not auto-expand the section
+ * (`hiddenActiveFilterCount` in DashboardClient).
+ *
  * Users clear filters by clicking active chips to deselect them.
  */
 export function FilterBar({
@@ -63,6 +76,7 @@ export function FilterBar({
   expanded,
   onToggleExpanded,
   activeFilterCount = 0,
+  pinnedOverdueCount = 0,
   selectedPriorities,
   selectedLabels,
   selectedDateFilters = [],
@@ -117,6 +131,11 @@ export function FilterBar({
   onToggleExpanded: () => void
   /** Number of active filters inside the collapsible block — drives the badge. */
   activeFilterCount?: number
+  /**
+   * The pinned Overdue chip's number — the top bar's red-pill count, computed
+   * once by the dashboard (`useDateFacetCounts`) so the two cannot disagree.
+   */
+  pinnedOverdueCount?: number
   selectedPriorities: number[]
   selectedLabels: string[]
   selectedDateFilters?: DueDateFilter[]
@@ -244,6 +263,10 @@ export function FilterBar({
     (insightsActive || insightsSignalChipsVisible)
   const aiRowVisible = aiChipVisible || insightsChipVisible || signalRowVisible
 
+  const overdueSelected = selectedDateFilters.includes('overdue')
+  const pinnedOverdueVisible =
+    !!onExclusiveDateFilter && !!onToggleDateFilter && (pinnedOverdueCount > 0 || overdueSelected)
+
   const hasActiveAttributes =
     (attributeFilters?.size ?? 0) > 0 || (excludedAttributes?.size ?? 0) > 0
   const hasAttributes =
@@ -264,6 +287,15 @@ export function FilterBar({
             activeCount={activeFilterCount}
             onToggle={onToggleExpanded}
           />
+
+          {pinnedOverdueVisible && (
+            <PinnedOverdueChip
+              count={pinnedOverdueCount}
+              selected={overdueSelected}
+              onSelect={() => onExclusiveDateFilter!('overdue')}
+              onDeselect={() => onToggleDateFilter!('overdue')}
+            />
+          )}
 
           {aiRowVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
 
@@ -419,6 +451,65 @@ function FiltersToggleChip({
         <ChevronDown
           className={cn('size-3 opacity-60 transition-transform', expanded && 'rotate-180')}
         />
+      </button>
+    </Badge>
+  )
+}
+
+/**
+ * The control row's pinned Overdue chip (see the FilterBar layout comment).
+ *
+ * Same outline-badge dialect as `FiltersToggleChip` beside it, in the
+ * destructive treatment `CountBadge`'s `overdue` variant uses for the top
+ * bar's red pill (`bg-destructive/15 text-destructive`); solid red when on.
+ *
+ * Tap rules — deliberately simpler than the expanded chips' (no double-click
+ * exclude, no long-press): this chip has one job.
+ * - Off → apply Overdue EXCLUSIVELY (`exclusiveDateFilter`: Overdue becomes
+ *   the only date filter and date excludes clear; project/priority/label
+ *   filters stay) — the same call the expanded chip's Cmd+click/long-press
+ *   makes and the top bar's red pill makes.
+ * - On → turn Overdue off (`toggleDateFilter`), leaving any other date chip
+ *   the user picked in the expanded section alone. When Overdue is the only
+ *   date filter — the case a tap here produces — that clears the date filter.
+ */
+function PinnedOverdueChip({
+  count,
+  selected,
+  onSelect,
+  onDeselect,
+}: {
+  count: number
+  selected: boolean
+  onSelect: () => void
+  onDeselect: () => void
+}) {
+  return (
+    <Badge
+      asChild
+      variant="outline"
+      className={cn(
+        'flex-shrink-0 cursor-pointer rounded-sm transition-colors select-none',
+        selected
+          ? 'bg-destructive border-destructive hover:bg-destructive/90 text-white'
+          : 'bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/25',
+      )}
+    >
+      <button
+        type="button"
+        data-pinned-date-chip="overdue"
+        onClick={selected ? onDeselect : onSelect}
+        aria-pressed={selected}
+        aria-label={
+          selected
+            ? `Overdue, ${count} — showing only overdue tasks; tap to show all`
+            : `Overdue, ${count} — show only overdue tasks`
+        }
+        title={selected ? 'Show all tasks' : 'Show only overdue tasks'}
+      >
+        <AlertCircle className="size-3" />
+        <span className="leading-none">Overdue</span>
+        <span className="text-[10px] leading-none opacity-80">{count}</span>
       </button>
     </Badge>
   )
