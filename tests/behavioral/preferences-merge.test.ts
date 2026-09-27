@@ -119,6 +119,10 @@ describe('parseServerPrefs', () => {
     expect(parsed.bulkSnoozeDefault).toBe('default_option')
   })
 
+  test('the Recent view is a stored grouping, not coerced away', () => {
+    expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('recent')
+  })
+
   test('null / missing data parses to nothing', () => {
     expect(parseServerPrefs(null)).toEqual({})
     expect(parseServerPrefs(undefined)).toEqual({})

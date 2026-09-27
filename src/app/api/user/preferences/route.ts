@@ -22,7 +22,8 @@ import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 // 'reminders' was briefly valid here, back when the §6 Reminders surface rode in
 // the dashboard's view toggle. It is now its own route (`/reminders`), so it is no
 // longer a grouping — clients coerce any lingering stored value to 'slot'.
-const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot'] as const
+// 'recent' is the Recent view: tasks added in the last 7 days, newest first.
+const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot', 'recent'] as const
 const VALID_SORT_OPTIONS = [
   'due_date',
   'priority',

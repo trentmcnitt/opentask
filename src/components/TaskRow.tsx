@@ -25,7 +25,12 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
-import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
+import {
+  formatAddedAgo,
+  formatDueTimeParts,
+  formatOriginalDueAt,
+  formatTaskAge,
+} from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -113,6 +118,11 @@ interface TaskRowProps {
   /** Project color for the project badge dot (used in unified view) */
   projectColor?: LabelColor | null
   /**
+   * Recent view: end the metadata line with "added 3h ago" (from `created_at`)
+   * in place of the "Xd old" age, which would say the same thing less exactly.
+   */
+  showAddedAgo?: boolean
+  /**
    * Deep-linked from the widget (`?task=<id>&highlight=1`): scroll to it and
    * flash it once, mirroring `RemindersView`'s `ReminderRow` — see the
    * `ResizeObserver` effect below for why the dashboard needs an effect
@@ -197,6 +207,7 @@ export function TaskRow({
   insightsCommentary,
   projectName,
   projectColor,
+  showAddedAgo = false,
   highlighted = false,
   onHighlightDone,
 }: TaskRowProps) {
@@ -394,7 +405,7 @@ export function TaskRow({
   // controls live in the Track panel on the Tasks page, not on every row.
   const metaSegments = tracked
     ? trackedMetaSegments(task)
-    : buildMetaSegments(task, timezone, isOverdue)
+    : buildMetaSegments(task, timezone, isOverdue, showAddedAgo)
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
@@ -780,7 +791,12 @@ function trackedMetaSegments(task: Task): MetaSegment[] {
   ]
 }
 
-function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
+function buildMetaSegments(
+  task: Task,
+  timezone: string,
+  isOverdue?: boolean,
+  showAddedAgo = false,
+): MetaSegment[] {
   const segments: MetaSegment[] = []
 
   // A quota's due_at is its period boundary, not a promise that got moved — no
@@ -811,6 +827,16 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     if (text) {
       segments.push({ text, className: 'text-muted-foreground/60' })
     }
+  }
+
+  // Recent view: when it was added, in place of the age — the row is there
+  // BECAUSE it is new, so "added 3h ago" is the fact being checked.
+  if (showAddedAgo) {
+    segments.push({
+      text: formatAddedAgo(task.created_at, timezone),
+      className: 'text-muted-foreground/60',
+    })
+    return segments
   }
 
   // Age indicator: how old a task is (very subtle, at the end of metadata)

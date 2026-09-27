@@ -26,6 +26,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
+import { RECENT_GROUP_LABEL, RECENT_WINDOW_DAYS, selectRecentTasks } from '@/lib/recent-view'
 
 /**
  * §7.3: items with no time of day (most Track items) get their own group after
@@ -54,9 +55,10 @@ import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 /**
  * `slot` is the §7.3 front door: today's tasks grouped by time slot. The other
  * modes remain reachable — the corpus stays fully accessible, it just isn't
- * what greets you.
+ * what greets you. `recent` is a flat, always-newest-first list of what was
+ * added in the last 7 days (`src/lib/recent-view.ts`).
  */
-export type GroupingMode = 'time' | 'project' | 'unified' | 'slot'
+export type GroupingMode = 'time' | 'project' | 'unified' | 'slot' | 'recent'
 
 import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
 
@@ -220,6 +222,27 @@ export function sortTasks(
   return sorted
 }
 
+/**
+ * The sort a view actually uses. Recent is ALWAYS newest first — that order is
+ * the view's whole point — so the stored sort preference does not apply there
+ * (and the sort control is hidden). Every place that orders a group's rows
+ * must go through this, not read the preference directly: the rendered list,
+ * the dashboard's keyboard order (`orderedIds`) and the clipboard copy all have
+ * to agree, or shift-click range selection and arrow keys walk a different
+ * order from the one on screen.
+ *
+ * `age` is `created_at` newest first; `buildTaskGroups` has already put the
+ * Recent group in that order with an id tie-break, and the sort is stable, so
+ * re-sorting leaves ties where they were.
+ */
+export function effectiveSort(
+  grouping: GroupingMode,
+  sortOption: SortOption,
+  reversed: boolean,
+): { sortOption: SortOption; reversed: boolean } {
+  return grouping === 'recent' ? { sortOption: 'age', reversed: false } : { sortOption, reversed }
+}
+
 /** Labels shown on the compact sort button — direction-aware. */
 const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string }> = {
   due_date: { default: 'Soonest', reversed: 'Latest' },
@@ -363,6 +386,21 @@ export function TaskList({
     [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick],
   )
 
+  const isRecent = grouping === 'recent'
+  const groups: TaskGroup[] = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots)
+
+  // Recent's empty state is not "all caught up": nothing being new is not an
+  // achievement, just a fact. Short and calm (the view reads the slice through
+  // the filter bar too, so an active filter can also land here — the "Showing
+  // 0 of N" banner above says so).
+  if (isRecent && groups.length === 0) {
+    return (
+      <p className="text-muted-foreground py-16 text-center text-sm">
+        Nothing added in the last {RECENT_WINDOW_DAYS} days
+      </p>
+    )
+  }
+
   if (tasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -380,23 +418,20 @@ export function TaskList({
   }
 
   const isUnified = grouping === 'unified'
+  // Unified and Recent are the two flat views: one list, no group headers, no
+  // collapse, no "Show more" cap, and each row names its project (there is no
+  // project heading above it to do that).
+  const isFlat = isUnified || isRecent
 
-  // Build project lookups for unified view (project badge + color on each task row)
-  const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
-  const projectColorMap = isUnified ? new Map(projects.map((p) => [p.id, p.color])) : undefined
-
-  const groups: TaskGroup[] = isUnified
-    ? [{ label: '_unified', tasks }]
-    : grouping === 'project'
-      ? groupByProject(tasks, projects)
-      : grouping === 'slot'
-        ? groupByTimeSlot(tasks, timeSlots, timezone)
-        : groupByTime(tasks, timezone)
+  // Build project lookups for the flat views (project badge + color on each task row)
+  const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
+  const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
   // Compute sorted groups once, reuse for both orderedIds and rendering
+  const sort = effectiveSort(grouping, sortOption, reversed)
   const sortedGroups = groups.map((g) => ({
     ...g,
-    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
+    sortedTasks: sortTasks(g.tasks, sort.sortOption, sort.reversed, insightsScoreMap),
   }))
   const orderedIds = sortedGroups.flatMap((g) => g.sortedTasks.map((t) => t.id))
 
@@ -422,7 +457,15 @@ export function TaskList({
         <div className="mb-4 flex items-center justify-between px-1">
           {headerLeft ?? <div />}
           <div className="flex items-center gap-1">
-            {onUnifiedChange && (
+            {/* Recent has one fixed order, so it shows what the list IS in
+                place of controls that would do nothing here (no Unified — it
+                is already one list — and no sort). */}
+            {isRecent && (
+              <span className="text-muted-foreground px-2 text-xs">
+                Last {RECENT_WINDOW_DAYS} days · newest first
+              </span>
+            )}
+            {!isRecent && onUnifiedChange && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -439,28 +482,30 @@ export function TaskList({
                 Unified
               </Button>
             )}
-            <SortDropdown
-              sortOption={sortOption}
-              reversed={reversed}
-              onSort={setSortOption}
-              showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
-              aiScoreDisabled={aiScoreDisabledProp ?? false}
-            />
+            {!isRecent && (
+              <SortDropdown
+                sortOption={sortOption}
+                reversed={reversed}
+                onSort={setSortOption}
+                showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
+                aiScoreDisabled={aiScoreDisabledProp ?? false}
+              />
+            )}
           </div>
         </div>
       )}
-      <div className={isUnified ? 'space-y-1' : 'space-y-6'}>
+      <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
         {sortedGroups.map((group, groupIdx) => {
           const { sortedTasks } = group
-          const collapsed = !isUnified && isCollapsed(group.label)
+          const collapsed = !isFlat && isCollapsed(group.label)
 
           // §7.3: show the first N, with everything else one tap away. Nothing
           // is ever truncated permanently — §1.1's constraint is that the
           // harness adapts to the scale, so a 40-item slot stays fully
           // reachable while the day still reads at a glance. Every grouped view
           // previews — Today's slots at 5, the rest at 10 — and only the
-          // unified flat list shows everything.
-          const previewed = !isUnified
+          // flat lists (Unified, Recent) show everything.
+          const previewed = !isFlat
           const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
@@ -472,8 +517,8 @@ export function TaskList({
               {/* "Now" separator between Overdue and the next group */}
               {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
-              {/* Skip group header in unified mode — all tasks render in a single flat list */}
-              {!isUnified && (
+              {/* Skip group header in the flat views — all tasks render in a single list */}
+              {!isFlat && (
                 <div
                   className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
                 >
@@ -588,6 +633,7 @@ export function TaskList({
                           insightsCommentary={insightsCommentaryMap?.get(task.id)}
                           projectName={projectNameMap?.get(task.project_id)}
                           projectColor={projectColorMap?.get(task.project_id)}
+                          showAddedAgo={isRecent}
                           highlighted={highlightTaskId === task.id}
                           onHighlightDone={onHighlightDone}
                         />
@@ -905,6 +951,10 @@ export function buildTaskGroups(
   timeSlots: TimeSlot[] = [],
 ): TaskGroup[] {
   if (grouping === 'unified') return [{ label: '_unified', tasks }]
+  if (grouping === 'recent') {
+    const recent = selectRecentTasks(tasks)
+    return recent.length > 0 ? [{ label: RECENT_GROUP_LABEL, tasks: recent }] : []
+  }
   if (grouping === 'project') return groupByProject(tasks, projects)
   if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone)
   return groupByTime(tasks, timezone)

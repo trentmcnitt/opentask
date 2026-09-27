@@ -3,7 +3,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
+import {
+  TaskList,
+  buildTaskGroups,
+  effectiveSort,
+  sortTasks,
+  type GroupingMode,
+} from '@/components/TaskList'
+import { selectRecentTasks } from '@/lib/recent-view'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { UNDATED_LABEL } from '@/lib/slot-view'
 import { isTracked } from '@/lib/track'
@@ -642,7 +649,21 @@ function HomeContent({
     })
   }, [searchResults, tasks])
 
-  const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
+  /**
+   * Recent is a SLICE, not just a grouping: it narrows the population to what
+   * was added in the last 7 days before the filter bar sees it. Everything
+   * derived from the list then describes the slice — the filter chips' counts,
+   * "Showing N of M", Select All (which must never reach the older tasks this
+   * view isn't showing; bulk Done on them would be a nasty surprise), and the
+   * keyboard order. Today's slot view narrows inside `groupByTimeSlot` instead;
+   * Recent does it here because the window is the view's population, and
+   * `buildTaskGroups` re-applies it harmlessly (idempotent) for its ordering.
+   */
+  const unslicedBaseTasks = searchQuery ? visibleSearchResults : visibleTasks
+  const baseTasks = useMemo(
+    () => (grouping === 'recent' ? selectRecentTasks(unslicedBaseTasks) : unslicedBaseTasks),
+    [grouping, unslicedBaseTasks],
+  )
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
 
   // `?filter=overdue` — the dashboard filtered to the Overdue chip. Two callers:
@@ -1029,13 +1050,16 @@ function HomeContent({
 
   // Apply per-group sorting to match the visual order in TaskList.
   // Exclude tasks in collapsed groups so keyboard navigation skips them.
+  // `effectiveSort`: Recent ignores the sort preference (always newest first),
+  // and this order must match the one TaskList renders.
+  const viewSort = effectiveSort(grouping, sortOption, reversed)
   const orderedIds = useMemo(
     () =>
       taskGroups.flatMap((g) => {
-        if (isCollapsed(g.label)) return []
-        return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
+        if (grouping !== 'recent' && isCollapsed(g.label)) return []
+        return sortTasks(g.tasks, viewSort.sortOption, viewSort.reversed).map((t) => t.id)
       }),
-    [taskGroups, sortOption, reversed, isCollapsed],
+    [taskGroups, grouping, viewSort.sortOption, viewSort.reversed, isCollapsed],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -1172,8 +1196,8 @@ function HomeContent({
     setKeyboardFocusedId,
     selection,
     taskGroups,
-    sortOption,
-    reversed,
+    sortOption: viewSort.sortOption,
+    reversed: viewSort.reversed,
     timezone,
     projects,
     annotationMap: effectiveAnnotationMap,
