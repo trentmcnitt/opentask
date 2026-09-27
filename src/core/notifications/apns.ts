@@ -60,6 +60,42 @@ function isStaleTokenError(err: unknown): boolean {
   return typeof reason === 'string' && STALE_TOKEN_REASONS.has(reason)
 }
 
+function isBadDeviceTokenError(err: unknown): boolean {
+  return (err as ApnsError)?.reason === Errors.badDeviceToken
+}
+
+/**
+ * Send on the environment the device registered with; if APNs answers
+ * BadDeviceToken, try the OTHER environment once before giving the token up.
+ *
+ * Why: BadDeviceToken is what APNs returns for a sandbox token sent to the
+ * production host (and vice versa), and the app's claimed environment can be
+ * wrong. The iOS apps chose it with `#if DEBUG`, but a Release build installed
+ * straight to a device is signed with `aps-environment: development`, so it
+ * gets SANDBOX tokens while registering as "production". Every send was then
+ * refused and the server deleted the registration — two users'
+ * iPhones silently stopped receiving push on 2026-09-27 (the Mac hit the same
+ * thing earlier; see WebViewHost.swift). Trusting APNs over the client's
+ * claim heals such a row on its next send, with no app update.
+ *
+ * Returns the environment the send succeeded on (the caller persists a
+ * change), or throws the error from the last attempt.
+ */
+async function sendTryingBothEnvironments(
+  environment: string,
+  notification: Notification | SilentNotification,
+): Promise<string> {
+  try {
+    await getClient(environment).send(notification)
+    return environment
+  } catch (err: unknown) {
+    if (!isBadDeviceTokenError(err)) throw err
+    const other = environment === 'development' ? 'production' : 'development'
+    await getClient(other).send(notification)
+    return other
+  }
+}
+
 /**
  * Shared helper that handles the common APNs device-send pattern:
  * look up devices, send via Promise.allSettled, clean stale tokens, log failures.
@@ -91,8 +127,11 @@ async function sendToAllDevices(
       const notification = buildNotification(device)
 
       try {
-        const apns = getClient(device.environment)
-        await apns.send(notification)
+        const env = await sendTryingBothEnvironments(device.environment, notification)
+        if (env !== device.environment) {
+          db.prepare('UPDATE apns_devices SET environment = ? WHERE id = ?').run(env, device.id)
+          log.info('apns', `Device token ${device.id} is ${env}, not ${device.environment} — fixed`)
+        }
       } catch (err: unknown) {
         if (isStaleTokenError(err)) {
           db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
@@ -485,7 +524,11 @@ export async function sendApnsWidgetReload(tokenId: number): Promise<boolean> {
   const topic = `${row.bundle_id}.push-type.widgets`
   const notification = new WidgetPushNotification(row.push_token, topic)
   try {
-    await getClient(row.environment).send(notification)
+    const env = await sendTryingBothEnvironments(row.environment, notification)
+    if (env !== row.environment) {
+      db.prepare('UPDATE widget_push_tokens SET environment = ? WHERE id = ?').run(env, row.id)
+      log.info('apns', `Widget push token ${row.id} is ${env}, not ${row.environment} — fixed`)
+    }
     return true
   } catch (err: unknown) {
     if (isStaleTokenError(err)) {
