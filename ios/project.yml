@@ -201,7 +201,8 @@ targets:
         # app's — missing, the build still succeeds and pushes silently never
         # arrive (docs/NOTIFICATIONS.md § WidgetKit push). Bare key on watchOS,
         # like the watch app's; `development` to match it and the phone/Mac
-        # widgets (the registrar sends "development" for the same reason).
+        # widgets. The registrar reports whatever the embedded profile grants
+        # (`ApsEnvironment`), so the two can't drift apart.
         aps-environment: development
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask

@@ -43,6 +43,7 @@
 		5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D351611FEE1FDCC48702D /* SampleData.swift */; };
 		5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */ = {isa = PBXBuildFile; fileRef = F781F8F4FFD0805CBC5D5068 /* completions.json */; };
 		5CD4762477A148AB18B23334 /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0431240DA3532D2272FDFAC /* TasksTimeline.swift */; };
+		5F6F249B5F70259FA9A01A58 /* ApsEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */; };
 		62886AC7F979636FE750C08E /* WatchQuotaLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */; };
 		64977AFF9CC42B0353EA7674 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
@@ -59,6 +60,7 @@
 		A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		A957F5A3429D50204CAFBAB2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 607A3ED0E07D6E9308774294 /* Info.plist */; };
 		AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
+		AB6C1D0E0A52F8A15B1C00F3 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
 		ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370309049F393EDDAD8042C0 /* DueLabelTests.swift */; };
 		B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
 		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
@@ -67,11 +69,13 @@
 		BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */ = {isa = PBXBuildFile; fileRef = 880F73DD5EB836E40BCA134A /* reminders.json */; };
 		BD681103236562BE55F338E1 /* WidgetKindShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203EF948683C146898ECCD57 /* WidgetKindShims.swift */; };
 		BE415267934330FE86282F6C /* OpenTaskCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */; };
+		C32613CD16537759B94E8923 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
 		CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */; };
 		CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */; };
 		D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */; };
 		D473788D4B4379B10D45B709 /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */; };
 		D5CFE82513923A9DD0563FB9 /* quota-prompts-restore.json in Resources */ = {isa = PBXBuildFile; fileRef = CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */; };
+		D5E5DBDF3011374CF3EA036F /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
 		D69FFE9776386998102E6583 /* undo-status.json in Resources */ = {isa = PBXBuildFile; fileRef = 8F19FED31D51A4F31E33C37B /* undo-status.json */; };
 		D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
@@ -121,6 +125,7 @@
 		1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesGlyphPreviews.swift; sourceTree = "<group>"; };
 		203EF948683C146898ECCD57 /* WidgetKindShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetKindShims.swift; sourceTree = "<group>"; };
 		225E098B934AE9962181E731 /* task-progress.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-progress.json"; sourceTree = "<group>"; };
+		243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApsEnvironment.swift; sourceTree = "<group>"; };
 		25EEEE55FFA907613ED3849C /* OpenTaskWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenTaskWidgets.entitlements; sourceTree = "<group>"; };
 		2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
 		2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
@@ -154,6 +159,7 @@
 		86C87419D6853F3A661B2252 /* TaskFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFeed.swift; sourceTree = "<group>"; };
 		880F73DD5EB836E40BCA134A /* reminders.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = reminders.json; sourceTree = "<group>"; };
 		8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskMacApp.swift; sourceTree = "<group>"; };
+		8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApsEnvironmentTests.swift; sourceTree = "<group>"; };
 		8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidget.swift; sourceTree = "<group>"; };
 		8F19FED31D51A4F31E33C37B /* undo-status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "undo-status.json"; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
@@ -216,6 +222,7 @@
 			isa = PBXGroup;
 			children = (
 				456B0402D3211FEEE9D56F67 /* APIClient.swift */,
+				243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */,
 				C605F50E331B33C23631EE81 /* DateHelpers.swift */,
 				D48B4A75163FF407F49D160B /* KeychainHelper.swift */,
 				606B27B10869F5EC627043D9 /* NotificationConstants.swift */,
@@ -264,6 +271,7 @@
 		5407F5223E724D9F0B07B2E6 /* Logic */ = {
 			isa = PBXGroup;
 			children = (
+				8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */,
 				4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */,
 				370309049F393EDDAD8042C0 /* DueLabelTests.swift */,
 				81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */,
@@ -506,6 +514,7 @@
 			files = (
 				BA1AE60805F4D1809E194172 /* APIClient.swift in Sources */,
 				4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */,
+				C32613CD16537759B94E8923 /* ApsEnvironment.swift in Sources */,
 				D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */,
 				DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */,
 				2ACFFF7B3CB81D12BFC9AC0D /* KeychainHelper.swift in Sources */,
@@ -530,6 +539,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				4ABEC9743D9F16FBA470924F /* APIClient.swift in Sources */,
+				AB6C1D0E0A52F8A15B1C00F3 /* ApsEnvironment.swift in Sources */,
+				5F6F249B5F70259FA9A01A58 /* ApsEnvironmentTests.swift in Sources */,
 				2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */,
 				909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */,
 				D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */,
@@ -558,6 +569,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */,
+				D5E5DBDF3011374CF3EA036F /* ApsEnvironment.swift in Sources */,
 				2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */,
 				A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */,
 				4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */,

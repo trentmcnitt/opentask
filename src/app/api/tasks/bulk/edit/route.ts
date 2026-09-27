@@ -3,7 +3,8 @@
  *
  * POST /api/tasks/bulk/edit - Edit multiple tasks
  *
- * Body: { ids: [1, 2, 3, ...], changes: { priority: 3, ... }, per_task?: { "1": { rrule } } }
+ * Body: { ids: [1, 2, 3, ...], changes: { priority: 3, ... }, per_task?: { "1": { rrule } },
+ *         include_task_ids?: [...], delta_minutes?: 60, date_task_ids?: [...] }
  */
 
 import { NextRequest } from 'next/server'
@@ -32,12 +33,16 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       taskIds: input.ids,
       changes: input.changes,
       perTask: input.per_task,
+      includeTaskIds: input.include_task_ids,
+      deltaMinutes: input.delta_minutes,
+      dateTaskIds: input.date_task_ids,
     })
 
     notifyDemoEngagement(user.name, 'update')
     return success({
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
+      skipped_no_due_date: result.noDueDateSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

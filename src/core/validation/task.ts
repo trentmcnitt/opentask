@@ -355,23 +355,45 @@ export type BulkSnoozeInput = z.infer<typeof bulkSnoozeSchema>
  * - labels_add: Adds labels to each task's existing labels
  * - labels_remove: Removes labels from each task's existing labels
  */
-export const bulkEditSchema = z.object({
-  ids: bulkIds,
-  changes: taskUpdateSchema.extend({
-    labels_add: labels.optional(),
-    labels_remove: labels.optional(),
-  }),
-  /**
-   * Values that legitimately differ from task to task within ONE gesture,
-   * keyed by task id and merged over `changes` for that task. The case that
-   * needs it: moving several reminders to another time slot rewrites each
-   * one's own rule (daily, Tue/Thu, monthly) with the new time — one request,
-   * one Undo. Only the schedule is per-task; everything else stays shared.
-   */
-  per_task: z
-    .record(z.string().regex(/^\d+$/, 'Task id'), z.object({ rrule: rruleString }).strict())
-    .optional(),
-})
+export const bulkEditSchema = z
+  .object({
+    ids: bulkIds,
+    changes: taskUpdateSchema.extend({
+      labels_add: labels.optional(),
+      labels_remove: labels.optional(),
+    }),
+    /**
+     * Values that legitimately differ from task to task within ONE gesture,
+     * keyed by task id and merged over `changes` for that task. The case that
+     * needs it: moving several reminders to another time slot rewrites each
+     * one's own rule (daily, Tue/Thu, monthly) with the new time — one request,
+     * one Undo. Only the schedule is per-task; everything else stays shared.
+     */
+    per_task: z
+      .record(z.string().regex(/^\d+$/, 'Task id'), z.object({ rrule: rruleString }).strict())
+      .optional(),
+    /**
+     * One save, one undo (2026-09-27): the multi-select quick panel sends a date
+     * AND other fields in this one request rather than splitting the date off
+     * to bulk/snooze. These three carry what bulk/snooze's body used to:
+     * - `include_task_ids`: explicit picks the High/Urgent sweep filter keeps.
+     * - `delta_minutes`: a relative move of each task's own date (instead of
+     *   `changes.due_at`); a task with no date keeps the rest of the edit.
+     * - `date_task_ids`: the date applies to these ids only — the rest of the
+     *   edit still applies to every id.
+     */
+    include_task_ids: z.array(z.number().int().positive()).max(500).optional(),
+    delta_minutes: z
+      .number()
+      .int()
+      .min(-1440, 'Cannot go back more than 24 hours')
+      .max(525600, 'Cannot snooze more than 1 year')
+      .optional(),
+    date_task_ids: z.array(z.number().int().positive()).max(500).optional(),
+  })
+  .refine((data) => !(data.delta_minutes !== undefined && data.changes.due_at !== undefined), {
+    message: 'Cannot provide both changes.due_at and delta_minutes',
+  })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>
 

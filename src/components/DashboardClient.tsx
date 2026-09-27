@@ -206,51 +206,20 @@ function useBulkActions(
 
   /**
    * Unified save path for the SelectionActionSheet. Routes single-task saves
-   * through PATCH /api/tasks/:id and multi-task saves through the bulk
-   * endpoints (with `include_task_ids` so explicit selections bypass the
-   * server's P3/P4 (High/Urgent) skip filter).
+   * through PATCH /api/tasks/:id and multi-task saves through ONE bulk
+   * request (with `include_task_ids` so explicit selections bypass the
+   * server's P3/P4 (High/Urgent) skip filter) — see `planQuickPanelSave`.
    *
-   * `dateTaskIds` is forwarded as the effective task ID list for the save —
-   * used when the snooze confirmation dialog opts some tasks out of the date
-   * change. Non-date fields fall back to the full selection.
+   * `dateTaskIds` scopes the date part of the change to a subset of the
+   * selection — used when the snooze confirmation dialog opts some tasks out
+   * of the date change. Non-date fields still apply to the full selection, in
+   * the same request, so the whole save is one Undo (Trent, 2026-09-27).
    */
   const bulkSaveAll = async (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => {
     const allIds = [...selection.selectedIds]
     if (allIds.length === 0) return
-    const hasDate = changes.due_at !== undefined || changes.delta_minutes !== undefined
     try {
-      if (hasDate && dateTaskIds && dateTaskIds.length !== allIds.length) {
-        // Date change targets a subset; split the save so non-date fields
-        // still apply to every selected task.
-        const { due_at: _du, delta_minutes: _dm, ...nonDateChanges } = changes
-        void _du
-        void _dm
-        const dateOnly: QuickActionPanelChanges = {}
-        if (changes.due_at !== undefined) dateOnly.due_at = changes.due_at
-        if (changes.delta_minutes !== undefined) dateOnly.delta_minutes = changes.delta_minutes
-        const calls: Promise<{ tasksAffected: number; description?: string }>[] = []
-        if (dateTaskIds.length > 0 && Object.keys(dateOnly).length > 0) {
-          calls.push(saveQuickPanelChanges(dateTaskIds, dateOnly))
-        }
-        if (Object.keys(nonDateChanges).length > 0) {
-          calls.push(saveQuickPanelChanges(allIds, nonDateChanges))
-        }
-        const results = await Promise.all(calls)
-        bumpUndoCount()
-        fetchTasks()
-        // Prefer the single-task description when available (most specific),
-        // otherwise show a generic success.
-        const desc = results.find((r) => r.description)?.description
-        showToast({
-          message: desc || `${allIds.length} ${taskWord(allIds.length)} updated`,
-          type: 'success',
-          action: { label: 'Undo', onClick: handleUndo },
-        })
-        return
-      }
-      const effectiveIds = hasDate && dateTaskIds ? dateTaskIds : allIds
-      if (effectiveIds.length === 0) return
-      const result = await saveQuickPanelChanges(effectiveIds, changes)
+      const result = await saveQuickPanelChanges(allIds, changes, dateTaskIds)
       bumpUndoCount()
       fetchTasks()
       showToast({
