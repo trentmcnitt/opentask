@@ -483,16 +483,21 @@ test.describe('Dashboard filter facets', () => {
     // a test can trip.
     const clearFilter = page.getByRole('button', { name: 'Clear filter' })
 
-    // Read baselines first rather than assume a pristine corpus — the seed
-    // deliberately includes an overdue-and-due-today task (globalSetup.ts's
-    // "Reply to email", in Inbox) so this test stays correct however the
-    // seed evolves, rather than hardcoding "today = 3".
-    await expect(todayChip).toBeVisible()
-    const baselineToday = await countOf(todayChip)
+    // Read baselines first rather than assume a pristine corpus, so this test
+    // stays correct however the seed evolves, rather than hardcoding
+    // "today = 3". The baseline may legitimately be 0 — and the Today chip
+    // then absent: the seed's one due-today task (globalSetup.ts's "Reply to
+    // email", due two hours before the seed ran) falls on YESTERDAY when the
+    // suite starts in the first two hours of the day. So the chips' arrival is
+    // awaited through the Work chip (Work always has seeded open tasks), never
+    // through the Today chip.
     await expect(workChip).toBeVisible()
+    const baselineToday = await countOf(todayChip)
     await workChip.click() // select Work exclusively, facet Today over it
+    await expect(clearFilter).toBeVisible() // the filter has applied
     const baselineWorkToday = await countOf(todayChip)
     await clearFilter.click() // back to unfiltered
+    await expect(clearFilter).toBeHidden()
 
     try {
       // Project 1 = Inbox, 3 = Work (scripts/seed-test.ts / globalSetup.ts).
