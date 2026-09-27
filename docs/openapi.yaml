@@ -1055,6 +1055,33 @@ paths:
                       rrule:
                         type: string
                         nullable: true
+                include_task_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: >-
+                    Task ids that bypass the High/Urgent snooze filter when `changes.due_at`
+                    moves a date without changing `rrule` (explicit picks), as on
+                    bulk/snooze. Reminders and quotas are never given a date.
+                delta_minutes:
+                  type: integer
+                  minimum: -1440
+                  maximum: 525600
+                  description: >-
+                    Relative date move — each task's own `due_at` plus this many minutes.
+                    Mutually exclusive with `changes.due_at`. A task with no due date
+                    keeps the rest of the edit and is counted in `skipped_no_due_date`.
+                date_task_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: >-
+                    Apply the date part (`changes.due_at` / `delta_minutes`) only to these
+                    ids; every other field in `changes` still applies to all `ids`. The
+                    whole request is one undo entry. A task the date cannot apply to (a
+                    quota, one the High/Urgent filter holds back, or an undated task in a
+                    relative move) still takes the other fields; one left with nothing
+                    to change is skipped.
       responses:
         '200':
           description: Bulk operation result

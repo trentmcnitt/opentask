@@ -226,11 +226,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // The CustomEvent wakes up the PreferencesProvider listener if it already mounted.
         DispatchQueue.main.async {
             let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            #if DEBUG
-            let env = "development"
-            #else
-            let env = "production"
-            #endif
+            let env = ApsEnvironment.current  // signing entitlement, not #if DEBUG
             let js = """
                 window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };
                 window.dispatchEvent(new CustomEvent('opentask-device-token'));

@@ -67,6 +67,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
+import { isPickedReschedule } from '@/lib/picked-reschedule'
 import type { Task, Project } from '@/types'
 
 /**
@@ -106,20 +107,6 @@ export interface QuickActionPanelChanges {
   notes?: string | null
   /** §6: move this item on/off the Reminders surface. Single-task only. */
   is_reminder?: boolean
-}
-
-/**
- * Whether a save carries an explicit, date-PICKER reschedule rather than a
- * snooze — see `pendingDatePicked`. Kept out of `collectPendingChanges` so
- * that callback's branching stays readable.
- */
-function isPickedReschedule(
-  datePicked: boolean,
-  isBulkMode: boolean,
-  isCreateMode: boolean,
-  dueAt: string | null | undefined,
-): boolean {
-  return datePicked && !isBulkMode && !isCreateMode && typeof dueAt === 'string'
 }
 
 export interface QuickActionPanelProps {

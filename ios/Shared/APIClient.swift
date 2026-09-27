@@ -25,13 +25,10 @@ final class APIClient {
     // MARK: - Device Registration
 
     /// Register this device's APNs token with the server.
-    /// Debug builds use "development" (APNs sandbox), Release builds use "production".
+    /// The environment follows the signing entitlement (`ApsEnvironment`),
+    /// not the build configuration.
     func registerDevice(token: String, bundleId: String) async throws {
-        #if DEBUG
-        let environment = "development"
-        #else
-        let environment = "production"
-        #endif
+        let environment = ApsEnvironment.current
 
         try await post(path: "/api/push/apns/register", body: [
             "device_token": token,

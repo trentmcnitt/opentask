@@ -71,6 +71,49 @@ describe('Bulk operations integration', () => {
     expect(bad.status).toBe(400)
   })
 
+  test('POST bulk/edit carries a relative date + priority as one undo entry', async () => {
+    const make = async (title: string, body: Record<string, unknown>) => {
+      const res = await apiFetch('/api/tasks', { method: 'POST', body: { title, ...body } })
+      expect(res.status).toBe(201)
+      return (await res.json()).data as { id: number; due_at: string | null; priority: number }
+    }
+    const dueAt = new Date(Date.now() + 86_400_000).toISOString()
+    const dated = await make('Dated low', { due_at: dueAt, priority: 1 })
+    const urgent = await make('Dated urgent', { due_at: dueAt, priority: 4 })
+    const undated = await make('Undated', { priority: 0 })
+    const ids = [dated.id, urgent.id, undated.id]
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids, changes: { priority: 2 }, delta_minutes: 60, include_task_ids: ids },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    expect(data.tasks_affected).toBe(3)
+    expect(data.skipped_no_due_date).toBe(1)
+
+    const get = async (id: number) => (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+    const plusHour = new Date(new Date(dueAt).getTime() + 3_600_000).toISOString()
+    // The explicitly picked Urgent task moved too; the undated one took the priority.
+    for (const id of [dated.id, urgent.id]) {
+      expect(await get(id)).toMatchObject({ due_at: plusHour, priority: 2 })
+    }
+    expect(await get(undated.id)).toMatchObject({ due_at: null, priority: 2 })
+
+    // ONE Undo puts back every field on every task.
+    expect((await apiFetch('/api/undo', { method: 'POST' })).status).toBe(200)
+    expect(await get(dated.id)).toMatchObject({ due_at: dueAt, priority: 1 })
+    expect(await get(urgent.id)).toMatchObject({ due_at: dueAt, priority: 4 })
+    expect(await get(undated.id)).toMatchObject({ priority: 0 })
+
+    // A date and a delta together are refused.
+    const bad = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids, changes: { due_at: dueAt }, delta_minutes: 60 },
+    })
+    expect(bad.status).toBe(400)
+  })
+
   test('POST bulk/done with one invalid ID fails atomically', async () => {
     // Get original states
     const before1 = (await (await apiFetch('/api/tasks/1')).json()).data
