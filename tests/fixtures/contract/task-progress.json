@@ -28,7 +28,13 @@
     "is_reminder": false,
     "is_tracked": true,
     "quota_prompt_config": null,
-    "quota_day_state": { "date": "2026-01-15", "logged": 1, "did": [], "considered": [] },
+    "quota_day_state": {
+      "date": "2026-01-15",
+      "logged": 1,
+      "did": [],
+      "considered": [],
+      "did_applied": {}
+    },
     "completion_count": 0,
     "snooze_count": 0,
     "skip_count": 0,

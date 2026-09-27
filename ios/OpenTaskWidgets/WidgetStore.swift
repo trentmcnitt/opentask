@@ -185,6 +185,7 @@ enum WidgetStore {
         let stamps = Array(pendingMap(pendingCompletionsKey).values)
             + progressMap().values.map { $0[stampIndex] }
             + (latestPromptActionStamp().map { [$0] } ?? [])
+            + Array(pendingMap(pendingPromptRestoresKey).values)
         return stamps.contains { $0 >= cutoff }
     }
 
@@ -899,6 +900,9 @@ enum WidgetStore {
         // Quota prompt actions (2026-09-24): an undone did-it must bring its
         // prompt back, not stay hidden behind a tombstone.
         defaults?.removeObject(forKey: pendingPromptActionsKey)
+        // Prompt put-backs (2026-09-25): an undone put-back must show the
+        // prompt handled again.
+        defaults?.removeObject(forKey: pendingPromptRestoresKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -949,7 +953,8 @@ enum WidgetStore {
     ///
     /// Quota prompts (2026-09-24): a prompt with a live action tombstone
     /// (`pendingPromptActions`) is drawn HANDLED — `QuotaPromptDTO.handled(did:)`
-    /// — not removed. The server returns handled prompts too (flagged), so a
+    /// — not removed. One being put back (`pendingPromptRestores`, 2026-09-25)
+    /// is drawn WAITING (`putBack()`): out of DONE, back among the open rows. The server returns handled prompts too (flagged), so a
     /// slot's day total never shrinks; removing one here would shift both
     /// halves of the count at once. `considered` is NOT credited: it stays
     /// reminder-only, and a handled prompt already counts through
@@ -957,14 +962,18 @@ enum WidgetStore {
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
         let restoring = pendingRestores(now: now)
         let promptActions = pendingPromptActions(now: now)
+        let promptRestores = pendingPromptRestores(now: now)
         return groups.map { group in
             let remaining = filterPending(group.reminders, now: now)
             let consideredItems = restoring.isEmpty
                 ? group.consideredItems
                 : group.consideredItems.filter { !restoring.contains($0.id) }
-            let prompts = promptActions.isEmpty
+            let prompts = promptActions.isEmpty && promptRestores.isEmpty
                 ? group.prompts
                 : group.prompts.map { prompt in
+                    if promptRestores.contains(prompt.promptKey) {
+                        return prompt.isWaiting ? prompt : prompt.putBack()
+                    }
                     guard let did = promptActions[prompt.promptKey], prompt.isWaiting else { return prompt }
                     return prompt.handled(did: did)
                 }
@@ -1007,6 +1016,11 @@ enum WidgetStore {
         var map = promptActionMap()
         map[key] = [now.timeIntervalSince1970, did ? 1 : 0]
         defaults?.set(map, forKey: pendingPromptActionsKey)
+        // The latest tap wins: a put-back still staged for this key would
+        // draw it waiting over the action just taken.
+        var restores = pendingMap(pendingPromptRestoresKey)
+        restores.removeValue(forKey: key)
+        defaults?.set(restores, forKey: pendingPromptRestoresKey)
     }
 
     static func clearPendingPromptAction(_ key: String) {
@@ -1034,6 +1048,113 @@ enum WidgetStore {
         }
         defaults?.set(map, forKey: pendingPromptActionsKey)
         return live
+    }
+
+    // MARK: Put back (2026-09-25)
+    //
+    // `RestorePromptIntent`'s tombstone: the prompt leaves DONE and is drawn
+    // waiting the instant its filled dashed circle is tapped. Keyed by
+    // `prompt_key`, valued with its stamp; same 90s TTL. The intent clears it
+    // once the server's answer is in the cache (`confirmPromptRestore`) or
+    // the call failed — so a prompt the server leaves done (a daily row whose
+    // count still reaches it) is never drawn waiting for longer than the
+    // round trip.
+
+    private static let pendingPromptRestoresKey = "widget.pendingPromptRestores"
+
+    static func stagePendingPromptRestore(_ key: String, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingPromptRestoresKey)
+        map[key] = now.timeIntervalSince1970
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+        // The latest tap wins: an action still staged for this key would
+        // draw it handled over the put-back.
+        var actions = promptActionMap()
+        actions.removeValue(forKey: key)
+        defaults?.set(actions, forKey: pendingPromptActionsKey)
+    }
+
+    static func clearPendingPromptRestore(_ key: String) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingPromptRestoresKey)
+        map.removeValue(forKey: key)
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+    }
+
+    /// Live (un-expired) put-backs, pruning expired ones as a side effect.
+    static func pendingPromptRestores(now: Date = Date()) -> Set<String> {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingPromptRestoresKey)
+        let cutoff = now.timeIntervalSince1970 - pendingTTL
+        var live = Set<String>()
+        for (key, stamp) in map {
+            if stamp >= cutoff {
+                live.insert(key)
+            } else {
+                map.removeValue(forKey: key)
+            }
+        }
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+        return live
+    }
+
+    /// The server CONFIRMED a put-back: write it into the cached Reminders
+    /// payload (the put-back twin of `confirmPromptAction`) and retire the
+    /// tombstone.
+    ///
+    /// Every prompt of each returned quota takes the SERVER's count, and a
+    /// daily one is done exactly while that count reaches its number — the
+    /// server's rule, in both directions, since a put-back LOWERS the count.
+    /// The put-back prompt itself is un-considered.
+    ///
+    /// Marks Reminders fetch-required when the cache can't know the answer:
+    /// a once-a-day prompt is done while ANY progress was logged today, which
+    /// only the server knows (a `TaskDTO` carries no day record); and a
+    /// sibling daily row left considered above the new count may have been a
+    /// did-it the lower count no longer supports, which the server has made
+    /// waiting (`brokenDids`) — or a mere consider, which stays. Either way
+    /// the next reload fetches instead of trusting this guess.
+    static func confirmPromptRestore(_ key: String, tasks: [TaskDTO]) {
+        pendingLock.lock()
+        let counts = Dictionary(tasks.map { ($0.id, $0.progressCurrent) }, uniquingKeysWith: { _, last in last })
+        var needsFetch = false
+        if let cached = loadReminders() {
+            let groups = cached.value.groups.map { group in
+                group.replacingPrompts(group.prompts.map { prompt in
+                    let isTarget = prompt.promptKey == key
+                    guard let current = counts[prompt.taskId] else {
+                        return isTarget ? prompt.putBack() : prompt
+                    }
+                    let done: Bool
+                    if let number = prompt.number {
+                        done = current >= number
+                        if !isTarget && prompt.considered && current < number { needsFetch = true }
+                    } else {
+                        done = isTarget ? false : prompt.done
+                        if isTarget { needsFetch = true }
+                    }
+                    return QuotaPromptDTO(
+                        promptKey: prompt.promptKey, taskId: prompt.taskId, number: prompt.number,
+                        numbers: prompt.numbers, slotId: prompt.slotId, title: prompt.title,
+                        current: current, target: prompt.target, period: prompt.period,
+                        stripeColor: prompt.stripeColor,
+                        considered: isTarget ? false : prompt.considered, done: done,
+                        hasNotes: prompt.hasNotes
+                    )
+                })
+            }
+            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+        } else {
+            needsFetch = true
+        }
+        var map = pendingMap(pendingPromptRestoresKey)
+        map.removeValue(forKey: key)
+        defaults?.set(map, forKey: pendingPromptRestoresKey)
+        pendingLock.unlock()
+        if needsFetch { requireRemindersFetch() }
     }
 
     /// The most recent prompt-action stamp, for `hasRecentInteraction`.

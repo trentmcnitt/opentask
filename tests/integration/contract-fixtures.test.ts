@@ -44,8 +44,10 @@
  *     GET  /api/time-slots                      → time-slots.json
  *     GET  /api/completions?since=&until=       → completions.json
  *     GET  /api/undo/status                     → undo-status.json
+ *  7. POST /api/quota-prompts/restore [daily #1] → quota-prompts-restore.json
+ *        (after every other capture, so none of them changes)
  *
- * Final state: daily #1 done, daily #2 waiting; weekly done today (and
+ * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
  * CLOCK: the integration server runs on the real clock (there is no test-mode
@@ -138,7 +140,12 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
   if (Array.isArray(value)) return value.map((v) => normalise(v, ids, key, parent))
   if (value !== null && typeof value === 'object') {
     const out: Record<string, Json> = {}
-    for (const [k, v] of Object.entries(value)) out[k] = normalise(v, ids, k, value)
+    for (const [k, v] of Object.entries(value)) {
+      // A prompt key can be an object KEY too (`quota_day_state.did_applied`).
+      const pk = PROMPT_KEY.exec(k)
+      const name = pk ? `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}` : k
+      out[name] = normalise(v, ids, k, value)
+    }
     return out
   }
   if (typeof value === 'number' && Number.isInteger(value) && parent) {
@@ -376,6 +383,12 @@ describe('contract fixtures (native clients)', () => {
       `/api/completions?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`,
     )
     captured['undo-status'] = await call('/api/undo/status')
+
+    // 7. put the daily quota's did-it #1 back — after every capture above, so
+    //    none of them moves
+    captured['quota-prompts-restore'] = await call('/api/quota-prompts/restore', {
+      keys: [dailyOne.prompt_key],
+    })
   })
 
   const names = [
@@ -389,6 +402,7 @@ describe('contract fixtures (native clients)', () => {
     'time-slots',
     'completions',
     'undo-status',
+    'quota-prompts-restore',
   ]
 
   for (const name of names) {

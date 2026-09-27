@@ -605,6 +605,19 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
             considered: true, done: done || did, hasNotes: hasNotes
         )
     }
+
+    /// A copy put back — waiting for today again — the optimistic render of
+    /// a put-back (`RestorePromptIntent`, 2026-09-25) whose round trip is
+    /// still in flight. The COUNT is left alone: what a did-it added (and so
+    /// what comes off) is recorded only on the server (`did_applied`), and
+    /// its answer is written in by `WidgetStore.confirmPromptRestore`.
+    func putBack() -> QuotaPromptDTO {
+        QuotaPromptDTO(
+            promptKey: promptKey, taskId: taskId, number: number, numbers: numbers, slotId: slotId,
+            title: title, current: current, target: target, period: period, stripeColor: stripeColor,
+            considered: false, done: false, hasNotes: hasNotes
+        )
+    }
 }
 
 struct RemindersPayload: Codable {

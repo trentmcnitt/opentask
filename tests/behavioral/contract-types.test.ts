@@ -145,6 +145,7 @@ const QUOTA_DAY_STATE: Record<keyof QuotaDayState, Field> = {
   logged: INT,
   did: ['array'],
   considered: ['array'],
+  did_applied: ['object'],
 }
 
 function kindOf(v: Json): Kind | 'null' {

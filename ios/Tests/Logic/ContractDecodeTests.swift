@@ -162,6 +162,37 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(cached.map(\.consideredCount), server.map(\.consideredCount))
     }
 
+    // MARK: POST /api/quota-prompts/restore (2026-09-25)
+
+    func testRestoreResponseDecodes() throws {
+        let result = try Fixtures.decode(APIClient.PromptRestoreResult.self, "quota-prompts-restore")
+        XCTAssertTrue(result.decoded)
+        XCTAssertEqual(result.restored, 1)
+        let task = try XCTUnwrap(result.tasks.first)
+        XCTAssertEqual(task.id, Fixtures.daily)
+        XCTAssertEqual(task.progressCurrent, 0, "the did-it's +1 came off")
+        XCTAssertEqual(task.progressTarget, 2)
+        XCTAssertTrue(task.isTracked)
+        // The raw day record: the key left both lists.
+        let raw = try XCTUnwrap((try Fixtures.object("quota-prompts-restore")["tasks"] as? [[String: Any]])?.first)
+        let day = try XCTUnwrap(raw["quota_day_state"] as? [String: Any])
+        XCTAssertEqual(day["did"] as? [String], [])
+        XCTAssertEqual(day["considered"] as? [String], [])
+        XCTAssertEqual(day["logged"] as? Int, 0)
+    }
+
+    /// `confirmPromptRestore` with the restore response's `tasks`, applied to
+    /// the post-did cache, yields the server's own pre-did payload: the
+    /// put-back is the did-it undone, every group and prompt included.
+    func testConfirmPromptRestoreReproducesThePreDidPayload() throws {
+        WidgetStore.saveReminders(try Fixtures.reminders("reminders-after-did"))
+        let result = try Fixtures.decode(APIClient.PromptRestoreResult.self, "quota-prompts-restore")
+        WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.daily, 1), tasks: result.tasks)
+
+        let cached = try XCTUnwrap(WidgetStore.loadReminders()).value.groups
+        XCTAssertEqual(cached, try Fixtures.reminders("reminders-initial"))
+    }
+
     // MARK: POST /api/tasks/{id}/progress
 
     func testProgressResponseDecodesAsATask() throws {
