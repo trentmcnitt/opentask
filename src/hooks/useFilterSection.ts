@@ -17,8 +17,12 @@ import { useIsMobile } from '@/hooks/useIsMobile'
  *    and sort), so it survives reloads and follows the user across devices.
  * 3. **An active filter is never invisible.** Whenever a filter is active the
  *    section auto-expands — including on load, which is what makes deep links
- *    like `?filter=overdue` and `?project=3` land on a visible, obviously
- *    filtered view instead of a silently shortened list. The toggle chip also
+ *    like `?filter=today` and `?project=3` land on a visible, obviously
+ *    filtered view instead of a silently shortened list. "Active" here means
+ *    active AND not already shown by the always-visible control row: the
+ *    caller passes that count, not the raw one — an Overdue selection is shown
+ *    by FilterBar's pinned Overdue chip, so it does not expand the section
+ *    (see `hiddenActiveFilterCount` in DashboardClient). The toggle chip also
  *    carries a count badge ("Filters · 2") whenever filters are active, so even
  *    if the user then collapses the section by hand, the fact that a filter is
  *    narrowing the list stays on screen (the "Showing N of M · Clear filter"
