@@ -468,7 +468,10 @@ export function TaskList({
           const hiddenCount = sortedTasks.length - visibleTasks.length
 
           return (
-            <section key={group.label}>
+            // `data-task-group` + `scroll-below-header`: the dashboard's
+            // overdue/today jump scrolls the FIRST of these to just under the
+            // top bar (`useJumpToTaskList`).
+            <section key={group.label} data-task-group className="scroll-below-header">
               {/* "Now" separator between Overdue and the next group */}
               {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 

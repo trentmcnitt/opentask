@@ -16,7 +16,7 @@ import type { SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
-import { Header } from '@/components/Header'
+import { Header, type HeaderPillFilter } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { DemoTour } from '@/components/DemoTour'
 import { QuickTakeBanner } from '@/components/QuickTakeBanner'
@@ -25,6 +25,7 @@ import { AiControlArea } from '@/components/AiControlArea'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
+import { OverdueJumpFab } from '@/components/OverdueJumpFab'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
 import { showToast, showSuccessToastWithAction, showAiSuccessToastWithAction } from '@/lib/toast'
 import dynamic from 'next/dynamic'
@@ -56,6 +57,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState, type TaskFilterCriteria } from '@/hooks/useFilterState'
+import { useJumpToTaskList } from '@/hooks/useJumpToTaskList'
 import { useFilterSection } from '@/hooks/useFilterSection'
 import { useTaskCounts, useDateFacetCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
@@ -1937,6 +1939,22 @@ function DashboardView({
       ? selectedDateFilters[0]
       : null
 
+  // Overdue FAB + top-bar pills: filter, then scroll the first task group up
+  // under the top bar (`useJumpToTaskList`). A pill tap scrolls only when it
+  // turns its filter ON — i.e. when it is not already the sole date filter,
+  // which is exactly when `exclusiveDateFilter` sets it rather than clearing
+  // it. Tapping the lit pill just clears the filter and leaves the page where
+  // it is.
+  const { listRef: taskListRef, requestJump } = useJumpToTaskList()
+  const onPillFilter = (filter: HeaderPillFilter) => {
+    if (activePillFilter !== filter) requestJump()
+    onExclusiveDateFilter(filter)
+  }
+  const onOverdueJump = () => {
+    onExclusiveDateFilter('overdue')
+    requestJump()
+  }
+
   // The AI chips stay visible in the collapsed control row, so they are not
   // part of the count — but they still narrow the list, so they still count
   // toward "is anything filtered".
@@ -1959,7 +1977,7 @@ function DashboardView({
         taskCount={shownTaskCount}
         overdueCount={headerCounts.overdueCount}
         todayCount={headerCounts.todayCount}
-        onPillFilter={onExclusiveDateFilter}
+        onPillFilter={onPillFilter}
         activePillFilter={activePillFilter}
         isSelectionMode={selection.isSelectionMode}
         onUndo={actions.handleUndo}
@@ -2134,7 +2152,10 @@ function DashboardView({
           timezone={timezone}
         />
 
-        <div className="min-w-0 xl:col-start-1 xl:row-start-2">
+        <div
+          ref={taskListRef}
+          className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
+        >
           <TaskList
             tasks={tasks}
             projects={projects}
@@ -2216,6 +2237,16 @@ function DashboardView({
         overdueCount={overdueCount}
         isSelectionMode={selection.isSelectionMode}
         onSnoozeOverdue={onSnoozeOverdue}
+      />
+
+      {/* Counts the date facet (`headerCounts`), like the red pill and the
+          pinned chip it acts like — not `overdueCount` above. "On" is
+          `includes`, the pinned chip's own solid state, not "sole filter". */}
+      <OverdueJumpFab
+        overdueCount={headerCounts.overdueCount}
+        overdueFilterOn={selectedDateFilters.includes('overdue')}
+        isSelectionMode={selection.isSelectionMode}
+        onJump={onOverdueJump}
       />
 
       {showProjectPicker && (
