@@ -40,13 +40,13 @@ function getSignalSelectedClass(key: string): string {
  * filter chips beneath it (REDESIGN-V03 §7.3).
  *
  * Collapsed (the default — see `useFilterSection` for the full collapse rules):
- *   Control: [⌄ Filters] │ [What's Next 6] [Insights] [Stale 4] [Quick Win 1]
+ *   Control: [⌄ Filters] [Overdue 9] │ [What's Next 6] [Insights] [Stale 4] [Quick Win 1]
  *
  * Expanded:
- *   Control: [⌃ Filters · 2] │ [What's Next 6] [Insights] [Stale 4]  ← scrollable
+ *   Control: [⌃ Filters · 2] [Overdue 9] │ [What's Next 6] [Insights]  ← scrollable
  *            ─────────────────────────────────────────────────────    ← subtle border
  *   Projects: [●Work 42] [●Personal 18] [●Side 6]                    ← wrapping (if 2+ projects)
- *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                          ← scrollable
+ *   Row 1:  [Soon 3] [Today 6] [This Week 12]                        ← scrollable
  *   Row 2:  [None 68] [Low 6] [Medium 6] [High 3] ...                ← wrapping
  *
  * The AI chips stay in the control row rather than moving inside the collapse:
@@ -56,6 +56,21 @@ function getSignalSelectedClass(key: string): string {
  * due date, priority, label, attribute — collapse, and those are exactly the
  * ones `activeFilterCount` counts.
  *
+ * The one exception is the pinned **Overdue** chip (Trent, 2026-09-26: one tap
+ * to "just the overdue tasks" without opening the filter stack). It sits right
+ * after the Filters toggle — before the AI chips, so it never scrolls away —
+ * whenever anything is overdue, or while the Overdue filter is on (so it can
+ * always be turned off from where it was turned on). It is MOVED, not
+ * duplicated: the expanded date row omits its own Overdue chip while the
+ * pinned one exists (`omitFilters` below), except when Overdue is EXCLUDED —
+ * the pinned chip has no exclude state, so the expanded chip stays to show
+ * and clear it. It drives the same `selectedDateFilters` state, and its number
+ * is the same date-facet count the top bar's red pill shows
+ * (`useDateFacetCounts`, passed in as `pinnedOverdueCount`). See
+ * `PinnedOverdueChip` for the tap rules. Because it shows the Overdue
+ * selection on its own, an Overdue selection does not auto-expand the section
+ * (`hiddenActiveFilterCount` in DashboardClient).
+ *
  * Users clear filters by clicking active chips to deselect them.
  */
 export function FilterBar({
@@ -63,6 +78,7 @@ export function FilterBar({
   expanded,
   onToggleExpanded,
   activeFilterCount = 0,
+  pinnedOverdueCount = 0,
   selectedPriorities,
   selectedLabels,
   selectedDateFilters = [],
@@ -117,6 +133,11 @@ export function FilterBar({
   onToggleExpanded: () => void
   /** Number of active filters inside the collapsible block — drives the badge. */
   activeFilterCount?: number
+  /**
+   * The pinned Overdue chip's number — the top bar's red-pill count, computed
+   * once by the dashboard (`useDateFacetCounts`) so the two cannot disagree.
+   */
+  pinnedOverdueCount?: number
   selectedPriorities: number[]
   selectedLabels: string[]
   selectedDateFilters?: DueDateFilter[]
@@ -244,6 +265,17 @@ export function FilterBar({
     (insightsActive || insightsSignalChipsVisible)
   const aiRowVisible = aiChipVisible || insightsChipVisible || signalRowVisible
 
+  const overdueSelected = selectedDateFilters.includes('overdue')
+  const pinnedOverdueVisible =
+    !!onExclusiveDateFilter && !!onToggleDateFilter && (pinnedOverdueCount > 0 || overdueSelected)
+
+  // Overdue lives in the control row now (see the layout comment). When the
+  // pinned chip is hidden, the expanded chip would have nothing to show
+  // either (0 overdue, not selected) — except an EXCLUDED Overdue, which only
+  // the expanded chip can display and clear.
+  const omitOverdueFromDateRow =
+    !!onExclusiveDateFilter && !!onToggleDateFilter && !excludedDateFilters.includes('overdue')
+
   const hasActiveAttributes =
     (attributeFilters?.size ?? 0) > 0 || (excludedAttributes?.size ?? 0) > 0
   const hasAttributes =
@@ -264,6 +296,15 @@ export function FilterBar({
             activeCount={activeFilterCount}
             onToggle={onToggleExpanded}
           />
+
+          {pinnedOverdueVisible && (
+            <PinnedOverdueChip
+              count={pinnedOverdueCount}
+              selected={overdueSelected}
+              onSelect={() => onExclusiveDateFilter!('overdue')}
+              onDeselect={() => onToggleDateFilter!('overdue')}
+            />
+          )}
 
           {aiRowVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
 
@@ -330,6 +371,7 @@ export function FilterBar({
                   timezone={timezone!}
                   onExclusiveDateFilter={onExclusiveDateFilter}
                   onExcludeDateFilter={onExcludeDateFilter}
+                  omitFilters={omitOverdueFromDateRow ? ['overdue'] : undefined}
                 />
               </div>
             )}
@@ -419,6 +461,65 @@ function FiltersToggleChip({
         <ChevronDown
           className={cn('size-3 opacity-60 transition-transform', expanded && 'rotate-180')}
         />
+      </button>
+    </Badge>
+  )
+}
+
+/**
+ * The control row's pinned Overdue chip (see the FilterBar layout comment).
+ *
+ * Styled exactly like the date chips it was moved out of (`DateChipBadge`:
+ * plain outline, solid foreground when on). Not red: Trent, 2026-09-26 —
+ * a red chip on every visit read as an alarm; the top bar's red pill
+ * already carries the "something is overdue" signal.
+ *
+ * Tap rules — deliberately simpler than the expanded chips' (no double-click
+ * exclude, no long-press): this chip has one job.
+ * - Off → apply Overdue EXCLUSIVELY (`exclusiveDateFilter`: Overdue becomes
+ *   the only date filter and date excludes clear; project/priority/label
+ *   filters stay) — the same call the expanded chip's Cmd+click/long-press
+ *   makes and the top bar's red pill makes.
+ * - On → turn Overdue off (`toggleDateFilter`), leaving any other date chip
+ *   the user picked in the expanded section alone. When Overdue is the only
+ *   date filter — the case a tap here produces — that clears the date filter.
+ */
+function PinnedOverdueChip({
+  count,
+  selected,
+  onSelect,
+  onDeselect,
+}: {
+  count: number
+  selected: boolean
+  onSelect: () => void
+  onDeselect: () => void
+}) {
+  return (
+    <Badge
+      asChild
+      variant="outline"
+      className={cn(
+        'flex-shrink-0 cursor-pointer rounded-sm transition-colors select-none',
+        selected
+          ? 'bg-foreground text-background border-foreground hover:bg-foreground/90'
+          : 'hover:bg-muted',
+      )}
+    >
+      <button
+        type="button"
+        data-pinned-date-chip="overdue"
+        onClick={selected ? onDeselect : onSelect}
+        aria-pressed={selected}
+        aria-label={
+          selected
+            ? `Overdue, ${count} — showing only overdue tasks; tap to show all`
+            : `Overdue, ${count} — show only overdue tasks`
+        }
+        title={selected ? 'Show all tasks' : 'Show only overdue tasks'}
+      >
+        <span className="leading-none">Overdue</span>
+        <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>
       </button>
     </Badge>
   )
