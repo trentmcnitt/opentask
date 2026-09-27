@@ -18,10 +18,11 @@ import { scrollSectionIntoView } from '@/lib/scroll-row-into-view'
  * auto-expand during render for the same reason — see the comment there.)
  *
  * The target is the first `[data-task-group]` section inside `listRef` (a
- * group header — whatever the grouping). The unified view and the empty
- * "All caught up" state have no group sections, so it falls back to the list
- * wrapper itself. Both carry `scroll-below-header` (globals.css), which is
- * what keeps the target clear of the sticky top bar and the iOS safe area.
+ * group — whatever the grouping; in the unified view that one section is the
+ * whole flat list, with no header). The empty "All caught up" state has no
+ * section, so it falls back to the list wrapper itself. Both carry
+ * `scroll-below-header` (globals.css), which is what keeps the target clear
+ * of the sticky top bar and the iOS safe area.
  *
  * A short filtered list may not make the page tall enough for the target to
  * reach the top; the browser then stops at the bottom of the page, which
