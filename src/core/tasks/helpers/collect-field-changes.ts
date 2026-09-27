@@ -9,8 +9,8 @@ import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
-import { isTracked } from '@/lib/track'
+import { QUOTA_DUE_DATE_MESSAGE, QUOTA_PERIOD_MESSAGE } from '@/core/validation'
+import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
@@ -100,6 +100,20 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // task editor, or by a bulk edit that swept it up.
   if (willBeTracked && options.input.due_at) {
     throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
+  }
+
+  // A quota always has a period (QUOTA_PERIOD_MESSAGE) — asked of the
+  // resulting row, so it refuses making a period-less task a quota, clearing a
+  // quota's rule, and a bulk edit that would do either (which aborts the whole
+  // batch: a 400, not a skip). A row that is ALREADY a period-less quota (none
+  // exist in production; older data could hold one) stays editable as long as
+  // the write leaves its rule alone — the display paths still handle it.
+  const resultingRrule =
+    options.input.rrule !== undefined ? options.input.rrule : (task.rrule ?? null)
+  const legacyPeriodless =
+    wasTracked && quotaPeriodOf(task.rrule) === null && options.input.rrule === undefined
+  if (willBeTracked && quotaPeriodOf(resultingRrule) === null && !legacyPeriodless) {
+    throw new ValidationError(QUOTA_PERIOD_MESSAGE)
   }
 
   // Retiring a quota takes its rule with it.

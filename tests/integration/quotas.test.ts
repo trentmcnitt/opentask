@@ -354,3 +354,70 @@ describe('POST /api/tasks/:id/undone on a quota', () => {
     expect(body.error).toMatch(/quota/i)
   })
 })
+
+/**
+ * A quota always has a period (Trent, 2026-09-25; QUOTA_PERIOD_MESSAGE).
+ * With no period there is no boundary, so its count never resets and its
+ * prompt, once met, never returns. Create, PATCH and bulk edit all refuse one.
+ */
+describe('A quota needs a period', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function create(body: Record<string, unknown>) {
+    return (await (await apiFetch('/api/tasks', { method: 'POST', body })).json()).data
+  }
+
+  async function expectPeriodRefusal(res: Response) {
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/quota needs a period/i)
+  }
+
+  test('POST /api/tasks refuses a quota without a period, by flag or by target', async () => {
+    for (const body of [
+      { title: 'Loose count', is_tracked: true },
+      { title: 'Loose count', progress_target: 3 },
+    ]) {
+      await expectPeriodRefusal(await apiFetch('/api/tasks', { method: 'POST', body }))
+    }
+  })
+
+  test("PATCH /api/tasks/:id refuses clearing a quota's rule, and making a period-less quota", async () => {
+    const quota = await create({ title: 'Period probe', progress_target: 3, rrule: 'FREQ=WEEKLY' })
+    await expectPeriodRefusal(
+      await apiFetch(`/api/tasks/${quota.id}`, { method: 'PATCH', body: { rrule: null } }),
+    )
+    const after = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(after.rrule).toBe('FREQ=WEEKLY')
+
+    const plain = await create({ title: 'Plain probe' })
+    await expectPeriodRefusal(
+      await apiFetch(`/api/tasks/${plain.id}`, {
+        method: 'PATCH',
+        body: { is_tracked: true, progress_target: 3 },
+      }),
+    )
+  })
+
+  test('POST /api/tasks/bulk/edit refuses the whole batch when it would clear a quota rule', async () => {
+    const quota = await create({
+      title: 'Bulk period probe',
+      progress_target: 3,
+      rrule: 'FREQ=WEEKLY',
+    })
+    const plain = await create({ title: 'Bulk plain probe', rrule: 'FREQ=DAILY' })
+
+    await expectPeriodRefusal(
+      await apiFetch('/api/tasks/bulk/edit', {
+        method: 'POST',
+        body: { ids: [quota.id, plain.id], changes: { rrule: null } },
+      }),
+    )
+    // All or nothing: the plain task kept its rule too.
+    const plainAfter = (await (await apiFetch(`/api/tasks/${plain.id}`)).json()).data
+    expect(plainAfter.rrule).toBe('FREQ=DAILY')
+    const quotaAfter = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(quotaAfter.rrule).toBe('FREQ=WEEKLY')
+  })
+})

@@ -12,7 +12,10 @@
  *   IDEMPOTENT per prompt_key, so a double tap, a retried request or two
  *   clients acting on the same prompt log it once:
  *     daily #k      raises today's count to at least k (never adds past it);
- *     anything else +1, unless this key is already in today's `did`.
+ *     anything else +1, unless this key is already in today's `did` — and
+ *                   ONLY then: a +1 logged elsewhere today (the widget, the
+ *                   watch) does not block it, so a did-it from a screen loaded
+ *                   before that +1 counts again (Trent, 2026-09-25; QPM-010).
  *
  * - PUT BACK — the filled dashed circle in a "considered"/DONE list
  *   (2026-09-25; before that a handled prompt had no way back but Undo). The

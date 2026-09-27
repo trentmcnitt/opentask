@@ -39,6 +39,25 @@
  * would still put them in whatever slot precedes their old time. The last
  * remaining slot cannot be removed.
  *
+ * QUOTA PROMPTS MOVE THE SAME WAY (Trent, 2026-09-25). A prompt stores the
+ * slot id it sits in (`quota_prompt_config.slot_id`, and per number for a
+ * daily quota; the user's default in `users.quota_prompt_slot_id`). Removing
+ * a slot rewrites every stored id that names it to the remaining slot nearest
+ * the removed slot's start — a prompt's "time" is its slot's start, so this
+ * is exactly where a boundary reminder of that slot goes (`nearestSlot`, tie
+ * to the earlier). Done here, in the same transaction and undo entry, rather
+ * than at read time: `resolvePromptSlot` only sees ids, and once the row is
+ * gone nothing knows where the removed slot was, so "nearest" cannot be
+ * computed later. The quotas' configs ride in the entry's task snapshots and
+ * the user's default in its `slotState.prompt_default`, so one Undo puts the
+ * slot, its reminders and its prompts back together.
+ *   Only STORED ids move. A daily quota's numbers that were never placed by
+ *   hand are derived — spread one per period from the quota's base — so they
+ *   re-spread over the remaining periods, as they would for a new quota.
+ *   `resolvePromptSlot`'s read-time fallback stays as a safety net for ids
+ *   left stale by deletes made before this rule.
+ *   Retiming a slot keeps its id, so its prompts follow it with no rewrite.
+ *
  * HOW A REMINDER MOVES: a repeating one gets its own rule rewritten with the
  * new BYHOUR/BYMINUTE (`buildSchedule`, so Tue/Thu stays Tue/Thu) — the same
  * write the Reminders editor makes when you pick a slot chip, which re-derives
@@ -70,7 +89,7 @@ import {
   type SlottableItem,
   type TimeSlot,
 } from '@/lib/time-slot-assign'
-import type { Task, UndoSnapshot } from '@/types'
+import type { QuotaPromptConfig, SlotUndoState, Task, UndoSnapshot } from '@/types'
 import { assertStartTimeFree, listTimeSlots } from './index'
 
 /** What the planners need to know about a reminder. */
@@ -189,17 +208,72 @@ interface MoveOutcome {
   fields: string[]
 }
 
+interface TaskChange {
+  task: Task
+  input: FieldChangesInput
+}
+
+/** Planned reminder moves, as the field changes that make them. */
+function moveInputs(reminders: Task[], moves: Map<number, number>, timezone: string): TaskChange[] {
+  return reminders.flatMap((task) => {
+    const minutes = moves.get(task.id)
+    const input = minutes === undefined ? null : moveInput(task, minutes, timezone)
+    return input ? [{ task, input }] : []
+  })
+}
+
+/** `config` with every id naming `fromId` rewritten to `toId`; null if none did. */
+export function repointPromptConfig(
+  config: QuotaPromptConfig | null | undefined,
+  fromId: number,
+  toId: number,
+): QuotaPromptConfig | null {
+  if (!config) return null
+  let changed = false
+  const next: QuotaPromptConfig = { ...config }
+  if (config.slot_id === fromId) {
+    next.slot_id = toId
+    changed = true
+  }
+  if (config.numbers) {
+    next.numbers = Object.fromEntries(
+      Object.entries(config.numbers).map(([k, id]) => {
+        if (id !== fromId) return [k, id]
+        changed = true
+        return [k, toId]
+      }),
+    )
+  }
+  return changed ? next : null
+}
+
 /**
- * Apply planned moves inside the caller's transaction. Mirrors bulkEdit's
- * per-task loop (collectFieldChanges → UPDATE → snapshot + activity), minus
- * its snooze/quota filters, which cannot apply to a reminder schedule move.
+ * The quotas whose stored prompt periods name a removed slot, with the config
+ * that points them at `toId` instead. Every one of the user's non-trashed
+ * rows with a config — done and archived included, so a quota brought back
+ * later does not name a slot that is gone.
  */
-function applyMoves(
-  userId: number,
-  timezone: string,
-  reminders: Task[],
-  moves: Map<number, number>,
-): MoveOutcome {
+function promptInputs(userId: number, fromId: number, toId: number): TaskChange[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id FROM tasks
+        WHERE user_id = ? AND deleted_at IS NULL AND quota_prompt_config IS NOT NULL`,
+    )
+    .all(userId) as { id: number }[]
+  return rows.flatMap((r) => {
+    const task = getTaskById(r.id)
+    const config = task ? repointPromptConfig(task.quota_prompt_config, fromId, toId) : null
+    return task && config ? [{ task, input: { quota_prompt_config: config } }] : []
+  })
+}
+
+/**
+ * Apply planned changes inside the caller's transaction. Mirrors bulkEdit's
+ * per-task loop (collectFieldChanges → UPDATE → snapshot + activity), minus
+ * its snooze/quota filters, which cannot apply to a reminder schedule move or
+ * a prompt's period.
+ */
+function applyChanges(userId: number, timezone: string, changes: TaskChange[]): MoveOutcome {
   const db = getDb()
   const now = new Date()
   const nowStr = nowUtc()
@@ -208,12 +282,7 @@ function applyMoves(
   const activity: ActivityEntry[] = []
   const fields = new Set<string>()
 
-  for (const task of reminders) {
-    const minutes = moves.get(task.id)
-    if (minutes === undefined) continue
-    const input = moveInput(task, minutes, timezone)
-    if (!input) continue
-
+  for (const { task, input } of changes) {
     const data = collectFieldChanges({
       task,
       input,
@@ -283,6 +352,11 @@ export interface TimeSlotChangeResult {
   slot: TimeSlot
   /** How many reminders were rewritten to stay in (or find) a slot. */
   reminders_moved: number
+  /**
+   * How many quotas had a stored prompt period repointed — a delete only: a
+   * retime keeps the slot's id, so its prompts follow it untouched.
+   */
+  quotas_moved: number
   /** The undo_log entry for this change, or null when nothing undoable happened (a rename). */
   undo_id: number | null
 }
@@ -308,7 +382,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
 
   const after: TimeSlot = { ...before, label, start_time: startTime }
   if (!retimed && label === before.label) {
-    return { slot: before, reminders_moved: 0, undo_id: null }
+    return { slot: before, reminders_moved: 0, quotas_moved: 0, undo_id: null }
   }
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
@@ -326,7 +400,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     const newSlots = oldSlots.map((s) => (s.id === slotId ? after : s))
     const reminders = loadReminders(userId)
     const moves = planSlotRetime(reminders, oldSlots, newSlots, slotId, userTimezone)
-    outcome = applyMoves(userId, userTimezone, reminders, moves)
+    outcome = applyChanges(userId, userTimezone, moveInputs(reminders, moves, userTimezone))
 
     const moved = outcome.snapshots.length
     const description =
@@ -339,7 +413,12 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
   })
 
   notifyMoved(userId, outcome)
-  return { slot: after, reminders_moved: outcome.snapshots.length, undo_id: undoId }
+  return {
+    slot: after,
+    reminders_moved: outcome.snapshots.length,
+    quotas_moved: 0,
+    undo_id: undoId,
+  }
 }
 
 export interface DeleteTimeSlotOptions {
@@ -348,12 +427,42 @@ export interface DeleteTimeSlotOptions {
   slotId: number
 }
 
-/** Remove a slot, moving its reminders to the nearest remaining slot. */
+/**
+ * Where a removed slot's quota prompts go: the remaining slot nearest the
+ * removed slot's start — where its boundary reminders go (see the header).
+ */
+export function promptSlotAfterDelete(oldSlots: TimeSlot[], slotId: number): TimeSlot | null {
+  const removed = oldSlots.find((s) => s.id === slotId)
+  const start = removed ? parseHHMM(removed.start_time) : null
+  if (start === null) return null
+  const remaining = oldSlots
+    .filter((s) => s.id !== slotId)
+    .sort((a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0))
+  return nearestSlot(start, remaining)
+}
+
+function readPromptDefault(userId: number): number | null {
+  const row = getDb().prepare('SELECT quota_prompt_slot_id FROM users WHERE id = ?').get(userId) as
+    | { quota_prompt_slot_id: number | null }
+    | undefined
+  return row?.quota_prompt_slot_id ?? null
+}
+
+function deleteDescription(label: string, reminders: number, quotas: number): string {
+  const parts = [
+    reminders > 0 ? reminderCount(reminders) : null,
+    quotas > 0 ? `${quotas} quota${quotas === 1 ? '' : 's'}` : null,
+  ].filter((p): p is string => p !== null)
+  return `Removed "${label}"` + (parts.length > 0 ? ` (moved ${parts.join(', ')})` : '')
+}
+
+/** Remove a slot, moving its reminders and quota prompts to the nearest remaining slot. */
 export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeResult {
   const { userId, userTimezone, slotId } = options
   const before = loadSlot(userId, slotId)
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
+  let remindersMoved = 0
   const undoId = withTransaction((tx) => {
     const oldSlots = listTimeSlots(userId)
     if (oldSlots.length <= 1) {
@@ -361,18 +470,48 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
     }
     const reminders = loadReminders(userId)
     const moves = planSlotDelete(reminders, oldSlots, slotId, userTimezone)
+    const promptTarget = promptSlotAfterDelete(oldSlots, slotId)
     tx.prepare('DELETE FROM time_slots WHERE id = ? AND user_id = ?').run(slotId, userId)
-    outcome = applyMoves(userId, userTimezone, reminders, moves)
 
-    const moved = outcome.snapshots.length
-    const description =
-      `Removed "${before.label}"` + (moved > 0 ? ` (moved ${reminderCount(moved)})` : '')
-    return logAction(userId, 'time_slot_delete', description, outcome.fields, outcome.snapshots, {
-      before,
-      after: null,
-    })
+    // After the DELETE, so `assertPromptSlotsOwned` sees the target as one of
+    // the user's slots and the removed one as gone.
+    const reminderChanges = moveInputs(reminders, moves, userTimezone)
+    const quotaChanges = promptTarget ? promptInputs(userId, slotId, promptTarget.id) : []
+    outcome = applyChanges(userId, userTimezone, [...reminderChanges, ...quotaChanges])
+    const quotaIds = new Set(quotaChanges.map((c) => c.task.id))
+    remindersMoved = outcome.snapshots.filter((s) => !quotaIds.has(s.task_id)).length
+
+    // The user's default prompt period follows too. It is not a task field,
+    // so the entry carries it beside the slot row (`applyPromptDefault`).
+    const slotState: SlotUndoState = { before, after: null }
+    if (promptTarget && readPromptDefault(userId) === slotId) {
+      tx.prepare('UPDATE users SET quota_prompt_slot_id = ? WHERE id = ?').run(
+        promptTarget.id,
+        userId,
+      )
+      slotState.prompt_default = { before: slotId, after: promptTarget.id }
+    }
+
+    const description = deleteDescription(
+      before.label,
+      remindersMoved,
+      outcome.snapshots.length - remindersMoved,
+    )
+    return logAction(
+      userId,
+      'time_slot_delete',
+      description,
+      outcome.fields,
+      outcome.snapshots,
+      slotState,
+    )
   })
 
   notifyMoved(userId, outcome)
-  return { slot: before, reminders_moved: outcome.snapshots.length, undo_id: undoId }
+  return {
+    slot: before,
+    reminders_moved: remindersMoved,
+    quotas_moved: outcome.snapshots.length - remindersMoved,
+    undo_id: undoId,
+  }
 }

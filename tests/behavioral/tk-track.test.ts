@@ -24,11 +24,12 @@ import {
   TEST_USER_ID,
 } from '../helpers/setup'
 
+/** A quota always has a period (QUOTA_PERIOD_MESSAGE) — weekly unless a test says otherwise. */
 function makeTracked(target = 2, extra: Record<string, unknown> = {}) {
   return createTask({
     userId: TEST_USER_ID,
     userTimezone: TEST_TIMEZONE,
-    input: { title: 'Eggs', progress_target: target, ...extra },
+    input: { title: 'Eggs', rrule: 'FREQ=WEEKLY', progress_target: target, ...extra },
   })
 }
 
@@ -46,7 +47,7 @@ describe('Track (quotas)', () => {
   /**
    * TK-001: Opting in is just setting a target above 1 — no separate flag.
    */
-  test('TK-001: setting progress_target > 1 makes a task tracked', () => {
+  test('TK-001: setting progress_target > 1 (with a period) makes a task tracked', () => {
     const task = makeTracked(3)
     expect(task.progress_target).toBe(3)
     expect(task.progress_current).toBe(0)
@@ -281,7 +282,7 @@ describe('Track (quotas)', () => {
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
-      input: { progress_target: 4 },
+      input: { progress_target: 4, rrule: 'FREQ=WEEKLY' },
     })
     expect(updated.progress_target).toBe(4)
     expect(isTracked(updated)).toBe(true)

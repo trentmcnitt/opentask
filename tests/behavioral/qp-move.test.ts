@@ -14,7 +14,6 @@ import { getDb } from '@/core/db'
 import { bulkEdit, createTask, getTaskById, updateTask } from '@/core/tasks'
 import { getQuotaPromptsBySlot, type QuotaPrompt } from '@/core/tasks/quota-prompts'
 import { listTimeSlots } from '@/core/time-slots'
-import { deleteTimeSlot } from '@/core/time-slots/edit'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import type { QuotaPromptConfig } from '@/types'
@@ -110,7 +109,10 @@ describe('Quota prompt moves — the owner-slot check', () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
     const afternoon = slotId('Afternoon')
     configure(q.id, { slot_id: afternoon })
-    deleteTimeSlot({ ...base, slotId: afternoon })
+    // `deleteTimeSlot` repoints stored ids since 2026-09-25 (QP-011), so a
+    // stale one only survives from a delete made before that — removed here
+    // the way that delete left it: the slot row gone, the config untouched.
+    getDb().prepare('DELETE FROM time_slots WHERE id = ?').run(afternoon)
 
     // The editor re-sends the whole config — the stale id with it.
     configure(q.id, { enabled: true, slot_id: afternoon })

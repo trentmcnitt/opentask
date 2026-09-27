@@ -48,10 +48,18 @@
  *
  * SLOT RESOLUTION: a prompt stores slot IDS (in its config, and the user's
  * default in `users.quota_prompt_slot_id`) and resolves them here, at read
- * time. One fallback rule, everywhere: the quota's own slot if it still
- * exists, else the user's default if IT still exists, else the first period of
- * the day. A deleted slot therefore never strands a prompt, and undoing the
- * delete (which restores the slot under its original id) puts it back.
+ * time: the quota's own slot, else the user's default, else the first period
+ * of the day. Retiming a slot keeps its id, so its prompts follow it.
+ * DELETING a slot repoints every stored id that names it to the nearest
+ * remaining slot — where its reminders go — inside the delete's own
+ * transaction and undo entry (`deleteTimeSlot`, src/core/time-slots/edit.ts;
+ * Trent, 2026-09-25), so undoing the delete puts the prompts back too. The
+ * read-time fallback past a missing id is only a safety net now, for ids left
+ * stale by deletes made before that rule.
+ *
+ * A quota always has a period (QUOTA_PERIOD_MESSAGE, 2026-09-25): create and
+ * edit refuse a period-less one. The period-less branches below (default
+ * off, `period: null`) stay only so a legacy row reads harmlessly.
  */
 
 import { getDb } from '@/core/db'

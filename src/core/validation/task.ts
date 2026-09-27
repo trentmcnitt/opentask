@@ -167,6 +167,17 @@ export const QUOTA_DUE_DATE_MESSAGE =
   'A quota has no due date — it is counted within its period, not due on a day'
 
 /**
+ * §5: a quota always has a period (Trent, 2026-09-25). Its count runs over a
+ * day, week, month or year named by its rule; with no rule there is no
+ * boundary, so the period rollover never resets it and its prompt, once met,
+ * never comes back. "Has a period" is `quotaPeriodOf(rrule) !== null` (the
+ * reader every display uses). Refused on create (`createTask`) and on edit and
+ * bulk edit (`collectFieldChanges`, which both go through).
+ */
+export const QUOTA_PERIOD_MESSAGE =
+  'A quota needs a period — send rrule FREQ=DAILY, FREQ=WEEKLY, FREQ=MONTHLY or FREQ=YEARLY'
+
+/**
  * Short name for the quota widget chip (§5) — trimmed, capped at 24 chars so
  * it fits a small tappable chip, and an empty string clears it back to null
  * rather than storing "". Meaningful only on a quota, but accepted on any
