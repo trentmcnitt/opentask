@@ -13,8 +13,19 @@
  * is put back, so other specs' counts are untouched.
  */
 
-import { test, expect, waitForPreferenceSave, gotoQuotasDetails } from './fixtures'
-import type { Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  waitForPreferenceSave,
+  gotoQuotasDetails,
+  uniqueTitle,
+  waitForGetsSettled,
+} from './fixtures'
+import type { Page, Request } from '@playwright/test'
+import { DateTime } from 'luxon'
+
+/** The seeded user's timezone — must track globalSetup.ts's `E2E_TZ`. */
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
 const created: number[] = []
 
@@ -95,7 +106,15 @@ test.describe('Quota prompts', () => {
     await expect(row.locator('[data-prompt-consider]')).toHaveCSS('cursor', 'pointer')
     await expect(row.locator('[data-prompt-did]')).toHaveCSS('cursor', 'pointer')
 
+    // The row leaves optimistically, before the request lands: wait for the
+    // consider itself, or `progressOf` can read the server before it has
+    // done anything and pass whatever the consider does to the count.
+    const key = await row.getAttribute('data-prompt-key')
+    const considered = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/consider'))
     await row.locator('[data-prompt-consider]').click()
+    const res = await considered
+    expect(res.ok()).toBeTruthy()
+    expect(res.request().postDataJSON()).toEqual({ keys: [key] })
     await expect(row).toHaveCount(0)
     expect(await progressOf(page, id)).toBe(0)
 
@@ -211,24 +230,51 @@ test.describe('Quota prompts', () => {
     await expect(row(yearly)).toContainText('0/2 this year')
   })
 
+  /**
+   * Every "it's gone" below has a positive control beside it, because a bare
+   * `toHaveCount(0)` also passes on a page that has not rendered its list yet
+   * (the Reminders region is on screen during the skeleton): the prompt is
+   * seen on /reminders before the switch, a reminder in the same period must
+   * render after it, and the server's own payload is checked too.
+   *
+   * The switch is put back by `cleanUp` (afterEach), pass or fail.
+   */
   test('Settings: the quota reminders switch hides every prompt', async ({
     authenticatedPage: page,
   }) => {
-    await makeQuota(page, 'E2E prompt settings')
+    const [slot] = await userSlots(page)
+    const quotaTitle = uniqueTitle('E2E prompt settings')
+    const thoughtTitle = uniqueTitle('E2E settings thought')
+    const quota = await makeQuota(page, quotaTitle)
+    await placeIn(page, quota, { slot_id: slot.id })
+    await makeReminder(page, thoughtTitle, slot)
+
+    // On: the prompt is there — so its absence later means something.
+    await page.goto('/reminders')
+    await expect(reminderRow(page, thoughtTitle)).toBeVisible()
+    await expect(promptRow(page, quotaTitle)).toBeVisible()
+
     await page.goto('/settings')
     const toggle = page.locator('[data-quota-prompts-switch]')
     await expect(toggle).toBeVisible()
     await expect(page.locator('[data-quota-prompt-slot]')).toBeVisible()
     const saved = waitForPreferenceSave(page, 'quota_prompts_enabled')
     await toggle.click()
-    await saved
+    expect((await saved).ok()).toBeTruthy()
     await expect(page.locator('[data-quota-prompt-slot]')).toHaveCount(0)
 
+    // The server stops sending prompts at all — not just the page hiding them.
+    const payload = (await (await page.request.get('/api/reminders')).json()).data as {
+      groups: { prompts?: unknown[] }[]
+    }
+    expect(payload.groups.flatMap((g) => g.prompts ?? [])).toEqual([])
+
+    // Off: the period's reminder renders (the list is really there) and the
+    // prompt beside it does not.
     await page.goto('/reminders')
-    await expect(
-      page.locator('[data-reminders-headline], section[aria-label="Reminders"]').first(),
-    ).toBeVisible()
-    await expect(promptRow(page, 'E2E prompt settings')).toHaveCount(0)
+    await expect(reminderRow(page, thoughtTitle)).toBeVisible()
+    await expect(promptRow(page, quotaTitle)).toHaveCount(0)
+    await expect(page.locator('li[data-prompt-key]')).toHaveCount(0)
   })
 })
 
@@ -727,6 +773,163 @@ test.describe('Quota prompts — selection', () => {
     await expect(one).toHaveCount(0)
     await expect(two).toHaveCount(0)
     expect(await progressOf(page, daily)).toBe(0)
+  })
+})
+
+/** Does any value anywhere inside `body` say `did: true`? */
+function saysDid(body: unknown): boolean {
+  if (Array.isArray(body)) return body.some(saysDid)
+  if (body && typeof body === 'object') {
+    return Object.entries(body).some(([k, v]) => (k === 'did' && v === true) || saysDid(v))
+  }
+  return false
+}
+
+/**
+ * The selection bar only ever CONSIDERS a prompt: "did it" is the row's own
+ * square, a deliberate +1, and a bulk action must never log progress on the
+ * user's behalf (testing-pass plan §1b). Watched from the wire: every POST
+ * the page makes while the bar acts, for a prompts-only selection (the
+ * prompts' own consider endpoint) and a mixed one (bulk/complete).
+ */
+test.describe('Quota prompts — the bar never logs progress', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('Considered from the bar never sends did: true — prompts alone or mixed', async ({
+    authenticatedPage: page,
+  }) => {
+    const [first, second] = await userSlots(page)
+    const weeklyTitle = uniqueTitle('E2E bar weekly')
+    const dailyTitle = uniqueTitle('E2E bar daily')
+    const thoughtTitle = uniqueTitle('E2E bar thought')
+    const weekly = await makeQuota(page, weeklyTitle)
+    const daily = await makeQuota(page, dailyTitle, 'FREQ=DAILY', 2)
+    await placeIn(page, weekly, { slot_id: first.id })
+    await placeIn(page, daily, { slot_id: first.id, numbers: { '2': second.id } })
+    const reminder = await makeReminder(page, thoughtTitle, first)
+
+    const posts: { path: string; body: unknown }[] = []
+    const onRequest = (r: Request) => {
+      if (r.method() !== 'POST') return
+      posts.push({ path: new URL(r.url()).pathname, body: r.postDataJSON() })
+    }
+    page.on('request', onRequest)
+    try {
+      await page.goto('/reminders')
+      const weeklyRow = promptRow(page, weeklyTitle)
+      const dailyOne = promptIn(page, first.label, dailyTitle)
+      const dailyTwo = promptIn(page, second.label, dailyTitle)
+      const thought = reminderRow(page, thoughtTitle)
+      await expect(dailyTwo).toBeVisible()
+      await expect(thought).toBeVisible()
+      const weeklyKey = await weeklyRow.getAttribute('data-prompt-key')
+      const oneKey = await dailyOne.getAttribute('data-prompt-key')
+      const twoKey = await dailyTwo.getAttribute('data-prompt-key')
+
+      // Prompts only → the prompts' consider endpoint.
+      await weeklyRow.click({ modifiers: ['ControlOrMeta'] })
+      await dailyOne.click({ modifiers: ['ControlOrMeta'] })
+      await expect(bar(page)).toContainText('2 selected')
+      const considered = page.waitForResponse((r) =>
+        r.url().includes('/api/quota-prompts/consider'),
+      )
+      await bar(page).getByRole('button', { name: 'Considered' }).click()
+      const first_ = await considered
+      expect(first_.ok()).toBeTruthy()
+      expect([...first_.request().postDataJSON().keys].sort()).toEqual([weeklyKey, oneKey].sort())
+      await expect(weeklyRow).toHaveCount(0)
+      await expect(dailyOne).toHaveCount(0)
+
+      // A reminder and a prompt → one bulk/complete, the prompt as considered.
+      await thought.click({ modifiers: ['ControlOrMeta'] })
+      await dailyTwo.click({ modifiers: ['ControlOrMeta'] })
+      await expect(bar(page)).toContainText('2 selected')
+      const completed = page.waitForResponse((r) => r.url().includes('/api/tasks/bulk/complete'))
+      await bar(page).getByRole('button', { name: 'Considered' }).click()
+      const second_ = await completed
+      expect(second_.ok()).toBeTruthy()
+      expect(second_.request().postDataJSON()).toEqual({
+        ids: [reminder],
+        prompts: [{ key: twoKey, did: false }],
+      })
+      await expect(dailyTwo).toHaveCount(0)
+
+      // What went over the wire: all three keys (so the watch below is not
+      // looking at an empty list), and not one "did it".
+      const sent = JSON.stringify(posts.map((p) => p.body))
+      for (const key of [weeklyKey, oneKey, twoKey]) expect(sent).toContain(key!)
+      expect(posts.map((p) => p.path)).not.toContain('/api/quota-prompts/did')
+      expect(posts.filter((p) => saysDid(p.body))).toEqual([])
+      // And the server agrees: nothing was logged.
+      expect(await progressOf(page, weekly)).toBe(0)
+      expect(await progressOf(page, daily)).toBe(0)
+    } finally {
+      page.off('request', onRequest)
+    }
+  })
+})
+
+/**
+ * Prompts count toward "waiting so far" exactly like reminders do
+ * (`summarizeReminders`): the headline and the nav badge must agree with a
+ * prompt in the picture, and handling the prompt must move both.
+ *
+ * A prompt only counts once its period has started. So the prompt goes into
+ * the latest period that has started — whose status cannot change for the
+ * rest of the day — and must move both numbers by one. Before the day's first
+ * period there is no such slot: the prompt goes into the first one and must
+ * move neither. Either way the two numbers agree at every step.
+ *
+ * Two narrow windows are left, deliberately not papered over with a guard: the
+ * first period starting during the few seconds of an early-morning run, and a
+ * run straddling local midnight (prompt keys are per day).
+ */
+test.describe('Quota prompts — the headline and the nav badge', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('agree with a prompt counted, and both move when it is handled', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const slots = await userSlots(page)
+    const now = DateTime.now().setZone(TEST_TZ)
+    const minutes = now.hour * 60 + now.minute
+    const toMinutes = (hhmm: string) => {
+      const [h, m] = hhmm.split(':').map(Number)
+      return h * 60 + m
+    }
+    const started = slots.filter((s) => toMinutes(s.start_time) <= minutes).at(-1)
+    const target = started ?? slots[0]
+    const counts = started ? 1 : 0
+
+    const title = uniqueTitle('E2E prompt badge')
+    const id = await makeQuota(page, title)
+    await placeIn(page, id, { slot_id: target.id })
+
+    const prompt = promptIn(page, target.label, title)
+    // Once the row is up, every reminders fetch the page started (the view's
+    // and the badge's) has finished: the numbers read below are final.
+    await waitForGetsSettled(page, '/api/reminders', () => page.goto('/reminders'), prompt)
+    const read = async () => {
+      const headline = page.locator('[data-reminders-headline] [data-waiting-so-far]')
+      const badge = page.locator('aside [data-reminders-badge]')
+      return {
+        headline: (await headline.count())
+          ? Number(await headline.getAttribute('data-waiting-so-far'))
+          : 0,
+        badge: (await badge.count()) ? Number(await badge.innerText()) : 0,
+      }
+    }
+    const before = await read()
+    expect(before.badge).toBe(before.headline)
+    expect(before.headline).toBeGreaterThanOrEqual(counts)
+
+    const considered = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/consider'))
+    await prompt.locator('[data-prompt-consider]').click()
+    expect((await considered).ok()).toBeTruthy()
+    await expect(prompt).toHaveCount(0)
+    const after = before.headline - counts
+    await expect.poll(read).toEqual({ headline: after, badge: after })
   })
 })
 
