@@ -159,12 +159,17 @@ test.describe('Quota prompts', () => {
   test("the count names its period, in the Quotas panel's words — on the dashboard card too", async ({
     authenticatedPage: page,
   }) => {
+    // Two periods, two phrasings. A quota always has a period now — a
+    // period-less one is refused on create (QUOTA_PERIOD_MESSAGE) — so there
+    // is no "count alone" row to make here; that legacy rendering rests on
+    // `periodLabel(null)` being null, pinned in tr-quota-periods.test.ts.
+    // Yearly is the period whose prompt defaults off, so it is asked for.
     const monthly = `E2E prompt monthly ${Date.now()}`
-    const bare = `E2E prompt no period ${Date.now()}`
+    const yearly = `E2E prompt yearly ${Date.now()}`
     const ids: number[] = []
     for (const [title, rrule] of [
       [monthly, 'FREQ=MONTHLY'],
-      [bare, null],
+      [yearly, 'FREQ=YEARLY'],
     ] as const) {
       const res = await page.request.post('/api/tasks', {
         data: {
@@ -172,14 +177,17 @@ test.describe('Quota prompts', () => {
           rrule,
           progress_target: 2,
           is_tracked: true,
-          // A period-less quota prompts only when asked to.
-          quota_prompt_config: rrule ? null : { enabled: true },
+          quota_prompt_config: rrule === 'FREQ=YEARLY' ? { enabled: true } : null,
         },
       })
       expect(res.ok()).toBeTruthy()
-      ids.push((await res.json()).data.id)
+      const id = (await res.json()).data.id as number
+      // Handed to cleanUp the moment it exists: a failure further down must
+      // never leave a quota (and its prompt) behind for later specs — a leaked
+      // one here once failed half of reminders.spec.ts.
+      created.push(id)
+      ids.push(id)
     }
-    created.push(...ids)
     // The card shows one period at a time (it has something to show now):
     // move both prompts into whichever one that is.
     await page.goto('/')
@@ -200,8 +208,7 @@ test.describe('Quota prompts', () => {
     if (await more.isVisible()) await more.click()
     const row = (title: string) => panel.locator('li[data-prompt-key]', { hasText: title })
     await expect(row(monthly)).toContainText('0/2 this month')
-    // No period, no words: the count alone.
-    await expect(row(bare).locator('p')).toHaveText(/· 0\/2$/)
+    await expect(row(yearly)).toContainText('0/2 this year')
   })
 
   test('Settings: the quota reminders switch hides every prompt', async ({
@@ -343,9 +350,10 @@ test.describe('Quota prompts — notes mark', () => {
         data: { title, rrule: 'FREQ=WEEKLY', progress_target: 2, is_tracked: true, notes },
       })
       expect(res.ok()).toBeTruthy()
-      ids.push((await res.json()).data.id)
+      const id = (await res.json()).data.id as number
+      created.push(id) // for cleanUp at once, even if a later create fails
+      ids.push(id)
     }
-    created.push(...ids)
 
     await page.goto('/reminders')
     await expect(promptRow(page, noted).locator('[data-has-notes]')).toHaveCount(1)
