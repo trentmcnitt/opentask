@@ -27,6 +27,8 @@ import { quickTakeSlotQuery } from './quick-take-slot'
 import { resolveFeatureAIConfig } from './models'
 import { getUserFeatureModes, resolveFeatureTimeout } from './user-context'
 import { log } from '@/lib/logger'
+import { getDb } from '@/core/db'
+import { coerceWeekStart, startOfWeek, WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
 
 const PRIORITY_LABELS: Record<number, string> = {
   0: '',
@@ -146,13 +148,18 @@ export function formatCompactTaskList(
  * Precompute statistics from the task list so the model never has to count.
  * Exported so the quality test runner can build the same stats from scenario data.
  */
-export function buildTaskStats(tasks: QuickTakeTask[], timezone: string): TaskStats {
+export function buildTaskStats(
+  tasks: QuickTakeTask[],
+  timezone: string,
+  firstDay: WeekStart = WEEK_START_DEFAULT,
+): TaskStats {
   const now = DateTime.now().setZone(timezone)
   const todayStart = now.startOf('day')
   const todayEnd = now.endOf('day')
-  // Week: Monday through Sunday in the user's timezone
-  const weekStart = now.startOf('week') // Luxon weeks start on Monday
-  const weekEnd = now.endOf('week')
+  // Week: the user's week (Sunday–Saturday by default, or Monday–Sunday) in
+  // their timezone — see `@/lib/week-start`. `weekEnd` is inclusive, hence −1ms.
+  const weekStart = startOfWeek(now, firstDay)
+  const weekEnd = weekStart.plus({ weeks: 1 }).minus({ milliseconds: 1 })
 
   let dueToday = 0
   let dueThisWeek = 0
@@ -303,7 +310,10 @@ export function buildFromDb(
   // the task list just needs to be a representative sample.
 
   // Stats are computed from ALL tasks (before capping) — model gets accurate counts.
-  const stats = buildTaskStats(withNames, timezone)
+  const row = getDb().prepare('SELECT week_start FROM users WHERE id = ?').get(userId) as
+    | { week_start: string }
+    | undefined
+  const stats = buildTaskStats(withNames, timezone, coerceWeekStart(row?.week_start))
   const { text, count } = formatCompactTaskList(withNames, timezone)
 
   return { text, count, stats, tasks: withNames }

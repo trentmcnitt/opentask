@@ -50,6 +50,9 @@ describe('Track period rollover', () => {
   beforeEach(() => {
     vi.setSystemTime(THU)
     setupTestDb()
+    // These cases pin the ISO (Monday) week; the default Sunday week and the
+    // switch between the two are covered in tr-week-start.test.ts.
+    getDb().prepare("UPDATE users SET week_start = 'monday' WHERE id = ?").run(TEST_USER_ID)
   })
   afterEach(() => {
     vi.useRealTimers()

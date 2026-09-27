@@ -195,25 +195,36 @@ describe('Redo of a did-it', () => {
 })
 
 describe('Period lifecycles across the boundary', () => {
-  test('QPM-005: a met weekly prompt stays gone through Sunday and comes back Monday at 0', () => {
+  test('QPM-005: a met weekly prompt stays gone through Saturday and comes back Sunday at 0', () => {
     const q = quota('Date night', 'FREQ=WEEKLY', 1)
     act(promptKey(q.id, 0, TODAY), true)
 
     expect(promptsOn('2026-01-16')).toEqual([]) // Friday
-    expect(promptsOn('2026-01-18', 23)).toEqual([]) // Sunday, late
+    expect(promptsOn('2026-01-17', 23)).toEqual([]) // Saturday, late
 
-    // Monday (ISO week start), before the cron has closed the week…
-    expect(promptsOn('2026-01-19', 7)).toEqual([
+    // Sunday (the default week start), before the cron has closed the week…
+    expect(promptsOn('2026-01-18', 7)).toEqual([
       expect.objectContaining({
-        prompt_key: promptKey(q.id, 0, '2026-01-19'),
+        prompt_key: promptKey(q.id, 0, '2026-01-18'),
         current: 0,
         considered: false,
         done: false,
       }),
     ])
     // …and after it has.
-    rolloverTrackedPeriods(dayAt('2026-01-19', 7))
-    expect(prompts(dayAt('2026-01-19', 7))[0]).toMatchObject({ current: 0, done: false })
+    rolloverTrackedPeriods(dayAt('2026-01-18', 7))
+    expect(prompts(dayAt('2026-01-18', 7))[0]).toMatchObject({ current: 0, done: false })
+  })
+
+  test('QPM-005b: with a Monday week start it stays gone through Sunday and comes back Monday', () => {
+    getDb().prepare("UPDATE users SET week_start = 'monday' WHERE id = ?").run(TEST_USER_ID)
+    const q = quota('Date night', 'FREQ=WEEKLY', 1)
+    act(promptKey(q.id, 0, TODAY), true)
+
+    expect(promptsOn('2026-01-18', 23)).toEqual([]) // Sunday, late
+    expect(promptsOn('2026-01-19', 7)).toEqual([
+      expect.objectContaining({ prompt_key: promptKey(q.id, 0, '2026-01-19'), current: 0 }),
+    ])
   })
 
   test('QPM-006: a monthly prompt asks daily until met, stays gone to month end, and returns on the 1st', () => {

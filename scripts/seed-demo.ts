@@ -28,6 +28,7 @@ import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
 import { RRulePatterns, parseRRule } from '../src/core/recurrence/rrule-builder'
 import { localToUtcIso, daysUntilWeekday } from './seed-utils'
+import { startOfWeek, WEEK_START_DEFAULT } from '../src/lib/week-start'
 import type { LabelColor } from '../src/types'
 
 const TIMEZONE = 'America/Chicago'
@@ -648,7 +649,8 @@ function quotaPeriodBounds(
   period: QuotaPeriod,
   now: DateTime,
 ): { startIso: string; elapsed: number } {
-  const start = period === 'week' ? now.startOf('week') : now.startOf('month')
+  // The demo user has the default week start (Sunday) — `users.week_start`.
+  const start = period === 'week' ? startOfWeek(now, WEEK_START_DEFAULT) : now.startOf('month')
   const end = period === 'week' ? start.plus({ weeks: 1 }) : start.plus({ months: 1 })
   const elapsed = (now.toMillis() - start.toMillis()) / (end.toMillis() - start.toMillis())
   return { startIso: start.toUTC().toISO()!, elapsed }

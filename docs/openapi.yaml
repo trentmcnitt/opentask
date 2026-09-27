@@ -2065,6 +2065,56 @@ paths:
 
   # --- Completions ---
 
+  /api/user/preferences:
+    get:
+      summary: Get the user's preferences
+      operationId: getUserPreferences
+      tags: [User]
+      description: |
+        The signed-in user's settings. Only `week_start` is described field by
+        field here; the response carries the rest of the Settings page's
+        values (view, snooze, schedule, notification and AI settings) as well.
+      responses:
+        '200':
+          description: The user's preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserPreferences'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      summary: Update the user's preferences
+      operationId: updateUserPreferences
+      tags: [User]
+      description: |
+        Send only the fields to change. Changing `week_start` closes, before
+        the response is returned, any weekly quota period the new boundary has
+        already ended (see `UserPreferences.week_start`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPreferences'
+      responses:
+        '200':
+          description: The user's preferences after the update
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserPreferences'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/completions:
     get:
       summary: Query completion history
@@ -2165,6 +2215,26 @@ components:
                       $ref: '#/components/schemas/Task'
 
   schemas:
+    UserPreferences:
+      type: object
+      additionalProperties: true
+      properties:
+        week_start:
+          type: string
+          enum: [sunday, monday]
+          default: sunday
+          description: |
+            The first day of the user's week - where every weekly quota's
+            period begins and ends (00:00 local on that day). `sunday` makes
+            Saturday the last day of a week's quotas.
+
+            A weekly quota whose current period did not begin on the new
+            boundary (it was anchored under the other setting) ends at the NEXT
+            boundary after it began - a short period, recorded like any other
+            (met: a completion; short: recorded only) - and is aligned from
+            then on. Progress logged after that boundary stays in the new
+            period. With INTERVAL > 1 the short period is at most one week and
+            the next period runs the full interval from the boundary.
     PromptKeys:
       type: object
       required: [keys]
@@ -2371,8 +2441,9 @@ components:
           nullable: true
           description: >
             A quota's period anchor (§5) - the UTC instant the current period
-            began, by the user's local calendar (Monday 00:00 for a week, the
-            1st for a month). Null until the period-rollover job first runs for
+            began, by the user's local calendar (00:00 on the user's first day
+            of the week for a week - see the `week_start` preference, Sunday by
+            default - the 1st for a month). Null until the period-rollover job first runs for
             the quota, and null on anything that is not a quota. USE THIS, NOT
             due_at, for anything that needs to know how far through its period a
             quota is (a pace indicator, for example): a quota has no due_at.

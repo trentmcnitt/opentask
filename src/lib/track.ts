@@ -8,6 +8,7 @@
 import { DateTime } from 'luxon'
 import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
+import { quotaPeriodEnd, startOfWeek, WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
@@ -127,13 +128,16 @@ export function effectiveProgress(
   task: Pick<Task, 'rrule' | 'progress_current' | 'progress_period_start'>,
   timezone: string,
   now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
 ): number {
   const current = Math.max(0, task.progress_current ?? 0)
   const period = quotaPeriodOf(task.rrule)
   if (!period || !task.progress_period_start) return current
   const start = DateTime.fromISO(task.progress_period_start, { zone: 'utc' }).setZone(timezone)
   if (!start.isValid) return current
-  const end = start.plus({ [FREQ_UNIT[period.freq]]: period.interval })
+  // The rollover's own end rule — a weekly anchor off the user's week-start
+  // boundary ends at the next boundary, not a full week on.
+  const end = quotaPeriodEnd(start, FREQ_UNIT[period.freq], period.interval, weekStart)
   return DateTime.fromJSDate(now) >= end ? 0 : current
 }
 
@@ -439,6 +443,7 @@ function periodBounds(
   freq: QuotaFreq,
   timezone: string,
   now: Date,
+  weekStart: WeekStart,
 ): { start: DateTime; end: DateTime } {
   const local = DateTime.fromJSDate(now).setZone(timezone)
   switch (freq) {
@@ -447,9 +452,9 @@ function periodBounds(
       return { start, end: start.plus({ days: 1 }) }
     }
     case 'WEEKLY': {
-      // Luxon's week starts Monday (ISO 8601) — no option to set, and none
-      // needed: that is the week the app already shows everywhere else.
-      const start = local.startOf('week')
+      // The user's week (Sunday by default, or Monday) — never Luxon's
+      // `startOf('week')`, which is always ISO Monday. See `@/lib/week-start`.
+      const start = startOfWeek(local, weekStart)
       return { start, end: start.plus({ weeks: 1 }) }
     }
     case 'MONTHLY': {
@@ -478,8 +483,9 @@ export function periodElapsedFraction(
   freq: QuotaFreq,
   timezone: string,
   now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
 ): number {
-  const { start, end } = periodBounds(freq, timezone, now)
+  const { start, end } = periodBounds(freq, timezone, now, weekStart)
   const local = DateTime.fromJSDate(now).setZone(timezone)
   const total = end.diff(start).as('milliseconds')
   if (total <= 0) return 0
@@ -489,14 +495,20 @@ export function periodElapsedFraction(
 
 /**
  * Calendar days left in a quota's period, TODAY COUNTED (Trent's mock:
- * Wednesday with 5 days left in a Monday-start week — Wed, Thu, Fri, Sat, Sun).
+ * Wednesday with 5 days left in a Monday-start week — Wed, Thu, Fri, Sat, Sun;
+ * 4 in the default Sunday-start week — Wed, Thu, Fri, Sat).
  *
  * Measured from the start of TODAY to the period's end, not from `now` itself,
  * so the number does not tick down at the moment `now`'s clock passes; it only
  * changes at midnight, the way a person reading "5 days left" expects.
  */
-export function periodDaysLeft(freq: QuotaFreq, timezone: string, now: Date = new Date()): number {
-  const { end } = periodBounds(freq, timezone, now)
+export function periodDaysLeft(
+  freq: QuotaFreq,
+  timezone: string,
+  now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
+): number {
+  const { end } = periodBounds(freq, timezone, now, weekStart)
   const startOfToday = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   return Math.ceil(end.diff(startOfToday, 'days').days)
 }
@@ -512,9 +524,10 @@ export function periodTimeLeftText(
   freq: QuotaFreq,
   timezone: string,
   now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
 ): string | null {
   if (freq === 'DAILY') return null
-  const days = periodDaysLeft(freq, timezone, now)
+  const days = periodDaysLeft(freq, timezone, now, weekStart)
   return `${days} day${days === 1 ? '' : 's'} left`
 }
 
@@ -560,6 +573,7 @@ export function trackSections(
   quotas: Task[],
   timezone: string,
   now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
 ): TrackSection[] {
   return groupByPeriod(quotas).map(({ period, tasks }) => {
     const freq =
@@ -567,7 +581,7 @@ export function trackSections(
     const summary = quotaGroupSummary(tasks)
     const { done, total } = trackSummary(tasks)
     const barFraction = total === 0 ? 0 : done / total
-    const elapsedFraction = freq ? periodElapsedFraction(freq, timezone, now) : null
+    const elapsedFraction = freq ? periodElapsedFraction(freq, timezone, now, weekStart) : null
     const fillPct = Math.round(barFraction * 100)
     const elapsedPct = elapsedFraction === null ? null : Math.round(elapsedFraction * 100)
     const noun = freq ? QUOTA_PERIODS.find((p) => p.freq === freq)?.noun : null
@@ -575,7 +589,7 @@ export function trackSections(
       key: freq ?? 'NONE',
       freq,
       heading: period ?? 'no period',
-      timeLeft: freq ? periodTimeLeftText(freq, timezone, now) : null,
+      timeLeft: freq ? periodTimeLeftText(freq, timezone, now, weekStart) : null,
       elapsedFraction,
       barFraction,
       barAriaLabel:

@@ -76,6 +76,7 @@ import {
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
 import { effectiveProgress, isTracked, quotaLabelOf, quotaPeriodOf } from '@/lib/track'
+import { coerceWeekStart, type WeekStart } from '@/lib/week-start'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 import { getTasks } from './create'
 
@@ -99,15 +100,22 @@ interface UserPromptSettings {
   enabled: boolean
   defaultSlotId: number | null
   labelConfig: LabelConfig[]
+  /** Where a weekly quota's period ends — an expired week's count reads 0. */
+  weekStart: WeekStart
 }
 
 function readUserSettings(userId: number): UserPromptSettings {
   const row = getDb()
     .prepare(
-      'SELECT quota_prompts_enabled, quota_prompt_slot_id, label_config FROM users WHERE id = ?',
+      'SELECT quota_prompts_enabled, quota_prompt_slot_id, label_config, week_start FROM users WHERE id = ?',
     )
     .get(userId) as
-    | { quota_prompts_enabled: number; quota_prompt_slot_id: number | null; label_config: string }
+    | {
+        quota_prompts_enabled: number
+        quota_prompt_slot_id: number | null
+        label_config: string
+        week_start: string
+      }
     | undefined
   let labelConfig: LabelConfig[] = []
   try {
@@ -119,6 +127,7 @@ function readUserSettings(userId: number): UserPromptSettings {
     enabled: (row?.quota_prompts_enabled ?? 1) !== 0,
     defaultSlotId: row?.quota_prompt_slot_id ?? null,
     labelConfig,
+    weekStart: coerceWeekStart(row?.week_start),
   }
 }
 
@@ -157,7 +166,7 @@ export function getQuotaPromptsBySlot(
   }
 
   for (const task of quotas) {
-    const current = effectiveProgress(task, timezone, now)
+    const current = effectiveProgress(task, timezone, now, settings.weekStart)
     const target = Math.max(1, task.progress_target ?? 1)
     const day = dayStateFor(task.quota_day_state, date)
     const base = {

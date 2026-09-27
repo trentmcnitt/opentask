@@ -19,11 +19,26 @@
  *      for a Track history view later.
  *
  * The anchor is `tasks.progress_period_start`: the UTC instant the current
- * period began, by the user's local calendar — Monday 00:00 for a week (ISO,
- * as everywhere else in the app), the 1st for a month, midnight for a day,
- * Jan 1 for a year. A quota the job has never seen is anchored to the start
- * of the period it is in, and nothing is recorded for it. INTERVAL is
- * honoured by advancing the anchor `interval` units at a time.
+ * period began, by the user's local calendar — 00:00 on the first day of the
+ * user's week for a week (`users.week_start`: Sunday by default, or Monday;
+ * see `@/lib/week-start`), the 1st for a month, midnight for a day, Jan 1 for
+ * a year. A quota the job has never seen is anchored to the start of the
+ * period it is in, and nothing is recorded for it. INTERVAL is honoured by
+ * advancing the anchor `interval` units at a time. A weekly anchor that is
+ * not on the user's week-start boundary (anchored under the old Monday-only
+ * rule, or the preference changed) closes at the NEXT boundary instead — a
+ * short period — and is aligned from then on (`quotaPeriodEnd`).
+ *
+ * Progress logged AFTER a period's end but before that period was closed
+ * stays in the new period: the count carried forward is the sum of the
+ * `progress_events` logged at or after the end (clamped to the count). In
+ * normal running this is always 0 — every write closes an expired period
+ * first (`rolloverQuotaNow`) — but when a boundary moves backwards in time
+ * (the Monday→Sunday switch shipping on a Sunday, or a user flipping the
+ * preference mid-week) taps made after the new boundary must not be swept
+ * into the week that just closed. Caveat: undo restores `progress_current`
+ * without deleting the event row, so an undone +1 is still in the sum; the
+ * clamp keeps that from ever carrying more than was logged.
  *
  * Runs every few minutes (see instrumentation.ts). If the server was down
  * across a boundary it catches up: the first missed period gets the count,
@@ -37,8 +52,15 @@ import { parseRRule } from '@/core/recurrence/rrule-builder'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
+import {
+  coerceWeekStart,
+  quotaPeriodEnd,
+  startOfWeek,
+  type PeriodUnit,
+  type WeekStart,
+} from '@/lib/week-start'
 
-type Unit = 'days' | 'weeks' | 'months' | 'years'
+type Unit = PeriodUnit
 
 interface QuotaRow {
   id: number
@@ -51,6 +73,7 @@ interface QuotaRow {
   completion_count: number
   first_completed_at: string | null
   timezone: string
+  week_start: string | null
 }
 
 export interface RolloverResult {
@@ -81,12 +104,12 @@ function periodOf(rrule: string): { unit: Unit; interval: number } | null {
 }
 
 /** The start of the calendar unit `now` falls in, by the user's clock. */
-function unitStart(now: DateTime, unit: Unit): DateTime {
+function unitStart(now: DateTime, unit: Unit, weekStart: WeekStart): DateTime {
   switch (unit) {
     case 'days':
       return now.startOf('day')
     case 'weeks':
-      return now.startOf('week')
+      return startOfWeek(now, weekStart)
     case 'months':
       return now.startOf('month')
     case 'years':
@@ -95,7 +118,8 @@ function unitStart(now: DateTime, unit: Unit): DateTime {
 }
 
 const QUOTA_ROW_SQL = `SELECT t.id, t.user_id, t.title, t.rrule, t.progress_current, t.progress_target,
-              t.progress_period_start, t.completion_count, t.first_completed_at, u.timezone
+              t.progress_period_start, t.completion_count, t.first_completed_at, u.timezone,
+              u.week_start
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
         WHERE (t.is_tracked = 1 OR t.progress_target > 1)
@@ -104,19 +128,23 @@ const QUOTA_ROW_SQL = `SELECT t.id, t.user_id, t.title, t.rrule, t.progress_curr
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL`
 
-function fetchQuotas(): QuotaRow[] {
-  return getDb().prepare(QUOTA_ROW_SQL).all() as QuotaRow[]
+function fetchQuotas(userId?: number): QuotaRow[] {
+  if (userId === undefined) return getDb().prepare(QUOTA_ROW_SQL).all() as QuotaRow[]
+  return getDb().prepare(`${QUOTA_ROW_SQL} AND t.user_id = ?`).all(userId) as QuotaRow[]
 }
 
 /**
- * Close every period that has ended, for every quota. Idempotent: a second
- * run in the same period does nothing.
+ * Close every period that has ended, for every quota (or one user's, when
+ * `userId` is given — the preferences route runs it the moment a user changes
+ * their first day of the week, so the new boundary shows at once rather than
+ * at the next cron tick). Idempotent: a second run in the same period does
+ * nothing.
  */
-export function rolloverTrackedPeriods(now: Date = new Date()): RolloverResult {
+export function rolloverTrackedPeriods(now: Date = new Date(), userId?: number): RolloverResult {
   const result: RolloverResult = { anchored: 0, rolled: 0 }
   const touchedUsers = new Set<number>()
 
-  for (const q of fetchQuotas()) {
+  for (const q of fetchQuotas(userId)) {
     const outcome = rolloverQuota(q, now)
     if (outcome.anchored) result.anchored++
     if (outcome.closed > 0) {
@@ -167,9 +195,10 @@ function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   if (!period) return none
   const local = DateTime.fromJSDate(now).setZone(q.timezone)
   if (!local.isValid) return none
+  const weekStart = coerceWeekStart(q.week_start)
 
   if (!q.progress_period_start) {
-    const start = unitStart(local, period.unit).toUTC().toISO()
+    const start = unitStart(local, period.unit, weekStart).toUTC().toISO()
     getDb().prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?').run(start, q.id)
     return { anchored: true, closed: 0 }
   }
@@ -181,8 +210,13 @@ function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   let firstCompletedAt = q.first_completed_at
   let closed = 0
 
-  while (local >= start.plus({ [period.unit]: period.interval })) {
-    const end = start.plus({ [period.unit]: period.interval })
+  const endOf = (from: DateTime) => quotaPeriodEnd(from, period.unit, period.interval, weekStart)
+
+  while (local >= endOf(start)) {
+    const end = endOf(start)
+    // Taps logged at/after this period's end belong to the next one (module doc).
+    const carried = Math.min(logged, loggedSince(q.id, end))
+    logged -= carried
     const met = logged >= q.progress_target
     const periodStart = start.toUTC().toISO() as string
     const periodEnd = end.toUTC().toISO() as string
@@ -215,19 +249,19 @@ function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
       }
       tx.prepare(
         `UPDATE tasks
-              SET progress_current = 0, progress_period_start = ?,
+              SET progress_current = ?, progress_period_start = ?,
                   completion_count = ?, first_completed_at = ?,
                   last_completed_at = CASE WHEN ? THEN ? ELSE last_completed_at END,
                   updated_at = ?
             WHERE id = ?`,
-      ).run(periodEnd, nextCount, nextFirst, met ? 1 : 0, periodEnd, nowStr, q.id)
+      ).run(carried, periodEnd, nextCount, nextFirst, met ? 1 : 0, periodEnd, nowStr, q.id)
       logActivity({
         userId: q.user_id,
         taskId: q.id,
         action: 'period_rollover',
         fields: ['progress_current', 'progress_period_start'],
         before: { id: q.id, title: q.title, progress_current: snapshotLogged },
-        after: { id: q.id, title: q.title, progress_current: 0 },
+        after: { id: q.id, title: q.title, progress_current: carried },
         metadata: {
           period_start: periodStart,
           period_end: periodEnd,
@@ -235,14 +269,31 @@ function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
           target: q.progress_target,
           met,
           unit: period.unit,
+          carried_forward: carried,
         },
       })
     })
     closed++
-    logged = 0
+    logged = carried
     start = end
   }
 
   if (closed > 0) log.info('cron', `Track: closed ${closed} period(s) for "${q.title}" (#${q.id})`)
   return { anchored: false, closed }
+}
+
+/**
+ * Net progress logged for a quota at or after `since` — what a closing period
+ * hands forward. `julianday()` on both sides: `logged_at` is written both as
+ * `…:SSZ` (column default) and `…:SS.sssZ` (`toISOString`), and a plain string
+ * compare between the two formats is wrong at the exact boundary second.
+ */
+function loggedSince(taskId: number, since: DateTime): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(SUM(delta), 0) AS n FROM progress_events
+        WHERE task_id = ? AND julianday(logged_at) >= julianday(?)`,
+    )
+    .get(taskId, since.toUTC().toISO()) as { n: number }
+  return Math.max(0, row.n)
 }

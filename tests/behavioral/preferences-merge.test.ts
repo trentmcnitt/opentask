@@ -110,6 +110,7 @@ describe('parseServerPrefs', () => {
       auto_snooze_minutes: 0, // zero means absent
       priority_display: { badgeStyle: 'dots' },
       bulk_snooze_default: 'default_option',
+      week_start: 'monday',
     })
     expect(parsed.defaultGrouping).toBe('slot')
     expect(parsed.aiMode).toBe('on')
@@ -117,6 +118,10 @@ describe('parseServerPrefs', () => {
     expect('autoSnoozeDefault' in parsed).toBe(false)
     expect(parsed.priorityDisplay).toEqual({ ...DEFAULT_PREFS.priorityDisplay, badgeStyle: 'dots' })
     expect(parsed.bulkSnoozeDefault).toBe('default_option')
+    expect(parsed.weekStart).toBe('monday')
+    // An unknown week start is ignored, leaving the Sunday default.
+    expect('weekStart' in parseServerPrefs({ week_start: 'tuesday' })).toBe(false)
+    expect(DEFAULT_PREFS.weekStart).toBe('sunday')
   })
 
   test('the Recent view is a stored grouping, not coerced away', () => {
