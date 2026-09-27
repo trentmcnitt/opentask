@@ -48,7 +48,11 @@ export function RemindersCountBadges({ timezone }: { timezone: string }) {
               tooltip={
                 popoverOpen ? undefined : `${consideredTotal} of ${dayTotal} considered today`
               }
-              className="inline-flex items-center justify-center select-none"
+              // Shown only when the badge slot has room for "NN/NN" — the same
+              // container-query rule the dashboard's TaskCountBadges use — so at
+              // large text sizes on a phone it steps aside instead of running
+              // under the search icon (Trent, 2026-09-26).
+              className="hidden items-center justify-center select-none md:inline-flex @[3.75rem]/badges:inline-flex"
             />
           )}
         </div>

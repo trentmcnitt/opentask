@@ -209,13 +209,18 @@ export function QuotaPromptRow({
       />
       <p
         className={cn(
-          'min-w-0 flex-1 text-pretty',
+          // No text-pretty: it avoids a short last line by pulling the title's
+          // last word down beside the (unbreakable) count, which read as
+          // "Clean bedroom / fans · 0/1 this month" (Trent, 2026-09-26).
+          'min-w-0 flex-1',
           panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
           completing && 'text-muted-foreground line-through',
         )}
       >
-        {prompt.title}
-        <span className="text-muted-foreground ml-1.5 text-[0.85em] whitespace-nowrap tabular-nums">
+        {prompt.title}{' '}
+        {/* The space above is the break point: the count wraps as a unit on
+            its own, never dragging the title's last word with it. */}
+        <span className="text-muted-foreground ml-1 text-[0.85em] whitespace-nowrap tabular-nums">
           &middot; {countText(prompt)}
         </span>
         {/* The quota's notes, marked exactly as a reminder row marks its own
