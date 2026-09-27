@@ -30,6 +30,7 @@ import {
   useAutoSnoozeDefault,
   useSnoozePreferences,
   useSchedulePreferences,
+  useWeekStart,
   useNotificationConfig,
   useAiContext,
   useAiPreferences,
@@ -37,6 +38,7 @@ import {
   useAiFeatureInfo,
 } from '@/components/PreferencesProvider'
 import type { BulkSnoozeDefault, FeatureMode, FeatureInfo } from '@/components/PreferencesProvider'
+import type { WeekStart } from '@/lib/week-start'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
@@ -77,6 +79,7 @@ export default function SettingsPage() {
     setMorningTime,
   } = useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
+  const { weekStart, setWeekStart } = useWeekStart()
   const {
     notificationsEnabled,
     setNotificationsEnabled,
@@ -334,6 +337,26 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setWakeTime(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  // The server closes any weekly quota period the new boundary ends before it
+  // answers (see the preferences route), so a refresh after this shows the
+  // new week; open dashboards pick it up from the sync event it emits.
+  const handleWeekStartChange = async (value: WeekStart) => {
+    const prev = weekStart
+    setWeekStart(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week_start: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setWeekStart(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -1103,6 +1126,26 @@ export default function SettingsPage() {
                 }}
                 className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               />
+            </div>
+            {/* Trent, 2026-09-27: Sunday, so Saturday is the last day to do a
+                week's quotas. Moves every weekly quota's boundary. */}
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Week starts on</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  When weekly quotas reset
+                </div>
+              </div>
+              <select
+                aria-label="Week starts on"
+                data-week-start-select
+                value={weekStart}
+                onChange={(e) => void handleWeekStartChange(e.target.value as WeekStart)}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="sunday">Sunday</option>
+                <option value="monday">Monday</option>
+              </select>
             </div>
           </div>
         </section>

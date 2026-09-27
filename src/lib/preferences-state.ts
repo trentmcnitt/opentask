@@ -27,6 +27,7 @@ import type { SortOption } from '@/hooks/useGroupSort'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo, AIFeature } from '@/core/ai/models'
+import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
 
 export type FeatureInfoMap = Record<AIFeature, FeatureInfo>
 
@@ -57,6 +58,8 @@ export interface Prefs {
   autoSnoozeMedium: number
   defaultSnoozeOption: string
   bulkSnoozeDefault: BulkSnoozeDefault
+  /** First day of the week — where a weekly quota's period starts. */
+  weekStart: WeekStart
   morningTime: string
   wakeTime: string
   sleepTime: string
@@ -97,6 +100,7 @@ export const DEFAULT_PREFS: Prefs = {
   autoSnoozeMedium: 60,
   defaultSnoozeOption: '60',
   bulkSnoozeDefault: 'next_period',
+  weekStart: WEEK_START_DEFAULT,
   morningTime: '09:00',
   wakeTime: '07:00',
   sleepTime: '22:00',
@@ -183,6 +187,9 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'defaultSnoozeOption', data.default_snooze_option, truthy)
   if (data.bulk_snooze_default === 'default_option' || data.bulk_snooze_default === 'next_period') {
     out.bulkSnoozeDefault = data.bulk_snooze_default
+  }
+  if (data.week_start === 'sunday' || data.week_start === 'monday') {
+    out.weekStart = data.week_start
   }
   take(out, 'morningTime', data.morning_time, truthy)
   take(out, 'wakeTime', data.wake_time, truthy)

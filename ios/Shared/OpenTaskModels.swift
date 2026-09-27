@@ -39,7 +39,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// anything that isn't a quota (and for a quota the server's rollover job
     /// has not anchored yet).
     ///
-    /// The anchor is the user's local calendar boundary — Monday 00:00 for a
+    /// The anchor is the user's local calendar boundary — 00:00 on the user's
+    /// first day of the week (`week_start`: Sunday by default, or Monday) for a
     /// week, the 1st for a month, midnight for a day — advanced one period at a
     /// time as each period closes (`src/core/tasks/period-rollover.ts`). It is
     /// the only thing that says where a quota is in its period: §5 quotas carry

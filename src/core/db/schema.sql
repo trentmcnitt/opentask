@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS users (
   auto_snooze_medium_minutes INTEGER NOT NULL DEFAULT 60,
   default_snooze_option TEXT NOT NULL DEFAULT '60',
   bulk_snooze_default TEXT NOT NULL DEFAULT 'next_period',
+  -- First day of the user's week: 'sunday' (default) or 'monday'. Sets where a
+  -- weekly quota's period begins and ends (src/lib/week-start.ts).
+  week_start TEXT NOT NULL DEFAULT 'sunday',
   morning_time  TEXT NOT NULL DEFAULT '09:00',
   wake_time     TEXT NOT NULL DEFAULT '07:00',
   sleep_time    TEXT NOT NULL DEFAULT '22:00',

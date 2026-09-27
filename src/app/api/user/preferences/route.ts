@@ -16,6 +16,8 @@ import type { FeatureMode } from '@/core/ai/user-context'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+import { coerceWeekStart, WEEK_STARTS, type WeekStart } from '@/lib/week-start'
+import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 // §7.3 adds 'slot' — today grouped by time slot, the new front door.
@@ -479,6 +481,13 @@ function validateQuotaPromptFields(
     updates.push('quota_prompts_enabled = ?')
     params.push(body.quota_prompts_enabled ? 1 : 0)
   }
+  // Where weekly quota periods start and end (src/lib/week-start.ts).
+  if (body.week_start !== undefined) {
+    if (!WEEK_STARTS.includes(body.week_start as WeekStart))
+      return `week_start must be one of: ${WEEK_STARTS.join(', ')}`
+    updates.push('week_start = ?')
+    params.push(body.week_start)
+  }
   return null
 }
 
@@ -504,7 +513,7 @@ function validatePatchFields(
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, track_expanded, quotas_details, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, bulk_snooze_default, quota_prompt_slot_id, quota_prompts_enabled, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
+  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, track_expanded, quotas_details, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, bulk_snooze_default, week_start, quota_prompt_slot_id, quota_prompts_enabled, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -522,6 +531,7 @@ interface PreferencesRow {
   auto_snooze_medium_minutes: number
   default_snooze_option: string
   bulk_snooze_default: 'next_period' | 'default_option'
+  week_start: string
   quota_prompt_slot_id: number | null
   quota_prompts_enabled: number
   morning_time: string
@@ -564,6 +574,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   auto_snooze_medium_minutes: 60,
   default_snooze_option: '60',
   bulk_snooze_default: 'next_period',
+  week_start: 'sunday',
   quota_prompt_slot_id: null,
   quota_prompts_enabled: 1,
   morning_time: '09:00',
@@ -606,6 +617,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     auto_snooze_high_minutes: row.auto_snooze_high_minutes,
     default_snooze_option: row.default_snooze_option,
     bulk_snooze_default: row.bulk_snooze_default,
+    week_start: coerceWeekStart(row.week_start),
     quota_prompt_slot_id: row.quota_prompt_slot_id,
     quota_prompts_enabled: row.quota_prompts_enabled !== 0,
     morning_time: row.morning_time,
@@ -672,6 +684,12 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest) {
     const { updates, params } = result
     params.push(user.id)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+    // A new first day of the week moves every weekly quota's boundary. Close
+    // what that ends now (it may be in the past — flipping to Monday on a
+    // Wednesday ends a Sunday-anchored week at Monday), so the Quotas panel
+    // shows the new week at once instead of after the next cron tick.
+    if (body.week_start !== undefined) rolloverTrackedPeriods(new Date(), user.id)
 
     const row = db.prepare(PREFERENCES_SELECT).get(user.id) as PreferencesRow
     return success(formatPreferencesResponse(row))

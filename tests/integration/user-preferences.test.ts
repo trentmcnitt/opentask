@@ -8,6 +8,7 @@
  */
 
 import { describe, test, expect, beforeAll } from 'vitest'
+import { DateTime } from 'luxon'
 import { apiFetch, resetTestData } from './helpers'
 
 beforeAll(async () => {
@@ -414,6 +415,8 @@ describe('round trip: every remaining preference', () => {
       next: 'default_option',
       invalid: 'later',
     },
+    // First day of the week: Sunday unless the user picks Monday.
+    { field: 'week_start', initial: 'sunday', next: 'monday', invalid: 'tuesday' },
     { field: 'morning_time', initial: '09:00', next: '07:45', invalid: '24:00' },
     { field: 'default_snooze_option', initial: '60', next: 'tomorrow', invalid: '0' },
     { field: 'quota_prompts_enabled', initial: true, next: false, invalid: 'off' },
@@ -505,5 +508,44 @@ describe('round trip: every remaining preference', () => {
       method: 'PATCH',
       body: { track_expanded: false, filters_expanded: false },
     })
+  })
+})
+
+/**
+ * Changing `week_start` runs the period rollover for the user before the PATCH
+ * answers, so a weekly quota the rollover has never seen is anchored at once,
+ * on the new first day of the week. (What a CHANGE does to an existing anchor
+ * depends on today's weekday; tests/behavioral/tr-week-start.test.ts covers
+ * that with a frozen clock.)
+ */
+describe('week_start anchors weekly quotas on the chosen day', () => {
+  test('PATCH week_start: monday anchors a new weekly quota to Monday 00:00 local', async () => {
+    const created = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Week-start probe', progress_target: 2, rrule: 'FREQ=WEEKLY' },
+    })
+    expect(created.status).toBe(201)
+    const { id } = (await created.json()).data as { id: number }
+
+    const patched = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { week_start: 'monday' },
+    })
+    expect(patched.status).toBe(200)
+
+    const task = (await (await apiFetch(`/api/tasks/${id}`)).json()).data as {
+      progress_period_start: string | null
+    }
+    expect(task.progress_period_start).not.toBeNull()
+    const local = DateTime.fromISO(task.progress_period_start!).setZone('America/Chicago')
+    // A Monday — unless the rollover cron happened to anchor it (to Sunday)
+    // between the POST and the PATCH on a Sunday, when the Monday boundary is
+    // still ahead and the Sunday anchor legitimately stands until then.
+    const today = DateTime.now().setZone('America/Chicago')
+    const sundayRace = today.weekday === 7 && local.equals(today.startOf('day'))
+    if (!sundayRace) expect(local.toFormat('ccc HH:mm')).toBe('Mon 00:00')
+
+    await apiFetch('/api/user/preferences', { method: 'PATCH', body: { week_start: 'sunday' } })
+    await apiFetch(`/api/tasks/${id}`, { method: 'DELETE' })
   })
 })

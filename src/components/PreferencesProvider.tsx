@@ -8,6 +8,7 @@ import type { SortOption } from '@/hooks/useGroupSort'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo } from '@/core/ai/models'
+import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
 import {
   DEFAULT_PREFS,
   DEFAULT_PRIORITY_DISPLAY,
@@ -44,6 +45,9 @@ interface PreferencesContextValue {
   /** What a plain press of the bulk-snooze clock does — see `BulkSnoozeDefault`. */
   bulkSnoozeDefault: BulkSnoozeDefault
   setBulkSnoozeDefault: (value: BulkSnoozeDefault) => void
+  /** First day of the week (Settings) — the Quotas panel's week boundary. */
+  weekStart: WeekStart
+  setWeekStart: (value: WeekStart) => void
   morningTime: string
   setMorningTime: (time: string) => void
   wakeTime: string
@@ -126,6 +130,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setDefaultSnoozeOption: () => {},
   bulkSnoozeDefault: 'next_period',
   setBulkSnoozeDefault: () => {},
+  weekStart: WEEK_START_DEFAULT,
+  setWeekStart: () => {},
   morningTime: '09:00',
   setMorningTime: () => {},
   wakeTime: '07:00',
@@ -265,6 +271,7 @@ function makeFieldSetters(set: FieldSet) {
     setAutoSnoozeMedium: field('autoSnoozeMedium'),
     setDefaultSnoozeOption: field('defaultSnoozeOption'),
     setBulkSnoozeDefault: field('bulkSnoozeDefault'),
+    setWeekStart: field('weekStart'),
     setMorningTime: field('morningTime'),
     setWakeTime: field('wakeTime'),
     setSleepTime: field('sleepTime'),
@@ -473,6 +480,16 @@ export function useSnoozePreferences() {
     morningTime,
     setMorningTime,
   }
+}
+
+/**
+ * The user's first day of the week and its setter. The setter only changes
+ * local state — Settings PATCHes `week_start` itself (the server then closes
+ * any week the new boundary ends; see the preferences route).
+ */
+export function useWeekStart() {
+  const { weekStart, setWeekStart } = useContext(PreferencesContext)
+  return { weekStart, setWeekStart }
 }
 
 export function useSchedulePreferences() {

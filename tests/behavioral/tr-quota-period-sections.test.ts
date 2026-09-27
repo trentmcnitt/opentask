@@ -42,17 +42,29 @@ describe('periodElapsedFraction', () => {
     expect(late).toBeLessThan(1)
   })
 
-  test('a week: 0 at Monday local midnight, close to 1 just before the next Monday', () => {
-    // Luxon's week starts Monday. 2026-09-21 is a Monday.
-    expect(periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-21T05:00:00.000Z'))).toBe(0)
-    // Sunday 23:59:59.999 local (2026-09-27), the week's last instant.
-    const sundayNight = periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-28T04:59:59.999Z'))
-    expect(sundayNight).toBeGreaterThan(0.999)
-    expect(sundayNight).toBeLessThan(1)
+  test('a week (default Sunday start): 0 at Sunday local midnight, close to 1 just before the next', () => {
+    // 2026-09-20 is a Sunday.
+    expect(periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-20T05:00:00.000Z'))).toBe(0)
+    // Saturday 23:59:59.999 local (2026-09-26), the week's last instant.
+    const saturdayNight = periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-27T04:59:59.999Z'))
+    expect(saturdayNight).toBeGreaterThan(0.999)
+    expect(saturdayNight).toBeLessThan(1)
     // Midweek (Wed 2026-09-23, noon local) sits partway through, in order.
     const wed = periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))
     expect(wed).toBeGreaterThan(0)
-    expect(wed).toBeLessThan(sundayNight)
+    expect(wed).toBeLessThan(saturdayNight)
+    // Sunday 00:00 starts the next week at 0.
+    expect(periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-27T05:00:00.000Z'))).toBe(0)
+  })
+
+  test('a week with a Monday start: 0 at Monday local midnight, close to 1 just before the next Monday', () => {
+    // 2026-09-21 is a Monday.
+    const at = (iso: string) => periodElapsedFraction('WEEKLY', TZ, new Date(iso), 'monday')
+    expect(at('2026-09-21T05:00:00.000Z')).toBe(0)
+    // Sunday 23:59:59.999 local (2026-09-27), the week's last instant.
+    const sundayNight = at('2026-09-28T04:59:59.999Z')
+    expect(sundayNight).toBeGreaterThan(0.999)
+    expect(sundayNight).toBeLessThan(1)
   })
 
   test('a month: 0 on the 1st, close to 1 on the last night, resets cleanly across the boundary', () => {
@@ -90,9 +102,18 @@ describe('periodElapsedFraction', () => {
 })
 
 describe('periodDaysLeft', () => {
-  test('a week: Wednesday has 5 days left (Wed, Thu, Fri, Sat, Sun), today counted', () => {
+  test('a week: Wednesday has 4 days left (Wed, Thu, Fri, Sat), today counted', () => {
     // 2026-09-23 is a Wednesday.
-    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBe(5)
+    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBe(4)
+  })
+
+  test('a week: Saturday is the last day (1 left); Sunday starts a fresh 7', () => {
+    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-26T17:00:00.000Z'))).toBe(1)
+    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-27T17:00:00.000Z'))).toBe(7)
+  })
+
+  test('a Monday-start week: Wednesday has 5 days left (Wed, Thu, Fri, Sat, Sun)', () => {
+    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'), 'monday')).toBe(5)
   })
 
   test('a month: the 23rd of a 30-day September has 8 days left', () => {
@@ -119,6 +140,9 @@ describe('periodTimeLeftText', () => {
 
   test('a week or month reads "N days left", pluralised', () => {
     expect(periodTimeLeftText('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBe(
+      '4 days left',
+    )
+    expect(periodTimeLeftText('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'), 'monday')).toBe(
       '5 days left',
     )
     expect(periodTimeLeftText('MONTHLY', TZ, new Date('2026-09-30T15:00:00.000Z'))).toBe(

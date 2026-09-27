@@ -39,7 +39,11 @@ import { usePromptSetup } from '@/components/QuotaPromptField'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
-import { useLabelConfig, useTrackPanelPreference } from '@/components/PreferencesProvider'
+import {
+  useLabelConfig,
+  useTrackPanelPreference,
+  useWeekStart,
+} from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
@@ -417,13 +421,14 @@ export function TrackPanel({
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
+  const { weekStart } = useWeekStart()
   const now = useTrackNow()
   const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh })
   const section = useResponsiveFold('track-section')
   const clusters = useResponsiveFolds('track-cluster')
   const quotas = trackedItems(tasks)
 
-  const sections = trackSections(quotas, timezone, now)
+  const sections = trackSections(quotas, timezone, now, weekStart)
   // What each cluster's shut header says. Keyed the same way the DOM is (one
   // key per period+label), so a heading and its summary can never be looking
   // at different groups.

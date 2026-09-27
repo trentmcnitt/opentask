@@ -273,6 +273,13 @@ function runMigrations(database: Database.Database): void {
       "ALTER TABLE users ADD COLUMN bulk_snooze_default TEXT NOT NULL DEFAULT 'next_period'",
     )
   }
+  // First day of the user's week (Trent, 2026-09-27: Sunday, so Saturday is
+  // the last day for the week's quotas). Existing users get 'sunday' too; their
+  // Monday-anchored weekly quotas close at the next Sunday boundary on the next
+  // rollover pass — see `quotaPeriodEnd` in src/lib/week-start.ts.
+  if (!hasColumn(database, 'users', 'week_start')) {
+    database.exec("ALTER TABLE users ADD COLUMN week_start TEXT NOT NULL DEFAULT 'sunday'")
+  }
   // Short label for the quota widget chip (§5, Trent 2026-09-23): quota
   // titles are often long sentences, and the widget needs something that
   // fits on a small tappable chip.

@@ -206,8 +206,9 @@ enum TrackTimeline {
     ///
     /// The window is `[progress_period_start, that + one period]`. The anchor is
     /// the server's (`src/core/tasks/period-rollover.ts`): the UTC instant the
-    /// current period began by the user's local calendar — Monday 00:00 for a
-    /// week, the 1st for a month, midnight for a day — moved forward one period
+    /// current period began by the user's local calendar — 00:00 on the user's
+    /// first day of the week (Sunday by default, or Monday) for a week, the 1st
+    /// for a month, midnight for a day — moved forward one period
     /// at a time by the rollover job, which is the same moment it zeroes
     /// `progress_current`. So the tick and the count always describe the same
     /// period.
@@ -390,38 +391,64 @@ enum QuotaPeriodKey: String {
         return .none
     }
 
-    /// A fresh, explicitly-Monday-first calendar — never `Calendar.current`,
-    /// whose `firstWeekday` follows the device locale and would silently
-    /// disagree with `periodBounds`' week math on a locale that starts its
-    /// week on Sunday. Matches Luxon's ISO week (`src/lib/track.ts`'s
-    /// `periodBounds`, which the web panel's section math is built on), and
-    /// `.current` for the time zone — the widget has no user-timezone field
-    /// to read (see the handoff this file was built from for that gap, also
-    /// accepted by `TrackTimeline.elapsedFraction` above already).
-    private static var calendar: Calendar = {
+    /// `Calendar` weekday numbers (1 = Sunday, 2 = Monday) for the two week
+    /// starts the server allows (`users.week_start`, `src/lib/week-start.ts`).
+    static let sundayFirst = 1
+    static let mondayFirst = 2
+
+    /// The user's first day of the week, read off the weekly quotas' own
+    /// anchors. The widget never fetches preferences, but it does not need to:
+    /// the server anchors every weekly quota at 00:00 on the user's first day
+    /// of the week (`period-rollover.ts`), so the weekday of any
+    /// `progress_period_start` IS the preference. Sunday — the server's
+    /// default — when there is no anchor to read, or one on another weekday
+    /// (only possible in the minutes between a preference change and the
+    /// rollover that realigns it).
+    static func firstWeekday(from tasks: [TaskDTO]) -> Int {
         var cal = Calendar(identifier: .gregorian)
-        cal.firstWeekday = 2
+        cal.timeZone = .current
+        for task in tasks where from(rrule: task.rrule) == .weekly {
+            guard let start = task.periodStartDate else { continue }
+            let weekday = cal.component(.weekday, from: start)
+            if weekday == sundayFirst || weekday == mondayFirst { return weekday }
+        }
+        return sundayFirst
+    }
+
+    /// A fresh calendar with an explicit first weekday — never
+    /// `Calendar.current`, whose `firstWeekday` follows the device locale
+    /// rather than the user's OpenTask setting. `firstWeekday` comes from
+    /// `firstWeekday(from:)`; `.current` for the time zone — the widget has no
+    /// user-timezone field to read (see the handoff this file was built from
+    /// for that gap, also accepted by `TrackTimeline.elapsedFraction` above
+    /// already).
+    static func calendar(firstWeekday: Int) -> Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = firstWeekday
         cal.timeZone = .current
         return cal
-    }()
+    }
 
     /// `[start, end)` of this period containing `now`, in calendar units — a
     /// real calendar interval (DST-safe, exact month/year lengths), never a
-    /// flat multiple of 86,400. Nil for `.none`, which has no clock.
-    func bounds(now: Date) -> (start: Date, end: Date)? {
+    /// flat multiple of 86,400. Nil for `.none`, which has no clock. The week
+    /// starts on `firstWeekday` (Sunday unless told otherwise — the server's
+    /// default), mirroring `periodBounds`' `startOfWeek` in `src/lib/track.ts`.
+    func bounds(now: Date, firstWeekday: Int = QuotaPeriodKey.sundayFirst) -> (start: Date, end: Date)? {
+        let calendar = Self.calendar(firstWeekday: firstWeekday)
         switch self {
         case .daily:
-            let start = Self.calendar.startOfDay(for: now)
-            guard let end = Self.calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
+            let start = calendar.startOfDay(for: now)
+            guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
             return (start, end)
         case .weekly:
-            guard let interval = Self.calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
+            guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
             return (interval.start, interval.end)
         case .monthly:
-            guard let interval = Self.calendar.dateInterval(of: .month, for: now) else { return nil }
+            guard let interval = calendar.dateInterval(of: .month, for: now) else { return nil }
             return (interval.start, interval.end)
         case .yearly:
-            guard let interval = Self.calendar.dateInterval(of: .year, for: now) else { return nil }
+            guard let interval = calendar.dateInterval(of: .year, for: now) else { return nil }
             return (interval.start, interval.end)
         case .none:
             return nil
@@ -430,8 +457,8 @@ enum QuotaPeriodKey: String {
 
     /// How much of this period has already run, 0...1 — a ratio of two REAL
     /// durations (DST-safe), mirroring `periodElapsedFraction` exactly.
-    func elapsedFraction(now: Date) -> Double? {
-        guard let (start, end) = bounds(now: now) else { return nil }
+    func elapsedFraction(now: Date, firstWeekday: Int = QuotaPeriodKey.sundayFirst) -> Double? {
+        guard let (start, end) = bounds(now: now, firstWeekday: firstWeekday) else { return nil }
         let total = end.timeIntervalSince(start)
         guard total > 0 else { return nil }
         return min(max(now.timeIntervalSince(start) / total, 0), 1)
@@ -446,13 +473,14 @@ enum QuotaPeriodKey: String {
     /// count is already exact — no rounding needed), so the number only
     /// changes at midnight rather than ticking down the instant `now`'s
     /// clock passes.
-    func timeLeftText(now: Date) -> String? {
+    func timeLeftText(now: Date, firstWeekday: Int = QuotaPeriodKey.sundayFirst) -> String? {
         switch self {
         case .daily, .none: return nil
         case .weekly, .monthly, .yearly:
-            guard let (_, end) = bounds(now: now) else { return nil }
-            let startOfToday = Self.calendar.startOfDay(for: now)
-            let days = Self.calendar.dateComponents([.day], from: startOfToday, to: end).day ?? 0
+            guard let (_, end) = bounds(now: now, firstWeekday: firstWeekday) else { return nil }
+            let calendar = Self.calendar(firstWeekday: firstWeekday)
+            let startOfToday = calendar.startOfDay(for: now)
+            let days = calendar.dateComponents([.day], from: startOfToday, to: end).day ?? 0
             return "\(days) day\(days == 1 ? "" : "s") left"
         }
     }
@@ -570,11 +598,12 @@ enum QuotaSectionBuilder {
         let metCount = tasks.filter(\.isProgressMet).count
         let capped = tasks.reduce(0.0) { $0 + Double(min($1.progressCurrent, $1.progressTarget)) }
         let targetSum = tasks.reduce(0.0) { $0 + Double($1.progressTarget) }
+        let firstWeekday = QuotaPeriodKey.firstWeekday(from: tasks)
         return QuotaSection(
             id: key.rawValue,
             heading: key.heading,
-            timeLeftText: key.timeLeftText(now: now),
-            elapsedFraction: key.elapsedFraction(now: now),
+            timeLeftText: key.timeLeftText(now: now, firstWeekday: firstWeekday),
+            elapsedFraction: key.elapsedFraction(now: now, firstWeekday: firstWeekday),
             barFraction: targetSum > 0 ? capped / targetSum : 0,
             allMet: !tasks.isEmpty && metCount == tasks.count,
             summary: (met: metCount, count: tasks.count),
