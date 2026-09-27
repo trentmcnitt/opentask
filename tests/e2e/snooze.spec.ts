@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, holdUntil } from './fixtures'
 
 test.describe('Snooze', () => {
   test('quick tap on overdue task triggers immediate snooze', async ({
@@ -37,43 +37,42 @@ test.describe('Snooze', () => {
     const taskText = page.getByText('Review PRs')
     await taskText.hover()
 
-    // Get snooze button bounding box for long-press simulation
     const snoozeBtn = page.getByRole('button', { name: /snooze "Review PRs"/i })
     await expect(snoozeBtn).toBeVisible({ timeout: 3000 })
-    const box = await snoozeBtn.boundingBox()
-    if (!box) throw new Error('Snooze button bounding box not found')
 
-    // Long-press: mouse down, wait 500ms (threshold is 400ms), mouse up
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    await page.mouse.down()
-    await page.waitForTimeout(500)
-    await page.mouse.up()
-
-    // Snooze menu (role="menu") should appear
+    // Long-press: hold until the menu opens, not for a hand-timed interval
+    // (the 400ms threshold under CI load made a timed hold read as a tap).
     const menu = page.getByRole('menu', { name: 'Snooze options' })
-    await expect(menu).toBeVisible({ timeout: 3000 })
+    await holdUntil(snoozeBtn, () => expect(menu).toBeVisible({ timeout: 3000 }))
 
     // Verify menu items
     await expect(menu.getByRole('menuitem', { name: '1 hour' })).toBeVisible()
     await expect(menu.getByRole('menuitem', { name: '2 hours' })).toBeVisible()
     // The user's time slots are targets too (Trent, 2026-09-22), each labelled
     // with where it lands: "Midday · 12:00 PM", or "… · tomorrow …" once begun.
-    await expect(
-      menu.getByRole('menuitem', { name: /^Midday · (tomorrow )?12:00 PM$/ }),
-    ).toBeVisible()
-    await expect(
-      menu.getByRole('menuitem', { name: /^Evening · (tomorrow )?8:30 PM$/ }),
-    ).toBeVisible()
+    // Whichever slot starts next leads the menu as "Next period · Midday 12:00 PM"
+    // (#106), so each slot may appear in either form depending on the hour.
+    const slotItem = (name: string, time: string) =>
+      menu.getByRole('menuitem', {
+        name: new RegExp(
+          `^(Next period · ${name} (tomorrow )?${time}|${name} · (tomorrow )?${time})$`,
+        ),
+      })
+    await expect(slotItem('Midday', '12:00 PM')).toBeVisible()
+    await expect(slotItem('Evening', '8:30 PM')).toBeVisible()
     // Tomorrow morning is always offered: as "Tomorrow at 9:00 AM", or as the
     // time slot that already lands there.
     await expect(menu.getByRole('menuitem', { name: /tomorrow( at)? 9:00 AM$/i })).toBeVisible()
 
-    // Dismiss the menu by dispatching keydown Escape directly on document.
-    // The component registers its keydown listener in setTimeout(0), so wait first.
-    await page.waitForTimeout(200)
-    await page.evaluate(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
+    // Dismiss with Escape. The menu registers its keydown listener in a
+    // setTimeout(0) after opening, so an Escape can arrive first; toPass
+    // re-sends until the listener is there, rather than a guessed sleep.
+    await expect(async () => {
+      await page.evaluate(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      })
+      await expect(menu).not.toBeVisible({ timeout: 500 })
+    }).toPass({ timeout: 5000 })
     await expect(menu).not.toBeVisible({ timeout: 5000 })
   })
 })

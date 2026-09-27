@@ -237,3 +237,56 @@ export async function gotoQuotasDetails(page: Page, path = '/quotas'): Promise<v
   }
   await page.locator('[data-quotas-view]').waitFor()
 }
+
+/**
+ * Run `run` with these server preferences set, and put the old values back
+ * afterwards — pass or fail.
+ *
+ * Every spec shares one test user, so a preference a test depends on (the
+ * dashboard's `default_grouping`, the quota-reminders switch) is only what the
+ * test needs if the test sets it; and whatever it sets must not leak into the
+ * next spec. Set it BEFORE loading the page the test drives, then load with
+ * `waitForPrefsLoaded` so the page has applied it before the first click.
+ */
+export async function withPreferences(
+  page: Page,
+  prefs: Record<string, unknown>,
+  run: () => Promise<void>,
+): Promise<void> {
+  const current = (await (await page.request.get('/api/user/preferences')).json()).data as Record<
+    string,
+    unknown
+  >
+  const before = Object.fromEntries(Object.keys(prefs).map((k) => [k, current[k] ?? null]))
+  const written = await page.request.patch('/api/user/preferences', { data: prefs })
+  if (!written.ok()) throw new Error(`PATCH preferences: ${written.status()}`)
+  try {
+    await run()
+  } finally {
+    await page.request.patch('/api/user/preferences', { data: before })
+  }
+}
+
+/**
+ * Cmd/Ctrl-click a dashboard task row, on the row itself: its bottom-left
+ * padding, scrolled toward the middle of the viewport.
+ *
+ * Where on the row matters:
+ * - Not its centre. Once anything is selected, the floating selection bar
+ *   sits fixed, centred, over the bottom of the page. The LAST row of a list
+ *   cannot scroll higher than the page's bottom padding allows, and there the
+ *   bar covers the row's centre — where a plain `row.click()` aims — so the
+ *   click hit the bar and Playwright waited out the whole test timeout for
+ *   the row to be uncovered (selection-fab.spec.ts, 2026-09-27).
+ * - Not the title. Outside selection mode it is a link to the task page, and
+ *   the link keeps the click from the row — Cmd-click there never selects.
+ * - Not the far left edge: outside selection mode that is the Done circle.
+ * The row's own padding, just past the circle and below the text, is none of
+ * these on any row.
+ */
+export async function cmdClickRow(row: Locator): Promise<void> {
+  await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  const box = await row.boundingBox()
+  if (!box) throw new Error('cmdClickRow: the row is not on screen')
+  await row.click({ modifiers: ['ControlOrMeta'], position: { x: 56, y: box.height - 6 } })
+}
