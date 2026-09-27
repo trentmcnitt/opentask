@@ -592,11 +592,134 @@ export interface BulkEditOptions {
   changes: BulkEditChanges
   /** Per-task values merged over `changes` (see `bulkEditSchema.per_task`). */
   perTask?: Record<string, Partial<BulkEditChanges>>
+  /**
+   * Task ids the High/Urgent sweep filter must not drop — explicit picks, as
+   * in `bulkSnooze`. Without it a date on a selection that holds a P4 would
+   * silently leave the P4 where it was.
+   */
+  includeTaskIds?: number[]
+  /** Relative date move: each task's OWN due date plus this many minutes. */
+  deltaMinutes?: number
+  /**
+   * Scope the date part of the edit (`changes.due_at` / `deltaMinutes`) to
+   * these ids. Every other field still applies to every id in `taskIds`.
+   * Omitted = the date applies to all of them.
+   */
+  dateTaskIds?: number[]
 }
 
 export interface BulkEditResult {
   tasksAffected: number
   tasksSkipped: number
+  /** Tasks a relative (`deltaMinutes`) move could not shift — they have no date. */
+  noDueDateSkipped: number
+}
+
+interface BulkEditDatePlan {
+  /** Tasks the date part must NOT be applied to (every other field still is). */
+  withheld: Set<number>
+  /** Withheld by a rule (quota, sweep filter, no date to shift) — reported as skipped. */
+  skipped: number
+  noDueDateSkipped: number
+}
+
+/**
+ * §5: a quota has no due date, so a date-bearing batch skips it rather than
+ * failing. `collectFieldChanges` throws QUOTA_DUE_DATE_MESSAGE on a tracked
+ * row given a date, and one throw aborts the whole transaction — a mixed
+ * selection lost the plain tasks' edits too. The snooze filter in
+ * `planBulkEditDates` also leaves quotas out, but only for a date sent
+ * WITHOUT an rrule; `{ due_at, rrule }` together, and a per-task date, would
+ * go straight through. Runs before that filter so the two never double-count.
+ *
+ * The quota is dropped WHOLE, not just its date: the rest of such an edit
+ * (`rrule: null` beside a date) is exactly what a quota refuses (it needs a
+ * period), and TR-023/TR-024 pin that it is left untouched.
+ */
+function dropQuotasFromDatedBatch(
+  tasks: Task[],
+  changes: BulkEditChanges,
+  perTask: BulkEditOptions['perTask'],
+  deltaMinutes: number | undefined,
+): { tasks: Task[]; skipped: number } {
+  const bearsDate =
+    changes.due_at != null ||
+    deltaMinutes !== undefined ||
+    Object.values(perTask ?? {}).some((p) => (p as { due_at?: string | null }).due_at != null)
+  if (!bearsDate) return { tasks, skipped: 0 }
+  const kept = tasks.filter((t) => !isTracked(t))
+  return { tasks: kept, skipped: tasks.length - kept.length }
+}
+
+/**
+ * Which tasks in a bulk edit take the DATE part of the edit.
+ *
+ * ONE SAVE, ONE UNDO (Trent, 2026-09-27). The multi-select quick panel used to
+ * send a date change to bulk/snooze and the rest (priority, labels…) to
+ * bulk/edit in parallel: two undo entries whose order was a race, and a
+ * partial failure left half the change behind. Both now travel in this one
+ * request, so the date rules that used to live in bulk/snooze's filtering
+ * have to live here, PER TASK: a task the date cannot apply to still takes
+ * the rest of the edit — exactly what it got when the two halves were
+ * separate requests. (Before, a date-bearing bulk edit dropped such a task
+ * from the whole batch; for a date-only edit the result is the same, since
+ * a task left with nothing to change is skipped either way.)
+ *
+ * Quotas are the exception and are not planned here: a date-bearing batch
+ * still drops a quota WHOLE (`dropQuotasFromDatedBatch`), since the rest of
+ * such an edit (`rrule: null` alongside a date) can be what a quota refuses.
+ *
+ * The date is withheld from a task when:
+ * - it is outside `dateTaskIds` (the snooze confirmation opted it out) — not
+ *   counted as skipped, the user chose it;
+ * - it is a snooze (a date without an rrule change) and `filterForBulkSnooze`
+ *   leaves it out — the same function bulk/snooze uses, with the same
+ *   `includeTaskIds` rescue for explicit picks;
+ * - it is a relative move and the task has no date to move.
+ */
+function planBulkEditDates(
+  tasks: Task[],
+  changes: BulkEditChanges,
+  opts: Pick<BulkEditOptions, 'includeTaskIds' | 'deltaMinutes' | 'dateTaskIds'>,
+): BulkEditDatePlan {
+  const { includeTaskIds, deltaMinutes, dateTaskIds } = opts
+  const plan: BulkEditDatePlan = { withheld: new Set(), skipped: 0, noDueDateSkipped: 0 }
+  const hasDate = changes.due_at !== undefined || deltaMinutes !== undefined
+  if (!hasDate) return plan
+
+  const scope = dateTaskIds ? new Set(dateTaskIds) : null
+  let candidates = tasks.filter((t) => {
+    if (!scope || scope.has(t.id)) return true
+    plan.withheld.add(t.id)
+    return false
+  })
+  const withhold = (keep: (t: Task) => boolean) => {
+    candidates = candidates.filter((t) => {
+      if (keep(t)) return true
+      plan.withheld.add(t.id)
+      plan.skipped++
+      return false
+    })
+  }
+
+  // Priority filter for snooze edits — literally the same function as
+  // bulkSnooze, so the High tier's "only once nothing lower is left" rule
+  // applies here too. A date change is only a snooze when rrule is not being
+  // changed; with an rrule (even null) it is part of a schedule change.
+  const isSnoozeEdit = changes.rrule === undefined
+  if (isSnoozeEdit) {
+    const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
+    const eligible = new Set(filterForBulkSnooze(candidates, includeSet).eligible.map((t) => t.id))
+    withhold((t) => eligible.has(t.id))
+  }
+
+  if (deltaMinutes !== undefined) {
+    const before = plan.skipped
+    withhold((t) => t.due_at !== null)
+    plan.noDueDateSkipped = plan.skipped - before
+  }
+
+  return plan
 }
 
 /**
@@ -662,23 +785,16 @@ function mergePromptConfig(
  * the exception that merges per task — see `mergePromptConfig`.
  */
 export function bulkEdit(options: BulkEditOptions): BulkEditResult {
-  const { userId, userTimezone, taskIds, changes, perTask } = options
+  const { userId, userTimezone, taskIds, changes, perTask, deltaMinutes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: 0 }
+    return { tasksAffected: 0, tasksSkipped: 0, noDueDateSkipped: 0 }
+  }
+  if (deltaMinutes !== undefined && changes.due_at !== undefined) {
+    throw new ValidationError('Cannot provide both due_at and delta_minutes')
   }
 
   let tasks = validateBulkTasks(taskIds, userId)
-  const inputFor = (task: Task): BulkEditChanges => {
-    const input = { ...changes, ...(perTask?.[String(task.id)] ?? {}) }
-    if (input.quota_prompt_config) {
-      input.quota_prompt_config = mergePromptConfig(
-        task.quota_prompt_config,
-        input.quota_prompt_config,
-      )
-    }
-    return input
-  }
 
   registerBulkEditLabels(userId, changes)
 
@@ -692,50 +808,34 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     const beforeCount = tasks.length
     tasks = tasks.filter((t) => !t.done)
     rruleSkippedCount = beforeCount - tasks.length
-    if (tasks.length === 0) {
-      return { tasksAffected: 0, tasksSkipped: rruleSkippedCount }
-    }
   }
 
-  // §5: a quota has no due date, so a date-bearing batch skips it rather than
-  // failing. `collectFieldChanges` throws QUOTA_DUE_DATE_MESSAGE on a tracked
-  // row given a date, and one throw aborts the whole transaction — a mixed
-  // selection lost the plain tasks' edits too. The snooze path below already
-  // filtered quotas out through `filterForBulkSnooze`, but only for a date sent
-  // WITHOUT an rrule; `{ due_at, rrule }` together, and a per-task date, went
-  // straight through. Runs before that filter so the two never double-count.
-  let quotaSkippedCount = 0
-  const bearsDate =
-    changes.due_at != null ||
-    Object.values(perTask ?? {}).some((p) => (p as { due_at?: string | null }).due_at != null)
-  if (bearsDate) {
-    const beforeCount = tasks.length
-    tasks = tasks.filter((t) => !isTracked(t))
-    quotaSkippedCount = beforeCount - tasks.length
-    if (tasks.length === 0) {
-      return { tasksAffected: 0, tasksSkipped: rruleSkippedCount + quotaSkippedCount }
-    }
-  }
+  const quotas = dropQuotasFromDatedBatch(tasks, changes, perTask, deltaMinutes)
+  tasks = quotas.tasks
 
-  // Priority filter for snooze edits — literally the same function as bulkSnooze,
-  // so the High tier's "only once nothing lower is left" rule applies here too:
-  // a selection of nothing but High tasks, given a new date, now moves, where
-  // before it silently did nothing.
-  //
-  // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
-  // set (even to null), the due_at change is part of a schedule change, not a snooze.
-  let snoozeSkippedCount = 0
-  const isSnoozeEdit = changes.due_at !== undefined && changes.rrule === undefined
-  if (isSnoozeEdit) {
-    const { eligible } = filterForBulkSnooze(tasks)
-    snoozeSkippedCount = tasks.length - eligible.length
-    tasks = eligible
-    if (tasks.length === 0) {
-      return {
-        tasksAffected: 0,
-        tasksSkipped: rruleSkippedCount + quotaSkippedCount + snoozeSkippedCount,
-      }
+  // Which tasks take the date part — see `planBulkEditDates`.
+  const dates = planBulkEditDates(tasks, changes, options)
+  const inputFor = (task: Task): BulkEditChanges => {
+    const input = { ...changes, ...(perTask?.[String(task.id)] ?? {}) }
+    if (dates.withheld.has(task.id)) {
+      delete input.due_at
+    } else if (deltaMinutes !== undefined && task.due_at) {
+      input.due_at = new Date(new Date(task.due_at).getTime() + deltaMinutes * 60_000).toISOString()
     }
+    if (input.quota_prompt_config) {
+      input.quota_prompt_config = mergePromptConfig(
+        task.quota_prompt_config,
+        input.quota_prompt_config,
+      )
+    }
+    return input
+  }
+  // A task left with nothing to change once its date is withheld is not
+  // touched at all — which is what a date-only edit always did with it.
+  tasks = tasks.filter((t) => Object.keys(inputFor(t)).length > 0)
+  const tasksSkipped = rruleSkippedCount + quotas.skipped + dates.skipped
+  if (tasks.length === 0) {
+    return { tasksAffected: 0, tasksSkipped, noDueDateSkipped: dates.noDueDateSkipped }
   }
 
   const nowStr = nowUtc()
@@ -826,7 +926,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
     return {
       tasksAffected: snapshots.length,
-      tasksSkipped: snoozeSkippedCount + rruleSkippedCount + quotaSkippedCount,
+      tasksSkipped,
+      noDueDateSkipped: dates.noDueDateSkipped,
     }
   })
 
