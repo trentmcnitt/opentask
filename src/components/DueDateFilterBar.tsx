@@ -21,6 +21,8 @@ interface DueDateFilterBarProps {
   timezone: string
   onExclusiveDateFilter?: (filter: DueDateFilter) => void
   onExcludeDateFilter?: (filter: DueDateFilter) => void
+  /** Chips shown elsewhere instead — FilterBar pins Overdue in its control row. */
+  omitFilters?: DueDateFilter[]
 }
 
 const FILTER_LABELS: Record<DueDateFilter, string> = {
@@ -96,6 +98,7 @@ export function DueDateFilterBar({
   timezone,
   onExclusiveDateFilter,
   onExcludeDateFilter,
+  omitFilters,
 }: DueDateFilterBarProps) {
   const { filterCounts, todayOverdueCount } = useMemo(() => {
     const now = new Date()
@@ -112,9 +115,11 @@ export function DueDateFilterBar({
     }
 
     // Include any filter that has tasks OR is actively selected/excluded
-    const filterCounts = FILTER_ORDER.filter(
-      (f) => counts.has(f) || selectedDateFilters.includes(f) || excludedDateFilters.includes(f),
-    ).map((f) => [f, counts.get(f) ?? 0] as [DueDateFilter, number])
+    const filterCounts = FILTER_ORDER.filter((f) => !omitFilters?.includes(f))
+      .filter(
+        (f) => counts.has(f) || selectedDateFilters.includes(f) || excludedDateFilters.includes(f),
+      )
+      .map((f) => [f, counts.get(f) ?? 0] as [DueDateFilter, number])
 
     // The Today chip's own overdue pill (feat/chip-due-badges): how many of
     // ITS total (the 'today' bucket above) are also overdue, NOT the
@@ -124,7 +129,7 @@ export function DueDateFilterBar({
     const todayOverdueCount = countChipDueBadges(todaysTasks, now, boundaries).overdue
 
     return { filterCounts, todayOverdueCount }
-  }, [tasks, timezone, selectedDateFilters, excludedDateFilters])
+  }, [tasks, timezone, selectedDateFilters, excludedDateFilters, omitFilters])
 
   const hasActiveFilter = selectedDateFilters.length > 0 || excludedDateFilters.length > 0
   if (filterCounts.length <= 1 && !hasActiveFilter) return null

@@ -168,7 +168,7 @@ test.describe('Dashboard filter section', () => {
     await expect(chips).toBeVisible()
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
     // The chips the section hides are really there once opened
-    await expect(chips.getByText('Overdue', { exact: false }).first()).toBeVisible()
+    await expect(chips.locator('[data-date-chip]').first()).toBeVisible()
 
     // ...and close again
     await clickFiltersToggle(page)
@@ -185,7 +185,7 @@ test.describe('Dashboard filter section', () => {
   }) => {
     await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
-    await chips.getByText('Overdue', { exact: false }).first().click()
+    await chips.locator('[data-date-chip]').first().click()
 
     // Filter applied: the list is narrowed and the control carries the count
     await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toBeVisible()
@@ -202,7 +202,7 @@ test.describe('Dashboard filter section', () => {
   }) => {
     await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
-    await chips.getByText('Overdue', { exact: false }).first().click()
+    await chips.locator('[data-date-chip]').first().click()
     await expect(toggle(page)).toContainText('1')
 
     await page.getByRole('button', { name: 'Clear filter' }).click()
