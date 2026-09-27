@@ -268,15 +268,25 @@ export async function withPreferences(
 }
 
 /**
- * Cmd/Ctrl-click a list row, first bringing it to the MIDDLE of the viewport.
+ * Cmd/Ctrl-click a dashboard task row, on the row itself: its bottom-left
+ * padding, scrolled toward the middle of the viewport.
  *
- * Once anything is selected, the floating selection bar sits fixed over the
- * bottom of the page. Playwright's own scroll only makes a row visible, which
- * can leave it under the bar; the click then lands on the bar, and Playwright
- * waits out the test's whole timeout for the row to stop being covered
- * (selection-fab.spec.ts, 2026-09-27). A row in the middle is never covered.
+ * Where on the row matters:
+ * - Not its centre. Once anything is selected, the floating selection bar
+ *   sits fixed, centred, over the bottom of the page. The LAST row of a list
+ *   cannot scroll higher than the page's bottom padding allows, and there the
+ *   bar covers the row's centre — where a plain `row.click()` aims — so the
+ *   click hit the bar and Playwright waited out the whole test timeout for
+ *   the row to be uncovered (selection-fab.spec.ts, 2026-09-27).
+ * - Not the title. Outside selection mode it is a link to the task page, and
+ *   the link keeps the click from the row — Cmd-click there never selects.
+ * - Not the far left edge: outside selection mode that is the Done circle.
+ * The row's own padding, just past the circle and below the text, is none of
+ * these on any row.
  */
 export async function cmdClickRow(row: Locator): Promise<void> {
   await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
-  await row.click({ modifiers: ['ControlOrMeta'] })
+  const box = await row.boundingBox()
+  if (!box) throw new Error('cmdClickRow: the row is not on screen')
+  await row.click({ modifiers: ['ControlOrMeta'], position: { x: 56, y: box.height - 6 } })
 }
