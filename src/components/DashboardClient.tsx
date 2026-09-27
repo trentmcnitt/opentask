@@ -55,9 +55,9 @@ import { saveQuickPanelChanges } from '@/lib/save-quick-panel-changes'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
-import { useFilterState } from '@/hooks/useFilterState'
+import { useFilterState, type TaskFilterCriteria } from '@/hooks/useFilterState'
 import { useFilterSection } from '@/hooks/useFilterSection'
-import { useTaskCounts } from '@/hooks/useTaskCounts'
+import { useTaskCounts, useDateFacetCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import type { DueDateFilter } from '@/components/DueDateFilterBar'
 import { cn, taskWord } from '@/lib/utils'
@@ -682,9 +682,13 @@ function HomeContent({
   // `handleWidgetLink`). Both arrive as a FULL page load (WKWebView `load`,
   // the service worker's `client.navigate`), so the param only has to seed
   // the initial state of the ordinary date-filter chips — the same state the
-  // Overdue chip toggles, not a parallel one. `useFilterSection` then
-  // auto-expands the chips and the "Showing N of M · Clear filter" banner
-  // shows, so the filter is visibly on and one tap clears it.
+  // Overdue chip toggles, not a parallel one. The pinned Overdue chip in the
+  // control row turns solid red and the "Showing N of M · Clear filter" banner
+  // shows, so the filter is visibly on and one tap clears it. (Since
+  // 2026-09-26 an Overdue selection no longer auto-expands the chip section —
+  // the pinned chip already shows it; see `hiddenActiveFilterCount` in
+  // `DashboardView`. `?filter=today`, the today pill's fallback link, still
+  // expands it.)
   //
   // Applied ONCE per mount: the ref stops a later render from re-seeding it,
   // and the param is stripped from the URL straight away, so a reload after
@@ -701,7 +705,9 @@ function HomeContent({
     if (filterParamProcessed.current) return undefined
     filterParamProcessed.current = true
     const filter = searchParams.get('filter')
-    if (filter === 'overdue') return ['overdue'] as DueDateFilter[]
+    // `today`: the top bar's today pill's fallback link (Header's
+    // `TaskCountBadges`), same once-per-mount seeding as `overdue`.
+    if (filter === 'overdue' || filter === 'today') return [filter] as DueDateFilter[]
     return undefined
   }, [searchParams])
   useEffect(() => {
@@ -1209,7 +1215,10 @@ function HomeContent({
     onBulkDelete: bulk.bulkDelete,
   })
 
-  const { overdueCount, todayCount } = useTaskCounts(tasks_, timezone)
+  // The tab title, the PWA dock badge and the snooze-all FAB count the list as
+  // it stands (every filter applied). The top bar's pills count something
+  // else on purpose — see `useDateFacetCounts` in `DashboardView`.
+  const { overdueCount } = useTaskCounts(tasks_, timezone)
   // The nav's Tasks badges read a shared cache; this page is its source of
   // truth. Published from the unfiltered list (reminders excluded, nothing
   // else): a filter chip changes the view, not what is due.
@@ -1341,7 +1350,6 @@ function HomeContent({
         searchResultCount={visibleSearchResults.length}
         shownTaskCount={shownTaskCount}
         overdueCount={overdueCount}
-        todayCount={todayCount}
         selection={selection}
         selectedTasks={selectedTasks}
         showProjectPicker={showProjectPicker}
@@ -1658,7 +1666,6 @@ function DashboardView({
   searchResultCount,
   shownTaskCount,
   overdueCount,
-  todayCount,
   selection,
   selectedTasks,
   showProjectPicker,
@@ -1781,7 +1788,6 @@ function DashboardView({
   /** What the list renders — see `shownTaskCount` in `HomeContent`. */
   shownTaskCount: number
   overdueCount: number
-  todayCount: number
   selection: ReturnType<typeof useSelection>
   selectedTasks: Task[]
   showProjectPicker: boolean
@@ -1909,8 +1915,58 @@ function DashboardView({
     excludedAttributes.size +
     excludedProjects.length
 
+  // The pinned Overdue chip in FilterBar's control row shows the Overdue date
+  // filter's state on its own (solid red when selected), in the row that never
+  // collapses. So an Overdue selection is not a filter the collapsed section
+  // would hide, and it must not pop the section open: Trent's ask was "just
+  // the overdue tasks" in one tap WITHOUT the chip stack (on a phone it is
+  // most of a screen — `useFilterSection` rule 5). `useFilterSection`'s rule 3
+  // ("an active filter is never invisible") therefore gets the count of
+  // filters the collapsed row does NOT show; the "Filters · N" badge keeps the
+  // full count. Any other date filter (Today from the gray pill included)
+  // still auto-expands as before.
+  const hiddenActiveFilterCount =
+    activeFilterCount - (selectedDateFilters.includes('overdue') ? 1 : 0)
   const { expanded: filtersExpanded, toggleExpanded: onToggleFilters } =
-    useFilterSection(activeFilterCount)
+    useFilterSection(hiddenActiveFilterCount)
+
+  // Top bar pills + pinned Overdue chip: one memo, one population (the date
+  // facet) — see `useDateFacetCounts` for why not the filtered list.
+  const dateFacetCriteria: TaskFilterCriteria = useMemo(
+    () => ({
+      selectedLabels,
+      excludedLabels,
+      selectedPriorities,
+      excludedPriorities,
+      selectedDateFilters,
+      excludedDateFilters,
+      attributeFilters,
+      excludedAttributes,
+      selectedProjects,
+      excludedProjects,
+    }),
+    [
+      selectedLabels,
+      excludedLabels,
+      selectedPriorities,
+      excludedPriorities,
+      selectedDateFilters,
+      excludedDateFilters,
+      attributeFilters,
+      excludedAttributes,
+      selectedProjects,
+      excludedProjects,
+    ],
+  )
+  const headerCounts = useDateFacetCounts(allTasks, dateFacetCriteria, timezone)
+  // `aria-pressed` for the pills: on only when that filter is the SOLE date
+  // filter, i.e. exactly what a tap on the pill produces (and a second tap
+  // clears — `exclusiveDateFilter` toggles off an exclusive selection).
+  const activePillFilter =
+    selectedDateFilters.length === 1 &&
+    (selectedDateFilters[0] === 'overdue' || selectedDateFilters[0] === 'today')
+      ? selectedDateFilters[0]
+      : null
 
   // The AI chips stay visible in the collapsed control row, so they are not
   // part of the count — but they still narrow the list, so they still count
@@ -1932,8 +1988,10 @@ function DashboardView({
     <div className="flex flex-1 flex-col">
       <Header
         taskCount={shownTaskCount}
-        overdueCount={overdueCount}
-        todayCount={todayCount}
+        overdueCount={headerCounts.overdueCount}
+        todayCount={headerCounts.todayCount}
+        onPillFilter={onExclusiveDateFilter}
+        activePillFilter={activePillFilter}
         isSelectionMode={selection.isSelectionMode}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
@@ -2018,6 +2076,7 @@ function DashboardView({
             expanded={filtersExpanded}
             onToggleExpanded={onToggleFilters}
             activeFilterCount={activeFilterCount}
+            pinnedOverdueCount={headerCounts.overdueCount}
             selectedPriorities={selectedPriorities}
             selectedLabels={selectedLabels}
             selectedDateFilters={selectedDateFilters}

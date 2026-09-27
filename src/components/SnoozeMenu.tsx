@@ -104,11 +104,27 @@ export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMen
       until,
     }
   })
+  // NEXT PERIOD FIRST, THE REST IN TIME ORDER (Trent, 2026-09-26: "none for
+  // 'next period' … I have to do mental math to figure out which period is the
+  // one I want"). The slots are sorted by when they next start — later today,
+  // then tomorrow — and the soonest is offered first, named: "Next period ·
+  // After School 4:30 PM". It is the same target as the notification's
+  // "Next period" (`nextPeriodStart`).
+  slotOptions.sort((a, b) => a.until.localeCompare(b.until))
+  const [nextPeriod, ...laterSlots] = slotOptions
   const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime)
   const options = [
+    ...(nextPeriod
+      ? [
+          {
+            label: `Next period \u00b7 ${nextPeriod.label.replace(' \u00b7 ', ' ')}`,
+            option: nextPeriod.option,
+          },
+        ]
+      : []),
     { label: '1 hour', option: '60' },
     { label: '2 hours', option: '120' },
-    ...slotOptions.map(({ label, option }) => ({ label, option })),
+    ...laterSlots.map(({ label, option }) => ({ label, option })),
     ...(slotOptions.some((o) => o.until === tomorrowMorning)
       ? []
       : [{ label: `Tomorrow at ${formatMorningTime(morningTime)}`, option: 'tomorrow' }]),

@@ -6,6 +6,7 @@ import { useTheme } from 'next-themes'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   ChevronLeft,
   Clock,
@@ -51,6 +52,7 @@ import { formatCompactSnoozeLabel } from '@/lib/snooze'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
 import { GuardedLink } from '@/components/GuardedLink'
+import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 
 interface HeaderProps {
   backHref?: string
@@ -71,6 +73,14 @@ interface HeaderProps {
   taskCount?: number
   overdueCount?: number
   todayCount?: number
+  /**
+   * Tap on the red overdue / today pill (see `TaskCountBadges`). The dashboard
+   * passes its exclusive date-filter setter; without it the pills link to the
+   * dashboard's `?filter=` deep link.
+   */
+  onPillFilter?: (filter: HeaderPillFilter) => void
+  /** Which pill's filter is the sole active date filter, for `aria-pressed`. */
+  activePillFilter?: HeaderPillFilter | null
   isSelectionMode?: boolean
   onUndo: () => void
   onRedo: () => void
@@ -113,6 +123,8 @@ export function Header({
   taskCount = 0,
   overdueCount = 0,
   todayCount = 0,
+  onPillFilter,
+  activePillFilter = null,
   isSelectionMode = false,
   onUndo,
   onRedo,
@@ -284,6 +296,8 @@ export function Header({
                   taskCount={taskCount}
                   overdueCount={overdueCount}
                   todayCount={todayCount}
+                  onPillFilter={onPillFilter}
+                  activePillFilter={activePillFilter}
                 />
               )}
             </div>
@@ -464,66 +478,117 @@ export function Header({
   )
 }
 
+/** The two date filters the top bar's pills can apply. */
+export type HeaderPillFilter = 'overdue' | 'today'
+
 /**
- * The Tasks page's three pills: total, overdue (red, only when > 0), due today
- * (blue). Tap opens a popover that spells each one out; the tooltips step
- * aside while it is open so the two never stack.
+ * The Tasks page's three pills: total, overdue (red, only when > 0), due today.
+ *
+ * - **Total** is read-only: tapping it opens a popover that spells all three
+ *   numbers out (the only way to read them on a touch screen, where the
+ *   tooltips never show). Its tooltip steps aside while the popover is open.
+ * - **Overdue** and **due today** are buttons (Trent, 2026-09-26): a tap
+ *   applies that date filter EXCLUSIVELY on the dashboard — the same
+ *   `exclusiveDateFilter` the expanded Overdue/Today chips' Cmd+click uses, so
+ *   a second tap while it is the only date filter clears it again. They count
+ *   the same faceted set as those chips (see `headerCounts` in
+ *   DashboardClient's `DashboardView`), so the number on the pill is the
+ *   number the filtered list shows. Without an `onPillFilter` (a surface that
+ *   is not the dashboard) they navigate to the dashboard's `?filter=overdue` /
+ *   `?filter=today` deep link instead — today no such surface renders these
+ *   pills, but a pill that looks tappable must never be dead.
+ *
+ * Each pill is its own control, so the old single popover trigger wrapping all
+ * three is gone — a button inside a focusable trigger would be nested
+ * interactive content. The container-query classes (`@[..]/badges:`) are
+ * untouched: on a narrow phone bar the total, then the overdue pill, still
+ * drop out as the `@container/badges` box in `Header` shrinks.
  */
 function TaskCountBadges({
   taskCount,
   overdueCount,
   todayCount,
+  onPillFilter,
+  activePillFilter,
 }: {
   taskCount: number
   overdueCount: number
   todayCount: number
+  onPillFilter?: (filter: HeaderPillFilter) => void
+  activePillFilter?: HeaderPillFilter | null
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const router = useRouter()
+  const { requestNavigation } = useNavigationGuard()
+  const applyFilter = (filter: HeaderPillFilter) => {
+    if (onPillFilter) {
+      onPillFilter(filter)
+      return
+    }
+    const href = `/?filter=${filter}`
+    if (requestNavigation(href)) router.push(href)
+  }
+  const overdueActive = activePillFilter === 'overdue'
+  const todayActive = activePillFilter === 'today'
   return (
-    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-      <PopoverTrigger asChild>
-        <div
-          className="flex flex-shrink-0 cursor-pointer items-center gap-1"
-          role="group"
-          aria-label="Task counts"
-          tabIndex={0}
-        >
-          <CountBadge
-            count={taskCount}
-            tooltip={
-              popoverOpen ? undefined : `${taskCount} total task${taskCount === 1 ? '' : 's'}`
-            }
+    <div className="flex flex-shrink-0 items-center gap-1" role="group" aria-label="Task counts">
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${taskCount} total task${taskCount === 1 ? '' : 's'} — show breakdown`}
             className={cn(
-              'hidden items-center justify-center select-none md:inline-flex',
+              'hidden cursor-pointer items-center justify-center select-none md:inline-flex',
               overdueCount > 0 ? '@[4.75rem]/badges:inline-flex' : '@[2.75rem]/badges:inline-flex',
             )}
-          />
-          {overdueCount > 0 && (
+          >
             <CountBadge
-              count={overdueCount}
-              variant="overdue"
-              tooltip={popoverOpen ? undefined : `${overdueCount} overdue`}
-              className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"
+              count={taskCount}
+              tooltip={
+                popoverOpen ? undefined : `${taskCount} total task${taskCount === 1 ? '' : 's'}`
+              }
             />
-          )}
-          <CountBadge
-            count={todayCount}
-            variant="today"
-            tooltip={popoverOpen ? undefined : `${todayCount} due today`}
-            className={cn(
-              'inline-flex items-center justify-center select-none',
-              todayCount === 0 && 'md:hidden',
-            )}
-          />
-        </div>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
-        <div className="flex flex-col gap-1">
-          <span>{taskCount} total tasks</span>
-          {overdueCount > 0 && <span className="text-destructive">{overdueCount} overdue</span>}
-          {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
-        </div>
-      </PopoverContent>
-    </Popover>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
+          <div className="flex flex-col gap-1">
+            <span>{taskCount} total tasks</span>
+            {overdueCount > 0 && <span className="text-destructive">{overdueCount} overdue</span>}
+            {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
+          </div>
+        </PopoverContent>
+      </Popover>
+      {overdueCount > 0 && (
+        <CountBadge
+          count={overdueCount}
+          variant="overdue"
+          tooltip={overdueActive ? 'Show all tasks' : `${overdueCount} overdue — show only these`}
+          onClick={() => applyFilter('overdue')}
+          ariaLabel={
+            overdueActive
+              ? `${overdueCount} overdue — clear the overdue filter`
+              : `${overdueCount} overdue — show only overdue tasks`
+          }
+          pressed={overdueActive}
+          className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"
+        />
+      )}
+      <CountBadge
+        count={todayCount}
+        variant="today"
+        tooltip={todayActive ? 'Show all tasks' : `${todayCount} due today — show only these`}
+        onClick={() => applyFilter('today')}
+        ariaLabel={
+          todayActive
+            ? `${todayCount} due today — clear the today filter`
+            : `${todayCount} due today — show only tasks due today`
+        }
+        pressed={todayActive}
+        className={cn(
+          'inline-flex items-center justify-center select-none',
+          todayCount === 0 && 'md:hidden',
+        )}
+      />
+    </div>
   )
 }

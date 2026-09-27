@@ -92,14 +92,15 @@ async function inOwnProject(
 }
 
 /**
- * The snooze menu once its time slots are in. "Early morning" is one of the
+ * The snooze menu once its time slots are in ("Early morning" may be the
+ * "Next period · …" item, so the match is unanchored). "Early morning" is one of the
  * default slots every user is given (`backfillTimeSlots`, src/core/db/index.ts),
  * so its item showing means the list has reached its final shape.
  */
 async function openedMenu(page: Page) {
   const menu = page.getByRole('menu', { name: 'Snooze options' })
   await expect(menu).toBeVisible()
-  await expect(menu.getByRole('menuitem', { name: /^Early morning · / })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: /Early morning/ })).toBeVisible()
   return menu
 }
 
