@@ -65,11 +65,7 @@ struct WebView: UIViewRepresentable {
         // This ensures push notifications follow the web-logged-in user, not the bearer token user.
         if let deviceToken = AppConfig.shared.deviceToken {
             let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            #if DEBUG
-            let env = "development"
-            #else
-            let env = "production"
-            #endif
+            let env = ApsEnvironment.current  // signing entitlement, not #if DEBUG
             let tokenScript = WKUserScript(
                 source: "window.__OPENTASK_DEVICE_INFO = { token: '\(deviceToken)', bundleId: '\(bundleId)', environment: '\(env)' };",
                 injectionTime: .atDocumentStart,
@@ -483,11 +479,7 @@ struct WebView: UIViewRepresentable {
         private func injectDeviceInfo(into webView: WKWebView) {
             guard let token = AppConfig.shared.deviceToken else { return }
             let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            #if DEBUG
-            let env = "development"
-            #else
-            let env = "production"
-            #endif
+            let env = ApsEnvironment.current  // signing entitlement, not #if DEBUG
             let js = "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };"
             webView.evaluateJavaScript(js)
         }
