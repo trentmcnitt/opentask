@@ -124,12 +124,9 @@ private enum WatchWidgetPushRegistrar {
     private static let platform = "watchos"
 
     static func register(token: String, widgetKind: String) async throws {
-        // Fixed by the signing entitlement (`aps-environment: development`
-        // in project.yml for BOTH watch targets, Release included), not by
-        // `#if DEBUG` — the phone/Mac lesson: a Release build registered as
-        // "production" gets `BadDeviceToken` from APNs and the server then
-        // deletes the row. Change together with the entitlement.
-        let environment = "development"
+        // Fixed by the signing entitlement, not by `#if DEBUG` — read from
+        // the embedded provisioning profile; see `ApsEnvironment`.
+        let environment = ApsEnvironment.current
 
         try await send(method: "POST", body: [
             "push_token": token,
