@@ -1,0 +1,6 @@
+# Runs an optional, machine-local pre-push guard if one is installed at
+# .git/hooks/pre-push (it is never part of the repo). Husky owns core.hooksPath,
+# so without this line a hook in .git/hooks is silently skipped.
+g="$(git rev-parse --git-common-dir)/hooks/pre-push"
+[ -x "$g" ] && exec "$g" "$@"
+exit 0
