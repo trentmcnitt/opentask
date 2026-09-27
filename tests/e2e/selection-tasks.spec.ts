@@ -182,7 +182,7 @@ test.describe('Dashboard multi-select — the bar, checked against the server', 
         await select(page, ids)
         const saved = await saveDateAndPriority(page, ids)
 
-        const delta = saved.snooze.delta_minutes as number
+        const delta = saved.delta_minutes as number
         expect(delta).toBe(24 * 60)
         for (const [i, id] of ids.entries()) {
           const after = await stateOf(page, id)
@@ -200,14 +200,9 @@ test.describe('Dashboard multi-select — the bar, checked against the server', 
    * One save, one Undo. Trent's call (testing-pass plan, decision 4): a
    * multi-select save with a date AND a priority is one change to him, so one
    * Undo must put back both.
-   *
-   * FIXME(WP3): on main today `saveBulkPanelChanges` sends bulk/snooze and
-   * bulk/edit together (`Promise.all`), which logs TWO undo entries in a racy
-   * order — one Undo restores either the date or the priority, never both.
-   * WP3 (client logic behind multi-select) makes the save one undo entry;
-   * drop the `.fixme` once it merges.
+   * Fixed by WP3 (#109): the save is one bulk/edit request, one undo entry.
    */
-  test.fixme('Details: one Undo puts back both the date and the priority', async ({
+  test('Details: one Undo puts back both the date and the priority', async ({
     authenticatedPage: page,
   }) => {
     const { ids } = await createPair(page, 'Sel undo')
@@ -310,10 +305,7 @@ test.describe('Dashboard multi-select — only tasks', () => {
  * tasks. Returns the two request bodies once both responses are in: the date
  * goes out as bulk/snooze, the priority as bulk/edit, at the same time.
  */
-async function saveDateAndPriority(
-  page: Page,
-  ids: number[],
-): Promise<{ snooze: Record<string, unknown>; edit: Record<string, unknown> }> {
+async function saveDateAndPriority(page: Page, ids: number[]): Promise<Record<string, unknown>> {
   await bar(page).getByRole('button', { name: 'More', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: `${ids.length} tasks selected` })
   await expect(dialog).toBeVisible()
@@ -325,19 +317,25 @@ async function saveDateAndPriority(
     .getByRole('button', { name: 'Medium', exact: true })
     .click()
 
-  const snoozed = page.waitForResponse(isPost('/api/tasks/bulk/snooze'))
+  // One save, ONE request (WP3, #109): the date rides bulk/edit with the
+  // priority, so the server logs one undo entry. No bulk/snooze may go out.
+  const snoozeCalls: string[] = []
+  const onRequest = (r: import('@playwright/test').Request) => {
+    if (r.method() === 'POST' && r.url().includes('/api/tasks/bulk/snooze'))
+      snoozeCalls.push(r.url())
+  }
+  page.on('request', onRequest)
   const edited = page.waitForResponse(isPost('/api/tasks/bulk/edit'))
   await dialog.getByRole('button', { name: 'Save', exact: true }).click()
-  const [snoozeRes, editRes] = await Promise.all([snoozed, edited])
-  expect(snoozeRes.ok()).toBeTruthy()
+  const editRes = await edited
   expect(editRes.ok()).toBeTruthy()
-  const snooze = snoozeRes.request().postDataJSON()
   const edit = editRes.request().postDataJSON()
-  // Explicit picks: the P3/P4 sweep filter must not drop any of them.
-  expect(sorted(snooze.ids)).toEqual(sorted(ids))
-  expect(sorted(snooze.include_task_ids)).toEqual(sorted(ids))
-  expect(sorted(edit.ids)).toEqual(sorted(ids))
-  expect(edit.changes).toEqual({ priority: 2 })
   await expect(dialog).toHaveCount(0)
-  return { snooze, edit }
+  page.off('request', onRequest)
+  expect(snoozeCalls).toEqual([])
+  expect(sorted(edit.ids)).toEqual(sorted(ids))
+  // Explicit picks: the P3/P4 sweep filter must not drop any of them.
+  expect(sorted(edit.include_task_ids)).toEqual(sorted(ids))
+  expect(edit.changes).toEqual({ priority: 2 })
+  return edit
 }
