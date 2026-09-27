@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useFilterSectionPreference } from '@/components/PreferencesProvider'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
@@ -65,10 +65,18 @@ export function useFilterSection(activeFilterCount: number) {
   // Initialised from the first render's filter state so a filtered deep link
   // paints expanded rather than expanding a frame later.
   const [autoExpanded, setAutoExpanded] = useState(hasActiveFilters)
-
-  useEffect(() => {
+  // Follow `hasActiveFilters` DURING RENDER (React's "adjust state when a prop
+  // changes" pattern), not in an effect. An effect opened the section one
+  // commit after the filter applied, and the dashboard's overdue/today jump
+  // (`useJumpToTaskList`) scrolls in the filter's own commit — so the chips
+  // then expanded above the list and pushed the group it had just scrolled to
+  // back down the screen. Deriving it here puts the filter, the expansion and
+  // the scroll target in one commit.
+  const [prevHasActive, setPrevHasActive] = useState(hasActiveFilters)
+  if (prevHasActive !== hasActiveFilters) {
+    setPrevHasActive(hasActiveFilters)
     setAutoExpanded(hasActiveFilters)
-  }, [hasActiveFilters])
+  }
 
   const pinned = isMobile ? (mobilePinned ?? false) : filtersExpanded
   const expanded = pinned || autoExpanded
