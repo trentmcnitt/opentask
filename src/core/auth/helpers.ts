@@ -14,7 +14,7 @@ interface UserRow {
 }
 
 /** Every grouping the column is allowed to hold. See `AuthUser.default_grouping`. */
-const GROUPINGS: AuthUser['default_grouping'][] = ['time', 'project', 'unified', 'slot']
+const GROUPINGS: AuthUser['default_grouping'][] = ['time', 'project', 'unified', 'slot', 'recent']
 
 /**
  * Convert a database user row to an AuthUser, coercing default_grouping to its

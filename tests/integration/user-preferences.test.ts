@@ -360,15 +360,18 @@ describe('combined preference updates', () => {
  * render and the API must stop accepting it.
  */
 describe('default_grouping preference', () => {
-  test.each(['time', 'project', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
-    const res = await apiFetch('/api/user/preferences', {
-      method: 'PATCH',
-      body: { default_grouping: grouping },
-    })
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.data.default_grouping).toBe(grouping)
-  })
+  test.each(['time', 'project', 'unified', 'slot', 'recent'])(
+    'PATCH accepts %s',
+    async (grouping) => {
+      const res = await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { default_grouping: grouping },
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.data.default_grouping).toBe(grouping)
+    },
+  )
 
   test('PATCH with the retired "reminders" value returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
@@ -380,7 +383,7 @@ describe('default_grouping preference', () => {
     // The last accepted value stands — a rejected update changes nothing.
     const getRes = await apiFetch('/api/user/preferences')
     const body = await getRes.json()
-    expect(body.data.default_grouping).toBe('slot')
+    expect(body.data.default_grouping).toBe('recent')
 
     await apiFetch('/api/user/preferences', {
       method: 'PATCH',

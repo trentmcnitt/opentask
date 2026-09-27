@@ -421,6 +421,23 @@ export function formatTaskAge(anchorIsoUtc: string, timezone: string): string | 
   return `${years}y old`
 }
 
+/**
+ * "added 3h ago" — when a task was created, for the Recent view's rows.
+ *
+ * Reuses the overdue formatter's past-tense ladder ("just now", "12m ago",
+ * "3h ago", "yesterday", "3d ago") so the row speaks the same vocabulary as an
+ * overdue due time. A `created_at` a moment ahead of this device's clock (server
+ * and client clocks disagree slightly) reads "just now", not "in <1m".
+ */
+export function formatAddedAgo(createdIsoUtc: string, timezone: string, now = new Date()): string {
+  const created = new Date(createdIsoUtc)
+  if (created >= now) return 'added just now'
+  const { yesterdayStart, todayStart } = getTimezoneDayBoundaries(timezone, now)
+  const time = formatTimeInZone(created, timezone)
+  const { relative } = formatOverdue(created, now, todayStart, yesterdayStart, timezone, time)
+  return `added ${relative}`
+}
+
 export function parseLocalDatetimeInput(value: string, timezone: string): string {
   const [datePart, timePart] = value.split('T')
   const [year, month, day] = datePart.split('-').map(Number)

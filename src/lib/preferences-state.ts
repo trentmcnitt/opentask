@@ -125,8 +125,8 @@ export const DEFAULT_PREFS: Prefs = {
   aiFeatureInfo: null,
 }
 
-/** The dashboard's three chips plus 'unified', which the AI-sort toggle drives. */
-const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot']
+/** The dashboard's four chips plus 'unified', which the AI-sort toggle drives. */
+const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot', 'recent']
 
 /**
  * Coerce a stored `default_grouping` to a grouping the dashboard can actually render.
