@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
 import { CalendarClock } from 'lucide-react'
 
 interface OverdueJumpFabProps {
@@ -9,82 +8,15 @@ interface OverdueJumpFabProps {
   /** The Overdue date filter is selected (the pinned chip's solid state). */
   overdueFilterOn: boolean
   isSelectionMode: boolean
-  /** Apply the Overdue filter exclusively and scroll to the first task group. */
+  /** Off: apply the Overdue filter exclusively and scroll to the first task
+   *  group. On: take the Overdue filter off, without scrolling. */
   onJump: () => void
   /**
-   * `phone`: fixed above `SnoozeAllFab`, below `md`. `desktop`: a sticky grid
-   * child of the dashboard's `<main>`, from `md` up. Rendered once of each —
-   * see the placement notes below.
+   * `phone`: fixed above `SnoozeAllFab`, below `md`. `desktop`: fixed above
+   * `SnoozeAllFab` at the viewport's bottom-right, from `md` up. Rendered once of each — see the
+   * placement notes below.
    */
   placement: 'phone' | 'desktop'
-}
-
-/** The desktop button's resting gap from the viewport bottom (`bottom-6`). */
-const DESKTOP_BOTTOM_PX = 24
-/** Sonner's desktop `--offset-bottom` (its default; `sonner.tsx` sets none
- *  unless the selection bar is up, and the button is hidden then). */
-const TOASTER_BOTTOM_PX = 24
-/** Sonner's `--gap`: each collapsed toast behind the front one peeks this far
- *  above it, and at most two peek (`visibleToasts` defaults to 3). */
-const TOAST_PEEK_PX = 14
-const MAX_PEEKING_TOASTS = 2
-/** Air between the top of the toast stack and the lifted button. */
-const TOAST_CLEARANCE_GAP_PX = 12
-
-/**
- * How far to lift the desktop button so a toast never sits on top of it.
- *
- * The toaster is `bottom-center` (layout.tsx) and 356px wide, so it only
- * reaches the button in the `xl` two-column layout, where the task column's
- * right edge falls near the middle of the screen, under the toast. Below `xl`
- * the list column is a centred 42rem and the right-aligned button starts well
- * right of the toast (measured: 1280 and 900 wide both clear it), so
- * the horizontal-overlap check keeps it still there rather than bobbing for
- * nothing. The lift is the toast stack's real height — the front toast's
- * layout height (collapsed toasts behind it take that same height) plus the
- * peek of the ones behind — so a toast whose message wraps is cleared too.
- *
- * Watched with a MutationObserver, the way `sonner.tsx` watches for the
- * selection bar: toasts mount and leave outside React's view of this
- * component, and an observer callback runs after the DOM change, so the toast
- * is there to be measured. It observes sonner's always-mounted `<section>`
- * (aria-label "Notifications …") rather than the whole body, so list
- * re-renders do not trigger a measure; the body is only a fallback.
- */
-function useToastLift(buttonRef: React.RefObject<HTMLElement | null>, active: boolean): number {
-  const [lift, setLift] = useState(0)
-
-  useEffect(() => {
-    if (!active) return
-    const measure = () => {
-      const button = buttonRef.current
-      const toaster = document.querySelector<HTMLElement>('[data-sonner-toaster]')
-      const toasts = toaster
-        ? Array.from(
-            toaster.querySelectorAll<HTMLElement>('[data-sonner-toast]:not([data-removed="true"])'),
-          )
-        : []
-      if (!button || !toaster || toasts.length === 0) return setLift(0)
-      const b = button.getBoundingClientRect()
-      const t = toaster.getBoundingClientRect()
-      if (b.width === 0 || b.right <= t.left || b.left >= t.right) return setLift(0)
-      const front = Math.max(...toasts.map((el) => el.offsetHeight))
-      const peek = Math.min(toasts.length - 1, MAX_PEEKING_TOASTS) * TOAST_PEEK_PX
-      setLift(TOASTER_BOTTOM_PX + front + peek + TOAST_CLEARANCE_GAP_PX - DESKTOP_BOTTOM_PX)
-    }
-    measure()
-    const observer = new MutationObserver(measure)
-    const region = document.querySelector('section[aria-label^="Notifications"]')
-    observer.observe(region ?? document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-removed', 'data-front'],
-    })
-    return () => observer.disconnect()
-  }, [active, buttonRef])
-
-  return active ? lift : 0
 }
 
 /**
@@ -102,10 +34,14 @@ function useToastLift(buttonRef: React.RefObject<HTMLElement | null>, active: bo
  *   stack as one column. No number on it, so it can't read as a second copy
  *   of the snooze FAB's red count badge; the count and destination are in the
  *   aria-label and the tooltip.
- * - **Hidden** when nothing is overdue, while the Overdue filter is on (the
- *   job is done — the pinned chip shows it, and a second tap here would only
- *   clear it, which is the chip's and the pill's job), and in selection mode,
- *   where `SnoozeAllFab` hides too and the selection bar owns the bottom.
+ * - **A toggle** (Trent, 2026-09-28). While the Overdue filter is on it stays,
+ *   drawn pressed — a deeper coral with a coral ring around it — and a tap
+ *   clears the filter where the page is, without scrolling (the lit pill's
+ *   rule). It used to vanish once the filter was on, leaving no way back from
+ *   the corner.
+ * - **Hidden** only when nothing is overdue (an Overdue filter left empty
+ *   clears itself, `ce069c6`) and in selection mode, where `SnoozeAllFab`
+ *   hides too and the selection bar owns the bottom.
  *
  * **Phone (`placement="phone"`, below `md`).** The Reminders and Quotas panels
  * sit above the task list, so getting to the overdue tasks meant scrolling
@@ -120,21 +56,18 @@ function useToastLift(buttonRef: React.RefObject<HTMLElement | null>, active: bo
  * bar's pills do the same jump there. But the pills are small and scroll-bound
  * in attention, and on a long list nothing on screen offers the jump once
  * you are down among the rows; this does, because it stays in view.
- * - It sits at the bottom-right of the TASK LIST column, not the viewport's:
- *   at `xl` the viewport's bottom-right is over the Reminders/Quotas column
- *   (`mainClass`, `TrackColumn`). So it is not `fixed` — it is its own grid
- *   child of `<main>`, `sticky bottom-6`, placed in column 1 after the list,
- *   right-justified to that column's edge. Its containing block is `<main>`,
- *   which starts at the top of the page, so it rides the viewport bottom from
- *   the first screen (between `md` and `xl` the panels are still above the
- *   list, exactly the phone's problem) until the page end, where it settles
- *   in its own row below the last task instead of over it.
- * - The wrapper spans the column and is `pointer-events-none`, so only the
- *   pill itself takes clicks; the rows it floats beside stay clickable.
- * - Nothing else lives down there from `md` up: `SnoozeAllFab` is phone-only
- *   and the selection bar only exists while this is hidden. Toasts are the one
- *   neighbour — see `useToastLift`, which lifts the pill above them in the
- *   one layout where they would overlap.
+ * - Fixed at the viewport's bottom-right, stacked above `SnoozeAllFab` exactly
+ *   as on the phone: same right edge (`right-6`), bottom clearing the snooze
+ *   FAB (`1.5rem` + its `3rem`) plus the same `0.75rem` gap (Trent,
+ *   2026-09-28). It first sat at the task
+ *   list column's right edge to stay off the Reminders/Quotas column at `xl`,
+ *   but the page is centred, so that edge is mid-screen and the button read
+ *   as misplaced. At `xl` it can now float over the Quotas column's lower
+ *   rows, so it is 90% opaque (full on hover): whatever it covers still shows
+ *   through.
+ * - The selection bar only exists while both are hidden, and the toaster is
+ *   bottom-center and 356px wide, so even at `md` (768px) it ends well left
+ *   of this corner.
  */
 export function OverdueJumpFab({
   overdueCount,
@@ -143,16 +76,20 @@ export function OverdueJumpFab({
   onJump,
   placement,
 }: OverdueJumpFabProps) {
-  const hidden = overdueCount === 0 || overdueFilterOn || isSelectionMode
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const lift = useToastLift(buttonRef, placement === 'desktop' && !hidden)
-
+  const hidden = overdueCount === 0 || isSelectionMode
   if (hidden) return null
 
   const content = <CalendarClock className="size-5" aria-hidden />
-  const label = `${overdueCount} overdue — show only overdue tasks and scroll to them`
-  const pill =
-    'flex size-12 items-center justify-center rounded-full bg-[#fb7a6a] text-white shadow-md hover:bg-[#f86a58] active:bg-[#f86a58]'
+  // The pressed label must not end like the top-bar pill's ("clear the
+  // overdue filter"), which the E2E suite finds by its whole label.
+  const label = overdueFilterOn
+    ? `${overdueCount} overdue — showing only overdue tasks; tap to show everything`
+    : `${overdueCount} overdue — show only overdue tasks and scroll to them`
+  const pill = `size-12 items-center justify-center rounded-full text-white shadow-md ${
+    overdueFilterOn
+      ? 'bg-[#e0503d] ring-2 ring-[#fb7a6a] ring-offset-2 ring-offset-background hover:bg-[#d4452f]'
+      : 'bg-[#fb7a6a] hover:bg-[#f86a58] active:bg-[#f86a58]'
+  }`
 
   if (placement === 'phone') {
     return (
@@ -160,9 +97,10 @@ export function OverdueJumpFab({
         type="button"
         onClick={onJump}
         aria-label={label}
+        aria-pressed={overdueFilterOn}
         title={`${overdueCount} overdue`}
         data-overdue-jump-fab="phone"
-        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 transition-colors md:hidden`}
+        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 flex cursor-pointer transition-colors md:hidden`}
       >
         {content}
       </button>
@@ -170,19 +108,16 @@ export function OverdueJumpFab({
   }
 
   return (
-    <div className="pointer-events-none sticky bottom-6 z-40 mt-4 hidden min-w-0 justify-end md:flex xl:col-start-1">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={onJump}
-        aria-label={label}
-        title={`${overdueCount} overdue`}
-        data-overdue-jump-fab="desktop"
-        style={lift ? { transform: `translateY(-${lift}px)` } : undefined}
-        className={`${pill} pointer-events-auto transition-[background-color,transform] duration-300`}
-      >
-        {content}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onJump}
+      aria-label={label}
+      aria-pressed={overdueFilterOn}
+      title={`${overdueCount} overdue`}
+      data-overdue-jump-fab="desktop"
+      className={`${pill} fixed right-6 bottom-[5.25rem] z-40 hidden cursor-pointer opacity-90 transition-[background-color,opacity] hover:opacity-100 md:flex`}
+    >
+      {content}
+    </button>
   )
 }

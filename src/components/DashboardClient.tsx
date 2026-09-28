@@ -2030,7 +2030,12 @@ function DashboardView({
     if (activePillFilter !== filter) requestJump()
     onExclusiveDateFilter(filter)
   }
+  // The jump button is a toggle: lit (Overdue among the date filters — the
+  // pinned chip's own "on"), a tap just takes Overdue off and leaves the page
+  // where it is, like tapping the lit pill.
+  const overdueFilterOn = selectedDateFilters.includes('overdue')
   const onOverdueJump = () => {
+    if (overdueFilterOn) return onToggleDateFilter('overdue')
     onExclusiveDateFilter('overdue')
     requestJump()
   }
@@ -2302,16 +2307,6 @@ function DashboardView({
             onUnifiedChange={onUnifiedChange}
           />
         </div>
-
-        {/* md+ jump button: a sticky grid child after the list, so it rides the
-            viewport bottom at the list column's right edge — see OverdueJumpFab. */}
-        <OverdueJumpFab
-          placement="desktop"
-          overdueCount={headerCounts.overdueCount}
-          overdueFilterOn={selectedDateFilters.includes('overdue')}
-          isSelectionMode={selection.isSelectionMode}
-          onJump={onOverdueJump}
-        />
       </main>
 
       <SelectionActionSheet
@@ -2339,7 +2334,14 @@ function DashboardView({
       <OverdueJumpFab
         placement="phone"
         overdueCount={headerCounts.overdueCount}
-        overdueFilterOn={selectedDateFilters.includes('overdue')}
+        overdueFilterOn={overdueFilterOn}
+        isSelectionMode={selection.isSelectionMode}
+        onJump={onOverdueJump}
+      />
+      <OverdueJumpFab
+        placement="desktop"
+        overdueCount={headerCounts.overdueCount}
+        overdueFilterOn={overdueFilterOn}
         isSelectionMode={selection.isSelectionMode}
         onJump={onOverdueJump}
       />

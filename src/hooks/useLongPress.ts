@@ -139,9 +139,14 @@ interface UseSimpleLongPressOptions {
   delay?: number
 }
 
+/** The one field the simple handlers read; a React pointer event has it. */
+interface PressButton {
+  button: number
+}
+
 interface UseSimpleLongPressReturn {
-  onPointerDown: () => void
-  onPointerUp: () => void
+  onPointerDown: (e?: PressButton) => void
+  onPointerUp: (e?: PressButton) => void
   onPointerLeave: () => void
   /** Keyboard fallback — calls onShortPress if pointer didn't fire */
   onClick: () => void
@@ -153,6 +158,10 @@ interface UseSimpleLongPressReturn {
  * For components where the handler is wired into existing event props
  * without needing React.PointerEvent parameters (Header buttons, SnoozeAllFab).
  * Includes keyboard fallback via onClick.
+ *
+ * Only the primary button counts. A right-click fires pointerdown and
+ * pointerup too, and without the check that pair read as a short press — a
+ * right-click on the snooze-all clock or FAB snoozed every overdue task.
  */
 export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpleLongPressReturn {
   const { onLongPress, onShortPress, delay = 400 } = options
@@ -165,24 +174,32 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     }
   }, [])
 
-  const onPointerDown = useCallback(() => {
-    fired.current = false
-    timer.current = setTimeout(() => {
-      fired.current = true
-      onLongPress()
-    }, delay)
-  }, [onLongPress, delay])
+  const onPointerDown = useCallback(
+    (e?: PressButton) => {
+      if (e && e.button !== 0) return
+      fired.current = false
+      timer.current = setTimeout(() => {
+        fired.current = true
+        onLongPress()
+      }, delay)
+    },
+    [onLongPress, delay],
+  )
 
-  const onPointerUp = useCallback(() => {
-    if (timer.current) {
-      clearTimeout(timer.current)
-      timer.current = null
-    }
-    if (!fired.current) {
-      fired.current = true
-      onShortPress()
-    }
-  }, [onShortPress])
+  const onPointerUp = useCallback(
+    (e?: PressButton) => {
+      if (e && e.button !== 0) return
+      if (timer.current) {
+        clearTimeout(timer.current)
+        timer.current = null
+      }
+      if (!fired.current) {
+        fired.current = true
+        onShortPress()
+      }
+    },
+    [onShortPress],
+  )
 
   const onPointerLeave = useCallback(() => {
     if (timer.current) {
