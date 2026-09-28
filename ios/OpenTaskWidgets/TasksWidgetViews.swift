@@ -302,7 +302,15 @@ private struct TasksListView: View {
         if selectMode {
             return pagerRow + max(SelectModeActionBar.circleDiameter, metrics.actionPillHeight)
         }
-        return metrics.bottomBarHeight
+        return metrics.bottomBarHeight + (showsRestingOverdueBar ? 6 + metrics.actionPillHeight : 0)
+    }
+
+    /// Resting mode's Overdue page carries the "All overdue" bar under its
+    /// usual bottom row (Trent, 2026-09-28): snoozing everything overdue was
+    /// clock → bar, two taps and a mode, on the one page that exists to be
+    /// cleared. Hidden at N == 0, like snooze mode's.
+    private var showsRestingOverdueBar: Bool {
+        isLarge && !snoozeMode && !selectMode && entry.isOverdueScope && entry.overdueSweepCount > 0
     }
 
     /// The paged rows plus (systemLarge) the bottom area — see
@@ -510,7 +518,9 @@ private struct TasksListView: View {
     /// The bottom-of-card control area — resting mode's one row ("Select"
     /// bottom-left, the pager centred, the completed dot bottom-right —
     /// 2026-09-24, Trent: "change the eyeball to a dot and move it to the
-    /// bottom by the paginator"), or, in snooze/select mode, the pager's row
+    /// bottom by the paginator"; on the Overdue page the "All overdue" bar
+    /// sits under it — `showsRestingOverdueBar`), or, in snooze/select mode,
+    /// the pager's row
     /// (when there is more than one page) stacked ABOVE that mode's bar —
     /// mockup: "pages keep your picks", so paging must stay possible
     /// mid-selection. Heights come from `bottomHeight(withPager:)`; the
@@ -540,17 +550,23 @@ private struct TasksListView: View {
                 }
             }
         } else {
-            ListBottomBar(height: bar) {
-                SelectEntryButton(height: bar)
-            } pager: {
-                if totalPages > 1 {
-                    pager(page: page, totalPages: totalPages)
+            VStack(spacing: 6) {
+                ListBottomBar(height: bar) {
+                    SelectEntryButton(height: bar)
+                } pager: {
+                    if totalPages > 1 {
+                        pager(page: page, totalPages: totalPages)
+                    }
+                } trailing: {
+                    CompletedDotToggle(
+                        intent: ToggleShowCompletedIntent(kind: TasksWidget.kind),
+                        isOn: showCompleted, label: "done", height: bar
+                    )
                 }
-            } trailing: {
-                CompletedDotToggle(
-                    intent: ToggleShowCompletedIntent(kind: TasksWidget.kind),
-                    isOn: showCompleted, label: "done", height: bar
-                )
+                if showsRestingOverdueBar {
+                    SnoozeAllOverdueBar(count: entry.overdueSweepCount, nextPeriodLabel: nextPeriodTimeLabel)
+                        .frame(height: metrics.actionPillHeight)
+                }
             }
         }
     }

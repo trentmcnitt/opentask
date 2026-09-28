@@ -177,19 +177,50 @@ struct SnoozeOverdueNextPeriodIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        await OverdueSweep.run(label: targetLabel.isEmpty ? nil : targetLabel) {
+            try await APIClient.shared.snoozeOverdue(slot: "next")
+        }
+        return .result()
+    }
+}
+
+/// "+1h": the same overdue sweep, one hour from now snapped to the hour
+/// (`delta_minutes: 60` on `POST /api/tasks/bulk/snooze-overdue` — the
+/// server's "from now" for overdue tasks, the watch bulk sheet's "+1 hour").
+/// The card's default action (Trent, 2026-09-28: "when things are overdue,
+/// the default thing should be +1 hour"), beside ⏭ next period.
+struct SnoozeOverduePlusHourIntent: AppIntent {
+    static var title: LocalizedStringResource = "Snooze Overdue One Hour"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        await OverdueSweep.run(label: nil) {
+            try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+        }
+        return .result()
+    }
+}
+
+/// What both overdue-sweep intents do around their one API call: claim the
+/// sweep so a double tap can't send two, record the server's real counts for
+/// the card's result view, and drop what moved from the cache.
+private enum OverdueSweep {
+    static func run(label: String?, _ call: () async throws -> APIClient.BulkSnoozeResult) async {
         let claim = "snooze-overdue"
-        guard WatchWidgetState.tryClaim(claim) else { return .result() }
+        guard WatchWidgetState.tryClaim(claim) else { return }
         defer { WatchWidgetState.releaseClaim(claim) }
 
         do {
-            let result = try await APIClient.shared.snoozeOverdue(slot: "next")
+            let result = try await call()
             WatchWidgetState.recordSnoozeResult(.init(
                 at: Date(),
                 tasksAffected: result.tasksAffected,
                 snoozedHigh: result.snoozedHigh,
                 skippedHigh: result.skippedHigh,
                 skippedUrgent: result.skippedUrgent,
-                targetLabel: targetLabel.isEmpty ? nil : targetLabel
+                targetLabel: label
             ))
             // Take what the sweep moved out of the cached task list, so a
             // reload whose own fetch fails can't fall back to the pre-snooze
@@ -199,11 +230,10 @@ struct SnoozeOverdueNextPeriodIntent: AppIntent {
             WatchCache.removeSweptOverdueTasks(keepHigh: result.skippedHigh > 0)
         } catch {
             // No result recorded: the card simply stays in overdue mode with
-            // the button live for a retry.
+            // the buttons live for a retry.
         }
         if #available(watchOS 11.0, *) {
             WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
         }
-        return .result()
     }
 }

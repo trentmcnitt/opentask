@@ -1514,8 +1514,14 @@ private struct ActionCircle<I: AppIntent>: View {
 
     var body: some View {
         Button(intent: intent) {
+            // Resizable, so the symbol's own shape is centred: drawn at a
+            // font size it keeps text-style padding and `forward.end.fill`
+            // sat visibly high in the circle (Trent, 2026-09-28).
             Image(systemName: systemImage)
-                .font(.system(size: diameter * 0.4, weight: .semibold))
+                .resizable()
+                .scaledToFit()
+                .fontWeight(.semibold)
+                .frame(width: diameter * 0.36, height: diameter * 0.36)
                 .foregroundStyle(isPrimary ? Color.white : Color.primary)
                 .frame(width: diameter, height: diameter)
                 .background(
@@ -1629,9 +1635,11 @@ struct SelectEntryButton: View {
     }
 }
 
-/// The snooze-mode "All overdue (N)" bottom bar — acts on the WHOLE server-
-/// side overdue set via `SnoozeAllOverdueIntent`, not just what's on screen
-/// (see that intent's doc). The CALLER hides this entirely when `count == 0`
+/// The "All overdue (N)" bottom bar — acts on the WHOLE server-side overdue
+/// set via `SnoozeAllOverdueIntent`, not just what's on screen (see that
+/// intent's doc). Snooze mode shows it on every page; resting mode shows it
+/// on the Overdue page (Trent, 2026-09-28), so snoozing everything there is
+/// one tap instead of clock → bar. The CALLER hides this entirely when `count == 0`
 /// — a bar offering to snooze zero tasks has nothing honest to say.
 struct SnoozeAllOverdueBar: View {
     let count: Int
@@ -1652,7 +1660,9 @@ struct SnoozeAllOverdueBar: View {
             Spacer(minLength: 4)
             ActionPill(
                 intent: SnoozeAllOverdueIntent(target: .nextPeriod),
-                label: nextPeriodLabel.map { "Next period · \($0)" } ?? "Next period",
+                // The time, not the words (Trent, 2026-09-28: "⏭ always
+                // means next period, but put the time that's helpful").
+                label: nextPeriodLabel ?? "Next period",
                 systemImage: "forward.end.fill",
                 isPrimary: true
             )
