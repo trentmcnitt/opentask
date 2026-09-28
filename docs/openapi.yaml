@@ -987,7 +987,38 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkResult'
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tasks_affected:
+                        type: integer
+                      tasks_skipped:
+                        type: integer
+                      skipped_urgent:
+                        type: integer
+                        description: Skipped on priority — High (P3) AND Urgent (P4).
+                      skipped_high:
+                        type: integer
+                        description: The High subset of `skipped_urgent`; swept on the next press.
+                      snoozed_high:
+                        type: integer
+                        description: How many of the moved tasks were High.
+                      skipped_reminders:
+                        type: integer
+                        description: Reminders left in place (reminders are period-locked).
+                      until:
+                        type: string
+                        format: date-time
+                        description: The resolved snooze target.
+                      message:
+                        type: string
+                        description: >-
+                          Ready-to-display summary, the same copy as the web toast — e.g.
+                          "Snoozed 3 tasks (2 high, 1 urgent skipped)" or "No snoozable
+                          tasks". For clients that show the result without branching on
+                          the counts (Apple Shortcuts).
         '401':
           $ref: '#/components/responses/Unauthorized'
 
