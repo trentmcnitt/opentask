@@ -591,7 +591,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-dictation.ts`   | Dictation realism and typo tolerance                   | 10    |
 | `enrichment-context.ts`     | User context resolution                                | 8     |
 | `enrichment-voice.ts`       | Voice preservation                                     | 8     |
-| `enrichment-reminders.ts`   | Reminder enrichment — cadence and time slots (§6)      | 6     |
+| `enrichment-reminders.ts`   | Reminder enrichment — cadence and time slots (§6)      | 11    |
 | `quick-take.ts`             | Quick Take                                             | 12    |
 | `insights.ts`               | AI Insights scoring and signals                        | 11    |
 | `whats-next.ts`             | What's Next recommendations                            | 8     |
@@ -599,13 +599,19 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `helpers/generate-tasks.ts` | Realistic task list generator (used by insights-large) | —     |
 | `index.ts`                  | Barrel export                                          | —     |
 
-**Total: 143 scenarios** (103 enrichment + 6 enrichment_reminder + 12 quick_take + 14 insights + 8 whats_next)
+**Total: 148 scenarios** (103 enrichment + 11 enrichment_reminder + 12 quick_take + 14 insights + 8 whats_next)
 
 Reminder scenarios are a separate feature, not a subset of enrichment: a
 reminder has its own user prompt (`buildReminderEnrichmentUserPrompt`) built
 around the user's time slots, and its result passes through
 `sanitizeReminderEnrichment` before it is judged, so what a scenario asserts is
 what the database would actually receive.
+
+A reminder whose text states no time of day goes in the user's **default
+reminder slot** (Settings → Reminder periods → Default period; Trent,
+2026-09-28). The prompt marks that slot `← default slot`, a scenario names it
+with `defaultSlotLabel`, and the sanitizer falls back to it when the model's
+rule carries no BYHOUR. Before that it was the slot current at enrichment time.
 
 Each scenario defines:
 

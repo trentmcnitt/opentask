@@ -257,11 +257,13 @@ test.describe('Quota prompts', () => {
     await page.goto('/settings')
     const toggle = page.locator('[data-quota-prompts-switch]')
     await expect(toggle).toBeVisible()
-    await expect(page.locator('[data-quota-prompt-slot]')).toBeVisible()
+    await expect(page.locator('[data-default-reminder-slot]')).toBeVisible()
     const saved = waitForPreferenceSave(page, 'quota_prompts_enabled')
     await toggle.click()
     expect((await saved).ok()).toBeTruthy()
-    await expect(page.locator('[data-quota-prompt-slot]')).toHaveCount(0)
+    // The default period governs every reminder since 2026-09-28, so turning
+    // quota reminders off no longer hides it.
+    await expect(page.locator('[data-default-reminder-slot]')).toBeVisible()
 
     // The server stops sending prompts at all — not just the page hiding them.
     const payload = (await (await page.request.get('/api/reminders')).json()).data as {

@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useState } from 'react'
 
 /**
- * The user's two quota-reminder settings (2026-09-24): the feature's on/off
- * switch and the period prompts go in by default (a time slot id; null = the
- * first period of the day). Settings edits them; the quota editor reads the
- * default so it can show where an unassigned prompt will actually land.
+ * The user's reminder-placement settings: the quota-reminders on/off switch
+ * (2026-09-24) and the DEFAULT REMINDER SLOT (`slotId`, a time slot id; null =
+ * the first period of the day). The slot began as where quota prompts go by
+ * default and, since 2026-09-28, is where ANY reminder goes when nothing says
+ * when (stored as `quota_prompt_slot_id`; see `defaultReminderSlot`).
+ * Settings edits them; the quota editor reads the default so it can show where
+ * an unassigned prompt will actually land, and the reminder editor reads it to
+ * pre-pick a new reminder's slot.
  *
  * Module-cached like the other small settings reads, so opening a quota's
  * editor after Settings costs no fetch.

@@ -1150,7 +1150,9 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Reminder periods — the user's time slots (src/components/TimeSlotSettings.tsx) */}
+        {/* Reminder periods — the user's time slots (src/components/TimeSlotSettings.tsx),
+            then the default period and the quota-reminders switch
+            (src/components/QuotaPromptSettings.tsx) */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
           <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
             Reminder periods

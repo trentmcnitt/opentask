@@ -9,6 +9,11 @@
  * resolves "evening" to a generic 7pm rather than to this user's Evening slot
  * at 8:30pm — the whole reason the slots are in the prompt.
  *
+ * A thought that states no time of day goes in the user's DEFAULT reminder
+ * slot (Settings → Default period; `defaultSlotLabel` here, marked
+ * "← default slot" in the prompt) — Trent, 2026-09-28. It used to be the slot
+ * current at the moment of adding.
+ *
  * Output here is the SANITIZED result, so `must_include` asserts what the
  * database would actually receive: no due date, no labels, no project.
  */
@@ -33,7 +38,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'notice what I am grateful for',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Afternoon',
+      defaultSlotLabel: 'Afternoon',
     },
     requirements: {
       must_include: {
@@ -46,8 +51,8 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       quality_notes:
         'Title should preserve the user’s voice — "Notice what I am grateful for" — ' +
         'without being rewritten into an action ("Practice gratitude" is an edit, not a transcription). ' +
-        'No cadence was stated, so daily is right. No time of day was stated, so the current slot ' +
-        '(Afternoon, 16:00) is right. notes should be null — there is nothing the title cannot carry.',
+        'No cadence was stated, so daily is right. No time of day was stated, so the user’s default ' +
+        'reminder slot (Afternoon, 16:00) is right. notes should be null — there is nothing the title cannot carry.',
     },
   },
   {
@@ -58,7 +63,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'every Friday and Sunday in the evening think about the week ahead',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Morning',
+      defaultSlotLabel: 'Morning',
     },
     requirements: {
       must_include: {
@@ -82,7 +87,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'stretch my back in the morning',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Evening',
+      defaultSlotLabel: 'Evening',
     },
     requirements: {
       must_include: {
@@ -103,7 +108,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'on the first of every month look over what I spent',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Midday',
+      defaultSlotLabel: 'Midday',
     },
     requirements: {
       must_include: {
@@ -113,7 +118,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       },
       quality_notes:
         'rrule must be FREQ=MONTHLY;BYMONTHDAY=1 with BYHOUR/BYMINUTE on a slot boundary. ' +
-        'No time of day was stated, so the current slot (Midday, 12:00) is expected: ' +
+        'No time of day was stated, so the default slot (Midday, 12:00) is expected: ' +
         'FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=12;BYMINUTE=0. ' +
         'Title should read as the thought ("Look over what I spent"), not the schedule.',
     },
@@ -126,7 +131,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'a couple times a week I want to remember to text my brother',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Afternoon',
+      defaultSlotLabel: 'Afternoon',
     },
     requirements: {
       must_include: {
@@ -136,7 +141,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       },
       quality_notes:
         'rrule must be FREQ=WEEKLY with exactly two BYDAY values (any two spread across the week ' +
-        'is acceptable) and BYHOUR/BYMINUTE on a slot boundary — the current slot (16:00) is ' +
+        'is acceptable) and BYHOUR/BYMINUTE on a slot boundary — the default slot (16:00) is ' +
         'expected since no time of day was said. The user’s framing ("I want to remember to") ' +
         'is scaffolding: the title should be "Text my brother". ' +
         'This must NOT become a task with a due date.',
@@ -150,7 +155,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'um remind me every uh every night before bed no wait every night to um to write down one thing that went well today, my therapist suggested it',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Morning',
+      defaultSlotLabel: 'Morning',
     },
     requirements: {
       must_include: {
@@ -176,7 +181,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'at lunch check in with how my body feels',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Early morning',
+      defaultSlotLabel: 'Early morning',
     },
     requirements: {
       must_include: {
@@ -186,7 +191,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       },
       quality_notes:
         'No slot is called "Lunch". "At lunch" has to be matched by time to Midday (12:00), ' +
-        'not to the current slot (Early morning) and not to a generic 12:30 or 1pm. ' +
+        'not to the default slot (Early morning) and not to a generic 12:30 or 1pm. ' +
         'Daily, since no days were named. Title: "Check in with how my body feels".',
     },
   },
@@ -198,7 +203,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'drink a glass of water',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Evening',
+      defaultSlotLabel: 'Evening',
     },
     requirements: {
       must_include: {
@@ -209,7 +214,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Every prior about hydration says "morning" or "throughout the day". The user said ' +
-        'nothing about when, so the marked current slot (Evening, 20:30) is the answer. ' +
+        'nothing about when, so the marked default slot (Evening, 20:30) is the answer. ' +
         'The subject of a thought is not evidence about when the user wants it. ' +
         'Title preserved as typed: "Drink a glass of water".',
     },
@@ -223,7 +228,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'every other Sunday evening plan the next two weeks',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Midday',
+      defaultSlotLabel: 'Midday',
     },
     requirements: {
       must_include: {
@@ -246,7 +251,7 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
       text: 'high priority remember why I started this business every morning',
       timezone: 'America/Chicago',
       slots: SLOTS,
-      currentSlotLabel: 'Afternoon',
+      defaultSlotLabel: 'Afternoon',
     },
     requirements: {
       must_include: {
@@ -259,6 +264,31 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
         '"High priority" is the one explicit priority signal the task prompt maps to 3; it ' +
         'applies to reminders the same way. The phrase must be removed from the title, as must ' +
         '"every morning". Title: "Remember why I started this business". Morning slot (09:00).',
+    },
+  },
+  {
+    id: 'reminder-days-but-no-time',
+    feature: 'enrichment_reminder',
+    description: 'Named days with no time of day — the time comes from the default slot',
+    input: {
+      text: 'every Tuesday and Thursday water the plants',
+      timezone: 'America/Chicago',
+      slots: SLOTS,
+      defaultSlotLabel: 'Early morning',
+    },
+    requirements: {
+      must_include: {
+        rrule: 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=7;BYMINUTE=0',
+        due_at: null,
+        labels: [],
+        project_name: null,
+        priority: 0,
+      },
+      quality_notes:
+        'The text names the days but no time of day, so the time is the user’s default reminder ' +
+        'slot (Early morning, 07:00) — not Morning because plants are a morning chore, and not ' +
+        'any clock time the model prefers. BYDAY must be TU,TH. Title: "Water the plants", with ' +
+        'the schedule words removed.',
     },
   },
 ]

@@ -68,7 +68,9 @@
  *   client holding a stale start still snoozes — just to the old time.
  *   "Next period" everywhere is `nextPeriodStart` over the current slots.
  * - AI reminder parsing snaps a stated time to the nearest slot start, using
- *   the user's current slots (`buildPromptFor`).
+ *   the user's current slots (`buildPromptFor`); no stated time → the user's
+ *   default reminder slot (`defaultReminderSlot`, below), which is also where
+ *   a reminder created without a schedule starts (`createTask`).
  * - Native caches: `TimeSlotStore` (App Group) is refreshed by
  *   `refreshSlotActions()` on launch AND on every foreground in the iPhone,
  *   watch and Mac apps; the watch Smart Stack widget re-fetches on each
@@ -100,11 +102,54 @@ export {
 
 import { DEFAULT_TIME_SLOTS, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { QuotaPromptConfig } from '@/types'
+import { resolvePromptSlot } from '@/lib/quota-prompts'
+import { buildSchedule, parseCadence } from '@/lib/reminder-rule'
 
 export function listTimeSlots(userId: number): TimeSlot[] {
   return getDb()
     .prepare('SELECT * FROM time_slots WHERE user_id = ? ORDER BY start_time')
     .all(userId) as TimeSlot[]
+}
+
+/**
+ * The user's DEFAULT REMINDER SLOT (Trent, 2026-09-28): where a reminder goes
+ * when nothing says when — a title-only reminder from an Apple Shortcut or the
+ * Reminders quick add before (or without) AI enrichment, and a reminder whose
+ * text the AI finds no time cue in. It is also where quota prompts go when a
+ * quota has not chosen a period, which is where the setting started.
+ *
+ * Stored in `users.quota_prompt_slot_id`. The column keeps its old name —
+ * renaming a column is a destructive migration, and the API field name is
+ * public — so read "quota_prompt_slot_id" as "default reminder slot id"
+ * everywhere. `/api/user/preferences` also accepts and returns it as
+ * `default_reminder_slot_id`.
+ *
+ * Resolved exactly as quota prompts resolve it (`resolvePromptSlot`): the
+ * stored slot if the user still has it, else the first period of the day. So
+ * an unset default is the first period, for quotas and reminders alike. Null
+ * only when the user has no slots at all.
+ */
+export function defaultReminderSlot(userId: number): TimeSlot | null {
+  const slots = listTimeSlots(userId)
+  const row = getDb().prepare('SELECT quota_prompt_slot_id FROM users WHERE id = ?').get(userId) as
+    | { quota_prompt_slot_id: number | null }
+    | undefined
+  const index = resolvePromptSlot(slots, null, row?.quota_prompt_slot_id ?? null)
+  return index >= 0 ? slots[index] : null
+}
+
+/**
+ * The schedule a reminder gets when nothing says when: daily, at the default
+ * reminder slot's start — the same `FREQ=DAILY;BYHOUR=h;BYMINUTE=m` shape the
+ * reminder editor's slot chips and the enrichment guard write, so the row sits
+ * on the slot's boundary. Null when the user has no slots (the reminder then
+ * stays unscheduled, in "Anytime", as before this default existed).
+ */
+export function defaultReminderRule(userId: number): string | null {
+  const slot = defaultReminderSlot(userId)
+  const minutes = slot ? parseHHMM(slot.start_time) : null
+  if (minutes === null) return null
+  return buildSchedule({ ...parseCadence('FREQ=DAILY'), time: minutes })
 }
 
 /**

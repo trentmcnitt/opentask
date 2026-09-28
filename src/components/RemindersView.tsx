@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn, fromRowControl } from '@/lib/utils'
-import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { parseHHMM } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 import {
   groupConsidered,
@@ -528,22 +528,20 @@ export function RemindersView({
   }, [openCreate])
 
   /**
-   * Creating: the quick add makes a daily thought in the slot that is current
-   * right now (else the first slot), and it is on screen the moment the server
-   * answers. That default is also a fallback — the quick add sets `enrich`, so
-   * the text goes to AI enrichment, which reads any cadence or time of day the
-   * user actually said ("every Friday evening") and rewrites the schedule,
-   * snapping it to one of their slots. The form does not enrich: there the user
+   * Creating: the quick add sends only the text, and the SERVER makes it a
+   * daily thought in the user's default reminder slot (Settings → Reminder
+   * periods → Default period; `defaultReminderRule` in createTask) — the same
+   * path an Apple Shortcut's title-only POST takes (Trent, 2026-09-28: "adding
+   * a reminder should be just like adding a task"). It is on screen the moment
+   * the server answers. Until 2026-09-28 this box used the slot current right
+   * now; the quick add is one box for the whole surface, not a per-slot add,
+   * so "unspecified" means the default. That default is also a fallback — the
+   * quick add sets `enrich`, so the text goes to AI enrichment, which reads any
+   * cadence or time of day the user actually said ("every Friday evening") and
+   * rewrites the schedule, snapping it to one of their slots; with no time cue
+   * it stays in the default slot. The form does not enrich: there the user
    * picked the schedule by hand. Undo is the ordinary one.
    */
-  const dailyIn = useCallback(
-    (slots: TimeSlot[]): string => {
-      const slot = currentSlot(slots, timezone) ?? slots[0]
-      const minutes = (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
-      return `FREQ=DAILY;BYHOUR=${Math.floor(minutes / 60)};BYMINUTE=${minutes % 60}`
-    },
-    [timezone],
-  )
   const createReminder = useCallback(
     async (input: ReminderCreateInput) => {
       try {
@@ -570,15 +568,8 @@ export function RemindersView({
     [create, timeSlots, onUndo],
   )
   const quickAdd = useCallback(
-    async (title: string) => {
-      // The slots arrive on their own fetch, and this box is live before it
-      // lands — typing that fast is rare but reachable on a cold load. Guessing
-      // a time of day with the slots unknown would drop the thought at 9am,
-      // which may not even be a slot this user has, so wait for them instead.
-      const slots = timeSlots.length > 0 ? timeSlots : await fetchTimeSlots()
-      return createReminder({ title, rrule: dailyIn(slots), enrich: true })
-    },
-    [createReminder, dailyIn, timeSlots],
+    async (title: string) => createReminder({ title, enrich: true }),
+    [createReminder],
   )
   /**
    * Retry the AI on a reminder it gave up on: the server swaps `ai-failed`
@@ -700,7 +691,7 @@ export function RemindersView({
     // end of the list can always be scrolled out from under it.
     <section aria-label="Reminders" className="w-full pb-24">
       {/* Creating lives here, on the surface, not on the task form: a thought
-          typed and entered is a daily reminder in the current slot, on screen
+          typed and entered is a daily reminder in the default slot, on screen
           at once; the plus opens the editor for anything more. */}
       <div className="mb-4">
         <QuickAdd
@@ -2512,22 +2503,6 @@ function normalizeWording(text: string): string {
     .replace(/\s+/g, ' ')
     .replace(/[.,;:!?\s]+$/, '')
     .trim()
-}
-
-/**
- * The user's slots, for the one caller that needs them before `useTimeSlots`
- * has finished. Returns an empty list on any failure — the caller has a
- * fallback, and a thrown error here would lose what the user just typed.
- */
-async function fetchTimeSlots(): Promise<TimeSlot[]> {
-  try {
-    const res = await fetch('/api/time-slots')
-    if (!res.ok) return []
-    const json = await res.json()
-    return (json?.data?.time_slots ?? []) as TimeSlot[]
-  } catch {
-    return []
-  }
 }
 
 /** Quiet placeholder while the first fetch is in flight — no spinner, no jump. */

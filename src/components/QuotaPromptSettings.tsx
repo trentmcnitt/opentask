@@ -16,18 +16,27 @@ import { formatMinutes } from '@/lib/reminder-rule'
 import { showToast } from '@/lib/toast'
 
 /**
- * Settings → Reminder periods → quota reminders (2026-09-24).
+ * Settings → Reminder periods → Default period, and the quota-reminders switch.
  *
- * Unmet quotas also appear as prompts in a reminder period each day
- * (`src/core/tasks/quota-prompts.ts`). Two settings, both the user's own:
- * the switch for the whole feature (Trent wanted it easy to turn off), and
- * the period prompts go in when a quota has not chosen one ("Quota reminders
- * go in: Morning"). A quota's own editor overrides the period.
+ * DEFAULT PERIOD (Trent, 2026-09-28): the period a reminder goes in when
+ * nothing says when — a reminder added with just its words (the Reminders
+ * quick add, an Apple Shortcut's title-only POST), and one whose text AI
+ * enrichment finds no time cue in (`defaultReminderSlot` on the server). It is
+ * also where unmet quotas prompt when a quota has not chosen a period, which
+ * is where the setting started (2026-09-24, "Quota reminders go in"), so it
+ * is stored in `users.quota_prompt_slot_id` (alias `default_reminder_slot_id`
+ * in /api/user/preferences). It no longer hides when quota reminders are off:
+ * it governs every reminder now, not just quota prompts.
+ *
+ * QUOTA REMINDERS: unmet quotas also appear as prompts in a reminder period
+ * each day (`src/core/tasks/quota-prompts.ts`); the switch turns the whole
+ * feature off (Trent wanted it easy to turn off). A quota's own editor
+ * overrides the period.
  *
  * Lives under the period list because the choice is one of those periods.
  * The picker shows the RESOLVED period — an unset default, or one pointing at
  * a removed period, shows the first period of the day, which is where the
- * prompts actually are (`resolvePromptSlot`, the server's own rule).
+ * reminders actually go (`resolvePromptSlot`, the server's own rule).
  *
  * Saves on change like the section's other switches; only a failure speaks.
  */
@@ -53,31 +62,26 @@ export function QuotaPromptSettings() {
 
   return (
     <div className="mt-4 space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm">Quota reminders</div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            Unmet quotas also show up among your reminders each day
-          </div>
-        </div>
-        <Switch
-          checked={prefs?.enabled ?? true}
-          disabled={!prefs}
-          onCheckedChange={(checked) => void update({ enabled: checked })}
-          aria-label="Quota reminders"
-          data-quota-prompts-switch
-        />
-      </div>
-      {prefs?.enabled && slots.length > 0 && (
+      {slots.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <label htmlFor="quota-prompt-slot" className="text-sm">
-            Quota reminders go in
-          </label>
+          <div>
+            <label htmlFor="default-reminder-slot" className="text-sm">
+              Default period
+            </label>
+            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+              Where a reminder goes when you don&rsquo;t say when
+            </div>
+          </div>
           <Select
             value={current ? String(current.id) : undefined}
             onValueChange={(value) => void update({ slotId: Number(value) })}
           >
-            <SelectTrigger id="quota-prompt-slot" className="w-48" data-quota-prompt-slot>
+            <SelectTrigger
+              id="default-reminder-slot"
+              className="w-auto min-w-48"
+              aria-label="Default period"
+              data-default-reminder-slot
+            >
               <SelectValue placeholder="Choose a period" />
             </SelectTrigger>
             <SelectContent>
@@ -93,6 +97,22 @@ export function QuotaPromptSettings() {
           </Select>
         </div>
       )}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm">Quota reminders</div>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            Unmet quotas also show up among your reminders each day, in the default period unless a
+            quota picks its own
+          </div>
+        </div>
+        <Switch
+          checked={prefs?.enabled ?? true}
+          disabled={!prefs}
+          onCheckedChange={(checked) => void update({ enabled: checked })}
+          aria-label="Quota reminders"
+          data-quota-prompts-switch
+        />
+      </div>
     </div>
   )
 }

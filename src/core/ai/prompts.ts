@@ -750,10 +750,15 @@ Parse the task above and return the structured result.`
 // resolving names from context) is not repeated here.
 //
 // Two lines were added after watching the model get them wrong, and stay for
-// that reason: the current-slot marker is authoritative (the model computed
-// "current" from the clock printed in the prompt), and the subject of a
-// thought says nothing about when the user wants it (a gratitude practice
-// went to Evening on thematic grounds). `sanitizeReminderEnrichment` enforces
+// that reason: the marked slot is authoritative (when the marker meant the
+// CURRENT slot, the model recomputed "current" from the clock printed in the
+// prompt and overrode it), and the subject of a thought says nothing about
+// when the user wants it (a gratitude practice went to Evening on thematic
+// grounds).
+//
+// The marked slot is the user's DEFAULT reminder slot (a Settings choice,
+// `defaultReminderSlot`) since 2026-09-28 — Trent: a reminder with no time cue
+// goes where his default says, not wherever the clock happens to be. `sanitizeReminderEnrichment` enforces
 // the shape server-side regardless, which is why the wording below describes
 // the result rather than shouting rules.
 
@@ -761,8 +766,11 @@ export interface ReminderEnrichmentPromptParams {
   timezone: string
   /** The user's editable time slots, in sort order. */
   slots: Array<{ label: string; start_time: string }>
-  /** Label of the slot that is current right now, if any. */
-  currentSlotLabel?: string | null
+  /**
+   * Label of the user's default reminder slot — where a thought with no time
+   * cue goes (`defaultReminderSlot`).
+   */
+  defaultSlotLabel?: string | null
   userContext?: string | null
   taskText: string
 }
@@ -774,17 +782,17 @@ export interface ReminderEnrichmentPromptParams {
  * template is defined exactly once.
  */
 export function buildReminderEnrichmentUserPrompt(params: ReminderEnrichmentPromptParams): string {
-  const { timezone, slots, currentSlotLabel, userContext, taskText } = params
+  const { timezone, slots, defaultSlotLabel, userContext, taskText } = params
 
   // No clock. A reminder has no due date, so nothing in it needs today's date
   // or time, and printing one gave the model something to contradict the
-  // current-slot marker with — it recomputed "current" from the clock and
-  // overrode the marker (seen in the quality run). The marker is the clock,
-  // already digested.
+  // slot marker with — back when the marker meant "current", it recomputed
+  // "current" from the clock and overrode the marker (seen in the quality
+  // run). The marker is now the user's default, which no clock can derive.
   const slotList = slots
     .map((slot) => {
       const [hour, minute] = slot.start_time.split(':')
-      const marker = slot.label === currentSlotLabel ? '  ← current slot' : ''
+      const marker = slot.label === defaultSlotLabel ? '  ← default slot' : ''
       return `- ${slot.label} — ${formatMorningTime(slot.start_time)} — BYHOUR=${parseInt(hour, 10)};BYMINUTE=${parseInt(minute, 10)}${marker}`
     })
     .join('\n')
@@ -809,11 +817,10 @@ Time words map onto these windows, not onto clock times. "Evening" means the
 user's Evening slot even if that starts at 8:30 PM; "morning" means their
 Morning even at 9 AM; a word that matches no label ("lunch", "when I wake up")
 goes to the window its time falls in. When the thought says nothing about when,
-it goes in the slot marked current. That marker is authoritative — it is
-already worked out from the user's clock — and the subject of a thought says
-nothing about when they want it: a gratitude practice is not an evening
-thought, and a stretch is not a morning one, unless the user said so. The
-current time is not given here because the marker already carries it.
+it goes in the slot marked default. That marker is authoritative — it is the
+user's own choice of where unscheduled thoughts go — and the subject of a
+thought says nothing about when they want it: a gratitude practice is not an
+evening thought, and a stretch is not a morning one, unless the user said so.
 
 User's timezone: ${timezone}${userContextBlock}
 

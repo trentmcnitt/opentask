@@ -62,6 +62,26 @@ Result:
 - **priority**: 3 (high)
 - **notes**: "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching."
 
+### Adding a reminder
+
+A reminder (a thought prompted in one of your reminder periods, not a task) is
+the same request with `"is_reminder": true`:
+
+```bash
+curl -X POST https://tasks.example.com/api/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "every Friday evening think about the week ahead", "is_reminder": true}'
+```
+
+It is scheduled immediately in your **default reminder period** (Settings →
+Reminder periods → Default period), daily at that period's start, so it never
+lands unscheduled. AI enrichment then reads the text: a stated cadence or time
+of day ("every Friday evening") moves it to the matching period; with no time
+cue it stays in the default period. If AI is off or enrichment fails, it stays
+in the default period. Send `"rrule"` yourself to choose the schedule (it is
+used as sent), or `"rrule": null` for a one-time reminder with no schedule.
+
 ## Skipping AI Enrichment
 
 Send structured fields to bypass enrichment entirely:
