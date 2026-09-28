@@ -9,6 +9,8 @@ interface UseFilterStateOptions {
   tasks: Task[]
   onLabelToggle?: () => void
   timezone?: string
+  /** The page's clock (`useDashboardNow`) — the Overdue/Today filters move with it. */
+  now?: Date
   initialDateFilters?: DueDateFilter[]
 }
 
@@ -39,6 +41,12 @@ export interface TaskFilterCriteria {
 
 interface ApplyTaskFiltersOptions {
   timezone?: string
+  /**
+   * The instant the date filters classify against. The dashboard passes its
+   * one clock (`useDashboardNow`) so the list, the chips and the pills agree;
+   * omitted, it is the current time.
+   */
+  now?: Date
   /**
    * Skip this one group when applying filters — the faceted-count trick
    * FilterBar's chip rows use for their counts. A row that counted over the
@@ -78,12 +86,16 @@ function filterByPriorities(tasks: Task[], c: TaskFilterCriteria): Task[] {
   return filtered
 }
 
-function filterByDateFilters(tasks: Task[], c: TaskFilterCriteria, timezone?: string): Task[] {
+function filterByDateFilters(
+  tasks: Task[],
+  c: TaskFilterCriteria,
+  timezone?: string,
+  now: Date = new Date(),
+): Task[] {
   if (!timezone) return tasks
   if (c.selectedDateFilters.length === 0 && c.excludedDateFilters.length === 0) return tasks
   let filtered = tasks
-  const now = new Date()
-  const boundaries = getTimezoneDayBoundaries(timezone)
+  const boundaries = getTimezoneDayBoundaries(timezone, now)
   if (c.selectedDateFilters.length > 0) {
     filtered = filtered.filter((t) => {
       const buckets = classifyTaskDueDate(t, now, boundaries)
@@ -144,11 +156,11 @@ export function applyTaskFilters(
   criteria: TaskFilterCriteria,
   options: ApplyTaskFiltersOptions = {},
 ): Task[] {
-  const { timezone, skipGroup } = options
+  const { timezone, now, skipGroup } = options
   let filtered = tasks
   if (skipGroup !== 'labels') filtered = filterByLabels(filtered, criteria)
   if (skipGroup !== 'priorities') filtered = filterByPriorities(filtered, criteria)
-  if (skipGroup !== 'dateFilters') filtered = filterByDateFilters(filtered, criteria, timezone)
+  if (skipGroup !== 'dateFilters') filtered = filterByDateFilters(filtered, criteria, timezone, now)
   if (skipGroup !== 'attributes') filtered = filterByAttributes(filtered, criteria)
   if (skipGroup !== 'projects') filtered = filterByProjects(filtered, criteria)
   return filtered
@@ -168,6 +180,7 @@ export function useFilterState({
   tasks,
   onLabelToggle,
   timezone,
+  now,
   initialDateFilters,
 }: UseFilterStateOptions) {
   // Include state
@@ -207,6 +220,13 @@ export function useFilterState({
   const toggleDateFilter = useCallback((filter: DueDateFilter) => {
     setSelectedDateFilters((prev) =>
       prev.includes(filter) ? prev.filter((f) => f !== filter) : [...prev, filter],
+    )
+  }, [])
+
+  /** Remove one date filter if selected — never adds it (unlike the toggle). */
+  const deselectDateFilter = useCallback((filter: DueDateFilter) => {
+    setSelectedDateFilters((prev) =>
+      prev.includes(filter) ? prev.filter((f) => f !== filter) : prev,
     )
   }, [])
 
@@ -354,8 +374,8 @@ export function useFilterState({
   )
 
   const filteredTasks = useMemo(
-    () => applyTaskFilters(tasks, criteria, { timezone }),
-    [tasks, criteria, timezone],
+    () => applyTaskFilters(tasks, criteria, { timezone, now }),
+    [tasks, criteria, timezone, now],
   )
 
   return {
@@ -370,6 +390,7 @@ export function useFilterState({
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    deselectDateFilter,
     toggleAttribute,
     toggleProject,
     // Exclude state

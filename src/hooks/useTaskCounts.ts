@@ -20,12 +20,14 @@ interface TaskCountsResult {
  *
  * @param allTasks Full task list (used for both overdueCount and todayCount)
  * @param timezone User's IANA timezone string
+ * @param now The page's clock (`useDashboardNow`) — a dependency, so the
+ *   counts move when a task crosses its due time, not only when data changes
  */
-export function useTaskCounts(allTasks: Task[], timezone: string): TaskCountsResult {
+export function useTaskCounts(allTasks: Task[], timezone: string, now: Date): TaskCountsResult {
   return useMemo(() => {
-    const { overdue, today } = countTasks(allTasks, timezone)
+    const { overdue, today } = countTasks(allTasks, timezone, now)
     return { overdueCount: overdue, todayCount: today }
-  }, [allTasks, timezone])
+  }, [allTasks, timezone, now])
 }
 
 /**
@@ -47,19 +49,22 @@ export function useTaskCounts(allTasks: Task[], timezone: string): TaskCountsRes
  * chip 9). The AI chips (What's Next, signals) are deliberately not applied,
  * matching the chip rows, which never apply them either.
  *
- * The expanded chips compute their own `now` when they mount, so after a task
- * crosses its due time with no data change in between, they can run one ahead
- * of this memo until the next refresh — the same staleness every overdue
- * indicator on the page has (none of them tick).
+ * `now` is the page's one clock (`useDashboardNow`), shared with the expanded
+ * chips, the filtered list and the task groups. It advances the instant a
+ * task crosses its due time, so these counts tick with no data change —
+ * until 2026-09-27 they did not, and a task going overdue while the page sat
+ * open turned its row red but never lit the pill, the pinned chip or the
+ * jump button (see `src/lib/dashboard-clock.ts`).
  */
 export function useDateFacetCounts(
   tasks: Task[],
   criteria: TaskFilterCriteria,
   timezone: string,
+  now: Date,
 ): TaskCountsResult {
   return useMemo(() => {
-    const facet = applyTaskFilters(tasks, criteria, { timezone, skipGroup: 'dateFilters' })
-    const { overdue, today } = countTasks(facet, timezone)
+    const facet = applyTaskFilters(tasks, criteria, { timezone, now, skipGroup: 'dateFilters' })
+    const { overdue, today } = countTasks(facet, timezone, now)
     return { overdueCount: overdue, todayCount: today }
-  }, [tasks, criteria, timezone])
+  }, [tasks, criteria, timezone, now])
 }

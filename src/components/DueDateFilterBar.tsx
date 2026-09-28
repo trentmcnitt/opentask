@@ -23,6 +23,8 @@ interface DueDateFilterBarProps {
   onExcludeDateFilter?: (filter: DueDateFilter) => void
   /** Chips shown elsewhere instead — FilterBar pins Overdue in its control row. */
   omitFilters?: DueDateFilter[]
+  /** The dashboard's clock (`useDashboardNow`) — the chips' counts move with it. */
+  now: Date
 }
 
 const FILTER_LABELS: Record<DueDateFilter, string> = {
@@ -99,10 +101,10 @@ export function DueDateFilterBar({
   onExclusiveDateFilter,
   onExcludeDateFilter,
   omitFilters,
+  now,
 }: DueDateFilterBarProps) {
   const { filterCounts, todayOverdueCount } = useMemo(() => {
-    const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(timezone)
+    const boundaries = getTimezoneDayBoundaries(timezone, now)
     const counts = new Map<DueDateFilter, number>()
     const todaysTasks: Task[] = []
 
@@ -129,7 +131,7 @@ export function DueDateFilterBar({
     const todayOverdueCount = countChipDueBadges(todaysTasks, now, boundaries).overdue
 
     return { filterCounts, todayOverdueCount }
-  }, [tasks, timezone, selectedDateFilters, excludedDateFilters, omitFilters])
+  }, [tasks, timezone, now, selectedDateFilters, excludedDateFilters, omitFilters])
 
   const hasActiveFilter = selectedDateFilters.length > 0 || excludedDateFilters.length > 0
   if (filterCounts.length <= 1 && !hasActiveFilter) return null
