@@ -97,10 +97,12 @@ function useToastLift(buttonRef: React.RefObject<HTMLElement | null>, active: bo
  *   (`bg-popover`, as menus and popovers use): white in light, and one step
  *   lifted off the page in dark, where `bg-background` left only a hairline
  *   border separating it from the rows it floats over.
- * - **Content: "↓ N overdue".** A text pill rather than a second 48px circle:
- *   a bare number in a circle directly above the snooze FAB's red count badge
- *   would read as a second copy of that badge, not as a destination. The words
- *   say where it goes; the arrow says it moves the page.
+ * - **A 48px circle with just a down arrow** (Trent, 2026-09-27: "needs to be
+ *   a circle, not the pill... it can just be an icon, it doesn't need to say
+ *   overdue"). It matches the snooze FAB's size and shape so the two stack as
+ *   one column; no number on it, so it can't read as a second copy of the
+ *   snooze FAB's red count badge. The count and destination are in the
+ *   aria-label and the tooltip.
  * - **Hidden** when nothing is overdue, while the Overdue filter is on (the
  *   job is done — the pinned chip shows it, and a second tap here would only
  *   clear it, which is the chip's and the pill's job), and in selection mode,
@@ -148,16 +150,10 @@ export function OverdueJumpFab({
 
   if (hidden) return null
 
-  const content = (
-    <>
-      <ArrowDown className="text-muted-foreground size-4" aria-hidden />
-      <span className="tabular-nums">{overdueCount > 999 ? '999+' : overdueCount}</span>
-      <span>overdue</span>
-    </>
-  )
+  const content = <ArrowDown className="size-5" aria-hidden />
   const label = `${overdueCount} overdue — show only overdue tasks and scroll to them`
   const pill =
-    'border-border bg-popover text-popover-foreground hover:bg-accent active:bg-accent flex h-9 items-center gap-1.5 rounded-full border pr-3.5 pl-3 text-sm font-medium shadow-md'
+    'border-border bg-popover text-popover-foreground hover:bg-accent active:bg-accent flex size-12 items-center justify-center rounded-full border shadow-md'
 
   if (placement === 'phone') {
     return (
@@ -165,6 +161,7 @@ export function OverdueJumpFab({
         type="button"
         onClick={onJump}
         aria-label={label}
+        title={`${overdueCount} overdue`}
         data-overdue-jump-fab="phone"
         className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 transition-colors md:hidden`}
       >
@@ -180,6 +177,7 @@ export function OverdueJumpFab({
         type="button"
         onClick={onJump}
         aria-label={label}
+        title={`${overdueCount} overdue`}
         data-overdue-jump-fab="desktop"
         style={lift ? { transform: `translateY(-${lift}px)` } : undefined}
         className={`${pill} pointer-events-auto transition-[background-color,transform] duration-300`}

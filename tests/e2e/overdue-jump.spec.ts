@@ -54,9 +54,12 @@ async function firstGroupTop(page: Page): Promise<number> {
 
 /** The first group has come to rest just under the top bar. */
 async function expectLandedUnderTopBar(page: Page) {
-  // Smooth scroll: poll until it settles on the spot. `toBeCloseTo(.., 0)` is
-  // ±0.5px — sub-pixel layout rounding, not a tolerance for landing elsewhere.
-  await expect.poll(() => firstGroupTop(page)).toBeCloseTo(LANDING_Y, 0)
+  // Smooth scroll: poll until it settles on the spot. The scroll offset is a
+  // whole device pixel (DPR 1 here) while the group's layout position can sit
+  // on a half pixel, so it rests at 71.5 or 72 depending on the rows above —
+  // within one device pixel is "on the spot", not a tolerance for landing
+  // elsewhere.
+  await expect.poll(async () => Math.abs((await firstGroupTop(page)) - LANDING_Y)).toBeLessThan(1)
   const bar = await page.locator('header').first().boundingBox()
   expect(bar).not.toBeNull()
   expect(await firstGroupTop(page)).toBeGreaterThanOrEqual(bar!.y + bar!.height)
@@ -149,7 +152,8 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
       const chipCount = ((await pinned(page).getAttribute('aria-label')) ?? '').match(/\d+/)
       expect(chipCount).not.toBeNull()
       await expect(button).toHaveAttribute('aria-label', new RegExp(`^${chipCount![0]} overdue — `))
-      await expect(button).toHaveText(new RegExp(`^${chipCount![0]}\\s*overdue$`))
+      // Icon only: the count lives in the label, not on the button face.
+      await expect(button).toHaveText('')
       // The list starts below the panels — there is somewhere to jump to.
       expect(await firstGroupTop(page)).toBeGreaterThan(LANDING_Y + 100)
 
@@ -238,7 +242,10 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
           await expect(fab(page)).toBeHidden()
           const chipCount = ((await pinned(page).getAttribute('aria-label')) ?? '').match(/\d+/)
           expect(chipCount).not.toBeNull()
-          await expect(button).toHaveText(new RegExp(`^${chipCount![0]}\\s*overdue$`))
+          await expect(button).toHaveAttribute(
+            'aria-label',
+            new RegExp(`^${chipCount![0]} overdue — `),
+          )
           await expectPinnedToListCorner(page)
 
           if (twoColumn) {
