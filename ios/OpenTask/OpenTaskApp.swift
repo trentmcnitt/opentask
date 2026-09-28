@@ -117,6 +117,11 @@ struct OpenTaskApp: App {
             if url.pathComponents.count >= 3, url.pathComponents[url.pathComponents.count - 2] == "slot",
                let slotId = url.pathComponents.last.flatMap(Int.init) {
                 WebViewManager.shared.navigate(path: "/reminders?slot=\(slotId)")
+            } else if let promptKey = PromptDeepLink.promptKey(from: url) {
+            // A quota PROMPT row (`/prompt/<key>`, `PromptDeepLink`) opens
+            // ON the Reminders surface too — it was tapped on the Reminders
+            // widget — with that exact row (by `prompt_key`) highlighted.
+                WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
             } else {
                 WebViewManager.shared.navigate(path: "/reminders")
             }
