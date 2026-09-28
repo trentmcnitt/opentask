@@ -22,7 +22,7 @@ import { bulkSnooze } from '@/core/tasks'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
-import { computeSnoozeTime } from '@/lib/snooze'
+import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
 import { nextPeriodStart, nextSlotStart } from '@/lib/time-slot-assign'
 import { listTimeSlots } from '@/core/time-slots'
 import { ValidationError } from '@/core/errors'
@@ -92,6 +92,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         skipped_urgent: 0,
         skipped_high: 0,
         snoozed_high: 0,
+        skipped_reminders: 0,
+        until,
+        message: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
       })
     }
 
@@ -145,6 +148,18 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
+      // The resolved target (ISO), so a client can say where things went.
+      until,
+      // Ready-to-display summary for clients that can't branch on the counts
+      // (Apple Shortcuts show `data.message` as-is). Same copy as the web
+      // toast (`useSnoozeOverdue`): `skipped_urgent` counts High AND Urgent, so
+      // Urgent alone is the difference.
+      message: bulkSnoozeMessage({
+        affected: result.tasksAffected,
+        highAffected: result.highSnoozed,
+        high: result.highSkipped,
+        urgent: result.urgentSkipped - result.highSkipped,
+      }),
     })
   } catch (err) {
     if (err instanceof AuthError) {
