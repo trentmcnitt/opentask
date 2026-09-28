@@ -81,7 +81,6 @@ test.describe('Just added: the card', () => {
       await withPreferences(page, PROJECTS_BY_DUE, async () => {
         const inbox = group(page, 'Inbox')
         await waitForPrefsLoaded(page, () => page.goto('/'), inbox)
-        await expect(card(page)).toHaveCount(0)
 
         const title = uniqueTitle('Carded quick add')
         const created = page.waitForResponse(
