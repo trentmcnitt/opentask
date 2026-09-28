@@ -461,13 +461,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Except a quick action's own result ("Snoozed 12 overdue tasks"):
-        // the user just asked for it from the icon menu, and iOS has opened
-        // the app on top of the answer.
-        if notification.request.content.categoryIdentifier == QuickActionHandler.resultCategory {
-            completionHandler([.banner])
-            return
-        }
         completionHandler([])
     }
 }

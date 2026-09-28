@@ -1,6 +1,5 @@
 import OSLog
 import UIKit
-import UserNotifications
 import WebKit
 import WidgetKit
 
@@ -8,11 +7,11 @@ import WidgetKit
 /// `QuickActionSceneDelegate` on both cold and warm launch.
 ///
 /// The snooze actions sweep the overdue set (`POST /api/tasks/bulk/snooze-overdue`,
-/// the same call as the watch and the notification actions), then say what
-/// happened: a local notification with the server's real count (Trent,
-/// 2026-09-28: "it'd be nice if it … just sent me a notification saying
-/// everything was snoozed"), and a refresh of the page, which is already on
-/// screen — iOS always opens the app for a Home Screen quick action.
+/// the same call as the watch and the notification actions), then refresh the
+/// page, which is already on screen — iOS always opens the app for a Home
+/// Screen quick action, so the page (with its Undo) is the confirmation. A
+/// local notification saying the same thing was tried and dropped (Trent,
+/// 2026-09-28: "pointless if the app's going to actually open").
 ///
 /// The add-task action tries JS injection first (instant, no page reload);
 /// falls back to full URL navigation if the WebView's JS context isn't ready
@@ -20,10 +19,6 @@ import WidgetKit
 enum QuickActionHandler {
 
     static let log = Logger(subsystem: "io.mcnitt.opentask", category: "quick-actions")
-
-    /// Local notifications with this category are shown even while the app is
-    /// in the foreground — see `AppDelegate.userNotificationCenter(_:willPresent:)`.
-    static let resultCategory = "QUICK_ACTION_RESULT"
 
     // MARK: - Action Type Constants
 
@@ -63,58 +58,32 @@ enum QuickActionHandler {
 
     // MARK: - Snooze
 
+    /// iOS's completion handler is answered at once, on the main thread
+    /// where it was delivered: it only reports whether the action was
+    /// handled, and UIKit aborts when it is called from a background
+    /// executor — which the first cut did, after the network call
+    /// (crash, 2026-09-28: `_UIWindowSceneSendShortcutItemCallbackForWindowScene`
+    /// → NSAssertionHandler).
     private static func snooze(
         label: String,
         completionHandler: @escaping (Bool) -> Void,
         _ call: @escaping () async throws -> APIClient.BulkSnoozeResult
     ) {
+        completionHandler(true)
         Task {
-            let body: String
             do {
                 let result = try await call()
                 log.notice("Snoozed \(result.tasksAffected) overdue (\(label, privacy: .public))")
-                body = summary(result, label: label)
             } catch {
                 log.error("Snooze (\(label, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
-                body = "Couldn't snooze — \(error.localizedDescription)"
             }
-            await postResult(body)
             await MainActor.run {
                 // The page on screen still shows the old overdue list.
                 WebViewManager.shared.webView?.evaluateJavaScript(
                     "window.dispatchEvent(new CustomEvent('opentask-app-active'))"
                 )
+                WidgetCenter.shared.reloadAllTimelines()
             }
-            WidgetCenter.shared.reloadAllTimelines()
-            completionHandler(true)
-        }
-    }
-
-    /// "Snoozed 12 overdue tasks · +1 hour", plus what stayed behind and why.
-    private static func summary(_ result: APIClient.BulkSnoozeResult, label: String) -> String {
-        let n = result.tasksAffected
-        var text = n == 0
-            ? "Nothing to snooze"
-            : "Snoozed \(n) overdue \(n == 1 ? "task" : "tasks") · \(label)"
-        if result.skippedHigh > 0 {
-            text += " · \(result.skippedHigh) High left"
-        }
-        if result.skippedUrgent > 0 {
-            text += " · \(result.skippedUrgent) Urgent left"
-        }
-        return text
-    }
-
-    private static func postResult(_ body: String) async {
-        let content = UNMutableNotificationContent()
-        content.title = "OpenTask"
-        content.body = body
-        content.categoryIdentifier = resultCategory
-        let request = UNNotificationRequest(identifier: "quick-action-result", content: content, trigger: nil)
-        do {
-            try await UNUserNotificationCenter.current().add(request)
-        } catch {
-            log.error("Result notification failed: \(String(describing: error), privacy: .public)")
         }
     }
 
