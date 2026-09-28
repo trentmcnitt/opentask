@@ -261,6 +261,29 @@
   animation: ai-processing 2s ease-in-out infinite;
 }
 
+/* A quota met during the session (TrackPanel's `useMetPutAway`): it holds,
+   then fades over the last two seconds of MET_LEAVE_MS (5s), and is put away
+   when its timer ends. Keep the duration in step with MET_LEAVE_MS. */
+@keyframes met-leave {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.15;
+  }
+}
+
+.animate-met-leave {
+  animation: met-leave 5s ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-met-leave {
+    animation: none;
+  }
+}
+
 /* "AI is filling in details…" in the Just added card — a slow gradient
    sweep across the text, indigo to violet. Static under reduced motion. */
 @keyframes ai-shimmer {
