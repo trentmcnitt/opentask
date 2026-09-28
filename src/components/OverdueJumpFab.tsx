@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown } from 'lucide-react'
+import { CalendarClock } from 'lucide-react'
 
 interface OverdueJumpFabProps {
   /** The date-facet overdue count — the same number as the top bar's red pill. */
@@ -91,17 +91,16 @@ function useToastLift(buttonRef: React.RefObject<HTMLElement | null>, active: bo
  * "Jump to overdue" button (Trent, 2026-09-27). One tap filters to overdue and
  * scrolls the first group up under the top bar (`useJumpToTaskList`).
  *
- * - **Neutral, not red.** It is a way to get somewhere, not an alarm — the red
- *   already lives on the snooze FAB's badge and the top bar's pill. So it is
- *   an outlined neutral pill on the app's floating-surface colour
- *   (`bg-popover`, as menus and popovers use): white in light, and one step
- *   lifted off the page in dark, where `bg-background` left only a hairline
- *   border separating it from the rows it floats over.
- * - **A 48px circle with just a down arrow** (Trent, 2026-09-27: "needs to be
- *   a circle, not the pill... it can just be an icon, it doesn't need to say
- *   overdue"). It matches the snooze FAB's size and shape so the two stack as
- *   one column; no number on it, so it can't read as a second copy of the
- *   snooze FAB's red count badge. The count and destination are in the
+ * - **Coral, with a calendar-clock icon** (Trent, 2026-09-27, after several
+ *   rounds of mockups). A down arrow didn't say "overdue"; a calendar with a
+ *   clock does. The colour is a warm light coral (`#fb7a6a`), deliberately not
+ *   the badge red — a hint of "overdue", not an alarm — and not the snooze
+ *   FAB's blue, white or dark grey (all rejected: blue made the two buttons
+ *   twins, white/grey read as a black disc in dark mode). A red "unread" dot
+ *   was mocked and liked but left off for now to keep it quiet.
+ * - **A 48px circle, icon only**, the snooze FAB's size and shape so the two
+ *   stack as one column. No number on it, so it can't read as a second copy
+ *   of the snooze FAB's red count badge; the count and destination are in the
  *   aria-label and the tooltip.
  * - **Hidden** when nothing is overdue, while the Overdue filter is on (the
  *   job is done — the pinned chip shows it, and a second tap here would only
@@ -150,10 +149,10 @@ export function OverdueJumpFab({
 
   if (hidden) return null
 
-  const content = <ArrowDown className="size-5" aria-hidden />
+  const content = <CalendarClock className="size-5" aria-hidden />
   const label = `${overdueCount} overdue — show only overdue tasks and scroll to them`
   const pill =
-    'border-border bg-popover text-popover-foreground hover:bg-accent active:bg-accent flex size-12 items-center justify-center rounded-full border shadow-md'
+    'flex size-12 items-center justify-center rounded-full bg-[#fb7a6a] text-white shadow-md hover:bg-[#f86a58] active:bg-[#f86a58]'
 
   if (placement === 'phone') {
     return (
