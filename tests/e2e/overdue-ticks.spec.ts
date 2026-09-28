@@ -18,8 +18,12 @@ import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 const pinned = (page: Page) => page.locator('[data-pinned-date-chip="overdue"]')
-const redPill = (page: Page) => page.getByRole('button', { name: /^\d+ overdue — / })
-const fab = (page: Page) => page.locator('[data-overdue-jump-fab]')
+// The top bar's pill, not the jump button (whose label starts the same way).
+const redPill = (page: Page) =>
+  page.getByRole('button', {
+    name: /^\d+ overdue — (show only overdue tasks|clear the overdue filter)$/,
+  })
+const fab = (page: Page) => page.locator('[data-overdue-jump-fab="phone"]')
 const row = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
 async function post(page: Page, url: string, data: Record<string, unknown>): Promise<number> {
