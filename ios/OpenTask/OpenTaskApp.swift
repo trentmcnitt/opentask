@@ -32,6 +32,15 @@ struct OpenTaskApp: App {
                 WidgetCenter.shared.reloadAllTimelines()
             }
             if phase == .active {
+                // Tell the page to refresh (and re-open its sync stream if it
+                // has closed). The foreground usually fires visibilitychange
+                // in the web view too; this is the belt-and-braces signal the
+                // Mac app also sends, and `useSyncStream` dedupes the two.
+                // No-op before the web view exists.
+                WebViewManager.shared.webView?.evaluateJavaScript(
+                    "window.dispatchEvent(new CustomEvent('opentask-app-active'))"
+                )
+
                 // No `reloadAllTimelines()` here (removed 2026-09-24). It
                 // reloaded all three widget kinds — each a network fetch — on
                 // every activation, while the user is IN the app and can't
@@ -117,6 +126,11 @@ struct OpenTaskApp: App {
             if url.pathComponents.count >= 3, url.pathComponents[url.pathComponents.count - 2] == "slot",
                let slotId = url.pathComponents.last.flatMap(Int.init) {
                 WebViewManager.shared.navigate(path: "/reminders?slot=\(slotId)")
+            } else if let promptKey = PromptDeepLink.promptKey(from: url) {
+            // A quota PROMPT row (`/prompt/<key>`, `PromptDeepLink`) opens
+            // ON the Reminders surface too — it was tapped on the Reminders
+            // widget — with that exact row (by `prompt_key`) highlighted.
+                WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
             } else {
                 WebViewManager.shared.navigate(path: "/reminders")
             }

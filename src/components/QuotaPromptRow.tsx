@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
+import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
@@ -103,6 +104,14 @@ export interface QuotaPromptRowProps {
   /** Report being on screen; returns its deregistration (`useReminders`). */
   onRegister?: (key: string) => () => void
   /**
+   * The Reminders widget's deep link named this row (`?prompt=<key>` on
+   * /reminders): bring it on screen and flash it once — `ReminderRow`'s
+   * `?reminder=<id>` highlight, keyed by `prompt_key`.
+   */
+  highlighted?: boolean
+  /** The flash has played (or the row left mid-flash): spend the highlight. */
+  onHighlightDone?: () => void
+  /**
    * Render the quota's bubble, anchored to the element handed in (an inert
    * box over the row). Wrapping the row component from outside gave the
    * anchor nothing to measure, and the bubble opened off screen.
@@ -130,6 +139,8 @@ export function QuotaPromptRow({
   onPeek,
   onLeft,
   onRegister,
+  highlighted,
+  onHighlightDone,
   bubble,
 }: QuotaPromptRowProps) {
   const panel = variant === 'panel'
@@ -162,7 +173,8 @@ export function QuotaPromptRow({
       role={onSelect ? 'option' : undefined}
       aria-selected={onSelect ? selected : undefined}
       data-reminder-leaving={completing ? '' : undefined}
-      ref={completing ? measureLeavingRow : undefined}
+      data-prompt-highlight={highlighted ? '' : undefined}
+      ref={rowRef(completing, highlighted)}
       aria-disabled={completing || undefined}
       tabIndex={completing ? -1 : 0}
       onClick={onClick}
@@ -172,10 +184,16 @@ export function QuotaPromptRow({
       onPointerMove={press.onPointerMove}
       onPointerLeave={press.onPointerLeave}
       onPointerCancel={press.onPointerUp}
-      onAnimationEnd={(e) => {
-        if (e.target === e.currentTarget && e.animationName === 'reminder-leaving') onLeft?.(key)
-      }}
-      className={promptRowClasses({ panel, selected, hiddenWhenNarrow, completing })}
+      onAnimationEnd={(e) =>
+        onRowAnimationEnd(e, { key, highlighted: !!highlighted, onLeft, onHighlightDone })
+      }
+      className={promptRowClasses({
+        panel,
+        selected,
+        hiddenWhenNarrow,
+        completing,
+        highlighted: !!highlighted,
+      })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
           In the row's gutter (the panel's in the list's), so the dashed
@@ -514,17 +532,45 @@ function DashedRing({ px }: { px: number }) {
   )
 }
 
+/**
+ * What an animation ending on a prompt row MEANS. The collapse after an action
+ * and the deep link's flash both end here, so the name is checked rather than
+ * assumed — the same split as `ReminderRow`'s `onAnimationEnd`.
+ */
+function onRowAnimationEnd(
+  e: React.AnimationEvent,
+  {
+    key,
+    highlighted,
+    onLeft,
+    onHighlightDone,
+  }: Pick<QuotaPromptRowProps, 'onLeft' | 'onHighlightDone'> & {
+    key: string
+    highlighted: boolean
+  },
+): void {
+  if (e.target !== e.currentTarget) return
+  if (e.animationName === 'reminder-leaving') {
+    if (highlighted) onHighlightDone?.()
+    onLeft?.(key)
+  } else if (e.animationName === 'row-highlight') {
+    onHighlightDone?.()
+  }
+}
+
 /** The row's classes — the reminder row's (`reminderRowClasses`), in both sizes. */
 function promptRowClasses({
   panel,
   selected,
   hiddenWhenNarrow,
   completing,
+  highlighted,
 }: {
   panel: boolean
   selected: boolean
   hiddenWhenNarrow: boolean
   completing: boolean
+  highlighted: boolean
 }): string {
   const hover = panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'
   return cn(
@@ -534,7 +580,18 @@ function promptRowClasses({
     selected ? 'ring-ring bg-accent ring-2' : hover,
     hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
     completing && 'animate-reminder-leaving pointer-events-none',
+    !completing && highlighted && 'animate-row-highlight',
   )
+}
+
+/**
+ * The row's ref: a leaving row measures its height for the collapse; a
+ * deep-linked one (`?prompt=<key>`) brings itself on screen — `ReminderRow`'s
+ * pair, the collapse first.
+ */
+function rowRef(completing: boolean, highlighted: boolean | undefined) {
+  if (completing) return measureLeavingRow
+  return highlighted ? scrollRowIntoView : undefined
 }
 
 /** The leaving animation's starting height — see `measureLeavingRow` in RemindersView. */
@@ -586,6 +643,8 @@ export function usePromptRows({
   onUndo,
   onCompleted,
   refresh,
+  highlightKey = null,
+  onHighlightDone,
 }: {
   variant?: 'surface' | 'panel'
   completingIds?: Set<number | string>
@@ -603,6 +662,9 @@ export function usePromptRows({
   onUndo: () => void
   onCompleted?: () => void
   refresh: () => Promise<void>
+  /** The `prompt_key` a `?prompt=<key>` deep link asked to see (/reminders only). */
+  highlightKey?: string | null
+  onHighlightDone?: () => void
 }) {
   const detail = useQuotaPromptDetail({
     onUndo,
@@ -627,6 +689,8 @@ export function usePromptRows({
       onPeek={detail.peek}
       onLeft={rowLeft}
       onRegister={registerRow}
+      highlighted={highlightKey === prompt.prompt_key}
+      onHighlightDone={onHighlightDone}
     />
   )
   return { renderPrompt, openQuotas: detail.openQuotas, modal: detail.modal }

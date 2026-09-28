@@ -3,15 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import {
-  TaskList,
-  buildTaskGroups,
-  effectiveSort,
-  sortTasks,
-  type GroupingMode,
-} from '@/components/TaskList'
-import { selectRecentTasks } from '@/lib/recent-view'
+import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { useJustAddedClock } from '@/hooks/useJustAddedClock'
 import { UNDATED_LABEL } from '@/lib/slot-view'
 import { isTracked } from '@/lib/track'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
@@ -67,6 +61,7 @@ import { useFilterState, type TaskFilterCriteria } from '@/hooks/useFilterState'
 import { useJumpToTaskList } from '@/hooks/useJumpToTaskList'
 import { useFilterSection } from '@/hooks/useFilterSection'
 import { useTaskCounts, useDateFacetCounts } from '@/hooks/useTaskCounts'
+import { useDashboardNow, useAutoClearOverdueFilter } from '@/hooks/useDashboardNow'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import type { DueDateFilter } from '@/components/DueDateFilterBar'
 import { cn, taskWord } from '@/lib/utils'
@@ -77,6 +72,7 @@ import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
 import { useExitModes } from '@/hooks/useExitModes'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
@@ -100,7 +96,13 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
   const [loading, setLoading] = useState(initialTasks === undefined)
   const [error, setError] = useState<string | null>(null)
 
+  // Overlapping fetches (a focus refresh and a sync-event refresh, say) can
+  // resolve out of order; only the most recently STARTED one may set state,
+  // so an older payload never overwrites a newer one.
+  const [requestGuard] = useState(createLatestRequestGuard)
+
   const fetchTasks = useCallback(async () => {
+    const seq = requestGuard.begin()
     try {
       const res = await fetch('/api/tasks?limit=1000')
       if (res.status === 401) {
@@ -109,14 +111,16 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
       }
       if (!res.ok) throw new Error('Failed to fetch tasks')
       const data = await res.json()
+      if (!requestGuard.isLatest(seq)) return
       setTasks(data.data?.tasks || [])
       setError(null)
     } catch (err) {
+      if (!requestGuard.isLatest(seq)) return
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [router, requestGuard])
 
   return {
     tasks,
@@ -622,6 +626,12 @@ function HomeContent({
    * select-all and the clipboard.
    */
   const visibleTasks = useMemo(() => tasks.filter((t) => !t.is_reminder && !isTracked(t)), [tasks])
+  // The page's one clock: every overdue/today count, filter and group below
+  // reads THIS instant, and it advances exactly when a task crosses its due
+  // time (or at midnight, or when the app comes back to the foreground) — see
+  // `src/lib/dashboard-clock.ts`. Reminders and quotas are never overdue, so
+  // `visibleTasks` is the population whose due times matter.
+  const now = useDashboardNow(visibleTasks, timezone)
   /**
    * The server decides what a search MATCHES (`/api/tasks?search=`), but the
    * matches are RENDERED out of `tasks`, never out of the fetched copy. Every
@@ -651,21 +661,7 @@ function HomeContent({
     })
   }, [searchResults, tasks])
 
-  /**
-   * Recent is a SLICE, not just a grouping: it narrows the population to what
-   * was added in the last 7 days before the filter bar sees it. Everything
-   * derived from the list then describes the slice — the filter chips' counts,
-   * "Showing N of M", Select All (which must never reach the older tasks this
-   * view isn't showing; bulk Done on them would be a nasty surprise), and the
-   * keyboard order. Today's slot view narrows inside `groupByTimeSlot` instead;
-   * Recent does it here because the window is the view's population, and
-   * `buildTaskGroups` re-applies it harmlessly (idempotent) for its ordering.
-   */
-  const unslicedBaseTasks = searchQuery ? visibleSearchResults : visibleTasks
-  const baseTasks = useMemo(
-    () => (grouping === 'recent' ? selectRecentTasks(unslicedBaseTasks) : unslicedBaseTasks),
-    [grouping, unslicedBaseTasks],
-  )
+  const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
 
   // `?filter=overdue` — the dashboard filtered to the Overdue chip. Two callers:
@@ -718,6 +714,7 @@ function HomeContent({
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    deselectDateFilter,
     toggleAttribute,
     toggleProject,
     excludedLabels,
@@ -741,6 +738,7 @@ function HomeContent({
     tasks: baseTasks,
     onLabelToggle,
     timezone,
+    now,
     initialDateFilters,
   })
 
@@ -936,8 +934,8 @@ function HomeContent({
 
   // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
-    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
-    [tasks_, projects, grouping, timezone, timeSlots],
+    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots, now),
+    [tasks_, projects, grouping, timezone, timeSlots, now],
   )
   /**
    * The top bar's "N total tasks" pill counts what the list is SHOWING, which
@@ -1050,18 +1048,24 @@ function HomeContent({
     groupingLoaded,
   ])
 
+  // Just-added previews (`src/lib/just-added.ts`): a read-only preview of
+  // each task created in the last 10 minutes, at the top of the Inbox (or the
+  // list). Drawn from `visibleTasks` — unfiltered on purpose — and off while
+  // searching. The clock advances itself at each age-out, so a preview leaves
+  // without a reload. Previews are not rows: nothing here (keyboard order,
+  // counts, Select All) sees them.
+  const justAddedNow = useJustAddedClock(visibleTasks)
+  const justAddedSource = searchQuery ? null : visibleTasks
+
   // Apply per-group sorting to match the visual order in TaskList.
   // Exclude tasks in collapsed groups so keyboard navigation skips them.
-  // `effectiveSort`: Recent ignores the sort preference (always newest first),
-  // and this order must match the one TaskList renders.
-  const viewSort = effectiveSort(grouping, sortOption, reversed)
   const orderedIds = useMemo(
     () =>
       taskGroups.flatMap((g) => {
-        if (grouping !== 'recent' && isCollapsed(g.label)) return []
-        return sortTasks(g.tasks, viewSort.sortOption, viewSort.reversed).map((t) => t.id)
+        if (isCollapsed(g.label)) return []
+        return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
       }),
-    [taskGroups, grouping, viewSort.sortOption, viewSort.reversed, isCollapsed],
+    [taskGroups, sortOption, reversed, isCollapsed],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -1198,8 +1202,8 @@ function HomeContent({
     setKeyboardFocusedId,
     selection,
     taskGroups,
-    sortOption: viewSort.sortOption,
-    reversed: viewSort.reversed,
+    sortOption,
+    reversed,
     timezone,
     projects,
     annotationMap: effectiveAnnotationMap,
@@ -1213,11 +1217,11 @@ function HomeContent({
   // The tab title, the PWA dock badge and the snooze-all FAB count the list as
   // it stands (every filter applied). The top bar's pills count something
   // else on purpose — see `useDateFacetCounts` in `DashboardView`.
-  const { overdueCount } = useTaskCounts(tasks_, timezone)
+  const { overdueCount } = useTaskCounts(tasks_, timezone, now)
   // The nav's Tasks badges read a shared cache; this page is its source of
   // truth. Published from the unfiltered list (reminders excluded, nothing
   // else): a filter chip changes the view, not what is due.
-  const navCounts = useTaskCounts(visibleTasks, timezone)
+  const navCounts = useTaskCounts(visibleTasks, timezone, now)
   useEffect(() => {
     publishTaskCounts({
       total: visibleTasks.length,
@@ -1334,6 +1338,8 @@ function HomeContent({
         grouping={grouping}
         highlightTaskId={highlightTaskId}
         onHighlightDone={clearHighlight}
+        justAddedSource={justAddedSource}
+        justAddedNow={justAddedNow}
         onGroupingChange={(next) => {
           // Selecting a view explicitly turns off AI-sort's unified override —
           // otherwise the toggle would show a selection that isn't in effect.
@@ -1342,6 +1348,7 @@ function HomeContent({
         }}
         timeSlots={timeSlots}
         searchQuery={searchQuery}
+        searchHits={searchResults}
         searchResultCount={visibleSearchResults.length}
         shownTaskCount={shownTaskCount}
         overdueCount={overdueCount}
@@ -1357,7 +1364,9 @@ function HomeContent({
         onExclusivePriority={exclusivePriority}
         selectedDateFilters={selectedDateFilters}
         onToggleDateFilter={toggleDateFilter}
+        onDeselectDateFilter={deselectDateFilter}
         onExclusiveDateFilter={exclusiveDateFilter}
+        now={now}
         onExclusiveLabel={exclusiveLabel}
         attributeFilters={attributeFilters}
         onToggleAttribute={toggleAttribute}
@@ -1647,6 +1656,15 @@ function TrackColumn({
   )
 }
 
+/**
+ * The Overdue auto-clear's toast. Plain and action-less: it only explains why
+ * the list just widened. The snooze/done that emptied the filter has already
+ * raised its own toast with Undo, so this one offers nothing to click.
+ */
+function notifyOverdueFilterCleared() {
+  showToast({ message: 'No overdue tasks left — Overdue filter cleared' })
+}
+
 function DashboardView({
   tasks,
   allTasks,
@@ -1655,9 +1673,12 @@ function DashboardView({
   grouping,
   highlightTaskId,
   onHighlightDone,
+  justAddedSource,
+  justAddedNow,
   onGroupingChange,
   timeSlots,
   searchQuery,
+  searchHits,
   searchResultCount,
   shownTaskCount,
   overdueCount,
@@ -1673,7 +1694,9 @@ function DashboardView({
   onExclusivePriority,
   selectedDateFilters,
   onToggleDateFilter,
+  onDeselectDateFilter,
   onExclusiveDateFilter,
+  now,
   onExclusiveLabel,
   attributeFilters,
   onToggleAttribute,
@@ -1775,10 +1798,20 @@ function DashboardView({
   /** `?task=<id>&highlight=1` — the widget's link. See `HomeContent`'s `?task=` effect. */
   highlightTaskId: number | null
   onHighlightDone: () => void
+  /** Just-added previews' population; null while searching. See `src/lib/just-added.ts`. */
+  justAddedSource: Task[] | null
+  /** Just-added previews' clock. See `useJustAddedClock`. */
+  justAddedNow: number
   onGroupingChange: (grouping: GroupingMode) => void
   /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
   timeSlots: TimeSlot[]
   searchQuery: string | null
+  /**
+   * The raw search hit list (HomeContent's `searchResults`), only as a view
+   * identity for the Overdue auto-clear: hits arrive AFTER `searchQuery`
+   * changes, and only a new search or a clear writes this array.
+   */
+  searchHits: Task[]
   searchResultCount: number
   /** What the list renders — see `shownTaskCount` in `HomeContent`. */
   shownTaskCount: number
@@ -1795,7 +1828,11 @@ function DashboardView({
   onExclusivePriority: (priority: number) => void
   selectedDateFilters: DueDateFilter[]
   onToggleDateFilter: (filter: DueDateFilter) => void
+  /** Remove a date filter if selected (never adds) — the Overdue auto-clear. */
+  onDeselectDateFilter: (filter: DueDateFilter) => void
   onExclusiveDateFilter: (filter: DueDateFilter) => void
+  /** The page's one clock (`useDashboardNow` in `HomeContent`). */
+  now: Date
   onExclusiveLabel: (label: string) => void
   attributeFilters: Set<string>
   onToggleAttribute: (key: string) => void
@@ -1953,7 +1990,26 @@ function DashboardView({
       excludedProjects,
     ],
   )
-  const headerCounts = useDateFacetCounts(allTasks, dateFacetCriteria, timezone)
+  const headerCounts = useDateFacetCounts(allTasks, dateFacetCriteria, timezone, now)
+  // The Overdue filter switches itself off when its last task stops being
+  // overdue (done, snoozed, rescheduled — here or via sync), counted with the
+  // same facet number the pill and pinned chip show. Rules and the deep-link
+  // exception: `shouldAutoClearOverdueFilter` in src/lib/dashboard-clock.ts.
+  const clearOverdueFilter = useCallback(
+    () => onDeselectDateFilter('overdue'),
+    [onDeselectDateFilter],
+  )
+  const overdueAutoClearScope = useMemo(
+    () => [dateFacetCriteria, searchQuery, searchHits, grouping],
+    [dateFacetCriteria, searchQuery, searchHits, grouping],
+  )
+  useAutoClearOverdueFilter(
+    headerCounts.overdueCount,
+    selectedDateFilters.includes('overdue'),
+    overdueAutoClearScope,
+    clearOverdueFilter,
+    notifyOverdueFilterCleared,
+  )
   // `aria-pressed` for the pills: on only when that filter is the SOLE date
   // filter, i.e. exactly what a tap on the pill produces (and a second tap
   // clears — `exclusiveDateFilter` toggles off an exclusive selection).
@@ -2088,6 +2144,7 @@ function DashboardView({
             onToggleExpanded={onToggleFilters}
             activeFilterCount={activeFilterCount}
             pinnedOverdueCount={headerCounts.overdueCount}
+            now={now}
             selectedPriorities={selectedPriorities}
             selectedLabels={selectedLabels}
             selectedDateFilters={selectedDateFilters}
@@ -2185,8 +2242,11 @@ function DashboardView({
             projects={projects}
             grouping={grouping}
             timeSlots={timeSlots}
+            now={now}
             highlightTaskId={highlightTaskId}
             onHighlightDone={onHighlightDone}
+            justAddedSource={justAddedSource}
+            justAddedNow={justAddedNow}
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
             onLabelClick={onToggleLabel}
@@ -2242,6 +2302,16 @@ function DashboardView({
             onUnifiedChange={onUnifiedChange}
           />
         </div>
+
+        {/* md+ jump button: a sticky grid child after the list, so it rides the
+            viewport bottom at the list column's right edge — see OverdueJumpFab. */}
+        <OverdueJumpFab
+          placement="desktop"
+          overdueCount={headerCounts.overdueCount}
+          overdueFilterOn={selectedDateFilters.includes('overdue')}
+          isSelectionMode={selection.isSelectionMode}
+          onJump={onOverdueJump}
+        />
       </main>
 
       <SelectionActionSheet
@@ -2267,6 +2337,7 @@ function DashboardView({
           pinned chip it acts like — not `overdueCount` above. "On" is
           `includes`, the pinned chip's own solid state, not "sole filter". */}
       <OverdueJumpFab
+        placement="phone"
         overdueCount={headerCounts.overdueCount}
         overdueFilterOn={selectedDateFilters.includes('overdue')}
         isSelectionMode={selection.isSelectionMode}

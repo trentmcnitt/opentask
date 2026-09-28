@@ -1,6 +1,14 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { shouldResumeRefresh } from '@/lib/refresh-guards'
+
+/**
+ * Fired on `window` by the native apps when they come to the foreground
+ * (`MacAppDelegate.applicationDidBecomeActive`, `OpenTaskApp`'s scenePhase
+ * `.active`). See the resume notes on `useSyncStream`.
+ */
+export const APP_ACTIVE_EVENT = 'opentask-app-active'
 
 export interface EnrichmentCompleteData {
   taskId: number
@@ -33,6 +41,22 @@ interface SyncStreamCallbacks {
  * - Immediately syncs + reconnects when the tab becomes visible again
  * - EventSource handles reconnection automatically on network errors
  *
+ * Resume triggers — the page being looked at again — also run a full refresh
+ * and re-open the stream if it has closed:
+ * - `visibilitychange` to visible (tab switch, app foregrounded on iOS)
+ * - window `focus` — the Mac app's WKWebView usually stays `visible` while
+ *   its window is covered by other windows, so clicking back into it fires no
+ *   visibilitychange at all; without this, a change made on another device
+ *   while the stream was quietly dead stayed on screen until a reload
+ * - window `online` — the network came back; the stream may have given up
+ * - `opentask-app-active` (`APP_ACTIVE_EVENT`), dispatched by the native apps
+ *   on activation, because `focus` is not reliably delivered to a WKWebView
+ *
+ * Several of these usually fire together, so a resume refresh is skipped when
+ * a full refresh started within `RESUME_REFRESH_DEDUPE_MS`
+ * (`src/lib/refresh-guards.ts` explains why that is deduplication, not a
+ * timing workaround). Refreshes driven by the stream itself are never skipped.
+ *
  * Optional onEnrichmentComplete callback fires immediately (no debounce) when
  * AI enrichment finishes for a task created via the on-demand path.
  *
@@ -48,10 +72,18 @@ export function useSyncStream(callbacks: SyncStreamCallbacks) {
   useEffect(() => {
     let es: EventSource | null = null
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    // When the last full refresh started (any trigger) — read by the resume
+    // dedupe. `onSync` is fire-and-forget, so start time is all there is.
+    let lastFullRefreshAt: number | null = null
+
+    function fullRefresh() {
+      lastFullRefreshAt = Date.now()
+      callbacksRef.current.onSync()
+    }
 
     function debouncedSync() {
       if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => callbacksRef.current.onSync(), 300)
+      debounceTimer = setTimeout(fullRefresh, 300)
     }
 
     function connect() {
@@ -98,19 +130,34 @@ export function useSyncStream(callbacks: SyncStreamCallbacks) {
       connect()
     }
 
+    function handleResume() {
+      if (document.visibilityState !== 'visible') return
+      if (shouldResumeRefresh(lastFullRefreshAt, Date.now())) fullRefresh()
+      // Re-open a stream that has given up (the server refused it, or it was
+      // never opened). A CONNECTING one is left alone — EventSource is
+      // already retrying it.
+      if (es?.readyState === EventSource.CLOSED) disconnect()
+      connect()
+    }
+
     function handleVisibility() {
       if (document.visibilityState === 'visible') {
-        callbacksRef.current.onSync()
-        connect()
+        handleResume()
       } else {
         disconnect()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleResume)
+    window.addEventListener('online', handleResume)
+    window.addEventListener(APP_ACTIVE_EVENT, handleResume)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleResume)
+      window.removeEventListener('online', handleResume)
+      window.removeEventListener(APP_ACTIVE_EVENT, handleResume)
       disconnect()
     }
   }, [])

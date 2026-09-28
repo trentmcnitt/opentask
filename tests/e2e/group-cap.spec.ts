@@ -4,7 +4,7 @@
  * too hard to scroll through the projects when it's not in unified mode").
  * Today's time slots keep their own cap of 5.
  */
-import { test, expect, waitForPreferenceSave } from './fixtures'
+import { test, expect, backdateCreated, waitForPreferenceSave } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -42,6 +42,9 @@ test('the Projects view shows 10 per project, with the rest behind "Show all"', 
       expect(res.ok()).toBeTruthy()
       ids.push((await res.json()).data.id as number)
     }
+    // Not "just added": twelve fresh tasks would also each get a preview at
+    // the top of the Inbox (`src/lib/just-added.ts`), doubling the titles.
+    backdateCreated(ids)
     await page.goto('/')
     await switchView(page, 'Projects')
     const section = page.locator('section', {

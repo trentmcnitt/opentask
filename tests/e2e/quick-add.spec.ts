@@ -11,7 +11,8 @@ test.describe('Quick add', () => {
     await input.fill(taskTitle)
     await input.press('Enter')
 
-    // Wait for the task to appear in the list
-    await expect(page.getByText(taskTitle)).toBeVisible({ timeout: 5000 })
+    // Wait for the task to appear in the list (its row's title link — the
+    // just-added preview above the list shows the same title as plain text)
+    await expect(page.getByRole('link', { name: taskTitle })).toBeVisible({ timeout: 5000 })
   })
 })

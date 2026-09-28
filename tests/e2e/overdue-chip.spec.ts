@@ -19,7 +19,13 @@ import { DateTime } from 'luxon'
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
 const pinned = (page: Page) => page.locator('[data-pinned-date-chip="overdue"]')
-const redPill = (page: Page) => page.getByRole('button', { name: /^\d+ overdue — / })
+/** The top bar's red pill — anchored at both ends, because the md+ overdue
+ *  jump button's label ("N overdue — show only overdue tasks and scroll to
+ *  them") starts the same way. */
+const redPill = (page: Page) =>
+  page.getByRole('button', {
+    name: /^\d+ overdue — (show only overdue tasks|clear the overdue filter)$/,
+  })
 const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ due today — / })
 const banner = (page: Page) => page.getByText(/Showing \d+ of \d+ tasks/)
 

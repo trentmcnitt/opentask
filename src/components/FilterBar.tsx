@@ -79,6 +79,7 @@ export function FilterBar({
   onToggleExpanded,
   activeFilterCount = 0,
   pinnedOverdueCount = 0,
+  now,
   selectedPriorities,
   selectedLabels,
   selectedDateFilters = [],
@@ -138,6 +139,13 @@ export function FilterBar({
    * once by the dashboard (`useDateFacetCounts`) so the two cannot disagree.
    */
   pinnedOverdueCount?: number
+  /**
+   * The dashboard's one clock (`useDashboardNow`). Every date classification
+   * here — the expanded chips, the facets, the project chips' overdue pills —
+   * uses it, so they tick with the top bar's pills instead of freezing at the
+   * last data change.
+   */
+  now: Date
   selectedPriorities: number[]
   selectedLabels: string[]
   selectedDateFilters?: DueDateFilter[]
@@ -195,8 +203,7 @@ export function FilterBar({
     // Always show if date filters are actively selected or excluded
     if (selectedDateFilters.length > 0 || excludedDateFilters.length > 0) return true
     if (tasks.length === 0) return false
-    const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(timezone)
+    const boundaries = getTimezoneDayBoundaries(timezone, now)
     const allBuckets = new Set<string>()
     for (const task of tasks) {
       for (const bucket of classifyTaskDueDate(task, now, boundaries)) {
@@ -205,7 +212,7 @@ export function FilterBar({
       if (allBuckets.size > 1) return true
     }
     return false
-  }, [timezone, onToggleDateFilter, tasks, selectedDateFilters, excludedDateFilters])
+  }, [timezone, now, onToggleDateFilter, tasks, selectedDateFilters, excludedDateFilters])
 
   // Faceted counts (§ see `applyTaskFilters` doc comment in useFilterState.ts):
   // each chip row counts over `tasks` with every OTHER group's filter applied
@@ -240,10 +247,10 @@ export function FilterBar({
   const facetTasks = useMemo(() => {
     const result = {} as Record<FilterGroup, Task[]>
     for (const group of FILTER_GROUPS) {
-      result[group] = applyTaskFilters(tasks, filterCriteria, { timezone, skipGroup: group })
+      result[group] = applyTaskFilters(tasks, filterCriteria, { timezone, now, skipGroup: group })
     }
     return result
-  }, [tasks, filterCriteria, timezone])
+  }, [tasks, filterCriteria, timezone, now])
 
   if (tasks.length === 0) return null
 
@@ -356,6 +363,7 @@ export function FilterBar({
                   onExclusiveProject={onExclusiveProject}
                   onExcludeProject={onExcludeProject}
                   timezone={timezone}
+                  now={now}
                 />
               </div>
             )}
@@ -372,6 +380,7 @@ export function FilterBar({
                   onExclusiveDateFilter={onExclusiveDateFilter}
                   onExcludeDateFilter={onExcludeDateFilter}
                   omitFilters={omitOverdueFromDateRow ? ['overdue'] : undefined}
+                  now={now}
                 />
               </div>
             )}

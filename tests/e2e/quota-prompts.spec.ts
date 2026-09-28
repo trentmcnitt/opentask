@@ -1017,3 +1017,99 @@ test.describe('Quota prompts — put back', () => {
     expect(await progressOf(page, id)).toBe(0)
   })
 })
+
+/**
+ * The Reminders widget's deep link for a prompt row (2026-09-27):
+ * `opentask://reminders/prompt/<key>` → `/reminders?prompt=<key>`. It opens
+ * the Reminders surface — where the prompt was tapped — not Quotas, and
+ * brings that exact row (by `prompt_key`) on screen, flashed once, nothing
+ * opened: `?reminder=<id>`'s behavior for a prompt.
+ *
+ * Time-agnostic: prompts render in every period whatever the hour, and every
+ * key is read from `GET /api/reminders` at run time; the stale-key case derives
+ * "the day before" from that key's own date, never the wall clock. A slot
+ * cannot be folded at link time in the real flow (the apps do a full page
+ * load, and the fold is in-memory), so the hidden case covered is the
+ * realistic one: a row in the last period, below the fold of a short window.
+ */
+test.describe('Quota prompts — widget deep link', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  async function promptKeysOf(page: Page, taskId: number) {
+    const res = await page.request.get('/api/reminders')
+    expect(res.ok()).toBeTruthy()
+    const groups = (await res.json()).data.groups as {
+      slot: { id: number } | null
+      prompts: { prompt_key: string; task_id: number }[]
+    }[]
+    return groups.flatMap((g) =>
+      g.prompts
+        .filter((p) => p.task_id === taskId)
+        .map((p) => ({ slotId: g.slot?.id ?? null, key: p.prompt_key })),
+    )
+  }
+
+  /** A daily quota with its two rows in the first and last periods, below a pile of reminders. */
+  async function twoRowQuota(page: Page, title: string) {
+    await page.setViewportSize({ width: 1280, height: 600 })
+    const slots = await userSlots(page)
+    expect(slots.length).toBeGreaterThan(1)
+    const [first] = slots
+    const last = slots[slots.length - 1]
+    const id = await makeQuota(page, title, 'FREQ=DAILY', 2)
+    await placeIn(page, id, { slot_id: first.id, numbers: { '2': last.id } })
+    // Enough above it that the last period starts below the fold.
+    for (let i = 0; i < 10; i++) await makeReminder(page, `${title} filler ${i + 1}`, first)
+    const keys = await promptKeysOf(page, id)
+    return {
+      id,
+      one: keys.find((k) => k.slotId === first.id)!.key,
+      two: keys.find((k) => k.slotId === last.id)!.key,
+    }
+  }
+
+  test('?prompt=<key> brings that exact row on screen on Reminders, not its sibling', async ({
+    authenticatedPage: page,
+  }) => {
+    const { id, one, two } = await twoRowQuota(page, 'E2E linked daily')
+    // Two rows of ONE quota (one task id): the key is what tells them apart.
+    expect(one).not.toBe(two)
+    const rowOne = page.locator(`li[data-prompt-key="${one}"]`)
+    const rowTwo = page.locator(`li[data-prompt-key="${two}"]`)
+
+    // Unlinked, the second row starts off screen: the link is what moves it.
+    await page.goto('/reminders')
+    await expect(rowTwo).toHaveCount(1)
+    await expect(rowTwo).not.toBeInViewport()
+
+    await page.goto(`/reminders?prompt=${encodeURIComponent(two)}`)
+    await expect(rowTwo).toHaveAttribute('data-prompt-highlight', '')
+    await expect(rowTwo).toBeInViewport()
+    await expect(rowOne).not.toHaveAttribute('data-prompt-highlight', '')
+    // The param is spent, so a reload does not flash the row again.
+    await expect(page).toHaveURL(/\/reminders$/)
+    // A link is a place to look: no bubble, no editor, nothing logged.
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('[data-track-popover]')).toHaveCount(0)
+    expect(await progressOf(page, id)).toBe(0)
+    // The flash plays once and is spent; the row stays.
+    await expect(rowTwo).not.toHaveAttribute('data-prompt-highlight', '')
+    await expect(rowTwo).toBeVisible()
+  })
+
+  test('a key from another day lands on today’s row for the same quota and number', async ({
+    authenticatedPage: page,
+  }) => {
+    // A widget last drawn before midnight sends the day before's key.
+    const { two } = await twoRowQuota(page, 'E2E stale link daily')
+    const [, taskId, number, date] = two.split(':')
+    const dayBefore = DateTime.fromISO(date).minus({ days: 1 }).toISODate()
+    const stale = `q:${taskId}:${number}:${dayBefore}`
+
+    await page.goto(`/reminders?prompt=${encodeURIComponent(stale)}`)
+    const row = page.locator(`li[data-prompt-key="${two}"]`)
+    await expect(row).toHaveAttribute('data-prompt-highlight', '')
+    await expect(row).toBeInViewport()
+    await expect(page).toHaveURL(/\/reminders$/)
+  })
+})

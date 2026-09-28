@@ -129,8 +129,8 @@ export const DEFAULT_PREFS: Prefs = {
   aiFeatureInfo: null,
 }
 
-/** The dashboard's four chips plus 'unified', which the AI-sort toggle drives. */
-const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot', 'recent']
+/** The dashboard's three chips plus 'unified', which the AI-sort toggle drives. */
+const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot']
 
 /**
  * Coerce a stored `default_grouping` to a grouping the dashboard can actually render.
@@ -140,6 +140,10 @@ const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot', '
  * accounts that were left on 'reminders' hold a value no view corresponds to.
  * Rather than migrate the column, those users land on 'slot' — the §7.3 front door
  * — and the stored value is corrected the next time they pick a view.
+ *
+ * 'recent' (the "Recent" view, 2026-09-27) went the same way: just-added
+ * previews (`src/lib/just-added.ts`) replaced it, so a stored 'recent' lands on
+ * 'slot' too.
  */
 export function coerceGrouping(stored: unknown): GroupingMode {
   return VALID_GROUPINGS.includes(stored as GroupingMode) ? (stored as GroupingMode) : 'slot'

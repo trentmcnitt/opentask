@@ -14,14 +14,15 @@ interface UserRow {
 }
 
 /** Every grouping the column is allowed to hold. See `AuthUser.default_grouping`. */
-const GROUPINGS: AuthUser['default_grouping'][] = ['time', 'project', 'unified', 'slot', 'recent']
+const GROUPINGS: AuthUser['default_grouping'][] = ['time', 'project', 'unified', 'slot']
 
 /**
  * Convert a database user row to an AuthUser, coercing default_grouping to its
  * union type.
  *
  * The column is free-form TEXT, and it has held values this union no longer
- * covers — 'reminders', from when the §6 surface persisted as a dashboard view.
+ * covers — 'reminders', from when the §6 surface persisted as a dashboard view,
+ * and 'recent', the short-lived "Recent" view (replaced by just-added previews).
  * Anything unrecognized becomes 'project', the long-standing fallback. This value
  * is only echoed back to callers, never used to choose a view (see the type), so
  * the fallback is about keeping the union honest rather than about what the user

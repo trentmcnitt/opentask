@@ -958,6 +958,19 @@ enum WidgetLink {
         URL(string: "\(scheme)://reminder/\(id)") ?? reminders
     }
 
+    /// One quota PROMPT row, ON the Reminders surface — keyed by its
+    /// `prompt_key`, since a daily quota's rows share one task id.
+    ///
+    /// Deliberately NOT `quota(_:)`: a prompt is tapped on the Reminders
+    /// widget, so it opens the Reminders tab with that row highlighted, the
+    /// same as a reminder row (Trent, 2026-09-27: it opened the Quotas tab
+    /// instead). `opentask://reminders/prompt/<key>` → `/reminders?prompt=<key>`;
+    /// built and resolved by `PromptDeepLink` (ios/Shared), which the logic
+    /// tests pin.
+    static func prompt(_ promptKey: String) -> URL {
+        PromptDeepLink.url(promptKey: promptKey) ?? reminders
+    }
+
     /// One quota, ON the Quotas surface.
     ///
     /// Deliberately NOT `task(_:)`: a quota is tracked (`is_tracked`), and

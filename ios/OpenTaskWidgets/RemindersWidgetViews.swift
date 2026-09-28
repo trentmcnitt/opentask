@@ -1021,9 +1021,10 @@ enum PromptRowMetrics {
 ///   count, is DID IT: +1 and considered. Square because it is a different
 ///   verb, and a checkbox is what "I did this" looks like everywhere else.
 ///   Both are `ActOnPromptIntent`, keyed by `prompt_key`.
-/// - The title links to the quota on the Quotas surface
-///   (`opentask://quota/<id>`), not a reminder editor: a prompt is not a
-///   task.
+/// - The title links to THIS ROW on the Reminders surface
+///   (`WidgetLink.prompt`, by `prompt_key`), highlighted, exactly as a
+///   reminder row's title does — it was tapped on the Reminders widget, so it
+///   opens the Reminders tab, not the Quotas one (2026-09-27).
 private struct PromptRow: View {
     let prompt: QuotaPromptDTO
     let lines: Int
@@ -1049,7 +1050,7 @@ private struct PromptRow: View {
                     .fill(PromptRowMetrics.stripeColor(prompt.stripeColor))
                     .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
                     .padding(.top, 2)
-                Link(destination: WidgetLink.quota(prompt.taskId)) {
+                Link(destination: WidgetLink.prompt(prompt.promptKey)) {
                     WidgetTheme.titleText(
                         Text(prompt.title).foregroundStyle(.primary)
                             + Text("\(QuotaPromptDTO.countSeparator)\(prompt.countText)").foregroundStyle(.secondary),
@@ -1125,7 +1126,7 @@ private struct DonePromptRow: View {
                     .fill(PromptRowMetrics.stripeColor(prompt.stripeColor).opacity(0.5))
                     .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
                     .padding(.top, 2)
-                Link(destination: WidgetLink.quota(prompt.taskId)) {
+                Link(destination: WidgetLink.prompt(prompt.promptKey)) {
                     WidgetTheme.titleText(Text(prompt.labelText).strikethrough(), notesGlyphSize: notesGlyphSize)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
