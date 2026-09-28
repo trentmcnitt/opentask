@@ -9,6 +9,21 @@ import { describe, test, expect, beforeEach } from 'vitest'
 import { DateTime } from 'luxon'
 import { apiFetch, apiAnon, resetTestData } from './helpers'
 
+/** Make task 1 overdue, so the bulk snooze has something to move. */
+async function makeOverdue() {
+  await apiFetch('/api/tasks/1', {
+    method: 'PATCH',
+    body: { due_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(), priority: 0 },
+  })
+}
+
+/** Task 1's due time as Chicago wall-clock "HH:mm" (the test user's zone). */
+async function dueLocal(): Promise<{ hhmm: string; ms: number }> {
+  const task = (await (await apiFetch('/api/tasks/1')).json()).data
+  const due = DateTime.fromISO(task.due_at).setZone('America/Chicago')
+  return { hhmm: due.toFormat('HH:mm'), ms: due.toMillis() }
+}
+
 describe('Bulk snooze-overdue integration', () => {
   beforeEach(async () => {
     await resetTestData()
@@ -101,21 +116,6 @@ describe('Bulk snooze-overdue integration', () => {
     expect(undoRes.status).toBe(200)
   })
 
-  /** Make task 1 overdue, so the bulk snooze has something to move. */
-  async function makeOverdue() {
-    await apiFetch('/api/tasks/1', {
-      method: 'PATCH',
-      body: { due_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(), priority: 0 },
-    })
-  }
-
-  /** Task 1's due time as Chicago wall-clock "HH:mm" (the test user's zone). */
-  async function dueLocal(): Promise<{ hhmm: string; ms: number }> {
-    const task = (await (await apiFetch('/api/tasks/1')).json()).data
-    const due = DateTime.fromISO(task.due_at).setZone('America/Chicago')
-    return { hhmm: due.toFormat('HH:mm'), ms: due.toMillis() }
-  }
-
   test('POST with a slot snoozes to that slot’s next start, in the user’s timezone', async () => {
     await makeOverdue()
     const res = await apiFetch('/api/tasks/bulk/snooze-overdue', {
@@ -153,6 +153,29 @@ describe('Bulk snooze-overdue integration', () => {
       return (today > now ? today : today.plus({ days: 1 })).toMillis()
     })
     expect(due.ms).toBe(Math.min(...upcoming))
+  })
+
+  test('POST with tomorrow: true snoozes to tomorrow at the user’s morning time', async () => {
+    const prefs = (await (await apiFetch('/api/user/preferences')).json()).data
+    await makeOverdue()
+    const res = await apiFetch('/api/tasks/bulk/snooze-overdue', {
+      method: 'POST',
+      body: { tomorrow: true },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.tasks_affected).toBeGreaterThanOrEqual(1)
+    const due = await dueLocal()
+    expect(due.hhmm).toBe(prefs.morning_time)
+    const tomorrow = DateTime.now().setZone('America/Chicago').plus({ days: 1 }).toISODate()
+    expect(DateTime.fromMillis(due.ms).setZone('America/Chicago').toISODate()).toBe(tomorrow)
+  })
+
+  test('POST rejects tomorrow combined with another target', async () => {
+    const res = await apiFetch('/api/tasks/bulk/snooze-overdue', {
+      method: 'POST',
+      body: { tomorrow: true, delta_minutes: 60 },
+    })
+    expect(res.status).toBe(400)
   })
 
   test('POST rejects a malformed slot, and a slot combined with until', async () => {

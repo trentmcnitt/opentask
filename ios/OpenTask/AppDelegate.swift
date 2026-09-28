@@ -109,18 +109,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     //
     // The scene's delegate class is `QuickActionSceneDelegate`, which receives
     // quick actions on cold launch (`connectionOptions.shortcutItem`) and warm
-    // launch (`performActionFor`) — see its doc. Add-task on a cold launch
-    // also sets a pending path here, so the web view's first load is the
-    // create URL rather than racing the base URL load.
+    // launch (`performActionFor`) — see its doc.
 
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        if options.shortcutItem?.type == QuickActionHandler.addTask {
-            WebViewManager.shared.navigate(path: "/?action=create")
-        }
         let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         config.delegateClass = QuickActionSceneDelegate.self
         return config

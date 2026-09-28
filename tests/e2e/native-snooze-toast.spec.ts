@@ -58,6 +58,16 @@ test.describe('Native quick-action snooze toast', () => {
     }
   })
 
+  test('a failed snooze says so', async ({ authenticatedPage: page }) => {
+    await page.evaluate(() => {
+      window.__opentaskNativeSnooze = { error: true }
+      window.dispatchEvent(new CustomEvent('opentask-native-snoozed'))
+    })
+    await expect(
+      page.locator('[data-sonner-toast]').filter({ hasText: 'Snooze failed' }),
+    ).toBeVisible()
+  })
+
   test('a result delivered before the page mounted shows once it does', async ({
     authenticatedPage: page,
   }) => {

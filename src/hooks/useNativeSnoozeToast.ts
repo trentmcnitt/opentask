@@ -8,8 +8,12 @@ import { APP_ACTIVE_EVENT } from '@/hooks/useSyncStream'
 /** The event the iOS app fires once a Home Screen quick action's snooze lands. */
 export const NATIVE_SNOOZED_EVENT = 'opentask-native-snoozed'
 
-/** The bulk snooze response fields the native app hands over (the API's own names). */
-interface NativeSnoozeResult {
+/** The bulk snooze response fields the native app hands over (the API's own
+ *  names), or `{ error: true }` when the snooze request failed. */
+type NativeSnoozeResult = NativeSnoozeSuccess | { error: true }
+
+interface NativeSnoozeSuccess {
+  error?: undefined
   tasks_affected: number
   snoozed_high: number
   skipped_high: number
@@ -47,6 +51,10 @@ export function useNativeSnoozeToast() {
       const result = window.__opentaskNativeSnooze
       if (!result) return
       delete window.__opentaskNativeSnooze
+      if (result.error) {
+        showToast({ message: 'Snooze failed', type: 'error' })
+        return
+      }
       // Pages refresh on the sync stream anyway; this makes it immediate.
       window.dispatchEvent(new CustomEvent(APP_ACTIVE_EVENT))
       const affected = result.tasks_affected
