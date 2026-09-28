@@ -1,30 +1,25 @@
 /**
- * Just-added previews: for 10 minutes after a task is created, a read-only
- * PREVIEW of it sits at the top of the dashboard's Inbox group (or, in a view
- * with no Inbox group, at the top of the list), while the real row stays
- * exactly where it belongs.
+ * Just added: for 10 minutes after a task is created it is listed in the
+ * dashboard's "Just added" card, under the add field (`JustAddedCard`), while
+ * its real row stays exactly where it belongs and wears a small "New" tag.
  *
- * Why (Trent, 2026-09-27): a task added by quick add, or by an iOS Shortcut
- * POSTing to the API from another device, lands wherever its project, due date
- * and the group's sort put it — often below the fold, or (enriched into
- * another project) somewhere else entirely. Right after adding, the question is
- * "did it land, where, and what did the AI make of it?". The preview answers
- * that in the one place the eye already goes: it shows the task as it now is
- * (title, labels, priority, due, recurrence, the `animate-ai-processing` pulse
- * while enrichment runs), a "New · 3m" badge, and the project when it is not
- * the Inbox. This replaced the separate "Recent" view.
+ * Why (Trent, 2026-09-27, restated 2026-09-28): a task added by quick add, by
+ * the Mac menu bar, or by an iOS Shortcut POSTing to the API from another
+ * device, lands wherever its project, due date and the group's sort put it —
+ * often below the fold, or (enriched into another project) somewhere else
+ * entirely. Right after adding, the question is "did it land, where, and what
+ * did the AI make of it?", and it must be answerable without scrolling and
+ * without moving the real row: "We have to have a place that shows the recent
+ * tasks without having to scroll down", and "the real row at the top means
+ * it's not in the actual place it's supposed to be". The card shows each
+ * task's project, what the AI filled in (or that it is still working) and how
+ * long ago it was added; a tap scrolls to the real row and flashes it (or,
+ * when the current view has no row for it, opens the task).
  *
- * The preview is VISUAL ONLY. The real row — at its natural place in its real
- * group — is the task: fully interactive, unfaded, carrying the same "New"
- * badge so it is easy to spot on arrival. The preview has no Done, no swipe,
- * no snooze, no selection, no `task-row-<id>` id; it is outside the keyboard
- * order, shift-click ranges, Select All and every count. Tapping it scrolls to
- * the real row and flashes it (or, when the current view has no row for it —
- * the Today view and a task due next week — opens the task's quick panel).
- *
- * No preview when it would add nothing: a task whose real row is already at
- * the top of the preview's host (the Inbox group, or the list's first group),
- * with only other new tasks above it, is its own preview.
+ * History: #115 was a separate "Recent" view; #121 replaced it with a dashed
+ * read-only copy of the row at the top of the Inbox, which Trent found cheap-
+ * looking next to the real row; the card (mockup A of three, 2026-09-28)
+ * replaced that.
  *
  * Population: the dashboard's unfiltered open tasks (reminders and quotas are
  * not dashboard tasks), NOT the filter-chip result and not the Today view's
@@ -32,10 +27,9 @@
  * the "did it land?" case. Hidden while searching (the results are the
  * question then).
  *
- * The window is measured from `created_at` (server clock). A
- * `created_at` a moment ahead of this device's clock is still in, and still
- * ages out ten minutes after it. Previews leave without a reload — see
- * `useJustAddedClock`.
+ * The window is measured from `created_at` (server clock). A `created_at` a
+ * moment ahead of this device's clock is still in, and still ages out ten
+ * minutes after it. Entries leave without a reload — see `useJustAddedClock`.
  */
 import type { Task } from '@/types'
 
@@ -80,8 +74,8 @@ export function nextJustAddedExpiry(tasks: Task[], now: number): number | null {
 }
 
 /**
- * The next moment anything just-added changes on screen: a badge's minute
- * turning over ("New · 2m" → "New · 3m", every whole minute after
+ * The next moment anything just-added changes on screen: an entry's age
+ * turning over ("2m ago" → "3m ago", every whole minute after
  * `created_at`) or, at the tenth, the task aging out. Null when nothing is in
  * the window. `useJustAddedClock` schedules ONE timeout for this — the next
  * visible change — rather than ticking on an interval.
@@ -100,31 +94,12 @@ export function nextJustAddedTick(tasks: Task[], now: number): number | null {
 }
 
 /**
- * The previews to show above a host's rows.
- *
- * `source` is the population (see the module comment); `hostRows` is the
- * host's real rows in on-screen order — the Inbox group's, or the first
- * group's when the previews sit at the top of the list — or `[]` when the host
- * shows no rows (collapsed, or no such group). A new task whose real row is in
- * the host's leading run of new tasks already sits at the top: previewing it
- * would put a copy directly above itself, so it is left out.
+ * How long ago, for the Just added card: "just now" under a minute, then
+ * "2m ago". Minutes, floored — inside a 10-minute window nothing coarser is
+ * useful. `now` is the dashboard's just-added clock, which advances on each
+ * minute boundary (`nextJustAddedTick`), so the age counts up without polling.
  */
-export function selectJustAddedPreviews(source: Task[], hostRows: Task[], now: number): Task[] {
-  const atTop = new Set<number>()
-  for (const row of hostRows) {
-    if (!isJustAdded(row, now)) break
-    atTop.add(row.id)
-  }
-  return selectJustAddedTasks(source, now).filter((t) => !atTop.has(t.id))
-}
-
-/**
- * The "New · 3m" badge, on the preview and on the real row. Minutes, floored
- * — inside a 10-minute window nothing coarser is useful. `now` is the
- * dashboard's just-added clock, which advances on each minute boundary
- * (`nextJustAddedTick`), so the badge counts up without polling.
- */
-export function formatJustAddedBadge(task: Task, now: number): string {
+export function formatJustAddedAge(task: Task, now: number): string {
   const minutes = Math.floor((now - createdMs(task)) / 60_000)
-  return minutes < 1 ? 'New · just now' : `New · ${minutes}m`
+  return minutes < 1 ? 'just now' : `${minutes}m ago`
 }

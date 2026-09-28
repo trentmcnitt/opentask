@@ -252,9 +252,9 @@ test.describe('Track', () => {
       // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
-      // Met DURING the session, so it stays put, green — only what was met
-      // when the page loaded is put away (Trent, 2026-09-22: "things should
-      // not disappear until reload").
+      // Met DURING the session: it stays put, green, for its 5-second
+      // countdown — and taking it back below target (the next line, well
+      // inside the 5s) cancels that, so it never leaves.
       await expect(chipCount).toHaveText('2/2')
       await chip.click({ modifiers: ['Shift'] })
       await expect(chipCount).toHaveText('1/2')
@@ -671,7 +671,7 @@ test.describe('Track', () => {
    * happens at load, not mid-session, and the header's "X of Y" toggle is
    * still the only way back.
    */
-  test('what was met at load is put away, with nothing standing in for a finished cluster', async ({
+  test('met at load is put away; met mid-session fades and goes 5s later, no reload', async ({
     authenticatedPage: page,
   }) => {
     // A run-unique label, so this cluster holds exactly these two.
@@ -695,6 +695,9 @@ test.describe('Track', () => {
       (await page.request.post(`/api/tasks/${done}/progress`, { data: { delta: 1 } })).ok(),
     ).toBeTruthy()
 
+    // Playwright's clock from here on, so the 5-second countdown is jumped
+    // with `fastForward`, never waited out.
+    await page.clock.install()
     await page.goto('/')
     await closeTrack(page)
     const panel = page.getByRole('region', { name: 'Quotas' })
@@ -712,19 +715,27 @@ test.describe('Track', () => {
     await expect(cluster.locator('[data-track-cluster-met]')).toHaveText('1')
     await expect(toggle).toHaveText(/^\d+ of \d+$/)
 
-    // Met now, mid-session: nothing disappears and nothing moves.
+    // Met now, mid-session: it stays where it is, green, fading — nothing
+    // vanishes under the finger (Trent, 2026-09-22) — and 5 seconds later it
+    // is put away without a reload (Trent, 2026-09-28), taking the finished
+    // label with it: no chip, no box, nothing else takes its place.
     await openChip.click()
     await expect(openChip.locator('[data-track-count]')).toHaveText('1/1')
     await expect(openChip).toBeVisible()
     await expect(cluster).toBeVisible()
-
-    // The next load puts the whole label away — no chip, no box, nothing else
-    // takes its place. The section's own heading still counts it (asserted
-    // via the header's toggle below): the panel's period math runs over
-    // every quota, not just the ones still on screen.
+    await expect(
+      panel.locator(`li[data-track-leaving]:has([data-track-chip="${open}"])`),
+    ).toHaveCount(1)
     await expect
       .poll(async () => (await (await page.request.get(`/api/tasks/${open}`)).json()).data)
       .toMatchObject({ progress_current: 1 })
+    await page.clock.fastForward('00:05')
+    await expect(openChip).toHaveCount(0)
+    await expect(cluster).toHaveCount(0)
+
+    // A load agrees. The section's own heading still counts it (asserted via
+    // the header's toggle below): the panel's period math runs over every
+    // quota, not just the ones still on screen.
     await page.reload()
     await expect(cluster).toHaveCount(0)
     await expect(openChip).toHaveCount(0)
