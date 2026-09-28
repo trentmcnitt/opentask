@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { toast, Toaster as Sonner, type ToasterProps } from 'sonner'
+import { useNativeSnoozeToast } from '@/hooks/useNativeSnoozeToast'
 
 /**
  * Tap-to-dismiss: Sonner v2 doesn't expose an onClick option on toasts or
@@ -54,6 +55,11 @@ function useSelectionSheetPresent(): boolean {
 
 const Toaster = ({ ...props }: ToasterProps) => {
   useTapToDismiss()
+  // Here, not in AppLayout: a toast raised before Sonner subscribes is
+  // dropped, and on a cold launch the native result is waiting at mount.
+  // This component's effects run after its child <Sonner>'s, so the
+  // subscription is always in place first.
+  useNativeSnoozeToast()
   const { resolvedTheme } = useTheme()
   const selectionSheet = useSelectionSheetPresent()
 

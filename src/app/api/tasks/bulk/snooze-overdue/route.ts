@@ -11,6 +11,7 @@
  * - { delta_minutes: 30 }  → 30 min from now (exact, < 60 min)
  * - { delta_minutes: 60 }  → 1 hour from now, snapped to nearest hour
  * - { until: "ISO8601" }   → explicit absolute target
+ * - { tomorrow: true }     → tomorrow at the user's morning_time
  * - {} (empty body)        → user's default_snooze_option preference
  */
 
@@ -51,13 +52,17 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     } else if (input.until) {
       until = input.until
     } else {
-      // Use delta_minutes from request, or fall back to user's default_snooze_option
+      // `tomorrow`, else delta_minutes, else the user's default_snooze_option
       const db = getDb()
       const prefs = db
         .prepare('SELECT default_snooze_option, morning_time FROM users WHERE id = ?')
         .get(user.id) as { default_snooze_option: string; morning_time: string }
 
-      const option = input.delta_minutes ? String(input.delta_minutes) : prefs.default_snooze_option
+      const option = input.tomorrow
+        ? 'tomorrow'
+        : input.delta_minutes
+          ? String(input.delta_minutes)
+          : prefs.default_snooze_option
 
       until = computeSnoozeTime(option, user.timezone, prefs.morning_time)
     }
