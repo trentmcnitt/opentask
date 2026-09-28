@@ -37,17 +37,17 @@ The AI extracts: clean title, due date, priority, labels, recurrence, project, a
 
 ### What enrichment extracts
 
-| Field               | Example input                              | Extracted                   |
-| ------------------- | ------------------------------------------ | --------------------------- |
-| title               | "um call dentist tomorrow"                 | "Call dentist"              |
-| due_at              | "tomorrow morning", "next Tuesday at 2pm"  | ISO 8601 UTC datetime       |
-| priority            | "high priority", "urgent", "no rush"       | 0-4 integer                 |
-| labels              | "call the dentist, label it medical"       | ["medical"]                 |
-| rrule               | "every Monday", "daily"                    | RFC 5545 RRULE string       |
-| project_name        | "add to family"                            | Matched to existing project |
-| auto_snooze_minutes | "auto-snooze 30 minutes"                   | Integer (0-1440)            |
-| recurrence_mode     | "repeat from completion"                   | "from_completion"           |
-| notes               | "claim number 847293, call 1-800-555-0123" | Supplementary context       |
+| Field               | Example input                               | Extracted                                             |
+| ------------------- | ------------------------------------------- | ----------------------------------------------------- |
+| title               | "um call dentist tomorrow"                  | "Call dentist"                                        |
+| due_at              | "tomorrow morning", "next Tuesday at 2pm"   | ISO 8601 UTC datetime                                 |
+| priority            | "high priority", "urgent", "no rush"        | 0-4 integer                                           |
+| labels              | "call the dentist, label it medical"        | ["medical"]                                           |
+| rrule               | "every Monday", "daily"                     | RFC 5545 RRULE string                                 |
+| project_name        | "add to family", "test task for job search" | Existing project named explicitly or by its full name |
+| auto_snooze_minutes | "auto-snooze 30 minutes"                    | Integer (0-1440)                                      |
+| recurrence_mode     | "repeat from completion"                    | "from_completion"                                     |
+| notes               | "claim number 847293, call 1-800-555-0123"  | Supplementary context                                 |
 
 ### Wall-of-text example
 

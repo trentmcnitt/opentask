@@ -422,7 +422,22 @@ async function runEnrichment(
     throw new Error(`AI query failed: ${result.error || 'No output'}`)
   }
 
-  return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
+  // Production runs the project through filterProjectMatch before storing it,
+  // so the scenario is judged on what the database would receive. When the
+  // guard changes the model's answer, the raw value is logged so a prompt
+  // regression the guard is hiding still shows up in the run output.
+  const { filterProjectMatch } = await import('@/core/ai/enrichment')
+  const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
+  if (guarded !== (parsed.project_name ?? null)) {
+    console.log(
+      `[quality] project guard nulled model project_name "${parsed.project_name}" for: ${input.text}`,
+    )
+  }
+
+  return {
+    output: { ...parsed, project_name: guarded } as unknown as Record<string, unknown>,
+    durationMs: result.durationMs,
+  }
 }
 
 /**

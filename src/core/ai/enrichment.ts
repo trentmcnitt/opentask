@@ -727,6 +727,50 @@ function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
  * - If the input has no label-intent keywords, all labels are stripped.
  * - If label-intent keywords are present, trust the AI's extraction.
  */
+/**
+ * Post-parse guard for project assignment — the project counterpart of
+ * `filterExplicitLabels` below.
+ *
+ * The prompt sets a project in two cases (Trent, 2026-09-28): the user assigns
+ * one ("add it to Work", "put it in shopping"), or the task text contains a
+ * project's full name used as that name ("test task for job search" → Job
+ * Search). Never from topic. Once name matches were allowed, the model began
+ * filing tasks by topic again ("fix the leak in the kitchen" → Home, "pick up
+ * bananas" → Shopping List, "apply to Acme" → Job Search) — its reasoning
+ * often said null, but `project_name` is emitted before `reasoning`, so the
+ * field was already set. Prompt wording did not get that to zero; this does.
+ *
+ * Division of labor. This guard is necessary, not sufficient: it keeps the
+ * model's project only if at least one word of the project's name (3+
+ * letters) appears in the input as a whole word. That admits every legitimate
+ * case, including explicit partial names ("put it in shopping" → Shopping
+ * List), and rejects every topic-only one, since topic inference is by
+ * definition a match on words that are NOT the name. Whole-word matching also
+ * rejects "homework" for Home or Work. What it deliberately leaves to the
+ * model is whether a present word is used AS the name: "after work", "work
+ * out", "on the way home" contain the word, and the prompt tells the model
+ * those are not matches.
+ *
+ * Known cost: an explicit assignment by synonym ("put this in groceries" for a
+ * project named Shopping List) is dropped.
+ */
+export function filterProjectMatch(projectName: string | null, inputText: string): string | null {
+  if (!projectName) return null
+  const all = projectName
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+  // Short words ("of", "to") would match almost anything; a name made only of
+  // short words ("HR") has to be matched on those.
+  const long = all.filter((w) => w.length >= 3)
+  const words = long.length > 0 ? long : all
+  const text = inputText.toLowerCase()
+  const present = words.some((w) =>
+    new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, 'u').test(text),
+  )
+  return present ? projectName : null
+}
+
 function filterExplicitLabels(labels: string[], inputText: string): string[] {
   const labelIntentPattern = /\b(label\s+it|tag\s+it|mark\s+it\s+as|add\s+the\s+\w+\s+label)\b/i
   if (labelIntentPattern.test(inputText)) {
@@ -892,14 +936,16 @@ function collectEnrichmentChanges(
     }
   }
 
-  // Project — resolve project name to ID if provided (owned or shared)
-  if (enrichment.project_name) {
+  // Project — resolve project name to ID if provided (owned or shared), after
+  // the text-presence guard (see filterProjectMatch).
+  const projectName = filterProjectMatch(enrichment.project_name, inputText)
+  if (projectName) {
     const db = getDb()
     const project = db
       .prepare(
         'SELECT id FROM projects WHERE (owner_id = ? OR shared = 1) AND name = ? COLLATE NOCASE',
       )
-      .get(user.id, enrichment.project_name) as { id: number } | undefined
+      .get(user.id, projectName) as { id: number } | undefined
     if (project && project.id !== task.project_id) {
       setClauses.push('project_id = ?')
       values.push(project.id)

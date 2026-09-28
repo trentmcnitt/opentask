@@ -220,7 +220,7 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
       quality_notes:
         'Title should be clean (e.g., "Fix that deployment bug" or "Fix deployment bug"). ' +
         'project_name MUST be null — even though user context says "software engineer" and a Work project exists, ' +
-        'content-based project inference is forbidden. Only explicit assignment (e.g., "add to Work") triggers project matching. ' +
+        'content-based project inference is forbidden. Only explicit assignment (e.g., "add to Work") or the task text containing a project name ("... for work") triggers project matching — the words "work" and "home" appear only in the user context here, not in the task. ' +
         'The user context should NOT appear in the title or notes — it is background knowledge only. ' +
         'Priority should remain 0 (no urgency signal in the input).',
     },
