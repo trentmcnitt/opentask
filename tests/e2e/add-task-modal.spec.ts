@@ -37,8 +37,9 @@ test.describe('Add task modal (mobile FAB)', () => {
     await dialog.getByLabel('Task title').fill(taskTitle)
     await dialog.getByRole('button', { name: 'Create Task' }).click()
 
-    // Dialog should close and task should appear in the list
+    // Dialog should close and task should appear in the list (its row's title
+    // link — the just-added preview above the list shows the title as text)
     await expect(dialog).not.toBeVisible({ timeout: 5000 })
-    await expect(page.getByText(taskTitle)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('link', { name: taskTitle })).toBeVisible({ timeout: 5000 })
   })
 })

@@ -7,7 +7,7 @@
  * including default values, valid updates, and validation rejections.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { DateTime } from 'luxon'
 import { apiFetch, resetTestData } from './helpers'
 
@@ -361,31 +361,36 @@ describe('combined preference updates', () => {
  * render and the API must stop accepting it.
  */
 describe('default_grouping preference', () => {
-  test.each(['time', 'project', 'unified', 'slot', 'recent'])(
-    'PATCH accepts %s',
-    async (grouping) => {
+  test.each(['time', 'project', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_grouping: grouping },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.default_grouping).toBe(grouping)
+  })
+
+  // 'recent' was the short-lived "Recent" view, replaced by just-added pinning.
+  test.each(['reminders', 'recent'])(
+    'PATCH with the retired "%s" value returns 400',
+    async (retired) => {
+      const before = (await (await apiFetch('/api/user/preferences')).json()).data.default_grouping
       const res = await apiFetch('/api/user/preferences', {
         method: 'PATCH',
-        body: { default_grouping: grouping },
+        body: { default_grouping: retired },
       })
-      expect(res.status).toBe(200)
-      const body = await res.json()
-      expect(body.data.default_grouping).toBe(grouping)
+      expect(res.status).toBe(400)
+
+      // The last accepted value stands — a rejected update changes nothing.
+      const getRes = await apiFetch('/api/user/preferences')
+      const body = await getRes.json()
+      expect(body.data.default_grouping).toBe(before)
+      expect(before).not.toBe(retired)
     },
   )
 
-  test('PATCH with the retired "reminders" value returns 400', async () => {
-    const res = await apiFetch('/api/user/preferences', {
-      method: 'PATCH',
-      body: { default_grouping: 'reminders' },
-    })
-    expect(res.status).toBe(400)
-
-    // The last accepted value stands — a rejected update changes nothing.
-    const getRes = await apiFetch('/api/user/preferences')
-    const body = await getRes.json()
-    expect(body.data.default_grouping).toBe('recent')
-
+  afterAll(async () => {
     await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: { default_grouping: 'project' },

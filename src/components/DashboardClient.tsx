@@ -3,15 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import {
-  TaskList,
-  buildTaskGroups,
-  effectiveSort,
-  sortTasks,
-  type GroupingMode,
-} from '@/components/TaskList'
-import { selectRecentTasks } from '@/lib/recent-view'
+import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { useJustAddedClock } from '@/hooks/useJustAddedClock'
 import { UNDATED_LABEL } from '@/lib/slot-view'
 import { isTracked } from '@/lib/track'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
@@ -651,21 +645,7 @@ function HomeContent({
     })
   }, [searchResults, tasks])
 
-  /**
-   * Recent is a SLICE, not just a grouping: it narrows the population to what
-   * was added in the last 7 days before the filter bar sees it. Everything
-   * derived from the list then describes the slice — the filter chips' counts,
-   * "Showing N of M", Select All (which must never reach the older tasks this
-   * view isn't showing; bulk Done on them would be a nasty surprise), and the
-   * keyboard order. Today's slot view narrows inside `groupByTimeSlot` instead;
-   * Recent does it here because the window is the view's population, and
-   * `buildTaskGroups` re-applies it harmlessly (idempotent) for its ordering.
-   */
-  const unslicedBaseTasks = searchQuery ? visibleSearchResults : visibleTasks
-  const baseTasks = useMemo(
-    () => (grouping === 'recent' ? selectRecentTasks(unslicedBaseTasks) : unslicedBaseTasks),
-    [grouping, unslicedBaseTasks],
-  )
+  const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
 
   // `?filter=overdue` — the dashboard filtered to the Overdue chip. Two callers:
@@ -1050,18 +1030,24 @@ function HomeContent({
     groupingLoaded,
   ])
 
+  // Just-added previews (`src/lib/just-added.ts`): a read-only preview of
+  // each task created in the last 10 minutes, at the top of the Inbox (or the
+  // list). Drawn from `visibleTasks` — unfiltered on purpose — and off while
+  // searching. The clock advances itself at each age-out, so a preview leaves
+  // without a reload. Previews are not rows: nothing here (keyboard order,
+  // counts, Select All) sees them.
+  const justAddedNow = useJustAddedClock(visibleTasks)
+  const justAddedSource = searchQuery ? null : visibleTasks
+
   // Apply per-group sorting to match the visual order in TaskList.
   // Exclude tasks in collapsed groups so keyboard navigation skips them.
-  // `effectiveSort`: Recent ignores the sort preference (always newest first),
-  // and this order must match the one TaskList renders.
-  const viewSort = effectiveSort(grouping, sortOption, reversed)
   const orderedIds = useMemo(
     () =>
       taskGroups.flatMap((g) => {
-        if (grouping !== 'recent' && isCollapsed(g.label)) return []
-        return sortTasks(g.tasks, viewSort.sortOption, viewSort.reversed).map((t) => t.id)
+        if (isCollapsed(g.label)) return []
+        return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
       }),
-    [taskGroups, grouping, viewSort.sortOption, viewSort.reversed, isCollapsed],
+    [taskGroups, sortOption, reversed, isCollapsed],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -1198,8 +1184,8 @@ function HomeContent({
     setKeyboardFocusedId,
     selection,
     taskGroups,
-    sortOption: viewSort.sortOption,
-    reversed: viewSort.reversed,
+    sortOption,
+    reversed,
     timezone,
     projects,
     annotationMap: effectiveAnnotationMap,
@@ -1334,6 +1320,8 @@ function HomeContent({
         grouping={grouping}
         highlightTaskId={highlightTaskId}
         onHighlightDone={clearHighlight}
+        justAddedSource={justAddedSource}
+        justAddedNow={justAddedNow}
         onGroupingChange={(next) => {
           // Selecting a view explicitly turns off AI-sort's unified override —
           // otherwise the toggle would show a selection that isn't in effect.
@@ -1655,6 +1643,8 @@ function DashboardView({
   grouping,
   highlightTaskId,
   onHighlightDone,
+  justAddedSource,
+  justAddedNow,
   onGroupingChange,
   timeSlots,
   searchQuery,
@@ -1775,6 +1765,10 @@ function DashboardView({
   /** `?task=<id>&highlight=1` — the widget's link. See `HomeContent`'s `?task=` effect. */
   highlightTaskId: number | null
   onHighlightDone: () => void
+  /** Just-added previews' population; null while searching. See `src/lib/just-added.ts`. */
+  justAddedSource: Task[] | null
+  /** Just-added previews' clock. See `useJustAddedClock`. */
+  justAddedNow: number
   onGroupingChange: (grouping: GroupingMode) => void
   /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
   timeSlots: TimeSlot[]
@@ -2187,6 +2181,8 @@ function DashboardView({
             timeSlots={timeSlots}
             highlightTaskId={highlightTaskId}
             onHighlightDone={onHighlightDone}
+            justAddedSource={justAddedSource}
+            justAddedNow={justAddedNow}
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
             onLabelClick={onToggleLabel}

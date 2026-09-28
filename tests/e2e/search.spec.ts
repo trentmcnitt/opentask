@@ -49,7 +49,8 @@ test.describe('Search', () => {
     await expect(quickAdd).toBeVisible({ timeout: 5000 })
     await quickAdd.fill(title)
     await quickAdd.press('Enter')
-    await expect(page.getByText(title)).toBeVisible({ timeout: 5000 })
+    // The row's title link: the just-added preview shows the title as plain text.
+    await expect(page.getByRole('link', { name: title })).toBeVisible({ timeout: 5000 })
 
     const searchInput = page.getByRole('textbox', { name: 'Search tasks' })
     await searchInput.fill('Zarquon')

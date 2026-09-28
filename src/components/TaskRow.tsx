@@ -25,12 +25,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
-import {
-  formatAddedAgo,
-  formatDueTimeParts,
-  formatOriginalDueAt,
-  formatTaskAge,
-} from '@/lib/format-date'
+import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -118,10 +113,22 @@ interface TaskRowProps {
   /** Project color for the project badge dot (used in unified view) */
   projectColor?: LabelColor | null
   /**
-   * Recent view: end the metadata line with "added 3h ago" (from `created_at`)
-   * in place of the "Xd old" age, which would say the same thing less exactly.
+   * Just-added pinning (`src/lib/just-added.ts`): the row is pinned to the top
+   * of its group because it was created in the last 10 minutes, and this is
+   * the small neutral badge that says so ("New · 3m"). Neutral on purpose —
+   * new is not a state that needs acting on, just a fact to notice.
    */
-  showAddedAgo?: boolean
+  justAddedBadge?: string
+  /**
+   * Render as a read-only PREVIEW (the just-added preview at the top of the
+   * Inbox — `JustAddedPreview`): the same title, labels, priority, due line
+   * and enrichment pulse, but none of the row's behavior. No `task-row-<id>`
+   * id (the real row owns it — keyboard navigation finds rows by it), no
+   * `option` role, no click/long-press/selection, no Done (a dashed empty
+   * circle holds its place), a plain-text title, no snooze button. Dashed on a
+   * muted background so it reads as a preview, not a second task.
+   */
+  preview?: boolean
   /**
    * Deep-linked from the widget (`?task=<id>&highlight=1`): scroll to it and
    * flash it once, mirroring `RemindersView`'s `ReminderRow` — see the
@@ -207,7 +214,8 @@ export function TaskRow({
   insightsCommentary,
   projectName,
   projectColor,
-  showAddedAgo = false,
+  justAddedBadge,
+  preview = false,
   highlighted = false,
   onHighlightDone,
 }: TaskRowProps) {
@@ -405,7 +413,7 @@ export function TaskRow({
   // controls live in the Track panel on the Tasks page, not on every row.
   const metaSegments = tracked
     ? trackedMetaSegments(task)
-    : buildMetaSegments(task, timezone, isOverdue, showAddedAgo)
+    : buildMetaSegments(task, timezone, isOverdue)
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
@@ -418,22 +426,28 @@ export function TaskRow({
     hasLabels ||
     !!projectName
 
+  // The row's own identity and behavior — withheld entirely in preview mode.
+  const rowProps = {
+    id: `task-row-${task.id}`,
+    role: 'option',
+    'aria-selected': isSelected,
+    tabIndex: -1,
+    onClick: handleClick,
+    onMouseEnter: onFocus,
+    onMouseDown: (e: React.MouseEvent) => e.stopPropagation(), // Prevent triggering list's onMouseInteraction
+    onPointerDown: pointer.onPointerDown,
+    onPointerUp: pointer.onPointerUp,
+    onPointerMove: pointer.onPointerMove,
+    onPointerLeave: pointer.onPointerLeave,
+    onPointerCancel: pointer.onPointerUp,
+  }
+  const previewRowProps = { 'data-just-added-preview-row': task.id }
+
   return (
     <div
-      id={`task-row-${task.id}`}
+      {...(preview ? previewRowProps : rowProps)}
       ref={rowRef}
       data-task-highlight={highlighted ? '' : undefined}
-      role="option"
-      aria-selected={isSelected}
-      tabIndex={-1}
-      onClick={handleClick}
-      onMouseEnter={onFocus}
-      onMouseDown={(e) => e.stopPropagation()} // Prevent triggering list's onMouseInteraction
-      onPointerDown={pointer.onPointerDown}
-      onPointerUp={pointer.onPointerUp}
-      onPointerMove={pointer.onPointerMove}
-      onPointerLeave={pointer.onPointerLeave}
-      onPointerCancel={pointer.onPointerUp}
       onAnimationEnd={(e) => {
         // Filtered: this row can also run `animate-ai-processing`, whose
         // `animationend` must not spend the one-shot highlight early.
@@ -461,10 +475,16 @@ export function TaskRow({
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
         isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
         highlighted && 'animate-row-highlight',
+        preview && 'bg-muted/40 hover:border-muted-foreground/40 border-dashed',
       )}
     >
       {/* Selection checkbox (shown in selection mode) or Done button */}
-      {isSelectionMode ? (
+      {preview ? (
+        <span
+          aria-hidden
+          className="border-muted-foreground/25 h-6 w-6 flex-shrink-0 rounded-full border-2 border-dashed"
+        />
+      ) : isSelectionMode ? (
         <Checkbox
           checked={isSelected}
           onCheckedChange={() => onSelect?.()}
@@ -506,7 +526,7 @@ export function TaskRow({
       {/* Task content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          {isSelectionMode ? (
+          {isSelectionMode || preview ? (
             <span
               className={cn(
                 'line-clamp-3 font-medium',
@@ -532,6 +552,14 @@ export function TaskRow({
             >
               {task.title}
             </Link>
+          )}
+          {justAddedBadge && (
+            <span
+              data-just-added-badge
+              className="bg-muted text-muted-foreground mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-medium whitespace-nowrap"
+            >
+              {justAddedBadge}
+            </span>
           )}
         </div>
 
@@ -684,7 +712,7 @@ export function TaskRow({
       {/* Snooze button (hidden in selection mode and on mobile — swipe-to-snooze is the mobile interaction).
           Single click: immediate snooze with default duration.
           Long-press (400ms): opens SnoozeMenu with duration choices. */}
-      {!isSelectionMode && (
+      {!isSelectionMode && !preview && (
         <SnoozeMenu
           open={snoozeMenuOpen}
           onOpenChange={setSnoozeMenuOpen}
@@ -791,12 +819,7 @@ function trackedMetaSegments(task: Task): MetaSegment[] {
   ]
 }
 
-function buildMetaSegments(
-  task: Task,
-  timezone: string,
-  isOverdue?: boolean,
-  showAddedAgo = false,
-): MetaSegment[] {
+function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
   const segments: MetaSegment[] = []
 
   // A quota's due_at is its period boundary, not a promise that got moved — no
@@ -827,16 +850,6 @@ function buildMetaSegments(
     if (text) {
       segments.push({ text, className: 'text-muted-foreground/60' })
     }
-  }
-
-  // Recent view: when it was added, in place of the age — the row is there
-  // BECAUSE it is new, so "added 3h ago" is the fact being checked.
-  if (showAddedAgo) {
-    segments.push({
-      text: formatAddedAgo(task.created_at, timezone),
-      className: 'text-muted-foreground/60',
-    })
-    return segments
   }
 
   // Age indicator: how old a task is (very subtle, at the end of metadata)

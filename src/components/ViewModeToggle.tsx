@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarClock, FolderTree, History, List } from 'lucide-react'
+import { CalendarClock, FolderTree, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { GroupingMode } from '@/components/TaskList'
 
@@ -25,12 +25,6 @@ interface ViewModeToggleProps {
  * Every option here is a grouping of the same task list. The Reminders surface
  * (§6) used to ride along as a fourth chip — it is now a real route (`/reminders`)
  * with its own tab, so this control is back to doing exactly one job.
- *
- * "Recent" (2026-09-27) is the fourth: the tasks added in the last 7 days,
- * newest first, across every project. It replaces the round trip of switching
- * the sort to "Date added" to check that a quick add landed and was enriched,
- * and switching it back afterwards. Still a view of the same task list, so it
- * belongs here rather than on its own route.
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
   // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as an
@@ -39,12 +33,6 @@ export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
     { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
     { value: 'project', label: 'Projects', icon: FolderTree, hint: 'Group by project' },
     { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
-    {
-      value: 'recent',
-      label: 'Recent',
-      icon: History,
-      hint: 'Added in the last 7 days, newest first',
-    },
   ]
 
   return (

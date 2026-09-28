@@ -1,4 +1,10 @@
-import { test, expect, waitForPreferenceSave, waitForPrefsLoaded } from './fixtures'
+import {
+  test,
+  expect,
+  backdateCreated,
+  waitForPreferenceSave,
+  waitForPrefsLoaded,
+} from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -91,6 +97,9 @@ test.describe('Undated pile', () => {
     })
     expect(res.ok()).toBeTruthy()
     const ids = [(await res.json()).data.id as number]
+    // Not "just added", or its preview above the list would show the title
+    // while the group is folded (src/lib/just-added.ts).
+    backdateCreated(ids)
     // The view toggle persists server-side for the shared test user, so the
     // view this test finds is put back at the end for the specs that follow.
     const views = ['Today', 'Projects', 'All'] as const
@@ -122,7 +131,8 @@ test.describe('Undated pile', () => {
       await expect(page.getByText('A thought with no date yet')).toHaveCount(0)
       await page.getByRole('textbox', { name: 'Quick add task' }).fill('Another dateless thought')
       await page.keyboard.press('Enter')
-      await expect(page.getByText('Another dateless thought')).toBeVisible()
+      // Its row's title link: the new task's preview repeats the title as text.
+      await expect(page.getByRole('link', { name: 'Another dateless thought' })).toBeVisible()
       await expect(page.getByText('A thought with no date yet')).toBeVisible()
 
       const list = (await (await page.request.get('/api/tasks?limit=500')).json()).data.tasks
