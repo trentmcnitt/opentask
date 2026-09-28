@@ -211,6 +211,26 @@ while `target="_blank"` handling, `allowsMagnification` and `isInspectable` do.
 - **No `opentask://` URL scheme.** The Designed-for-iPad build currently owns
   it for widget taps, and registering it here could steal them.
 
+## Menu bar item (2026-09-28)
+
+A checklist icon in the menu bar with a red badge counting overdue TASKS (not
+reminders or quotas; the Tasks widget's Overdue rule, `TaskLists.overdue`).
+Clicking it opens a panel: quick add (the dashboard's `POST /api/tasks {title}`,
+AI fills in the rest), up to 8 overdue tasks — or, with none, the next few due
+today — each with ○ done, ⏭ next period and +1h (per-task, via
+`TaskSnoozePlan`), and an "All overdue (N): ⏭ 4:30 PM · +1h" bar (the server
+sweep, `bulk/snooze-overdue`). A title opens the task in the window.
+
+- `MenuBar/StatusItemController.swift` — an AppKit `NSStatusItem` + popover,
+  not SwiftUI's `MenuBarExtra`, which draws its label as a one-colour template
+  (the badge wasn't red).
+- `MenuBar/MenuBarModel.swift` — one `GET /api/tasks` on open, every 2 min,
+  on wake, on leaving the app, after each action and on the server's silent
+  pushes.
+- `MenuBar/MenuBarIcon.swift` — the glyph is drawn inset: at its bare size
+  the status item clipped the top of the checkmark.
+- Settings (⌘,): show in menu bar, and open at login (`SMAppService`).
+
 ## Widget extension (`OpenTaskMacWidgets`)
 
 A genuinely native macOS `app-extension` target, not shared with `ios/` at

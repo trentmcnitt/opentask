@@ -49,10 +49,12 @@
 		5F6F249B5F70259FA9A01A58 /* ApsEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */; };
 		62886AC7F979636FE750C08E /* WatchQuotaLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */; };
 		64977AFF9CC42B0353EA7674 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
+		64EBD90DFBC8DA583CA054D6 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52EC8E5A66C3C3ECE4A13D0 /* StatusItemController.swift */; };
 		65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		6A9B5E10389B15AE08DA8BD4 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
 		6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */ = {isa = PBXBuildFile; fileRef = 225E098B934AE9962181E731 /* task-progress.json */; };
 		6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
+		7131F2552F88AC5619E5A431 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
 		78931D4AFF9A62A3E49A51AA /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		8465F733F4E375E70C51CEA8 /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */; };
 		86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */; };
@@ -69,12 +71,15 @@
 		AB6C1D0E0A52F8A15B1C00F3 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
 		ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370309049F393EDDAD8042C0 /* DueLabelTests.swift */; };
 		B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
+		B0B3717E7812E581C8D7C470 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */; };
 		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		B82A490F8F2FE0CD2647854C /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */; };
 		B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		BA1AE60805F4D1809E194172 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */ = {isa = PBXBuildFile; fileRef = 880F73DD5EB836E40BCA134A /* reminders.json */; };
 		BD681103236562BE55F338E1 /* WidgetKindShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203EF948683C146898ECCD57 /* WidgetKindShims.swift */; };
 		BE415267934330FE86282F6C /* OpenTaskCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */; };
+		C32564333DC1B84950067AC0 /* MenuBarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B784D2707D9E3127B216E744 /* MenuBarModel.swift */; };
 		C32613CD16537759B94E8923 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
 		CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */; };
 		CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */; };
@@ -85,9 +90,11 @@
 		D69FFE9776386998102E6583 /* undo-status.json in Resources */ = {isa = PBXBuildFile; fileRef = 8F19FED31D51A4F31E33C37B /* undo-status.json */; };
 		D6B7E878B62AB20FEAE7DC92 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */; };
 		D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
+		D9EF8BAF2B05017FFE43DA89 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
 		DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		DBCA794BCC63F980AE658F47 /* tasks.json in Resources */ = {isa = PBXBuildFile; fileRef = 6676B0D8909B96B0AAA98C71 /* tasks.json */; };
 		DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
+		E2178CDCEEC7B5AABAD0C9F5 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */; };
 		E3DEAC0DDF5D70B663069797 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */; };
 		E96A95A44A30F64C80592FB7 /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		ED82B81A737BC79D08FFE378 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
@@ -96,7 +103,9 @@
 		EF9B9D541E938BB134EA1D78 /* bulk-complete.json in Resources */ = {isa = PBXBuildFile; fileRef = EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */; };
 		F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		F4A48262758480B2362DE1B0 /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93991B196F33DC054AF3D3C /* Fixtures.swift */; };
+		F865511EB1C704B8459AB6A1 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
 		F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */; };
+		F959E1E3928772A72154F071 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		FA63DF44534D4DD08E7F4116 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -130,6 +139,7 @@
 		063D351611FEE1FDCC48702D /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptDeepLink.swift; sourceTree = "<group>"; };
 		124940586D73E6C268F9E443 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidget.swift; sourceTree = "<group>"; };
 		1A067D6E5FA8D7357534284C /* NotesGlyphPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesGlyphPreviews.swift; sourceTree = "<group>"; };
 		203EF948683C146898ECCD57 /* WidgetKindShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetKindShims.swift; sourceTree = "<group>"; };
@@ -153,10 +163,12 @@
 		54BBA7157D64D84DE2038504 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueLabel.swift; sourceTree = "<group>"; };
 		5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
+		5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanel.swift; sourceTree = "<group>"; };
 		606B27B10869F5EC627043D9 /* NotificationConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationConstants.swift; sourceTree = "<group>"; };
 		607A3ED0E07D6E9308774294 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6676B0D8909B96B0AAA98C71 /* tasks.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tasks.json; sourceTree = "<group>"; };
 		6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBootstrapper.swift; sourceTree = "<group>"; };
+		6E710EC06D677571B16557AD /* TaskLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLists.swift; sourceTree = "<group>"; };
 		7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogicTests.swift; sourceTree = "<group>"; };
 		78F7579086893D2594E48169 /* OpenTaskMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenTaskMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-did.json"; sourceTree = "<group>"; };
@@ -183,6 +195,8 @@
 		B0431240DA3532D2272FDFAC /* TasksTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTimeline.swift; sourceTree = "<group>"; };
 		B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenTaskMacWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWidgetBundle.swift; sourceTree = "<group>"; };
+		B52EC8E5A66C3C3ECE4A13D0 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		B784D2707D9E3127B216E744 /* MenuBarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarModel.swift; sourceTree = "<group>"; };
 		B7DD47E083E073FE32FA2C34 /* time-slots.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "time-slots.json"; sourceTree = "<group>"; };
 		B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWidths.swift; sourceTree = "<group>"; };
 		C605F50E331B33C23631EE81 /* DateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateHelpers.swift; sourceTree = "<group>"; };
@@ -191,6 +205,7 @@
 		CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-restore.json"; sourceTree = "<group>"; };
 		CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
 		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
@@ -242,11 +257,23 @@
 				A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */,
 				117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */,
 				B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */,
+				6E710EC06D677571B16557AD /* TaskLists.swift */,
 				A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */,
 				432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */,
 			);
 			name = Shared;
 			path = ../ios/Shared;
+			sourceTree = "<group>";
+		};
+		1E9CBDB0490C1DB7B8850566 /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */,
+				B784D2707D9E3127B216E744 /* MenuBarModel.swift */,
+				5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */,
+				B52EC8E5A66C3C3ECE4A13D0 /* StatusItemController.swift */,
+			);
+			path = MenuBar;
 			sourceTree = "<group>";
 		};
 		217D6BBFB7D37AD82201C927 = {
@@ -372,12 +399,14 @@
 				CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */,
 				C92C74F59E9D3BDE167E4172 /* Info.plist */,
 				7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */,
+				14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */,
 				38BA76FEFE40A03A2F3E709E /* MenuActions.swift */,
 				A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */,
 				8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */,
 				54BBA7157D64D84DE2038504 /* SetupView.swift */,
 				DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */,
 				01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */,
+				1E9CBDB0490C1DB7B8850566 /* MenuBar */,
 			);
 			path = OpenTaskMac;
 			sourceTree = "<group>";
@@ -533,9 +562,14 @@
 				C32613CD16537759B94E8923 /* ApsEnvironment.swift in Sources */,
 				D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */,
 				DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */,
+				F959E1E3928772A72154F071 /* DueLabel.swift in Sources */,
 				2ACFFF7B3CB81D12BFC9AC0D /* KeychainHelper.swift in Sources */,
 				1493600E01F55BF186B4680D /* MacAppDelegate.swift in Sources */,
+				B0B3717E7812E581C8D7C470 /* MacSettingsView.swift in Sources */,
 				10DB7856F371B70147038E72 /* MenuActions.swift in Sources */,
+				E2178CDCEEC7B5AABAD0C9F5 /* MenuBarIcon.swift in Sources */,
+				C32564333DC1B84950067AC0 /* MenuBarModel.swift in Sources */,
+				B82A490F8F2FE0CD2647854C /* MenuBarPanel.swift in Sources */,
 				52209900BB7B38B4D5C46CBE /* NotificationConstants.swift in Sources */,
 				BE415267934330FE86282F6C /* OpenTaskCommands.swift in Sources */,
 				4AAFC03D30E04FA841BE999D /* OpenTaskMacApp.swift in Sources */,
@@ -545,6 +579,8 @@
 				9068C2E58CE2C69E562698A3 /* SegmentWidths.swift in Sources */,
 				86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */,
 				16E01EEDD0FF0DD9247D3962 /* SetupView.swift in Sources */,
+				64EBD90DFBC8DA583CA054D6 /* StatusItemController.swift in Sources */,
+				7131F2552F88AC5619E5A431 /* TaskLists.swift in Sources */,
 				4A71D0C3A619C2A06C85216F /* TaskSnoozePlan.swift in Sources */,
 				F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */,
 				0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */,
@@ -572,6 +608,7 @@
 				932B4699D3B795BB16459BE5 /* QuotaPromptDTOTests.swift in Sources */,
 				A2128E6CAB247BBB42C2BB69 /* SegmentWidths.swift in Sources */,
 				3EE6F7B84B2317550D8CC09A /* SegmentWidthsTests.swift in Sources */,
+				F865511EB1C704B8459AB6A1 /* TaskLists.swift in Sources */,
 				64977AFF9CC42B0353EA7674 /* TaskSnoozePlan.swift in Sources */,
 				4B1A0BA96C5C08ED15949CF1 /* TaskSnoozePlanTests.swift in Sources */,
 				1C2F3B649D24FD3C87F57B03 /* TasksScopeTests.swift in Sources */,
@@ -606,6 +643,7 @@
 				5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */,
 				D6B7E878B62AB20FEAE7DC92 /* SegmentWidths.swift in Sources */,
 				B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */,
+				D9EF8BAF2B05017FFE43DA89 /* TaskLists.swift in Sources */,
 				317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */,
 				5CD4762477A148AB18B23334 /* TasksTimeline.swift in Sources */,
 				33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */,

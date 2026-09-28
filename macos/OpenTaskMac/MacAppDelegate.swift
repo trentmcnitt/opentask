@@ -39,6 +39,13 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         // network round trip.
         Task { await refreshSlotActions() }
 
+        // The menu bar item: its overdue list (first fetch, then its own
+        // polling) and the status item that shows it.
+        Task { @MainActor in
+            MenuBarModel.shared.start()
+            StatusItemController.shared.start()
+        }
+
         print("[OpenTask] Launched — configured: \(AppConfig.shared.isConfigured), "
             + "server: \(AppConfig.shared.serverURL.isEmpty ? "(none)" : AppConfig.shared.serverURL), "
             + "token in Keychain: \(KeychainHelper.read(key: "bearerToken") != nil)")
@@ -85,6 +92,8 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
     /// timeline or a widget push (Trent, 2026-09-23).
     func applicationWillResignActive(_ notification: Notification) {
         WidgetCenter.shared.reloadAllTimelines()
+        // Same reason for the menu bar item's list.
+        Task { @MainActor in await MenuBarModel.shared.refresh() }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -178,6 +187,10 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
         guard let type = userInfo["type"] as? String else { return }
         let center = UNUserNotificationCenter.current()
+
+        // Every one of these means a task changed somewhere — the menu bar
+        // item's badge and list should catch up now, not at the next poll.
+        Task { @MainActor in await MenuBarModel.shared.refresh() }
 
         switch type {
         case "badge-update":
