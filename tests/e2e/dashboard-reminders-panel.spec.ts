@@ -6,7 +6,7 @@
  * `reminders.spec.ts` (seeding reminders via `page.request.post`, the
  * `todayAt` helper). This spec owns neither surface — it only covers the
  * compact panel itself: default slot, paging, the row cap, and completion.
- * The cap rule it pins: 9 rows wide, 5 narrow, the rest behind "Show more".
+ * The cap rule it pins: 20 rows wide, 5 narrow, the rest behind "Show more".
  */
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -222,7 +222,7 @@ test.describe('Dashboard Reminders panel — wide', () => {
     }
   })
 
-  test('caps a long slot at 9 rows, and "Show more" uncaps it with a considered readout', async ({
+  test('caps a long slot at 20 rows, and "Show more" uncaps it with a considered readout', async ({
     authenticatedPage: page,
   }) => {
     const slots = await fetchTimeSlots(page)
@@ -232,9 +232,9 @@ test.describe('Dashboard Reminders panel — wide', () => {
     const at = (offset: number) =>
       todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
 
-    // 15 — past the wide cap of 9, so 6 are held back at this viewport.
-    // Completing one below still leaves 14, i.e. still capped.
-    const titles = Array.from({ length: 15 }, (_, i) => `Cap probe reminder ${i}`)
+    // 26 — past the wide cap of 20, so 6 are held back at this viewport.
+    // Completing one below still leaves 25, i.e. still capped.
+    const titles = Array.from({ length: 26 }, (_, i) => `Cap probe reminder ${i}`)
     const ids: number[] = []
     try {
       for (let i = 0; i < titles.length; i++) {
@@ -245,10 +245,10 @@ test.describe('Dashboard Reminders panel — wide', () => {
       await expect(panel(page)).toBeVisible()
       await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
 
-      // Capped: 9 of the 15 on screen, a "Show more" beneath them, and the
-      // readout counting the whole slot (0 considered of 15).
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
-      await expect(panel(page).getByText('of 15')).toBeVisible()
+      // Capped: 20 of the 26 on screen, a "Show more" beneath them, and the
+      // readout counting the whole slot (0 considered of 26).
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(20)
+      await expect(panel(page).getByText('of 26')).toBeVisible()
       const showMore = panel(page).getByRole('button', { name: /Show more/ })
       await expect(showMore).toBeVisible()
       await expect(showMore).toContainText('6 more')
@@ -262,8 +262,8 @@ test.describe('Dashboard Reminders panel — wide', () => {
 
       await showMore.click()
 
-      // Uncapped: all 15 and the quick action.
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(15)
+      // Uncapped: all 26 and the quick action.
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(26)
       await expect(panel(page).getByRole('button', { name: /Show less/ })).toBeVisible()
       await expect(considerAll).toBeVisible()
 
@@ -279,8 +279,8 @@ test.describe('Dashboard Reminders panel — wide', () => {
         .click()
       await completion
       await expect(panel(page).getByText(titles[0])).toHaveCount(0)
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(14)
-      await expect(panel(page).getByText('of 15')).toBeVisible()
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(25)
+      await expect(panel(page).getByText('of 26')).toBeVisible()
 
       // The toast's Undo proves the dashboard's OWN undo pipeline is wired to
       // this panel end to end (`handleUndo` → `refreshAll` →
@@ -288,12 +288,12 @@ test.describe('Dashboard Reminders panel — wide', () => {
       // pipeline here would be a real bug (see DashboardClient.tsx), and this
       // is the one thing that could not be seen from the row disappearing.
       await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(15)
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(26)
       await expect(panel(page).getByText(titles[0])).toBeVisible()
 
-      // Show less returns to the 9-row cap (of the 15 again waiting).
+      // Show less returns to the 20-row cap (of the 26 again waiting).
       await panel(page).getByRole('button', { name: 'Show less' }).click()
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(20)
     } finally {
       await deleteTasks(page, ids)
     }
@@ -357,7 +357,7 @@ test.describe('Dashboard Reminders panel — wide', () => {
     const at = (offset: number) =>
       todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
 
-    // 7 — under the wide cap of 9, so nothing is held back HERE. The phone
+    // 7 — under the wide cap of 20, so nothing is held back HERE. The phone
     // spec below seeds the same size and proves it IS capped at that width;
     // the pair is what pins the cap as per-width rather than absolute.
     const titles = Array.from({ length: 7 }, (_, i) => `Wide cap probe ${i}`)
@@ -524,7 +524,7 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
 
     // Past the wide cap, so there is something to reveal.
-    const titles = Array.from({ length: 12 }, (_, i) => `Header toggle probe ${i}`)
+    const titles = Array.from({ length: 23 }, (_, i) => `Header toggle probe ${i}`)
     const ids: number[] = []
     try {
       for (let i = 0; i < titles.length; i++) {
@@ -533,7 +533,7 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
 
       await page.goto('/')
       await expect(panel(page)).toBeVisible()
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(20)
 
       // Tapping the bar between the chevrons opens the slot (Trent,
       // 2026-09-21) — the same thing "Show more" does, without hunting for it.
@@ -541,12 +541,12 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await expect(header).toHaveAttribute('aria-expanded', 'false')
       await header.click()
       await expect(header).toHaveAttribute('aria-expanded', 'true')
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(12)
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(23)
 
       // ...and shuts it again.
       await header.click()
       await expect(header).toHaveAttribute('aria-expanded', 'false')
-      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(20)
 
       // The chevrons keep their own job: paging, not toggling. "Next" rather
       // than "Previous": `natural` is an index into `slots` (real slots
