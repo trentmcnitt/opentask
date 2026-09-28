@@ -68,6 +68,33 @@ class WebViewManager {
         navigate(path: "/?task=\(taskId)")
     }
 
+    // MARK: - Quick-action snooze result
+
+    /// A Home Screen quick action's snooze result waiting for a page to show
+    /// it (`useNativeSnoozeToast` on the web side renders the usual "Snoozed
+    /// N tasks · Undo" toast). Held because on a cold launch the result can
+    /// arrive before the page has loaded; delivered by `flushSnoozeResult()`
+    /// from `WebView.Coordinator`'s `didFinish` (a real page, not /login),
+    /// or at once when a page is already up.
+    private var pendingSnoozeResultJSON: String?
+
+    func deliverSnoozeResult(json: String) {
+        pendingSnoozeResultJSON = json
+        flushSnoozeResult()
+    }
+
+    /// Sets `window.__opentaskNativeSnooze` (read by the web hook when it
+    /// mounts — the cold-launch case) and fires `opentask-native-snoozed`
+    /// (the page-already-mounted case). Cleared only once the page has run
+    /// it, so a delivery into a still-loading page is retried at `didFinish`.
+    func flushSnoozeResult() {
+        guard let json = pendingSnoozeResultJSON, let webView, !webView.isLoading else { return }
+        let js = "window.__opentaskNativeSnooze = \(json); window.dispatchEvent(new CustomEvent('opentask-native-snoozed'))"
+        webView.evaluateJavaScript(js) { [weak self] _, error in
+            if error == nil { self?.pendingSnoozeResultJSON = nil }
+        }
+    }
+
     /// Returns and clears any pending path from a cold-launch deep link.
     func consumePendingPath() -> String? {
         let path = pendingPath

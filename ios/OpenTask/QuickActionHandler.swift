@@ -9,9 +9,12 @@ import WidgetKit
 /// The snooze actions sweep the overdue set (`POST /api/tasks/bulk/snooze-overdue`,
 /// the same call as the watch and the notification actions), then refresh the
 /// page, which is already on screen — iOS always opens the app for a Home
-/// Screen quick action, so the page (with its Undo) is the confirmation. A
-/// local notification saying the same thing was tried and dropped (Trent,
-/// 2026-09-28: "pointless if the app's going to actually open").
+/// Screen quick action, so the page is where the answer goes: the result is
+/// handed to it (`WebViewManager.deliverSnoozeResult`) and it shows the same
+/// "Snoozed N tasks · Undo" toast its own snooze does (Trent, 2026-09-28: the
+/// toast "would have acted as a notification and also given me a chance to
+/// undo"). A local notification was tried first and dropped — pointless with
+/// the app already open.
 ///
 /// The add-task action tries JS injection first (instant, no page reload);
 /// falls back to full URL navigation if the WebView's JS context isn't ready
@@ -74,6 +77,10 @@ enum QuickActionHandler {
             do {
                 let result = try await call()
                 log.notice("Snoozed \(result.tasksAffected) overdue (\(label, privacy: .public))")
+                // The wire field names, so the page reads it like the API's.
+                let json = "{\"tasks_affected\":\(result.tasksAffected),\"snoozed_high\":\(result.snoozedHigh),"
+                    + "\"skipped_high\":\(result.skippedHigh),\"skipped_urgent\":\(result.skippedOnPriority)}"
+                await MainActor.run { WebViewManager.shared.deliverSnoozeResult(json: json) }
             } catch {
                 log.error("Snooze (\(label, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
             }
