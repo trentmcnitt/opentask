@@ -469,12 +469,21 @@ export const bulkSnoozeOverdueSchema = z
         z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'slot must be HH:MM or "next"'),
       ])
       .optional(),
+    /**
+     * Tomorrow at the user's morning time (the `'tomorrow'` snooze option),
+     * resolved on the server like `slot`. The iPhone's "Snooze All to
+     * Tomorrow" quick action sends it (2026-09-28); before this field it sent
+     * an empty body, which meant the user's default option — +1 hour for
+     * most users, not tomorrow.
+     */
+    tomorrow: z.literal(true).optional(),
     include_task_ids: z.array(z.number().int().positive()).max(10).optional(),
   })
   .refine(
     (data) =>
-      [data.delta_minutes, data.until, data.slot].filter((v) => v !== undefined).length <= 1,
-    { message: 'Provide at most one of until, delta_minutes and slot' },
+      [data.delta_minutes, data.until, data.slot, data.tomorrow].filter((v) => v !== undefined)
+        .length <= 1,
+    { message: 'Provide at most one of until, delta_minutes, slot and tomorrow' },
   )
 
 export type BulkSnoozeOverdueInput = z.infer<typeof bulkSnoozeOverdueSchema>

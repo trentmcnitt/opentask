@@ -12,10 +12,6 @@ import WatchConnectivity
 /// be transferred via WCSession.updateApplicationContext().
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, WCSessionDelegate {
 
-    /// Saved shortcut item from cold launch or warm-launch scene delegate.
-    /// Processed by OpenTaskApp's scenePhase observer when the scene becomes active.
-    var savedShortcutItem: UIApplicationShortcutItem?
-
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -111,35 +107,18 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Home Screen Quick Actions
     //
-    // Cold launch: configurationForConnecting captures the shortcut item.
-    // - add-task: sets a pending path on WebViewManager so makeUIView loads
-    //   the correct URL directly (avoids a race with the base URL load).
-    // - snooze: saves to savedShortcutItem for the scenePhase observer.
-    //
-    // Warm launch: SwiftUI replaces the scene delegate with its own internal
-    // delegate. SceneDelegateInterceptor wraps it and intercepts performActionFor.
-    //
-    // Both paths delegate to QuickActionHandler for the actual logic.
+    // The scene's delegate class is `QuickActionSceneDelegate`, which receives
+    // quick actions on cold launch (`connectionOptions.shortcutItem`) and warm
+    // launch (`performActionFor`) — see its doc.
 
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        if let shortcutItem = options.shortcutItem {
-            if shortcutItem.type == QuickActionHandler.addTask {
-                WebViewManager.shared.navigate(path: "/?action=create")
-            } else {
-                savedShortcutItem = shortcutItem
-            }
-        }
-        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
-    }
-
-    /// Process a home screen quick action. Called from the scenePhase observer
-    /// (cold launch snooze actions only — add-task uses pending path instead).
-    func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
-        QuickActionHandler.handle(shortcutItem, completionHandler: completionHandler)
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = QuickActionSceneDelegate.self
+        return config
     }
 
     /// Clear this device's delivered notifications when the app comes to the

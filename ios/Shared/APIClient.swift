@@ -114,6 +114,14 @@ final class APIClient {
         return parseBulkSnoozeResult(data)
     }
 
+    /// Bulk snooze all overdue tasks to tomorrow at the user's morning time
+    /// (`tomorrow: true`, resolved server-side — the Home Screen quick action).
+    @discardableResult
+    func snoozeOverdueTomorrow() async throws -> BulkSnoozeResult {
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: ["tomorrow": true])
+        return parseBulkSnoozeResult(data)
+    }
+
     /// Bulk snooze all overdue tasks using user's default preference.
     /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult

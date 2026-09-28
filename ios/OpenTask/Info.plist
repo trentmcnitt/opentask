@@ -48,6 +48,14 @@
 		</dict>
 		<dict>
 			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeDate</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Snooze All to Next Period</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>io.mcnitt.opentask.snooze-next-period</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
 			<string>UIApplicationShortcutIconTypeTime</string>
 			<key>UIApplicationShortcutItemTitle</key>
 			<string>Snooze All +2hr</string>
@@ -61,14 +69,6 @@
 			<string>Snooze All to Tomorrow</string>
 			<key>UIApplicationShortcutItemType</key>
 			<string>io.mcnitt.opentask.snooze-tomorrow</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemIconType</key>
-			<string>UIApplicationShortcutIconTypeAdd</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Add Task</string>
-			<key>UIApplicationShortcutItemType</key>
-			<string>io.mcnitt.opentask.add-task</string>
 		</dict>
 	</array>
 	<key>UIBackgroundModes</key>

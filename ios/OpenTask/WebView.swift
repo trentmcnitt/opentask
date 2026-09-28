@@ -438,6 +438,9 @@ struct WebView: UIViewRepresentable {
                 // Any page that isn't /login is proof the session is good again;
                 // arm the rescue for the next time one expires.
                 loginRescueAttempted = false
+                // A quick action's snooze result that arrived before this
+                // page did (cold launch) — see `WebViewManager.flushSnoozeResult`.
+                WebViewManager.shared.flushSnoozeResult()
             }
         }
 

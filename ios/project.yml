@@ -39,19 +39,21 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # iOS shows at most four. Trent's pick (2026-09-28): the four snoozes;
+        # Add Task, which was the fourth, gave way to Next Period.
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-1hr
             UIApplicationShortcutItemTitle: Snooze All +1hr
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeClock
+          - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-next-period
+            UIApplicationShortcutItemTitle: Snooze All to Next Period
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeDate
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-2hr
             UIApplicationShortcutItemTitle: Snooze All +2hr
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeTime
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-tomorrow
             UIApplicationShortcutItemTitle: Snooze All to Tomorrow
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAlarm
-          - UIApplicationShortcutItemType: io.mcnitt.opentask.add-task
-            UIApplicationShortcutItemTitle: Add Task
-            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAdd
         # Deep links from the widget extension (opentask://today, ://reminders,
         # ://task/<id>). Resolved to web paths in OpenTaskApp.onOpenURL — the
         # app has no native routes, it is a WKWebView over the PWA.

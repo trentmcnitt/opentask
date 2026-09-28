@@ -948,8 +948,8 @@ paths:
         and P4 (Urgent) never. See `/api/tasks/bulk/snooze` for the full rule
         and for what `skipped_urgent` and `skipped_high` count.
 
-        The target is at most one of `until`, `delta_minutes` or `slot`; with
-        none, the user's default snooze option applies.
+        The target is at most one of `until`, `delta_minutes`, `slot` or
+        `tomorrow`; with none, the user's default snooze option applies.
       requestBody:
         required: true
         content:
@@ -975,6 +975,10 @@ paths:
                     (today if still ahead, otherwise tomorrow); "next" snoozes
                     to the soonest upcoming slot start. 400 if "next" and the
                     user has no time slots.
+                tomorrow:
+                  type: boolean
+                  enum: [true]
+                  description: Tomorrow at the user's morning time.
                 include_task_ids:
                   type: array
                   maxItems: 10
