@@ -10,6 +10,10 @@
  * which has no safe area. Each test makes enough rows that the page is tall
  * enough for the group to actually reach that spot (a short list stops at the
  * bottom of the page, by design).
+ *
+ * From `md` up the same button is a sticky grid child at the bottom-right of
+ * the task-list column (Trent, 2026-09-27) — it stays on screen while a long
+ * list scrolls, and at `xl` it stays out of the Reminders/Quotas column.
  */
 import { test, expect, uniqueTitle } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -20,9 +24,18 @@ const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 /** `scroll-below-header`'s margin with no safe-area inset: 4.5rem. */
 const LANDING_Y = 72
 
-const fab = (page: Page) => page.locator('[data-overdue-jump-fab]')
+/** Both placements are always in the DOM together (one per breakpoint), so
+ *  every lookup names which one it means. */
+const fab = (page: Page) => page.locator('[data-overdue-jump-fab="phone"]')
+const deskFab = (page: Page) => page.locator('[data-overdue-jump-fab="desktop"]')
 const pinned = (page: Page) => page.locator('[data-pinned-date-chip="overdue"]')
-const redPill = (page: Page) => page.getByRole('button', { name: /^\d+ overdue — / })
+/** The top bar's red pill — anchored at both ends, because the md+ overdue
+ *  jump button's label ("N overdue — show only overdue tasks and scroll to
+ *  them") starts the same way. */
+const redPill = (page: Page) =>
+  page.getByRole('button', {
+    name: /^\d+ overdue — (show only overdue tasks|clear the overdue filter)$/,
+  })
 const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ due today — / })
 const firstGroup = (page: Page) => page.locator('[data-task-group]').first()
 
@@ -178,6 +191,108 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
       await expect(page.locator('[data-task-group]')).toHaveCount(1)
       await expect(fab(page)).toHaveCount(0)
     })
+  })
+
+  test.describe('desktop', () => {
+    // At `xl` the panels move beside the list, so the list alone has to make
+    // the page tall enough for the first group to reach the landing spot.
+    test.beforeEach(async ({ authenticatedPage: page }) => {
+      const startOfToday = DateTime.now().setZone(TEST_TZ).startOf('day')
+      for (let i = 12; i < 30; i++) {
+        taskIds.push(
+          await post(page, '/api/tasks', {
+            title: uniqueTitle(`Jump row ${i}`),
+            project_id: projectIds[0],
+            due_at: startOfToday.toUTC().toISO(),
+          }),
+        )
+      }
+      await page.reload()
+      await expect(firstGroup(page)).toBeVisible()
+    })
+
+    /** The button rides the viewport bottom at `bottom-6`, right-aligned to
+     *  the task list's column. */
+    async function expectPinnedToListCorner(page: Page) {
+      const viewport = page.viewportSize()!
+      const box = (await deskFab(page).boundingBox())!
+      const group = (await firstGroup(page).boundingBox())!
+      expect(box.y + box.height).toBeCloseTo(viewport.height - 24, 0)
+      expect(box.x + box.width).toBeCloseTo(group.x + group.width, 0)
+    }
+
+    // `xl` is 90.625rem (1450px, globals.css), so 1280 is still one column.
+    for (const { name, width, height, twoColumn } of [
+      { name: 'xl, two columns', width: 1500, height: 900, twoColumn: true },
+      { name: '1280, single column', width: 1280, height: 800, twoColumn: false },
+      { name: 'md, single column', width: 900, height: 800, twoColumn: false },
+    ]) {
+      test.describe(name, () => {
+        test.use({ viewport: { width, height } })
+
+        test('stays in the list corner while scrolling, jumps, then hides', async ({
+          authenticatedPage: page,
+        }) => {
+          const button = deskFab(page)
+          await expect(button).toBeVisible()
+          await expect(fab(page)).toBeHidden()
+          const chipCount = ((await pinned(page).getAttribute('aria-label')) ?? '').match(/\d+/)
+          expect(chipCount).not.toBeNull()
+          await expect(button).toHaveText(new RegExp(`^${chipCount![0]}\\s*overdue$`))
+          await expectPinnedToListCorner(page)
+
+          if (twoColumn) {
+            // Beside the Reminders/Quotas column, never over it.
+            const track = (await page.locator('[data-track-chip]').first().boundingBox())!
+            const box = (await button.boundingBox())!
+            expect(track.x).toBeGreaterThan(page.viewportSize()!.width / 2)
+            expect(box.x + box.width).toBeLessThan(track.x)
+          }
+
+          // Halfway down a long list it is still there, in the same corner.
+          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2))
+          await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
+          await expectPinnedToListCorner(page)
+
+          await button.click()
+          await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
+          await expectLandedUnderTopBar(page)
+          await expect(button).toHaveCount(0)
+        })
+
+        // The toaster is bottom-center; only the two-column layout puts the
+        // list column's right edge under it.
+        test(`a toast ${twoColumn ? 'lifts it clear' : 'leaves it where it is'}`, async ({
+          authenticatedPage: page,
+        }) => {
+          const button = deskFab(page)
+          await expect(button).toBeVisible()
+          const restingBottom = page.viewportSize()!.height - 24
+          const buttonBottom = async () => {
+            const b = (await button.boundingBox())!
+            return b.y + b.height
+          }
+
+          await page.getByRole('button', { name: /^Mark ".*Jump row 5.*" as done$/ }).click()
+          const toast = page.locator('[data-sonner-toast]').first()
+          await expect(toast).toBeVisible()
+          if (twoColumn) {
+            // Settles 12px above the toast (TOAST_CLEARANCE_GAP_PX).
+            await expect
+              .poll(async () => (await toast.boundingBox())!.y - (await buttonBottom()))
+              .toBeCloseTo(12, 0)
+          } else {
+            const t = (await toast.boundingBox())!
+            expect((await button.boundingBox())!.x).toBeGreaterThan(t.x + t.width)
+            expect(await buttonBottom()).toBeCloseTo(restingBottom, 0)
+          }
+
+          // And back down once the toast has gone.
+          await expect(toast).toHaveCount(0, { timeout: 10_000 })
+          await expect.poll(buttonBottom).toBeCloseTo(restingBottom, 0)
+        })
+      })
+    }
   })
 
   test.describe('top-bar pills (md, single column)', () => {

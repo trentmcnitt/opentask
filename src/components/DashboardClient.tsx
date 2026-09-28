@@ -2242,6 +2242,16 @@ function DashboardView({
             onUnifiedChange={onUnifiedChange}
           />
         </div>
+
+        {/* md+ jump button: a sticky grid child after the list, so it rides the
+            viewport bottom at the list column's right edge — see OverdueJumpFab. */}
+        <OverdueJumpFab
+          placement="desktop"
+          overdueCount={headerCounts.overdueCount}
+          overdueFilterOn={selectedDateFilters.includes('overdue')}
+          isSelectionMode={selection.isSelectionMode}
+          onJump={onOverdueJump}
+        />
       </main>
 
       <SelectionActionSheet
@@ -2267,6 +2277,7 @@ function DashboardView({
           pinned chip it acts like — not `overdueCount` above. "On" is
           `includes`, the pinned chip's own solid state, not "sole filter". */}
       <OverdueJumpFab
+        placement="phone"
         overdueCount={headerCounts.overdueCount}
         overdueFilterOn={selectedDateFilters.includes('overdue')}
         isSelectionMode={selection.isSelectionMode}
