@@ -347,6 +347,13 @@ export function TaskList({
     if (flashTaskId === taskId) setFlashTaskId(null)
     if (highlightTaskId === taskId) onHighlightDone?.()
   }
+  // A flash whose row left mid-flash (completed, filtered away) never reports
+  // done; drop it so the row does not flash — and pull the page to it — when
+  // it comes back later (say, by Undo). Adjusted during render, like
+  // `prevHighlightTaskId` below.
+  if (flashTaskId !== null && !tasks.some((t) => t.id === flashTaskId)) {
+    setFlashTaskId(null)
+  }
   const toggleGroupExpanded = useCallback((label: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev)
@@ -410,7 +417,9 @@ export function TaskList({
               <JustAddedPreview
                 key={task.id}
                 task={task}
-                badge={formatJustAddedBadge(task)}
+                project={projectElsewhere(task, projects)}
+                isOverdue={isTaskOverdue(task)}
+                badge={formatJustAddedBadge(task, justAddedNow)}
                 onShow={() => onDoubleClick?.(task)}
               />
             ))}
@@ -480,23 +489,18 @@ export function TaskList({
 
   function renderPreviews(previews: Task[]) {
     if (previews.length === 0) return null
-    const byId = new Map(projects.map((p) => [p.id, p]))
     return (
       <div data-just-added-previews className="space-y-1">
-        {previews.map((task) => {
-          const project = byId.get(task.project_id)
-          const elsewhere = project && project.name !== INBOX_NAME ? project : undefined
-          return (
-            <JustAddedPreview
-              key={task.id}
-              task={task}
-              projectName={elsewhere?.name}
-              projectColor={elsewhere?.color}
-              badge={formatJustAddedBadge(task)}
-              onShow={() => showRealRow(task)}
-            />
-          )
-        })}
+        {previews.map((task) => (
+          <JustAddedPreview
+            key={task.id}
+            task={task}
+            project={projectElsewhere(task, projects)}
+            isOverdue={isTaskOverdue(task)}
+            badge={formatJustAddedBadge(task, justAddedNow)}
+            onShow={() => showRealRow(task)}
+          />
+        ))}
       </div>
     )
   }
@@ -510,7 +514,9 @@ export function TaskList({
   )
   const previewBlock = renderPreviews(previews)
   const newBadge = (task: Task) =>
-    justAddedSource && isJustAdded(task, justAddedNow) ? formatJustAddedBadge(task) : undefined
+    justAddedSource && isJustAdded(task, justAddedNow)
+      ? formatJustAddedBadge(task, justAddedNow)
+      : undefined
 
   const renderTaskRow = (task: Task) => {
     const cancelRef = { current: null as (() => void) | null }
@@ -764,6 +770,12 @@ function placeJustAddedPreviews(
     host: host?.label ?? null,
     previews: selectJustAddedPreviews(source, hostRows, now),
   }
+}
+
+/** A just-added preview names the task's project only when it is not the Inbox. */
+function projectElsewhere(task: Task, projects: Project[]): Project | undefined {
+  const project = projects.find((p) => p.id === task.project_id)
+  return project && project.name !== INBOX_NAME ? project : undefined
 }
 
 export function isTaskOverdue(task: Task): boolean {

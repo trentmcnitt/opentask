@@ -470,8 +470,13 @@ export function TaskRow({
         priorityDisplay.rightBorder && priorityColors?.border,
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
-        // AI enrichment in progress — subtle border pulse
-        isAiProcessing && 'animate-ai-processing',
+        // AI enrichment in progress — subtle border pulse. Not while the row is
+        // flashing: both classes set the `animation` shorthand, so the pulse
+        // would override the flash, whose `animationend` would then never
+        // fire (the highlight and its scroll-into-view would stay alive until
+        // enrichment finished). A just-added preview's tap flashes exactly
+        // such a row.
+        isAiProcessing && !highlighted && 'animate-ai-processing',
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
         isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
         highlighted && 'animate-row-highlight',

@@ -24,7 +24,7 @@ import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 // 'reminders' was briefly valid here, back when the §6 Reminders surface rode in
 // the dashboard's view toggle. It is now its own route (`/reminders`), so it is no
 // longer a grouping — clients coerce any lingering stored value to 'slot'.
-// 'recent' (the short-lived "Recent" view, replaced by just-added pinning) is
+// 'recent' (the short-lived "Recent" view, replaced by just-added previews) is
 // retired the same way.
 const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot'] as const
 const VALID_SORT_OPTIONS = [

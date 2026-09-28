@@ -10,6 +10,7 @@ import {
   formatJustAddedBadge,
   isJustAdded,
   nextJustAddedExpiry,
+  nextJustAddedTick,
   selectJustAddedPreviews,
   selectJustAddedTasks,
 } from '@/lib/just-added'
@@ -118,6 +119,46 @@ describe('nextJustAddedExpiry', () => {
     expect(tasks.filter((t) => isJustAdded(t, second))).toEqual([])
     expect(nextJustAddedExpiry(tasks, second)).toBeNull()
     expect(first).toBe(Date.parse(tasks[1].created_at) + JUST_ADDED_WINDOW_MS)
+  })
+})
+
+describe('nextJustAddedTick', () => {
+  test('is the next minute boundary of the newest-changing badge, ending at the age-out', () => {
+    const task = makeTask({ id: 1, created_at: ago(2 * MIN + 40_000) })
+    let now = NOW
+    const badges: string[] = []
+    for (;;) {
+      const tick = nextJustAddedTick([task], now)
+      if (tick === null) break
+      expect(tick).toBeGreaterThan(now)
+      now = tick
+      badges.push(isJustAdded(task, now) ? formatJustAddedBadge(task, now) : 'gone')
+    }
+    expect(nextJustAddedTick([task], NOW)).toBe(NOW + 20_000)
+    expect(badges).toEqual([
+      'New · 3m',
+      'New · 4m',
+      'New · 5m',
+      'New · 6m',
+      'New · 7m',
+      'New · 8m',
+      'New · 9m',
+      'gone',
+    ])
+    expect(now).toBe(nextJustAddedExpiry([task], NOW))
+  })
+
+  test('the soonest across tasks; a created_at ahead of this clock ticks a minute after it', () => {
+    const tasks = [
+      makeTask({ id: 1, created_at: ago(30_000) }), // next: +30s
+      makeTask({ id: 2, created_at: ago(-5000) }), // skew: +65s
+    ]
+    expect(nextJustAddedTick(tasks, NOW)).toBe(NOW + 30_000)
+    expect(nextJustAddedTick([tasks[1]], NOW)).toBe(NOW + 65_000)
+  })
+
+  test('null when nothing is in the window', () => {
+    expect(nextJustAddedTick([makeTask({ id: 1, created_at: ago(HOUR) })], NOW)).toBeNull()
   })
 })
 

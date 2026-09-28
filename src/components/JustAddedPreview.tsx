@@ -1,13 +1,14 @@
 'use client'
 
 import { TaskRow } from './TaskRow'
-import type { LabelColor, Task } from '@/types'
+import type { Project, Task } from '@/types'
 
 interface JustAddedPreviewProps {
   task: Task
-  /** The task's project, named only when it is not the Inbox ("→ Work"). */
-  projectName?: string
-  projectColor?: LabelColor | null
+  /** The task's project, given only when it is not the Inbox — shown as "Work". */
+  project?: Project
+  /** Overdue: the same red stripe and red due text the real row wears. */
+  isOverdue: boolean
   /** "New · 3m" */
   badge: string
   /** Scroll to the real row and flash it (or open the task when it has no row in this view). */
@@ -32,8 +33,8 @@ const noop = () => {}
  */
 export function JustAddedPreview({
   task,
-  projectName,
-  projectColor,
+  project,
+  isOverdue,
   badge,
   onShow,
 }: JustAddedPreviewProps) {
@@ -64,8 +65,9 @@ export function JustAddedPreview({
         preview
         onDone={noop}
         onSnooze={noop}
-        projectName={projectName}
-        projectColor={projectColor}
+        isOverdue={isOverdue}
+        projectName={project?.name}
+        projectColor={project?.color}
         justAddedBadge={badge}
       />
     </div>

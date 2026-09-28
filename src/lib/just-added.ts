@@ -32,7 +32,7 @@
  * the "did it land?" case. Hidden while searching (the results are the
  * question then).
  *
- * The window is measured from `created_at` (server clock, whole seconds). A
+ * The window is measured from `created_at` (server clock). A
  * `created_at` a moment ahead of this device's clock is still in, and still
  * ages out ten minutes after it. Previews leave without a reload — see
  * `useJustAddedClock`.
@@ -53,9 +53,9 @@ export function isJustAdded(task: Task, now: number): boolean {
 }
 
 /**
- * Tasks inside the window, newest first. Ties (two adds in the same second —
- * `created_at` has whole-second precision) break by id, higher first, since
- * ids are assigned in insert order.
+ * Tasks inside the window, newest first. Ties (two adds in the same instant, or
+ * rows written with the schema's whole-second default) break by id, higher
+ * first, since ids are assigned in insert order.
  */
 export function selectJustAddedTasks(tasks: Task[], now: number): Task[] {
   return tasks
@@ -65,8 +65,8 @@ export function selectJustAddedTasks(tasks: Task[], now: number): Task[] {
 
 /**
  * The moment (epoch ms) the next task in the window ages out of it, or null
- * when none is in the window. The dashboard schedules ONE timeout for this
- * moment rather than polling.
+ * when none is in the window. The last of `nextJustAddedTick`'s ticks for a
+ * task is this moment; the dashboard schedules on the ticks.
  */
 export function nextJustAddedExpiry(tasks: Task[], now: number): number | null {
   let next: number | null = null
@@ -75,6 +75,26 @@ export function nextJustAddedExpiry(tasks: Task[], now: number): number | null {
     if (Number.isNaN(created)) continue
     const expiry = created + JUST_ADDED_WINDOW_MS
     if (expiry > now && (next === null || expiry < next)) next = expiry
+  }
+  return next
+}
+
+/**
+ * The next moment anything just-added changes on screen: a badge's minute
+ * turning over ("New · 2m" → "New · 3m", every whole minute after
+ * `created_at`) or, at the tenth, the task aging out. Null when nothing is in
+ * the window. `useJustAddedClock` schedules ONE timeout for this — the next
+ * visible change — rather than ticking on an interval.
+ */
+export function nextJustAddedTick(tasks: Task[], now: number): number | null {
+  let next: number | null = null
+  for (const t of tasks) {
+    const created = createdMs(t)
+    if (Number.isNaN(created) || created + JUST_ADDED_WINDOW_MS <= now) continue
+    // The first whole minute after `created_at` that is still ahead of now.
+    const minutes = Math.max(1, Math.floor((now - created) / 60_000) + 1)
+    const tick = created + minutes * 60_000
+    if (next === null || tick < next) next = tick
   }
   return next
 }
@@ -100,11 +120,11 @@ export function selectJustAddedPreviews(source: Task[], hostRows: Task[], now: n
 
 /**
  * The "New · 3m" badge, on the preview and on the real row. Minutes, floored
- * — inside a 10-minute window nothing coarser is useful. Reads the clock at
- * call time; the list re-renders on every sync and every age-out, so a minute's
- * drift is fine for a badge that only says "recent".
+ * — inside a 10-minute window nothing coarser is useful. `now` is the
+ * dashboard's just-added clock, which advances on each minute boundary
+ * (`nextJustAddedTick`), so the badge counts up without polling.
  */
-export function formatJustAddedBadge(task: Task, now: number = Date.now()): string {
+export function formatJustAddedBadge(task: Task, now: number): string {
   const minutes = Math.floor((now - createdMs(task)) / 60_000)
   return minutes < 1 ? 'New · just now' : `New · ${minutes}m`
 }

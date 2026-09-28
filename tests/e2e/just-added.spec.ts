@@ -164,6 +164,42 @@ test.describe('Just-added previews: placement', () => {
   })
 })
 
+test.describe('Just-added previews: tapping through', () => {
+  test("a tap unfolds the real row's group and flashes it, even mid-enrichment", async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    let projectId: number | null = null
+    try {
+      const name = uniqueTitle('Fold project')
+      projectId = await post(page, '/api/projects', { name })
+      // Still being enriched: its row pulses, and the flash must win over it.
+      const id = await post(page, '/api/tasks', {
+        title: uniqueTitle('Fold fresh'),
+        project_id: projectId,
+        labels: ['ai-to-process'],
+      })
+      ids.push(id)
+
+      await withPreferences(page, PROJECTS_BY_DUE, async () => {
+        const own = group(page, name)
+        await waitForPrefsLoaded(page, () => page.goto('/'), own)
+        await page.getByRole('button', { name: `Collapse ${name}`, exact: true }).click()
+        await expect(realRow(page, id)).toHaveCount(0)
+
+        await preview(page, id).click()
+        await expect(realRow(page, id)).toBeVisible()
+        await expect(realRow(page, id)).toHaveAttribute('data-task-highlight', '')
+        // The flash plays out and clears itself (it would hang if the
+        // enrichment pulse overrode its animation).
+        await expect(realRow(page, id)).not.toHaveAttribute('data-task-highlight')
+      })
+    } finally {
+      await cleanup(page, ids, projectId)
+    }
+  })
+})
+
 test.describe('Just-added previews: arrival and age-out', () => {
   test('a quick add is previewed at the top of the Inbox', async ({ authenticatedPage: page }) => {
     const ids: number[] = []

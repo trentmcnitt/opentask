@@ -142,7 +142,7 @@ const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot']
  * — and the stored value is corrected the next time they pick a view.
  *
  * 'recent' (the "Recent" view, 2026-09-27) went the same way: just-added
- * pinning (`src/lib/just-added.ts`) replaced it, so a stored 'recent' lands on
+ * previews (`src/lib/just-added.ts`) replaced it, so a stored 'recent' lands on
  * 'slot' too.
  */
 export function coerceGrouping(stored: unknown): GroupingMode {

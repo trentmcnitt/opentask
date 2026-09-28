@@ -1,23 +1,25 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { nextJustAddedExpiry } from '@/lib/just-added'
+import { nextJustAddedTick } from '@/lib/just-added'
 import type { Task } from '@/types'
 
 /**
- * The "now" that just-added pinning (`src/lib/just-added.ts`) is measured
- * against — kept current as pins release, without a reload and without
- * polling.
+ * The "now" that just-added previews (`src/lib/just-added.ts`) are measured
+ * against — kept current as badges count up and previews leave, without
+ * a reload and without polling.
  *
  * `now` is state, not a `Date.now()` read during render (the React Compiler
  * treats render as pure). It moves forward at exactly two kinds of moment:
  *
- * 1. The next age-out. ONE `setTimeout` is scheduled for the earliest moment a
- *    task in the window turns 10 minutes old; when it fires, `now` advances,
- *    that task's pin releases, and the effect schedules the next one. No task
- *    in the window, no timer. This also keeps `now` honest for tasks that
- *    arrive later: whenever a task is in the window a timer is pending, so a
- *    stale `now` can never hold an old task pinned.
+ * 1. The next visible change. ONE `setTimeout` is scheduled for the earliest
+ *    moment something just-added changes on screen — a "New · 3m" badge
+ *    turning over a minute, or a task turning 10 minutes old and its preview
+ *    leaving (`nextJustAddedTick`). When it fires, `now` advances and the
+ *    effect schedules the next one. No task in the window, no timer. This
+ *    also keeps `now` honest for tasks that arrive later: whenever a task is
+ *    in the window a timer is pending, so a stale `now` can never keep an old
+ *    task previewed.
  * 2. The page coming back (`visibilitychange` → visible, `focus`, `pageshow`).
  *    The Mac and iOS apps' WKWebView, and a backgrounded mobile tab, suspend
  *    JS timers, so a timeout due while suspended fires late or not at all; on
@@ -27,11 +29,11 @@ export function useJustAddedClock(tasks: Task[]): number {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    const expiry = nextJustAddedExpiry(tasks, now)
-    if (expiry === null) return
+    const tick = nextJustAddedTick(tasks, now)
+    if (tick === null) return
     // Measured against the real clock, not `now`: if `now` lags (a timer
-    // fired late), a past-due expiry runs on the next tick instead of waiting.
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, expiry - Date.now()))
+    // fired late), a past-due tick runs on the next turn instead of waiting.
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, tick - Date.now()))
     return () => clearTimeout(timer)
   }, [tasks, now])
 
