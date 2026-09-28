@@ -1,6 +1,6 @@
 # OpenTask
 
-Self-hosted task management PWA. This is the authoritative reference for contributing to this codebase. Canonical filename: `AGENTS.md` (symlinked as `CLAUDE.md` for Claude Code compatibility).
+Self-hosted task management PWA. This is the authoritative reference for contributing to this codebase. Canonical filename: `AGENTS.md`. `CLAUDE.md` is a one-line import shim (`@AGENTS.md`) for Claude Code — edit this file, not the shim. (Not a symlink: symlinks don't survive every sync tool.)
 
 **Start here:** [Critical Requirements](#critical-requirements) (data-loss prevention), [Commands](#commands) (build/test), [Route Handler Guide](#route-handler-guide) (API patterns), [Development and Testing](#development-and-testing) (what to run when). Reference sections (task model, due dates) are at the end — consult them when working on related features.
 
@@ -8,9 +8,11 @@ See also: `README.md` (project overview), `CONTRIBUTING.md` (quickstart), `TASKS
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + React Compiler + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications.
+Next.js 16 (App Router) + React 19 + React Compiler + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode for deployment. Native companions: an iOS app (`ios/`) that wraps the PWA in a WKWebView and adds APNs push, home-screen widgets, a notification extension, and a watchOS app with its own widgets; and a small native macOS app (`macos/`) with its own widgets. See [iOS and macOS apps](#ios-and-macos-apps-ios-macos).
 
-Additional docs: `docs/SPEC.md` (product requirements), `docs/ROADMAP.md` (planned features), `docs/AUTOMATION.md` (external API integration), `DEV_LOG.md` (design decisions and narrative context), `docs/NOTIFICATIONS.md` (push architecture), `docs/IOS-DEV-LOG.md` (iOS history), `docs/openapi.yaml` (REST API schema), `docs/AI.md` (AI architecture and quality testing), `docs/TASK-MODEL.md` (task model reference), `docs/DESIGN.md` (design philosophy).
+**v0.3 concepts.** Beyond plain tasks, the app now has **reminders** (recurring nudges grouped by time of day), **quotas** (a count target per day, week, month or year, plus daily **quota prompts** that surface each unmet quota inside a reminder period), and user-editable **periods** (time slots in code) that reminders, prompts and the dashboard's Today view are grouped by. The design spec is `docs/REDESIGN-V03.md` — code comments cite it as `§N` (e.g. `§7.3`), so read the section when you hit one. `docs/TASK-MODEL.md` has the current model; where the spec and the code disagree, the code and `docs/TASK-MODEL.md` win.
+
+Additional docs: `docs/REDESIGN-V03.md` (v0.3 redesign spec, cited as `§N` in code), `docs/SPEC.md` (product requirements), `docs/ROADMAP.md` (planned features), `docs/AUTOMATION.md` (external API integration), `DEV_LOG.md` (design decisions and narrative context), `docs/NOTIFICATIONS.md` (push architecture), `docs/IOS-DEV-LOG.md` (iOS history), `docs/openapi.yaml` (REST API schema), `docs/AI.md` (AI architecture and quality testing), `docs/TASK-MODEL.md` (task model reference), `docs/DESIGN.md` (design philosophy).
 
 ### Documentation site
 
@@ -30,26 +32,34 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 
 ### Source layout
 
-- `src/core/` — Business logic (no UI): auth, db, errors, projects, tasks, recurrence, undo, validation, notifications, webhooks, review, stats, ai, activity, export
+- `src/core/` — Business logic (no UI): auth, db, errors, projects, tasks, labels, time-slots, recurrence, undo, validation, notifications, webhooks, review, stats, ai, activity, export. Quota and reminder logic lives in `src/core/tasks/` (`quotas.ts`, `progress.ts`, `quota-prompts.ts`, `quota-prompt-actions.ts`, `reminders.ts`, `period-rollover.ts`)
 - `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
 - `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
 - `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
-- `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], settings, history, archive, trash
+- `src/app/` — Pages (App Router): root (`/`, the dashboard), reminders, quotas, login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
-- Real-time sync via Server-Sent Events (pushes task changes to open browser tabs): `src/app/api/sync/stream/`, `src/lib/sync-events.ts`, `src/hooks/useSyncStream.ts`
+- Real-time sync: `emitSyncEvent()` (`src/lib/sync-events.ts`) pushes a change to open browser tabs over Server-Sent Events (`src/app/api/sync/stream/`, `src/hooks/useSyncStream.ts`) and, via `src/core/notifications/widget-push.ts`, to the native widgets as WidgetKit pushes
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`), Web Speech API types (`speech-recognition.d.ts`)
-- `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
-- `ios/` — Native iOS companion app (see [iOS App](#ios-app-ios) section)
+- `src/instrumentation.ts` — Next.js server init hook: starts every cron job (overdue and reminder-period notifications, quota period rollover, AI jobs, purges — see [Background jobs](#background-jobs)) and the widget-push listener
+- `ios/`, `macos/` — Native apps (see [iOS and macOS apps](#ios-and-macos-apps-ios-macos))
 - `assets/` — Source logo and branding files (Pixelmator sources + exported PNGs). After updating source files in `assets/`, copy exports to `public/`.
 
 ### UI vocabulary
 
-| Term        | Component                                 | Description                                                                 |
-| ----------- | ----------------------------------------- | --------------------------------------------------------------------------- |
-| Top bar     | `src/components/Header.tsx`               | Fixed header with snooze button, task count, and navigation                 |
-| Quick panel | `src/components/QuickActionPanel.tsx`     | Grid of snooze/priority buttons used in task detail and the dashboard modal |
-| Action bar  | `src/components/SelectionActionSheet.tsx` | Floating black bar with Done/Details/More buttons shown during selection    |
+| Term        | Component                                 | Description                                                                                                                                                   |
+| ----------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top bar     | `src/components/Header.tsx`               | Fixed header: count pills (total/overdue/today — overdue and today filter), navigation, and the snooze-overdue button on desktop (phone: `SnoozeAllFab.tsx`)  |
+| Quick panel | `src/components/QuickActionPanel.tsx`     | The task editing panel (snooze, priority, title, recurrence…) — task detail, the dashboard modal, create panel, reminder detail, and the action bar's Details |
+| Action bar  | `src/components/SelectionActionSheet.tsx` | Floating black bar shown during selection: Done, Details (single selection), More, Trash, Clear. Other surfaces build theirs on `SelectionBarShell.tsx`       |
+
+**The UI and the code use different words for the same things** — search for the code word:
+
+| UI says                                       | Code / DB / API says                                                                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Period, "Reminder periods" (Settings)         | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                                        |
+| Quota                                         | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests           |
+| Today / All / Projects / Recent (view toggle) | `default_grouping` `'slot'` / `'time'` / `'project'` / `'recent'` (`'unified'` is set by the AI-sort toggle, not this one) |
 
 ### Database
 
@@ -58,7 +68,8 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 - **Config**: `OPENTASK_DB_PATH` env var (default: `data/tasks.db`). See `.env.example` for all env vars.
 - **Mode**: WAL (write-ahead logging) for concurrent read performance, 5-second busy timeout (waits for locks to release before failing), foreign keys enforced
 - **Operations**: All synchronous (better-sqlite3)
-- **JSON columns**: Labels and undo snapshots are stored as TEXT; parse/serialize in application code
+- **JSON columns**: `tasks.labels`, `quota_prompt_config`, `quota_day_state`, `users.label_config` and undo snapshots are stored as TEXT; parse/serialize in application code
+- **Labels** also have a registry (`labels` table, `src/core/labels/`): a task label that isn't in the user's registry is rejected
 
 **Schema changes:**
 
@@ -76,6 +87,8 @@ if (!hasColumn(database, 'tasks', 'new_column')) {
   database.exec('ALTER TABLE tasks ADD COLUMN new_column TEXT DEFAULT NULL')
 }
 ```
+
+`runMigrations()` also runs idempotent **data** steps on every startup (`backfillTimeSlots`, `backfillLabelRegistry`, `clearQuotaDueDates`, `migrateQuotaPrompts`) — each is safe to re-run because its `WHERE`/existence check makes a second run a no-op. Follow that shape for a backfill; there is no versioned migrations table.
 
 To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild. To test the migration path, keep an existing database and restart the app — `runMigrations()` applies the change idempotently.
 
@@ -97,7 +110,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 **Functions** from `@/core/auth`:
 
 - `requireAuth(request)` — Returns `AuthUser` or throws `AuthError`. Preferred for new endpoints.
-- `getAuthUser(request)` — Returns `AuthUser | null`. Use when you need to customize the error response (e.g., returning a different message or status code). Most existing route handlers use this with a manual null check.
+- `getAuthUser(request)` — Returns `AuthUser | null`. Use when you need to customize the error response (e.g., returning a different message or status code). Older route handlers use this with a manual null check.
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
@@ -105,7 +118,7 @@ Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicit
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 
-NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials provider, JWT sessions, custom callbacks).
+NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials provider, JWT sessions, custom callbacks). `POST /api/auth/session-from-token` mints a session cookie from a Bearer token, so the native apps' web views stay logged in (`src/core/auth/session-cookie.ts`).
 
 ### Security
 
@@ -113,6 +126,17 @@ NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials 
 - **Login rate limiting**: In-memory; 5 failures per username in 15 minutes trigger a lockout with exponential backoff (30s, 60s, 120s...).
 - **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 - **JWT sessions**: `maxAge` set to 7 days (NextAuth default is 30 days).
+
+### Background jobs
+
+`src/instrumentation.ts` starts every cron job when the server boots:
+
+- **Every minute:** overdue notifications, reminder-period notifications and nags (`src/core/notifications/slot-reminders.ts`, `slot-nags.ts`), and the AI enrichment safety net
+- **Every 5 minutes (and at startup):** quota period rollover (`src/core/tasks/period-rollover.ts`) — closes a finished period and resets its count
+- **Daily, when AI is enabled:** What's Next and Insights generation (`src/core/ai/scheduled.ts`)
+- **Purges:** `src/core/undo/purge.ts`, `src/core/stats/purge.ts`, `src/core/tasks/purge-completions.ts`, `src/core/tasks/purge-trash.ts`, `src/core/ai/purge.ts`, `src/core/webhooks/purge.ts`, and the slot-nag purge
+
+It also starts the widget-push listener (`initWidgetPushSync()` in `src/core/notifications/widget-push.ts`), which turns sync events into WidgetKit pushes.
 
 ## Commands
 
@@ -139,10 +163,10 @@ npm run db:seed-dev      # Seed dev user with ~25 realistic tasks (for contribut
 npm run db:seed-demo     # Seed demo user with ~55 generic professional tasks
 npm run db:reset-demo    # Delete and re-create all demo user data
 npm run db:create-token  # Create API token: npm run db:create-token -- <user> [name]
-npx tsx scripts/create-user.ts <username> <password> [email] [timezone]  # Create user (no npm script wrapper)
+npx tsx scripts/create-user.ts <username> <password> [email] <timezone>  # Create user; timezone may come from OPENTASK_DEFAULT_TIMEZONE instead
 ```
 
-**Quick check**: `npm run type-check && npm run lint && npm test`
+**Quick check**: `npm run type-check && npm run lint && npm test`. CI also runs `format:check`; the pre-commit hook formats staged files, so that rarely fails (see [Tooling](#tooling)).
 
 ## Critical Requirements
 
@@ -150,7 +174,7 @@ These rules prevent data-loss bugs and security issues. Violating the atomic mut
 
 ### Every mutation must be atomic and logged for undo
 
-Every task mutation must be logged for undo, and the mutation + log write must be atomic. Core mutation functions in `src/core/tasks/` call both `logAction()` and `withTransaction()` internally. Route handlers call the core mutation function directly — they do not call `logAction()` or `withTransaction()` themselves.
+Every task mutation must be logged for undo, and the mutation + log write must be atomic. Core mutation functions (mostly in `src/core/tasks/`; also `src/core/time-slots/edit.ts` and AI enrichment) call both `logAction()` and `withTransaction()` internally. Route handlers call the core mutation function directly — they do not call `logAction()` or `withTransaction()` themselves.
 
 If you create a **new core mutation function**, follow the existing pattern:
 
@@ -165,17 +189,27 @@ Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to
 
 For task creation, pass `{ id: taskId }` as `beforeTask` (there is no full before-state). On undo, the system soft-deletes the task (since there is no before-state to restore). See `createTask()` in `src/core/tasks/create.ts` for the pattern.
 
-For bulk operations, use the corresponding `bulk_*` action type (e.g., `bulk_done`, `bulk_snooze`) and pass an array of snapshots — one per affected task. See `src/core/tasks/bulk.ts` for the pattern.
+For bulk operations, use the corresponding `bulk_*` action type (e.g., `bulk_done`, `bulk_snooze`) and pass an array of snapshots — one per affected task. See `src/core/tasks/bulk.ts` for the pattern. The full set of action types is the `UndoAction` union in `src/types/index.ts`.
+
+**Quota counts use `createQuotaSnapshot()`**, not `createTaskSnapshot()`, for any change to `progress_current`. It records which period the count belonged to, so an undo after the period has rolled over is skipped instead of putting last period's count back (see `docs/TASK-MODEL.md` § Quotas and completion).
+
+**Log an entry even when nothing changed** (a −1 at zero, restoring a prompt that's already waiting). Clients offer Undo on the toast for every tap; without an entry of its own, that Undo would reverse whatever came before it (see `src/core/tasks/progress.ts`).
+
+**After the transaction commits**, a core mutation also calls `emitSyncEvent(userId)` (refreshes open tabs and pushes to widgets) and `dispatchWebhookEvent(...)`, and usually records `logActivity(...)` inside the transaction — see `createTask()`. Pass `emitSyncEvent(userId, { widgets: false })` only for a change no widget can show: iOS budgets widget pushes, so skipping invisible changes saves budget, but a wrongly-skipped push leaves a widget stale.
 
 ### All deletions must be soft deletes
 
-All task deletions are soft-deletes (set `deleted_at`). The only hard-delete operation is "Empty Trash," which permanently deletes data, cannot be undone, and must require explicit user confirmation.
+Deleting a task always soft-deletes it (set `deleted_at`). Tasks are only hard-deleted by "Empty Trash" — which cannot be undone and must require explicit user confirmation — and by the retention cron that purges trash older than `OPENTASK_RETENTION_TRASH_DAYS` (`src/core/tasks/purge-trash.ts`).
 
 ```ts
 db.prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?').run(now, taskId)
 ```
 
-These undo and soft-delete requirements apply to task mutations specifically. Project and user mutations do not use the undo system.
+These undo and soft-delete requirements apply to task mutations specifically. Outside tasks:
+
+- **Undoable:** editing or deleting a period (time slot) — the entry carries the slot row in `undo_log.slot_state`, and undo restores a deleted slot under its original id.
+- **Not undoable:** creating a period; projects (deleting one hard-deletes it and moves its tasks to Inbox); labels (hard delete); user preferences, webhooks, API tokens.
+- **Deliberately not in the undo log:** the quota period rollover cron (`period-rollover.ts`) — it writes only the activity log.
 
 ### Reject invalid tokens immediately
 
@@ -209,9 +243,10 @@ Don't add buffers, timeouts, or tolerances to work around symptoms. If something
 
 ### Tooling
 
-- **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`. Common failures: Prettier formatting (fix with `npm run format`), ESLint errors (fix the code, do not suppress).
+- **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`. Common failures: Prettier formatting (fix with `npx prettier --write <files>`), ESLint errors (fix the code, do not suppress).
 - **Node version**: Pinned in `.node-version` at the project root.
-- **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). Run `npm run format` to format all files.
+- **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). CI fails on unformatted files (`format:check`). Run from the main checkout, `npm run format` and `format:check` also cover every agent worktree under `.claude/worktrees/` (`.prettierignore` doesn't exclude them), so they rewrite or flag other sessions' files — format only your own with `npx prettier --write <files>`.
+- **CI** (`.github/workflows/ci.yml`, on PRs and pushes to `main`): Quality (type-check, lint, format:check), Test, Build, Integration, E2E, Dependency Review. PRs that only touch `ios/` or `macos/` skip the web jobs; `native-logic-tests.yml` runs the Swift `OpenTaskLogicTests` when `ios/`, `macos/` or `tests/fixtures/contract/` change.
 
 ## Route Handler Guide
 
@@ -267,16 +302,19 @@ Note: `updateTask()` handles its own transaction and undo logging internally.
 Follow the pattern above, and verify:
 
 - [ ] Use `requireAuth(request)` (preferred for new handlers) or `getAuthUser(request)` for authentication
-- [ ] Await `context.params` (Next.js 16 requirement)
+- [ ] Await `context.params` (Next.js 16 requirement), and parse an id strictly (`/^\d+$/`, else `badRequest()` — see `parseSlotId` in `src/app/api/time-slots/[id]/route.ts`)
 - [ ] Validate request body with validation functions from `@/core/validation` (`validateTaskCreate`, `validateTaskUpdate`, etc. — these call Zod `.parse()` internally)
 - [ ] Wrap in try/catch: `AuthError` → `unauthorized()`, `ZodError` → `handleZodError()`, else → `handleError()`. Core functions may also throw `NotFoundError`, `ForbiddenError`, or `ValidationError` from `@/core/errors` — `handleError()` handles these automatically via the `AppError` base class.
 - [ ] Use PATCH for updates (not PUT)
 - [ ] If you created a new core mutation function, ensure it uses `withTransaction()` and calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
 - [ ] Format task responses with `formatTaskResponse()` from `@/lib/format-task`
+- [ ] If the route mutates data itself rather than through a core function that already does it, call `emitSyncEvent(user.id)` after the write, so open tabs and widgets update
+- [ ] If it changes a task's `due_at` or `done`, call `dismissNotificationsForTasks()` (`@/core/notifications/dismiss`) so the old notification doesn't linger — as the task, snooze and `bulk/*` routes do
 - [ ] Return using response helpers: `success()`, `badRequest()`, `unauthorized()`, `forbidden()`, `notFound()`, `conflict()`, `internalError()`, `handleZodError()`, `handleError()` — success format: `{ data: ... }`, error format: `{ error, code, details? }`
 - [ ] Wrap handlers with `withLogging()` from `@/lib/with-logging` (use named function expression for stack traces)
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing
 - [ ] Update `docs/openapi.yaml` if this adds or changes a public API endpoint
+- [ ] If the endpoint is one the native apps call, follow the [contract fixtures rule](#contract-fixtures-rule)
 
 ## Development and Testing
 
@@ -286,11 +324,11 @@ If a change spans multiple rows in this table, combine the test suites from all 
 
 | Change type                                   | What to run                                                                                                                                         |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Every change (always run)                     | The quick check (`npm run type-check && npm run lint && npm test`)                                                                                  |
+| Every change (always run)                     | The [quick check](#commands)                                                                                                                        |
 | API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                            |
 | AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                                |
 | UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                                     |
-| iOS app (Swift, project.yml)                  | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/CLAUDE.md` § Tests), then manual testing on device. |
+| iOS / macOS app (Swift, project.yml)          | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/CLAUDE.md` § Tests), then manual testing on device. |
 | Refactoring / code reorganization             | All test suites                                                                                                                                     |
 | Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed)                 |
 
@@ -300,6 +338,8 @@ E2E tests (run locally) and browser verification (run against dev) are complemen
 
 Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
+
+**Run every E2E spec you added or changed locally, and see it pass, before you push.** A new E2E test that has only ever run in CI tends to fail there first: a pixel-exact position, a time-of-day assumption, a second element with the same label. Each such failure costs Trent a red CI run and a notification email. CI is the second check, not the first. If the change is visible on every page (a new floating button, a layout change), run the whole suite, since other specs can trip over it.
 
 ### AI quality testing
 
@@ -322,7 +362,7 @@ Production has no feedback loop for AI quality — quality testing **is** the qu
 
 Always dump and review the rendered prompt before and after any AI prompt change: `npm run dump-prompts -- --feature <feature>`. See `docs/AI.md` § Quality Testing for the full workflow, all `dump-prompts` flags, and targeted re-run commands.
 
-Scenarios live in `tests/quality/scenarios/` organized by category.
+Scenarios live in `tests/quality/scenarios/`, one file per feature (`enrichment-*.ts`, `quick-take.ts`, `insights*.ts`, `whats-next.ts`).
 
 ### Pre-existing test failures
 
@@ -361,17 +401,19 @@ Helper: `tests/helpers/setup.ts`
 
 Location: `tests/integration/`
 
-Integration tests send real HTTP requests to a running `next start` server (the production build). The global setup script (`globalSetup.ts`) builds the app and starts the server automatically. These tests authenticate using test-only tokens (`TOKEN_A`/`TOKEN_B` in `tests/integration/helpers.ts`).
+Integration tests send real HTTP requests to a running `next start` server (the production build). The global setup script (`globalSetup.ts`) builds the app and starts the server automatically on a random port, against `data/test-integration.db` with `OPENTASK_TEST_MODE=1`. These tests authenticate using test-only tokens (`TOKEN_A`/`TOKEN_B` in `tests/integration/helpers.ts`).
 
 Call `resetTestData()` between test files — this calls `POST /api/test/reset`, which is only available when `OPENTASK_TEST_MODE=1`.
 
 Helpers: `tests/integration/helpers.ts`, `tests/integration/globalSetup.ts`
 
+`tests/integration/contract-fixtures.test.ts` writes and checks the native-app contract fixtures — see the [contract fixtures rule](#contract-fixtures-rule).
+
 ### E2E tests
 
 Location: `tests/e2e/`
 
-Playwright with headless Chromium. Uses separate DB (`data/test-e2e.db`). The `authenticatedPage` fixture provides a pre-logged-in browser page by logging in via the real login form.
+Playwright with headless Chromium, one test at a time, against a **production build**: the web server is `npm run build && next start -p 3333` (set `E2E_PREBUILT=1` to skip the rebuild when nothing changed). Port 3333 is fixed, so two E2E runs at once — e.g. from two worktrees — collide. Uses a separate DB (`data/test-e2e.db`), which `tests/e2e/globalSetup.ts` builds and seeds itself. In CI a test that only passes on retry fails the run. The `authenticatedPage` fixture provides a pre-logged-in browser page by logging in via the real login form.
 
 Helpers: `tests/e2e/fixtures.ts`, `tests/e2e/globalSetup.ts`
 
@@ -379,11 +421,11 @@ If navigating away triggers a `beforeunload` dialog, either reset dirty state fi
 
 ### Test data seeding
 
-`scripts/seed-test.ts` seeds deterministic test data for integration and E2E tests. For development (not testing), `npm run db:seed` (which runs `scripts/seed.ts`) seeds the development database with initial users and projects.
+`scripts/seed-test.ts` seeds deterministic data for integration tests (via `POST /api/test/reset`); E2E seeds its own in `tests/e2e/globalSetup.ts`. For development (not testing), `npm run db:seed` (which runs `scripts/seed.ts`) seeds the development database with initial users and projects.
 
 ### Test naming conventions
 
-Behavioral tests use 2-letter prefixes for feature areas (`bo-` bulk ops, `sn-` snooze, `ur-` undo/redo, `rd-` recurrence, `di-` data integrity, `ai-` AI features). Utility-focused tests use descriptive names without prefixes.
+Behavioral tests use 2-letter prefixes for feature areas: `bo-` bulk ops, `sn-` snooze, `sg-` snooze guard, `sk-` skip, `ur-` undo/redo, `rd-` recurrence, `oc-` occurrences, `di-` data integrity, `ai-` AI features, `tr-`/`tk-` quotas (tracked tasks), `qp-` quota prompts, `qn-` quota-prompt notifications, `rm-` reminders, `ts-` time slots, `dv-` dashboard views, `lr-` label registry, `gt-` task queries, `pj-` projects, `cl-` cadence ladder. Utility-focused tests use descriptive names without prefixes.
 
 ### Time-based testing
 
@@ -418,7 +460,7 @@ See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts
 
 **Local development:** `npm run dev` starts a hot-reloading server on port 3000.
 
-**Production deployment:** OpenTask uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory. Deploy the built output however you prefer — systemd service, Docker, etc. A `Dockerfile` and `docker-compose.yml` are provided; a GitHub Actions workflow (`.github/workflows/docker-publish.yml`) publishes images to GHCR on version tags. Schema migrations run automatically on app startup.
+**Production deployment:** OpenTask uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory. Deploy the built output however you prefer — systemd service, Docker, etc. A `Dockerfile` and `docker-compose.yml` are provided; `.github/workflows/docker-publish.yml` publishes images to GHCR on version tags (CI is described under [Tooling](#tooling)). Schema migrations run automatically on app startup.
 
 **Commit policy for deployments** (overrides the global "only commit when explicitly instructed" rule):
 
@@ -439,11 +481,9 @@ See `docs/TASK-MODEL.md` for the complete task model reference: priority values,
 
 **Undo system:** See [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo) for the atomic mutation pattern and API, or `docs/TASK-MODEL.md` for the full undo reference.
 
-**Purge modules** run via cron jobs started in `src/instrumentation.ts`: `src/core/undo/purge.ts`, `src/core/stats/purge.ts`, `src/core/tasks/purge-completions.ts`, `src/core/tasks/purge-trash.ts`, `src/core/ai/purge.ts`, `src/core/webhooks/purge.ts`.
-
 ## Demo User
 
-The demo account showcases OpenTask with curated portfolio-style tasks. Each user only sees their own data (filtered by `user_id`).
+The demo account showcases OpenTask with curated portfolio-style tasks, plus quotas, reminders, default periods, and pre-generated AI Insights/What's Next. Each user only sees their own data (filtered by `user_id`). The user row has `is_demo = 1`, which keeps it out of scheduled AI generation and widget push.
 
 | Setting       | Value                                                       |
 | ------------- | ----------------------------------------------------------- |
@@ -456,34 +496,61 @@ The demo account showcases OpenTask with curated portfolio-style tasks. Each use
 **Scripts:**
 
 - `npm run db:seed-demo` — Create the demo user and tasks (run once)
-- `npm run db:reset-demo` — Delete and re-create all demo data (cron)
+- `npm run db:reset-demo` — Delete and re-create all demo data (cron). Keeps the user row, so sessions stay valid
 
-## iOS App (`ios/`)
+## iOS and macOS apps (`ios/`, `macos/`)
 
-Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with APNs push notifications. Five targets: `OpenTask` (main app), `OpenTaskNotification` (content extension), `OpenTaskWidgets` (WidgetKit extension), `OpenTaskWatch` (watchOS companion, with its own real UI — Reminders, Tasks and Quotas pages, swiped between horizontally, not just notification handling), `OpenTaskWatchWidgets` (watchOS Smart Stack widget extension, embedded in `OpenTaskWatch`). Pure logic (wire DTOs, `WidgetStore`'s optimistic cache, `TaskSnoozePlan`, the watch's quota/slot logic) has a macOS unit-test target, `OpenTaskLogicTests` (`ios/Tests/Logic/`, run from `macos/` — see `ios/CLAUDE.md` § Tests); UI and device behavior are tested manually. Build with `cd ios && xcodegen`. Source shared across iOS targets lives in `ios/Shared/`; code shared only between the two watchOS targets (`OpenTaskWatch` and `OpenTaskWatchWidgets`) lives in `ios/WatchShared/` instead — not duplicated into either target, and not folded into `ios/Shared/`, which iOS targets also compile.
+**iOS** (`ios/`, SwiftUI, iOS 17+ / watchOS 10+) wraps the PWA in a WKWebView and adds APNs push. Five targets:
 
-**Server API endpoints used by the iOS app** (changes to these require manual iOS testing):
+- `OpenTask` — the main app
+- `OpenTaskNotification` — notification content extension
+- `OpenTaskWidgets` — home-screen widgets (Reminders, Tasks, Quotas)
+- `OpenTaskWatch` — watchOS app with its own UI (Reminders, Tasks and Quotas pages), not just notification handling
+- `OpenTaskWatchWidgets` — watchOS Smart Stack widgets, embedded in `OpenTaskWatch`
 
-- `POST /api/push/apns/register`, `DELETE /api/push/apns/register` — device token registration
-- `POST /api/push/apns/widget-token`, `DELETE /api/push/apns/widget-token` — WidgetKit push token registration (iOS 26 / macOS 26 / watchOS 26 — `platform` `ios`/`macos`/`watchos` — from the widget extension, see docs/NOTIFICATIONS.md)
-- `POST /api/tasks/{id}/progress` — quota +1/−1 from the phone Quotas widget and the watch Quotas page
-- `POST /api/notifications/actions` — done/snooze from notification actions
-- `PATCH /api/tasks/{id}` — snooze to specific time (content extension); and `quota_prompt_config` from the watch Reminders page's press-and-hold "move to period" list (2026-09-25), after a `GET /api/tasks/{id}` for the stored config it merges over. Uses `groups[].prompts[].numbers` (a daily row's own numbers) and `slot_id` from `GET /api/reminders`
-- `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action (+ `slot` body field: a slot's `start_time`, or `"next"` for the next slot to start — bulk-snooze-to-slot notification actions)
-- `GET /api/user/preferences` — connection validation during setup
-- `GET /api/time-slots` — cached in the App Group (`TimeSlotStore`) to build the slot-snooze notification actions offline; refreshed by the apps on launch/foreground and, since slots became editable in Settings (2026-09-24, `PATCH`/`DELETE /api/time-slots/{id}`), by the phone Tasks widget and watch Smart Stack widget on every timeline reload (a slot edit emits a sync event → widget push)
-- `GET /api/completions` — the Tasks widget's "show completed" DONE list (2026-09-23), queried with `?since=&until=` for the local calendar day
-- `POST /api/tasks/{id}/undone` — restore a completed item to open, from a widget's "show completed" DONE row (2026-09-23). Refuses a quota with 400 since 2026-09-24 — a quota completion is a closed period, so a DONE row for a quota never uses it (a handled quota PROMPT is put back with `POST /api/quota-prompts/restore`, below)
-- `POST /api/tasks/bulk/snooze` — Tasks widget snooze mode's per-row and bulk-select "⏭ Next period"/"+1h" (2026-09-23, Phase 2; per-task targets 2026-09-24 — `until`, or `delta_minutes: 60` for an upcoming task's "+1h"), with `include_task_ids` mirroring `ids` so explicit picks bypass the P3/P4 sweep filter; the watch Tasks page's touch-and-hold "Next period"/"+1 hour" uses the same endpoint and the same shared plan (`ios/Shared/TaskSnoozePlan.swift`, 2026-09-24). `POST /api/tasks/bulk/complete` (pre-existing, previously undocumented here) is the same endpoint bulk select's "Done" and the SLOT_REMINDER notification checklist both use; since quota reminders (2026-09-25) it also carries `prompts` (a bare `prompt_key` = considered, `{key, did: true}` = did it) from the checklist and from every "Complete all" (which only ever considers).
-- `GET /api/reminders`' `groups[].prompts` and `POST /api/quota-prompts/consider` / `POST /api/quota-prompts/did` (`{keys}` → `{considered, did, tasks}`) — quota reminders (2026-09-25): prompt rows on the Reminders widget, the watch Reminders page and Smart Stack card, and the slot checklist. Keyed by `prompt_key`, never task id; a key from another day is refused (400).
-- `POST /api/quota-prompts/restore` (`{keys}` → `{restored, tasks}`) — put a handled prompt back (2026-09-25): the Reminders widget's DONE-section prompt rows (`RestorePromptIntent`). The prompt waits again and a did-it's progress comes off — exactly what it added (`quota_day_state.did_applied`).
+**macOS** (`macos/`) is a separate native AppKit/SwiftUI app with its own XcodeGen project — not a Catalyst port. Targets: `OpenTaskMac`, `OpenTaskMacWidgets`, and `OpenTaskLogicTests`. It compiles `ios/Shared/` and `ios/OpenTaskWidgets/`, so **a change there ships to the Mac too**. See `macos/README.md`.
 
-**Contract fixtures rule:** any change to one of the endpoints above — a field added, renamed, removed or re-typed, or a value's meaning changed — re-runs the fixture writer and commits the fixture diff in the same PR, so the contract change is visible in review:
+**Shared code:** source shared across iOS targets lives in `ios/Shared/`; code shared only by the two watchOS targets lives in `ios/WatchShared/` — not duplicated into either target, and not folded into `ios/Shared/`, which the iOS and Mac targets also compile.
+
+**Build:** `cd ios && xcodegen generate --spec project-sim.yml && xcodegen generate`. `project.yml` is canonical; `project-sim.yml` is generated from it without the watch targets (so it builds without the watchOS SDK) — never hand-edit it. Mac: `cd macos && xcodegen generate`.
+
+**Tests:** pure logic (wire DTOs, `WidgetStore`'s cache, snooze plans, the watch's quota/slot logic) is covered by `OpenTaskLogicTests` — sources in `ios/Tests/Logic/`, run from `macos/` (`ios/CLAUDE.md` § Tests has the command). UI and device behavior are tested manually.
+
+`ios/CLAUDE.md` has the implementation detail: widget and watch behavior, notification mechanisms, previews, and XcodeBuildMCP workarounds.
+
+### Server endpoints the native apps call
+
+Changes to these require manual testing on the native apps. Nearly every call goes through `ios/Shared/APIClient.swift`.
+
+| Endpoint                                                   | Used for                                                                                                                     |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/session-from-token`                        | Keeping the web view logged in from the stored API token                                                                     |
+| `GET /api/user/preferences`                                | Connection check during setup; label config for the Quotas widget and watch                                                  |
+| `POST`, `DELETE /api/push/apns/register`                   | Device token registration                                                                                                    |
+| `POST`, `DELETE /api/push/apns/widget-token`               | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
+| `POST /api/notifications/actions`                          | Done/snooze from notification action buttons                                                                                 |
+| `POST /api/notifications/dismiss-all`                      | Clearing delivered notifications                                                                                             |
+| `GET /api/tasks?done=false`, `GET /api/projects`           | The Tasks and Quotas widgets and watch pages                                                                                 |
+| `GET /api/reminders`                                       | Reminders widget, watch Reminders page and Smart Stack, slot checklist — including `groups[].prompts`                        |
+| `GET /api/time-slots`                                      | Cached in the App Group (`TimeSlotStore`) to build period-snooze actions offline                                             |
+| `GET /api/completions`                                     | Widgets' "show completed" list (`?since=&until=` for the local day)                                                          |
+| `GET`, `PATCH /api/tasks/{id}`                             | Snooze to a time (content extension); moving a quota prompt to another period (`quota_prompt_config`, merged over the `GET`) |
+| `POST /api/tasks/{id}/undone`                              | Restoring a completed task from a DONE row (refuses a quota: 400)                                                            |
+| `POST /api/tasks/{id}/progress`                            | Quota +1/−1                                                                                                                  |
+| `POST /api/tasks/bulk/complete`                            | Bulk Done and the slot checklist; its `prompts` field marks quota prompts considered or done                                 |
+| `POST /api/tasks/bulk/snooze`                              | Per-row and selected-task snooze; sets `include_task_ids` so explicit picks bypass the P3/P4 sweep filter                    |
+| `POST /api/tasks/bulk/snooze-overdue`                      | "Snooze all overdue" actions; `slot` body field (a slot's `start_time`, or `"next"`)                                         |
+| `POST /api/quota-prompts/consider`, `/did`, `/restore`     | Handling a quota prompt and putting it back. Keyed by `prompt_key`, never task id; another day's key is a 400                |
+| `POST /api/undo`, `POST /api/redo`, `GET /api/undo/status` | Widget and watch Undo                                                                                                        |
+
+### Contract fixtures rule
+
+Any change to one of the endpoints above — a field added, renamed, removed or re-typed, or a value's meaning changed — re-runs the fixture writer and commits the fixture diff in the same PR, so the contract change is visible in review:
 
 ```bash
 CONTRACT_WRITE=1 npx vitest run --config vitest.integration.config.ts tests/integration/contract-fixtures.test.ts
 ```
 
-The fixtures (`tests/fixtures/contract/*.json`) are the live responses of a fixed synthetic scenario, normalised (ids → integer placeholders, timestamps pinned). Without `CONTRACT_WRITE=1` that test fails on any drift, shape first. They are read by `tests/behavioral/contract-types.test.ts` (against the TS types) and by the Swift `ContractDecodeTests` (against the DTOs, asserting values) — re-run both after rewriting, and update the Swift assertions if a pinned value legitimately changed. Endpoints captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/quota-prompts/restore`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`. A new iOS-used endpoint should get a capture there too.
+The fixtures (`tests/fixtures/contract/*.json`) are the live responses of a fixed synthetic scenario, normalised (ids → integer placeholders, timestamps pinned). Without `CONTRACT_WRITE=1` that test fails on any drift, shape first. They are read by `tests/behavioral/contract-types.test.ts` (against the TS types) and by the Swift `ContractDecodeTests` (against the DTOs, asserting values) — re-run both after rewriting, and update the Swift assertions if a pinned value legitimately changed.
 
-See `ios/CLAUDE.md` for full details: targets, shared code, contributing, notification mechanisms, and XcodeBuildMCP workarounds.
+Only some endpoints are captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/quota-prompts/restore`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`. Changing an uncaptured one is a good moment to add its capture; a new endpoint the apps call should get one from the start.

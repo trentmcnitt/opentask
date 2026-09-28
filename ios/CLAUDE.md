@@ -1,6 +1,6 @@
 # iOS App — Development Reference
 
-Detailed development reference for the OpenTask iOS companion app. See the main `AGENTS.md` for the overview, targets, shared code, build instructions, and API endpoints.
+Detailed development reference for the OpenTask iOS companion app. The root `AGENTS.md` § iOS and macOS apps owns the overview: targets, shared-code rules, the server endpoints the native apps call, and the contract-fixtures rule. This file holds the implementation detail.
 
 ## Notification Mechanisms
 
