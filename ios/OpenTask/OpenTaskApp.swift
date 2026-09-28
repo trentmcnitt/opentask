@@ -32,6 +32,15 @@ struct OpenTaskApp: App {
                 WidgetCenter.shared.reloadAllTimelines()
             }
             if phase == .active {
+                // Tell the page to refresh (and re-open its sync stream if it
+                // has closed). The foreground usually fires visibilitychange
+                // in the web view too; this is the belt-and-braces signal the
+                // Mac app also sends, and `useSyncStream` dedupes the two.
+                // No-op before the web view exists.
+                WebViewManager.shared.webView?.evaluateJavaScript(
+                    "window.dispatchEvent(new CustomEvent('opentask-app-active'))"
+                )
+
                 // No `reloadAllTimelines()` here (removed 2026-09-24). It
                 // reloaded all three widget kinds — each a network fetch — on
                 // every activation, while the user is IN the app and can't

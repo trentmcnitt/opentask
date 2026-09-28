@@ -72,6 +72,7 @@ import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
 import { useExitModes } from '@/hooks/useExitModes'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
@@ -95,7 +96,13 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
   const [loading, setLoading] = useState(initialTasks === undefined)
   const [error, setError] = useState<string | null>(null)
 
+  // Overlapping fetches (a focus refresh and a sync-event refresh, say) can
+  // resolve out of order; only the most recently STARTED one may set state,
+  // so an older payload never overwrites a newer one.
+  const [requestGuard] = useState(createLatestRequestGuard)
+
   const fetchTasks = useCallback(async () => {
+    const seq = requestGuard.begin()
     try {
       const res = await fetch('/api/tasks?limit=1000')
       if (res.status === 401) {
@@ -104,14 +111,16 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
       }
       if (!res.ok) throw new Error('Failed to fetch tasks')
       const data = await res.json()
+      if (!requestGuard.isLatest(seq)) return
       setTasks(data.data?.tasks || [])
       setError(null)
     } catch (err) {
+      if (!requestGuard.isLatest(seq)) return
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [router, requestGuard])
 
   return {
     tasks,
