@@ -18,7 +18,9 @@ import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
 import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
-import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { resolvePromptSlot } from '@/lib/quota-prompts'
+import { useQuotaPromptPrefs } from '@/hooks/useQuotaPromptPrefs'
 import {
   describeCadence,
   describeTimeOfDay,
@@ -263,14 +265,24 @@ export function ReminderDetail({
 
   /**
    * A reminder that has no time of day (a new one, or a one-time thought with
-   * no due time) gets one the moment it repeats: the slot that is current
-   * right now, else the first slot, so the chip that lights up is the honest
-   * answer to "when will this come up".
+   * no due time) gets one the moment it repeats: the user's DEFAULT reminder
+   * slot (Settings → Reminder periods → Default period), resolved by the
+   * server's own rule (`resolvePromptSlot`: the stored slot, else the first
+   * period), so the chip that lights up is the honest answer to "when will
+   * this come up" — and the same slot the quick add, an Apple Shortcut and AI
+   * enrichment with no time cue all use (2026-09-28; it was the slot current
+   * right now before).
    */
+  const { prefs: reminderSlotPrefs } = useQuotaPromptPrefs()
+  const defaultSlotId = reminderSlotPrefs?.slotId ?? null
   const defaultTime = useCallback((): number => {
-    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
+    const sorted = [...timeSlots].sort(
+      (a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0),
+    )
+    const index = resolvePromptSlot(sorted, null, defaultSlotId)
+    const slot = index >= 0 ? sorted[index] : null
     return (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
-  }, [timeSlots, timezone])
+  }, [timeSlots, defaultSlotId])
 
   const title = creating ? titleDraft : (pendingTitle ?? single?.title ?? '')
   const notes = pendingNotes !== undefined ? pendingNotes : (single?.notes ?? null)

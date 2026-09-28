@@ -16,7 +16,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { QUOTA_DUE_DATE_MESSAGE, QUOTA_PERIOD_MESSAGE } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { normalizeDayState } from '@/lib/quota-prompts'
-import { assertPromptSlotsOwned } from '@/core/time-slots'
+import { assertPromptSlotsOwned, defaultReminderRule } from '@/core/time-slots'
 import { getCurrentlyDueTaskIds } from './currently-due'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
@@ -34,6 +34,32 @@ export interface CreateTaskOptions {
 function assertQuotaShape(input: TaskCreateInput): void {
   if (input.due_at) throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
   if (quotaPeriodOf(input.rrule) === null) throw new ValidationError(QUOTA_PERIOD_MESSAGE)
+}
+
+/**
+ * DEFAULT REMINDER SLOT (Trent, 2026-09-28: "Adding a reminder should be just
+ * like adding a task"). A reminder created with no schedule — an Apple
+ * Shortcut POSTing `{title, is_reminder: true}`, or the Reminders quick add —
+ * lands at once in the user's default reminder slot, daily at its start
+ * (`defaultReminderRule`), never in "Anytime". Enrichment still runs on it
+ * (the ai-to-process trigger in createTask) and moves it if the text names a time or
+ * cadence; if AI is off or enrichment fails, it stays in the default slot.
+ *
+ * Only an OMITTED rrule gets the default. An explicit `rrule: null` is the
+ * reminder editor's one-time thought ("once"), a deliberate "no schedule",
+ * and a caller-supplied rule ("FREQ=DAILY;BYHOUR=9") or due_at is respected
+ * as sent. A user with no slots at all gets no default (null) — the
+ * reminder stays unscheduled, as before.
+ */
+function scheduleFor(
+  userId: number,
+  input: TaskCreateInput,
+  tracked: boolean,
+): string | null | undefined {
+  if (input.is_reminder !== true || input.rrule !== undefined || input.due_at || tracked) {
+    return input.rrule
+  }
+  return defaultReminderRule(userId) ?? undefined
 }
 
 /**
@@ -77,6 +103,14 @@ export function createTask(options: CreateTaskOptions): Task {
   })
   if (tracked) assertQuotaShape(input)
 
+  // Title-only is judged on what the CALLER sent, before the default reminder
+  // schedule below fills in an rrule — otherwise a title-only reminder would
+  // stop qualifying for enrichment the moment it got its default slot.
+  const isTitleOnly =
+    !input.due_at && (input.priority ?? 0) === 0 && !input.labels?.length && !input.rrule
+
+  const rrule = scheduleFor(userId, input, tracked)
+
   // Compute due_at if rrule provided but no due_at.
   //
   // A quota is skipped: its rrule is a bare period rule ("FREQ=WEEKLY"), which
@@ -84,8 +118,8 @@ export function createTask(options: CreateTaskOptions): Task {
   // asking rrule.js for its "first occurrence" produced an arbitrary weekday —
   // which is how quotas ended up carrying a stray local-midnight due date.
   let dueAt = tracked ? null : (input.due_at ?? null)
-  if (!tracked && input.rrule && !dueAt) {
-    const firstOccurrence = computeFirstOccurrence(input.rrule, null, userTimezone)
+  if (!tracked && rrule && !dueAt) {
+    const firstOccurrence = computeFirstOccurrence(rrule, null, userTimezone)
     dueAt = firstOccurrence.toISOString()
   }
 
@@ -94,8 +128,8 @@ export function createTask(options: CreateTaskOptions): Task {
   let anchorDow: number | null = null
   let anchorDom: number | null = null
 
-  if (input.rrule) {
-    const anchors = deriveAnchorFields(input.rrule, dueAt, userTimezone)
+  if (rrule) {
+    const anchors = deriveAnchorFields(rrule, dueAt, userTimezone)
     anchorTime = anchors.anchor_time
     anchorDow = anchors.anchor_dow
     anchorDom = anchors.anchor_dom
@@ -103,9 +137,8 @@ export function createTask(options: CreateTaskOptions): Task {
 
   const now = nowUtc()
 
-  // If AI is enabled and the task is title-only, add the ai-to-process trigger label
-  const isTitleOnly =
-    !input.due_at && (input.priority ?? 0) === 0 && !input.labels?.length && !input.rrule
+  // If AI is enabled and the task is title-only (`isTitleOnly`, above), add the
+  // ai-to-process trigger label.
   const taskLabels = [...(input.labels ?? [])]
 
   // §7.2: the registry gates labels the caller supplied. Check before the
@@ -125,9 +158,11 @@ export function createTask(options: CreateTaskOptions): Task {
     taskLabels.push(PROVENANCE_LABELS.added)
   }
 
-  // `enrich` lets a caller opt in explicitly: the Reminders quick add sends a
-  // default schedule so the row appears in a slot at once, which makes it look
-  // structured even though the user only typed a sentence.
+  // `enrich` lets a caller opt in explicitly even when it sent structured
+  // fields that disqualify it from title-only. (The Reminders quick add used to
+  // need it for the schedule it sent; it now sends only the title and the
+  // server's default slot does not count against title-only, but it still
+  // sets `enrich` — harmless, and explicit about intent.)
   if (isAIEnabled() && (isTitleOnly || input.enrich === true)) {
     taskLabels.push('ai-to-process')
   }
@@ -158,7 +193,7 @@ export function createTask(options: CreateTaskOptions): Task {
         input.priority ?? 0,
         dueAt,
         dueAt, // original_due_at = due_at (null if no due date)
-        input.rrule ?? null,
+        rrule ?? null,
         input.recurrence_mode ?? 'from_due',
         anchorTime,
         anchorDow,

@@ -137,9 +137,10 @@ describe('AI enrichment trigger (label-based)', () => {
   })
 
   test('enrich:true asks for enrichment even with fields already set', () => {
-    // The Reminders quick add sends a default schedule so the row appears in a
-    // slot at once. That would otherwise disqualify it from the title-only
-    // trigger, and nothing the user actually said would ever be read.
+    // A caller that sends a schedule is disqualified from the title-only
+    // trigger; `enrich` opts back in, so what the user actually said is still
+    // read. (The Reminders quick add now sends only the title and lets the
+    // server apply the default slot — see rm-default-slot.test.ts.)
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,

@@ -251,10 +251,11 @@ export const taskCreateSchema = z
     is_reminder: isReminderFlag.optional(),
     is_tracked: z.boolean().optional(),
     quota_prompt_config: quotaPromptConfig.optional(),
-    // Ask for AI enrichment even though the caller supplied structured fields.
-    // The Reminders quick add sets it: it always sends a sensible default
-    // schedule so the row lands in a slot immediately, which would otherwise
-    // disqualify it from the title-only enrichment trigger.
+    // Ask for AI enrichment even though the caller supplied structured fields
+    // (which would otherwise disqualify it from the title-only trigger). The
+    // Reminders quick add sets it. Note on `rrule` above for a reminder:
+    // OMITTED means "put it in my default reminder slot" (createTask), while
+    // an explicit null means "no schedule" (the editor's one-time thought).
     enrich: z.boolean().optional(),
   })
   .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })

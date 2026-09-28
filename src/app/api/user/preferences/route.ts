@@ -451,12 +451,17 @@ function validateAiFields(
  * Returns a string error message on validation failure, or the validated result.
  */
 /**
- * Quota reminders (2026-09-24): the period unmet quotas prompt in by default,
- * and the user's switch for the whole feature. The slot must be one of the
- * user's own; `null` means "the first period of the day". A slot deleted
- * later is not chased down here — prompts resolve the id at read time and
- * fall back (`resolvePromptSlot`), and undoing the delete brings the slot back
- * under the same id.
+ * The DEFAULT REMINDER SLOT and the quota-reminders switch.
+ *
+ * `quota_prompt_slot_id` began (2026-09-24) as the period unmet quotas prompt
+ * in by default; since 2026-09-28 it is the default slot for ALL reminders —
+ * where a reminder with no stated time goes (`defaultReminderSlot`). The
+ * field keeps its name for existing clients, and `default_reminder_slot_id`
+ * is an alias for it, read and written alike (sending both with different
+ * values is refused). The slot must be one of the user's own; `null` means
+ * "the first period of the day". A slot deleted later is not chased down here
+ * — readers resolve the id and fall back (`resolvePromptSlot`), and undoing the
+ * delete brings the slot back under the same id.
  */
 function validateQuotaPromptFields(
   body: Record<string, unknown>,
@@ -464,15 +469,23 @@ function validateQuotaPromptFields(
   updates: string[],
   params: unknown[],
 ): string | null {
-  if (body.quota_prompt_slot_id !== undefined) {
-    const val = body.quota_prompt_slot_id
+  const alias = body.default_reminder_slot_id
+  if (
+    alias !== undefined &&
+    body.quota_prompt_slot_id !== undefined &&
+    alias !== body.quota_prompt_slot_id
+  )
+    return 'default_reminder_slot_id and quota_prompt_slot_id are the same setting — send one'
+  const slotField = alias !== undefined ? 'default_reminder_slot_id' : 'quota_prompt_slot_id'
+  if (body[slotField] !== undefined) {
+    const val = body[slotField]
     if (val !== null) {
       if (typeof val !== 'number' || !Number.isInteger(val) || val <= 0)
-        return 'quota_prompt_slot_id must be a time slot id or null'
+        return `${slotField} must be a time slot id or null`
       const owned = getDb()
         .prepare('SELECT 1 FROM time_slots WHERE id = ? AND user_id = ?')
         .get(val, userId)
-      if (!owned) return 'quota_prompt_slot_id must be one of your reminder periods'
+      if (!owned) return `${slotField} must be one of your reminder periods`
     }
     updates.push('quota_prompt_slot_id = ?')
     params.push(val)
@@ -621,6 +634,8 @@ function formatPreferencesResponse(row: PreferencesRow) {
     bulk_snooze_default: row.bulk_snooze_default,
     week_start: coerceWeekStart(row.week_start),
     quota_prompt_slot_id: row.quota_prompt_slot_id,
+    // Alias: the same column, under the name it has meant since 2026-09-28.
+    default_reminder_slot_id: row.quota_prompt_slot_id,
     quota_prompts_enabled: row.quota_prompts_enabled !== 0,
     morning_time: row.morning_time,
     wake_time: row.wake_time,

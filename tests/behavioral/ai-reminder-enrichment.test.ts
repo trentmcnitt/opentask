@@ -90,7 +90,7 @@ describe('sanitizeReminderEnrichment', () => {
     expect(out.rrule).toBe('FREQ=DAILY;BYHOUR=7;BYMINUTE=0')
   })
 
-  test('a rule with no time of day lands in the slot the user is in now', () => {
+  test('a rule with no time of day lands in the default reminder slot', () => {
     const out = sanitizeReminderEnrichment(result({ rrule: 'FREQ=DAILY' }), SLOTS, 'Midday')
     expect(out.rrule).toBe('FREQ=DAILY;BYHOUR=12;BYMINUTE=0')
   })

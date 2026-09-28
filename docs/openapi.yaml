@@ -2254,6 +2254,27 @@ components:
       type: object
       additionalProperties: true
       properties:
+        default_reminder_slot_id:
+          type: integer
+          nullable: true
+          description: |
+            The user's default reminder slot (a time slot id; Settings ->
+            Reminder periods -> Default period). A reminder with no stated time
+            goes here: one created without a schedule, and one whose text AI
+            enrichment finds no time cue in. Quotas that have not chosen a
+            period prompt here too. `null` means the first period of the day
+            (also the fallback when the stored slot no longer exists). Must be
+            one of the user's own slots.
+        quota_prompt_slot_id:
+          type: integer
+          nullable: true
+          description: |
+            The original name of `default_reminder_slot_id` - the same
+            setting, returned and accepted under both names. Sending both with
+            different values is a 400.
+        quota_prompts_enabled:
+          type: boolean
+          description: Whether unmet quotas also appear as prompts among the user's reminders.
         week_start:
           type: string
           enum: [sunday, monday]
@@ -2599,7 +2620,18 @@ components:
           default: 0
         rrule:
           type: string
-          description: RFC 5545 recurrence rule
+          nullable: true
+          description: |
+            RFC 5545 recurrence rule.
+
+            On a reminder (`is_reminder: true`), OMITTING `rrule` (with no
+            `due_at`) puts the reminder in the user's default reminder slot -
+            daily at that slot's start, e.g. `FREQ=DAILY;BYHOUR=9;BYMINUTE=0` -
+            so it is scheduled immediately, never "Anytime". A title-only
+            reminder is still sent to AI enrichment (when AI is on), which moves
+            it if the text names a time or cadence. An explicit `rrule: null`
+            means "no schedule" (a one-time reminder), and a supplied rule is
+            used as sent. A user with no time slots gets no default.
         recurrence_mode:
           type: string
           enum: [from_due, from_completion]
@@ -2613,6 +2645,15 @@ components:
         project_id:
           type: integer
           description: Defaults to user's Inbox project
+        is_reminder:
+          type: boolean
+          default: false
+          description: |
+            Create a reminder (a thought prompted in a time slot) rather than a
+            task. The minimal request - e.g. from an Apple Shortcut - is
+            `{"title": "...", "is_reminder": true}`: it lands in the user's
+            default reminder slot (see `rrule`) and is enriched by AI when AI
+            is enabled. Cannot be combined with quota tracking.
         auto_snooze_minutes:
           type: integer
           minimum: 0
@@ -2645,10 +2686,10 @@ components:
           type: boolean
           description: >
             Ask for AI enrichment even though this request supplies structured
-            fields. Enrichment is normally triggered only by title-only input;
-            the Reminders quick add sets this because it always sends a default
-            schedule so the new reminder appears in a time slot immediately.
-            Ignored when AI is disabled.
+            fields. Enrichment is normally triggered only by title-only input
+            (a reminder's server-applied default schedule does not count
+            against that). The Reminders quick add sets it. Ignored when AI is
+            disabled.
 
     Label:
       type: object

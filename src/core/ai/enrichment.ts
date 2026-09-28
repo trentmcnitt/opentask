@@ -41,8 +41,8 @@ import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
 import { buildEnrichmentUserPrompt, buildReminderEnrichmentUserPrompt } from './prompts'
-import { listTimeSlots } from '@/core/time-slots'
-import { currentSlot, nearestSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { defaultReminderSlot, listTimeSlots } from '@/core/time-slots'
+import { nearestSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
 import { isTracked } from '@/lib/track'
 import { EnrichmentResultSchema } from './types'
@@ -471,12 +471,12 @@ function buildPromptFor(
   },
   projects: Array<{ id: number; name: string; shared: number }>,
   textToEnrich: string,
-): { prompt: string; isReminder: boolean; slots: TimeSlot[]; currentSlotLabel: string | null } {
+): { prompt: string; isReminder: boolean; slots: TimeSlot[]; defaultSlotLabel: string | null } {
   if (row.is_reminder !== 1) {
     return {
       isReminder: false,
       slots: [],
-      currentSlotLabel: null,
+      defaultSlotLabel: null,
       prompt: buildEnrichmentUserPrompt({
         timezone: user.timezone,
         morningTime: user.morning_time,
@@ -489,16 +489,19 @@ function buildPromptFor(
     }
   }
 
+  // No time cue in the text → the user's default reminder slot (Trent,
+  // 2026-09-28), the same slot the reminder was created in. Before that
+  // decision it was the slot current at enrichment time.
   const slots = listTimeSlots(user.id)
-  const currentSlotLabel = currentSlot(slots, user.timezone)?.label ?? null
+  const defaultSlotLabel = defaultReminderSlot(user.id)?.label ?? null
   return {
     isReminder: true,
     slots,
-    currentSlotLabel,
+    defaultSlotLabel,
     prompt: buildReminderEnrichmentUserPrompt({
       timezone: user.timezone,
       slots,
-      currentSlotLabel,
+      defaultSlotLabel,
       userContext: user.ai_context,
       taskText: textToEnrich,
     }),
@@ -544,7 +547,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
   // Legacy tasks with null original_title fall back to current title.
   const textToEnrich = row.original_title || row.title
 
-  const { prompt, isReminder, slots, currentSlotLabel } = buildPromptFor(
+  const { prompt, isReminder, slots, defaultSlotLabel } = buildPromptFor(
     row,
     user,
     projects,
@@ -610,7 +613,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
     throw new Error('Failed to parse enrichment result')
   }
 
-  if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, currentSlotLabel)
+  if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, defaultSlotLabel)
 
   // Convert due_at from local time to UTC using Luxon.
   // The AI returns local time (no Z, no offset). Luxon handles DST transitions
@@ -659,7 +662,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
 export function sanitizeReminderEnrichment(
   enrichment: EnrichmentResult,
   slots: TimeSlot[],
-  currentSlotLabel: string | null,
+  defaultSlotLabel: string | null,
 ): EnrichmentResult {
   // Everything a reminder does not carry, cleared regardless of what came back.
   const base: EnrichmentResult = {
@@ -686,11 +689,13 @@ export function sanitizeReminderEnrichment(
   // miss to be corrected: a model that answers 7pm for "evening" meant this
   // user's 8:30pm Evening, and rounding down would drop it into Afternoon,
   // three hours from what was asked for. No stated time at all is different —
-  // the model said nothing about when, so the slot the user is living in now
-  // is the answer.
+  // the model said nothing about when, so the user's DEFAULT reminder slot is
+  // the answer (Trent, 2026-09-28; `defaultReminderSlot`). A label that
+  // matches none of the slots falls back to the first period of the day, the
+  // same fallback `resolvePromptSlot` uses, so quotas and reminders agree.
   const slot =
     stated === null
-      ? (slots.find((s) => s.label === currentSlotLabel) ?? nearestSlot(0, slots))
+      ? (slots.find((s) => s.label === defaultSlotLabel) ?? slots[0])
       : nearestSlot(stated, slots)
   const minutes = slot ? parseHHMM(slot.start_time) : stated
   if (minutes === null) return { ...base, rrule: null }

@@ -161,14 +161,21 @@ export interface UseRemindersReturn {
 
 export interface ReminderCreateInput {
   title: string
-  rrule: string | null
+  /**
+   * The schedule. OMITTED puts the reminder in the user's default reminder
+   * slot, server-side (the quick add); `null` is a deliberate one-time thought
+   * with no schedule (the editor's "once") and is sent as null so the server
+   * can tell the two apart.
+   */
+  rrule?: string | null
   notes?: string | null
   priority?: number
   /**
    * Hand the text to AI enrichment after creating it. The quick add sets this:
-   * it sends a daily-in-this-slot default so the row is on screen at once, and
-   * enrichment then reads what was actually typed ("every Friday evening") and
-   * corrects the schedule. The form does not — there the user chose.
+   * the server puts the row in the default reminder slot so it is on screen at
+   * once, and enrichment then reads what was actually typed ("every Friday
+   * evening") and corrects the schedule. The form does not — there the user
+   * chose.
    */
   enrich?: boolean
 }
@@ -713,7 +720,7 @@ export function useReminders({
   const create = useCallback(
     async (input: ReminderCreateInput): Promise<Task> => {
       const body: Record<string, unknown> = { title: input.title, is_reminder: true }
-      if (input.rrule) body.rrule = input.rrule
+      if (input.rrule !== undefined) body.rrule = input.rrule
       if (input.notes) body.notes = input.notes
       if (input.priority) body.priority = input.priority
       if (input.enrich) body.enrich = true

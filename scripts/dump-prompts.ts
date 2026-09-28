@@ -101,7 +101,7 @@ interface ScenarioInput {
     sleepTime?: string
     projects?: Array<{ id: number; name: string; shared?: boolean }>
     slots?: Array<{ label: string; start_time: string }>
-    currentSlotLabel?: string
+    defaultSlotLabel?: string
   }
 }
 
@@ -138,7 +138,7 @@ function renderReminderEnrichmentPrompt(scenario?: ScenarioInput): string {
   const userPrompt = buildReminderEnrichmentUserPrompt({
     timezone: scenario?.input.timezone || DEFAULTS.timezone,
     slots: scenario?.input.slots ?? [...DEFAULT_TIME_SLOTS],
-    currentSlotLabel: scenario?.input.currentSlotLabel ?? 'Morning',
+    defaultSlotLabel: scenario?.input.defaultSlotLabel ?? 'Morning',
     userContext: scenario?.input.userContext,
     taskText: scenario?.input.text || '<raw reminder text would appear here>',
   })

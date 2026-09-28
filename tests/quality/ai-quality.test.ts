@@ -447,7 +447,7 @@ async function runReminderEnrichment(
   const prompt = buildReminderEnrichmentUserPrompt({
     timezone: input.timezone,
     slots,
-    currentSlotLabel: input.currentSlotLabel ?? null,
+    defaultSlotLabel: input.defaultSlotLabel ?? null,
     userContext: input.userContext,
     taskText: input.text,
   })
@@ -488,7 +488,7 @@ async function runReminderEnrichment(
       sort_order: index,
       created_at: new Date().toISOString(),
     })),
-    input.currentSlotLabel ?? null,
+    input.defaultSlotLabel ?? null,
   )
 
   return { output: sanitized as unknown as Record<string, unknown>, durationMs: result.durationMs }

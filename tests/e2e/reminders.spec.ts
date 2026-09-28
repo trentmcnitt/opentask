@@ -183,7 +183,9 @@ test.describe('Reminders surface', () => {
         title: 'Morning = Focus, Afternoon = Meetings',
         due_at: todayAt(7),
       }),
-      await createReminder(page, { title: 'A thought with no hour' }),
+      // An explicit `rrule: null` is a deliberate no-schedule thought. Omitting
+      // it would put the reminder in the default slot (2026-09-28).
+      await createReminder(page, { title: 'A thought with no hour', rrule: null }),
     ]
 
     try {
@@ -1295,19 +1297,33 @@ test.describe('Reminder details', () => {
     }
   })
 
-  test('a thought typed into the quick add is a daily reminder in the current slot', async ({
+  test('a thought typed into the quick add is a daily reminder in the default slot', async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
+    // The quick add sends only the words; the server puts the thought in the
+    // user's default reminder slot (Settings → Default period, 2026-09-28) —
+    // not the slot current right now. Pick a default that is deliberately NOT
+    // the first period, so the fallback cannot pass this by accident.
+    const slots = (await (await page.request.get('/api/time-slots')).json()).data.time_slots as {
+      id: number
+      label: string
+      start_time: string
+    }[]
+    const chosen = slots[slots.length - 1]
+    const prefs = (await (await page.request.get('/api/user/preferences')).json()).data as {
+      default_reminder_slot_id: number | null
+    }
     let id: number | null = null
     try {
+      const set = await page.request.patch('/api/user/preferences', {
+        data: { default_reminder_slot_id: chosen.id },
+      })
+      expect(set.ok()).toBeTruthy()
       // The toast names the slot from the view's own `timeSlots`, which stay
       // empty until `/api/time-slots` answers — and the box is live before
-      // that. Typing first gave `Added "…"` instead of `Added to <slot>` (a
-      // product race, flaky until 2026-09-25: `quickAdd` fetches the slots it
-      // needs itself, but `createReminder`'s toast doesn't use them; fixing
-      // that in RemindersView is a separate follow-up). The heading shows only
-      // once the view has mounted and started that fetch.
+      // that. The heading shows only once the view has mounted and started
+      // that fetch.
       await waitForGetsSettled(
         page,
         '/api/time-slots',
@@ -1316,18 +1332,54 @@ test.describe('Reminder details', () => {
       )
       const input = page.getByRole('textbox', { name: 'Add a reminder' })
       await input.fill('A thought typed in place')
+      const posted = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+      )
       await input.press('Enter')
-      // On screen the moment the server answers, in whichever slot is current.
-      const row = page.locator('li[data-reminder-id]', { hasText: 'A thought typed in place' })
-      await expect(row).toBeVisible()
-      await expect(page.getByText(/^Added to /)).toBeVisible()
-      id = Number(await row.getAttribute('data-reminder-id'))
+      const response = await posted
+      // The quick add sends only the words (and `enrich`) — no schedule.
+      expect(response.request().postDataJSON()).not.toHaveProperty('rrule')
+      id = (await response.json()).data.id as number
+      // Named in the toast the moment the server answers: the default slot.
+      await expect(page.getByText(`Added to ${chosen.label}`)).toBeVisible()
       const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
       expect(task.is_reminder).toBe(true)
-      expect(task.rrule).toMatch(/^FREQ=DAILY;BYHOUR=\d+;BYMINUTE=\d+$/)
-      // It sits in the slot its time falls in, which is the current one.
-      const slot = row.locator('xpath=ancestor::*[@data-slot-group]')
-      await expect(slot).toHaveCount(1)
+      const [hour, minute] = chosen.start_time.split(':').map(Number)
+      expect(task.rrule).toBe(`FREQ=DAILY;BYHOUR=${hour};BYMINUTE=${minute}`)
+    } finally {
+      if (id) await deleteTasks(page, [id])
+      await page.request.patch('/api/user/preferences', {
+        data: { default_reminder_slot_id: prefs.default_reminder_slot_id ?? null },
+      })
+    }
+  })
+
+  test('a one-time thought from the form stays unscheduled — it never takes the default slot', async ({
+    authenticatedPage: page,
+  }) => {
+    // The server gives a reminder with NO rrule the default slot (2026-09-28),
+    // so the form's "Once" must send an explicit `rrule: null` to say "no
+    // schedule on purpose". Dropping the null would silently turn every
+    // one-time thought into a daily one.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    let id: number | null = null
+    try {
+      await openReminders(page)
+      await page.getByRole('button', { name: 'Add Reminder' }).click()
+      const dialog = page.getByRole('dialog', { name: 'New reminder' })
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('textbox', { name: 'Reminder text' }).fill('A one-off thought')
+      await dialog.locator('[data-cadence="once"]').click()
+      const posted = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+      )
+      await dialog.getByRole('button', { name: 'Add reminder' }).click()
+      const response = await posted
+      expect(response.request().postDataJSON().rrule).toBeNull()
+      id = (await response.json()).data.id as number
+      const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
+      expect(task.rrule).toBeNull()
+      await expect(page.getByText('Anytime', { exact: true })).toBeVisible()
     } finally {
       if (id) await deleteTasks(page, [id])
     }
@@ -1545,7 +1597,7 @@ test.describe('Reminder details', () => {
   test('a reminder the AI gave up on says so, and Retry hands it back', async ({
     authenticatedPage: page,
   }) => {
-    // The quick add puts a thought in a slot with a plausible daily rule before
+    // The quick add puts a thought in the default slot with a daily rule before
     // the AI has read a word, so a failure would look exactly like success
     // unless the row says otherwise. `ai-failed` is a system label the API
     // accepts on create, which is how the state is staged without an AI.
