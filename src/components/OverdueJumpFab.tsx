@@ -8,11 +8,12 @@ interface OverdueJumpFabProps {
   /** The Overdue date filter is selected (the pinned chip's solid state). */
   overdueFilterOn: boolean
   isSelectionMode: boolean
-  /** Apply the Overdue filter exclusively and scroll to the first task group. */
+  /** Off: apply the Overdue filter exclusively and scroll to the first task
+   *  group. On: take the Overdue filter off, without scrolling. */
   onJump: () => void
   /**
-   * `phone`: fixed above `SnoozeAllFab`, below `md`. `desktop`: fixed at the
-   * viewport's bottom-right, from `md` up. Rendered once of each — see the
+   * `phone`: fixed above `SnoozeAllFab`, below `md`. `desktop`: fixed above
+   * `SnoozeAllFab` at the viewport's bottom-right, from `md` up. Rendered once of each — see the
    * placement notes below.
    */
   placement: 'phone' | 'desktop'
@@ -33,10 +34,14 @@ interface OverdueJumpFabProps {
  *   stack as one column. No number on it, so it can't read as a second copy
  *   of the snooze FAB's red count badge; the count and destination are in the
  *   aria-label and the tooltip.
- * - **Hidden** when nothing is overdue, while the Overdue filter is on (the
- *   job is done — the pinned chip shows it, and a second tap here would only
- *   clear it, which is the chip's and the pill's job), and in selection mode,
- *   where `SnoozeAllFab` hides too and the selection bar owns the bottom.
+ * - **A toggle** (Trent, 2026-09-28). While the Overdue filter is on it stays,
+ *   drawn pressed — a deeper coral with a coral ring around it — and a tap
+ *   clears the filter where the page is, without scrolling (the lit pill's
+ *   rule). It used to vanish once the filter was on, leaving no way back from
+ *   the corner.
+ * - **Hidden** only when nothing is overdue (an Overdue filter left empty
+ *   clears itself, `ce069c6`) and in selection mode, where `SnoozeAllFab`
+ *   hides too and the selection bar owns the bottom.
  *
  * **Phone (`placement="phone"`, below `md`).** The Reminders and Quotas panels
  * sit above the task list, so getting to the overdue tasks meant scrolling
@@ -51,15 +56,16 @@ interface OverdueJumpFabProps {
  * bar's pills do the same jump there. But the pills are small and scroll-bound
  * in attention, and on a long list nothing on screen offers the jump once
  * you are down among the rows; this does, because it stays in view.
- * - Fixed at the viewport's bottom-right (`right-6 bottom-6`), where a
- *   floating button is expected (Trent, 2026-09-28). It first sat at the task
+ * - Fixed at the viewport's bottom-right, stacked above `SnoozeAllFab` exactly
+ *   as on the phone: same right edge (`right-6`), bottom clearing the snooze
+ *   FAB (`1.5rem` + its `3rem`) plus the same `0.75rem` gap (Trent,
+ *   2026-09-28). It first sat at the task
  *   list column's right edge to stay off the Reminders/Quotas column at `xl`,
  *   but the page is centred, so that edge is mid-screen and the button read
  *   as misplaced. At `xl` it can now float over the Quotas column's lower
  *   rows, so it is 90% opaque (full on hover): whatever it covers still shows
  *   through.
- * - Nothing else lives down there from `md` up: `SnoozeAllFab` is phone-only,
- *   the selection bar only exists while this is hidden, and the toaster is
+ * - The selection bar only exists while both are hidden, and the toaster is
  *   bottom-center and 356px wide, so even at `md` (768px) it ends well left
  *   of this corner.
  */
@@ -70,13 +76,20 @@ export function OverdueJumpFab({
   onJump,
   placement,
 }: OverdueJumpFabProps) {
-  const hidden = overdueCount === 0 || overdueFilterOn || isSelectionMode
+  const hidden = overdueCount === 0 || isSelectionMode
   if (hidden) return null
 
   const content = <CalendarClock className="size-5" aria-hidden />
-  const label = `${overdueCount} overdue — show only overdue tasks and scroll to them`
-  const pill =
-    'size-12 items-center justify-center rounded-full bg-[#fb7a6a] text-white shadow-md hover:bg-[#f86a58] active:bg-[#f86a58]'
+  // The pressed label must not end like the top-bar pill's ("clear the
+  // overdue filter"), which the E2E suite finds by its whole label.
+  const label = overdueFilterOn
+    ? `${overdueCount} overdue — showing only overdue tasks; tap to show everything`
+    : `${overdueCount} overdue — show only overdue tasks and scroll to them`
+  const pill = `size-12 items-center justify-center rounded-full text-white shadow-md ${
+    overdueFilterOn
+      ? 'bg-[#e0503d] ring-2 ring-[#fb7a6a] ring-offset-2 ring-offset-background hover:bg-[#d4452f]'
+      : 'bg-[#fb7a6a] hover:bg-[#f86a58] active:bg-[#f86a58]'
+  }`
 
   if (placement === 'phone') {
     return (
@@ -84,9 +97,10 @@ export function OverdueJumpFab({
         type="button"
         onClick={onJump}
         aria-label={label}
+        aria-pressed={overdueFilterOn}
         title={`${overdueCount} overdue`}
         data-overdue-jump-fab="phone"
-        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 flex transition-colors md:hidden`}
+        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 flex cursor-pointer transition-colors md:hidden`}
       >
         {content}
       </button>
@@ -98,9 +112,10 @@ export function OverdueJumpFab({
       type="button"
       onClick={onJump}
       aria-label={label}
+      aria-pressed={overdueFilterOn}
       title={`${overdueCount} overdue`}
       data-overdue-jump-fab="desktop"
-      className={`${pill} fixed right-6 bottom-6 z-40 hidden opacity-90 transition-[background-color,opacity] hover:opacity-100 md:flex`}
+      className={`${pill} fixed right-6 bottom-[5.25rem] z-40 hidden cursor-pointer opacity-90 transition-[background-color,opacity] hover:opacity-100 md:flex`}
     >
       {content}
     </button>

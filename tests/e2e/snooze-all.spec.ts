@@ -47,7 +47,11 @@ async function tapClock(page: Page) {
   const done = page.waitForResponse(
     (r) => r.url().endsWith('/api/tasks/bulk/snooze') && r.request().method() === 'POST',
   )
-  await page.getByRole('button', { name: /hold for options/ }).click()
+  // The top bar's clock — the snooze FAB carries the same label from `md` up.
+  await page
+    .locator('header')
+    .getByRole('button', { name: /hold for options/ })
+    .click()
   expect((await done).ok()).toBeTruthy()
   return page.locator('[data-sonner-toast]').filter({ hasText: /^Snoozed \d+ / })
 }
@@ -94,5 +98,42 @@ test.describe('Snooze-all clock', () => {
       await setBulkDefault(page, 'next_period')
       await page.request.delete(`/api/tasks/${id}`)
     }
+  })
+
+  // The snooze FAB is on desktop too (Trent, 2026-09-28). Opening its menu
+  // snoozes nothing, so the shared user's tasks are left alone.
+  test('the FAB opens its options on a right-click or a mouse hold', async ({
+    authenticatedPage: page,
+  }) => {
+    const fab = page.locator('[data-snooze-all-fab]')
+    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    // Opening the menu must never snooze anything, release included.
+    const snoozes: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().includes('/api/tasks/bulk/')) snoozes.push(r.url())
+    })
+    await expect(fab).toBeVisible()
+    await expect(fab).toHaveCSS('cursor', 'pointer')
+
+    await fab.click({ button: 'right' })
+    await expect(menu).toBeVisible()
+    // The FAB is in the bottom corner, so the menu opens upward, on screen.
+    const box = (await menu.boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(0)
+    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height)
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+
+    // Held past the 400ms long-press, released with the menu already open.
+    await fab.hover()
+    await page.mouse.down()
+    await expect(menu).toBeVisible()
+    await page.mouse.up()
+    await expect(menu).toBeVisible()
+    // A request would be sent on the release itself; let the page settle
+    // on the open menu before counting.
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+    expect(snoozes).toEqual([])
   })
 })

@@ -15,7 +15,7 @@
  * (Trent, 2026-09-28) — it stays on screen while a long list scrolls.
  */
 import { test, expect, uniqueTitle } from './fixtures'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 /** Must track `globalSetup.ts`'s `E2E_TZ` override — see dashboard.spec.ts. */
@@ -62,6 +62,20 @@ async function expectLandedUnderTopBar(page: Page) {
   const bar = await page.locator('header').first().boundingBox()
   expect(bar).not.toBeNull()
   expect(await firstGroupTop(page)).toBeGreaterThanOrEqual(bar!.y + bar!.height)
+}
+
+/**
+ * After a jump the button stays, drawn pressed (Trent, 2026-09-28), and a
+ * second tap takes the Overdue filter off without asking for a scroll —
+ * the lit pill's rule. Needs `countScrollRequests` called before the jump.
+ */
+async function expectLitThenCleared(page: Page, button: Locator) {
+  await expect(button).toBeVisible()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+  await button.click()
+  await expect(pinned(page)).toHaveAttribute('aria-pressed', 'false')
+  await expect(button).toHaveAttribute('aria-pressed', 'false')
+  expect(await scrollRequests(page)).toBe(1)
 }
 
 /** Count `scrollIntoView` calls from here on (the jump's only way to scroll). */
@@ -142,7 +156,7 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
   test.describe('phone', () => {
     test.use({ viewport: { width: 375, height: 812 } })
 
-    test('the FAB filters to overdue, scrolls the first group under the top bar, then hides', async ({
+    test('the FAB filters to overdue and scrolls the first group under the top bar; lit, it clears the filter', async ({
       authenticatedPage: page,
     }) => {
       const button = fab(page)
@@ -156,20 +170,15 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
       // The list starts below the panels — there is somewhere to jump to.
       expect(await firstGroupTop(page)).toBeGreaterThan(LANDING_Y + 100)
 
+      await countScrollRequests(page)
       await button.click()
       await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
       await expectLandedUnderTopBar(page)
-      // The filter is on: nothing left for it to do.
-      await expect(button).toHaveCount(0)
+      await expectLitThenCleared(page, button)
 
       // Stacked ABOVE the snooze FAB, sharing its right edge, clear of its badge.
-      await pinned(page).click()
-      await expect(button).toBeVisible()
       const jumpBox = (await button.boundingBox())!
-      const snoozeBox = (await page
-        .getByRole('button', { name: /^Snooze .*hold for options/ })
-        .last()
-        .boundingBox())!
+      const snoozeBox = (await page.locator('[data-snooze-all-fab]').boundingBox())!
       expect(jumpBox.x + jumpBox.width).toBeCloseTo(snoozeBox.x + snoozeBox.width, 0)
       // Badge pokes 4px above the snooze FAB; the gap is 12px.
       expect(snoozeBox.y - (jumpBox.y + jumpBox.height)).toBeCloseTo(12, 0)
@@ -214,15 +223,19 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
       await expect(firstGroup(page)).toBeVisible()
     })
 
-    /** The button sits 24px (`right-6 bottom-6`) in from the viewport's
-     *  bottom-right corner. The right edge is measured from `<body>`'s, which
-     *  stops short of the scrollbar gutter `html` always reserves
-     *  (`scrollbar-gutter: stable`, globals.css). */
+    /** The snooze FAB sits 24px (`right-6 bottom-6`) in from the viewport's
+     *  bottom-right corner, and the jump button stacks on it as on the phone:
+     *  same right edge, 12px above. The right edge is measured from
+     *  `<body>`'s, which stops short of the scrollbar gutter `html` always
+     *  reserves (`scrollbar-gutter: stable`, globals.css). */
     async function expectPinnedToViewportCorner(page: Page) {
       const width = await page.evaluate(() => document.body.getBoundingClientRect().right)
+      const snooze = (await page.locator('[data-snooze-all-fab]').boundingBox())!
+      expect(snooze.y + snooze.height).toBeCloseTo(page.viewportSize()!.height - 24, 0)
+      expect(snooze.x + snooze.width).toBeCloseTo(width - 24, 0)
       const box = (await deskFab(page).boundingBox())!
-      expect(box.y + box.height).toBeCloseTo(page.viewportSize()!.height - 24, 0)
       expect(box.x + box.width).toBeCloseTo(width - 24, 0)
+      expect(snooze.y - (box.y + box.height)).toBeCloseTo(12, 0)
     }
 
     // `xl` is 90.625rem (1450px, globals.css), so 1280 is still one column.
@@ -248,18 +261,20 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
           )
           await expectPinnedToViewportCorner(page)
 
-          // Slightly see-through, so a Quotas row it floats over still shows.
+          // Slightly see-through, so a Quotas row they float over still shows.
           await expect(button).toHaveCSS('opacity', '0.9')
+          await expect(page.locator('[data-snooze-all-fab]')).toHaveCSS('opacity', '0.9')
 
           // Halfway down a long list it is still there, in the same corner.
           await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2))
           await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
           await expectPinnedToViewportCorner(page)
 
+          await countScrollRequests(page)
           await button.click()
           await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
           await expectLandedUnderTopBar(page)
-          await expect(button).toHaveCount(0)
+          await expectLitThenCleared(page, button)
         })
 
         // The toaster is bottom-center and 356px wide: it never reaches the

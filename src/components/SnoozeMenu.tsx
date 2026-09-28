@@ -235,16 +235,24 @@ function SnoozeDropdown({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
-
-  // Compute position from trigger's bounding rect before paint to avoid flash
+  // Position from the trigger's bounding rect, written straight onto the menu
+  // element in a layout effect — before paint, so it never flashes elsewhere.
+  // Below the trigger by default; ABOVE it when the trigger sits in the lower
+  // half of the viewport — the snooze-all FAB lives in the bottom-right corner
+  // (Trent, 2026-09-28), where a menu opened downward is off-screen.
   useLayoutEffect(() => {
-    if (!triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    setPosition({
-      top: rect.bottom + 4, // 4px gap below trigger
-      left: rect.right, // right-aligned with trigger
-    })
+    const menu = ref.current
+    if (!triggerRef.current || !menu) return
+    // Measure the trigger itself, not the wrapper: a `fixed` trigger (the FAB)
+    // leaves its in-flow wrapper somewhere else entirely.
+    const trigger = triggerRef.current.firstElementChild ?? triggerRef.current
+    const rect = trigger.getBoundingClientRect()
+    menu.style.left = `${rect.right}px` // right-aligned with trigger
+    if (rect.top > window.innerHeight / 2) {
+      menu.style.bottom = `${window.innerHeight - rect.top + 4}px` // 4px gap above
+    } else {
+      menu.style.top = `${rect.bottom + 4}px` // 4px gap below
+    }
   }, [triggerRef])
 
   // Close on pointerdown outside. Using pointerdown instead of click prevents
@@ -276,15 +284,13 @@ function SnoozeDropdown({
     }
   }, [handlePointerDownOutside, handleKeyDown])
 
-  if (!position) return null
-
   return createPortal(
     <div
       ref={ref}
       role="menu"
       aria-label="Snooze options"
       className="bg-popover text-popover-foreground fixed z-50 min-w-[200px] rounded-md border p-1 shadow-md"
-      style={{ top: position.top, left: position.left, transform: 'translateX(-100%)' }}
+      style={{ transform: 'translateX(-100%)' }}
     >
       {options.map((opt) => (
         <button

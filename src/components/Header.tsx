@@ -316,7 +316,7 @@ export function Header({
 
           {/* Action buttons: always fixed in place */}
           <div className="flex flex-shrink-0 items-center">
-            {/* Snooze all overdue button - desktop only (mobile uses FAB).
+            {/* Snooze all overdue button - desktop only (SnoozeAllFab, shown at every width, duplicates it there).
                Single click: snooze using default duration.
                Long-press (400ms): opens SnoozeMenu with duration choices. */}
             {onSnoozeOverdue && !isSelectionMode && (
