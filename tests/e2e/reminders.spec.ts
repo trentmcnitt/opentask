@@ -1354,6 +1354,37 @@ test.describe('Reminder details', () => {
     }
   })
 
+  test('a one-time thought from the form stays unscheduled — it never takes the default slot', async ({
+    authenticatedPage: page,
+  }) => {
+    // The server gives a reminder with NO rrule the default slot (2026-09-28),
+    // so the form's "Once" must send an explicit `rrule: null` to say "no
+    // schedule on purpose". Dropping the null would silently turn every
+    // one-time thought into a daily one.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    let id: number | null = null
+    try {
+      await openReminders(page)
+      await page.getByRole('button', { name: 'Add Reminder' }).click()
+      const dialog = page.getByRole('dialog', { name: 'New reminder' })
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('textbox', { name: 'Reminder text' }).fill('A one-off thought')
+      await dialog.locator('[data-cadence="once"]').click()
+      const posted = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+      )
+      await dialog.getByRole('button', { name: 'Add reminder' }).click()
+      const response = await posted
+      expect(response.request().postDataJSON().rrule).toBeNull()
+      id = (await response.json()).data.id as number
+      const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
+      expect(task.rrule).toBeNull()
+      await expect(page.getByText('Anytime', { exact: true })).toBeVisible()
+    } finally {
+      if (id) await deleteTasks(page, [id])
+    }
+  })
+
   test('Add Reminder opens the form in place; a weekly thought lands under Not today until its day', async ({
     authenticatedPage: page,
   }) => {
