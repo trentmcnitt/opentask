@@ -1,17 +1,15 @@
 /**
- * Just-added previews (`src/lib/just-added.ts`): for 10 minutes after a task
- * is created, a read-only preview of it sits at the top of the dashboard's
- * Inbox (or list), newest first, unless its real row is already right there.
- * Pure selection logic, frozen clock.
+ * Just added (`src/lib/just-added.ts`): for 10 minutes after a task is
+ * created it is listed in the dashboard's Just added card, newest first, with
+ * how long ago it was added. Pure selection logic, frozen clock.
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   JUST_ADDED_WINDOW_MS,
-  formatJustAddedBadge,
+  formatJustAddedAge,
   isJustAdded,
   nextJustAddedExpiry,
   nextJustAddedTick,
-  selectJustAddedPreviews,
   selectJustAddedTasks,
 } from '@/lib/just-added'
 import type { Task } from '@/types'
@@ -123,7 +121,7 @@ describe('nextJustAddedExpiry', () => {
 })
 
 describe('nextJustAddedTick', () => {
-  test('is the next minute boundary of the newest-changing badge, ending at the age-out', () => {
+  test('is the next minute boundary of the newest-changing age, ending at the age-out', () => {
     const task = makeTask({ id: 1, created_at: ago(2 * MIN + 40_000) })
     let now = NOW
     const badges: string[] = []
@@ -132,17 +130,17 @@ describe('nextJustAddedTick', () => {
       if (tick === null) break
       expect(tick).toBeGreaterThan(now)
       now = tick
-      badges.push(isJustAdded(task, now) ? formatJustAddedBadge(task, now) : 'gone')
+      badges.push(isJustAdded(task, now) ? formatJustAddedAge(task, now) : 'gone')
     }
     expect(nextJustAddedTick([task], NOW)).toBe(NOW + 20_000)
     expect(badges).toEqual([
-      'New · 3m',
-      'New · 4m',
-      'New · 5m',
-      'New · 6m',
-      'New · 7m',
-      'New · 8m',
-      'New · 9m',
+      '3m ago',
+      '4m ago',
+      '5m ago',
+      '6m ago',
+      '7m ago',
+      '8m ago',
+      '9m ago',
       'gone',
     ])
     expect(now).toBe(nextJustAddedExpiry([task], NOW))
@@ -175,59 +173,13 @@ describe('selectJustAddedTasks', () => {
   })
 })
 
-describe('selectJustAddedPreviews', () => {
-  const old = (id: number) => makeTask({ id, created_at: ago(HOUR) })
-  const fresh = (id: number, minutesAgo: number) =>
-    makeTask({ id, created_at: ago(minutesAgo * MIN) })
-
-  test('every new task gets a preview when none of them is already on top', () => {
-    const a = fresh(8, 1)
-    const b = fresh(9, 2)
-    const hostRows = [old(1), a, old(2), b]
-    expect(selectJustAddedPreviews([old(1), a, old(2), b], hostRows, NOW).map((t) => t.id)).toEqual(
-      [8, 9],
-    )
-  })
-
-  test('no preview for a new task whose real row already tops the host', () => {
-    const a = fresh(8, 1)
-    const source = [a, old(1)]
-    expect(selectJustAddedPreviews(source, [a, old(1)], NOW)).toEqual([])
-  })
-
-  test('the leading run of new rows is on top; a new row below an old one is not', () => {
-    const a = fresh(7, 1)
-    const b = fresh(8, 2)
-    const c = fresh(9, 3)
-    const hostRows = [b, a, old(1), c]
-    expect(selectJustAddedPreviews([a, b, c, old(1)], hostRows, NOW).map((t) => t.id)).toEqual([9])
-  })
-
-  test('a new task outside the host (another project, or not in this view) is previewed', () => {
-    const elsewhere = fresh(9, 1)
-    expect(selectJustAddedPreviews([elsewhere], [old(1)], NOW).map((t) => t.id)).toEqual([9])
-    // No host rows at all (folded, empty or absent host): everything new is previewed.
-    expect(selectJustAddedPreviews([elsewhere], [], NOW).map((t) => t.id)).toEqual([9])
-  })
-
-  test('previews leave at 10 minutes', () => {
-    const a = fresh(9, 1)
-    const later = nextJustAddedExpiry([a], NOW)!
-    expect(selectJustAddedPreviews([a], [], later)).toEqual([])
-  })
-})
-
-describe('formatJustAddedBadge', () => {
+describe('formatJustAddedAge', () => {
   test('"just now" under a minute, whole minutes after', () => {
-    expect(formatJustAddedBadge(makeTask({ id: 1, created_at: ago(20_000) }), NOW)).toBe(
-      'New · just now',
-    )
-    expect(formatJustAddedBadge(makeTask({ id: 1, created_at: ago(3 * MIN + 40_000) }), NOW)).toBe(
-      'New · 3m',
+    expect(formatJustAddedAge(makeTask({ id: 1, created_at: ago(20_000) }), NOW)).toBe('just now')
+    expect(formatJustAddedAge(makeTask({ id: 1, created_at: ago(3 * MIN + 40_000) }), NOW)).toBe(
+      '3m ago',
     )
     // Skew: a created_at ahead of this clock is "just now", never negative.
-    expect(formatJustAddedBadge(makeTask({ id: 1, created_at: ago(-5000) }), NOW)).toBe(
-      'New · just now',
-    )
+    expect(formatJustAddedAge(makeTask({ id: 1, created_at: ago(-5000) }), NOW)).toBe('just now')
   })
 })

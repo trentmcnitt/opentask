@@ -261,6 +261,36 @@
   animation: ai-processing 2s ease-in-out infinite;
 }
 
+/* "AI is filling in details…" in the Just added card — a slow gradient
+   sweep across the text, indigo to violet. Static under reduced motion. */
+@keyframes ai-shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: 200px 0;
+  }
+}
+
+.animate-ai-shimmer {
+  background: linear-gradient(90deg, #6366f1 0%, #a855f7 50%, #6366f1 100%);
+  background-size: 200px 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 2.4s linear infinite;
+}
+
+.animate-ai-shimmer svg {
+  color: #7c3aed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ai-shimmer {
+    animation: none;
+  }
+}
+
 /* Quick Take typing indicator — iMessage-style bouncing dots */
 @keyframes typing-dot-bounce {
   0%,

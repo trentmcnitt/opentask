@@ -1,14 +1,14 @@
 /**
- * Just-added previews (`src/lib/just-added.ts`): for 10 minutes after a task
- * is created, a read-only preview of it sits at the top of the Inbox (or, in
- * a view with no Inbox group, the top of the list), while the real row stays
- * at its natural place. Tapping the preview goes to the real row. After 10
- * minutes the preview leaves without a reload.
+ * Just added (`src/lib/just-added.ts`, `JustAddedCard`): for 10 minutes after
+ * a task is created it is listed in the Just added card under the add field —
+ * its project, what the AI filled in, how long ago — while the real row stays
+ * at its natural place wearing a "New" tag. Tapping an entry goes to the real
+ * row. After 10 minutes the entry and the tag leave without a reload.
  *
  * Isolation: tasks and projects are created per test and deleted in
  * `finally`; the grouping and sort are set per test by `withPreferences`
  * (every spec shares one test user). Tasks meant to be "old" are backdated in
- * the database (`backdateCreated`) so they get no preview.
+ * the database (`backdateCreated`) so they are not listed.
  *
  * Time-agnostic: due dates are whole days from now; the 10-minute window is
  * crossed with Playwright's `page.clock`, never by waiting.
@@ -17,7 +17,6 @@ import {
   test,
   expect,
   backdateCreated,
-  cmdClickRow,
   uniqueTitle,
   waitForPrefsLoaded,
   withPreferences,
@@ -48,18 +47,15 @@ function group(page: Page, name: string): Locator {
   })
 }
 
-const preview = (scope: Page | Locator, id: number) =>
-  scope.locator(`[data-just-added-preview="${id}"]`)
+const card = (page: Page) => page.locator('[data-just-added-card]')
+const entry = (page: Page, id: number) => page.locator(`[data-just-added-entry="${id}"]`)
 const realRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
-/** A section's rendered sequence: previews as `v<id>`, real rows as `<id>`. */
-async function sequence(section: Locator): Promise<string[]> {
-  return section.locator('[data-just-added-preview], [role="option"]').evaluateAll((els) =>
-    els.map((el) => {
-      const id = el.getAttribute('data-just-added-preview')
-      return id ? `v${id}` : el.id.replace('task-row-', '')
-    }),
-  )
+/** A group's real rows, as ids in on-screen order. */
+function rowOrder(section: Locator): Promise<string[]> {
+  return section
+    .locator('[role="option"]')
+    .evaluateAll((els) => els.map((el) => el.id.replace('task-row-', '')))
 }
 
 const PROJECTS_BY_DUE = {
@@ -68,95 +64,110 @@ const PROJECTS_BY_DUE = {
   default_sort_reversed: false,
 }
 
-test.describe('Just-added previews: placement', () => {
-  test('a new task in another project is previewed at the top of the Inbox', async ({
+test.describe('Just added: the card', () => {
+  test('a quick add is listed in the card, and its real row stays in place with a New tag', async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
-    let projectId: number | null = null
     try {
-      const name = uniqueTitle('Preview project')
-      projectId = await post(page, '/api/projects', { name })
-      const early = await post(page, '/api/tasks', {
-        title: uniqueTitle('Preview early'),
-        project_id: projectId,
-        due_at: inDays(1),
-      })
       const inboxOld = await post(page, '/api/tasks', {
-        title: uniqueTitle('Preview inbox old'),
+        title: uniqueTitle('Card inbox old'),
         project_id: INBOX_ID,
         due_at: inDays(1),
       })
-      ids.push(early, inboxOld)
-      backdateCreated([early, inboxOld])
-      const title = uniqueTitle('Preview fresh')
-      const fresh = await post(page, '/api/tasks', {
-        title,
-        project_id: projectId,
-        due_at: inDays(2),
-      })
-      ids.push(fresh)
+      ids.push(inboxOld)
+      backdateCreated([inboxOld])
 
       await withPreferences(page, PROJECTS_BY_DUE, async () => {
         const inbox = group(page, 'Inbox')
-        const own = group(page, name)
-        await waitForPrefsLoaded(page, () => page.goto('/'), own)
+        await waitForPrefsLoaded(page, () => page.goto('/'), inbox)
+        await expect(card(page)).toHaveCount(0)
 
-        // The preview heads the Inbox, naming the project the task is really in.
-        await expect.poll(async () => (await sequence(inbox))[0]).toBe(`v${fresh}`)
-        const card = preview(inbox, fresh)
-        await expect(card).toContainText(title)
-        await expect(card).toContainText(name)
-        await expect(card.locator('[data-just-added-badge]')).toHaveText('New · just now')
-        // It is not a row: no option role, no row id, no Done, no snooze.
-        await expect(card.getByRole('option')).toHaveCount(0)
-        await expect(card.locator('[id^="task-row-"]')).toHaveCount(0)
-        await expect(card.getByRole('button', { name: /Mark .* as done|Snooze/ })).toHaveCount(0)
+        const title = uniqueTitle('Carded quick add')
+        const created = page.waitForResponse(
+          (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+        )
+        await page.getByRole('textbox', { name: 'Quick add task' }).fill(title)
+        await page.keyboard.press('Enter')
+        const id = (await (await created).json()).data.id as number
+        ids.push(id)
 
-        // The real row is where it belongs, normal, wearing the same badge.
-        await expect.poll(() => sequence(own)).toEqual([`${early}`, `${fresh}`])
-        await expect(realRow(page, fresh).locator('[data-just-added-badge]')).toBeVisible()
-
-        // Tapping the preview flashes the real row and selects nothing.
-        await card.click()
-        await expect(realRow(page, fresh)).toHaveAttribute('data-task-highlight', '')
-        await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
-
-        // Selection runs over real rows only; the preview never joins it.
-        await cmdClickRow(realRow(page, early))
-        await realRow(page, fresh).click({ modifiers: ['Shift'], position: { x: 56, y: 8 } })
-        await expect(realRow(page, fresh)).toHaveAttribute('aria-selected', 'true')
-        await expect(page.locator('[data-selection-sheet]')).toContainText('2 selected')
-        await expect(card.locator('[aria-selected]')).toHaveCount(0)
-        await page.keyboard.press('Escape')
+        await expect(entry(page, id)).toContainText(title)
+        await expect(entry(page, id)).toContainText('Inbox')
+        await expect(entry(page, id)).toContainText('just now')
+        // The real row is where the sort puts it (undated, so after the dated
+        // old task), not pulled to the top — and it wears the tag.
+        const order = await rowOrder(inbox)
+        expect(order.indexOf(String(id))).toBeGreaterThan(order.indexOf(String(inboxOld)))
+        await expect(realRow(page, id).locator('[data-just-added-badge]')).toHaveText('New')
+        // Not a second task: the card is not in the list.
+        await expect(
+          page.getByRole('listbox', { name: 'Task list' }).locator('[data-just-added-card]'),
+        ).toHaveCount(0)
       })
     } finally {
-      await cleanup(page, ids, projectId)
+      await cleanup(page, ids, null)
     }
   })
 
-  test('no preview when the real row already tops the Inbox', async ({
+  test('a task added through the API from elsewhere is listed with its project, without a reload', async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
     try {
-      // Overdue by a year: first in the Inbox under due-soonest.
-      const title = uniqueTitle('Tops inbox')
-      const fresh = await post(page, '/api/tasks', {
-        title,
-        project_id: INBOX_ID,
-        due_at: inDays(-365),
-      })
-      ids.push(fresh)
-
       await withPreferences(page, PROJECTS_BY_DUE, async () => {
-        const inbox = group(page, 'Inbox')
-        await waitForPrefsLoaded(page, () => page.goto('/'), realRow(page, fresh))
-        // First real row of the Inbox (other specs' new tasks may still be
-        // previewed above it — that is correct, and not this test's concern).
-        await expect(inbox.getByRole('option').first()).toHaveAttribute('id', `task-row-${fresh}`)
-        await expect(preview(page, fresh)).toHaveCount(0)
-        await expect(realRow(page, fresh).locator('[data-just-added-badge]')).toBeVisible()
+        await waitForPrefsLoaded(page, () => page.goto('/'), group(page, 'Inbox'))
+
+        // Not through the page: the dashboard only learns of it over the
+        // sync stream, as it would from an iOS Shortcut or the Mac menu bar.
+        const title = uniqueTitle('Synced fresh')
+        const id = await post(page, '/api/tasks', { title, project_id: 3, due_at: inDays(4) })
+        ids.push(id)
+
+        await expect(entry(page, id)).toContainText(title)
+        await expect(entry(page, id)).toContainText('Work')
+        await expect(realRow(page, id)).toBeVisible()
+      })
+    } finally {
+      await cleanup(page, ids, null)
+    }
+  })
+
+  test('an entry still being enriched says so', async ({ authenticatedPage: page }) => {
+    const ids: number[] = []
+    try {
+      const id = await post(page, '/api/tasks', {
+        title: uniqueTitle('Enriching fresh'),
+        labels: ['ai-to-process'],
+      })
+      ids.push(id)
+      await withPreferences(page, PROJECTS_BY_DUE, async () => {
+        await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
+        await expect(entry(page, id)).toContainText('AI is filling in details')
+      })
+    } finally {
+      await cleanup(page, ids, null)
+    }
+  })
+
+  test('Clear hides what is listed; a task added after it shows', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const first = await post(page, '/api/tasks', { title: uniqueTitle('Clear first') })
+      ids.push(first)
+      await withPreferences(page, PROJECTS_BY_DUE, async () => {
+        await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, first))
+        await card(page).getByRole('button', { name: 'Clear', exact: true }).click()
+        await expect(entry(page, first)).toHaveCount(0)
+        // The real row is untouched, tag and all.
+        await expect(realRow(page, first).locator('[data-just-added-badge]')).toBeVisible()
+
+        const second = await post(page, '/api/tasks', { title: uniqueTitle('Clear second') })
+        ids.push(second)
+        await expect(entry(page, second)).toBeVisible()
+        await expect(entry(page, first)).toHaveCount(0)
       })
     } finally {
       await cleanup(page, ids, null)
@@ -164,7 +175,7 @@ test.describe('Just-added previews: placement', () => {
   })
 })
 
-test.describe('Just-added previews: tapping through', () => {
+test.describe('Just added: tapping through', () => {
   test("a tap unfolds the real row's group and flashes it, even mid-enrichment", async ({
     authenticatedPage: page,
   }) => {
@@ -187,7 +198,7 @@ test.describe('Just-added previews: tapping through', () => {
         await page.getByRole('button', { name: `Collapse ${name}`, exact: true }).click()
         await expect(realRow(page, id)).toHaveCount(0)
 
-        await preview(page, id).click()
+        await entry(page, id).click()
         await expect(realRow(page, id)).toBeVisible()
         await expect(realRow(page, id)).toHaveAttribute('data-task-highlight', '')
         // The flash plays out and clears itself (it would hang if the
@@ -198,84 +209,18 @@ test.describe('Just-added previews: tapping through', () => {
       await cleanup(page, ids, projectId)
     }
   })
-})
 
-test.describe('Just-added previews: arrival and age-out', () => {
-  test('a quick add is previewed at the top of the Inbox', async ({ authenticatedPage: page }) => {
-    const ids: number[] = []
-    try {
-      const inboxOld = await post(page, '/api/tasks', {
-        title: uniqueTitle('Quick inbox old'),
-        project_id: INBOX_ID,
-        due_at: inDays(1),
-      })
-      ids.push(inboxOld)
-      backdateCreated([inboxOld])
-
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
-        const inbox = group(page, 'Inbox')
-        await waitForPrefsLoaded(page, () => page.goto('/'), inbox)
-
-        const title = uniqueTitle('Previewed quick add')
-        const created = page.waitForResponse(
-          (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
-        )
-        await page.getByRole('textbox', { name: 'Quick add task' }).fill(title)
-        await page.keyboard.press('Enter')
-        const id = (await (await created).json()).data.id as number
-        ids.push(id)
-
-        // Undated, so due-soonest puts the real row last in the Inbox.
-        await expect.poll(async () => (await sequence(inbox))[0]).toBe(`v${id}`)
-        await expect(preview(inbox, id)).toContainText(title)
-        await expect(inbox.locator(`#task-row-${id}`)).toBeVisible()
-      })
-    } finally {
-      await cleanup(page, ids, null)
-    }
-  })
-
-  test('a task added through the API from elsewhere is previewed without a reload', async ({
-    authenticatedPage: page,
-  }) => {
-    const ids: number[] = []
-    try {
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
-        const inbox = group(page, 'Inbox')
-        await waitForPrefsLoaded(page, () => page.goto('/'), inbox)
-
-        // Not through the page: the dashboard only learns of it over the
-        // sync stream, as it would from an iOS Shortcut.
-        const title = uniqueTitle('Synced fresh')
-        const id = await post(page, '/api/tasks', { title, project_id: 3, due_at: inDays(4) })
-        ids.push(id)
-
-        await expect(preview(inbox, id)).toContainText(title)
-        await expect(preview(inbox, id)).toContainText('Work')
-        await expect(realRow(page, id)).toBeVisible()
-      })
-    } finally {
-      await cleanup(page, ids, null)
-    }
-  })
-
-  test('in Today, a task with no row there is previewed on top and opens on tap', async ({
-    authenticatedPage: page,
-  }) => {
+  test('in Today, a task with no row there opens on tap', async ({ authenticatedPage: page }) => {
     const ids: number[] = []
     try {
       await withPreferences(page, { default_grouping: 'slot' }, async () => {
         const title = uniqueTitle('Next week fresh')
         const id = await post(page, '/api/tasks', { title, due_at: inDays(7) })
         ids.push(id)
-        await waitForPrefsLoaded(page, () => page.goto('/'), preview(page, id))
-
-        // Above every group, and there is no real row in Today to go to.
-        const list = page.getByRole('listbox', { name: 'Task list' })
-        await expect(list.locator('[data-just-added-previews]')).toBeVisible()
+        await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
         await expect(realRow(page, id)).toHaveCount(0)
 
-        await preview(page, id).click()
+        await entry(page, id).click()
         await expect(page.getByRole('dialog')).toContainText(title)
         await page.keyboard.press('Escape')
       })
@@ -283,19 +228,14 @@ test.describe('Just-added previews: arrival and age-out', () => {
       await cleanup(page, ids, null)
     }
   })
+})
 
-  test('the preview and badges leave after 10 minutes, without a reload', async ({
+test.describe('Just added: age-out', () => {
+  test('the entry and the tag leave after 10 minutes, without a reload', async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
     try {
-      const inboxOld = await post(page, '/api/tasks', {
-        title: uniqueTitle('Age inbox old'),
-        project_id: INBOX_ID,
-        due_at: inDays(1),
-      })
-      ids.push(inboxOld)
-      backdateCreated([inboxOld])
       const id = await post(page, '/api/tasks', {
         title: uniqueTitle('Age fresh'),
         project_id: INBOX_ID,
@@ -305,14 +245,16 @@ test.describe('Just-added previews: arrival and age-out', () => {
 
       await withPreferences(page, PROJECTS_BY_DUE, async () => {
         // The page's clock is Playwright's from here on; it still runs, and
-        // `fastForward` jumps it (firing the one age-out timer on the way).
+        // `fastForward` jumps it (firing the age timers on the way).
         await page.clock.install()
-        await waitForPrefsLoaded(page, () => page.goto('/'), preview(page, id))
+        await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
         await expect(realRow(page, id).locator('[data-just-added-badge]')).toBeVisible()
 
-        await page.clock.fastForward('10:30')
+        await page.clock.fastForward('03:00')
+        await expect(entry(page, id)).toContainText('3m ago')
 
-        await expect(preview(page, id)).toHaveCount(0)
+        await page.clock.fastForward('07:30')
+        await expect(entry(page, id)).toHaveCount(0)
         await expect(realRow(page, id)).toBeVisible()
         await expect(realRow(page, id).locator('[data-just-added-badge]')).toHaveCount(0)
       })

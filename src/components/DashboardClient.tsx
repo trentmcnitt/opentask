@@ -19,6 +19,8 @@ import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header, type HeaderPillFilter } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
+import { JustAddedCard } from '@/components/JustAddedCard'
+import { selectJustAddedTasks } from '@/lib/just-added'
 import { DemoTour } from '@/components/DemoTour'
 import { QuickTakeBanner } from '@/components/QuickTakeBanner'
 import { FilterBar } from '@/components/FilterBar'
@@ -1048,12 +1050,13 @@ function HomeContent({
     groupingLoaded,
   ])
 
-  // Just-added previews (`src/lib/just-added.ts`): a read-only preview of
-  // each task created in the last 10 minutes, at the top of the Inbox (or the
-  // list). Drawn from `visibleTasks` — unfiltered on purpose — and off while
-  // searching. The clock advances itself at each age-out, so a preview leaves
-  // without a reload. Previews are not rows: nothing here (keyboard order,
-  // counts, Select All) sees them.
+  // Just added (`src/lib/just-added.ts`): each task created in the last 10
+  // minutes is listed in the Just added card under the add field, and its
+  // real row wears a "New" tag. Drawn from `visibleTasks` — unfiltered on
+  // purpose — and off while searching. The clock advances itself at each
+  // minute and age-out, so entries count up and leave without a reload. The
+  // card is not part of the list: nothing here (keyboard order, counts,
+  // Select All) sees it.
   const justAddedNow = useJustAddedClock(visibleTasks)
   const justAddedSource = searchQuery ? null : visibleTasks
 
@@ -2056,6 +2059,15 @@ function DashboardView({
   // search runs, so typing cannot re-centre the page under the user.
   const twoColumn = quotaSource.some(isTracked)
 
+  // The Just added card: its entries, what "Clear" has hidden (in-memory —
+  // a task added after a Clear shows again), and the list's reveal function
+  // for a tap (`TaskList`'s `revealRef`).
+  const [clearedJustAdded, setClearedJustAdded] = useState<Set<number>>(new Set())
+  const justAddedTasks = justAddedSource
+    ? selectJustAddedTasks(justAddedSource, justAddedNow).filter((t) => !clearedJustAdded.has(t.id))
+    : []
+  const revealTaskRef = useRef<((task: Task) => void) | null>(null)
+
   return (
     <div className="flex flex-1 flex-col">
       <Header
@@ -2125,6 +2137,17 @@ function DashboardView({
               />
             )}
           </div>
+
+          <JustAddedCard
+            tasks={justAddedTasks}
+            projects={projects}
+            now={justAddedNow}
+            timezone={timezone}
+            onShow={(task) => revealTaskRef.current?.(task)}
+            onClear={() =>
+              setClearedJustAdded((prev) => new Set([...prev, ...justAddedTasks.map((t) => t.id)]))
+            }
+          />
 
           {aiAvailable && bannerState && (
             <QuickTakeBanner
@@ -2252,6 +2275,7 @@ function DashboardView({
             onHighlightDone={onHighlightDone}
             justAddedSource={justAddedSource}
             justAddedNow={justAddedNow}
+            revealRef={revealTaskRef}
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
             onLabelClick={onToggleLabel}

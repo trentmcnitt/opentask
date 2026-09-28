@@ -55,11 +55,11 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 
 **The UI and the code use different words for the same things** — search for the code word:
 
-| UI says                                       | Code / DB / API says                                                                                                       |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Period, "Reminder periods" (Settings)         | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                                        |
-| Quota                                         | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests           |
-| Today / All / Projects / Recent (view toggle) | `default_grouping` `'slot'` / `'time'` / `'project'` / `'recent'` (`'unified'` is set by the AI-sort toggle, not this one) |
+| UI says                               | Code / DB / API says                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Period, "Reminder periods" (Settings) | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                              |
+| Quota                                 | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests |
+| Today / Projects / All (view toggle)  | `default_grouping` `'slot'` / `'project'` / `'time'` (`'unified'` is set by the AI-sort toggle, not this one)    |
 
 ### Database
 
