@@ -58,6 +58,11 @@ describe('Bulk snooze-overdue integration', () => {
     expect(res.status).toBe(200)
     const data = (await res.json()).data
     expect(data.tasks_affected).toBe(0)
+    // Same shape as the non-empty path, and a displayable message for
+    // branchless clients (Apple Shortcuts).
+    expect(data.skipped_reminders).toBe(0)
+    expect(data.message).toBe('No snoozable tasks')
+    expect(typeof data.until).toBe('string')
   })
 
   test('POST returns correct response shape', async () => {
@@ -90,6 +95,8 @@ describe('Bulk snooze-overdue integration', () => {
     expect(res.status).toBe(200)
     const data = (await res.json()).data
     expect(data.tasks_affected).toBeGreaterThanOrEqual(1)
+    expect(data.message).toMatch(/^Snoozed \d+ /)
+    expect(new Date(data.until).getTime()).toBeGreaterThan(Date.now())
 
     // Verify the task got snoozed (due_at should now be in the future)
     const taskRes = await apiFetch('/api/tasks/1')
