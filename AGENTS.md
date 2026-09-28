@@ -339,6 +339,8 @@ E2E tests (run locally) and browser verification (run against dev) are complemen
 Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
+**Run every E2E spec you added or changed locally, and see it pass, before you push.** A new E2E test that has only ever run in CI tends to fail there first: a pixel-exact position, a time-of-day assumption, a second element with the same label. Each such failure costs Trent a red CI run and a notification email. CI is the second check, not the first. If the change is visible on every page (a new floating button, a layout change), run the whole suite, since other specs can trip over it.
+
 ### AI quality testing
 
 **Running quality tests:** Quality tests require `OPENTASK_AI_ENABLED=true`. When running locally with Claude Code installed, SDK mode is the default — no API keys or model env vars are needed:
