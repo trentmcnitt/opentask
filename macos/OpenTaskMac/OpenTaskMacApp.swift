@@ -37,6 +37,13 @@ struct OpenTaskMacApp: App {
         }
         .defaultSize(width: 1180, height: 860)
         .commands { OpenTaskCommands() }
+
+        // The menu bar item (2026-09-28) is AppKit — `StatusItemController`,
+        // started by `MacAppDelegate` — not a `MenuBarExtra` scene: see its
+        // doc for why.
+        Settings {
+            MacSettingsView()
+        }
     }
 
     /// Resolve an `opentask://` deep link from OpenTaskMacWidgets to a web path.

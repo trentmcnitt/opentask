@@ -37,6 +37,9 @@ targets:
       # copied: it encodes the /api/auth/session-from-token contract, and two
       # copies of that would drift. Foundation + WebKit only.
       - path: ../ios/OpenTask/SessionBootstrapper.swift
+      # The due-label words ("Yesterday" / "9:00 am") the menu bar item's rows
+      # share with the Tasks widget. Foundation-only; referenced, not copied.
+      - path: ../ios/OpenTaskWidgets/DueLabel.swift
     info:
       path: OpenTaskMac/Info.plist
       properties:

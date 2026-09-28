@@ -14,28 +14,14 @@ import Foundation
 /// rule here rather than inventing an endpoint.
 enum TasksTimeline {
 
-    /// The three exclusions both unified pages share, each with its own home:
-    ///
-    /// - **Undated** tasks: §7.1 treats a task without a real due date as
-    ///   backlog, and putting backlog on a today/up-next surface is exactly
-    ///   the noise the redesign is removing.
-    /// - **Reminders** (§6): their own widget, their own no-debt semantics.
-    /// - **Tracked** items, `progress_target > 1` (§8 as amended 2026-07-27):
-    ///   their own widget too. A quota row inside a task list buries the thing
-    ///   being glanced at — it is twice the height of a task row and answers a
-    ///   different question ("how far in", not "is it done").
+    /// The shared rules live in `TaskLists` (ios/Shared) since 2026-09-28, so
+    /// the Mac menu bar item counts "overdue" exactly as the widget does.
     private static func eligibleTasks(from tasks: [TaskDTO]) -> [TaskDTO] {
-        tasks.filter { !$0.isReminder && !$0.isTracked && $0.dueDate != nil }
+        TaskLists.eligible(tasks)
     }
 
     private static func sortedSoonestFirst(_ tasks: [TaskDTO]) -> [TaskDTO] {
-        tasks.sorted { lhs, rhs in
-            let l = lhs.dueDate ?? .distantFuture
-            let r = rhs.dueDate ?? .distantFuture
-            // Soonest (so: most overdue) first; priority breaks ties.
-            if l != r { return l < r }
-            return lhs.priority > rhs.priority
-        }
+        TaskLists.sortedSoonestFirst(tasks)
     }
 
     /// How many tasks `POST /api/tasks/bulk/snooze-overdue` would actually

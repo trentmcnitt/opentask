@@ -56,6 +56,13 @@ final class APIClient {
         ] as [String: Any])
     }
 
+    /// Create a task from a title alone — the web's quick add
+    /// (`POST /api/tasks` `{ title }`). The server tags it for AI enrichment
+    /// when AI is on, exactly as it does for the dashboard's quick add.
+    func createTask(title: String) async throws {
+        try await post(path: "/api/tasks", body: ["title": title])
+    }
+
     /// Snooze a task to a specific ISO 8601 datetime.
     func snoozeTo(taskId: Int, dueAt: String) async throws {
         try await request(method: "PATCH", path: "/api/tasks/\(taskId)", body: [
