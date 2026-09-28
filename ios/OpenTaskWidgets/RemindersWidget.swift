@@ -546,8 +546,7 @@ private enum ReminderPreviewData {
     static var earlyMorningKey: Int { groups.first?.slot?.id ?? 11 }
 
     /// 4:30 PM — Afternoon is live, three periods behind it, Evening still
-    /// to come: the strip's started/faded split and the header's "now"
-    /// (2026-09-28) show on one card.
+    /// to come: the strip's started/faded split (2026-09-28) on one card.
     static var afternoon: Date {
         Calendar.current.date(bySettingHour: 16, minute: 30, second: 0, of: Date()) ?? Date()
     }
