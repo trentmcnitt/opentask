@@ -545,9 +545,16 @@ private enum ReminderPreviewData {
     /// page index is paired with (`WidgetStore.remindersPage(for:)`).
     static var earlyMorningKey: Int { groups.first?.slot?.id ?? 11 }
 
-    static func entry(slotIndex: Int = 0) -> RemindersEntry {
+    /// 4:30 PM — Afternoon is live, three periods behind it, Evening still
+    /// to come: the strip's started/faded split and the header's "now"
+    /// (2026-09-28) show on one card.
+    static var afternoon: Date {
+        Calendar.current.date(bySettingHour: 16, minute: 30, second: 0, of: Date()) ?? Date()
+    }
+
+    static func entry(slotIndex: Int = 0, at date: Date? = nil) -> RemindersEntry {
         RemindersEntry(
-            date: now,
+            date: date ?? now,
             groups: groups,
             slotIndex: slotIndex,
             staleSince: nil,
@@ -716,6 +723,13 @@ private enum ReminderPreviewData {
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
     ReminderPreviewData.promptsOnlyEntry()
+}
+
+#Preview("Reminders Large — Afternoon live, 4:30 PM", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.entry(slotIndex: 3, at: ReminderPreviewData.afternoon)
 }
 
 #Preview("Reminders Large — Evening page 1", as: .systemLarge) {
