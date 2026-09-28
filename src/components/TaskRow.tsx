@@ -113,22 +113,12 @@ interface TaskRowProps {
   /** Project color for the project badge dot (used in unified view) */
   projectColor?: LabelColor | null
   /**
-   * Just-added pinning (`src/lib/just-added.ts`): the row is pinned to the top
-   * of its group because it was created in the last 10 minutes, and this is
-   * the small neutral badge that says so ("New · 3m"). Neutral on purpose —
-   * new is not a state that needs acting on, just a fact to notice.
+   * Just added (`src/lib/just-added.ts`): the task was created in the last 10
+   * minutes — it is listed in the Just added card — and this is the small tag
+   * ("New") that makes its real row easy to spot where it lives. Neutral on
+   * purpose: new is not a state that needs acting on, just a fact to notice.
    */
   justAddedBadge?: string
-  /**
-   * Render as a read-only PREVIEW (the just-added preview at the top of the
-   * Inbox — `JustAddedPreview`): the same title, labels, priority, due line
-   * and enrichment pulse, but none of the row's behavior. No `task-row-<id>`
-   * id (the real row owns it — keyboard navigation finds rows by it), no
-   * `option` role, no click/long-press/selection, no Done (a dashed empty
-   * circle holds its place), a plain-text title, no snooze button. Dashed on a
-   * muted background so it reads as a preview, not a second task.
-   */
-  preview?: boolean
   /**
    * Deep-linked from the widget (`?task=<id>&highlight=1`): scroll to it and
    * flash it once, mirroring `RemindersView`'s `ReminderRow` — see the
@@ -215,7 +205,6 @@ export function TaskRow({
   projectName,
   projectColor,
   justAddedBadge,
-  preview = false,
   highlighted = false,
   onHighlightDone,
 }: TaskRowProps) {
@@ -426,7 +415,6 @@ export function TaskRow({
     hasLabels ||
     !!projectName
 
-  // The row's own identity and behavior — withheld entirely in preview mode.
   const rowProps = {
     id: `task-row-${task.id}`,
     role: 'option',
@@ -441,11 +429,10 @@ export function TaskRow({
     onPointerLeave: pointer.onPointerLeave,
     onPointerCancel: pointer.onPointerUp,
   }
-  const previewRowProps = { 'data-just-added-preview-row': task.id }
 
   return (
     <div
-      {...(preview ? previewRowProps : rowProps)}
+      {...rowProps}
       ref={rowRef}
       data-task-highlight={highlighted ? '' : undefined}
       onAnimationEnd={(e) => {
@@ -474,22 +461,16 @@ export function TaskRow({
         // flashing: both classes set the `animation` shorthand, so the pulse
         // would override the flash, whose `animationend` would then never
         // fire (the highlight and its scroll-into-view would stay alive until
-        // enrichment finished). A just-added preview's tap flashes exactly
-        // such a row.
+        // enrichment finished). A Just added card tap flashes exactly such a
+        // row.
         isAiProcessing && !highlighted && 'animate-ai-processing',
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
         isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
         highlighted && 'animate-row-highlight',
-        preview && 'bg-muted/40 hover:border-muted-foreground/40 border-dashed',
       )}
     >
       {/* Selection checkbox (shown in selection mode) or Done button */}
-      {preview ? (
-        <span
-          aria-hidden
-          className="border-muted-foreground/25 h-6 w-6 flex-shrink-0 rounded-full border-2 border-dashed"
-        />
-      ) : isSelectionMode ? (
+      {isSelectionMode ? (
         <Checkbox
           checked={isSelected}
           onCheckedChange={() => onSelect?.()}
@@ -531,7 +512,7 @@ export function TaskRow({
       {/* Task content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          {isSelectionMode || preview ? (
+          {isSelectionMode ? (
             <span
               className={cn(
                 'line-clamp-3 font-medium',
@@ -559,11 +540,19 @@ export function TaskRow({
             </Link>
           )}
           {justAddedBadge && (
+            // A box exactly one title line tall (`1lh` at the title's own
+            // size class), with the tag centred in it — so the tag sits on
+            // the title's first line whatever its size. It used to be pinned
+            // to the top with a margin and sat visibly high (Trent, 09-28).
             <span
-              data-just-added-badge
-              className="bg-muted text-muted-foreground mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-medium whitespace-nowrap"
+              className={cn('flex h-[1lh] shrink-0 items-center', getTitleSizeClass(task.title))}
             >
-              {justAddedBadge}
+              <span
+                data-just-added-badge
+                className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] leading-none font-semibold whitespace-nowrap text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"
+              >
+                {justAddedBadge}
+              </span>
             </span>
           )}
         </div>
@@ -717,7 +706,7 @@ export function TaskRow({
       {/* Snooze button (hidden in selection mode and on mobile — swipe-to-snooze is the mobile interaction).
           Single click: immediate snooze with default duration.
           Long-press (400ms): opens SnoozeMenu with duration choices. */}
-      {!isSelectionMode && !preview && (
+      {!isSelectionMode && (
         <SnoozeMenu
           open={snoozeMenuOpen}
           onOpenChange={setSnoozeMenuOpen}

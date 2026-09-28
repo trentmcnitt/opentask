@@ -4,6 +4,18 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 09-28-26
+
+### Just added: a card of its own, not a copy of the row
+
+**The requirement (Trent):** right after adding a task — from quick add, the Mac menu bar, or an iOS Shortcut on another device — you must be able to see that it landed, where, and what the AI made of it, **without scrolling** and **without the real row leaving its proper place**: "We have to have a place that shows the recent tasks without having to scroll down", and "the real row at the top means it's not in the actual place it's supposed to be". Until now this lived only in a code comment.
+
+Three attempts: a separate "Recent" view (#115) meant switching views to check; a dashed read-only copy of the row at the top of the Inbox (#121) looked cheap next to the real row, its "New · 1m" tag sat above the title's line, and the real row was still at the bottom of the Inbox. Now a **Just added card** under the add field lists the last 10 minutes' tasks — project, what the AI filled in (or "AI is filling in details…"), how long ago — and a tap scrolls to the real row in its real group and flashes it. The real row only wears a small "New" tag, centred on its first line. Chosen from three mockups (`~/hub-store/capabilities/opentask/mockups-2026-09-28-just-added/`, option A).
+
+Same day, same test task: "Test task for job search" stayed in the Inbox despite a Job Search project, because the enrichment prompt only moved a task on explicit phrasing ("add it to…"). Trent chose "file it when the text names the project" — a separate prompt change with its own quality run.
+
+---
+
 ## 09-15-26
 
 ### Bulk snooze: the High tier joins in once nothing lower is left

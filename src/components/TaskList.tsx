@@ -26,8 +26,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
-import { formatJustAddedBadge, isJustAdded, selectJustAddedPreviews } from '@/lib/just-added'
-import { JustAddedPreview } from '@/components/JustAddedPreview'
+import { isJustAdded } from '@/lib/just-added'
 
 /**
  * §7.3: items with no time of day (most Track items) get their own group after
@@ -51,12 +50,6 @@ const SLOT_PREVIEW_COUNT = 5
  */
 const GROUP_PREVIEW_COUNT = 10
 
-/**
- * The project new tasks land in (quick add and a bare API POST both default
- * to it — `createTask`), identified by name the same way the server does.
- * Hosts the just-added previews in the Projects view.
- */
-const INBOX_NAME = 'Inbox'
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
@@ -159,14 +152,19 @@ interface TaskListProps {
   /** The deep link's flash has played; it must not play again on a remount. */
   onHighlightDone?: () => void
   /**
-   * Just-added previews (`src/lib/just-added.ts`): the population previews are
-   * drawn from — the dashboard's unfiltered open tasks. Null or omitted turns
-   * previews (and the real rows' "New" badge) off; the dashboard passes null
-   * while searching.
+   * Just added (`src/lib/just-added.ts`): the dashboard's unfiltered open
+   * tasks, which decide which real rows wear the "New" tag. Null or omitted
+   * turns the tag off; the dashboard passes null while searching.
    */
   justAddedSource?: Task[] | null
   /** The "now" the 10-minute window is measured against (`useJustAddedClock`). */
   justAddedNow?: number
+  /**
+   * Filled in by this list with a function that brings a task's real row on
+   * screen and flashes it — what the Just added card (`JustAddedCard`, rendered
+   * outside the list) calls on a tap.
+   */
+  revealRef?: React.MutableRefObject<((task: Task) => void) | null>
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -305,6 +303,7 @@ export function TaskList({
   onHighlightDone,
   justAddedSource = null,
   justAddedNow = 0,
+  revealRef,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -409,29 +408,40 @@ export function TaskList({
     [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick, now],
   )
 
+  /**
+   * The Just added card's tap: bring the task's real row on screen and flash
+   * it — unfolding its group and lifting the group's "Show all" cap first if
+   * either hides it. A task with no row in this view (Today, and a task due
+   * next week; or one a filter hides) opens its quick panel instead, the same
+   * thing a tap on a row does on mobile. Handed to the card through
+   * `revealRef` after each render, so it always reads this render's groups.
+   */
+  useEffect(() => {
+    if (!revealRef) return
+    revealRef.current = (task: Task) => {
+      const unified = grouping === 'unified'
+      const group = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now).find((g) =>
+        g.tasks.some((t) => t.id === task.id),
+      )
+      if (!group) {
+        onDoubleClick?.(task)
+        return
+      }
+      if (!unified && isCollapsed(group.label)) toggleCollapse(group.label)
+      const cap = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
+      const index = sortTasks(group.tasks, sortOption, reversed, insightsScoreMap).findIndex(
+        (t) => t.id === task.id,
+      )
+      if (!unified && index >= cap && !expandedGroups.has(group.label)) {
+        toggleGroupExpanded(group.label)
+      }
+      setFlashTaskId(task.id)
+    }
+  })
+
   if (tasks.length === 0) {
-    // Nothing to list — but a new task hidden by a filter (or the Today
-    // view's narrowing) still gets its just-added preview above the empty
-    // state: "did it land?" matters most exactly when the list says nothing.
-    const previews = justAddedSource
-      ? selectJustAddedPreviews(justAddedSource, [], justAddedNow)
-      : []
     return (
       <>
-        {previews.length > 0 && (
-          <div data-just-added-previews className="space-y-1">
-            {previews.map((task) => (
-              <JustAddedPreview
-                key={task.id}
-                task={task}
-                project={projectElsewhere(task, projects)}
-                isOverdue={isTaskOverdue(task, now)}
-                badge={formatJustAddedBadge(task, justAddedNow)}
-                onShow={() => onDoubleClick?.(task)}
-              />
-            ))}
-          </div>
-        )}
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="mb-4 text-4xl">&#x2705;</div>
           <h2 className="text-foreground text-xl font-medium">All caught up!</h2>
@@ -466,58 +476,8 @@ export function TaskList({
   const hasOverdue = grouping === 'time' && groups.some((g) => g.label === 'Overdue')
   const hasUpcoming = grouping === 'time' && groups.some((g) => g.label !== 'Overdue')
 
-  /**
-   * A preview's tap: bring its real row on screen and flash it — unfolding
-   * its group and lifting the group's "Show all" cap first if either hides it.
-   * A task with no row in this view (Today, and a task due next week; or one
-   * a filter hides) opens its quick panel instead, the same thing a tap on a
-   * row does on mobile.
-   */
-  function showRealRow(task: Task) {
-    const group = sortedGroups.find((g) => g.tasks.some((t) => t.id === task.id))
-    if (!group) {
-      onDoubleClick?.(task)
-      return
-    }
-    if (!isUnified && isCollapsed(group.label)) toggleCollapse(group.label)
-    const cap = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
-    const index = group.sortedTasks.findIndex((t) => t.id === task.id)
-    if (!isUnified && index >= cap && !expandedGroups.has(group.label)) {
-      toggleGroupExpanded(group.label)
-    }
-    setFlashTaskId(task.id)
-  }
-
-  function renderPreviews(previews: Task[]) {
-    if (previews.length === 0) return null
-    return (
-      <div data-just-added-previews className="space-y-1">
-        {previews.map((task) => (
-          <JustAddedPreview
-            key={task.id}
-            task={task}
-            project={projectElsewhere(task, projects)}
-            isOverdue={isTaskOverdue(task, now)}
-            badge={formatJustAddedBadge(task, justAddedNow)}
-            onShow={() => showRealRow(task)}
-          />
-        ))}
-      </div>
-    )
-  }
-
-  const { host: previewHost, previews } = placeJustAddedPreviews(
-    sortedGroups,
-    grouping,
-    isCollapsed,
-    justAddedSource,
-    justAddedNow,
-  )
-  const previewBlock = renderPreviews(previews)
   const newBadge = (task: Task) =>
-    justAddedSource && isJustAdded(task, justAddedNow)
-      ? formatJustAddedBadge(task, justAddedNow)
-      : undefined
+    justAddedSource && isJustAdded(task, justAddedNow) ? 'New' : undefined
 
   const renderTaskRow = (task: Task) => {
     const cancelRef = { current: null as (() => void) | null }
@@ -611,7 +571,6 @@ export function TaskList({
         </div>
       )}
       <div className={isUnified ? 'space-y-1' : 'space-y-6'}>
-        {previewHost === null && previewBlock}
         {sortedGroups.map((group, groupIdx) => {
           const { sortedTasks } = group
           const collapsed = !isUnified && isCollapsed(group.label)
@@ -711,7 +670,6 @@ export function TaskList({
               )}
               {!collapsed && (
                 <div className="space-y-1">
-                  {previewHost === group.label && previewBlock}
                   {visibleTasks.map((task) => renderTaskRow(task))}
                   {hiddenCount > 0 && (
                     <button
@@ -741,42 +699,6 @@ export function TaskList({
       <SnoozeGuardDialog {...dialogProps} />
     </div>
   )
-}
-
-/**
- * Where the just-added previews go (`src/lib/just-added.ts`) and which ones.
- *
- * Their host is the Inbox group in the Projects view — where a new task is
- * expected to land — when that group is on screen and open. Anywhere else
- * (Today, All, Unified; or an empty, filtered-out or folded Inbox) they sit at
- * the very top of the list, above the first group (`host` null). What already
- * sits at the top of the host decides whether a preview would only duplicate
- * the row right under it.
- */
-function placeJustAddedPreviews(
-  sortedGroups: (TaskGroup & { sortedTasks: Task[] })[],
-  grouping: GroupingMode,
-  isCollapsed: (label: string) => boolean,
-  source: Task[] | null,
-  now: number,
-): { host: string | null; previews: Task[] } {
-  if (!source) return { host: null, previews: [] }
-  const inbox =
-    grouping === 'project' ? sortedGroups.find((g) => g.label === INBOX_NAME) : undefined
-  const host = inbox && !isCollapsed(inbox.label) ? inbox : undefined
-  const first = sortedGroups[0]
-  const firstOpen = first && (grouping === 'unified' || !isCollapsed(first.label))
-  const hostRows = host ? host.sortedTasks : firstOpen ? first.sortedTasks : []
-  return {
-    host: host?.label ?? null,
-    previews: selectJustAddedPreviews(source, hostRows, now),
-  }
-}
-
-/** A just-added preview names the task's project only when it is not the Inbox. */
-function projectElsewhere(task: Task, projects: Project[]): Project | undefined {
-  const project = projects.find((p) => p.id === task.project_id)
-  return project && project.name !== INBOX_NAME ? project : undefined
 }
 
 export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
