@@ -124,8 +124,8 @@ describe('parseServerPrefs', () => {
     expect(DEFAULT_PREFS.weekStart).toBe('sunday')
   })
 
-  test('the Recent view is a stored grouping, not coerced away', () => {
-    expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('recent')
+  test('the retired Recent view lands on the front door', () => {
+    expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('slot')
   })
 
   test('null / missing data parses to nothing', () => {

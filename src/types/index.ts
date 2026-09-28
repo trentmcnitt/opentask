@@ -292,14 +292,12 @@ export interface AuthUser {
   timezone: string
   /**
    * §7.3 adds 'slot' — today grouped by time slot, the new front door.
-   * 'recent' is the dashboard's "Recent" view: tasks added in the last 7 days,
-   * newest first, across every project (see `src/lib/recent-view.ts`).
    *
    * Nothing reads this to make a decision: it is only ever echoed back out
    * (`/api/auth/me`, the NextAuth session, the iOS token-provision response).
    * The dashboard's live view preference comes from `PreferencesProvider`,
    * which fetches `/api/user/preferences` directly.
    */
-  default_grouping: 'time' | 'project' | 'unified' | 'slot' | 'recent'
+  default_grouping: 'time' | 'project' | 'unified' | 'slot'
   is_demo: boolean
 }

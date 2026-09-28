@@ -13,6 +13,8 @@ import {
   type Page,
   type Request,
 } from '@playwright/test'
+import path from 'path'
+import Database from 'better-sqlite3'
 
 export const TEST_EMAIL = 'test@opentask.local'
 export const TEST_PASSWORD = 'testpass123'
@@ -85,6 +87,26 @@ export function waitForPreferenceSave(page: Page, field: string) {
  * a toast shows before it truncates a title (`truncateTitle`,
  * src/lib/field-labels.ts).
  */
+/**
+ * Move tasks' `created_at` back a day, straight in the E2E database (the API
+ * cannot create a task in the past). A task created in the last 10 minutes
+ * also gets a read-only preview at the top of the dashboard's Inbox or list
+ * (`src/lib/just-added.ts`), so a spec that counts titles or reads the top of
+ * the list backdates the tasks it made first. The server reads SQLite in WAL mode, so the next
+ * fetch sees the write.
+ */
+export function backdateCreated(ids: number[]): void {
+  const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+  try {
+    const stmt = db.prepare(
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+    )
+    for (const id of ids) stmt.run(id)
+  } finally {
+    db.close()
+  }
+}
+
 let titleCounter = 0
 export function uniqueTitle(base: string): string {
   titleCounter += 1

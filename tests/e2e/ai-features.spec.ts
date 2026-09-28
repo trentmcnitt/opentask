@@ -40,7 +40,8 @@ test.describe('AI features (disabled)', () => {
     await quickAddInput.fill(taskTitle)
     await quickAddInput.press('Enter')
 
-    // The new task should appear in the task list
-    await expect(page.getByText(taskTitle)).toBeVisible({ timeout: 10000 })
+    // The new task should appear in the task list (its row's title link — the
+    // just-added preview above the list shows the same title as plain text)
+    await expect(page.getByRole('link', { name: taskTitle })).toBeVisible({ timeout: 10000 })
   })
 })

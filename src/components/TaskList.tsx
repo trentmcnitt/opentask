@@ -26,7 +26,8 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
-import { RECENT_GROUP_LABEL, RECENT_WINDOW_DAYS, selectRecentTasks } from '@/lib/recent-view'
+import { formatJustAddedBadge, isJustAdded, selectJustAddedPreviews } from '@/lib/just-added'
+import { JustAddedPreview } from '@/components/JustAddedPreview'
 
 /**
  * §7.3: items with no time of day (most Track items) get their own group after
@@ -49,16 +50,22 @@ const SLOT_PREVIEW_COUNT = 5
  * when it's not in unified mode"). Unified is one flat list and is not capped.
  */
 const GROUP_PREVIEW_COUNT = 10
+
+/**
+ * The project new tasks land in (quick add and a bare API POST both default
+ * to it — `createTask`), identified by name the same way the server does.
+ * Hosts the just-added previews in the Projects view.
+ */
+const INBOX_NAME = 'Inbox'
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
 /**
  * `slot` is the §7.3 front door: today's tasks grouped by time slot. The other
  * modes remain reachable — the corpus stays fully accessible, it just isn't
- * what greets you. `recent` is a flat, always-newest-first list of what was
- * added in the last 7 days (`src/lib/recent-view.ts`).
+ * what greets you.
  */
-export type GroupingMode = 'time' | 'project' | 'unified' | 'slot' | 'recent'
+export type GroupingMode = 'time' | 'project' | 'unified' | 'slot'
 
 import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
 
@@ -151,6 +158,15 @@ interface TaskListProps {
   highlightTaskId?: number | null
   /** The deep link's flash has played; it must not play again on a remount. */
   onHighlightDone?: () => void
+  /**
+   * Just-added previews (`src/lib/just-added.ts`): the population previews are
+   * drawn from — the dashboard's unfiltered open tasks. Null or omitted turns
+   * previews (and the real rows' "New" badge) off; the dashboard passes null
+   * while searching.
+   */
+  justAddedSource?: Task[] | null
+  /** The "now" the 10-minute window is measured against (`useJustAddedClock`). */
+  justAddedNow?: number
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -228,27 +244,6 @@ export function sortTasks(
   return sorted
 }
 
-/**
- * The sort a view actually uses. Recent is ALWAYS newest first — that order is
- * the view's whole point — so the stored sort preference does not apply there
- * (and the sort control is hidden). Every place that orders a group's rows
- * must go through this, not read the preference directly: the rendered list,
- * the dashboard's keyboard order (`orderedIds`) and the clipboard copy all have
- * to agree, or shift-click range selection and arrow keys walk a different
- * order from the one on screen.
- *
- * `age` is `created_at` newest first; `buildTaskGroups` has already put the
- * Recent group in that order with an id tie-break, and the sort is stable, so
- * re-sorting leaves ties where they were.
- */
-export function effectiveSort(
-  grouping: GroupingMode,
-  sortOption: SortOption,
-  reversed: boolean,
-): { sortOption: SortOption; reversed: boolean } {
-  return grouping === 'recent' ? { sortOption: 'age', reversed: false } : { sortOption, reversed }
-}
-
 /** Labels shown on the compact sort button — direction-aware. */
 const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string }> = {
   due_date: { default: 'Soonest', reversed: 'Latest' },
@@ -308,6 +303,8 @@ export function TaskList({
   onUnifiedChange,
   highlightTaskId,
   onHighlightDone,
+  justAddedSource = null,
+  justAddedNow = 0,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -345,6 +342,25 @@ export function TaskList({
   // state, not persisted: expansion is a momentary "show me the rest", not a
   // preference worth remembering across sessions.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+  // The real row a tapped just-added preview points at: scrolled to and
+  // flashed with the same one-shot highlight a widget deep link uses
+  // (`highlighted` on TaskRow). Local state — the deep link's own
+  // `highlightTaskId` belongs to the caller and has URL-consumption semantics
+  // this does not share.
+  const [flashTaskId, setFlashTaskId] = useState<number | null>(null)
+  // One flash, two possible sources: clear whichever asked for it.
+  const handleHighlightDone = (taskId: number) => {
+    if (flashTaskId === taskId) setFlashTaskId(null)
+    if (highlightTaskId === taskId) onHighlightDone?.()
+  }
+  // A flash whose row left mid-flash (completed, filtered away) never reports
+  // done; drop it so the row does not flash — and pull the page to it — when
+  // it comes back later (say, by Undo). Adjusted during render, like
+  // `prevHighlightTaskId` below.
+  if (flashTaskId !== null && !tasks.some((t) => t.id === flashTaskId)) {
+    setFlashTaskId(null)
+  }
   const toggleGroupExpanded = useCallback((label: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev)
@@ -393,58 +409,161 @@ export function TaskList({
     [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick, now],
   )
 
-  const isRecent = grouping === 'recent'
-  const groups: TaskGroup[] = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now)
-
-  // Recent's empty state is not "all caught up": nothing being new is not an
-  // achievement, just a fact. Short and calm (the view reads the slice through
-  // the filter bar too, so an active filter can also land here — the "Showing
-  // 0 of N" banner above says so).
-  if (isRecent && groups.length === 0) {
-    return (
-      <p className="text-muted-foreground py-16 text-center text-sm">
-        Nothing added in the last {RECENT_WINDOW_DAYS} days
-      </p>
-    )
-  }
-
   if (tasks.length === 0) {
+    // Nothing to list — but a new task hidden by a filter (or the Today
+    // view's narrowing) still gets its just-added preview above the empty
+    // state: "did it land?" matters most exactly when the list says nothing.
+    const previews = justAddedSource
+      ? selectJustAddedPreviews(justAddedSource, [], justAddedNow)
+      : []
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="mb-4 text-4xl">&#x2705;</div>
-        <h2 className="text-foreground text-xl font-medium">All caught up!</h2>
-        <p className="text-muted-foreground mt-1">
-          {grouping === 'slot'
-            ? // §7.3 explicitly wants the inbox-zero feeling for TODAY, while
-              // being honest that later-today items still pend.
-              'Nothing left for today.'
-            : 'No tasks due right now.'}
-        </p>
-      </div>
+      <>
+        {previews.length > 0 && (
+          <div data-just-added-previews className="space-y-1">
+            {previews.map((task) => (
+              <JustAddedPreview
+                key={task.id}
+                task={task}
+                project={projectElsewhere(task, projects)}
+                isOverdue={isTaskOverdue(task, now)}
+                badge={formatJustAddedBadge(task, justAddedNow)}
+                onShow={() => onDoubleClick?.(task)}
+              />
+            ))}
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="mb-4 text-4xl">&#x2705;</div>
+          <h2 className="text-foreground text-xl font-medium">All caught up!</h2>
+          <p className="text-muted-foreground mt-1">
+            {grouping === 'slot'
+              ? // §7.3 explicitly wants the inbox-zero feeling for TODAY, while
+                // being honest that later-today items still pend.
+                'Nothing left for today.'
+              : 'No tasks due right now.'}
+          </p>
+        </div>
+      </>
     )
   }
 
   const isUnified = grouping === 'unified'
-  // Unified and Recent are the two flat views: one list, no group headers, no
-  // collapse, no "Show more" cap, and each row names its project (there is no
-  // project heading above it to do that).
-  const isFlat = isUnified || isRecent
 
-  // Build project lookups for the flat views (project badge + color on each task row)
-  const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
-  const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
+  // Build project lookups for unified view (project badge + color on each task row)
+  const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
+  const projectColorMap = isUnified ? new Map(projects.map((p) => [p.id, p.color])) : undefined
+
+  const groups: TaskGroup[] = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now)
 
   // Compute sorted groups once, reuse for both orderedIds and rendering
-  const sort = effectiveSort(grouping, sortOption, reversed)
   const sortedGroups = groups.map((g) => ({
     ...g,
-    sortedTasks: sortTasks(g.tasks, sort.sortOption, sort.reversed, insightsScoreMap),
+    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
   }))
   const orderedIds = sortedGroups.flatMap((g) => g.sortedTasks.map((t) => t.id))
 
   // Determine if we should show the "now" separator
   const hasOverdue = grouping === 'time' && groups.some((g) => g.label === 'Overdue')
   const hasUpcoming = grouping === 'time' && groups.some((g) => g.label !== 'Overdue')
+
+  /**
+   * A preview's tap: bring its real row on screen and flash it — unfolding
+   * its group and lifting the group's "Show all" cap first if either hides it.
+   * A task with no row in this view (Today, and a task due next week; or one
+   * a filter hides) opens its quick panel instead, the same thing a tap on a
+   * row does on mobile.
+   */
+  function showRealRow(task: Task) {
+    const group = sortedGroups.find((g) => g.tasks.some((t) => t.id === task.id))
+    if (!group) {
+      onDoubleClick?.(task)
+      return
+    }
+    if (!isUnified && isCollapsed(group.label)) toggleCollapse(group.label)
+    const cap = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
+    const index = group.sortedTasks.findIndex((t) => t.id === task.id)
+    if (!isUnified && index >= cap && !expandedGroups.has(group.label)) {
+      toggleGroupExpanded(group.label)
+    }
+    setFlashTaskId(task.id)
+  }
+
+  function renderPreviews(previews: Task[]) {
+    if (previews.length === 0) return null
+    return (
+      <div data-just-added-previews className="space-y-1">
+        {previews.map((task) => (
+          <JustAddedPreview
+            key={task.id}
+            task={task}
+            project={projectElsewhere(task, projects)}
+            isOverdue={isTaskOverdue(task, now)}
+            badge={formatJustAddedBadge(task, justAddedNow)}
+            onShow={() => showRealRow(task)}
+          />
+        ))}
+      </div>
+    )
+  }
+
+  const { host: previewHost, previews } = placeJustAddedPreviews(
+    sortedGroups,
+    grouping,
+    isCollapsed,
+    justAddedSource,
+    justAddedNow,
+  )
+  const previewBlock = renderPreviews(previews)
+  const newBadge = (task: Task) =>
+    justAddedSource && isJustAdded(task, justAddedNow)
+      ? formatJustAddedBadge(task, justAddedNow)
+      : undefined
+
+  const renderTaskRow = (task: Task) => {
+    const cancelRef = { current: null as (() => void) | null }
+    return (
+      <SwipeableRow
+        key={task.id}
+        onSwipeRight={() => onDone(task.id)}
+        onSwipeLeft={() => handleSwipeLeft(task)}
+        leftAction={isTaskOverdue(task, now) ? 'snooze' : 'edit'}
+        onDragStart={() => cancelRef.current?.()}
+        disabled={selection.isSelectionMode}
+      >
+        <TaskRow
+          task={task}
+          onDone={() => onDone(task.id)}
+          onSnooze={(_taskId, until) => requestSnooze(task, until)}
+          // §5: a quota is exempt from the overdue cadence and
+          // must never wear the red stripe — its period is what
+          // is "due", and the bar already says how it stands.
+          isOverdue={!isTracked(task) && isTaskOverdue(task, now)}
+          isSelected={selection.selectedIds.has(task.id)}
+          isSelectionMode={selection.isSelectionMode}
+          onSelect={() => selection.toggle(task.id)}
+          onSelectOnly={() => selection.selectOnly(task.id)}
+          onRangeSelect={() => selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)}
+          cancelLongPressRef={cancelRef}
+          onLabelClick={onLabelClick}
+          onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
+          isKeyboardFocused={isKeyboardActive && !isMobile && task.id === keyboardFocusedId}
+          onActivate={onActivate ? () => onActivate(task.id) : undefined}
+          onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
+          annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
+          isAiHighlighted={showWnHighlight && (wnTaskIds?.has(task.id) ?? false)}
+          onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
+          insightsScore={insightsScoreMap?.get(task.id)}
+          insightsSignals={insightsSignalMap?.get(task.id)}
+          insightsCommentary={insightsCommentaryMap?.get(task.id)}
+          projectName={projectNameMap?.get(task.project_id)}
+          projectColor={projectColorMap?.get(task.project_id)}
+          justAddedBadge={newBadge(task)}
+          highlighted={[highlightTaskId, flashTaskId].includes(task.id)}
+          onHighlightDone={() => handleHighlightDone(task.id)}
+        />
+      </SwipeableRow>
+    )
+  }
 
   return (
     <div
@@ -464,15 +583,7 @@ export function TaskList({
         <div className="mb-4 flex items-center justify-between px-1">
           {headerLeft ?? <div />}
           <div className="flex items-center gap-1">
-            {/* Recent has one fixed order, so it shows what the list IS in
-                place of controls that would do nothing here (no Unified — it
-                is already one list — and no sort). */}
-            {isRecent && (
-              <span className="text-muted-foreground px-2 text-xs">
-                Last {RECENT_WINDOW_DAYS} days · newest first
-              </span>
-            )}
-            {!isRecent && onUnifiedChange && (
+            {onUnifiedChange && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -489,30 +600,29 @@ export function TaskList({
                 Unified
               </Button>
             )}
-            {!isRecent && (
-              <SortDropdown
-                sortOption={sortOption}
-                reversed={reversed}
-                onSort={setSortOption}
-                showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
-                aiScoreDisabled={aiScoreDisabledProp ?? false}
-              />
-            )}
+            <SortDropdown
+              sortOption={sortOption}
+              reversed={reversed}
+              onSort={setSortOption}
+              showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
+              aiScoreDisabled={aiScoreDisabledProp ?? false}
+            />
           </div>
         </div>
       )}
-      <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
+      <div className={isUnified ? 'space-y-1' : 'space-y-6'}>
+        {previewHost === null && previewBlock}
         {sortedGroups.map((group, groupIdx) => {
           const { sortedTasks } = group
-          const collapsed = !isFlat && isCollapsed(group.label)
+          const collapsed = !isUnified && isCollapsed(group.label)
 
           // §7.3: show the first N, with everything else one tap away. Nothing
           // is ever truncated permanently — §1.1's constraint is that the
           // harness adapts to the scale, so a 40-item slot stays fully
           // reachable while the day still reads at a glance. Every grouped view
           // previews — Today's slots at 5, the rest at 10 — and only the
-          // flat lists (Unified, Recent) show everything.
-          const previewed = !isFlat
+          // unified flat list shows everything.
+          const previewed = !isUnified
           const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
@@ -527,8 +637,8 @@ export function TaskList({
               {/* "Now" separator between Overdue and the next group */}
               {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
-              {/* Skip group header in the flat views — all tasks render in a single list */}
-              {!isFlat && (
+              {/* Skip group header in unified mode — all tasks render in a single flat list */}
+              {!isUnified && (
                 <div
                   className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
                 >
@@ -601,55 +711,8 @@ export function TaskList({
               )}
               {!collapsed && (
                 <div className="space-y-1">
-                  {visibleTasks.map((task) => {
-                    const cancelRef = { current: null as (() => void) | null }
-                    return (
-                      <SwipeableRow
-                        key={task.id}
-                        onSwipeRight={() => onDone(task.id)}
-                        onSwipeLeft={() => handleSwipeLeft(task)}
-                        leftAction={isTaskOverdue(task, now) ? 'snooze' : 'edit'}
-                        onDragStart={() => cancelRef.current?.()}
-                        disabled={selection.isSelectionMode}
-                      >
-                        <TaskRow
-                          task={task}
-                          onDone={() => onDone(task.id)}
-                          onSnooze={(_taskId, until) => requestSnooze(task, until)}
-                          // §5: a quota is exempt from the overdue cadence and
-                          // must never wear the red stripe — its period is what
-                          // is "due", and the bar already says how it stands.
-                          isOverdue={!isTracked(task) && isTaskOverdue(task, now)}
-                          isSelected={selection.selectedIds.has(task.id)}
-                          isSelectionMode={selection.isSelectionMode}
-                          onSelect={() => selection.toggle(task.id)}
-                          onSelectOnly={() => selection.selectOnly(task.id)}
-                          onRangeSelect={() =>
-                            selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)
-                          }
-                          cancelLongPressRef={cancelRef}
-                          onLabelClick={onLabelClick}
-                          onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
-                          isKeyboardFocused={
-                            isKeyboardActive && !isMobile && task.id === keyboardFocusedId
-                          }
-                          onActivate={onActivate ? () => onActivate(task.id) : undefined}
-                          onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
-                          annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
-                          isAiHighlighted={showWnHighlight && (wnTaskIds?.has(task.id) ?? false)}
-                          onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
-                          insightsScore={insightsScoreMap?.get(task.id)}
-                          insightsSignals={insightsSignalMap?.get(task.id)}
-                          insightsCommentary={insightsCommentaryMap?.get(task.id)}
-                          projectName={projectNameMap?.get(task.project_id)}
-                          projectColor={projectColorMap?.get(task.project_id)}
-                          showAddedAgo={isRecent}
-                          highlighted={highlightTaskId === task.id}
-                          onHighlightDone={onHighlightDone}
-                        />
-                      </SwipeableRow>
-                    )
-                  })}
+                  {previewHost === group.label && previewBlock}
+                  {visibleTasks.map((task) => renderTaskRow(task))}
                   {hiddenCount > 0 && (
                     <button
                       type="button"
@@ -678,6 +741,42 @@ export function TaskList({
       <SnoozeGuardDialog {...dialogProps} />
     </div>
   )
+}
+
+/**
+ * Where the just-added previews go (`src/lib/just-added.ts`) and which ones.
+ *
+ * Their host is the Inbox group in the Projects view — where a new task is
+ * expected to land — when that group is on screen and open. Anywhere else
+ * (Today, All, Unified; or an empty, filtered-out or folded Inbox) they sit at
+ * the very top of the list, above the first group (`host` null). What already
+ * sits at the top of the host decides whether a preview would only duplicate
+ * the row right under it.
+ */
+function placeJustAddedPreviews(
+  sortedGroups: (TaskGroup & { sortedTasks: Task[] })[],
+  grouping: GroupingMode,
+  isCollapsed: (label: string) => boolean,
+  source: Task[] | null,
+  now: number,
+): { host: string | null; previews: Task[] } {
+  if (!source) return { host: null, previews: [] }
+  const inbox =
+    grouping === 'project' ? sortedGroups.find((g) => g.label === INBOX_NAME) : undefined
+  const host = inbox && !isCollapsed(inbox.label) ? inbox : undefined
+  const first = sortedGroups[0]
+  const firstOpen = first && (grouping === 'unified' || !isCollapsed(first.label))
+  const hostRows = host ? host.sortedTasks : firstOpen ? first.sortedTasks : []
+  return {
+    host: host?.label ?? null,
+    previews: selectJustAddedPreviews(source, hostRows, now),
+  }
+}
+
+/** A just-added preview names the task's project only when it is not the Inbox. */
+function projectElsewhere(task: Task, projects: Project[]): Project | undefined {
+  const project = projects.find((p) => p.id === task.project_id)
+  return project && project.name !== INBOX_NAME ? project : undefined
 }
 
 export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
@@ -961,10 +1060,6 @@ export function buildTaskGroups(
   now: Date = new Date(),
 ): TaskGroup[] {
   if (grouping === 'unified') return [{ label: '_unified', tasks }]
-  if (grouping === 'recent') {
-    const recent = selectRecentTasks(tasks, now)
-    return recent.length > 0 ? [{ label: RECENT_GROUP_LABEL, tasks: recent }] : []
-  }
   if (grouping === 'project') return groupByProject(tasks, projects, now)
   if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
   return groupByTime(tasks, timezone, now)

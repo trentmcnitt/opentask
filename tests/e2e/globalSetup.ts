@@ -198,6 +198,12 @@ export default async function globalSetup() {
   `,
   ).run(7, 1, 1, 'Reply to email', twoHoursAgo, 2)
 
+  // Seeded tasks are not "just added": created a day ago. Left at the schema
+  // default (now), every seeded task would also be previewed at the top of
+  // the dashboard for the run's first 10 minutes (`src/lib/just-added.ts`).
+  // Shifting all of them by the same day keeps their order.
+  db.exec(`UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '-1 day')`)
+
   db.close()
   console.log('[e2e] Database seeded at', DB_PATH)
 }
