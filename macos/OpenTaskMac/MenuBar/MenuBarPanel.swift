@@ -127,9 +127,14 @@ struct MenuBarPanel: View {
             Button {
                 model.complete(task)
             } label: {
-                Image(systemName: "circle")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
+                // A task's check-off is a square in its project's colour —
+                // the Tasks widget's marker; circles are reminders' (Trent,
+                // 2026-09-28).
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(projectColor(for: task), lineWidth: 1.5)
+                    .frame(width: 15, height: 15)
+                    .padding(.top, 2)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Mark done")
@@ -214,6 +219,22 @@ struct MenuBarPanel: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// `WidgetTheme.projectColor`'s palette (the widget's own file is
+    /// SwiftUI-heavy and not compiled into the app).
+    private func projectColor(for task: TaskDTO) -> Color {
+        switch model.projects[task.projectId]?.color {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        case "pink": return .pink
+        case "gray": return .gray
+        default: return .secondary
+        }
     }
 
     private func dueText(_ due: Date, isOverdue: Bool) -> String {

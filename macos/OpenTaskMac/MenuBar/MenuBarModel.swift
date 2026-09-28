@@ -28,6 +28,9 @@ final class MenuBarModel: ObservableObject {
 
     @Published private(set) var tasks: [TaskDTO] = []
     @Published private(set) var slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots
+    /// For each row's check-off square colour (the project's, as on the
+    /// Tasks widget).
+    @Published private(set) var projects: [Int: ProjectDTO] = [:]
     @Published private(set) var hasLoaded = false
     @Published private(set) var errorText: String?
     /// Rows with an action in flight — drawn dimmed, buttons disabled.
@@ -93,6 +96,9 @@ final class MenuBarModel: ObservableObject {
         }
         now = Date()
         hasLoaded = true
+        if let fetched = try? await APIClient.shared.fetchProjects() {
+            projects = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
         if let fresh = try? await APIClient.shared.fetchTimeSlots() {
             slots = fresh
             TimeSlotStore.save(fresh)
