@@ -81,6 +81,12 @@ interface TaskListProps {
   grouping?: GroupingMode
   /** Time slots for `grouping === 'slot'` (§6.0). */
   timeSlots?: TimeSlot[]
+  /**
+   * The dashboard's one clock (`useDashboardNow`): the groups and every row's
+   * overdue state use it, so they agree with the top bar's pills to the
+   * instant — see `src/lib/dashboard-clock.ts`.
+   */
+  now: Date
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
@@ -270,6 +276,7 @@ export function TaskList({
   projects = [],
   grouping = 'time',
   timeSlots = [],
+  now,
   onDone,
   onSnooze,
   onLabelClick,
@@ -365,7 +372,7 @@ export function TaskList({
   if (highlightTaskId !== undefined && highlightTaskId !== prevHighlightTaskId) {
     setPrevHighlightTaskId(highlightTaskId ?? null)
     if (highlightTaskId) {
-      const group = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots).find((g) =>
+      const group = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now).find((g) =>
         g.tasks.some((t) => t.id === highlightTaskId),
       )
       if (group && !expandedGroups.has(group.label)) {
@@ -376,18 +383,18 @@ export function TaskList({
 
   const handleSwipeLeft = useCallback(
     (task: Task) => {
-      if (isTaskOverdue(task)) {
+      if (isTaskOverdue(task, now)) {
         const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
         requestSnooze(task, until)
       } else {
         onDoubleClick?.(task)
       }
     },
-    [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick],
+    [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick, now],
   )
 
   const isRecent = grouping === 'recent'
-  const groups: TaskGroup[] = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots)
+  const groups: TaskGroup[] = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now)
 
   // Recent's empty state is not "all caught up": nothing being new is not an
   // achievement, just a fact. Short and calm (the view reads the slice through
@@ -601,7 +608,7 @@ export function TaskList({
                         key={task.id}
                         onSwipeRight={() => onDone(task.id)}
                         onSwipeLeft={() => handleSwipeLeft(task)}
-                        leftAction={isTaskOverdue(task) ? 'snooze' : 'edit'}
+                        leftAction={isTaskOverdue(task, now) ? 'snooze' : 'edit'}
                         onDragStart={() => cancelRef.current?.()}
                         disabled={selection.isSelectionMode}
                       >
@@ -612,7 +619,7 @@ export function TaskList({
                           // §5: a quota is exempt from the overdue cadence and
                           // must never wear the red stripe — its period is what
                           // is "due", and the bar already says how it stands.
-                          isOverdue={!isTracked(task) && isTaskOverdue(task)}
+                          isOverdue={!isTracked(task) && isTaskOverdue(task, now)}
                           isSelected={selection.selectedIds.has(task.id)}
                           isSelectionMode={selection.isSelectionMode}
                           onSelect={() => selection.toggle(task.id)}
@@ -673,9 +680,9 @@ export function TaskList({
   )
 }
 
-export function isTaskOverdue(task: Task): boolean {
+export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
   if (!task.due_at) return false
-  return new Date(task.due_at) < new Date()
+  return new Date(task.due_at) < now
 }
 
 export interface TaskGroup {
@@ -685,13 +692,12 @@ export interface TaskGroup {
   color?: LabelColor | null
 }
 
-function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
-  const now = new Date()
+function groupByTime(tasks: Task[], timezone: string, now: Date): TaskGroup[] {
   const {
     tomorrowStart: tomorrow,
     dayAfterTomorrowStart: dayAfterTomorrow,
     nextWeekStart: nextWeek,
-  } = getTimezoneDayBoundaries(timezone)
+  } = getTimezoneDayBoundaries(timezone, now)
 
   const buckets: Record<string, Task[]> = {
     Overdue: [],
@@ -751,7 +757,7 @@ function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
  *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
  *    so a fully-empty day collapses to no groups and the caught-up state shows.
  */
-function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
+function groupByProject(tasks: Task[], projects: Project[], now: Date): TaskGroup[] {
   const projectMap = new Map<number, Project>()
   for (const p of projects) {
     projectMap.set(p.id, p)
@@ -787,12 +793,12 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
     const projectTasks = byProject.get(projectId) || []
 
     // Sort within project: overdue first, then by due_at, then by anchor_time
-    const now = Date.now()
+    const nowMs = now.getTime()
     projectTasks.sort((a, b) => {
       const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
       const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
-      const aOverdue = aDue < now ? 0 : 1
-      const bOverdue = bDue < now ? 0 : 1
+      const aOverdue = aDue < nowMs ? 0 : 1
+      const bOverdue = bDue < nowMs ? 0 : 1
 
       if (aOverdue !== bOverdue) return aOverdue - bOverdue
       if (aDue !== bDue) return aDue - bDue
@@ -952,13 +958,14 @@ export function buildTaskGroups(
   grouping: GroupingMode,
   timezone: string,
   timeSlots: TimeSlot[] = [],
+  now: Date = new Date(),
 ): TaskGroup[] {
   if (grouping === 'unified') return [{ label: '_unified', tasks }]
   if (grouping === 'recent') {
-    const recent = selectRecentTasks(tasks)
+    const recent = selectRecentTasks(tasks, now)
     return recent.length > 0 ? [{ label: RECENT_GROUP_LABEL, tasks: recent }] : []
   }
-  if (grouping === 'project') return groupByProject(tasks, projects)
-  if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone)
-  return groupByTime(tasks, timezone)
+  if (grouping === 'project') return groupByProject(tasks, projects, now)
+  if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
+  return groupByTime(tasks, timezone, now)
 }

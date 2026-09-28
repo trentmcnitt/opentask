@@ -25,6 +25,8 @@ interface ProjectFilterBarProps {
    * without it (same defensive fallback `filterByDateFilters` uses).
    */
   timezone?: string
+  /** The dashboard's clock (`useDashboardNow`), so the overdue pills tick. */
+  now: Date
 }
 
 /**
@@ -47,9 +49,9 @@ export function ProjectFilterBar({
   onExclusiveProject,
   onExcludeProject,
   timezone,
+  now,
 }: ProjectFilterBarProps) {
   const projectCounts = useMemo(() => {
-    const now = new Date()
     const boundaries = timezone ? getTimezoneDayBoundaries(timezone, now) : null
     const counts = new Map<number, number>()
     const dueTodayCounts = new Map<number, number>()
@@ -80,7 +82,7 @@ export function ProjectFilterBar({
         if (b.count !== a.count) return b.count - a.count
         return a.project.sort_order - b.project.sort_order
       })
-  }, [projects, tasks, selectedProjects, excludedProjects, timezone])
+  }, [projects, tasks, selectedProjects, excludedProjects, timezone, now])
 
   const hasActiveProjectFilter = selectedProjects.length > 0 || excludedProjects.length > 0
   if (projectCounts.length < 2 && !hasActiveProjectFilter) return null
