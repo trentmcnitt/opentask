@@ -11,9 +11,8 @@
  * enough for the group to actually reach that spot (a short list stops at the
  * bottom of the page, by design).
  *
- * From `md` up the same button is a sticky grid child at the bottom-right of
- * the task-list column (Trent, 2026-09-27) — it stays on screen while a long
- * list scrolls, and at `xl` it stays out of the Reminders/Quotas column.
+ * From `md` up the same button is fixed at the viewport's bottom-right
+ * (Trent, 2026-09-28) — it stays on screen while a long list scrolls.
  */
 import { test, expect, uniqueTitle } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -215,26 +214,27 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
       await expect(firstGroup(page)).toBeVisible()
     })
 
-    /** The button rides the viewport bottom at `bottom-6`, right-aligned to
-     *  the task list's column. */
-    async function expectPinnedToListCorner(page: Page) {
-      const viewport = page.viewportSize()!
+    /** The button sits 24px (`right-6 bottom-6`) in from the viewport's
+     *  bottom-right corner. The right edge is measured from `<body>`'s, which
+     *  stops short of the scrollbar gutter `html` always reserves
+     *  (`scrollbar-gutter: stable`, globals.css). */
+    async function expectPinnedToViewportCorner(page: Page) {
+      const width = await page.evaluate(() => document.body.getBoundingClientRect().right)
       const box = (await deskFab(page).boundingBox())!
-      const group = (await firstGroup(page).boundingBox())!
-      expect(box.y + box.height).toBeCloseTo(viewport.height - 24, 0)
-      expect(box.x + box.width).toBeCloseTo(group.x + group.width, 0)
+      expect(box.y + box.height).toBeCloseTo(page.viewportSize()!.height - 24, 0)
+      expect(box.x + box.width).toBeCloseTo(width - 24, 0)
     }
 
     // `xl` is 90.625rem (1450px, globals.css), so 1280 is still one column.
-    for (const { name, width, height, twoColumn } of [
-      { name: 'xl, two columns', width: 1500, height: 900, twoColumn: true },
-      { name: '1280, single column', width: 1280, height: 800, twoColumn: false },
-      { name: 'md, single column', width: 900, height: 800, twoColumn: false },
+    for (const { name, width, height } of [
+      { name: 'xl, two columns', width: 1500, height: 900 },
+      { name: '1280, single column', width: 1280, height: 800 },
+      { name: 'md, single column', width: 900, height: 800 },
     ]) {
       test.describe(name, () => {
         test.use({ viewport: { width, height } })
 
-        test('stays in the list corner while scrolling, jumps, then hides', async ({
+        test('stays in the viewport corner while scrolling, jumps, then hides', async ({
           authenticatedPage: page,
         }) => {
           const button = deskFab(page)
@@ -246,20 +246,15 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
             'aria-label',
             new RegExp(`^${chipCount![0]} overdue — `),
           )
-          await expectPinnedToListCorner(page)
+          await expectPinnedToViewportCorner(page)
 
-          if (twoColumn) {
-            // Beside the Reminders/Quotas column, never over it.
-            const track = (await page.locator('[data-track-chip]').first().boundingBox())!
-            const box = (await button.boundingBox())!
-            expect(track.x).toBeGreaterThan(page.viewportSize()!.width / 2)
-            expect(box.x + box.width).toBeLessThan(track.x)
-          }
+          // Slightly see-through, so a Quotas row it floats over still shows.
+          await expect(button).toHaveCSS('opacity', '0.9')
 
           // Halfway down a long list it is still there, in the same corner.
           await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2))
           await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
-          await expectPinnedToListCorner(page)
+          await expectPinnedToViewportCorner(page)
 
           await button.click()
           await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
@@ -267,36 +262,17 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
           await expect(button).toHaveCount(0)
         })
 
-        // The toaster is bottom-center; only the two-column layout puts the
-        // list column's right edge under it.
-        test(`a toast ${twoColumn ? 'lifts it clear' : 'leaves it where it is'}`, async ({
-          authenticatedPage: page,
-        }) => {
+        // The toaster is bottom-center and 356px wide: it never reaches the
+        // corner, so a toast leaves the button where it is.
+        test('a toast leaves it where it is', async ({ authenticatedPage: page }) => {
           const button = deskFab(page)
           await expect(button).toBeVisible()
-          const restingBottom = page.viewportSize()!.height - 24
-          const buttonBottom = async () => {
-            const b = (await button.boundingBox())!
-            return b.y + b.height
-          }
-
           await page.getByRole('button', { name: /^Mark ".*Jump row 5.*" as done$/ }).click()
           const toast = page.locator('[data-sonner-toast]').first()
           await expect(toast).toBeVisible()
-          if (twoColumn) {
-            // Settles 12px above the toast (TOAST_CLEARANCE_GAP_PX).
-            await expect
-              .poll(async () => (await toast.boundingBox())!.y - (await buttonBottom()))
-              .toBeCloseTo(12, 0)
-          } else {
-            const t = (await toast.boundingBox())!
-            expect((await button.boundingBox())!.x).toBeGreaterThan(t.x + t.width)
-            expect(await buttonBottom()).toBeCloseTo(restingBottom, 0)
-          }
-
-          // And back down once the toast has gone.
-          await expect(toast).toHaveCount(0, { timeout: 10_000 })
-          await expect.poll(buttonBottom).toBeCloseTo(restingBottom, 0)
+          const t = (await toast.boundingBox())!
+          expect((await button.boundingBox())!.x).toBeGreaterThan(t.x + t.width)
+          await expectPinnedToViewportCorner(page)
         })
       })
     }
