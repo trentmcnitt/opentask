@@ -636,22 +636,22 @@ private struct RemindersListView: View {
         return WidgetLink.reminders(slot: group.slotKey)
     }
 
-    /// "8:30 am · now · 12 left": the period's start time first (Trent,
-    /// 2026-09-28: "the reminder widget needs to somehow show the time for
-    /// that segment because I get lost as to which segment we're in"), then
-    /// "now" when this is the period the clock is in — the strip marks it too
-    /// (see `ReminderSlotStrip`), but only on systemLarge. "Anytime" has no
-    /// start time and gets only the count.
+    /// "8:30 am · 12 left": the period's start time first (Trent, 2026-09-28:
+    /// "the reminder widget needs to somehow show the time for that segment
+    /// because I get lost as to which segment we're in"), then the count —
+    /// or the time alone once nothing is left ("· all clear" was cut, as was
+    /// a "· now" on the clock's period: "we just don't need that"). The strip
+    /// still implies which period is live (`ReminderSlotStrip`). "Anytime"
+    /// has no start time and gets only the count.
     private var subtitleLabel: String {
         guard let group = entry.group, let minutes = group.slot?.startMinutes,
               let start = Calendar.current.date(
                   byAdding: .minute, value: minutes, to: Calendar.current.startOfDay(for: entry.date)
               )
         else { return countLabel }
-        let isLive = entry.slotIndex == RemindersTimeline.naturalSlotIndex(in: entry.groups, now: entry.date)
-            && RemindersTimeline.hasStarted(group, now: entry.date)
-        let parts = [WidgetTheme.shortTime(start)] + (isLive ? ["now"] : []) + [countLabel]
-        return parts.joined(separator: " · ")
+        let time = WidgetTheme.shortTime(start)
+        let count = countLabel
+        return count == "all clear" ? time : "\(time) · \(count)"
     }
 
     /// "N left" ordinarily; "N left · M done" once "show completed" is on
@@ -698,7 +698,7 @@ private struct RemindersListView: View {
 /// that hasn't started yet draws a fainter track than one that has (Trent,
 /// same day: "we can actually imply it by just fading the gray out a little
 /// bit for future segments"), so "now" is the last segment at full weight.
-/// The header says it in words ("8:30 am · now"). An empty slot (nothing ever in it, `reminders` and `considered`
+/// An empty slot (nothing ever in it, `reminders` and `considered`
 /// both zero) gets no segment at all, same as the web — a segment is a claim
 /// that there is something to report.
 ///
