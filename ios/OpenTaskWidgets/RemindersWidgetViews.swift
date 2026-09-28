@@ -605,7 +605,7 @@ private struct RemindersListView: View {
     /// ordinary count subtitle rather than sitting beside it: the header has
     /// no spare height for a third line on systemMedium.
     private var headerSubtitle: some View {
-        Text(entry.actionDescription ?? countLabel)
+        Text(entry.actionDescription ?? subtitleLabel)
             .font(.caption2)
             .foregroundStyle(.secondary)
             .lineLimit(1)
@@ -634,6 +634,24 @@ private struct RemindersListView: View {
     private var headerDestination: URL {
         guard let group = entry.group else { return WidgetLink.reminders }
         return WidgetLink.reminders(slot: group.slotKey)
+    }
+
+    /// "8:30 am · now · 12 left": the period's start time first (Trent,
+    /// 2026-09-28: "the reminder widget needs to somehow show the time for
+    /// that segment because I get lost as to which segment we're in"), then
+    /// "now" when this is the period the clock is in — the strip marks it too
+    /// (see `ReminderSlotStrip`), but only on systemLarge. "Anytime" has no
+    /// start time and gets only the count.
+    private var subtitleLabel: String {
+        guard let group = entry.group, let minutes = group.slot?.startMinutes,
+              let start = Calendar.current.date(
+                  byAdding: .minute, value: minutes, to: Calendar.current.startOfDay(for: entry.date)
+              )
+        else { return countLabel }
+        let isLive = entry.slotIndex == RemindersTimeline.naturalSlotIndex(in: entry.groups, now: entry.date)
+            && RemindersTimeline.hasStarted(group, now: entry.date)
+        let parts = [WidgetTheme.shortTime(start)] + (isLive ? ["now"] : []) + [countLabel]
+        return parts.joined(separator: " · ")
     }
 
     /// "N left" ordinarily; "N left · M done" once "show completed" is on
@@ -668,12 +686,19 @@ private struct RemindersListView: View {
 /// (`currentIndex`) draws taller, the web's way of marking "you are here"
 /// without a second colour.
 ///
-/// Segments are EQUAL width here, where the web's are proportional
-/// (`flexGrow: total`) — a widget's few dozen points of width has no room to
-/// spare on a size-weighted layout for something this glanceable and this
-/// small (a few points tall), and equal segments still answer the question
-/// this exists for exactly as legibly: "is anything still waiting, and
-/// where." An empty slot (nothing ever in it, `reminders` and `considered`
+/// Segments are PROPORTIONAL to what each period holds (2026-09-28; they were
+/// equal until then): Trent's pre-bedtime has 2 reminders, evening 8 and
+/// after school 17, "and it's just not visually apparent". Width keys off the
+/// period's day total (waiting plus considered), so checking things off moves
+/// the fill but never resizes a segment — the web `ReminderSlotBar`'s rule.
+/// No segment is narrower than `minimumSegmentWidth`, a more generous floor
+/// than the web's 28px since this is a finger on a phone (`SegmentWidths`).
+///
+/// The period the CLOCK is in is implied rather than drawn: every period
+/// that hasn't started yet draws a fainter track than one that has (Trent,
+/// same day: "we can actually imply it by just fading the gray out a little
+/// bit for future segments"), so "now" is the last segment at full weight.
+/// The header says it in words ("8:30 am · now"). An empty slot (nothing ever in it, `reminders` and `considered`
 /// both zero) gets no segment at all, same as the web — a segment is a claim
 /// that there is something to report.
 ///
@@ -714,6 +739,8 @@ private struct ReminderSlotStrip: View {
         let isCurrent: Bool
         /// Considered over the slot's total — how far the indigo has filled.
         let fraction: Double
+        /// The slot's day total (waiting plus considered) — its width weight.
+        let total: Int
     }
 
     private var segments: [Segment] {
@@ -730,7 +757,8 @@ private struct ReminderSlotStrip: View {
             }
             return Segment(
                 id: index, slotKey: group.slotKey, state: state, isCurrent: index == currentIndex,
-                fraction: Double(considered) / Double(waiting + considered)
+                fraction: Double(considered) / Double(waiting + considered),
+                total: waiting + considered
             )
         }
     }
@@ -756,30 +784,45 @@ private struct ReminderSlotStrip: View {
     /// what the pre-existing height bump already cost.
     private var maxSegmentHeight: CGFloat { 8 }
 
+    /// See the type's doc: a finger's width, wider than the web's 28px floor.
+    static let minimumSegmentWidth: Double = 36
+
+    private let segmentSpacing: CGFloat = 3
+
     var body: some View {
         // One segment is not a strip — same rule as the web's ReminderSlotBar
         // ("it would say only 'everything is here', which the header already
         // says better").
         let shown = segments
         if shown.count >= 2 {
-            HStack(spacing: 3) {
-                ForEach(shown) { segment in
-                    Button(intent: JumpToReminderSlotIntent(slotKey: segment.slotKey)) {
-                        segmentBar(for: segment)
-                            // Real visual size — nothing painted beyond this
-                            // frame, so nothing for WidgetKit's renderer to
-                            // clip (see `segmentBar`'s doc).
-                            .frame(height: maxSegmentHeight)
-                            // THEN a taller invisible frame purely for the
-                            // tap target — see `segmentBleed`'s doc.
-                            .frame(height: maxSegmentHeight + 2 * segmentBleed)
-                            .contentShape(Rectangle())
+            GeometryReader { geo in
+                let gaps = segmentSpacing * CGFloat(shown.count - 1)
+                let widths = SegmentWidths.widths(
+                    weights: shown.map { Double($0.total) },
+                    available: Double(max(geo.size.width - gaps, 0)),
+                    minimum: Self.minimumSegmentWidth
+                )
+                HStack(spacing: segmentSpacing) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { position, segment in
+                        Button(intent: JumpToReminderSlotIntent(slotKey: segment.slotKey)) {
+                            segmentBar(for: segment)
+                                // Real visual size — nothing painted beyond this
+                                // frame, so nothing for WidgetKit's renderer to
+                                // clip (see `segmentBar`'s doc).
+                                .frame(height: maxSegmentHeight)
+                                // THEN a taller invisible frame purely for the
+                                // tap target — see `segmentBleed`'s doc.
+                                .frame(height: maxSegmentHeight + 2 * segmentBleed)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: CGFloat(widths[position]))
+                        .padding(.vertical, -segmentBleed)
+                        .accessibilityLabel(Text(groups[segment.id].label))
                     }
-                    .buttonStyle(.plain)
-                    .padding(.vertical, -segmentBleed)
-                    .accessibilityLabel(Text(groups[segment.id].label))
                 }
             }
+            .frame(height: maxSegmentHeight)
             .padding(.bottom, 2)
         }
     }
@@ -801,7 +844,9 @@ private struct ReminderSlotStrip: View {
     private func segmentBar(for segment: Segment) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.13))
+                // Fainter for a period whose time hasn't come — which is
+                // what makes the clock's period read as "now" (type doc).
+                Capsule().fill(Color.primary.opacity(segment.state == .upcoming ? 0.055 : 0.14))
                 if segment.state != .upcoming, segment.fraction > 0 {
                     Capsule()
                         .fill(color(for: segment.state))

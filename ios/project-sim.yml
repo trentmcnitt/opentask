@@ -37,15 +37,15 @@ targets:
         - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-1hr
           UIApplicationShortcutItemTitle: Snooze All +1hr
           UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeClock
+        - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-next-period
+          UIApplicationShortcutItemTitle: Snooze All to Next Period
+          UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeDate
         - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-2hr
           UIApplicationShortcutItemTitle: Snooze All +2hr
           UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeTime
         - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-tomorrow
           UIApplicationShortcutItemTitle: Snooze All to Tomorrow
           UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAlarm
-        - UIApplicationShortcutItemType: io.mcnitt.opentask.add-task
-          UIApplicationShortcutItemTitle: Add Task
-          UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAdd
         CFBundleURLTypes:
         - CFBundleURLName: io.mcnitt.opentask
           CFBundleTypeRole: Editor
