@@ -196,7 +196,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title should be "Whole milk" or unchanged. ' +
-        'project_name MUST be null — Shopping List project exists but the user did not explicitly assign it. ' +
+        'project_name MUST be null — Shopping List project exists but the user did not assign it and the text does not contain its name. ' +
         'Content-based project inference is forbidden. ' +
         'Labels must be an empty array — no explicit label request in input. ' +
         'No date or priority should be inferred.',

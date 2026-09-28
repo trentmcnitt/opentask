@@ -106,7 +106,19 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    If the user explicitly requests a label that doesn't exist yet, still include it — it's the user's intent. Use the naming style of existing labels (lowercase, simple words).
 
-5. **project_name** — Project name from the available projects list, or null. Only match when the user explicitly mentions a project ("add it to Work", "put this in Home", "for the Shopping List"). Do NOT infer projects from task content — if the user doesn't name a project, return null. Projects marked as "shared" are available to all users.
+5. **project_name** — Project name from the available projects list, or null. Projects marked as "shared" are available to all users. **The default is null.** Do NOT infer projects from task content: a task that obviously belongs to a project still gets null unless one of the two cases below applies. Set a project in only two cases:
+   - **Explicit assignment** — the user tells you where to put it ("add it to Work", "put this in Home", "it goes in the Shopping List"). A partial name is fine here ("put it in shopping" → "Shopping List"). Remove the instruction phrase from the title.
+   - **Name match** — the task text literally contains a project's full name as a phrase, case-insensitive ("test task for job search" → "Job Search", "print the expense report for work" → "Work"). Leave those words in the title — they are part of what the user said, not an instruction.
+
+   The test: can you point to the exact words in the task that are the project's name, or an instruction naming it? If not, return null — what the task is about never counts.
+
+   A name match counts only when the words are used as that name — a noun naming the area the task belongs to. It does NOT count when:
+   - the name is part of a longer word ("homework", "workout", "network" do not match "Work")
+   - the word is a verb or part of a verb phrase ("work out", "work on the fence")
+   - the phrase is a schedule cue that you resolve to a time ("after work", "before work") or a direction ("on the way home", "head home")
+   - the project is Inbox — Inbox is the default, never a name-match target
+
+   If two project names match, prefer the longer, more specific one ("book the hotel for work travel" with Work and Work Travel → "Work Travel"). If the matches are unrelated names and neither is an explicit assignment, return null.
 
 6. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY. FREQ=HOURLY, FREQ=MINUTELY, and FREQ=SECONDLY are NOT supported — use auto_snooze_minutes for sub-daily repeats. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. FREQ=WEEKLY MUST include BYDAY. FREQ=MONTHLY MUST include BYMONTHDAY or BYDAY. Do NOT include COUNT or UNTIL (only infinite recurrence is supported). Parse recurrence patterns:
    - "every day" → FREQ=DAILY
@@ -185,6 +197,44 @@ Available projects: Inbox, Family
   "recurrence_mode": null,
   "notes": null,
   "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time, defaulting to configured task time (9:00 AM). Matched 'family' project from user's explicit instruction — 'add it to family' is a project assignment, not a label request."
+}
+\`\`\`
+
+### Project name in the task text
+Input: "test task for job search"
+Timezone: America/Chicago
+Available projects: Inbox, Work, Job Search
+\`\`\`json
+{
+  "title": "Test task for job search",
+  "due_at": null,
+  "priority": 0,
+  "labels": [],
+  "project_name": "Job Search",
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null,
+  "reasoning": "'job search' is the full name of the Job Search project, used as a noun naming what the task is for → name match. Title keeps the user's words. No date, priority, or explicit label request."
+}
+\`\`\`
+
+### Project fits the topic but is not named — null
+Input: "clean the gutters before it rains"
+Timezone: America/Chicago
+Available projects: Inbox, Home
+\`\`\`json
+{
+  "title": "Clean the gutters before it rains",
+  "due_at": null,
+  "priority": 0,
+  "labels": [],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null,
+  "reasoning": "Gutters are a home chore, but the word 'home' is not in the text and the user gave no assignment — topic never picks a project, so project_name is null. No date, priority, or explicit label request."
 }
 \`\`\`
 
@@ -641,7 +691,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 export const ENRICHMENT_REMINDERS = `## Reminders
 - Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
 - Do NOT infer labels from context — only include labels the user explicitly requests
-- Do NOT infer projects from task content — only match when the user explicitly names a project
+- Do NOT infer projects from task content — project_name is null unless the user explicitly assigns one or the task text contains a project's full name used as that name ("for job search" → Job Search). Never Inbox; "after work", "work out" and "homework" are not matches
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - Return due_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
 - When no specific time is mentioned, use the configured default task time (if already past, use a reasonable near-future time)

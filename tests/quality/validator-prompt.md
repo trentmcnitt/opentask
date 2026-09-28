@@ -50,7 +50,10 @@ For each scenario:
 ### 5. Project Matching
 
 - Was the correct project selected from the available list?
-- Was `null` returned when no project was a clear match?
+- A project is set only by an explicit instruction ("add it to Work") or a **name match**: the task text contains the project's full name as a phrase, used as that name ("test task for job search" → Job Search). Is the project `null` otherwise?
+- No inference from topic: "apply to Acme" must not go to Job Search, "fix that deployment bug" must not go to Work.
+- Name-match false positives are failures: part of a longer word ("homework", "workout"), a verb ("work out"), a schedule cue or direction ("after work", "on the way home"), or Inbox.
+- Two matching names → the longer, more specific one; unrelated matches with no explicit instruction → `null`.
 
 ### 6. Recurrence Parsing
 

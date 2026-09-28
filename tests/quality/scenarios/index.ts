@@ -14,6 +14,7 @@ import { enrichmentReminderScenarios } from './enrichment-reminders'
 import { enrichmentVoiceScenarios } from './enrichment-voice'
 import { enrichmentEdgeScenarios } from './enrichment-edge'
 import { enrichmentContextScenarios } from './enrichment-context'
+import { enrichmentProjectScenarios } from './enrichment-projects'
 import { enrichmentPriorityScenarios } from './enrichment-priority'
 import { whatsNextScenarios } from './whats-next'
 import { insightsScenarios } from './insights'
@@ -29,6 +30,7 @@ export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentVoiceScenarios,
   ...enrichmentEdgeScenarios,
   ...enrichmentContextScenarios,
+  ...enrichmentProjectScenarios,
   ...enrichmentPriorityScenarios,
 ]
 
