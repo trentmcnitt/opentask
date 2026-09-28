@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -76,13 +76,19 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   "order jumps under your finger" complaint applied verbatim here.
  * - "Met" is a state, not an exit: green check, count keeps going (3/2).
  *
- * MET QUOTAS ARE PUT AWAY — AT LOAD, NEVER UNDER A FINGER (Trent,
- * 2026-09-22). He tried two orders by how many are left (live was "too jumpy")
- * and then hiding a quota the moment it was met, and ruled: "alphabetical,
- * hide the complete ones", but "things should not disappear until reload."
+ * MET QUOTAS ARE PUT AWAY (Trent, 2026-09-22; revised 2026-09-28). He tried
+ * two orders by how many are left (live was "too jumpy") and then hiding a
+ * quota the moment it was met, and ruled: "alphabetical, hide the complete
+ * ones", but "things should not disappear until reload." On 2026-09-28 he
+ * reversed the reload half: "if I complete something, there should be a
+ * 5-second countdown or something before it actually hides it from my screen.
+ * I shouldn't have to reload to get this off the dashboard."
  *
- * - The quotas already met when the panel LOADS are put away (`useMetAtLoad`).
- *   One met during the session stays where it is, green, until the next load.
+ * - The quotas already met when the panel LOADS are put away (`useMetPutAway`).
+ * - One met during the session stays where it is, green, and fades out over
+ *   `MET_LEAVE_MS` (5s) — never instantly, so it never vanishes under the
+ *   finger that just met it — then is put away like the rest. Taking it back
+ *   below target (a −1) before then cancels the countdown.
  * - A label whose every quota was put away leaves its section, title and all
  *   — nothing stands in for it (see `finishedClusterInSection`, below the
  *   period redesign, for why and what used to be there).
@@ -435,8 +441,9 @@ export function TrackPanel({
   const summaries = clusterSummaries(sections)
 
   const showMet = useShowMet()
-  const metAtLoad = useMetAtLoad(quotas)
-  const isPutAway = (task: Task) => !showMet.shown && metAtLoad.has(task.id) && trackState(task).met
+  const { putAway, leaving } = useMetPutAway(quotas)
+  const isPutAway = (task: Task) => !showMet.shown && putAway.has(task.id) && trackState(task).met
+  const isLeaving = (task: Task) => !showMet.shown && leaving.has(task.id) && trackState(task).met
 
   if (quotas.length === 0) return null
 
@@ -465,6 +472,7 @@ export function TrackPanel({
           open={open}
           labelConfig={labelConfig}
           isPutAway={isPutAway}
+          isLeaving={isLeaving}
           summaries={summaries}
           clusters={clusters}
           detail={detail}
@@ -521,30 +529,109 @@ function useShowMet(): { shown: boolean; toggle: () => void } {
   }
 }
 
+/** How long a quota met during the session stays, fading, before it is put away. */
+export const MET_LEAVE_MS = 5000
+
 /**
- * The quotas that were already met when the panel loaded — the only ones it
- * puts away.
+ * Which met quotas are put away, and which are on their way out.
  *
- * Decided once, on the first render that has quotas, and held. A quota met
- * during the session stays exactly where it is, green, until the next load
- * (Trent, 2026-09-22: "things should not disappear until reload... It's
- * disorienting to have it jump around"). The caller also requires the quota to
- * STILL be met, so one that stops being met — the period rolled over, or a −1
- * came in from the phone — comes back rather than staying hidden on a stale
- * snapshot.
+ * `putAway` starts as the quotas already met when the panel loaded — decided
+ * on the first render that has quotas, during render so the first paint is
+ * already the put-away one. A quota met DURING the session joins `leaving`
+ * instead: it stays where it is, green, fading out (`animate-met-leave`, the
+ * same `MET_LEAVE_MS`), and its own timer moves it to `putAway` when that
+ * runs out — see "MET QUOTAS ARE PUT AWAY" above. One timer per quota, so
+ * meeting a second one doesn't restart the first one's countdown.
  *
- * Set during render rather than in an effect, so the first paint is already
- * the put-away one; React allows a state update during render for this
- * derive-once case.
+ * The caller also requires the quota to STILL be met. One that stops being
+ * met — a −1 before the countdown ends, the period rolling over, a −1 from the
+ * phone — leaves both sets here, so meeting it again starts a fresh countdown
+ * rather than vanishing on a stale entry.
  */
-function useMetAtLoad(quotas: Task[]): ReadonlySet<number> {
-  const [ids, setIds] = useState<ReadonlySet<number> | null>(null)
-  if (ids === null && quotas.length > 0) {
-    const next = new Set(quotas.filter((q) => trackState(q).met).map((q) => q.id))
-    setIds(next)
-    return next
+function useMetPutAway(quotas: Task[]): {
+  putAway: ReadonlySet<number>
+  leaving: ReadonlySet<number>
+} {
+  const [putAway, setPutAway] = useState<ReadonlySet<number> | null>(null)
+  const [leaving, setLeaving] = useState<ReadonlySet<number>>(new Set())
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const finishLeaving = useCallback((id: number) => {
+    setPutAway((prev) => new Set(prev ?? []).add(id))
+    setLeaving((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
+  useLeaveTimers(leaving, finishLeaving, timers)
+
+  // Load: what is already met is put away, with no countdown.
+  if (putAway === null) {
+    if (quotas.length === 0) return { putAway: new Set(), leaving }
+    const atLoad = new Set(quotas.filter((q) => trackState(q).met).map((q) => q.id))
+    setPutAway(atLoad)
+    return { putAway: atLoad, leaving }
   }
-  return ids ?? new Set()
+
+  // Since load: newly met quotas start leaving; ones no longer met come back.
+  // Adjusted during render, guarded so it only sets state when something
+  // actually changed (React's "adjusting state when a prop changes").
+  const met = new Set(quotas.filter((q) => trackState(q).met).map((q) => q.id))
+  const newlyMet = [...met].filter((id) => !putAway.has(id) && !leaving.has(id))
+  const unmetLeaving = [...leaving].filter((id) => !met.has(id))
+  const unmetPutAway = [...putAway].filter((id) => !met.has(id))
+  if (newlyMet.length > 0 || unmetLeaving.length > 0) {
+    const next = new Set([...leaving, ...newlyMet])
+    for (const id of unmetLeaving) next.delete(id)
+    setLeaving(next)
+  }
+  if (unmetPutAway.length > 0) {
+    const next = new Set(putAway)
+    for (const id of unmetPutAway) next.delete(id)
+    setPutAway(next)
+  }
+
+  return { putAway, leaving }
+}
+
+/**
+ * The countdown timers behind `useMetPutAway`'s `leaving`: one per quota,
+ * started when it starts leaving and cleared if it stops. Split out so the
+ * hook body stays a render-time derivation.
+ */
+function useLeaveTimers(
+  leaving: ReadonlySet<number>,
+  onDone: (id: number) => void,
+  timers: React.MutableRefObject<Map<number, ReturnType<typeof setTimeout>>>,
+) {
+  useEffect(() => {
+    const running = timers.current
+    for (const id of leaving) {
+      if (!running.has(id)) {
+        running.set(
+          id,
+          setTimeout(() => {
+            running.delete(id)
+            onDone(id)
+          }, MET_LEAVE_MS),
+        )
+      }
+    }
+    for (const [id, timer] of running) {
+      if (!leaving.has(id)) {
+        clearTimeout(timer)
+        running.delete(id)
+      }
+    }
+  }, [leaving, onDone, timers])
+
+  useEffect(() => {
+    const running = timers.current
+    return () => {
+      for (const timer of running.values()) clearTimeout(timer)
+      running.clear()
+    }
+  }, [timers])
 }
 
 /**
@@ -656,6 +743,7 @@ function TrackSectionsList({
   open,
   labelConfig,
   isPutAway,
+  isLeaving,
   summaries,
   clusters,
   detail,
@@ -664,6 +752,8 @@ function TrackSectionsList({
   open: boolean
   labelConfig: LabelConfig[]
   isPutAway: (task: Task) => boolean
+  /** Met this session and fading out before it is put away (`useMetPutAway`). */
+  isLeaving: (task: Task) => boolean
   summaries: Map<string, { count: number; met: number }>
   clusters: ReturnType<typeof useResponsiveFolds>
   detail: ReturnType<typeof useTrackChipDetail>
@@ -694,6 +784,7 @@ function TrackSectionsList({
                         key={item.task.id}
                         task={item.task}
                         foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
+                        leaving={isLeaving(item.task)}
                       />
                     ),
                   )}
@@ -720,6 +811,7 @@ function TrackSectionsList({
                         task={item.task}
                         color={item.color}
                         foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
+                        leaving={isLeaving(item.task)}
                         detailOpen={detail.openId === item.task.id}
                         onOpenDetail={detail.openPopover}
                         onCloseDetail={detail.closePopover}
@@ -1167,6 +1259,7 @@ function TrackChip({
   task,
   color,
   foldClassName,
+  leaving = false,
   detailOpen,
   onOpenDetail,
   onCloseDetail,
@@ -1179,6 +1272,8 @@ function TrackChip({
   color: LabelColor | null
   /** Display classes from the cluster's fold — see `FOLD_BODY_BLOCK`. */
   foldClassName: string
+  /** Met this session: fading out before it is put away (`useMetPutAway`). */
+  leaving?: boolean
   detailOpen: boolean
   onOpenDetail: (task: Task) => void
   onCloseDetail: () => void
@@ -1194,7 +1289,10 @@ function TrackChip({
   const swipe = useHorizontalSwipe({ onSwipeLeft: () => void log(-1) })
 
   return (
-    <li className={cn('max-w-full', foldClassName)}>
+    <li
+      className={cn('max-w-full', foldClassName, leaving && 'animate-met-leave')}
+      data-track-leaving={leaving ? '' : undefined}
+    >
       <TrackChipPopover
         task={task}
         state={state}
@@ -1294,15 +1392,26 @@ function TrackChip({
   )
 }
 
-function TrackRow({ task, foldClassName }: { task: Task; foldClassName: string }) {
+function TrackRow({
+  task,
+  foldClassName,
+  leaving = false,
+}: {
+  task: Task
+  foldClassName: string
+  /** Met this session: fading out before it is put away (`useMetPutAway`). */
+  leaving?: boolean
+}) {
   const { state, period, log } = useTrackProgress(task)
 
   return (
     <li
       data-track-row={task.id}
+      data-track-leaving={leaving ? '' : undefined}
       className={cn(
         'hover:bg-background flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors',
         foldClassName,
+        leaving && 'animate-met-leave',
       )}
     >
       {/* The rows view is the keyboard-reachable route into a quota. The chips'

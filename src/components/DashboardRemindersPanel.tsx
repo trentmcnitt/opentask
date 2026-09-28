@@ -71,9 +71,12 @@ import type { Task } from '@/types'
  * Narrow gets the smaller cap because that is where the panel competes: it
  * sits inline above Track and the day, so 9 rows of thoughts put the first
  * task a full screen down (measured: 657px of panel, first task at 1.28
- * screens). Wide has its own column beside the day and costs it nothing.
+ * screens). Wide has its own column beside the day and costs it nothing —
+ * so its cap went from 9 to 20 (Trent, 2026-09-28: "let's try to get rid of
+ * the 'Show more' and 'Less' for the desktop version … show up to 20 items on
+ * the desktop before it shows 'Show more'").
  */
-const WIDE_CAP = 9
+const WIDE_CAP = 20
 const NARROW_CAP = 5
 
 const UNSLOTTED_KEY = 'unslotted'
