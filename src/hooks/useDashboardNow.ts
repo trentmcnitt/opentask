@@ -62,7 +62,8 @@ export function useDashboardNow(tasks: Task[], timezone: string): Date {
  * when the user narrows the view — picks a project with nothing overdue, types
  * a search, opens Recent — and clearing Overdue then would undo half of what
  * they just asked for. So `scope` lists what defines the view (the filter
- * criteria, the search query, the grouping); when any entry changes, that
+ * criteria, the search query AND its hit list — hits arrive a beat after the
+ * query changes — and the grouping); when any entry changes, that
  * observation becomes a fresh baseline instead of a transition. The same rule
  * keeps a `?project=…` deep link's filter landing (an effect, one render
  * after the first) from reading as "the overdue tasks went away".

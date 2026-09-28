@@ -1351,6 +1351,7 @@ function HomeContent({
         }}
         timeSlots={timeSlots}
         searchQuery={searchQuery}
+        searchHits={searchResults}
         searchResultCount={visibleSearchResults.length}
         shownTaskCount={shownTaskCount}
         overdueCount={overdueCount}
@@ -1678,6 +1679,7 @@ function DashboardView({
   onGroupingChange,
   timeSlots,
   searchQuery,
+  searchHits,
   searchResultCount,
   shownTaskCount,
   overdueCount,
@@ -1801,6 +1803,12 @@ function DashboardView({
   /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
   timeSlots: TimeSlot[]
   searchQuery: string | null
+  /**
+   * The raw search hit list (HomeContent's `searchResults`), only as a view
+   * identity for the Overdue auto-clear: hits arrive AFTER `searchQuery`
+   * changes, and only a new search or a clear writes this array.
+   */
+  searchHits: Task[]
   searchResultCount: number
   /** What the list renders — see `shownTaskCount` in `HomeContent`. */
   shownTaskCount: number
@@ -1989,8 +1997,8 @@ function DashboardView({
     [onDeselectDateFilter],
   )
   const overdueAutoClearScope = useMemo(
-    () => [dateFacetCriteria, searchQuery, grouping],
-    [dateFacetCriteria, searchQuery, grouping],
+    () => [dateFacetCriteria, searchQuery, searchHits, grouping],
+    [dateFacetCriteria, searchQuery, searchHits, grouping],
   )
   useAutoClearOverdueFilter(
     headerCounts.overdueCount,

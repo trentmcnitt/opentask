@@ -153,5 +153,7 @@ describe('sameViewScope', () => {
     expect(sameViewScope([criteria, null, 'slot'], [{ ...criteria }, null, 'slot'])).toBe(false)
     expect(sameViewScope([criteria, null, 'slot'], [criteria, 'query', 'slot'])).toBe(false)
     expect(sameViewScope([criteria, null, 'slot'], [criteria, null, 'recent'])).toBe(false)
+    // Search hits land after the query changes: a new hit array is a new view.
+    expect(sameViewScope([criteria, 'q', [], 'slot'], [criteria, 'q', [], 'slot'])).toBe(false)
   })
 })
