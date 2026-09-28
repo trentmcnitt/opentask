@@ -32,6 +32,7 @@ vi.mock('@/core/ai/enrichment-slot', () => ({
 import { getDb } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
 import {
+  allowProjectMove,
   enrichSingleTask,
   filterProjectMatch,
   _resetProcessingState,
@@ -76,7 +77,40 @@ describe('filterProjectMatch', () => {
   })
 })
 
+describe('allowProjectMove', () => {
+  test('a task in the Inbox moves on a name match', () => {
+    expect(
+      allowProjectMove({
+        currentIsInbox: true,
+        projectName: 'Job Search',
+        enrichedTitle: 'Test task for job search',
+      }),
+    ).toBe(true)
+  })
+
+  test('a task in a chosen project does not move on a name match', () => {
+    expect(
+      allowProjectMove({
+        currentIsInbox: false,
+        projectName: 'Job Search',
+        enrichedTitle: 'Test task for job search',
+      }),
+    ).toBe(false)
+  })
+
+  test('a task in a chosen project moves on an instruction the title no longer carries', () => {
+    expect(
+      allowProjectMove({
+        currentIsInbox: false,
+        projectName: 'Job Search',
+        enrichedTitle: 'Update my resume',
+      }),
+    ).toBe(true)
+  })
+})
+
 describe('enrichment applies the guard', () => {
+  let workId: number
   let homeId: number
   let jobSearchId: number
 
@@ -84,6 +118,11 @@ describe('enrichment applies the guard', () => {
     setupTestDb()
     const db = getDb()
     db.prepare("UPDATE users SET ai_enrichment_mode = 'sdk' WHERE id = ?").run(TEST_USER_ID)
+    workId = Number(
+      db
+        .prepare('INSERT INTO projects (name, owner_id, shared, sort_order) VALUES (?, ?, 0, 4)')
+        .run('Work', TEST_USER_ID).lastInsertRowid,
+    )
     homeId = Number(
       db
         .prepare('INSERT INTO projects (name, owner_id, shared, sort_order) VALUES (?, ?, 0, 5)')
@@ -149,5 +188,33 @@ describe('enrichment applies the guard', () => {
     expect(after.project_id).toBe(before)
     expect(after.project_id).not.toBe(homeId)
     expect(after.title).toBe('Fix the leak in the kitchen')
+  })
+
+  // A name match never moves a task out of a project the user chose.
+  test('a task created in another project stays there on a name match', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Test task for job search', project_id: workId },
+    })
+    expect(task.labels).toContain('ai-to-process')
+    modelSays('Test task for job search', 'Job Search')
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    const after = getTaskById(task.id)!
+    expect(after.project_id).toBe(workId)
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('a task created in another project moves on an explicit instruction', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'update my resume put it in job search', project_id: workId },
+    })
+    modelSays('Update my resume', 'Job Search')
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    const after = getTaskById(task.id)!
+    expect(after.project_id).toBe(jobSearchId)
+    expect(after.title).toBe('Update my resume')
   })
 })

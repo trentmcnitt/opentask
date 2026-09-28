@@ -756,19 +756,47 @@ function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
  */
 export function filterProjectMatch(projectName: string | null, inputText: string): string | null {
   if (!projectName) return null
+  return projectNameWordIn(projectName, inputText) ? projectName : null
+}
+
+/**
+ * True when at least one word of `projectName` appears in `text` as a whole
+ * word. Short words ("of", "to") would match almost anything, so only words of
+ * 3+ letters count — unless the name has nothing longer ("HR").
+ */
+function projectNameWordIn(projectName: string, text: string): boolean {
   const all = projectName
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
-  // Short words ("of", "to") would match almost anything; a name made only of
-  // short words ("HR") has to be matched on those.
   const long = all.filter((w) => w.length >= 3)
   const words = long.length > 0 ? long : all
-  const text = inputText.toLowerCase()
-  const present = words.some((w) =>
-    new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, 'u').test(text),
-  )
-  return present ? projectName : null
+  const lower = text.toLowerCase()
+  return words.some((w) => new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, 'u').test(lower))
+}
+
+/**
+ * May enrichment move this task into the project the model chose?
+ *
+ * A name match never moves a task out of a project the user chose (Trent,
+ * 2026-09-28). A task in the Inbox has no chosen project, so both triggers —
+ * explicit instruction and name match — apply as usual. A task already in any
+ * other project moves only on an EXPLICIT instruction.
+ *
+ * The two are told apart by the prompt's own contract: an explicit instruction
+ * is removed from the title ("update my resume put it in job search" →
+ * "Update my resume"), while a name match leaves the name in the title ("Test
+ * task for job search" stays as is). So for a task outside the Inbox, the move
+ * is kept only if NONE of the chosen project's name words (the same whole-word
+ * test as filterProjectMatch) remain in the enriched title.
+ */
+export function allowProjectMove(params: {
+  currentIsInbox: boolean
+  projectName: string
+  enrichedTitle: string
+}): boolean {
+  if (params.currentIsInbox) return true
+  return !projectNameWordIn(params.projectName, params.enrichedTitle)
 }
 
 function filterExplicitLabels(labels: string[], inputText: string): string[] {
@@ -936,24 +964,54 @@ function collectEnrichmentChanges(
     }
   }
 
-  // Project — resolve project name to ID if provided (owned or shared), after
-  // the text-presence guard (see filterProjectMatch).
-  const projectName = filterProjectMatch(enrichment.project_name, inputText)
-  if (projectName) {
-    const db = getDb()
-    const project = db
-      .prepare(
-        'SELECT id FROM projects WHERE (owner_id = ? OR shared = 1) AND name = ? COLLATE NOCASE',
-      )
-      .get(user.id, projectName) as { id: number } | undefined
-    if (project && project.id !== task.project_id) {
-      setClauses.push('project_id = ?')
-      values.push(project.id)
-      fieldsChanged.push('project_id')
-    }
+  const projectId = resolveProjectChange(task, enrichment, user.id, inputText)
+  if (projectId !== null) {
+    setClauses.push('project_id = ?')
+    values.push(projectId)
+    fieldsChanged.push('project_id')
   }
 
   return { setClauses, values, fieldsChanged }
+}
+
+/**
+ * The project enrichment should move the task into, or null to leave it.
+ *
+ * Resolves the model's project name (owned or shared) after two guards: the
+ * text-presence guard (filterProjectMatch), and the rule that a name match
+ * never moves a task out of a project the user chose (allowProjectMove). The
+ * Inbox is the user's own project named "Inbox" — how createTask finds it.
+ */
+function resolveProjectChange(
+  task: Task,
+  enrichment: EnrichmentResult,
+  userId: number,
+  inputText: string,
+): number | null {
+  const projectName = filterProjectMatch(enrichment.project_name, inputText)
+  if (!projectName) return null
+
+  const db = getDb()
+  const project = db
+    .prepare(
+      'SELECT id FROM projects WHERE (owner_id = ? OR shared = 1) AND name = ? COLLATE NOCASE',
+    )
+    .get(userId, projectName) as { id: number } | undefined
+  if (!project || project.id === task.project_id) return null
+
+  const current = db
+    .prepare('SELECT owner_id, name FROM projects WHERE id = ?')
+    .get(task.project_id) as { owner_id: number; name: string } | undefined
+  const currentIsInbox = current?.owner_id === userId && current.name === 'Inbox'
+  const enrichedTitle = enrichment.title || task.title
+  if (!allowProjectMove({ currentIsInbox, projectName, enrichedTitle })) {
+    log.info(
+      'ai',
+      `Task ${task.id}: kept its project — "${projectName}" came from a name match, not an instruction`,
+    )
+    return null
+  }
+  return project.id
 }
 
 /**
