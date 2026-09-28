@@ -11,6 +11,7 @@ import {
   promptWaiting,
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
+import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 
 /**
@@ -330,6 +331,8 @@ export function useReminders({
    */
   const leavingIdsRef = useRef<Set<number | string>>(new Set())
   const heldRefreshRef = useRef(false)
+  // Out-of-order guard for `refresh` (see `createLatestRequestGuard`).
+  const [requestGuard] = useState(createLatestRequestGuard)
   /** IDs with a row actually rendered right now (see `registerRow`). */
   const mountedIdsRef = useRef<Set<number | string>>(new Set())
   // The rendered groups, for the snapshot a failed completion restores.
@@ -350,10 +353,15 @@ export function useReminders({
       heldRefreshRef.current = true
       return
     }
+    const seq = requestGuard.begin()
     try {
       const res = await fetch('/api/reminders')
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
+      // A newer refresh was sent while this one was out: its answer is the
+      // current one, so this (older) payload must not overwrite it — nor the
+      // shared cache the nav badge reads.
+      if (!requestGuard.isLatest(seq)) return
       const nextGroups = stripPending(parseGroups(json))
       const nextHasAny = json?.data?.has_any === true
       const nextNotToday = ((json as { data?: { not_today?: Task[] } })?.data?.not_today ??
@@ -368,13 +376,13 @@ export function useReminders({
       // A failed background refresh over cached data is not an error state —
       // the stale render plus the next successful refresh beats an error
       // banner replacing content the user can already see.
-      if (remindersCache === null) {
+      if (remindersCache === null && requestGuard.isLatest(seq)) {
         setError(err instanceof Error ? err.message : 'Failed to load reminders')
       }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [requestGuard])
 
   useEffect(() => {
     void refresh()

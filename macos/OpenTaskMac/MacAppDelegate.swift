@@ -97,6 +97,17 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         // quit it) for a long time.
         Task { await refreshSlotActions() }
 
+        // Tell the page to refresh. Clicking back into a window that was only
+        // covered by other windows leaves the WKWebView `visible`, so the
+        // page gets no visibilitychange, and window `focus` is not reliably
+        // delivered to it either — so a change made on another device while
+        // the page's sync stream was dead stayed on screen until a reload.
+        // `useSyncStream` listens for this event, refreshes everything the
+        // page shows and re-opens the stream if it has closed (deduped
+        // against its own focus/visibility triggers). No-op before the web
+        // view exists.
+        WebViewManager.shared.evaluate("window.dispatchEvent(new CustomEvent('opentask-app-active'))")
+
         // Mirrors ios/OpenTask/OpenTaskApp.swift's scenePhase == .active case:
         // reloads triggered by the app foregrounding don't count against the
         // widget refresh budget, so OpenTaskMacWidgets is current again by the
