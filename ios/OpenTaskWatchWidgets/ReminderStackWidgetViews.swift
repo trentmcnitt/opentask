@@ -285,8 +285,10 @@ private struct CaughtUpCardView: View {
     }
 }
 
-/// "N overdue" and ONE button: the sweep to the next period. Full-width
-/// capsule at the bottom — the only control, so it gets the whole row.
+/// "N overdue" and two buttons side by side, sharing the bottom row: "+1h"
+/// (filled — the default, Trent 2026-09-28) and "⏭ 4:30 PM", the sweep to
+/// the next period, labelled with its time rather than the words "next
+/// period" (⏭ always means next period; the time is what helps).
 private struct OverdueCardView: View {
     let card: WatchWidgetEntry.OverdueCard
 
@@ -316,25 +318,44 @@ private struct OverdueCardView: View {
 
             Spacer(minLength: 2)
 
-            Button(intent: SnoozeOverdueNextPeriodIntent(targetLabel: card.targetLabel ?? "")) {
-                Label(buttonTitle, systemImage: "moon.zzz.fill")
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 30)
-                    .background(Capsule().fill(WatchTheme.accent).widgetAccentable())
-                    .contentShape(Capsule())
+            HStack(spacing: 4) {
+                Button(intent: SnoozeOverduePlusHourIntent()) {
+                    pill(Text("+1h"), filled: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Snooze all overdue one hour")
+
+                Button(intent: SnoozeOverdueNextPeriodIntent(targetLabel: card.targetLabel ?? "")) {
+                    pill(nextPeriodLabel, filled: false)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Snooze all overdue to the next period")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Snooze all overdue to the next period")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var buttonTitle: String {
-        guard let label = card.targetLabel else { return "Snooze all → next" }
-        return "Snooze all → \(label)"
+    /// "⏭ 4:30 PM"; just "⏭" when there is no slot to preview (the server
+    /// still resolves "next" itself).
+    private var nextPeriodLabel: Text {
+        let icon = Image(systemName: "forward.end.fill")
+        guard let date = card.targetDate else { return Text(icon) }
+        return Text("\(icon) \(DateHelpers.formatShortTime(date))")
+    }
+
+    private func pill(_ label: Text, filled: Bool) -> some View {
+        label
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .foregroundStyle(filled ? Color.white : Color.primary)
+            .frame(maxWidth: .infinity, minHeight: 30)
+            .background(
+                Capsule()
+                    .fill(filled ? WatchTheme.accent : Color.secondary.opacity(0.3))
+                    .widgetAccentable(filled)
+            )
+            .contentShape(Capsule())
     }
 }
 
