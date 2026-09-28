@@ -14,8 +14,11 @@
  *   [Task has both `ai-locked` + `ai-to-process`] → skip (ai-locked wins),
  *     remove `ai-to-process`
  *
- * Processing guard: in-memory Set<number> of task IDs currently being
- * processed prevents double-processing. Resets naturally on restart.
+ * Processing guard: a task is CLAIMED before any async work (`claimTask`) —
+ * an in-memory Set<number> of task IDs in flight, checked together with a
+ * fresh read of the row. Both entry points claim through it. The Set lives on
+ * globalThis because this module is instantiated more than once in a build
+ * (see "Pipeline state" below). Resets naturally on restart.
  *
  * Retry tracking: in-memory Map<number, number> (taskId → attempt count).
  * After 2 failed attempts, swap `ai-to-process` → `ai-failed`. Resets on
@@ -58,14 +61,49 @@ import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
 import { validateLabelsExist, filterAutoCreatableLabels } from '@/core/labels'
 
-/** Simple lock to prevent concurrent queue processing */
-let processing = false
+// --- Pipeline state ---
+//
+// All mutable state lives on globalThis, for the reason enrichment-slot.ts
+// gives: Next.js bundles instrumentation.ts (which runs the per-minute queue)
+// and the API routes (which fire `enrichSingleTask` on create) separately, and
+// this module is instantiated once in each — two module ids for the same file
+// in the production build. With module-level state each copy had its own
+// in-flight Set, so a task created a few seconds before the cron tick was
+// enriched by both paths: two model calls, two ai_activity_log rows, the
+// second "no changes needed" (task created 2026-09-28, seen in prod logs).
+// The retry counter and circuit breaker were split the same way, which made
+// MAX_ATTEMPTS and the breaker threshold per-bundle rather than per-process.
 
-/** In-memory set of task IDs currently being processed (prevents double-processing) */
-const processingTasks = new Set<number>()
+interface EnrichmentPipelineGlobals {
+  /** Lock so two queue cycles never overlap */
+  processing: boolean
+  /** Task IDs currently being enriched, by either entry point */
+  processingTasks: Set<number>
+  /** Retry tracking (taskId → attempt count). Resets on restart. */
+  retryCount: Map<number, number>
+  circuitBreaker: CircuitBreakerState
+}
 
-/** In-memory retry tracking (taskId → attempt count). Resets on restart. */
-const retryCount = new Map<number, number>()
+interface CircuitBreakerState {
+  failureTimestamps: number[]
+  pausedUntil: number | null
+}
+
+const globalForPipeline = globalThis as typeof globalThis & {
+  __enrichmentPipelineState?: EnrichmentPipelineGlobals
+}
+
+if (!globalForPipeline.__enrichmentPipelineState) {
+  globalForPipeline.__enrichmentPipelineState = {
+    processing: false,
+    processingTasks: new Set<number>(),
+    retryCount: new Map<number, number>(),
+    circuitBreaker: { failureTimestamps: [], pausedUntil: null },
+  }
+}
+
+const pipeline = globalForPipeline.__enrichmentPipelineState
+const { processingTasks, retryCount, circuitBreaker } = pipeline
 
 const MAX_ATTEMPTS = 2
 
@@ -79,16 +117,6 @@ const MAX_ATTEMPTS = 2
 const CIRCUIT_BREAKER_THRESHOLD = 5
 const CIRCUIT_BREAKER_WINDOW_MS = 60_000 // 1 minute
 const CIRCUIT_BREAKER_PAUSE_MS = 300_000 // 5 minutes
-
-interface CircuitBreakerState {
-  failureTimestamps: number[]
-  pausedUntil: number | null
-}
-
-const circuitBreaker: CircuitBreakerState = {
-  failureTimestamps: [],
-  pausedUntil: null,
-}
 
 /** Record a failure for circuit breaker tracking */
 function recordFailure(): void {
@@ -136,6 +164,7 @@ export function _resetCircuitBreaker(): void {
 export function _resetProcessingState(): void {
   processingTasks.clear()
   retryCount.clear()
+  pipeline.processing = false
 }
 
 /** Get enrichment pipeline status for observability. */
@@ -202,6 +231,42 @@ function handleFailure(taskId: number): void {
 }
 
 /**
+ * Claim a task for enrichment, or return null if it is not this caller's to do.
+ *
+ * The one gate both entry points go through. Synchronous from the Set check to
+ * the Set add — better-sqlite3 is synchronous, so no other enrichment can run
+ * in between — which makes "check, re-read, mark in flight" atomic within the
+ * process. Returns null when the task is already in flight, no longer carries
+ * `ai-to-process` (someone finished it), is deleted, or is `ai-locked` (in
+ * which case the trigger label is removed, as before). The caller owns the
+ * claim and must `processingTasks.delete(id)` in a `finally`.
+ */
+function claimTask(taskId: number, userId: number): PendingTaskRow | null {
+  if (processingTasks.has(taskId)) return null
+
+  const row = getDb()
+    .prepare(
+      `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule, is_reminder
+       FROM tasks
+       WHERE id = ? AND user_id = ?
+         AND deleted_at IS NULL
+         AND EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')`,
+    )
+    .get(taskId, userId) as PendingTaskRow | undefined
+  if (!row) return null
+
+  const labels: string[] = JSON.parse(row.labels)
+  if (labels.includes('ai-locked')) {
+    removeLabel(row.id, 'ai-to-process')
+    log.info('ai', `Task ${row.id} has ai-locked label, removing ai-to-process`)
+    return null
+  }
+
+  processingTasks.add(taskId)
+  return row
+}
+
+/**
  * Process the enrichment queue. Called by cron every minute.
  *
  * Picks up tasks with the `ai-to-process` label (excluding those with
@@ -213,10 +278,10 @@ function handleFailure(taskId: number): void {
  */
 export async function processEnrichmentQueue(): Promise<void> {
   if (!isAIEnabled()) return
-  if (processing) return
+  if (pipeline.processing) return
   if (isCircuitBreakerOpen()) return
 
-  processing = true
+  pipeline.processing = true
   try {
     const db = getDb()
 
@@ -259,23 +324,17 @@ export async function processEnrichmentQueue(): Promise<void> {
     let failed = 0
     let skipped = 0
 
-    for (const row of fairQueue) {
-      // Skip if already being processed (in-memory guard)
-      if (processingTasks.has(row.id)) {
+    for (const picked of fairQueue) {
+      // `picked` is from the SELECT at the top of the cycle, and every row
+      // before it awaited the model. Claiming re-reads it, so a task that the
+      // fire-and-forget path finished (or is still enriching) in the meantime
+      // is skipped rather than enriched a second time.
+      const row = claimTask(picked.id, picked.user_id)
+      if (!row) {
         skipped++
         continue
       }
 
-      // Check for ai-locked label (sole guard — in-memory since the query doesn't filter by label)
-      const labels: string[] = JSON.parse(row.labels)
-      if (labels.includes('ai-locked')) {
-        removeLabel(row.id, 'ai-to-process')
-        log.info('ai', `Task ${row.id} has ai-locked label, removing ai-to-process`)
-        skipped++
-        continue
-      }
-
-      processingTasks.add(row.id)
       let succeeded = false
       try {
         const enrichedFields = await enrichTask(row)
@@ -312,7 +371,7 @@ export async function processEnrichmentQueue(): Promise<void> {
         ` (${fairQueue.length} picked up)`,
     )
   } finally {
-    processing = false
+    pipeline.processing = false
   }
 }
 
@@ -366,30 +425,10 @@ function buildEnrichmentDescription(
  */
 export async function enrichSingleTask(taskId: number, userId: number): Promise<void> {
   if (!isAIEnabled()) return
-  if (processingTasks.has(taskId)) return
 
-  const db = getDb()
-  const row = db
-    .prepare(
-      `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule, is_reminder
-       FROM tasks
-       WHERE id = ? AND user_id = ?
-         AND deleted_at IS NULL
-         AND EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')`,
-    )
-    .get(taskId, userId) as PendingTaskRow | undefined
-
+  const row = claimTask(taskId, userId)
   if (!row) return
 
-  // Check for ai-locked label
-  const labels: string[] = JSON.parse(row.labels)
-  if (labels.includes('ai-locked')) {
-    removeLabel(row.id, 'ai-to-process')
-    log.info('ai', `Task ${row.id} has ai-locked label, removing ai-to-process`)
-    return
-  }
-
-  processingTasks.add(taskId)
   let enrichmentSucceeded = false
   let enrichedFields: string[] = []
   try {
