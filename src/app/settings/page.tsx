@@ -37,7 +37,12 @@ import {
   useAiAvailable,
   useAiFeatureInfo,
 } from '@/components/PreferencesProvider'
-import type { BulkSnoozeDefault, FeatureMode, FeatureInfo } from '@/components/PreferencesProvider'
+import type {
+  BulkSnoozeDefault,
+  FeatureMode,
+  FeatureInfo,
+  FeatureInfoMap,
+} from '@/components/PreferencesProvider'
 import type { WeekStart } from '@/lib/week-start'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
@@ -45,6 +50,7 @@ import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { usePushSubscription } from '@/hooks/usePushSubscription'
 import { showToast } from '@/lib/toast'
+import { savePreference } from '@/lib/save-preference'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
@@ -150,232 +156,75 @@ export default function SettingsPage() {
     }
   }, [])
 
+  // Each control saves on change through savePreference(): optimistic apply,
+  // PATCH, toast, and a revert to the value it replaced if the save fails.
   const saveLabelConfig = async (newConfig: LabelConfig[]) => {
     const prev = labelConfig
-    setLabelConfig(newConfig)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label_config: newConfig }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Labels saved', type: 'success' })
-    } catch {
-      setLabelConfig(prev)
-      showToast({ message: 'Failed to save labels', type: 'error' })
-    }
+    await savePreference(
+      { label_config: newConfig },
+      {
+        apply: () => setLabelConfig(newConfig),
+        revert: () => setLabelConfig(prev),
+        successMessage: 'Labels saved',
+        errorMessage: 'Failed to save labels',
+      },
+    )
   }
 
-  const handlePriorityDisplayChange = async (
+  const handlePriorityDisplayChange = (
     key: keyof PriorityDisplayConfig,
     value: boolean | string,
   ) => {
     const prev = priorityDisplay
     const newConfig = { ...priorityDisplay, [key]: value }
-    setPriorityDisplay(newConfig)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priority_display: newConfig }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setPriorityDisplay(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
+    return savePreference(
+      { priority_display: newConfig },
+      { apply: () => setPriorityDisplay(newConfig), revert: () => setPriorityDisplay(prev) },
+    )
   }
 
-  const handleAutoSnoozeChange = async (value: number) => {
-    const prev = autoSnoozeDefault
-    setAutoSnoozeDefault(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_snooze_minutes: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setAutoSnoozeDefault(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
+  /** A plain preference: one field, one setter, the generic toasts. */
+  const saveField = <T,>(field: string, value: T, prev: T, setter: (v: T) => void) =>
+    savePreference({ [field]: value }, { apply: () => setter(value), revert: () => setter(prev) })
 
-  const handleAutoSnoozeUrgentChange = async (value: number) => {
-    const prev = autoSnoozeUrgent
-    setAutoSnoozeUrgent(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_snooze_urgent_minutes: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setAutoSnoozeUrgent(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleAutoSnoozeLowChange = async (value: number) => {
-    const prev = autoSnoozeLow
-    setAutoSnoozeLow(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_snooze_low_minutes: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setAutoSnoozeLow(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleAutoSnoozeMediumChange = async (value: number) => {
-    const prev = autoSnoozeMedium
-    setAutoSnoozeMedium(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_snooze_medium_minutes: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setAutoSnoozeMedium(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleAutoSnoozeHighChange = async (value: number) => {
-    const prev = autoSnoozeHigh
-    setAutoSnoozeHigh(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_snooze_high_minutes: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setAutoSnoozeHigh(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleDefaultSnoozeChange = async (value: string) => {
-    const prev = defaultSnoozeOption
-    setDefaultSnoozeOption(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ default_snooze_option: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setDefaultSnoozeOption(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleBulkSnoozeDefaultChange = async (value: BulkSnoozeDefault) => {
-    const prev = bulkSnoozeDefault
-    setBulkSnoozeDefault(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bulk_snooze_default: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setBulkSnoozeDefault(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleMorningTimeChange = async (value: string) => {
-    const prev = morningTime
-    setMorningTime(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ morning_time: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setMorningTime(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleWakeTimeChange = async (value: string) => {
-    const prev = wakeTime
-    setWakeTime(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wake_time: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setWakeTime(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
+  const handleAutoSnoozeChange = (value: number) =>
+    saveField('auto_snooze_minutes', value, autoSnoozeDefault, setAutoSnoozeDefault)
+  const handleAutoSnoozeUrgentChange = (value: number) =>
+    saveField('auto_snooze_urgent_minutes', value, autoSnoozeUrgent, setAutoSnoozeUrgent)
+  const handleAutoSnoozeLowChange = (value: number) =>
+    saveField('auto_snooze_low_minutes', value, autoSnoozeLow, setAutoSnoozeLow)
+  const handleAutoSnoozeMediumChange = (value: number) =>
+    saveField('auto_snooze_medium_minutes', value, autoSnoozeMedium, setAutoSnoozeMedium)
+  const handleAutoSnoozeHighChange = (value: number) =>
+    saveField('auto_snooze_high_minutes', value, autoSnoozeHigh, setAutoSnoozeHigh)
+  const handleDefaultSnoozeChange = (value: string) =>
+    saveField('default_snooze_option', value, defaultSnoozeOption, setDefaultSnoozeOption)
+  const handleBulkSnoozeDefaultChange = (value: BulkSnoozeDefault) =>
+    saveField('bulk_snooze_default', value, bulkSnoozeDefault, setBulkSnoozeDefault)
+  const handleMorningTimeChange = (value: string) =>
+    saveField('morning_time', value, morningTime, setMorningTime)
+  const handleWakeTimeChange = (value: string) =>
+    saveField('wake_time', value, wakeTime, setWakeTime)
   // The server closes any weekly quota period the new boundary ends before it
   // answers (see the preferences route), so a refresh after this shows the
   // new week; open dashboards pick it up from the sync event it emits.
-  const handleWeekStartChange = async (value: WeekStart) => {
-    const prev = weekStart
-    setWeekStart(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ week_start: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setWeekStart(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
+  const handleWeekStartChange = (value: WeekStart) =>
+    saveField('week_start', value, weekStart, setWeekStart)
+  const handleSleepTimeChange = (value: string) =>
+    saveField('sleep_time', value, sleepTime, setSleepTime)
+  const handleCriticalAlertVolumeChange = (value: number) =>
+    saveField('critical_alert_volume', value, criticalAlertVolume, setCriticalAlertVolume)
 
-  const handleSleepTimeChange = async (value: string) => {
-    const prev = sleepTime
-    setSleepTime(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sleep_time: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setSleepTime(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
+  const handleNotificationsEnabledChange = (checked: boolean) => {
+    const prev = notificationsEnabled
+    return savePreference(
+      { notifications_enabled: checked },
+      {
+        apply: () => setNotificationsEnabled(checked),
+        revert: () => setNotificationsEnabled(prev),
+        successMessage: checked ? 'Notifications enabled' : 'Notifications disabled',
+      },
+    )
   }
 
   const sendTestNotification = async (
@@ -414,19 +263,15 @@ export default function SettingsPage() {
     }
     const newValue = aiContextDraft.trim() || null
     const prev = aiContext
-    setAiContext(newValue)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_context: newValue }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'AI context saved', type: 'success' })
-    } catch {
-      setAiContext(prev)
-      showToast({ message: 'Failed to save AI context', type: 'error' })
-    }
+    await savePreference(
+      { ai_context: newValue },
+      {
+        apply: () => setAiContext(newValue),
+        revert: () => setAiContext(prev),
+        successMessage: 'AI context saved',
+        errorMessage: 'Failed to save AI context',
+      },
+    )
   }
 
   const handleFeatureModeChange = async (
@@ -439,29 +284,19 @@ export default function SettingsPage() {
       showDemoToast()
       return
     }
-    setter(value)
     const fieldMap = {
       enrichment: 'ai_enrichment_mode',
       quicktake: 'ai_quicktake_mode',
       whats_next: 'ai_whats_next_mode',
       insights: 'ai_insights_mode',
     }
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [fieldMap[feature]]: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      const json = await res.json()
-      if (json?.data?.ai_feature_info) {
-        setAiFeatureInfo(json.data.ai_feature_info)
-      }
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setter(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
+    // The response carries each feature's info recomputed for its new mode
+    // (`getFeatureInfo` in the preferences route).
+    const data = await savePreference<{ ai_feature_info?: FeatureInfoMap }>(
+      { [fieldMap[feature]]: value },
+      { apply: () => setter(value), revert: () => setter(prev) },
+    )
+    if (data?.ai_feature_info) setAiFeatureInfo(data.ai_feature_info)
   }
 
   const handleProjectReorder = async (projectIds: number[]) => {
@@ -703,25 +538,7 @@ export default function SettingsPage() {
             </div>
             <Switch
               checked={notificationsEnabled}
-              onCheckedChange={async (checked) => {
-                const prev = notificationsEnabled
-                setNotificationsEnabled(checked)
-                try {
-                  const res = await fetch('/api/user/preferences', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ notifications_enabled: checked }),
-                  })
-                  if (!res.ok) throw new Error('Failed to save')
-                  showToast({
-                    message: checked ? 'Notifications enabled' : 'Notifications disabled',
-                    type: 'success',
-                  })
-                } catch {
-                  setNotificationsEnabled(prev)
-                  showToast({ message: 'Failed to save preference', type: 'error' })
-                }
-              }}
+              onCheckedChange={(checked) => void handleNotificationsEnabledChange(checked)}
               aria-label="Toggle notifications"
             />
           </div>
@@ -799,23 +616,7 @@ export default function SettingsPage() {
             </div>
             <select
               value={criticalAlertVolume}
-              onChange={async (e) => {
-                const val = parseFloat(e.target.value)
-                const prev = criticalAlertVolume
-                setCriticalAlertVolume(val)
-                try {
-                  const res = await fetch('/api/user/preferences', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ critical_alert_volume: val }),
-                  })
-                  if (!res.ok) throw new Error('Failed to save')
-                  showToast({ message: 'Preference saved', type: 'success' })
-                } catch {
-                  setCriticalAlertVolume(prev)
-                  showToast({ message: 'Failed to save preference', type: 'error' })
-                }
-              }}
+              onChange={(e) => void handleCriticalAlertVolumeChange(parseFloat(e.target.value))}
               className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             >
               <option value={0.25}>25%</option>

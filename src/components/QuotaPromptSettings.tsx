@@ -11,7 +11,7 @@ import {
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useQuotaPromptPrefs } from '@/hooks/useQuotaPromptPrefs'
 import { resolvePromptSlot } from '@/lib/quota-prompts'
-import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { parseHHMM, sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { formatMinutes } from '@/lib/reminder-rule'
 import { showToast } from '@/lib/toast'
 
@@ -43,9 +43,7 @@ import { showToast } from '@/lib/toast'
 export function QuotaPromptSettings() {
   const { timeSlots } = useTimeSlots()
   const { prefs, save } = useQuotaPromptPrefs()
-  const slots = [...timeSlots].sort(
-    (a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0),
-  )
+  const slots = sortSlotsByStart(timeSlots)
   const index = prefs ? resolvePromptSlot(slots, prefs.slotId, null) : -1
   const current: TimeSlot | null = index >= 0 ? slots[index] : null
 
@@ -72,8 +70,12 @@ export function QuotaPromptSettings() {
               Where a reminder goes when you don&rsquo;t say when
             </div>
           </div>
+          {/* Always controlled: '' (Radix's "no value", which shows the
+              placeholder) until the prefs load, never undefined — flipping
+              from undefined to an id made Radix warn "Select is changing from
+              uncontrolled to controlled". */}
           <Select
-            value={current ? String(current.id) : undefined}
+            value={current ? String(current.id) : ''}
             onValueChange={(value) => void update({ slotId: Number(value) })}
           >
             <SelectTrigger

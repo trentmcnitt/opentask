@@ -2,20 +2,15 @@
  * Task provenance confirmation (REDESIGN-V03 §7.2)
  *
  * POST /api/tasks/:id/confirm - Bless a task the assistant created on its own
- * initiative: removes `ai-proposed`, adds `ai-added`.
- *
- * Deliberately task-scoped and narrow. Confirming is a statement about where a
- * task came from, not an invitation to re-edit it, so this touches no other
- * field. It routes through updateTask() rather than writing labels directly, so
- * the change is transactional and lands in the undo log like any other edit.
+ * initiative: removes `ai-proposed`, adds `ai-added`. The logic lives in
+ * `confirmTaskProvenance` (`src/core/tasks/confirm.ts`).
  */
 
 import { NextRequest } from 'next/server'
 import { requireAuth } from '@/core/auth'
-import { AppError } from '@/core/errors'
+import { AppError, ForbiddenError } from '@/core/errors'
 import { success, badRequest, notFound, handleError, parseRouteId } from '@/lib/api-response'
-import { getTaskById, updateTask, canUserAccessTask } from '@/core/tasks'
-import { confirmProvenance, PROVENANCE_LABELS } from '@/core/labels'
+import { confirmTaskProvenance } from '@/core/tasks'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -28,29 +23,12 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     const taskId = parseRouteId(id)
     if (taskId === null) return badRequest('Invalid task ID')
 
-    const task = getTaskById(taskId)
-    if (!task || !canUserAccessTask(user.id, task)) return notFound('Task not found')
-
-    // Idempotent: confirming an already-confirmed task is a no-op rather than
-    // an error, so a retried call can't fail spuriously.
-    if (!task.labels.includes(PROVENANCE_LABELS.proposed)) {
-      return success({
-        ...formatTaskResponse(task),
-        confirmed: task.labels.includes(PROVENANCE_LABELS.added),
-      })
-    }
-
-    const { task: updated } = updateTask({
-      userId: user.id,
-      userTimezone: user.timezone,
-      taskId,
-      // `ai-added` is registered by the backfill and by the provenance flags, so
-      // create_label is not needed here.
-      input: { labels: confirmProvenance(task.labels) },
-    })
-
-    return success({ ...formatTaskResponse(updated), confirmed: true })
+    const { task, confirmed } = confirmTaskProvenance(user.id, user.timezone, taskId)
+    return success({ ...formatTaskResponse(task), confirmed })
   } catch (err) {
+    // A task the user can't access answers 404, like a missing one — this
+    // endpoint doesn't reveal that the id exists.
+    if (err instanceof ForbiddenError) return notFound('Task not found')
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/confirm error:', err)
     return handleError(err)
   }

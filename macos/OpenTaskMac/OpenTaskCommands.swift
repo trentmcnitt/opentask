@@ -37,7 +37,7 @@ struct OpenTaskCommands: Commands {
             .keyboardShortcut("2", modifiers: [.command, .control])
 
             Button("Snooze All to Tomorrow") {
-                MenuActions.snoozeAllToDefault(label: "Snooze All to Tomorrow")
+                MenuActions.snoozeAllToTomorrow(label: "Snooze All to Tomorrow")
             }
             .keyboardShortcut("3", modifiers: [.command, .control])
         }

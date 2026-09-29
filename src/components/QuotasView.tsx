@@ -17,6 +17,7 @@ import { getLabelClasses } from '@/lib/label-colors'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { cn, fromRowControl } from '@/lib/utils'
+import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import type { Task } from '@/types'
 
 /**
@@ -46,6 +47,7 @@ export function QuotasView({
   onCompleted,
   refreshRef,
   viewSwitch,
+  searchQuery,
 }: {
   /** Undo the last action — wired to the toasts, as on every other surface. */
   onUndo: () => void
@@ -55,6 +57,8 @@ export function QuotasView({
   refreshRef?: React.MutableRefObject<(() => void) | null>
   /** The page's Summary/Details switch, set into the header row. */
   viewSwitch?: React.ReactNode
+  /** The top bar's search — see "SEARCH" below. */
+  searchQuery?: string
 }) {
   const router = useRouter()
   const { requestNavigation } = useNavigationGuard()
@@ -126,7 +130,27 @@ export function QuotasView({
     onCompleted,
   })
 
-  const groups = useMemo(() => groupByLabel(tasks ?? []), [tasks])
+  // SEARCH narrows the list to matching quotas — the Reminders surface's
+  // pattern and its matcher (`matchesTaskSearch`: title and notes, as on the
+  // Tasks page). Filtered BEFORE grouping, so a label group with no match
+  // simply is not there, and the groups that remain keep their order. Nothing
+  // here folds, so there is no disclosure state for a search to disturb; the
+  // header row keeps the full count (it describes the page), and a count line
+  // below it describes the results. `?quota=` and the editor are untouched: a
+  // highlight id that is filtered out just matches no row, and the modal
+  // holds its own snapshot of the task.
+  const query = normalizeTaskSearch(searchQuery)
+  const searching = query.length > 0
+  const shown = useMemo(
+    () => (searching ? (tasks ?? []).filter((t) => matchesTaskSearch(t, query)) : (tasks ?? [])),
+    [tasks, searching, query],
+  )
+  const groups = useMemo(() => groupByLabel(shown), [shown])
+  // A selection made before the query no longer corresponds to what is on
+  // screen, exactly as on the Tasks and Reminders pages.
+  useEffect(() => {
+    clear()
+  }, [query, clear])
   const orderedIds = useMemo(() => groups.flatMap((g) => g.tasks.map((t) => t.id)), [groups])
 
   if (tasks === null)
@@ -146,8 +170,11 @@ export function QuotasView({
 
       {tasks.length === 0 ? (
         <EmptyState />
+      ) : searching && shown.length === 0 ? (
+        <QuotasSearchCount count={0} query={searchQuery ?? ''} />
       ) : (
         <div className="space-y-2.5">
+          {searching && <QuotasSearchCount count={shown.length} query={searchQuery ?? ''} />}
           {groups.map((group) => (
             <QuotaGroupCard
               key={group.label ?? 'unlabelled'}
@@ -256,6 +283,24 @@ export function EmptyState() {
         week&rdquo;. It counts instead of completing, and it is never late.
       </p>
     </div>
+  )
+}
+
+/**
+ * The count line shown while a search is active, and the no-match state — the
+ * Reminders surface's `SearchResults` header, word for word apart from the
+ * noun, so the two pages read the same. Shared by both of this page's views.
+ */
+export function QuotasSearchCount({ count, query }: { count: number; query: string }) {
+  return (
+    <>
+      <div className="text-muted-foreground px-2 text-sm" data-search-count={count}>
+        {count} result{count !== 1 ? 's' : ''} for &ldquo;{query.trim()}&rdquo;
+      </div>
+      {count === 0 && (
+        <p className="text-muted-foreground py-12 text-center text-sm">No quota here says that.</p>
+      )}
+    </>
   )
 }
 

@@ -5,10 +5,8 @@
  * POST /api/tokens — Create a new token, return the full token value once
  */
 
-import crypto from 'crypto'
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { hashToken, tokenPreview } from '@/core/auth/token-hash'
+import { requireAuth, AuthError, createApiToken } from '@/core/auth'
 import { success, unauthorized, forbidden, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
@@ -49,16 +47,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       return badRequest('Token name must be 100 characters or less')
     }
 
-    const db = getDb()
-    const raw = crypto.randomBytes(32).toString('hex')
-    const hashed = hashToken(raw)
-    const preview = tokenPreview(raw)
-    const result = db
-      .prepare('INSERT INTO api_tokens (user_id, token, token_preview, name) VALUES (?, ?, ?, ?)')
-      .run(user.id, hashed, preview, name)
+    const { id, raw } = createApiToken(user.id, name)
 
     // Return the raw token once — it cannot be retrieved after this
-    return success({ id: Number(result.lastInsertRowid), name, token: raw }, 201)
+    return success({ id, name, token: raw }, 201)
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'POST /api/tokens error:', err)

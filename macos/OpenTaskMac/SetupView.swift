@@ -82,15 +82,9 @@ struct SetupView: View {
         errorMessage = nil
         defer { isValidating = false }
 
-        // Normalise: trim, drop trailing slashes, and assume https:// when no
-        // scheme was typed — "tasks.example.com" is what people actually type.
-        var url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while url.hasSuffix("/") {
-            url.removeLast()
-        }
-        if !url.contains("://") {
-            url = "https://" + url
-        }
+        // Trim, drop trailing slashes, and assume https:// when no scheme was
+        // typed — shared with the iPhone's setup (`ServerURL.normalize`).
+        let url = ServerURL.normalize(serverURL)
 
         guard let checkURL = URL(string: "\(url)/login") else {
             errorMessage = "Invalid URL"

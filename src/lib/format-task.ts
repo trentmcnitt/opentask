@@ -6,7 +6,7 @@
  */
 
 import type { Task } from '@/types'
-import type { SortOption } from '@/hooks/useGroupSort'
+import type { SortOption } from '@/lib/task-grouping'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'

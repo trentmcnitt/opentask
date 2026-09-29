@@ -39,11 +39,11 @@
 import { getDb, withTransaction } from '@/core/db'
 import { logAction, createQuotaSnapshot } from '@/core/undo'
 import { nowUtc } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
-import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { getTaskById } from './read'
+import { loadTaskForMutation } from './access'
 import { rolloverQuotaNow } from './period-rollover'
 import { localDate, withLogged } from '@/lib/quota-prompts'
 // ONE definition of "is this a quota" — the client-safe one in lib/track. This
@@ -76,10 +76,9 @@ export interface IncrementProgressResult {
 export function incrementProgress(options: IncrementProgressOptions): IncrementProgressResult {
   const { userId, taskId, delta = 1 } = options
 
-  const found = getTaskById(taskId)
-  if (!found) throw new NotFoundError('Task not found')
-  if (!canUserAccessTask(userId, found)) throw new ForbiddenError('Access denied')
-  if (found.deleted_at) throw new ValidationError('Cannot log progress on a trashed task')
+  const found = loadTaskForMutation(userId, taskId, {
+    trashed: { reject: 'Cannot log progress on a trashed task' },
+  })
   if (!isTracked(found)) {
     throw new ValidationError(
       'Task is not tracked. Set a progress_target greater than 1 to track it.',

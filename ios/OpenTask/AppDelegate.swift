@@ -319,9 +319,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     switch response.actionIdentifier {
                     case NotificationAction.snoozeAll1hr:
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                        if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                        }
+                        await dismissNotificationsAfterSweep(result)
 
                     case NotificationAction.snoozeAllCustom:
                         // Handled by the content extension directly via .dismiss completion.
@@ -334,9 +332,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     default:
                         if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                             let result = try await APIClient.shared.snoozeOverdue(slot: slot)
-                            if result.tasksAffected > 0 {
-                                await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                            }
+                            await dismissNotificationsAfterSweep(result)
                         }
                     }
                 } catch {
@@ -416,9 +412,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
                 case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
-                    if result.tasksAffected > 0 {
-                        await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                    }
+                    await dismissNotificationsAfterSweep(result)
 
                 case NotificationAction.snoozeCustom, NotificationAction.snoozeAllCustom:
                     // These actions are handled entirely by the content extension
@@ -435,9 +429,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 default:
                     if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                         let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
-                        if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                        }
+                        await dismissNotificationsAfterSweep(result)
                     }
                 }
             } catch {

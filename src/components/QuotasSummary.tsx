@@ -6,10 +6,11 @@ import { cn } from '@/lib/utils'
 import { TrackPanel } from '@/components/TrackPanel'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import type { QuotaCreateDraft } from '@/components/QuotaDetail'
-import { EmptyState, QuotasHeaderRow } from '@/components/QuotasView'
+import { EmptyState, QuotasHeaderRow, QuotasSearchCount } from '@/components/QuotasView'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { useQuotasData } from '@/hooks/useQuotasData'
+import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 
 /**
  * /quotas' default view: the dashboard's Quotas panel, on a page of its own.
@@ -35,11 +36,15 @@ export function QuotasSummary({
   onCompleted,
   refreshRef,
   viewSwitch,
+  searchQuery,
 }: {
   onUndo: () => void
   onCompleted: () => void
   refreshRef?: React.MutableRefObject<(() => void) | null>
   viewSwitch?: React.ReactNode
+  /** The top bar's search. The panel narrows itself (see `TrackPanel`); this
+   *  view adds the count line and the no-match state, as `QuotasView` does. */
+  searchQuery?: string
 }) {
   const router = useRouter()
   const { requestNavigation } = useNavigationGuard()
@@ -60,6 +65,9 @@ export function QuotasSummary({
     return () => window.removeEventListener('open-add-quota', open)
   }, [])
 
+  const query = normalizeTaskSearch(searchQuery)
+  const searching = query.length > 0
+
   if (tasks === null)
     return <p className="text-muted-foreground py-16 text-center text-sm">{error ?? 'Loading…'}</p>
 
@@ -73,6 +81,13 @@ export function QuotasSummary({
         viewSwitch={viewSwitch}
       />
 
+      {searching && tasks.length > 0 && (
+        <QuotasSearchCount
+          count={tasks.filter((t) => matchesTaskSearch(t, query)).length}
+          query={searchQuery ?? ''}
+        />
+      )}
+
       {tasks.length === 0 ? (
         <EmptyState />
       ) : (
@@ -82,6 +97,7 @@ export function QuotasSummary({
           onCompleted={onCompleted}
           onRefresh={refresh}
           standalone
+          searchQuery={searchQuery}
         />
       )}
 

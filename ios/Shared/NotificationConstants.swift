@@ -169,21 +169,8 @@ func registerNotificationCategories() {
     ])
 }
 
-/// Highest priority the server will include in a bulk snooze.
-///
-/// Mirrors `HIGH_PRIORITY_THRESHOLD` in `src/lib/priority.ts`: the server
-/// snoozes P0-P2 and leaves P3 (High) and P4 (Urgent) alone, because their due
-/// dates are real deadlines. Dismissing above this value would clear the banner
-/// for a task that was never actually snoozed — it would stay overdue while
-/// looking handled, which is the failure this app exists to prevent.
-///
-/// Keep in sync with the server constant; there is no shared source of truth
-/// across the Swift/TypeScript boundary.
-let bulkSnoozeMaxPriority = 2
-
 /// Remove delivered notifications for tasks at or below the given priority.
-/// Used after bulk snooze to clear notifications for tasks that were just snoozed.
-/// P3 (High) and P4 (Urgent) are never bulk-snoozed, so those notifications remain.
+/// The general form; after a bulk snooze use `dismissNotificationsAfterSweep`.
 func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
     let center = UNUserNotificationCenter.current()
     let notifications = await center.deliveredNotifications()
@@ -199,40 +186,44 @@ func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
     }
 }
 
+/// After a bulk snooze: clear the delivered notifications of the tiers the
+/// sweep actually moved. P0-P2 always; P3 (High) too when the sweep took the
+/// High tier (`sweepDismissCeiling`, in `SweepDismissal.swift`); P4 (Urgent)
+/// never, since it is never swept. A sweep that moved nothing clears nothing.
+///
+/// Every sweep path calls this — the phone, Mac and Watch action handlers,
+/// the content extension and the Mac's menu items — so they can't drift on
+/// which banners a sweep clears.
+func dismissNotificationsAfterSweep(_ result: APIClient.BulkSnoozeResult) async {
+    guard result.tasksAffected > 0 else { return }
+    await dismissNotifications(atOrBelowPriority: sweepDismissCeiling(result))
+}
+
 /// Set the app icon badge (iOS) or the Dock tile badge (macOS) — same call,
-/// same meaning. watchOS has no app icon badge, so there it is a no-op.
+/// same meaning. watchOS has no app icon badge, so neither badge function
+/// exists there.
 #if os(iOS) || os(macOS)
 func updateBadge(_ count: Int) {
     UNUserNotificationCenter.current().setBadgeCount(max(0, count))
 }
-#else
-func updateBadge(_ count: Int) {
-    // watchOS does not support app icon badges
-}
-#endif
 
 /// Set the badge to the server's overdue count — the Tasks page's red pill,
 /// from `GET /api/tasks/counts` (the same `countTasks` the pill uses).
 ///
 /// Called when the app comes to the foreground, and after a notification
-/// action. The server also sends a badge-only push after every change (an
-/// alert-type push with just `aps.badge`, which iOS/macOS apply without waking
-/// the app), so this is the local half: the moment the user is in the app,
-/// or has just acted on a notification, the badge is the real number rather
-/// than a guess. (Before 2026-09-29 the actions guessed — "the payload's
-/// count minus one" — from a payload count that was never the badge total,
-/// and activation zeroed the badge outright.)
+/// action or a Mac menu sweep. The server also sends a badge-only push after
+/// every change (an alert-type push with just `aps.badge`, which iOS/macOS
+/// apply without waking the app), so this is the local half: the moment the
+/// user is in the app, or has just acted on a notification, the badge is the
+/// real number rather than a guess. (Before 2026-09-29 the actions guessed —
+/// "the payload's count minus one" — from a payload count that was never the
+/// badge total, and activation zeroed the badge outright.)
 ///
 /// A failed fetch leaves the badge alone; it never zeroes it.
-#if os(iOS) || os(macOS)
 func refreshBadgeFromServer() async {
     guard APIClient.shared.isConfigured,
           let counts = try? await APIClient.shared.fetchTaskCounts() else { return }
     updateBadge(counts.overdue)
-}
-#else
-func refreshBadgeFromServer() async {
-    // watchOS does not support app icon badges
 }
 #endif
 

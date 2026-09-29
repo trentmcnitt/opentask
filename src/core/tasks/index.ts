@@ -4,13 +4,25 @@
  * Provides all task CRUD operations plus mark-done, snooze, and bulk operations.
  */
 
-// Create and read
-export { createTask, getTaskById, getTasks } from './create'
-export type { CreateTaskOptions, GetTasksOptions, TaskKind } from './create'
+// Read
+export { getTaskById, getTasks } from './read'
+export type { GetTasksOptions, TaskKind } from './read'
+
+// Access
+export { canUserAccessTask, loadTaskForMutation } from './access'
+export type { LoadTaskForMutationOptions } from './access'
+
+// Create
+export { createTask } from './create'
+export type { CreateTaskOptions } from './create'
 
 // Update
-export { updateTask, canUserAccessTask } from './update'
+export { updateTask } from './update'
 export type { UpdateTaskOptions, UpdateTaskResult } from './update'
+
+// Provenance confirmation (§7.2)
+export { confirmTaskProvenance } from './confirm'
+export type { ConfirmTaskProvenanceResult } from './confirm'
 
 // Delete
 export { deleteTask, restoreTask, emptyTrash } from './delete'
