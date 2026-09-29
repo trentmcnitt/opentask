@@ -471,7 +471,8 @@ export function SelectionActionSheet({
         <Dialog open={sheetOpen} onOpenChange={handleOpenChange}>
           <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4">
             <DialogHeader>
-              <DialogTitle className="truncate">{modalTitle}</DialogTitle>
+              {/* `pr-6` keeps a long title's ellipsis clear of the close (X) button. */}
+              <DialogTitle className="truncate pr-6">{modalTitle}</DialogTitle>
               <DialogDescription className="sr-only">
                 Adjust date, priority, and other settings for selected tasks
               </DialogDescription>

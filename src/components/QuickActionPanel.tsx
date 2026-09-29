@@ -2179,10 +2179,12 @@ function NotesInlineSection({
     return (
       <div>
         <div className="flex items-start gap-2">
+          {/* `break-words`: notes often hold an unbroken path or URL; without
+              it that line runs past the panel's edge once "more" unclamps it. */}
           <p
             ref={textRef}
             className={cn(
-              'min-w-0 flex-1 text-xs whitespace-pre-wrap',
+              'min-w-0 flex-1 text-xs break-words whitespace-pre-wrap',
               !readExpanded && 'line-clamp-3',
               isDirty ? 'text-blue-500' : 'text-muted-foreground',
             )}
