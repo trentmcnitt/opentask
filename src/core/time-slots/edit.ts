@@ -70,11 +70,16 @@
  */
 
 import { DateTime } from 'luxon'
+import type { Database } from 'better-sqlite3'
 import { getDb, withTransaction } from '@/core/db'
 import { NotFoundError, ValidationError } from '@/core/errors'
-import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logAction } from '@/core/undo'
 import { logActivityBatch, type ActivityEntry } from '@/core/activity'
-import { collectFieldChanges, type FieldChangesInput } from '@/core/tasks/helpers'
+import {
+  applyFieldChanges,
+  collectFieldChanges,
+  type FieldChangesInput,
+} from '@/core/tasks/helpers'
 import { getTaskById } from '@/core/tasks/create'
 import { nowUtc } from '@/core/recurrence'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
@@ -269,13 +274,19 @@ function promptInputs(userId: number, fromId: number, toId: number): TaskChange[
 }
 
 /**
- * Apply planned changes inside the caller's transaction. Mirrors bulkEdit's
- * per-task loop (collectFieldChanges → UPDATE → snapshot + activity), minus
- * its snooze/quota filters, which cannot apply to a reminder schedule move or
- * a prompt's period.
+ * Apply planned changes inside the caller's transaction. The same per-task
+ * step as bulkEdit (collectFieldChanges → `applyFieldChanges`: UPDATE →
+ * snapshot + activity), minus its snooze/quota filters, which cannot apply to
+ * a reminder schedule move or a prompt's period. The activity action is always
+ * 'edit' here: `collectFieldChanges` refuses a snooze of a reminder outright,
+ * and a prompt-period change carries no date.
  */
-function applyChanges(userId: number, timezone: string, changes: TaskChange[]): MoveOutcome {
-  const db = getDb()
+function applyChanges(
+  tx: Database,
+  userId: number,
+  timezone: string,
+  changes: TaskChange[],
+): MoveOutcome {
   const now = new Date()
   const nowStr = nowUtc()
   const batchId = crypto.randomUUID()
@@ -294,27 +305,9 @@ function applyChanges(userId: number, timezone: string, changes: TaskChange[]): 
     })
     if (data.fieldsChanged.length === 0) continue
 
-    data.setClauses.push('updated_at = ?')
-    data.values.push(nowStr, task.id)
-    db.prepare(`UPDATE tasks SET ${data.setClauses.join(', ')} WHERE id = ?`).run(...data.values)
-
-    snapshots.push(
-      createTaskSnapshot(
-        data.beforeState as Partial<Task> & { id: number },
-        data.afterState as Partial<Task> & { id: number },
-        data.fieldsChanged,
-      ),
-    )
-    activity.push({
-      userId,
-      taskId: task.id,
-      action: 'edit',
-      source: 'bulk',
-      batchId,
-      fields: data.fieldsChanged,
-      before: data.beforeState,
-      after: data.afterState,
-    })
+    const applied = applyFieldChanges(tx, task, data, nowStr)
+    snapshots.push(applied.snapshot)
+    activity.push({ userId, ...applied.activity, source: 'bulk', batchId })
     data.fieldsChanged.forEach((f) => fields.add(f))
   }
 
@@ -396,7 +389,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     const newSlots = oldSlots.map((s) => (s.id === slotId ? after : s))
     const reminders = loadReminders(userId)
     const moves = planSlotRetime(reminders, oldSlots, newSlots, slotId, userTimezone)
-    outcome = applyChanges(userId, userTimezone, moveInputs(reminders, moves, userTimezone))
+    outcome = applyChanges(tx, userId, userTimezone, moveInputs(reminders, moves, userTimezone))
 
     const moved = outcome.snapshots.length
     const description =
@@ -473,7 +466,7 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
     // the user's slots and the removed one as gone.
     const reminderChanges = moveInputs(reminders, moves, userTimezone)
     const quotaChanges = promptTarget ? promptInputs(userId, slotId, promptTarget.id) : []
-    outcome = applyChanges(userId, userTimezone, [...reminderChanges, ...quotaChanges])
+    outcome = applyChanges(tx, userId, userTimezone, [...reminderChanges, ...quotaChanges])
     const quotaIds = new Set(quotaChanges.map((c) => c.task.id))
     remindersMoved = outcome.snapshots.filter((s) => !quotaIds.has(s.task_id)).length
 
