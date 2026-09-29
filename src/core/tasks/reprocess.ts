@@ -12,9 +12,9 @@ import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { ValidationError } from '@/core/errors'
+import { getTaskById } from './read'
+import { loadTaskForMutation } from './access'
 
 export interface ReprocessTaskOptions {
   userId: number
@@ -30,18 +30,9 @@ export interface ReprocessTaskOptions {
 export function reprocessTask(options: ReprocessTaskOptions): Task {
   const { userId, taskId } = options
 
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
-
-  if (task.deleted_at) {
-    throw new ValidationError('Cannot reprocess a trashed task')
-  }
+  const task = loadTaskForMutation(userId, taskId, {
+    trashed: { reject: 'Cannot reprocess a trashed task' },
+  })
 
   if (!task.labels.includes('ai-failed')) {
     throw new ValidationError('Task does not have ai-failed label')

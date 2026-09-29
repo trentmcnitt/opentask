@@ -23,13 +23,12 @@ import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { isTracked } from '@/lib/track'
-import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { loadTaskForMutation } from './access'
 import type { Task } from '@/types'
 
 export interface SkipOccurrenceOptions {
@@ -56,10 +55,9 @@ export interface SkipOccurrenceResult {
 export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceResult {
   const { userId, userTimezone, taskId } = options
 
-  const task = getTaskById(taskId)
-  if (!task) throw new NotFoundError('Task not found')
-  if (!canUserAccessTask(userId, task)) throw new ForbiddenError('Access denied')
-  if (task.deleted_at) throw new ValidationError('Cannot skip a trashed task')
+  const task = loadTaskForMutation(userId, taskId, {
+    trashed: { reject: 'Cannot skip a trashed task' },
+  })
   // §6: a reminder has no occurrence to skip. A missed one already rolls
   // forward on its own (`effectiveDueAt`), and clearing one is "Considered"
   // (done), which is the whole interaction — the same reason `snoozeTask`
