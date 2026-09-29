@@ -70,9 +70,8 @@ enum MenuActions {
     ///
     /// The Dock badge is re-read from the server (`refreshBadgeFromServer`,
     /// the same count the notification actions use). It used to be set to
-    /// the sweep's skipped count, which is not the overdue total: it missed
-    /// every overdue task the sweep never looked at, such as a dateless
-    /// recurring task that is due today.
+    /// the sweep's Urgent-only skipped count, which is not the overdue total:
+    /// it left out every High task the sweep skipped.
     private static func run(
         label: String,
         _ call: @escaping () async throws -> APIClient.BulkSnoozeResult
