@@ -10,7 +10,8 @@ import Foundation
 /// Structured cases rather than strings so each surface can word them for
 /// its space (the menu bar says "2 High left", the watch "2 High still
 /// overdue") and style them (Urgent is drawn in the overdue colour) while the
-/// set of lines, and their order, stays the same everywhere. They drifted
+/// counts and their order come from one place. The Mac surfaces show only
+/// what was left behind and skip `.includedHigh`. The lists drifted
 /// when each surface built its own: the watch sheet had no line for High
 /// left behind, so a High task still overdue after the sweep went unmentioned.
 ///
