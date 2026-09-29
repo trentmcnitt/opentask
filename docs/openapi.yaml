@@ -360,9 +360,8 @@ paths:
                           was_recurring:
                             type: boolean
                           next_due_at:
-                            type: string
+                            type: [string, 'null']
                             format: date-time
-                            nullable: true
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -571,11 +570,9 @@ paths:
                     `operational` labels carry behavior; `domain` labels carry
                     meaning.
                 icon:
-                  type: string
-                  nullable: true
+                  type: [string, 'null']
                 color:
-                  type: string
-                  nullable: true
+                  type: [string, 'null']
       responses:
         '200':
           description: The registered label (idempotent - returns the existing row if present)
@@ -804,16 +801,13 @@ paths:
                       - type: object
                         properties:
                           previous_due_at:
-                            type: string
+                            type: [string, 'null']
                             format: date-time
-                            nullable: true
                           original_due_at:
-                            type: string
+                            type: [string, 'null']
                             format: date-time
-                            nullable: true
                           description:
-                            type: string
-                            nullable: true
+                            type: [string, 'null']
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1084,8 +1078,7 @@ paths:
                     project_id:
                       type: integer
                     quota_prompt_config:
-                      type: object
-                      nullable: true
+                      type: [object, 'null']
                       description: >-
                         Unlike a single-task PATCH (which replaces the whole config), a bulk
                         edit MERGES this over each task's stored config, top level only:
@@ -1097,13 +1090,11 @@ paths:
                         enabled:
                           type: boolean
                         slot_id:
-                          type: integer
-                          nullable: true
+                          type: [integer, 'null']
                         numbers:
                           type: object
                           additionalProperties:
-                            type: integer
-                            nullable: true
+                            type: [integer, 'null']
                 per_task:
                   type: object
                   description: >-
@@ -1115,8 +1106,7 @@ paths:
                     type: object
                     properties:
                       rrule:
-                        type: string
-                        nullable: true
+                        type: [string, 'null']
                 include_task_ids:
                   type: array
                   items:
@@ -1484,8 +1474,7 @@ paths:
                           type: object
                           properties:
                             slot:
-                              nullable: true
-                              type: object
+                              type: [object, 'null']
                               properties:
                                 id:
                                   type: integer
@@ -1580,9 +1569,8 @@ paths:
                   type: integer
                   description: Position in the user's project order. Omitted = after the last project.
                 color:
-                  type: string
-                  enum: [red, orange, yellow, green, blue, purple, pink, gray]
-                  nullable: true
+                  type: [string, 'null']
+                  enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
                   description: Omitted or null = a random colour not yet used by another of the user's projects.
       responses:
         '201':
@@ -1693,9 +1681,8 @@ paths:
                 sort_order:
                   type: integer
                 color:
-                  type: string
-                  enum: [red, orange, yellow, green, blue, purple, pink, gray]
-                  nullable: true
+                  type: [string, 'null']
+                  enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
       responses:
         '200':
           description: Updated project
@@ -1837,8 +1824,7 @@ paths:
                     type: object
                     properties:
                       latest_id:
-                        type: integer
-                        nullable: true
+                        type: [integer, 'null']
                         description: Newest undo-log entry id, or null when the user has none.
                       undoable_count:
                         type: integer
@@ -2252,8 +2238,7 @@ paths:
                             name:
                               type: string
                             token_preview:
-                              type: string
-                              nullable: true
+                              type: [string, 'null']
                               description: Last 8 characters of the token
                             created_at:
                               type: string
@@ -2615,8 +2600,7 @@ paths:
                                   priority:
                                     type: integer
                                   rrule:
-                                    type: string
-                                    nullable: true
+                                    type: [string, 'null']
                                   labels:
                                     type: array
                                     items:
@@ -2771,18 +2755,14 @@ paths:
                           - type: object
                             properties:
                               currentOperation:
-                                type: object
-                                nullable: true
+                                type: [object, 'null']
                                 properties:
                                   taskId:
-                                    type: integer
-                                    nullable: true
+                                    type: [integer, 'null']
                                   inputText:
-                                    type: string
-                                    nullable: true
+                                    type: [string, 'null']
                                   startedAt:
-                                    type: string
-                                    nullable: true
+                                    type: [string, 'null']
                       quick_take_slot:
                         allOf:
                           - $ref: '#/components/schemas/AISlotStats'
@@ -2791,15 +2771,12 @@ paths:
                               totalSuperseded:
                                 type: integer
                               currentOperation:
-                                type: object
-                                nullable: true
+                                type: [object, 'null']
                                 properties:
                                   inputText:
-                                    type: string
-                                    nullable: true
+                                    type: [string, 'null']
                                   startedAt:
-                                    type: string
-                                    nullable: true
+                                    type: [string, 'null']
                       queue:
                         type: object
                         properties:
@@ -2816,8 +2793,7 @@ paths:
                             type: object
                             properties:
                               slot:
-                                type: object
-                                nullable: true
+                                type: [object, 'null']
                                 description: Same as `enrichment_slot.currentOperation`.
                               pipeline_task_ids:
                                 type: array
@@ -2829,8 +2805,7 @@ paths:
                                 type: integer
                                 description: The user's tasks still waiting for enrichment.
                           insights:
-                            type: object
-                            nullable: true
+                            type: [object, 'null']
                             properties:
                               session_id:
                                 type: string
@@ -2897,8 +2872,7 @@ paths:
                       model_display:
                         type: string
                       error:
-                        type: string
-                        nullable: true
+                        type: [string, 'null']
         '400':
           description: |
             Unknown feature, the feature is turned off for this user, or no
@@ -2944,8 +2918,7 @@ paths:
                     type: object
                     properties:
                       text:
-                        type: string
-                        nullable: true
+                        type: [string, 'null']
                         description: Null when the feature is off for this user, or the call failed or timed out.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -2978,8 +2951,7 @@ paths:
                 type: object
                 properties:
                   data:
-                    type: object
-                    nullable: true
+                    type: [object, 'null']
                     properties:
                       tasks:
                         type: array
@@ -2995,8 +2967,7 @@ paths:
                       generated_at:
                         type: string
                       duration_ms:
-                        type: integer
-                        nullable: true
+                        type: [integer, 'null']
         '401':
           $ref: '#/components/responses/Unauthorized'
         '503':
@@ -3029,8 +3000,7 @@ paths:
                     type: object
                     properties:
                       session_id:
-                        type: string
-                        nullable: true
+                        type: [string, 'null']
                       total_tasks:
                         type: integer
                       single_call:
@@ -3099,12 +3069,10 @@ paths:
                         type: string
                         format: date-time
                       finished_at:
-                        type: string
+                        type: [string, 'null']
                         format: date-time
-                        nullable: true
                       error:
-                        type: string
-                        nullable: true
+                        type: [string, 'null']
         '400':
           description: Missing `session_id`
           content:
@@ -3159,15 +3127,13 @@ paths:
                               type: string
                               format: date-time
                       generated_at:
-                        type: string
+                        type: [string, 'null']
                         format: date-time
-                        nullable: true
                       stale:
                         type: boolean
                         description: There are results, but not from today (UTC).
                       duration_ms:
-                        type: integer
-                        nullable: true
+                        type: [integer, 'null']
                         description: How long the last completed generation took.
                       signal_counts:
                         type: object
@@ -3190,8 +3156,7 @@ paths:
                             description:
                               type: string
                       active_session:
-                        type: object
-                        nullable: true
+                        type: [object, 'null']
                         properties:
                           session_id:
                             type: string
@@ -3271,23 +3236,19 @@ paths:
                             type: boolean
                             description: '`done` only.'
                           nextDueAt:
-                            type: string
+                            type: [string, 'null']
                             format: date-time
-                            nullable: true
                             description: '`done` on a recurring task only.'
                           previousDueAt:
-                            type: string
+                            type: [string, 'null']
                             format: date-time
-                            nullable: true
                             description: Snooze actions only.
                           originalDueAt:
-                            type: string
+                            type: [string, 'null']
                             format: date-time
-                            nullable: true
                             description: Snooze actions only.
                           description:
-                            type: string
-                            nullable: true
+                            type: [string, 'null']
                             description: Snooze actions only.
         '400':
           description: Invalid `task_id`, unknown action, or the task cannot take it
@@ -3543,8 +3504,7 @@ paths:
                   default: production
                   description: Any value other than `development` is stored as `production`.
                 widget_kind:
-                  type: string
-                  nullable: true
+                  type: [string, 'null']
       responses:
         '200':
           description: Registered
@@ -3678,8 +3638,7 @@ components:
             accepted on PATCH so older clients don't get a 400, but it is
             stored and returned as `time`. Any other value is a 400.
         default_reminder_slot_id:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
           description: |
             The user's default reminder slot (a time slot id; Settings ->
             Reminder periods -> Default period). A reminder with no stated time
@@ -3689,8 +3648,7 @@ components:
             (also the fallback when the stored slot no longer exists). Must be
             one of the user's own slots.
         quota_prompt_slot_id:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
           description: |
             The original name of `default_reminder_slot_id` - the same
             setting, returned and accepted under both names. Sending both with
@@ -3755,14 +3713,12 @@ components:
         task_id:
           type: integer
         number:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
           description: >
             Daily quotas: the row is done once today's count reaches this.
             Null for every other quota (one prompt a day).
         numbers:
-          type: array
-          nullable: true
+          type: [array, 'null']
           items:
             type: integer
           description: >
@@ -3771,8 +3727,7 @@ components:
             setting `quota_prompt_config.numbers[k]` for exactly these. Null for
             every other quota — move those with `quota_prompt_config.slot_id`.
         slot_id:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
           description: The period (time slot id) this row sits in; null in the un-slotted group.
         title:
           type: string
@@ -3782,13 +3737,11 @@ components:
         target:
           type: integer
         period:
-          type: string
-          nullable: true
-          enum: [DAILY, WEEKLY, MONTHLY, YEARLY]
+          type: [string, 'null']
+          enum: [DAILY, WEEKLY, MONTHLY, YEARLY, null]
         stripe_color:
-          type: string
-          nullable: true
-          enum: [red, orange, yellow, blue, purple, pink, gray]
+          type: [string, 'null']
+          enum: [red, orange, yellow, blue, purple, pink, gray, null]
           description: >
             The quota's label colour for its stripe, resolved server-side. Null
             is neutral (no label or colour); green is never sent — it means
@@ -3836,12 +3789,10 @@ components:
         title:
           type: string
         original_title:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: Raw input text before AI enrichment
         short_title:
-          type: string
-          nullable: true
+          type: [string, 'null']
           maxLength: 24
           description: >
             Optional short label for the quota widget chip (§5). Only
@@ -3852,56 +3803,45 @@ components:
         done:
           type: boolean
         done_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         priority:
           type: integer
           minimum: 0
           maximum: 4
           description: '0=unset, 1=low, 2=medium, 3=high, 4=urgent'
         due_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         rrule:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: RFC 5545 recurrence rule
         recurrence_mode:
           type: string
           enum: [from_due, from_completion]
         anchor_time:
-          type: string
-          nullable: true
+          type: [string, 'null']
         anchor_dow:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
         anchor_dom:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
         original_due_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         auto_snooze_minutes:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
         deleted_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         archived_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         labels:
           type: array
           items:
             type: string
         notes:
-          type: string
-          nullable: true
+          type: [string, 'null']
         progress_target:
           type: integer
           description: >
@@ -3915,9 +3855,8 @@ components:
             marks the task "met" but does NOT complete it; the task stays open
             until its period boundary, so overflow (3/2) remains observable.
         progress_period_start:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
           description: >
             A quota's period anchor (§5) - the UTC instant the current period
             began, by the user's local calendar (00:00 on the user's first day
@@ -3927,8 +3866,7 @@ components:
             due_at, for anything that needs to know how far through its period a
             quota is (a pace indicator, for example): a quota has no due_at.
         quota_prompt_config:
-          type: object
-          nullable: true
+          type: [object, 'null']
           description: >
             Quota reminders (2026-09-24): whether and where this quota prompts
             on the Reminders surface. Null = the defaults (on for daily, weekly
@@ -3945,17 +3883,14 @@ components:
             enabled:
               type: boolean
             slot_id:
-              type: integer
-              nullable: true
+              type: [integer, 'null']
             numbers:
               type: object
               description: Daily quotas — the period for prompt number k, keyed "1".."N".
               additionalProperties:
-                type: integer
-                nullable: true
+                type: [integer, 'null']
         quota_day_state:
-          type: object
-          nullable: true
+          type: [object, 'null']
           readOnly: true
           description: >
             Server-owned record of the owner's local day for this quota's
@@ -3994,13 +3929,11 @@ components:
             Occurrences declined without a completion (§7.5). Exists so
             completion_count stays honest - nothing may infer intent from it.
         first_completed_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         last_completed_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         created_at:
           type: string
           format: date-time
@@ -4025,8 +3958,7 @@ components:
         title:
           type: string
         short_title:
-          type: string
-          nullable: true
+          type: [string, 'null']
           maxLength: 24
           description: >
             Optional short label for the quota widget chip (§5). Trimmed;
@@ -4042,8 +3974,7 @@ components:
           maximum: 4
           default: 0
         rrule:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: |
             RFC 5545 recurrence rule.
 
@@ -4128,11 +4059,9 @@ components:
           type: string
           enum: [domain, operational]
         icon:
-          type: string
-          nullable: true
+          type: [string, 'null']
         color:
-          type: string
-          nullable: true
+          type: [string, 'null']
         created_at:
           type: string
           format: date-time
@@ -4175,8 +4104,7 @@ components:
             the nearest remaining one (DELETE only; always 0 for PATCH — a
             retime keeps the slot's id, so its prompts follow it).
         undo_id:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
           description: The undo_log entry for this change (POST /api/undo/batch with through_id undoes exactly it); null for a rename.
 
     TaskUpdate:
@@ -4185,8 +4113,7 @@ components:
         title:
           type: string
         short_title:
-          type: string
-          nullable: true
+          type: [string, 'null']
           maxLength: 24
           description: >
             Optional short label for the quota widget chip (§5). Trimmed;
@@ -4194,9 +4121,8 @@ components:
             Kept for API compatibility; the web editor no longer sets it, and
             clients fall back to `title` when it is null.
         due_at:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
           description: |
             On its own, moving an existing date is a **snooze**: the
             occurrence origin (`original_due_at`) is kept, `snooze_count`
@@ -4220,8 +4146,7 @@ components:
           minimum: 0
           maximum: 4
         rrule:
-          type: string
-          nullable: true
+          type: [string, 'null']
         recurrence_mode:
           type: string
           enum: [from_due, from_completion]
@@ -4230,8 +4155,7 @@ components:
           items:
             type: string
         notes:
-          type: string
-          nullable: true
+          type: [string, 'null']
         project_id:
           type: integer
         auto_snooze_minutes:
@@ -4251,9 +4175,8 @@ components:
           type: integer
           minimum: 0
         create_label:
-          type: boolean
+          type: [boolean, 'null']
           description: Register unknown labels in this write instead of rejecting them (§7.2).
-          nullable: true
 
     Project:
       type: object
@@ -4269,9 +4192,8 @@ components:
         sort_order:
           type: integer
         color:
-          type: string
-          enum: [red, orange, yellow, green, blue, purple, pink, gray]
-          nullable: true
+          type: [string, 'null']
+          enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
         active_count:
           type: integer
         overdue_count:
@@ -4293,13 +4215,11 @@ components:
           type: string
           format: date-time
         due_at_was:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         due_at_next:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
         task_title:
           type: string
         project_id:
@@ -4425,11 +4345,9 @@ components:
           type: string
           description: JSON string of the delivered payload
         status_code:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
         error:
-          type: string
-          nullable: true
+          type: [string, 'null']
         attempt:
           type: integer
         created_at:
@@ -4442,8 +4360,7 @@ components:
         undone_action:
           type: string
         description:
-          type: string
-          nullable: true
+          type: [string, 'null']
         tasks_affected:
           type: integer
         undoable_count:
@@ -4468,8 +4385,7 @@ components:
         redone_action:
           type: string
         description:
-          type: string
-          nullable: true
+          type: [string, 'null']
         tasks_affected:
           type: integer
         undoable_count:
@@ -4516,8 +4432,7 @@ components:
             - time_slot_delete
             - quota_prompt
         description:
-          type: string
-          nullable: true
+          type: [string, 'null']
         tasks_affected:
           type: integer
           description: Number of task snapshots in the entry
@@ -4576,15 +4491,13 @@ components:
           type: string
           enum: [uninitialized, initializing, available, busy, dead]
         activatedAt:
-          type: string
-          nullable: true
+          type: [string, 'null']
         totalRequests:
           type: integer
         totalRecycles:
           type: integer
         lastRequestAt:
-          type: string
-          nullable: true
+          type: [string, 'null']
         model:
           type: string
 
@@ -4597,32 +4510,25 @@ components:
         user_id:
           type: integer
         task_id:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
         action:
           type: string
         status:
           type: string
           enum: [success, error, skipped]
         input:
-          type: string
-          nullable: true
+          type: [string, 'null']
         output:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: Raw model output (usually a JSON string)
         model:
-          type: string
-          nullable: true
+          type: [string, 'null']
         duration_ms:
-          type: integer
-          nullable: true
+          type: [integer, 'null']
         error:
-          type: string
-          nullable: true
+          type: [string, 'null']
         provider:
-          type: string
-          nullable: true
+          type: [string, 'null']
         created_at:
           type: string
 
@@ -4666,15 +4572,10 @@ components:
       type: object
       properties:
         today:
-          type: object
-          nullable: true
-          properties:
-            completions:
-              type: integer
-            tasks_created:
-              type: integer
-            snoozes:
-              type: integer
+          description: Today's stats row (in the user's timezone), or null when there has been no activity today.
+          oneOf:
+            - $ref: '#/components/schemas/DailyStat'
+            - type: 'null'
         week:
           type: object
           properties:
