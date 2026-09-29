@@ -7,15 +7,17 @@
  */
 
 import { NextRequest } from 'next/server'
-import { getAuthUser, AuthError } from '@/core/auth'
+import { getAuthUser } from '@/core/auth'
+import { AppError } from '@/core/errors'
 import {
   success,
   unauthorized,
-  notFound,
   forbidden,
   badRequest,
+  notFound,
   handleError,
   handleZodError,
+  parseRouteId,
 } from '@/lib/api-response'
 import { getDb, withTransaction } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
@@ -60,11 +62,8 @@ export const GET = withLogging(async function GET(request: NextRequest, context:
     }
 
     const { id } = await context.params
-    const projectId = parseInt(id)
-
-    if (isNaN(projectId)) {
-      return notFound('Project not found', { id })
-    }
+    const projectId = parseRouteId(id)
+    if (projectId === null) return badRequest('Invalid project ID')
 
     const project = getProjectById(projectId, user.id)
     if (!project) {
@@ -77,10 +76,7 @@ export const GET = withLogging(async function GET(request: NextRequest, context:
 
     return success(formatProjectResponse(project))
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    log.error('api', 'GET /api/projects/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'GET /api/projects/:id error:', err)
     return handleError(err)
   }
 })
@@ -93,11 +89,8 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
     }
 
     const { id } = await context.params
-    const projectId = parseInt(id)
-
-    if (isNaN(projectId)) {
-      return notFound('Project not found', { id })
-    }
+    const projectId = parseRouteId(id)
+    if (projectId === null) return badRequest('Invalid project ID')
 
     const project = getProjectById(projectId, user.id)
     if (!project) {
@@ -148,9 +141,8 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
 
     return success(formatProjectResponse(updated))
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)
-    log.error('api', 'PATCH /api/projects/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'PATCH /api/projects/:id error:', err)
     return handleError(err)
   }
 })
@@ -166,11 +158,8 @@ export const DELETE = withLogging(async function DELETE(
     }
 
     const { id } = await context.params
-    const projectId = parseInt(id)
-
-    if (isNaN(projectId)) {
-      return notFound('Project not found', { id })
-    }
+    const projectId = parseRouteId(id)
+    if (projectId === null) return badRequest('Invalid project ID')
 
     const project = getProjectById(projectId, user.id)
     if (!project) {
@@ -221,10 +210,7 @@ export const DELETE = withLogging(async function DELETE(
       tasks_moved_to_inbox: true,
     })
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    log.error('api', 'DELETE /api/projects/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'DELETE /api/projects/:id error:', err)
     return handleError(err)
   }
 })

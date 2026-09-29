@@ -7,20 +7,23 @@
  *
  * AT-TARGET BEHAVIOR IS PERIOD-ANCHORED (decided by Trent, 2026-07-26).
  * Reaching the target marks the row "met" — a visual state change, no completion
- * event. The row stays OPEN until the rrule's natural period boundary, and it is
- * that boundary's advance which fires the completion path and resets
+ * event. The row stays OPEN until its period ends, and the period-rollover cron
+ * (`period-rollover.ts`) is what closes it: it records the period in
+ * `progress_periods`, writes a completion if the target was met, and resets
  * `progress_current` to 0. Overflow is therefore observable: a third egg meal in
  * a 2x/week target displays as 3/2 rather than vanishing.
  *
  * The rejected alternative was auto-completing at target, which made overflow
  * unobservable — the row disappeared at 2/2 and the third never got recorded.
  *
- * Completing one before the boundary still closes the period early, but only
- * as a deliberate act: `markDone`/`bulkDone` refuse a quota unless the caller
- * passes `close_period: true` (2026-09-24). No app surface offers it — every
- * quota surface only logs progress — and an API `done` on a quota almost
- * always meant +1, which the old behavior answered by silently zeroing the
- * period's count.
+ * The one other way a period ends is `close_period`, an API-only early close:
+ * `markDone`/`bulkDone` refuse a quota unless the caller passes
+ * `close_period: true` (2026-09-24). That runs the ordinary recurring
+ * completion path (`execute-mark-done.ts`) — a completions row and the count
+ * reset to 0 — but writes NO `progress_periods` row and does not move the
+ * period anchor. No app surface offers it — every quota surface only logs
+ * progress — and an API `done` on a quota almost always meant +1, which the
+ * old behavior answered by silently zeroing the period's count.
  *
  * WHAT MUST NOT HAPPEN HERE:
  * - A sub-target increment must NOT dispatch `task.completed`. Anything
@@ -165,56 +168,4 @@ export function ownerTimezone(userId: number): string {
     | { timezone: string }
     | undefined
   return row?.timezone ?? 'UTC'
-}
-
-export type PaceState = 'on-pace' | 'behind' | 'met'
-
-export interface Pace {
-  state: PaceState
-  current: number
-  target: number
-  /** 0..1 through the current period, or null when there is no period to measure. */
-  periodElapsed: number | null
-}
-
-/**
- * Deterministic pace calculation — view logic, not AI (§5).
- *
- * Compares how far through the period we are against how much of the target is
- * logged. Returns 'behind' only when the shortfall is real, and callers must
- * treat that as information, not as failure: per L1 a 0/1 late in the week may
- * mean UNLOGGED, not undone. The user routinely stops recording mid-period out
- * of expertise, and an instrument that reads non-recording as failure is broken.
- */
-export function computePace(
-  task: Pick<Task, 'progress_current' | 'progress_target'>,
-  periodElapsed: number | null,
-): Pace {
-  const current = task.progress_current ?? 0
-  const target = task.progress_target ?? 1
-
-  if (current >= target) {
-    return { state: 'met', current, target, periodElapsed }
-  }
-  if (periodElapsed === null) {
-    return { state: 'on-pace', current, target, periodElapsed }
-  }
-
-  const expected = target * periodElapsed
-  return {
-    state: current + 1 <= expected ? 'behind' : 'on-pace',
-    current,
-    target,
-    periodElapsed,
-  }
-}
-
-/**
- * Reset progress at a period boundary.
- *
- * Called by the completion path when a recurring tracked task advances to its
- * next occurrence — that advance IS the period rolling over.
- */
-export function resetProgressForNewPeriod(tx: ReturnType<typeof getDb>, taskId: number): void {
-  tx.prepare('UPDATE tasks SET progress_current = 0 WHERE id = ?').run(taskId)
 }

@@ -19,8 +19,6 @@ import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
-import { REMINDER_SNOOZE_MESSAGE, TRACKED_REMINDER_MESSAGE } from '@/core/validation'
-import { isTracked } from '@/lib/track'
 
 export interface UpdateTaskOptions {
   userId: number
@@ -86,24 +84,6 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // from accidentally bypassing this guard by passing prefetchedTask
   if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')
 
-  // §5/§6 mutual exclusivity, checked against the RESULTING row rather than the
-  // payload. The schema-level refusal only sees fields sent together, so it
-  // cannot catch "flag this already-tracked task as a reminder" — the single
-  // most likely way to reach the incoherent state from the task editor, where
-  // the toggle sends `is_reminder` alone.
-  //
-  // `isTracked`, not `progress_target > 1`: a quota with target 1 is marked by
-  // the `is_tracked` flag alone ("date night, once a month"), and testing only
-  // the target let the editor toggle flip exactly those quotas into reminders.
-  const resultingIsReminder = input.is_reminder ?? task.is_reminder
-  const resultingTracked = isTracked({
-    is_tracked: input.is_tracked ?? task.is_tracked,
-    progress_target: input.progress_target ?? task.progress_target,
-  })
-  if (resultingIsReminder && resultingTracked) {
-    throw new ValidationError(TRACKED_REMINDER_MESSAGE)
-  }
-
   // §7.2: only labels being NEWLY added are held to the registry. Passing the
   // task's current labels as `existing` is what lets an unrelated edit (a title
   // fix, a priority bump) succeed on a task that happens to carry a legacy
@@ -113,32 +93,15 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     validateLabelsExist(userId, input.labels, task.labels, input.create_label === true)
   }
 
+  // Also enforces the quota/reminder invariants (a quota is never a reminder,
+  // a reminder is never snoozed) — see its docblock. They live there so bulk
+  // edit is held to them too.
   const data = collectFieldChanges({
     task,
     input,
     userId,
     userTimezone,
   })
-
-  // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
-  // enforced here because a bare `PATCH { due_at }` on a dated reminder is a
-  // snooze by every other measure (`isSnoozeScenario`: origin kept, count
-  // bumped, snooze stat) and used to walk straight past it.
-  //
-  // An EXPLICIT reschedule is still allowed: `reset_original_due_at: true`
-  // with the date (what the date picker sends) is not a snooze — it moves the
-  // occurrence and clears "snoozed from" — so `isSnoozeScenario` is false and
-  // this does not fire. Nor does giving an undated ("anytime") reminder its
-  // first date, or a schedule change that recomputes one.
-  //
-  // Asked of the RESULTING flag, like the exclusivity guard above, so
-  // `{ is_reminder: true, due_at }` — convert and snooze in one request — is
-  // refused too; the date has to be an explicit reschedule to travel with it.
-  if (data.isSnoozeScenario && resultingIsReminder) {
-    throw new ValidationError(
-      `${REMINDER_SNOOZE_MESSAGE}. To move one to a new time, send reset_original_due_at: true with the due_at.`,
-    )
-  }
 
   if (data.setClauses.length === 0) {
     return { task, fieldsChanged: [], description: '' }

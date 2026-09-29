@@ -11,8 +11,9 @@
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, badRequest, notFound, handleError, parseRouteId } from '@/lib/api-response'
 import { getTaskById, updateTask, canUserAccessTask } from '@/core/tasks'
 import { confirmProvenance, PROVENANCE_LABELS } from '@/core/labels'
 import { formatTaskResponse } from '@/lib/format-task'
@@ -24,7 +25,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
-    const taskId = parseInt(id)
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     const task = getTaskById(taskId)
     if (!task || !canUserAccessTask(user.id, task)) return notFound('Task not found')
@@ -49,8 +51,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
 
     return success({ ...formatTaskResponse(updated), confirmed: true })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'POST /api/tasks/:id/confirm error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/confirm error:', err)
     return handleError(err)
   }
 })

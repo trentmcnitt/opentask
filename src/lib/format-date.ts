@@ -2,8 +2,11 @@
  * Timezone-aware date formatting utilities.
  *
  * All functions accept a UTC ISO string and a timezone string (IANA, e.g. "America/Chicago").
- * Uses Intl.DateTimeFormat for browser-native formatting — no extra dependencies.
+ * Formatting uses Intl.DateTimeFormat; parseLocalDatetimeInput uses luxon for the
+ * local → UTC conversion.
  */
+
+import { DateTime } from 'luxon'
 
 export interface DayBoundaries {
   yesterdayStart: Date
@@ -119,25 +122,6 @@ export function formatDateTime(isoUtc: string, timezone: string): string {
     minute: '2-digit',
     hour12: true,
   })
-}
-
-/**
- * For datetime-local input value: "2025-01-05T09:00"
- */
-export function toLocalDatetimeInput(isoUtc: string, timezone: string): string {
-  const d = new Date(isoUtc)
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(d)
-
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
 }
 
 export interface DueTimeParts {
@@ -421,35 +405,24 @@ export function formatTaskAge(anchorIsoUtc: string, timezone: string): string | 
   return `${years}y old`
 }
 
+/**
+ * Convert a local wall-clock "YYYY-MM-DDTHH:mm" in `timezone` to a UTC ISO string.
+ *
+ * Luxon resolves the zone offset for that exact local date and time, so the
+ * result is right on either side of midnight and across DST. (An earlier
+ * version derived the offset from the hour/minute difference alone and landed
+ * a day off whenever UTC and local time fell on different calendar days.)
+ * A time inside a spring-forward gap (2:30 AM on the change day) moves forward
+ * by the gap, to 3:30 AM.
+ */
 export function parseLocalDatetimeInput(value: string, timezone: string): string {
   const [datePart, timePart] = value.split('T')
   const [year, month, day] = datePart.split('-').map(Number)
   const [hour, minute] = timePart.split(':').map(Number)
 
-  // Get the UTC offset for this specific date/time in the target timezone
-  // by creating a UTC guess near the target and measuring the difference
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0))
-
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(utcGuess)
-
-  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0')
-  const localH = get('hour')
-  const localM = get('minute')
-
-  const utcH = utcGuess.getUTCHours()
-  const utcM = utcGuess.getUTCMinutes()
-  const offsetMs = (localH - utcH) * 60 * 60 * 1000 + (localM - utcM) * 60 * 1000
-
-  // The desired local time as if it were UTC, then subtract the offset
-  const localAsUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, 0))
-  return new Date(localAsUtc.getTime() - offsetMs).toISOString()
+  const iso = DateTime.fromObject({ year, month, day, hour, minute }, { zone: timezone })
+    .toUTC()
+    .toISO()
+  if (!iso) throw new Error(`Invalid local date-time "${value}" in ${timezone}`)
+  return iso
 }

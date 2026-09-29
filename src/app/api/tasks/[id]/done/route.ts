@@ -9,8 +9,9 @@
  */
 
 import { NextRequest } from 'next/server'
-import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { getAuthUser } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, unauthorized, badRequest, handleError, parseRouteId } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { markDone } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
@@ -27,11 +28,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     }
 
     const { id } = await context.params
-    const taskId = parseInt(id)
-
-    if (isNaN(taskId)) {
-      return notFound('Task not found', { id })
-    }
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     // Optional body. Every existing caller (web, iOS) POSTs with no body at
     // all, so this must not throw on an empty or non-JSON one. The only field
@@ -56,10 +54,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       next_due_at: result.nextDueAt,
     })
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    log.error('api', 'POST /api/tasks/:id/done error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/done error:', err)
     return handleError(err)
   }
 })

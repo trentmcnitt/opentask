@@ -52,7 +52,7 @@ export function getTodaysReminders(
   timezone: string,
   now: Date = new Date(),
 ): Task[] {
-  const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const all = getTasks({ userId, done: false, kind: 'reminder', limit: 1000 })
   const localToday = DateTime.fromJSDate(now).setZone(timezone)
 
   return all.filter((task) => {
@@ -168,26 +168,10 @@ export function getRemindersNotToday(
   timezone: string,
   now: Date = new Date(),
 ): Task[] {
-  const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const all = getTasks({ userId, done: false, kind: 'reminder', limit: 1000 })
   const today = new Set(getTodaysReminders(userId, timezone, now).map((t) => t.id))
   const considered = new Set(getConsideredToday(userId, timezone, now).map((t) => t.id))
   return all.filter((t) => !today.has(t.id) && !considered.has(t.id)).sort((a, b) => a.id - b.id)
-}
-
-/**
- * How many reminders are pending in each slot. Reminders only — the slot
- * notifications count quota prompts too, through `waitingBySlot` in
- * `src/core/notifications/slot-reminders.ts`, not through this.
- */
-export function countRemindersBySlot(
-  userId: number,
-  timezone: string,
-  now: Date = new Date(),
-): { slot: TimeSlot | null; count: number }[] {
-  return getRemindersBySlot(userId, timezone, now).map((g) => ({
-    slot: g.slot,
-    count: g.reminders.length,
-  }))
 }
 
 /**
@@ -206,12 +190,4 @@ export function hasAnyReminders(userId: number): boolean {
     )
     .get(userId) as { found: number } | undefined
   return row !== undefined
-}
-
-/** Is this task on the Reminders surface? Cheap check without loading the row. */
-export function isReminderTask(taskId: number): boolean {
-  const row = getDb().prepare('SELECT is_reminder FROM tasks WHERE id = ?').get(taskId) as
-    | { is_reminder: number }
-    | undefined
-  return row?.is_reminder === 1
 }

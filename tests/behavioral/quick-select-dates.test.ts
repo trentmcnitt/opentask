@@ -9,6 +9,7 @@ import {
   getDayLabel,
   snapToNextHour,
 } from '@/lib/quick-select-dates'
+import { parseLocalDatetimeInput } from '@/lib/format-date'
 
 const TZ = 'America/Chicago' // UTC-6 (CST) / UTC-5 (CDT)
 
@@ -401,5 +402,56 @@ describe('adjustDate DST fall-back', () => {
     const result = adjustDate(eveningBeforeFallBack, { minutes: null, days: 1 }, TZ)
     // 8 PM CST on Nov 2 = 02:00 UTC Nov 3 (CST = UTC-6, offset shifted)
     expect(new Date(result).toISOString()).toBe('2025-11-03T02:00:00.000Z')
+  })
+})
+
+/**
+ * Local wall-clock → UTC conversion near midnight.
+ *
+ * parseLocalDatetimeInput used to derive the zone offset from the hour/minute
+ * difference alone, so whenever the probe instant fell on a different calendar
+ * day in the target zone the result came out a day off (Chicago before 6 AM,
+ * Tokyo from 3 PM on). Every preset and ±1 day button goes through it.
+ */
+describe('parseLocalDatetimeInput across the day boundary', () => {
+  it('Chicago 02:00 is 08:00Z the same day', () => {
+    expect(parseLocalDatetimeInput('2026-01-15T02:00', TZ)).toBe('2026-01-15T08:00:00.000Z')
+  })
+
+  it('Tokyo 20:00 is 11:00Z the same day', () => {
+    expect(parseLocalDatetimeInput('2026-01-15T20:00', 'Asia/Tokyo')).toBe(
+      '2026-01-15T11:00:00.000Z',
+    )
+  })
+
+  it('a time in the spring-forward gap moves forward an hour', () => {
+    // 2:30 AM does not exist in Chicago on 2026-03-08; it becomes 3:30 AM CDT
+    expect(parseLocalDatetimeInput('2026-03-08T02:30', TZ)).toBe('2026-03-08T08:30:00.000Z')
+  })
+
+  it('adjustDate +1 day from 01:30 Chicago keeps the wall-clock time', () => {
+    // 01:30 CST on Jan 15 = 07:30Z
+    expect(adjustDate('2026-01-15T07:30:00.000Z', { minutes: null, days: 1 }, TZ)).toBe(
+      '2026-01-16T07:30:00.000Z',
+    )
+  })
+
+  it('snapToNextPreset just after midnight lands later today', () => {
+    // 00:30 JST on Jan 15 = 15:30Z Jan 14; the 4 PM preset is 16:00 JST Jan 15 = 07:00Z
+    const now = new Date('2026-01-14T15:30:00.000Z')
+    const result = snapToNextPreset(16, 0, 'Asia/Tokyo', now)
+    expect(result).toBe('2026-01-15T07:00:00.000Z')
+    expect(new Date(result).getTime()).toBeGreaterThan(now.getTime())
+  })
+})
+
+describe('formatRelativeTime counts calendar days in the account timezone', () => {
+  it('uses the given timezone, not the process timezone', () => {
+    // 07:00Z → 20:00Z is the same day in UTC and Chicago, but in Tokyo it runs
+    // from 16:00 Jan 15 to 05:00 Jan 16: tomorrow, 12+ hours away.
+    const now = new Date('2026-01-15T07:00:00.000Z')
+    const target = '2026-01-15T20:00:00.000Z'
+    expect(formatRelativeTime(target, now, 'Asia/Tokyo')).toBe('in 1 day')
+    expect(formatRelativeTime(target, now, TZ)).toBe('in 13h')
   })
 })

@@ -7,8 +7,17 @@
  */
 
 import { NextRequest } from 'next/server'
-import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
+import { getAuthUser } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import {
+  success,
+  unauthorized,
+  badRequest,
+  notFound,
+  handleError,
+  handleZodError,
+  parseRouteId,
+} from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById, updateTask, deleteTask, canUserAccessTask } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
@@ -27,11 +36,8 @@ export const GET = withLogging(async function GET(request: NextRequest, context:
     }
 
     const { id } = await context.params
-    const taskId = parseInt(id)
-
-    if (isNaN(taskId)) {
-      return notFound('Task not found', { id })
-    }
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     const task = getTaskById(taskId)
     if (!task) {
@@ -45,10 +51,7 @@ export const GET = withLogging(async function GET(request: NextRequest, context:
 
     return success(formatTaskResponse(task))
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    log.error('api', 'GET /api/tasks/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'GET /api/tasks/:id error:', err)
     return handleError(err)
   }
 })
@@ -61,11 +64,8 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
     }
 
     const { id } = await context.params
-    const taskId = parseInt(id)
-
-    if (isNaN(taskId)) {
-      return notFound('Task not found', { id })
-    }
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     const body = await request.json()
     const input = validateTaskUpdate(body)
@@ -89,13 +89,10 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       description,
     })
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
     if (err instanceof ZodError) {
       return handleZodError(err)
     }
-    log.error('api', 'PATCH /api/tasks/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'PATCH /api/tasks/:id error:', err)
     return handleError(err)
   }
 })
@@ -111,11 +108,8 @@ export const DELETE = withLogging(async function DELETE(
     }
 
     const { id } = await context.params
-    const taskId = parseInt(id)
-
-    if (isNaN(taskId)) {
-      return notFound('Task not found', { id })
-    }
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     const task = deleteTask({
       userId: user.id,
@@ -130,10 +124,7 @@ export const DELETE = withLogging(async function DELETE(
       message: 'Task moved to trash',
     })
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    log.error('api', 'DELETE /api/tasks/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'DELETE /api/tasks/:id error:', err)
     return handleError(err)
   }
 })

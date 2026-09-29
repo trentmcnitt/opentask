@@ -2,31 +2,19 @@
  * Webhook delivery purge — deletes entries older than retention period
  *
  * Default retention is 7 days. Webhook deliveries are high-volume
- * and only useful for recent debugging.
+ * and only useful for recent debugging. There is no env var for this one;
+ * a caller (the behavioral test) may pass the retention directly.
  */
 
-import { getDb } from '@/core/db'
-import { log } from '@/lib/logger'
+import { purgeOlderThan } from '@/core/db/purge'
 
 const DEFAULT_RETENTION_DAYS = 7
 
 export function purgeOldDeliveries(retentionDays: number = DEFAULT_RETENTION_DAYS): number {
-  const db = getDb()
-
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
-  const cutoffIso = cutoffDate.toISOString()
-
-  const result = db
-    .prepare('DELETE FROM webhook_deliveries WHERE datetime(created_at) < datetime(?)')
-    .run(cutoffIso)
-
-  if (result.changes > 0) {
-    log.info(
-      'cron',
-      `Deleted ${result.changes} webhook deliveries older than ${retentionDays} days`,
-    )
-  }
-
-  return result.changes
+  return purgeOlderThan({
+    table: 'webhook_deliveries',
+    column: 'created_at',
+    defaultDays: retentionDays,
+    label: 'webhook deliveries',
+  })
 }

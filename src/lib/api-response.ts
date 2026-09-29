@@ -82,6 +82,17 @@ export function internalError(message: string = 'Internal server error'): NextRe
 }
 
 /**
+ * Parse a numeric `[id]` route segment strictly: digits only, else null.
+ *
+ * `parseInt('12abc')` reads 12, so a typo'd URL would act on task 12. Every
+ * `[id]` route calls this and answers null with `badRequest()` (400), the
+ * same response for a malformed id on every route.
+ */
+export function parseRouteId(raw: string): number | null {
+  return /^\d+$/.test(raw) ? parseInt(raw, 10) : null
+}
+
+/**
  * Handle Zod validation errors
  */
 export function handleZodError(err: unknown): NextResponse {

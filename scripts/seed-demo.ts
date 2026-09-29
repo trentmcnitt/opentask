@@ -660,8 +660,9 @@ function quotaPeriodBounds(
  * The count a quota should be showing right now, from its state and how far
  * through the period we are.
  *
- * The thresholds mirror `computePace` in `src/core/tasks/progress.ts`, which
- * calls a quota behind when `current + 1 <= target * periodElapsed`:
+ * The thresholds use this pace rule: a quota is behind when
+ * `current + 1 <= target * periodElapsed` (a full count short of what the
+ * elapsed share of the period expects), and on pace otherwise:
  * - on-pace clears that comparison with one in hand, and stays below target;
  * - behind sits one under what the elapsed time expects.
  *

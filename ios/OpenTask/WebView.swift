@@ -64,10 +64,8 @@ struct WebView: UIViewRepresentable {
         // Inject APNs device token info so the web app can register it via session cookie.
         // This ensures push notifications follow the web-logged-in user, not the bearer token user.
         if let deviceToken = AppConfig.shared.deviceToken {
-            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            let env = ApsEnvironment.current  // signing entitlement, not #if DEBUG
             let tokenScript = WKUserScript(
-                source: "window.__OPENTASK_DEVICE_INFO = { token: '\(deviceToken)', bundleId: '\(bundleId)', environment: '\(env)' };",
+                source: WebBridge.deviceInfoJS(token: deviceToken),
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             )
@@ -81,7 +79,7 @@ struct WebView: UIViewRepresentable {
         // in — the preview is the token's last 8 characters, matching the
         // `token_preview` column the server exposes for API tokens.
         let hasTokenScript = WKUserScript(
-            source: Coordinator.tokenFlagsJS(),
+            source: WebBridge.tokenFlagsJS(),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         )
@@ -325,7 +323,7 @@ struct WebView: UIViewRepresentable {
             guard navigationAction.targetFrame?.isMainFrame != false,
                   let url = navigationAction.request.url,
                   url.host == URL(string: AppConfig.shared.serverURL)?.host,
-                  isLoginPage(url),
+                  WebBridge.isLoginPath(url),
                   SessionBootstrapper.hasCredentials,
                   !loginRescueAttempted
             else {
@@ -358,7 +356,10 @@ struct WebView: UIViewRepresentable {
         /// Destination to resume after a rescued /login bounce: the login URL's
         /// own callbackUrl when present (the server records exactly where the
         /// user was headed), falling back to the last path the app requested.
-        /// Same-origin relative paths only — anything else falls through.
+        /// Same-origin relative paths only — anything else falls through. The
+        /// rule itself is `WebBridge.resumePath` (ios/Shared, shared with the
+        /// Mac, which always passes `wasPreempted: false`); this binds it to
+        /// `WebViewManager.lastRequestedPath`.
         ///
         /// **The foreground-resume race (task A, 2026-09-23):** "I tapped on a
         /// widget task link while the Reminders tab was open in the
@@ -394,13 +395,11 @@ struct WebView: UIViewRepresentable {
         /// session found on pull-to-refresh of a page the user reached via
         /// in-page SPA navigation, which `lastRequestedPath` never sees).
         static func resumePath(fromLoginURL url: URL, wasPreempted: Bool) -> String {
-            if !wasPreempted,
-               let cb = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "callbackUrl" })?.value,
-                cb.hasPrefix("/"), !cb.hasPrefix("//") {
-                return cb
-            }
-            return WebViewManager.shared.lastRequestedPath
+            WebBridge.resumePath(
+                fromLoginURL: url,
+                wasPreempted: wasPreempted,
+                fallback: WebViewManager.shared.lastRequestedPath
+            )
         }
 
         /// Uses the Coordinator's own `webView` reference (set in
@@ -432,7 +431,7 @@ struct WebView: UIViewRepresentable {
             // WKWebView doesn't guarantee immediate persistence — getAllCookies triggers a sync.
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { _ in }
 
-            if isLoginPage(webView.url) {
+            if WebBridge.isLoginPath(webView.url) {
                 rescueFromLogin(webView)
             } else {
                 // Any page that isn't /login is proof the session is good again;
@@ -468,23 +467,12 @@ struct WebView: UIViewRepresentable {
             }
         }
 
-        /// NextAuth's login route, whether or not it carries a `callbackUrl`
-        /// query or a trailing slash.
-        private func isLoginPage(_ url: URL?) -> Bool {
-            guard var path = url?.path else { return false }
-            if path.count > 1 && path.hasSuffix("/") { path.removeLast() }
-            return path == "/login"
-        }
-
         /// Inject device token info into the page after every navigation.
         /// The WKUserScript set at WebView creation may have missed the token
         /// (APNs responds async), so this ensures it's available after logout → login.
         private func injectDeviceInfo(into webView: WKWebView) {
             guard let token = AppConfig.shared.deviceToken else { return }
-            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            let env = ApsEnvironment.current  // signing entitlement, not #if DEBUG
-            let js = "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };"
-            webView.evaluateJavaScript(js)
+            webView.evaluateJavaScript(WebBridge.deviceInfoJS(token: token))
         }
 
         /// Re-inject the Keychain token flags after every navigation.
@@ -495,43 +483,7 @@ struct WebView: UIViewRepresentable {
         /// creation, so without this a token provisioned mid-session (or wiped
         /// by a disconnect) would never be reflected in the page.
         private func injectTokenFlags(into webView: WKWebView) {
-            webView.evaluateJavaScript(Self.tokenFlagsJS())
-        }
-
-        /// `window.__OPENTASK_HAS_TOKEN` / `window.__OPENTASK_TOKEN_PREVIEW`.
-        ///
-        /// The preview is the last 8 characters of the stored Bearer token —
-        /// the same suffix the server keeps in `api_tokens.token_preview` — so
-        /// the web app can tell that the native token belongs to a different
-        /// user than the one whose session is loaded. `null` when there is no
-        /// token; never the token itself.
-        static func tokenFlagsJS() -> String {
-            let token = KeychainHelper.read(key: "bearerToken")
-            let preview = token.map { String($0.suffix(8)) }
-            return """
-                window.__OPENTASK_HAS_TOKEN = \(token != nil);
-                window.__OPENTASK_TOKEN_PREVIEW = \(jsStringLiteral(preview));
-                """
-        }
-
-        /// Render a Swift string as a JS single-quoted literal (or `null`).
-        /// Token previews are opaque server-generated strings — escape rather
-        /// than assume they are alphanumeric.
-        static func jsStringLiteral(_ value: String?) -> String {
-            guard let value else { return "null" }
-            var escaped = ""
-            for character in value.unicodeScalars {
-                switch character {
-                case "\\": escaped += "\\\\"
-                case "'": escaped += "\\'"
-                case "\n": escaped += "\\n"
-                case "\r": escaped += "\\r"
-                case "\u{2028}": escaped += "\\u2028"
-                case "\u{2029}": escaped += "\\u2029"
-                default: escaped.unicodeScalars.append(character)
-                }
-            }
-            return "'\(escaped)'"
+            webView.evaluateJavaScript(WebBridge.tokenFlagsJS())
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

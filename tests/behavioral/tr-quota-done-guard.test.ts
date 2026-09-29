@@ -19,6 +19,7 @@ import {
 } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { incrementProgress } from '@/core/tasks/progress'
+import { executeUndo } from '@/core/undo'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -92,6 +93,30 @@ describe('Quota done guard', () => {
     expect(result.tasksAffected).toBe(1)
     expect(result.quotaSkipped).toBe(0)
     expect(getTaskById(q.id)!.progress_current).toBe(0)
+  })
+
+  // The period reset is part of the completion, so its undo has to put the
+  // count back. bulkDone used to hand-build its entry's `fieldsChanged` and
+  // leave `progress_current` out, so the undo restored the completion stats
+  // but left the count at 0.
+  test('TR-038: undoing a closePeriod markDone restores the count', () => {
+    const q = quota()
+    markDone({ ...base, taskId: q.id, closePeriod: true })
+    expect(getTaskById(q.id)!.progress_current).toBe(0)
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(q.id)!.progress_current).toBe(2)
+  })
+
+  test('TR-039: undoing a closePeriod bulkDone restores the count', () => {
+    const q = quota()
+    const plain = createTask({ ...base, input: { title: 'Plain', due_at: '2026-01-15T13:00:00Z' } })
+    bulkDone({ ...base, taskIds: [q.id, plain.id], closePeriod: true })
+    expect(getTaskById(q.id)!.progress_current).toBe(0)
+    executeUndo(TEST_USER_ID)
+    const after = getTaskById(q.id)!
+    expect(after.progress_current).toBe(2)
+    expect(after.completion_count).toBe(0)
+    expect(getTaskById(plain.id)!.done).toBe(false)
   })
 
   test('TR-036: ordinary tasks are unaffected', () => {

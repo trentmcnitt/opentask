@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { showToast } from '@/lib/toast'
 import dynamic from 'next/dynamic'
+import { DateTime } from 'luxon'
 
 const BatchUndoDialog = dynamic(() =>
   import('@/components/BatchUndoDialog').then((mod) => ({ default: mod.BatchUndoDialog })),
@@ -77,7 +78,12 @@ export default function HistoryPage() {
   }, [])
   const [activityFetchedAt, setActivityFetchedAt] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
+  // The Completions tab's day (YYYY-MM-DD), in the account's timezone. null
+  // means "today": it is resolved at render because useTimezone() returns the
+  // browser's zone until the session loads, and a value captured on the first
+  // render would keep that zone's date.
+  const [pickedDate, setDate] = useState<string | null>(null)
+  const date = pickedDate ?? DateTime.now().setZone(timezone).toISODate()!
 
   const fetchActivity = useCallback(async () => {
     setLoading(true)
@@ -106,7 +112,13 @@ export default function HistoryPage() {
       setLoading(true)
       try {
         if (tab === 'completions') {
-          const res = await fetch(`/api/completions?date=${date}`)
+          // Ask for the account-timezone day as an instant range. The API's
+          // ?date= filter matches the UTC calendar date, which files an
+          // evening completion west of UTC under the next day.
+          const day = DateTime.fromISO(date, { zone: timezone }).startOf('day')
+          const since = encodeURIComponent(day.toUTC().toISO()!)
+          const until = encodeURIComponent(day.plus({ days: 1 }).toUTC().toISO()!)
+          const res = await fetch(`/api/completions?since=${since}&until=${until}`)
           if (res.ok) {
             const data = await res.json()
             setCompletions(data.data?.completions || [])
@@ -123,7 +135,7 @@ export default function HistoryPage() {
     }
 
     fetchData()
-  }, [status, router, tab, date, fetchActivity])
+  }, [status, router, tab, date, timezone, fetchActivity])
 
   if (status === 'loading') {
     return (
@@ -234,11 +246,7 @@ function CompletionsTab({
       {/* Date navigation */}
       <div className="mb-4 flex items-center gap-3">
         <button
-          onClick={() => {
-            const d = new Date(date)
-            d.setDate(d.getDate() - 1)
-            setDate(d.toISOString().split('T')[0])
-          }}
+          onClick={() => setDate(DateTime.fromISO(date).minus({ days: 1 }).toISODate()!)}
           className="text-muted-foreground hover:bg-accent rounded-lg p-2"
           aria-label="Previous day"
         >
@@ -247,15 +255,14 @@ function CompletionsTab({
         <input
           type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => {
+            // A cleared picker gives "": keep the current day rather than query nothing
+            if (e.target.value) setDate(e.target.value)
+          }}
           className="border-border bg-background rounded-lg border px-3 py-1.5 text-sm"
         />
         <button
-          onClick={() => {
-            const d = new Date(date)
-            d.setDate(d.getDate() + 1)
-            setDate(d.toISOString().split('T')[0])
-          }}
+          onClick={() => setDate(DateTime.fromISO(date).plus({ days: 1 }).toISODate()!)}
           className="text-muted-foreground hover:bg-accent rounded-lg p-2"
           aria-label="Next day"
         >

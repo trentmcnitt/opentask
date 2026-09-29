@@ -9,8 +9,9 @@
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, badRequest, handleError, parseRouteId } from '@/lib/api-response'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
@@ -22,7 +23,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
-    const taskId = parseInt(id)
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     const { task, wasRecurring, description } = skipOccurrence({
       userId: user.id,
@@ -35,8 +37,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
 
     return success({ ...formatTaskResponse(task), was_recurring: wasRecurring, description })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'POST /api/tasks/:id/skip-occurrence error:', err)
+    if (!(err instanceof AppError))
+      log.error('api', 'POST /api/tasks/:id/skip-occurrence error:', err)
     return handleError(err)
   }
 })

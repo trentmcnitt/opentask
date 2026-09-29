@@ -16,8 +16,15 @@ import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
-import { snapToHour } from '@/lib/snooze'
+import { computeSnoozeTime } from '@/lib/snooze'
 import { withLogging } from '@/lib/with-logging'
+
+/**
+ * Snooze length in minutes per notification action. `computeSnoozeTime` (the
+ * same helper as the app's snooze buttons) makes 30 exact minutes from now and
+ * snaps the hour-based ones to the top of the hour.
+ */
+const SNOOZE_MINUTES: Record<string, number> = { snooze30: 30, snooze: 60, snooze2h: 120 }
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -55,43 +62,20 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         return success({ action: 'done', task_id, result })
       }
 
-      case 'snooze30': {
-        const until = new Date(Date.now() + 30 * 60 * 1000)
-        const result = snoozeTask({
-          userId: user.id,
-          userTimezone: user.timezone,
-          taskId: task_id,
-          until: until.toISOString(),
-        })
-        dismissAfter()
-        log.info('notifications', `Action complete: snooze30 on task ${task_id}`)
-        return success({ action: 'snooze30', task_id, until: until.toISOString(), result })
-      }
-
-      case 'snooze': {
-        const until = snapToHour(new Date(Date.now() + 60 * 60 * 1000))
-        const result = snoozeTask({
-          userId: user.id,
-          userTimezone: user.timezone,
-          taskId: task_id,
-          until: until.toISOString(),
-        })
-        dismissAfter()
-        log.info('notifications', `Action complete: snooze on task ${task_id}`)
-        return success({ action: 'snooze', task_id, until: until.toISOString(), result })
-      }
-
+      case 'snooze30':
+      case 'snooze':
       case 'snooze2h': {
-        const until = snapToHour(new Date(Date.now() + 2 * 60 * 60 * 1000))
+        // Only the minute options are passed, so the morning time is unused.
+        const until = computeSnoozeTime(String(SNOOZE_MINUTES[action]), user.timezone, '')
         const result = snoozeTask({
           userId: user.id,
           userTimezone: user.timezone,
           taskId: task_id,
-          until: until.toISOString(),
+          until,
         })
         dismissAfter()
-        log.info('notifications', `Action complete: snooze2h on task ${task_id}`)
-        return success({ action: 'snooze2h', task_id, until: until.toISOString(), result })
+        log.info('notifications', `Action complete: ${action} on task ${task_id}`)
+        return success({ action, task_id, until, result })
       }
 
       default:
