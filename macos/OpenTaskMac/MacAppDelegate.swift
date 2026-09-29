@@ -167,7 +167,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         // The CustomEvent wakes PreferencesProvider if it mounted first.
         Task { @MainActor in
             WebViewManager.shared.evaluate(
-                WebViewHost.Coordinator.deviceInfoJS(token: token)
+                WebBridge.deviceInfoJS(token: token)
                     + "window.dispatchEvent(new CustomEvent('opentask-device-token'));"
             )
         }

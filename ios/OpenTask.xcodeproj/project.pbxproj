@@ -17,6 +17,7 @@
 		05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */; };
 		10DC84D1FB60BBEA3F354C6E /* SnoozeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */; };
 		1135A613B9BE637CBD113074 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
+		1193D251741F3BE8F46CAF04 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		12DB40DFAC48488361ADE990 /* QuickActionSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 613B60F9999A8718BB9EA210 /* QuickActionSceneDelegate.swift */; };
 		1451C659DF4CBA7DC372AA9D /* OpenTaskWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6014FAABE0C945E0B82A726F /* OpenTaskWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		147103E01CACBE78C706BA4C /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF23F7E7947DAD1F6AE3750 /* SegmentWidths.swift */; };
@@ -37,6 +38,7 @@
 		2FFAEB7A57849E2CC7091EDC /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		322E0D073D55A99C4FB4314F /* WatchFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA310D3214806920A653F67 /* WatchFormatting.swift */; };
 		355629C29D6E350718288BE6 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B38C9B52B08A3A90460BB365 /* WidgetKit.framework */; };
+		37EBBA59498ECCCDC3E4B956 /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
 		38491646BCB157D234A0F89E /* ReminderStackTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBC0580F954EC226733CA293 /* ReminderStackTimeline.swift */; };
 		3B38D9F33860B8973B5F4624 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		40250523F9652DF204D34640 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */; };
@@ -45,6 +47,7 @@
 		46513B019B9D9460B7D15B73 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */; };
 		47A6D6459C1F8D895C6099D7 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
 		4878E2635134BD8DED88B74C /* ReminderChecklistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6933E944911C147430B2A615 /* ReminderChecklistView.swift */; };
+		4878E3787524B240B8E6F1A5 /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
 		499609D6583A23B9CC442901 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6B4551ACAEF40F8906C15079 /* SwiftUI.framework */; };
 		4A4BDDB42FF8A951E3F4BE4B /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2691657DEC3A30B3BCD14CA /* WidgetIntents.swift */; };
 		4C1BA9E22873F10B266275FA /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7217478BDB26B0487A7C05FF /* TasksTimeline.swift */; };
@@ -80,9 +83,11 @@
 		76D83632FD8B18895F9E99E7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */; };
 		7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B872742B2A8BD9EA4734A7 /* QuickActionHandler.swift */; };
 		80594A9F5EDE4FB3E31684EE /* WatchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9681162F97176C33B61407A /* WatchCache.swift */; };
+		809C9E642210FD09C8F3C252 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		88C77707E12180F739E46FE6 /* WatchWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9080749DBD681AAA6C5C8BD4 /* WatchWidgetIntents.swift */; };
 		896C7265B3976900820FF4C1 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		8B90324E7E11A658DFC17FD0 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */; };
+		8C70BF6641FA52C27AEE830B /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		8D79DAE12A0463CA0E754A9A /* OpenTaskWatchWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78853DF57CF91B869B3AFBCB /* OpenTaskWatchWidgetBundle.swift */; };
 		904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
 		90B3D7D51716BBB58CDABA81 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4AA3D7BA53FB714D8109DB /* TaskLists.swift */; };
@@ -101,6 +106,7 @@
 		AB8D0452DEB7878EACF33CFE /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
 		AD56C73ABE6D862EFD583906 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		B44AC055BB27E89C6E8CBC2E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
+		B5848AF766A5FA0EF47669EF /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
 		BA800074867155F9D688713D /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B761D724E9EABFA497BD0CF3 /* AppConfig.swift */; };
 		BC06179715F5A71D37A6C991 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34F38A2233E6C7AD5D02FD9 /* AppDelegate.swift */; };
 		BD1378E55FCFB7263904EEE6 /* OpenTaskWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC8E2443EB8CFC907A4983 /* OpenTaskWatchApp.swift */; };
@@ -128,13 +134,17 @@
 		EB11FC75F958C565EF41BF38 /* ReminderStackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C90FA651ABD2058B84858C /* ReminderStackWidget.swift */; };
 		EC83B5169939B9F2DC0F105D /* ReminderStackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A08BC471071DBA22DD4A5E /* ReminderStackWidgetViews.swift */; };
 		ECB0FD5F24B460DCF051564A /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
+		ECC90515DF900211EA5D6F4D /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
 		EE9CE197D549AF68FFD5E433 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */; };
 		EFF1A691230C056E223211E2 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4AA3D7BA53FB714D8109DB /* TaskLists.swift */; };
 		F0F52293DB52D0DBA364994F /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		F177F1DE946BA6A9DDE51027 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
+		F283720A048B3354653F4FF8 /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
 		F2B9CE2AC5E93952233D893B /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683C420F16089F7B2D99FED2 /* TrackWidget.swift */; };
 		F2F26F95B22A85BD7B3F34BD /* OpenTaskApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955351AED16FD834316AB1EA /* OpenTaskApp.swift */; };
+		F347EBEE087F2C516D1A9D31 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		F9D1F47F9930F04DA2B80E18 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B5F413C3A06EF7B3DEFE9AB1 /* Assets.xcassets */; };
+		FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		FB7A654DBF27BE1F27819750 /* WatchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796964A2DD4C8A80D223996C /* WatchViewModel.swift */; };
 		FBB91BA91EEE6C115AF05C05 /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56DAD630482D315A1F294B8F /* WebViewManager.swift */; };
 /* End PBXBuildFile section */
@@ -214,6 +224,7 @@
 		156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskModels.swift; sourceTree = "<group>"; };
 		17A08BC471071DBA22DD4A5E /* ReminderStackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderStackWidgetViews.swift; sourceTree = "<group>"; };
 		186FCE9C574F0644BB68C310 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebBridge.swift; sourceTree = "<group>"; };
 		214D7F74FAF79F1D94BCD4B8 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
 		272E41A6CFA6E60EB1581D0C /* BulkSnoozeSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkSnoozeSheetView.swift; sourceTree = "<group>"; };
 		29B9EAB91C2948947698CB10 /* OpenTask.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenTask.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -234,6 +245,7 @@
 		65AA422DED4654FD15D0C535 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		6670206D951705CAC891F28F /* WidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
 		67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
+		681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
 		683C420F16089F7B2D99FED2 /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
 		6933E944911C147430B2A615 /* ReminderChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderChecklistView.swift; sourceTree = "<group>"; };
 		6B4551ACAEF40F8906C15079 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -430,6 +442,7 @@
 				65AA422DED4654FD15D0C535 /* APIClient.swift */,
 				40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */,
 				D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */,
+				681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */,
 				BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */,
 				317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */,
 				156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */,
@@ -439,6 +452,7 @@
 				BC4AA3D7BA53FB714D8109DB /* TaskLists.swift */,
 				00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */,
 				F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */,
+				1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -654,6 +668,7 @@
 				6A018F73275ACE3FF6F8C162 /* ApsEnvironment.swift in Sources */,
 				94220B779E8200B698FED4D1 /* ContentView.swift in Sources */,
 				51E6296F83B4E9B84CA333C3 /* DateHelpers.swift in Sources */,
+				809C9E642210FD09C8F3C252 /* DeepLinkRouter.swift in Sources */,
 				904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */,
 				E4FE546C6EC6664FD2CEB3A7 /* NotificationConstants.swift in Sources */,
 				F2F26F95B22A85BD7B3F34BD /* OpenTaskApp.swift in Sources */,
@@ -668,6 +683,7 @@
 				565AC3E90D05E6DAEB600958 /* TaskLists.swift in Sources */,
 				2FFAEB7A57849E2CC7091EDC /* TaskSnoozePlan.swift in Sources */,
 				E4FB3AE0291FEE49D0FE3536 /* TimeSlotStore.swift in Sources */,
+				37EBBA59498ECCCDC3E4B956 /* WebBridge.swift in Sources */,
 				029411004C797D95E55FEF91 /* WebView.swift in Sources */,
 				FBB91BA91EEE6C115AF05C05 /* WebViewManager.swift in Sources */,
 			);
@@ -681,6 +697,7 @@
 				04D5F48AF04D4A2DECBE8251 /* ApsEnvironment.swift in Sources */,
 				C60DB58FC123FB9A62331E11 /* BulkSnoozeSheetView.swift in Sources */,
 				63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */,
+				8C70BF6641FA52C27AEE830B /* DeepLinkRouter.swift in Sources */,
 				E51D8D6F02BEB9BEE1486257 /* KeychainHelper.swift in Sources */,
 				017812E3F6E013E37B5A85D2 /* NotificationConstants.swift in Sources */,
 				532750219041769490D1EFD2 /* OpenTaskModels.swift in Sources */,
@@ -706,6 +723,7 @@
 				FB7A654DBF27BE1F27819750 /* WatchViewModel.swift in Sources */,
 				D423C4CC7905CF58FB9515B6 /* WatchWidgetIntents.swift in Sources */,
 				D0A0BBA8DAB1EEBA31E6B7DF /* WatchWidgetState.swift in Sources */,
+				B5848AF766A5FA0EF47669EF /* WebBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -716,6 +734,7 @@
 				ECB0FD5F24B460DCF051564A /* APIClient.swift in Sources */,
 				896C7265B3976900820FF4C1 /* ApsEnvironment.swift in Sources */,
 				EACE06C9E8EB63FF815818AD /* DateHelpers.swift in Sources */,
+				1193D251741F3BE8F46CAF04 /* DeepLinkRouter.swift in Sources */,
 				5D948F2336DBDB3B71925E84 /* DueLabel.swift in Sources */,
 				4D721AFB724370814CF5D477 /* KeychainHelper.swift in Sources */,
 				917AA65E43D8A46805B4E674 /* NotesGlyphPreviews.swift in Sources */,
@@ -737,6 +756,7 @@
 				AB363025B6A55407760C15DF /* TimeSlotStore.swift in Sources */,
 				F2B9CE2AC5E93952233D893B /* TrackWidget.swift in Sources */,
 				05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */,
+				4878E3787524B240B8E6F1A5 /* WebBridge.swift in Sources */,
 				4A4BDDB42FF8A951E3F4BE4B /* WidgetIntents.swift in Sources */,
 				6AD63E5A68DDF99138643374 /* WidgetPushHandler.swift in Sources */,
 				64E6410CDCE13D1F7BB429EC /* WidgetStore.swift in Sources */,
@@ -751,6 +771,7 @@
 				6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */,
 				3B38D9F33860B8973B5F4624 /* ApsEnvironment.swift in Sources */,
 				D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */,
+				FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */,
 				1135A613B9BE637CBD113074 /* KeychainHelper.swift in Sources */,
 				67BBCD29E3F75D5609165FFA /* NotificationConstants.swift in Sources */,
 				5BC4E254AB252148F78EBF4F /* NotificationViewController.swift in Sources */,
@@ -763,6 +784,7 @@
 				92A37D74E4883DC815882606 /* TaskLists.swift in Sources */,
 				2B3E674998F009A2213CB0A4 /* TaskSnoozePlan.swift in Sources */,
 				40250523F9652DF204D34640 /* TimeSlotStore.swift in Sources */,
+				ECC90515DF900211EA5D6F4D /* WebBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -773,6 +795,7 @@
 				AB8D0452DEB7878EACF33CFE /* APIClient.swift in Sources */,
 				AD56C73ABE6D862EFD583906 /* ApsEnvironment.swift in Sources */,
 				5481CB0C47BEEEA103C88576 /* DateHelpers.swift in Sources */,
+				F347EBEE087F2C516D1A9D31 /* DeepLinkRouter.swift in Sources */,
 				F177F1DE946BA6A9DDE51027 /* KeychainHelper.swift in Sources */,
 				E4CCD6D236B62034324ADEB9 /* NotificationConstants.swift in Sources */,
 				8B90324E7E11A658DFC17FD0 /* OpenTaskModels.swift in Sources */,
@@ -795,6 +818,7 @@
 				88C77707E12180F739E46FE6 /* WatchWidgetIntents.swift in Sources */,
 				D0F191F9E7B622184BE88525 /* WatchWidgetPushHandler.swift in Sources */,
 				E5E93DC554365075C9E87D1A /* WatchWidgetState.swift in Sources */,
+				F283720A048B3354653F4FF8 /* WebBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

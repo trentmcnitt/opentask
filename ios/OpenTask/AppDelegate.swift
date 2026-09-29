@@ -211,12 +211,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // This handles the case where APNs token arrives after WebView has already loaded.
         // The CustomEvent wakes up the PreferencesProvider listener if it already mounted.
         DispatchQueue.main.async {
-            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            let env = ApsEnvironment.current  // signing entitlement, not #if DEBUG
-            let js = """
-                window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };
-                window.dispatchEvent(new CustomEvent('opentask-device-token'));
-                """
+            let js = WebBridge.deviceInfoJS(token: token)
+                + "window.dispatchEvent(new CustomEvent('opentask-device-token'));"
             WebViewManager.shared.webView?.evaluateJavaScript(js)
         }
     }
