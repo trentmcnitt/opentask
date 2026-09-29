@@ -829,6 +829,12 @@ async function chipOf(page: Page, id: number) {
   await page.goto('/')
   const panel = page.getByRole('region', { name: 'Quotas' })
   await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
+  // On a phone the chip's period starts folded to its bar — open it first.
+  // The toggle is `sm:hidden`, so this is a no-op at desktop widths.
+  const toggle = panel.locator(
+    `[data-quota-period]:has([data-track-chip="${id}"]) [data-track-period-toggle]`,
+  )
+  if (await toggle.isVisible()) await toggle.click()
   const chip = panel.locator(`[data-track-chip="${id}"]`)
   await expect(chip).toBeVisible()
   return chip
@@ -1001,6 +1007,150 @@ test.describe('Track — moving a quota reminder from its chip', () => {
     pop = await holdChipOpen(page, await chipOf(page, on))
     await expect(pop).toContainText('Periods met')
     await expect(pop.locator('[data-prompt-periods]')).toHaveCount(0)
+  })
+})
+
+/** A successful +1/−1 on one quota — for `page.waitForResponse`. */
+function isProgressOf(id: number) {
+  return (r: Response) => r.url().includes(`/api/tasks/${id}/progress`) && r.ok()
+}
+
+/**
+ * What each period's heading should say — "M of N" — computed from the API
+ * rather than from the quotas this test made: the shared E2E database may hold
+ * other tests' quotas in the same periods, and the heading counts every one.
+ */
+async function expectedPeriodCounts(page: Page): Promise<Map<string, string>> {
+  const res = await page.request.get('/api/tasks?done=false&limit=1000')
+  expect(res.ok()).toBeTruthy()
+  const tasks = (await res.json()).data.tasks as {
+    is_tracked: boolean
+    rrule: string | null
+    progress_current: number | null
+    progress_target: number | null
+  }[]
+  const by = new Map<string, { met: number; count: number }>()
+  for (const t of tasks.filter((t) => t.is_tracked)) {
+    const freq = /FREQ=(\w+)/.exec(t.rrule ?? '')?.[1] ?? 'NONE'
+    const s = by.get(freq) ?? { met: 0, count: 0 }
+    s.count++
+    if ((t.progress_current ?? 0) >= Math.max(1, t.progress_target ?? 1)) s.met++
+    by.set(freq, s)
+  }
+  return new Map([...by].map(([k, s]) => [k, `${s.met} of ${s.count}`]))
+}
+
+/**
+ * Trent, 2026-09-29: "on mobile, I want quotas to start collapsed … segments:
+ * day, week, month. They have the bars fill up so I can see how far I am
+ * towards completing today, this week, and this month. Desktop doesn't need
+ * it." See `PERIOD_BODY` in TrackPanel.tsx.
+ */
+test.describe('Track — periods fold to their bars on a phone', () => {
+  async function seedThree(page: Page) {
+    const tag = `period-fold-${Date.now()}`
+    const daily = await createTask(page, {
+      title: `${tag} daily`,
+      rrule: 'FREQ=DAILY',
+      progress_target: 3,
+      is_tracked: true,
+      labels: [tag],
+      create_label: true,
+    })
+    const weekly = await createTask(page, {
+      title: `${tag} weekly`,
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 2,
+      is_tracked: true,
+      labels: [tag],
+    })
+    const monthly = await createTask(page, {
+      title: `${tag} monthly`,
+      rrule: 'FREQ=MONTHLY',
+      progress_target: 4,
+      is_tracked: true,
+      labels: [tag],
+    })
+    // Some progress, so a bar has something in it.
+    expect(
+      (await page.request.post(`/api/tasks/${weekly}/progress`, { data: { delta: 1 } })).ok(),
+    ).toBeTruthy()
+    return { daily, weekly, monthly }
+  }
+
+  test('at 375×812: one bar per period; tapping a period opens its chips, tapping again folds them', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const { daily, weekly, monthly } = await seedThree(page)
+    await withQuotasView(page, false, async () => {
+      const expected = await expectedPeriodCounts(page)
+      await page.goto('/')
+      const panel = page.getByRole('region', { name: 'Quotas' })
+      await expect(panel.locator('#track-card')).toBeVisible()
+
+      // Day, week, month — in that order, each with its bar and "M of N".
+      const keys: (string | null)[] = []
+      for (const el of await panel.locator('[data-quota-period]').all()) {
+        keys.push(await el.getAttribute('data-quota-period'))
+      }
+      const ours = keys.filter((k) => k === 'DAILY' || k === 'WEEKLY' || k === 'MONTHLY')
+      expect(ours).toEqual(['DAILY', 'WEEKLY', 'MONTHLY'])
+      for (const [key, id] of [
+        ['DAILY', daily],
+        ['WEEKLY', weekly],
+        ['MONTHLY', monthly],
+      ] as const) {
+        const section = panel.locator(`[data-quota-period="${key}"]`)
+        await expect(section.locator('[data-track-period-bar]')).toBeVisible()
+        await expect(section.locator('[data-track-period-count]')).toHaveText(expected.get(key)!)
+        // Folded: no chips, no label clusters.
+        await expect(section.locator(`[data-track-chip="${id}"]`)).toBeHidden()
+        await expect(section.locator('[data-track-cluster]').first()).toBeHidden()
+        await expect(section.locator('[data-track-period-toggle]')).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        )
+      }
+
+      // Tap the week: its chips appear, the others stay folded.
+      const week = panel.locator('[data-quota-period="WEEKLY"]')
+      const toggle = week.locator('[data-track-period-toggle]')
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(week.locator(`[data-track-chip="${weekly}"]`)).toBeVisible()
+      await expect(panel.locator(`[data-track-chip="${daily}"]`)).toBeHidden()
+      await expect(panel.locator(`[data-track-chip="${monthly}"]`)).toBeHidden()
+
+      // A chip in an opened period still counts: a tap is +1, and the
+      // period's own bar row follows (the weekly quota is now 2 of 2, met).
+      const [met, count] = expected.get('WEEKLY')!.split(' of ').map(Number)
+      const logged = page.waitForResponse(isProgressOf(weekly))
+      await week.locator(`[data-track-chip="${weekly}"]`).click()
+      await logged
+      await expect(week.locator('[data-track-period-count]')).toHaveText(`${met + 1} of ${count}`)
+
+      // Tap again: folded back to its bar.
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(week.locator(`[data-track-chip="${weekly}"]`)).toBeHidden()
+      await expect(week.locator('[data-track-period-bar]')).toBeVisible()
+    })
+  })
+
+  test('at 1512 wide: everything is open as before, with no period toggle', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1512, height: 900 })
+    const { daily, weekly, monthly } = await seedThree(page)
+    await withQuotasView(page, false, async () => {
+      await page.goto('/')
+      const panel = page.getByRole('region', { name: 'Quotas' })
+      for (const id of [daily, weekly, monthly]) {
+        await expect(panel.locator(`[data-track-chip="${id}"]`)).toBeVisible()
+      }
+      await expect(panel.locator('[data-track-period-toggle]:visible')).toHaveCount(0)
+    })
   })
 })
 
