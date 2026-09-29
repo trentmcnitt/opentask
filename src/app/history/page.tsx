@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, Undo2, Redo2 } from 'lucide-react'
 import {
   formatDurationDelta,
@@ -12,7 +10,8 @@ import {
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
 import { getPriorityOption } from '@/lib/priority'
 import { useTimezone } from '@/hooks/useTimezone'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -57,8 +56,7 @@ interface UndoEntry {
 type TabId = 'completions' | 'activity' | 'ai'
 
 export default function HistoryPage() {
-  const { status } = useSession()
-  const router = useRouter()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
   const [tab, setTab] = useState<TabId>('activity')
   const [completions, setCompletions] = useState<CompletionEntry[]>([])
@@ -103,11 +101,7 @@ export default function HistoryPage() {
   }, [])
 
   useEffect(() => {
-    if (status === 'loading') return
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-      return
-    }
+    if (!ready) return
 
     async function fetchData() {
       setLoading(true)
@@ -136,15 +130,9 @@ export default function HistoryPage() {
     }
 
     fetchData()
-  }, [status, router, tab, date, timezone, fetchActivity])
+  }, [ready, tab, date, timezone, fetchActivity])
 
-  if (status === 'loading') {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-muted-foreground animate-pulse">Loading...</div>
-      </div>
-    )
-  }
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">

@@ -34,6 +34,7 @@ import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { showToast } from '@/lib/toast'
+import { apiFetch, jsonInit } from '@/lib/api-client'
 import { sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { formatClockTime } from '@/lib/time-utils'
 
@@ -69,18 +70,6 @@ function remindersMoved(n: number): string {
   return n === 0 ? '' : ` · moved ${n} reminder${n === 1 ? '' : 's'}`
 }
 
-/** fetch + unwrap `{ data }`, throwing the server's own message on failure. */
-async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
-  const body = (await res.json().catch(() => null)) as { data?: T; error?: string } | null
-  if (!res.ok) throw new Error(body?.error || 'Something went wrong')
-  return body?.data as T
-}
-
-function jsonInit(method: string, body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-}
-
 function errorMessage(err: unknown): string {
   return err instanceof Error && err.message ? err.message : 'Save failed'
 }
@@ -100,7 +89,7 @@ export function TimeSlotSettings() {
   const undo = useCallback(
     async (undoId: number) => {
       try {
-        const { history } = await call<{ history: { id: number; undone: boolean }[] }>(
+        const { history } = await apiFetch<{ history: { id: number; undone: boolean }[] }>(
           '/api/undo/history?limit=20',
         )
         if (history.find((e) => !e.undone)?.id !== undoId) {
@@ -110,7 +99,7 @@ export function TimeSlotSettings() {
           })
           return
         }
-        await call('/api/undo/batch', jsonInit('POST', { through_id: undoId }))
+        await apiFetch('/api/undo/batch', jsonInit('POST', { through_id: undoId }))
         await load()
         showToast({ message: 'Undone', type: 'success' })
       } catch (err) {
@@ -134,7 +123,7 @@ export function TimeSlotSettings() {
   const update = useCallback(
     async (slot: TimeSlot, changes: { label?: string; start_time?: string }) => {
       try {
-        const result = await call<SlotChange>(
+        const result = await apiFetch<SlotChange>(
           `/api/time-slots/${slot.id}`,
           jsonInit('PATCH', changes),
         )
@@ -160,7 +149,9 @@ export function TimeSlotSettings() {
   const remove = useCallback(
     async (slot: TimeSlot) => {
       try {
-        const result = await call<SlotChange>(`/api/time-slots/${slot.id}`, { method: 'DELETE' })
+        const result = await apiFetch<SlotChange>(`/api/time-slots/${slot.id}`, {
+          method: 'DELETE',
+        })
         await load()
         toastWithUndo(
           `Removed "${slot.label}"` + remindersMoved(result.reminders_moved),
@@ -176,7 +167,7 @@ export function TimeSlotSettings() {
   const add = useCallback(
     async (label: string, startTime: string) => {
       try {
-        const slot = await call<TimeSlot>(
+        const slot = await apiFetch<TimeSlot>(
           '/api/time-slots',
           jsonInit('POST', { label, start_time: startTime }),
         )

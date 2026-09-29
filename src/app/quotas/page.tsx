@@ -1,8 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { QuotasView } from '@/components/QuotasView'
 import { QuotasSummary, QuotasViewSwitch, type QuotasPageView } from '@/components/QuotasSummary'
@@ -10,7 +8,8 @@ import { useQuotasPagePreference } from '@/components/PreferencesProvider'
 import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useTimezone } from '@/hooks/useTimezone'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 
 /**
  * Quotas as a route (REDESIGN-V03 §5).
@@ -50,8 +49,7 @@ import { loginUrlFromLocation } from '@/lib/login-redirect'
  */
 
 export default function QuotasPage() {
-  const { status } = useSession()
-  const router = useRouter()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
 
   // Searching narrows the quotas to matching ones, in whichever view is
@@ -105,24 +103,10 @@ export default function QuotasPage() {
     setQuotasDetails(next === 'details')
   }
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-    }
-  }, [status, router])
-
   // Wait for the preferences as well as the session: until they land,
   // `quotasDetails` is the default, and a user who chose Details would watch
   // the summary paint and then swap out from under him.
-  if (status === 'loading' || (status === 'authenticated' && !loaded)) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-muted-foreground animate-pulse">Loading...</div>
-      </div>
-    )
-  }
-
-  if (status === 'unauthenticated') return null
+  if (!ready || !loaded) return <PageLoading />
 
   return (
     <div className="flex-1">

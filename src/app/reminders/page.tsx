@@ -1,8 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { RemindersCountBadges } from '@/components/RemindersCountBadges'
 import { RemindersView } from '@/components/RemindersView'
@@ -10,7 +8,8 @@ import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useTimezone } from '@/hooks/useTimezone'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 
 /**
  * The Reminders surface (REDESIGN-V03 §6) as a route.
@@ -35,8 +34,7 @@ import { loginUrlFromLocation } from '@/lib/login-redirect'
  */
 
 export default function RemindersPage() {
-  const { status } = useSession()
-  const router = useRouter()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
 
   // Searching narrows the slots to matching thoughts; the surface filters what
@@ -78,22 +76,7 @@ export default function RemindersPage() {
   // device, so this surface joins the same SSE refresh chain the dashboard uses.
   useSyncStream({ onSync: refresh })
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-    }
-  }, [status, router])
-
-  if (status === 'loading') {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-muted-foreground animate-pulse">Loading...</div>
-      </div>
-    )
-  }
-
-  if (status === 'unauthenticated') return null
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">

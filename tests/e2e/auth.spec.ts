@@ -22,4 +22,45 @@ test.describe('Authentication', () => {
     await page.waitForURL('/', { timeout: 10_000 })
     await expect(page.getByRole('img', { name: 'OpenTask' })).toBeVisible()
   })
+
+  // The signed-in pages share one client-side guard (useRequireSession): a
+  // visitor with no session lands on the login page, which remembers where
+  // they were headed.
+  //
+  // The redirect must not wait on any chunk the page body would lazy-load.
+  // It used to: /history rendered its body for a signed-out visitor, the
+  // body's next/dynamic BatchUndoDialog suspended the page, and the redirect
+  // effect waited on that chunk (in CI it never came). So every JS chunk
+  // requested once the session has resolved is held back until the /login
+  // navigation's own request goes out, then released. A guard that renders
+  // only the loading shell until the session is in needs none of them.
+  for (const path of [
+    '/archive',
+    '/trash',
+    '/history',
+    '/quotas',
+    '/reminders',
+    '/settings',
+    '/tasks/1',
+  ]) {
+    test(`signed-out visit to ${path} redirects to login with a callbackUrl`, async ({ page }) => {
+      let sessionResolved = false
+      let releaseChunks = () => {}
+      const loginRequested = new Promise<void>((resolve) => (releaseChunks = resolve))
+      page.on('response', (res) => {
+        if (new URL(res.url()).pathname === '/api/auth/session') sessionResolved = true
+      })
+      page.on('request', (req) => {
+        if (new URL(req.url()).pathname === '/login') releaseChunks()
+      })
+      await page.route('**/_next/static/chunks/*.js', async (route) => {
+        if (sessionResolved) await loginRequested
+        await route.continue()
+      })
+
+      await page.goto(path)
+      await page.waitForURL(`/login?callbackUrl=${encodeURIComponent(path)}`)
+      await expect(page.getByLabel('Username')).toBeVisible()
+    })
+  }
 })
