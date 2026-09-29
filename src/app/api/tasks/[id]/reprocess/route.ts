@@ -8,8 +8,9 @@
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, badRequest, handleError, parseRouteId } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { reprocessTask } from '@/core/tasks'
 import { isAIEnabled, enrichSingleTask } from '@/core/ai'
@@ -21,10 +22,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
-    const taskId = parseInt(id)
-    if (isNaN(taskId)) {
-      return notFound('Task not found', { id })
-    }
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     const task = reprocessTask({
       userId: user.id,
@@ -40,8 +39,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
 
     return success(formatTaskResponse(task))
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'POST /api/tasks/:id/reprocess error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/reprocess error:', err)
     return handleError(err)
   }
 })

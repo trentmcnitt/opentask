@@ -9,8 +9,9 @@
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, badRequest, handleError, handleZodError, parseRouteId } from '@/lib/api-response'
 import { incrementProgress } from '@/core/tasks/progress'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
@@ -27,6 +28,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
 
     // An empty body is the common case (a +1 tap), so tolerate no JSON at all.
     const body = await request.json().catch(() => ({}))
@@ -34,15 +37,14 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
 
     const { task, met, description } = incrementProgress({
       userId: user.id,
-      taskId: parseInt(id),
+      taskId,
       delta,
     })
 
     return success({ ...formatTaskResponse(task), met, description })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)
-    log.error('api', 'POST /api/tasks/:id/progress error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/progress error:', err)
     return handleError(err)
   }
 })

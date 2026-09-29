@@ -6,33 +6,14 @@
  * at completion time.
  */
 
-import { getDb } from '@/core/db'
-import { log } from '@/lib/logger'
-
-const DEFAULT_RETENTION_DAYS = 30
+import { purgeOlderThan } from '@/core/db/purge'
 
 export function purgeOldCompletions(): number {
-  const retentionDays = parseInt(
-    process.env.OPENTASK_RETENTION_COMPLETIONS_DAYS || String(DEFAULT_RETENTION_DAYS),
-    10,
-  )
-
-  const db = getDb()
-
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
-  const cutoffIso = cutoffDate.toISOString()
-
-  const result = db
-    .prepare(`DELETE FROM completions WHERE datetime(completed_at) < datetime(?)`)
-    .run(cutoffIso)
-
-  if (result.changes > 0) {
-    log.info(
-      'cron',
-      `Deleted ${result.changes} completion records older than ${retentionDays} days`,
-    )
-  }
-
-  return result.changes
+  return purgeOlderThan({
+    table: 'completions',
+    column: 'completed_at',
+    envVar: 'OPENTASK_RETENTION_COMPLETIONS_DAYS',
+    defaultDays: 30,
+    label: 'completion records',
+  })
 }

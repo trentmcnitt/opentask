@@ -12,23 +12,26 @@
  * Because it's a real task, tapping Done/Snooze on any device triggers
  * cross-device notification dismissal — a true end-to-end test.
  *
- * 'urgent' sends a P4 notification with time-sensitive interruption level.
- * 'critical' sends a P4 notification with Apple Critical Alert (bypasses
- * mute/DND, plays at the user's configured critical_alert_volume).
+ * Title prefix and interruption level come from the same helpers the overdue
+ * checker uses (`@/core/notifications/format`), so a test looks like the real
+ * thing. 'urgent' and 'critical' both send a P4 notification, which is an Apple
+ * Critical Alert (bypasses mute/DND, plays at the user's configured
+ * critical_alert_volume), exactly as a real overdue P4 does. 'critical' stays
+ * as its own type so existing clients that send it keep working.
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, badRequest, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 import { sendApnsNotification, isApnsConfigured } from '@/core/notifications/apns'
 import { createTask } from '@/core/tasks'
 import { getDb } from '@/core/db'
-import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { URGENT_PRIORITY } from '@/lib/priority'
 import { withLogging } from '@/lib/with-logging'
-
-const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
+import { APP_URL, interruptionLevelFor, notificationTitlePrefix } from '@/core/notifications/format'
 
 const VALID_TYPES = ['individual', 'high', 'bulk', 'urgent', 'critical'] as const
 type TestType = (typeof VALID_TYPES)[number]
@@ -73,9 +76,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     const priority = TYPE_PRIORITY[testType]
 
-    // Look up user's critical alert volume for critical test type
+    // A P4 test is a critical alert, so it needs the user's critical alert volume
+    const isCritical = priority >= URGENT_PRIORITY
     let criticalAlertVolume = 1.0
-    if (testType === 'critical') {
+    if (isCritical) {
       const db = getDb()
       const row = db
         .prepare('SELECT critical_alert_volume FROM users WHERE id = ?')
@@ -104,9 +108,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     setTimeout(async () => {
       try {
         const sends: Promise<void>[] = []
-        const priorityLabel =
-          priority >= 4 ? 'URGENT: ' : priority >= HIGH_PRIORITY_THRESHOLD ? 'HIGH: ' : ''
-        const title = `${priorityLabel}${task.title}`
+        const title = `${notificationTitlePrefix(priority)}${task.title}`
 
         // Web Push
         if (webPushEnabled) {
@@ -122,7 +124,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
         // APNs (all devices — iPhone + Watch)
         if (apnsEnabled) {
-          const isCritical = testType === 'critical'
           sends.push(
             sendApnsNotification(userId, {
               title,
@@ -131,11 +132,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
               dueAt: task.due_at!,
               priority,
               overdueCount: 0,
-              interruptionLevel: isCritical
-                ? 'critical'
-                : priority >= HIGH_PRIORITY_THRESHOLD
-                  ? 'time-sensitive'
-                  : 'active',
+              interruptionLevel: interruptionLevelFor(priority),
               ...(isCritical ? { criticalAlertVolume } : {}),
             }),
           )
@@ -155,8 +152,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       delay_seconds: SEND_DELAY_MS / 1000,
     })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'POST /api/notifications/test error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'POST /api/notifications/test error:', err)
     return handleError(err)
   }
 })

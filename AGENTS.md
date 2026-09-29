@@ -259,8 +259,9 @@ Preferred pattern for new route handlers:
 
 ```ts
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, badRequest, handleError, handleZodError, parseRouteId } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -273,11 +274,13 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
   try {
     const user = await requireAuth(request)
     const { id } = await context.params // Next.js 16 requires await
+    const taskId = parseRouteId(id)
+    if (taskId === null) return badRequest('Invalid task ID')
     const input = validateTaskUpdate(await request.json())
     const { task, fieldsChanged, description } = updateTask({
       userId: user.id,
       userTimezone: user.timezone,
-      taskId: parseInt(id),
+      taskId,
       input,
     })
     return success({
@@ -286,15 +289,14 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       description,
     })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)
-    log.error('api', 'PATCH /api/tasks/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'PATCH /api/tasks/:id error:', err)
     return handleError(err)
   }
 })
 ```
 
-Log unexpected errors in the catch-all before calling `handleError()` — expected errors like `AuthError` and `ZodError` don't need explicit logging.
+Log unexpected errors in the catch-all before calling `handleError()`. Expected errors don't need explicit logging: `ZodError`, and any `AppError` (`AuthError`, `NotFoundError`, …), which `withLogging()` already records as a 4xx.
 
 Note: `updateTask()` handles its own transaction and undo logging internally.
 
@@ -303,9 +305,9 @@ Note: `updateTask()` handles its own transaction and undo logging internally.
 Follow the pattern above, and verify:
 
 - [ ] Use `requireAuth(request)` (preferred for new handlers) or `getAuthUser(request)` for authentication
-- [ ] Await `context.params` (Next.js 16 requirement), and parse an id strictly (`/^\d+$/`, else `badRequest()` — see `parseSlotId` in `src/app/api/time-slots/[id]/route.ts`)
+- [ ] Await `context.params` (Next.js 16 requirement), and parse an id strictly with `parseRouteId()` from `@/lib/api-response` (digits only; `null` → `badRequest()`, the 400 every `[id]` route returns for a malformed id)
 - [ ] Validate request body with validation functions from `@/core/validation` (`validateTaskCreate`, `validateTaskUpdate`, etc. — these call Zod `.parse()` internally)
-- [ ] Wrap in try/catch: `AuthError` → `unauthorized()`, `ZodError` → `handleZodError()`, else → `handleError()`. Core functions may also throw `NotFoundError`, `ForbiddenError`, or `ValidationError` from `@/core/errors` — `handleError()` handles these automatically via the `AppError` base class.
+- [ ] Wrap in try/catch: `ZodError` → `handleZodError()`, else → `handleError()`. `requireAuth()`'s `AuthError` and the core functions' `NotFoundError`, `ForbiddenError` and `ValidationError` all extend `AppError` (`@/core/errors`), so `handleError()` maps them to 401/404/403/400 with no branch of their own.
 - [ ] Use PATCH for updates (not PUT)
 - [ ] If you created a new core mutation function, ensure it uses `withTransaction()` and calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
 - [ ] Format task responses with `formatTaskResponse()` from `@/lib/format-task`

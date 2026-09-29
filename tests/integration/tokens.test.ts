@@ -196,9 +196,9 @@ describe('API Token Management', () => {
     expect(res.status).toBe(404)
   })
 
-  test('DELETE /api/tokens/:id returns 404 for non-numeric id', async () => {
+  test('DELETE /api/tokens/:id returns 400 for non-numeric id', async () => {
     const res = await apiFetch('/api/tokens/abc', { method: 'DELETE' })
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(400)
   })
 
   test('DELETE /api/tokens/:id cannot revoke another user token', async () => {

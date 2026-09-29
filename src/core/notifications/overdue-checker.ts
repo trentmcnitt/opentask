@@ -36,8 +36,7 @@ import {
 import { getOverdueCount } from '@/core/notifications/dismiss'
 import { lastBadgeSent, usersWithNonZeroBadge } from '@/core/notifications/badge-state'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
-
-const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
+import { APP_URL, interruptionLevelFor, notificationTitlePrefix } from '@/core/notifications/format'
 
 /** Consolidation caps per bucket */
 const REGULAR_CAP = 4 // P0-P2
@@ -161,11 +160,8 @@ function splitIntoBuckets(tasks: OverdueTask[]): {
 
 /** Send an individual Web Push notification for a single task. */
 async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
-  const priorityLabel =
-    task.priority >= 4 ? 'URGENT: ' : task.priority >= HIGH_PRIORITY_THRESHOLD ? 'HIGH: ' : ''
-
   await sendPushNotification(task.user_id, {
-    title: `${priorityLabel}${task.title}`,
+    title: `${notificationTitlePrefix(task.priority)}${task.title}`,
     body: 'Overdue task',
     data: { url: `${APP_URL}/?task=${task.id}`, taskId: task.id },
   })
@@ -186,11 +182,8 @@ async function sendIndividualApns(
   overdueCount: number,
   badgeCount: number,
 ): Promise<void> {
-  const priorityLabel =
-    task.priority >= 4 ? 'URGENT: ' : task.priority >= HIGH_PRIORITY_THRESHOLD ? 'HIGH: ' : ''
-
   await sendApnsNotification(task.user_id, {
-    title: `${priorityLabel}${task.title}`,
+    title: `${notificationTitlePrefix(task.priority)}${task.title}`,
     body: 'Overdue task',
     taskId: task.id,
     // The occurrence being notified about, not the stored due_at (§4.6) — for
@@ -200,12 +193,7 @@ async function sendIndividualApns(
     priority: task.priority,
     overdueCount,
     badge: badgeCount,
-    interruptionLevel:
-      task.priority >= URGENT_PRIORITY
-        ? 'critical'
-        : task.priority >= HIGH_PRIORITY_THRESHOLD
-          ? 'time-sensitive'
-          : 'active',
+    interruptionLevel: interruptionLevelFor(task.priority),
     criticalAlertVolume: task.priority >= URGENT_PRIORITY ? task.critical_alert_volume : undefined,
   })
 }
