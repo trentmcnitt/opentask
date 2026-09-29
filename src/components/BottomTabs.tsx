@@ -116,7 +116,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
                   <span
                     data-tasks-badge
                     className={`${BADGE} ${
-                      tasksBadge.tone === 'overdue' ? 'bg-badge-destructive' : 'bg-primary'
+                      tasksBadge.tone === 'overdue' ? 'bg-badge-destructive' : 'bg-blue-500'
                     }`}
                     aria-label={tasksBadge.label}
                   >

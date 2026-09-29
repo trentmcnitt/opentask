@@ -16,3 +16,6 @@ export type {
   FieldChangesInput,
   CollectFieldChangesOptions,
 } from './collect-field-changes'
+
+export { applyFieldChanges } from './apply-field-changes'
+export type { AppliedActivity, ApplyFieldChangesResult } from './apply-field-changes'

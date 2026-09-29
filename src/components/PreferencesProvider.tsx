@@ -78,6 +78,8 @@ interface PreferencesContextValue {
   setQuotasDetails: (details: boolean) => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
+  enrichmentNotificationsEnabled: boolean
+  setEnrichmentNotificationsEnabled: (enabled: boolean) => void
   criticalAlertVolume: number
   setCriticalAlertVolume: (volume: number) => void
   aiContext: string | null
@@ -152,6 +154,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setQuotasDetails: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
+  enrichmentNotificationsEnabled: true,
+  setEnrichmentNotificationsEnabled: () => {},
   criticalAlertVolume: 1.0,
   setCriticalAlertVolume: () => {},
   aiContext: null,
@@ -276,6 +280,7 @@ function makeFieldSetters(set: FieldSet) {
     setWakeTime: field('wakeTime'),
     setSleepTime: field('sleepTime'),
     setNotificationsEnabled: field('notificationsEnabled'),
+    setEnrichmentNotificationsEnabled: field('enrichmentNotificationsEnabled'),
     setCriticalAlertVolume: field('criticalAlertVolume'),
     setAiContext: field('aiContext'),
     setAiMode: field('aiMode'),
@@ -558,12 +563,16 @@ export function useNotificationConfig() {
   const {
     notificationsEnabled,
     setNotificationsEnabled,
+    enrichmentNotificationsEnabled,
+    setEnrichmentNotificationsEnabled,
     criticalAlertVolume,
     setCriticalAlertVolume,
   } = useContext(PreferencesContext)
   return {
     notificationsEnabled,
     setNotificationsEnabled,
+    enrichmentNotificationsEnabled,
+    setEnrichmentNotificationsEnabled,
     criticalAlertVolume,
     setCriticalAlertVolume,
   }

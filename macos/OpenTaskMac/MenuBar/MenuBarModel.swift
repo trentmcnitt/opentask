@@ -168,8 +168,15 @@ final class MenuBarModel: ObservableObject {
         var parts: [String] = []
         let n = result.tasksAffected
         parts.append(n == 0 ? "Nothing to snooze" : "Snoozed \(n) \(n == 1 ? "task" : "tasks")")
-        if result.skippedHigh > 0 { parts.append("\(result.skippedHigh) High left") }
-        if result.skippedUrgent > 0 { parts.append("\(result.skippedUrgent) Urgent left") }
+        // What stayed behind, in the menu bar's short wording (`SweepLine`).
+        // "Included N High" is left out: the headline already counts them.
+        for line in result.summaryLines {
+            switch line {
+            case .includedHigh: break
+            case .highStillOverdue(let n): parts.append("\(n) High left")
+            case .urgentStillOverdue(let n): parts.append("\(n) Urgent left")
+            }
+        }
         return parts.joined(separator: " · ")
     }
 

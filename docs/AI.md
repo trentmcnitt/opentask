@@ -136,6 +136,8 @@ User types → Task saved immediately → `ai-to-process` label added
 
 Safety net: cron runs every 1 minute, picks up pending tasks with round-robin fairness across users.
 
+After a successful model run on a task added in the last 10 minutes, either path sends one quiet "AI finished" push with the cleaned title and what the AI filled in (the Just added card, on the lock screen). Never on failure. See `docs/NOTIFICATIONS.md` § "AI finished" notification.
+
 ### Shared project support
 
 Enrichment queries both owned and shared projects when building the project list for AI. This allows the model to route tasks to shared projects. The project list format indicates which projects are shared:

@@ -63,7 +63,7 @@ struct BulkSnoozeSheetView: View {
             .multilineTextAlignment(.center)
 
         Button {
-            run(model.bulkSnoozeOverdueNextPeriod)
+            run { await model.bulkSnoozeOverdue(.nextPeriod) }
         } label: {
             Text(nextPeriodLabel)
                 .frame(maxWidth: .infinity)
@@ -72,7 +72,7 @@ struct BulkSnoozeSheetView: View {
         .disabled(isRunning)
 
         Button {
-            run(model.bulkSnoozeOverduePlusHour)
+            run { await model.bulkSnoozeOverdue(.plusOneHour) }
         } label: {
             Text("+1 hour")
                 .frame(maxWidth: .infinity)
@@ -108,17 +108,13 @@ struct BulkSnoozeSheetView: View {
             .font(.headline)
 
         // Only the counts that actually apply this run — a batch with no
-        // High or Urgent items shows neither line, so the result reads as
-        // clean confirmation rather than a checklist of zeros.
-        if result.snoozedHigh > 0 {
-            Text("Included \(result.snoozedHigh) High")
+        // High or Urgent items shows no line, so the result reads as clean
+        // confirmation rather than a checklist of zeros. The same lines as
+        // the Smart Stack card (`SweepLine`), including High left behind.
+        ForEach(Array(result.summaryLines.enumerated()), id: \.offset) { _, line in
+            Text(line.text)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        if result.skippedUrgent > 0 {
-            Text("\(result.skippedUrgent) Urgent still overdue")
-                .font(.caption2)
-                .foregroundStyle(WatchTheme.overdue)
+                .foregroundStyle(line.isUrgent ? WatchTheme.overdue : .secondary)
         }
 
         Button("Done") {

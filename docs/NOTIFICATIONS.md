@@ -63,21 +63,22 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 
 ### Files
 
-| File                                         | Purpose                                                                                       |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/core/notifications/overdue-checker.ts`  | Unified overdue checker with consolidation (all priorities)                                   |
-| `src/core/notifications/web-push.ts`         | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
-| `src/core/notifications/apns.ts`             | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
-| `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                   |
-| `src/core/notifications/badge-state.ts`      | Last badge sent per user — the overdue checker's change gate                                  |
-| `src/core/notifications/slot-reminders.ts`   | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
-| `src/core/notifications/slot-nags.ts`        | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
-| `src/hooks/usePushSubscription.ts`           | Client-side push subscription management hook                                                 |
-| `src/app/api/push/subscribe/route.ts`        | Push subscription storage endpoint                                                            |
-| `src/app/api/push/test/route.ts`             | Quick push test (sends to current user)                                                       |
-| `src/app/api/notifications/actions/route.ts` | Action callback handler (done, snooze30, snooze, snooze2h)                                    |
-| `src/app/api/notifications/test/route.ts`    | Test notification endpoint (individual, high, bulk, critical)                                 |
-| `src/instrumentation.ts`                     | Cron scheduling                                                                               |
+| File                                          | Purpose                                                                                       |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/core/notifications/overdue-checker.ts`   | Unified overdue checker with consolidation (all priorities)                                   |
+| `src/core/notifications/web-push.ts`          | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
+| `src/core/notifications/apns.ts`              | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
+| `src/core/notifications/dismiss.ts`           | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                   |
+| `src/core/notifications/badge-state.ts`       | Last badge sent per user — the overdue checker's change gate                                  |
+| `src/core/notifications/slot-reminders.ts`    | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
+| `src/core/notifications/slot-nags.ts`         | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
+| `src/core/notifications/enrichment-notify.ts` | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                   |
+| `src/hooks/usePushSubscription.ts`            | Client-side push subscription management hook                                                 |
+| `src/app/api/push/subscribe/route.ts`         | Push subscription storage endpoint                                                            |
+| `src/app/api/push/test/route.ts`              | Quick push test (sends to current user)                                                       |
+| `src/app/api/notifications/actions/route.ts`  | Action callback handler (done, snooze30, snooze, snooze2h)                                    |
+| `src/app/api/notifications/test/route.ts`     | Test notification endpoint (individual, high, bulk, critical)                                 |
+| `src/instrumentation.ts`                      | Cron scheduling                                                                               |
 
 ## Web Push
 
@@ -203,6 +204,47 @@ Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push 
 - Cost: prompts are computed only for a user whose slot opens this minute, or who is awake at the top of the hour with nags left to spend today. That is one quota query per call, never one per minute for every user.
 - The native checklist shows at most 8 rows (`maxVisibleRows`), reminders first, then prompts, then "+N more". "Complete all" covers every row, including hidden ones. It considers waiting prompts without logging progress, except prompts staged as "did it", which keep their +1.
 
+## "AI finished" notification (just-added tasks)
+
+Added 2026-09-29: "a notification whenever a task or a reminder is enriched. Kind of does the same thing as the Just added list, but you don't actually have to open the app at all." One quiet push per new task, sent when AI enrichment finishes. The code and its full rationale are in `src/core/notifications/enrichment-notify.ts`.
+
+**Content** mirrors the Just added card (`JustAddedCard`), built from the task's state after enrichment, with the card's formatting helpers:
+
+| Field | Value                                                                                                                                                                                                                             |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Title | The task's cleaned title                                                                                                                                                                                                          |
+| Body  | `Added to <project>`, then due (`formatDueTimeParts`, relative · absolute, user's timezone), priority label, recurrence (`formatRRule`), labels (not `ai-*`), joined by `·`. A reminder: `Added to <period>` instead, no due date |
+
+Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:00 AM · Weekly on Monday at 9:00 AM`, `Added to Evening · Daily at 8:30 PM` (a reminder), and `Added to Inbox` when the AI filled in nothing.
+
+**Delivery.** Passive everywhere:
+
+- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: passive`, no `sound`, APNs priority 5, no `category` (so no Done / +1hr buttons and no content extension), no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. With no category and a `taskId`, a tap takes the apps' individual-task path and opens `/?task=<id>`; the `dismiss` silent push for that task (done, snooze, delete) clears it too.
+- Web Push: `urgency: low`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. Like every Web Push, it is not shown while an app window is visible.
+- Devices: every `apns_devices` row, the watch app included (the same set overdue alerts go to; only the badge push skips the watch), and every Web Push subscription. Never widget push tokens.
+
+```json
+{
+  "aps": {
+    "alert": { "title": "Call the dentist", "body": "Added to Work · Tomorrow 9:00 AM · High" },
+    "thread-id": "enriched-42",
+    "interruption-level": "passive"
+  },
+  "taskId": 42
+}
+```
+
+**When.** Both enrichment entry points in `src/core/ai/enrichment.ts` — the fire-and-forget `enrichSingleTask` on create and the per-minute `processEnrichmentQueue` safety net — call it after a successful model run, outside their error handling (a push failure is never an enrichment failure). It sends only when:
+
+- the task was created inside the Just added window (`JUST_ADDED_WINDOW_MS`, 10 minutes). The queue also enriches old tasks (a user re-adding `ai-to-process`, a reprocessed `ai-failed`); those get nothing.
+- it has not already sent for that task. An in-memory map on `globalThis`, checked and set synchronously before any await, so a retry, a re-enrichment inside the window, or the second bundle's copy of the module cannot double-send. A restart empties it.
+- the task is not done, deleted, or a quota.
+- the user has `notifications_enabled` and `enrichment_notifications_enabled`, and is not the demo user.
+
+Nothing is sent when enrichment fails (the `ai-failed` path), or when the user's enrichment mode is off (no model ran).
+
+**Setting.** Settings → Notifications → "Notify when AI finishes a new task" (`users.enrichment_notifications_enabled`, default on; `enrichment_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Shown only when AI is available, greyed out while notifications are off.
+
 ## iOS platform constraints
 
 These apply regardless of which notification service is used.
@@ -300,5 +342,6 @@ Both were verified by building each widget extension target directly (`xcodebuil
 Configured in Settings > Notifications:
 
 - Browser Push toggle (subscribe/unsubscribe per device)
+- Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available)
 - Auto-snooze intervals (tiered by priority)
 - Test notification buttons (individual, high, bulk, critical)

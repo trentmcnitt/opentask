@@ -3700,6 +3700,16 @@ components:
         quota_prompts_enabled:
           type: boolean
           description: Whether unmet quotas also appear as prompts among the user's reminders.
+        enrichment_notifications_enabled:
+          type: boolean
+          default: true
+          description: |
+            Whether a quiet push notification (no sound, Notification Center
+            only) is sent when AI enrichment finishes for a task or reminder
+            added in the last 10 minutes: its cleaned title, and the project,
+            due date, priority, recurrence and labels it now has (a reminder's
+            period instead of a project). Sent once per task, never for a
+            failed enrichment, and only while notifications are enabled.
         week_start:
           type: string
           enum: [sunday, monday]

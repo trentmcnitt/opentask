@@ -82,6 +82,9 @@ self.addEventListener('push', (event) => {
         icon: '/icon-192.png',
         data: data.data || {},
         tag: data.tag || undefined,
+        // Quiet pushes (the "AI finished" notification) ask for no sound or
+        // vibration. Everything else keeps the platform default.
+        silent: data.silent === true,
       })
     }),
   )

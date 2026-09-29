@@ -70,6 +70,8 @@ export interface Prefs {
   trackExpanded: boolean
   quotasDetails: boolean
   notificationsEnabled: boolean
+  /** The quiet "AI finished" push for a just-added task. */
+  enrichmentNotificationsEnabled: boolean
   criticalAlertVolume: number
   aiContext: string | null
   aiMode: AiMode
@@ -111,6 +113,7 @@ export const DEFAULT_PREFS: Prefs = {
   trackExpanded: false,
   quotasDetails: false,
   notificationsEnabled: true,
+  enrichmentNotificationsEnabled: true,
   criticalAlertVolume: 1.0,
   aiContext: null,
   aiMode: 'on',
@@ -185,6 +188,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'trackExpanded', data.track_expanded)
   take(out, 'quotasDetails', data.quotas_details)
   take(out, 'notificationsEnabled', data.notifications_enabled)
+  take(out, 'enrichmentNotificationsEnabled', data.enrichment_notifications_enabled)
   take(out, 'criticalAlertVolume', data.critical_alert_volume)
   take(out, 'aiContext', data.ai_context)
   // Defensive mapping: accept valid modes, anything else present is 'on'.

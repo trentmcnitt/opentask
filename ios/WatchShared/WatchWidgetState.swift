@@ -222,6 +222,11 @@ enum WatchWidgetState {
         /// The period the sweep targeted, as the card labeled it at tap time
         /// ("Midday"), so the result can say where things went.
         let targetLabel: String?
+
+        /// The High/Urgent detail lines under the headline (`SweepLine`).
+        var summaryLines: [SweepLine] {
+            SweepLine.lines(snoozedHigh: snoozedHigh, skippedHigh: skippedHigh, skippedUrgent: skippedUrgent)
+        }
     }
 
     /// How long the result replaces the card before it reverts to whatever
