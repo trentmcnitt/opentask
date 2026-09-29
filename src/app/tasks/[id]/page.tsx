@@ -91,36 +91,25 @@ export default function TaskDetailPage() {
     router.push(href)
   }, [pendingNavigation, clearPendingNavigation, router])
 
-  // Use a ref to access the shared undo handler in the save-and-leave callback,
-  // since actions is created after this callback in the hook order.
-  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
-
-  // Whether the last save failed. The editors swallow a rejected save — the
-  // host has already shown the error, and the staged edits stay for a retry —
-  // so `saveRef` resolves whether or not anything was stored. This page is the
-  // host (handleSaveAll below), so it records the failure here and
-  // save-and-leave reads it: leave only once the save has actually landed.
-  const saveFailedRef = useRef(false)
+  // Whether the last save reached the server. `saveRef` resolves either way:
+  // the editors swallow a failed save (the host has already shown the error,
+  // and the staged edits stay for a retry), and an editor may decline to send
+  // anything at all (QuotaDetail's `canSave`, e.g. a target out of range, with
+  // its own inline message saying why). This page is the host (handleSaveAll
+  // below), so it records a save that landed, and save-and-leave leaves only
+  // then. Anything else stays on the page, with no claim that it saved.
+  const saveLandedRef = useRef(false)
 
   const handleSaveAndLeave = useCallback(async () => {
-    saveFailedRef.current = false
+    saveLandedRef.current = false
     await saveRef.current?.()
-    if (saveFailedRef.current) {
-      // The error toast is already up; stay on the page with the edits.
+    if (!saveLandedRef.current) {
       clearPendingNavigation()
       return
     }
-    showToast({
-      message: 'Changes saved',
-      type: 'success',
-      action: {
-        label: 'Undo',
-        onClick: async () => {
-          await handleUndoRef.current?.()
-          window.location.reload()
-        },
-      },
-    })
+    // No toast of our own: the save already showed its description with Undo
+    // (the same single toast the Reminders and Quotas surfaces show). Undo
+    // still reaches the page left for, which refreshes on the sync event.
     const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
@@ -234,21 +223,14 @@ export default function TaskDetailPage() {
     onEnrichmentComplete: handleEnrichmentComplete,
   })
 
-  // Keep handleSaveAndLeave's undo ref in sync with the shared handler
-  handleUndoRef.current = actions.handleUndo
-
-  // Every editor on this page saves through here, so a failure is recorded for
-  // save-and-leave (see saveFailedRef) and still rethrown to the editor, which
-  // keeps its staged edits.
+  // Every editor on this page saves through here, so save-and-leave learns
+  // that the save landed (see saveLandedRef). A failure rejects to the editor,
+  // which keeps its staged edits.
   const { handleSaveAllChanges } = actions
   const handleSaveAll = useCallback(
     async (changes: QuickActionPanelChanges) => {
-      try {
-        await handleSaveAllChanges(changes)
-      } catch (err) {
-        saveFailedRef.current = true
-        throw err
-      }
+      await handleSaveAllChanges(changes)
+      saveLandedRef.current = true
     },
     [handleSaveAllChanges],
   )

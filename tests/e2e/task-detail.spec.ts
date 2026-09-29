@@ -1,14 +1,27 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from './fixtures'
 
-async function createTask(page: Page, title: string): Promise<number> {
-  const res = await page.request.post('/api/tasks', { data: { title } })
+async function createTask(
+  page: Page,
+  title: string,
+  extra: Record<string, unknown> = {},
+): Promise<number> {
+  const res = await page.request.post('/api/tasks', { data: { title, ...extra } })
   expect(res.ok()).toBeTruthy()
   return (await res.json()).data.id as number
 }
 
+async function taskField(page: Page, id: number, field: string): Promise<unknown> {
+  return (await (await page.request.get(`/api/tasks/${id}`)).json()).data[field]
+}
+
 async function taskTitle(page: Page, id: number): Promise<string> {
-  return (await (await page.request.get(`/api/tasks/${id}`)).json()).data.title
+  return (await taskField(page, id, 'title')) as string
+}
+
+/** Sonner's toasts, as opposed to anything else on the page. */
+function toasts(page: Page) {
+  return page.locator('[data-sonner-toast]')
 }
 
 /** Stage a title edit in the task page's panel without saving it. */
@@ -101,6 +114,13 @@ test.describe('Task detail', () => {
       // Not polled: the page may only leave once the PATCH has landed, so the
       // new title is already stored by the time the dashboard loads.
       expect(await taskTitle(page, id)).toBe('Leave-with-save probe, renamed')
+
+      // One toast: the save's own description, carrying Undo — not a second,
+      // generic "Changes saved" on top of it.
+      await expect(toasts(page)).toHaveCount(1)
+      await expect(toasts(page)).toContainText('Renamed')
+      await expect(toasts(page).getByRole('button', { name: 'Undo' })).toBeVisible()
+      await expect(page.getByText('Changes saved')).toHaveCount(0)
     } finally {
       await page.request.delete(`/api/tasks/${id}`)
     }
@@ -131,7 +151,7 @@ test.describe('Task detail', () => {
 
       await expect(page.getByText('The server said no')).toBeVisible()
       await expect(dialog).toHaveCount(0)
-      await expect(page.getByText('Changes saved')).toHaveCount(0)
+      await expect(toasts(page)).toHaveCount(1)
       expect(await taskTitle(page, id)).toBe('Failed-save probe')
 
       // Still here, edit still staged: the panel's own Save now stores it.
@@ -141,6 +161,43 @@ test.describe('Task detail', () => {
       await page.getByRole('button', { name: 'Save', exact: true }).click()
       await expect.poll(() => taskTitle(page, id)).toBe('Failed-save probe, renamed')
       await expect(page).toHaveURL(`/tasks/${id}`)
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
+  test('a save the editor declines stays on the page and says why', async ({
+    authenticatedPage: page,
+  }) => {
+    // A quota's editor refuses a target outside 1..1000: nothing is sent, so
+    // leaving must neither claim a save nor go.
+    const id = await createTask(page, 'Declined-save probe', {
+      progress_target: 2,
+      rrule: 'FREQ=WEEKLY',
+    })
+    try {
+      await page.goto(`/tasks/${id}`)
+      await expect(page.getByRole('heading', { name: 'Quota' })).toBeVisible()
+      await page.getByLabel('Times per period').fill('0')
+      const why = page.getByText('A target is a whole number from 1 to 1000.')
+      await expect(why).toBeVisible()
+
+      let patched = false
+      page.on('request', (r) => {
+        if (r.method() === 'PATCH' && r.url().includes(`/api/tasks/${id}`)) patched = true
+      })
+
+      await page.getByRole('button', { name: 'Back to quotas' }).click()
+      const dialog = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+
+      await expect(page).toHaveURL(`/tasks/${id}`)
+      await expect(why).toBeVisible()
+      await expect(page.getByLabel('Times per period')).toHaveValue('0')
+      await expect(toasts(page)).toHaveCount(0)
+      expect(patched).toBe(false)
+      expect(await taskField(page, id, 'progress_target')).toBe(2)
     } finally {
       await page.request.delete(`/api/tasks/${id}`)
     }
