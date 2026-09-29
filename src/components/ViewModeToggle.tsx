@@ -26,7 +26,7 @@ interface ViewModeToggleProps {
  * (§6) used to ride along as a fourth chip — it is now a real route (`/reminders`)
  * with its own tab, so this control is back to doing exactly one job.
  *
- * All · Today · New (Trent, 2026-09-29 — in that order). New replaced Projects: he never used
+ * All · Today · Newest (Trent, 2026-09-29 — in that order; "Newest", not "New"). New replaced Projects: he never used
  * the per-project grouping, and wanted one tap to everything newest-added first
  * (a flat list, each row naming its project — `'new'` in `src/lib/grouping.ts`).
  * The project filter chips still narrow any view to one project. Its icon is
@@ -41,7 +41,7 @@ export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
     { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
     {
       value: 'new',
-      label: 'New',
+      label: 'Newest',
       icon: ArrowDownWideNarrow,
       hint: 'Everything, newest added first',
     },

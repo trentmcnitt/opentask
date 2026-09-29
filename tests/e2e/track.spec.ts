@@ -103,7 +103,7 @@ test.beforeAll(async () => {
   }
 })
 
-const VIEWS = ['Today', 'All', 'New'] as const
+const VIEWS = ['Today', 'All', 'Newest'] as const
 type View = (typeof VIEWS)[number]
 /** The view toggle persists server-side for the shared test user; tests put it back. */
 async function pressedView(page: Page): Promise<View | null> {

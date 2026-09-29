@@ -274,6 +274,6 @@ test.describe('Just added: age-out', () => {
 
   test('the Recent view is gone from the view switch', async ({ authenticatedPage: page }) => {
     const toggle = page.getByRole('group', { name: 'View mode' })
-    await expect(toggle.getByRole('button')).toHaveText(['All', 'Today', 'New'])
+    await expect(toggle.getByRole('button')).toHaveText(['All', 'Today', 'Newest'])
   })
 })
