@@ -16,10 +16,15 @@ import {
 import type { Task, Project } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { cn } from '@/lib/utils'
-import type { SortOption } from '@/hooks/useGroupSort'
+import {
+  buildTaskGroups,
+  effectiveSort,
+  isFlatGrouping,
+  sortTasks,
+  type SortOption,
+  type TaskGroup,
+} from '@/lib/task-grouping'
 import { isTracked } from '@/lib/track'
-import { groupByTimeSlot } from '@/lib/slot-view'
-import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
@@ -53,38 +58,6 @@ const GROUP_PREVIEW_COUNT = 10
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
-/**
- * `slot` is the §7.3 front door: today's tasks grouped by time slot. The other
- * modes remain reachable — the corpus stays fully accessible, it just isn't
- * what greets you. The full list and what each value means: `src/lib/grouping.ts`.
- */
-export type { GroupingMode }
-
-/**
- * New and Unified are one flat list: no group headers, no preview cap, no
- * collapse, and every row names its project (there is no project heading to
- * say it). They differ only in order — see `effectiveSort`.
- */
-export function isFlatGrouping(grouping: GroupingMode): boolean {
-  return grouping === 'unified' || grouping === 'new'
-}
-
-/**
- * The sort a list is actually drawn in. New is newest-added first, always: the
- * `age` sort unreversed, whatever the saved sort preference says — that order
- * is what makes it New (Trent, 2026-09-29). The saved preference is left alone,
- * so All and Unified still get the user's own sort. The list, keyboard order
- * and every other reader of the visual order must go through this, or arrow
- * keys and the visual order disagree in New.
- */
-export function effectiveSort(
-  grouping: GroupingMode,
-  sortOption: SortOption,
-  reversed: boolean,
-): { sortOption: SortOption; reversed: boolean } {
-  return grouping === 'new' ? { sortOption: 'age', reversed: false } : { sortOption, reversed }
-}
-
 import { useSelection, type SelectionContextType } from './SelectionProvider'
 
 interface TaskListProps {
@@ -114,11 +87,11 @@ interface TaskListProps {
   onListFocus?: (e: React.FocusEvent) => void
   /** Blur handler for list container */
   onListBlur?: (e: React.FocusEvent) => void
-  /** Sort option (lifted from useGroupSort in the dashboard) */
+  /** Sort option (from the dashboard's persisted preferences) */
   sortOption: SortOption
-  /** Reversed state (lifted from useGroupSort in the dashboard) */
+  /** Reversed state (from the dashboard's persisted preferences) */
   reversed: boolean
-  /** Set sort option (lifted from useGroupSort in the dashboard) */
+  /** Set sort option (from the dashboard's persisted preferences) */
   setSortOption: (option: SortOption) => void
   /** Desktop click: set keyboard focus (blue glow) without selecting */
   onActivate?: (taskId: number) => void
@@ -175,81 +148,6 @@ interface TaskListProps {
    * outside the list) calls on a tap.
    */
   revealRef?: React.MutableRefObject<((task: Task) => void) | null>
-}
-
-// Sort tasks within a group - exported for use by keyboard navigation
-export function sortTasks(
-  tasks: Task[],
-  sortOption: SortOption,
-  reversed = false,
-  insightsScoreMap?: Map<number, number>,
-): Task[] {
-  const sorted = [...tasks]
-  switch (sortOption) {
-    case 'due_date':
-      // Default: soonest first, no due date last; priority as tiebreaker
-      sorted.sort((a, b) => {
-        const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
-        const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
-        const cmp = aDue - bDue
-        if (cmp !== 0) return reversed ? -cmp : cmp
-        return (b.priority || 0) - (a.priority || 0)
-      })
-      break
-    case 'priority':
-      // Default: highest first (4=urgent, 0=unset), then by due date
-      sorted.sort((a, b) => {
-        const priorityDiff = (b.priority || 0) - (a.priority || 0)
-        if (priorityDiff !== 0) return reversed ? -priorityDiff : priorityDiff
-        const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
-        const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
-        return aDue - bDue
-      })
-      break
-    case 'title':
-      sorted.sort((a, b) => {
-        const cmp = a.title.localeCompare(b.title)
-        return reversed ? -cmp : cmp
-      })
-      break
-    case 'age':
-      // Default: newest first (reversed = oldest first)
-      sorted.sort((a, b) => {
-        const aCreated = a.created_at ? new Date(a.created_at).getTime() : Infinity
-        const bCreated = b.created_at ? new Date(b.created_at).getTime() : Infinity
-        const cmp = bCreated - aCreated
-        return reversed ? -cmp : cmp
-      })
-      break
-    case 'modified':
-      sorted.sort((a, b) => {
-        const aUpdated = new Date(a.updated_at).getTime()
-        const bUpdated = new Date(b.updated_at).getTime()
-        const cmp = bUpdated - aUpdated
-        return reversed ? -cmp : cmp
-      })
-      break
-    case 'original_due':
-      // Default: earliest original_due first (oldest origin at top). Null → end.
-      sorted.sort((a, b) => {
-        const aOrig = a.original_due_at ? new Date(a.original_due_at).getTime() : Infinity
-        const bOrig = b.original_due_at ? new Date(b.original_due_at).getTime() : Infinity
-        const cmp = aOrig - bOrig
-        if (cmp !== 0) return reversed ? -cmp : cmp
-        return (b.priority || 0) - (a.priority || 0)
-      })
-      break
-    case 'ai_insights':
-      // Default: highest score first (most attention needed). Tasks without scores → end.
-      sorted.sort((a, b) => {
-        const aScore = insightsScoreMap?.get(a.id) ?? -1
-        const bScore = insightsScoreMap?.get(b.id) ?? -1
-        const cmp = bScore - aScore
-        return reversed ? -cmp : cmp
-      })
-      break
-  }
-  return sorted
 }
 
 /** Labels shown on the compact sort button — direction-aware. */
@@ -712,76 +610,6 @@ export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
   return new Date(task.due_at) < now
 }
 
-export interface TaskGroup {
-  label: string
-  tasks: Task[]
-}
-
-function groupByTime(tasks: Task[], timezone: string, now: Date): TaskGroup[] {
-  const {
-    tomorrowStart: tomorrow,
-    dayAfterTomorrowStart: dayAfterTomorrow,
-    nextWeekStart: nextWeek,
-  } = getTimezoneDayBoundaries(timezone, now)
-
-  const buckets: Record<string, Task[]> = {
-    Overdue: [],
-    Today: [],
-    Tomorrow: [],
-    'This Week': [],
-    Later: [],
-    'No Due Date': [],
-  }
-
-  for (const task of tasks) {
-    if (!task.due_at) {
-      buckets['No Due Date'].push(task)
-      continue
-    }
-
-    const due = new Date(task.due_at)
-
-    if (due < now) {
-      buckets['Overdue'].push(task)
-    } else if (due < tomorrow) {
-      buckets['Today'].push(task)
-    } else if (due < dayAfterTomorrow) {
-      buckets['Tomorrow'].push(task)
-    } else if (due < nextWeek) {
-      buckets['This Week'].push(task)
-    } else {
-      buckets['Later'].push(task)
-    }
-  }
-
-  // Insert "now" separator within Today group if there are both overdue and upcoming
-  const groups: TaskGroup[] = []
-  const order = ['Overdue', 'Today', 'Tomorrow', 'This Week', 'Later', 'No Due Date']
-
-  for (const label of order) {
-    if (buckets[label].length > 0) {
-      groups.push({ label, tasks: buckets[label] })
-    }
-  }
-
-  return groups
-}
-
-/**
- * Group today's tasks into time slots (§7.3).
- *
- * Two things this must not do:
- *
- * 1. Drop the un-slotted items. Anything with no time of day — which is most
- *    Track items — goes into an explicit "Undated" group rendered AFTER
- *    the timed slots. §7.3 is explicit that they must not become invisible
- *    from the front door.
- * 2. Hide empty slots... except when the whole day is empty. A slot the user
- *    defined is part of how they read their day, so an empty "Midday" still
- *    renders as a container. But rendering five empty containers when there is
- *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
- *    so a fully-empty day collapses to no groups and the caught-up state shows.
- */
 function GroupCheckbox({
   groupTaskIds,
   selection,
@@ -910,20 +738,4 @@ function NowSeparator({ timezone }: { timezone: string }) {
       <div className="bg-border h-px flex-1" />
     </div>
   )
-}
-
-/**
- * Build task groups from tasks array. Exported for use by keyboard navigation
- * to compute orderedIds and find first task in group after completion.
- */
-export function buildTaskGroups(
-  tasks: Task[],
-  grouping: GroupingMode,
-  timezone: string,
-  timeSlots: TimeSlot[] = [],
-  now: Date = new Date(),
-): TaskGroup[] {
-  if (isFlatGrouping(grouping)) return [{ label: '_unified', tasks }]
-  if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
-  return groupByTime(tasks, timezone, now)
 }

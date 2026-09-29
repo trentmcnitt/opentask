@@ -35,7 +35,7 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 - `src/core/` — Business logic (no UI): auth, db, errors, projects, tasks, labels, time-slots, recurrence, undo, validation, notifications, webhooks, review, stats, ai, activity, export. Quota and reminder logic lives in `src/core/tasks/` (`quotas.ts`, `progress.ts`, `quota-prompts.ts`, `quota-prompt-actions.ts`, `reminders.ts`, `period-rollover.ts`)
 - `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
-- `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
+- `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
 - `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
 - `src/app/` — Pages (App Router): root (`/`, the dashboard), reminders, quotas, login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)

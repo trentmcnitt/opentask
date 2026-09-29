@@ -23,7 +23,7 @@
 
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
 import { coerceGrouping, type GroupingMode } from '@/lib/grouping'
-import type { SortOption } from '@/hooks/useGroupSort'
+import type { SortOption } from '@/lib/task-grouping'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo, AIFeature } from '@/core/ai/models'

@@ -2,9 +2,7 @@
 
 import type React from 'react'
 import { useEffect } from 'react'
-import { sortTasks } from '@/components/TaskList'
-import type { TaskGroup } from '@/components/TaskList'
-import type { SortOption } from '@/hooks/useGroupSort'
+import { sortTasks, type SortOption, type TaskGroup } from '@/lib/task-grouping'
 import type { Project } from '@/types'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { showToast } from '@/lib/toast'

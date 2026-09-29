@@ -3,13 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import {
-  TaskList,
-  buildTaskGroups,
-  effectiveSort,
-  sortTasks,
-  type GroupingMode,
-} from '@/components/TaskList'
+import { TaskList } from '@/components/TaskList'
+import { buildTaskGroups, effectiveSort, sortTasks, type SortOption } from '@/lib/task-grouping'
+import type { GroupingMode } from '@/lib/grouping'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useJustAddedClock } from '@/hooks/useJustAddedClock'
 import { useStickyColumn } from '@/hooks/useStickyColumn'
@@ -20,7 +16,6 @@ import { TrackPanel } from '@/components/TrackPanel'
 import { DashboardRemindersPanel } from '@/components/DashboardRemindersPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
-import type { SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
