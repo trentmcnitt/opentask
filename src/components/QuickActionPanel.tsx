@@ -1073,7 +1073,7 @@ export function QuickActionPanel({
               </>
             )
           )}
-          {/* Completed badge - shown in popover/inline modes when task is done (hidden in create mode) */}
+          {/* Completed badge - shown when task is done (hidden in create mode) */}
           {!isCreateMode && showCompletedBadge && effectiveTask?.done && (
             <Badge
               variant="secondary"
