@@ -358,10 +358,20 @@ function PromptDidButton({
       // While selecting, the row offers only its checkbox, as a reminder
       // row does — kept in the layout (invisible) so nothing shifts.
       disabled={selecting}
+      // The tap target is bigger than the square (Trent, 09-29: "a little
+      // wider hit window on the right-hand side" — a near miss lands on the
+      // row, which considers the prompt instead of logging one). An empty
+      // `after:` box is the row's whole right-hand strip, top to bottom, out to
+      // the row's edge — the square plus its gap and padding. The button is
+      // deliberately NOT `relative`, so the box is placed against the row (the
+      // `<li>` is), not the square: a wrapped title makes the row taller than
+      // the square, and the strip still covers it. It is part of the button,
+      // so it takes the tap; `invisible` while selecting hides it too.
       className={cn(
         selecting && 'invisible',
         'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors disabled:cursor-default',
-        panel ? 'size-[19px]' : 'mt-[3px] size-6',
+        "after:absolute after:inset-y-0 after:right-0 after:content-['']",
+        panel ? 'size-[19px] after:w-9' : 'mt-[3px] size-6 after:w-12',
       )}
     >
       <Check
