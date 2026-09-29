@@ -1610,10 +1610,10 @@ SQLite WAL mode + transactions ensure writes are serialized. Bulk operations hol
 
 #### Dashboard (2 tests)
 
-| Test                                                                                    | Verifies                                 |
-| --------------------------------------------------------------------------------------- | ---------------------------------------- |
-| After login, tasks appear grouped by project with correct group headers and task counts | Data fetching, grouping logic, rendering |
-| Toggle grouping mode (project ↔ time) → groups change, same tasks present               | Grouping toggle wired correctly          |
+| Test                                                                                      | Verifies                                 |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------- |
+| After login, tasks appear grouped by due date with correct group headers and task counts  | Data fetching, grouping logic, rendering |
+| Switch view (Today · All · New) → groups change; New is one flat list, newest added first | View switch wired correctly              |
 
 #### Mark Done (2 tests)
 
