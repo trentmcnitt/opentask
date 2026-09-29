@@ -128,6 +128,11 @@ describe('parseServerPrefs', () => {
     expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('slot')
   })
 
+  test('the retired Projects view lands on All; New is kept', () => {
+    expect(parseServerPrefs({ default_grouping: 'project' }).defaultGrouping).toBe('time')
+    expect(parseServerPrefs({ default_grouping: 'new' }).defaultGrouping).toBe('new')
+  })
+
   test('null / missing data parses to nothing', () => {
     expect(parseServerPrefs(null)).toEqual({})
     expect(parseServerPrefs(undefined)).toEqual({})

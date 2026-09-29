@@ -3,7 +3,7 @@ import Foundation
 // Foundation-only on purpose (2026-09-25, the Overdue scope): the Tasks
 // widget's list rules and its scope ring/default live here, apart from the
 // SwiftUI entry/provider in TasksWidget.swift, so the macOS logic-test bundle
-// (`OpenTaskLogicTests`, ios/CLAUDE.md § Tests) can compile and test them.
+// (`OpenTaskLogicTests`, ios/AGENTS.md § Tests) can compile and test them.
 
 // MARK: - Today's set
 
@@ -166,7 +166,7 @@ enum TasksTimeline {
     /// derives from its rrule and nothing client-side can — the same accepted
     /// gap `overdueSweepEligibleCount`'s doc describes. A second fetch of
     /// `?overdue=true` to close it is ruled out (one `/api/tasks` read, shared
-    /// with Quotas — ios/CLAUDE.md "Data").
+    /// with Quotas — ios/AGENTS.md "Data").
     ///
     /// Most overdue first: the order every other Tasks page uses
     /// (`sortedSoonestFirst`), the server's own due-candidate order

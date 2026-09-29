@@ -13,8 +13,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { Task, Project, LabelColor } from '@/types'
-import { LABEL_COLORS } from '@/lib/label-colors'
+import type { Task, Project } from '@/types'
+import type { GroupingMode } from '@/lib/grouping'
 import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
@@ -43,10 +43,11 @@ import { isJustAdded } from '@/lib/just-added'
 /** Today's time slots show this many before "Show more" (§7.3). */
 const SLOT_PREVIEW_COUNT = 5
 /**
- * Every other grouped view (Projects, and time grouping) shows this many per
- * group before "Show more" (Trent, 2026-09-23: "cap the number of to-dos that
- * are shown at 10… otherwise it's too hard to scroll through the projects
- * when it's not in unified mode"). Unified is one flat list and is not capped.
+ * Every other grouped view (All's due-date groups) shows this many per group
+ * before "Show more" (Trent, 2026-09-23: "cap the number of to-dos that are
+ * shown at 10… otherwise it's too hard to scroll through the projects when
+ * it's not in unified mode" — said of the since-retired Projects view). The
+ * flat lists (New, Unified) are not capped.
  */
 const GROUP_PREVIEW_COUNT = 10
 
@@ -56,9 +57,34 @@ import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 /**
  * `slot` is the §7.3 front door: today's tasks grouped by time slot. The other
  * modes remain reachable — the corpus stays fully accessible, it just isn't
- * what greets you.
+ * what greets you. The full list and what each value means: `src/lib/grouping.ts`.
  */
-export type GroupingMode = 'time' | 'project' | 'unified' | 'slot'
+export type { GroupingMode }
+
+/**
+ * New and Unified are one flat list: no group headers, no preview cap, no
+ * collapse, and every row names its project (there is no project heading to
+ * say it). They differ only in order — see `effectiveSort`.
+ */
+export function isFlatGrouping(grouping: GroupingMode): boolean {
+  return grouping === 'unified' || grouping === 'new'
+}
+
+/**
+ * The sort a list is actually drawn in. New is newest-added first, always: the
+ * `age` sort unreversed, whatever the saved sort preference says — that order
+ * is what makes it New (Trent, 2026-09-29). The saved preference is left alone,
+ * so All and Unified still get the user's own sort. The list, keyboard order
+ * and every other reader of the visual order must go through this, or arrow
+ * keys and the visual order disagree in New.
+ */
+export function effectiveSort(
+  grouping: GroupingMode,
+  sortOption: SortOption,
+  reversed: boolean,
+): { sortOption: SortOption; reversed: boolean } {
+  return grouping === 'new' ? { sortOption: 'age', reversed: false } : { sortOption, reversed }
+}
 
 import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
 
@@ -307,8 +333,11 @@ export function TaskList({
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
-  const sortOption = sortOptionProp ?? internalSort.sortOption
-  const reversed = reversedProp ?? internalSort.reversed
+  const { sortOption, reversed } = effectiveSort(
+    grouping,
+    sortOptionProp ?? internalSort.sortOption,
+    reversedProp ?? internalSort.reversed,
+  )
   const setSortOption = setSortOptionProp ?? internalSort.setSortOption
   const internalCollapse = useCollapsedGroups()
   const isCollapsed = isCollapsedProp ?? internalCollapse.isCollapsed
@@ -387,7 +416,7 @@ export function TaskList({
   if (highlightTaskId !== undefined && highlightTaskId !== prevHighlightTaskId) {
     setPrevHighlightTaskId(highlightTaskId ?? null)
     if (highlightTaskId) {
-      const group = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now).find((g) =>
+      const group = buildTaskGroups(tasks, grouping, timezone, timeSlots, now).find((g) =>
         g.tasks.some((t) => t.id === highlightTaskId),
       )
       if (group && !expandedGroups.has(group.label)) {
@@ -419,8 +448,8 @@ export function TaskList({
   useEffect(() => {
     if (!revealRef) return
     revealRef.current = (task: Task) => {
-      const unified = grouping === 'unified'
-      const group = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now).find((g) =>
+      const unified = isFlatGrouping(grouping)
+      const group = buildTaskGroups(tasks, grouping, timezone, timeSlots, now).find((g) =>
         g.tasks.some((t) => t.id === task.id),
       )
       if (!group) {
@@ -457,13 +486,15 @@ export function TaskList({
     )
   }
 
-  const isUnified = grouping === 'unified'
+  // New and Unified are both one flat list (`isFlatGrouping`).
+  const isFlat = isFlatGrouping(grouping)
+  const isNew = grouping === 'new'
 
-  // Build project lookups for unified view (project badge + color on each task row)
-  const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
-  const projectColorMap = isUnified ? new Map(projects.map((p) => [p.id, p.color])) : undefined
+  // Build project lookups for the flat views (project badge + color on each task row)
+  const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
+  const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
-  const groups: TaskGroup[] = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots, now)
+  const groups: TaskGroup[] = buildTaskGroups(tasks, grouping, timezone, timeSlots, now)
 
   // Compute sorted groups once, reuse for both orderedIds and rendering
   const sortedGroups = groups.map((g) => ({
@@ -543,37 +574,57 @@ export function TaskList({
         <div className="mb-4 flex items-center justify-between px-1">
           {headerLeft ?? <div />}
           <div className="flex items-center gap-1">
-            {onUnifiedChange && (
+            {/* New is already flat, so the "Unified" button has nothing to
+                switch there — pressing it would leave New for Unified, a
+                second flat list in a different order. Hidden in New. */}
+            {onUnifiedChange && !isNew && (
               <Button
                 variant="ghost"
                 size="sm"
                 className={cn(
                   'h-6 px-2 text-xs',
-                  isUnified
+                  isFlat
                     ? 'text-foreground bg-muted font-medium'
                     : 'text-muted-foreground hover:text-foreground',
                 )}
-                onClick={() => onUnifiedChange(!isUnified)}
-                title={isUnified ? 'Show grouped by project' : 'Show all tasks in one list'}
+                onClick={() => onUnifiedChange(!isFlat)}
+                title={isFlat ? 'Show grouped again' : 'Show all tasks in one list'}
               >
                 <Layers className="mr-1 size-3" />
                 Unified
               </Button>
             )}
-            <SortDropdown
-              sortOption={sortOption}
-              reversed={reversed}
-              onSort={setSortOption}
-              showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
-              aiScoreDisabled={aiScoreDisabledProp ?? false}
-            />
+            {/* New ignores the sort preference (`effectiveSort`): its order is
+                what makes it New. A sort control there would either do
+                nothing (confusing) or turn New into a different view, so it
+                is replaced by a plain caption that says what the order is —
+                not a disabled dropdown, which would read as broken. The
+                caption sits where the dropdown was so the row doesn't jump
+                when switching views. */}
+            {isNew ? (
+              <span
+                data-new-order
+                className="text-muted-foreground flex h-6 items-center px-2 text-xs"
+              >
+                <ArrowUpDown className="mr-1 size-3" />
+                Newest added
+              </span>
+            ) : (
+              <SortDropdown
+                sortOption={sortOption}
+                reversed={reversed}
+                onSort={setSortOption}
+                showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
+                aiScoreDisabled={aiScoreDisabledProp ?? false}
+              />
+            )}
           </div>
         </div>
       )}
-      <div className={isUnified ? 'space-y-1' : 'space-y-6'}>
+      <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
         {sortedGroups.map((group, groupIdx) => {
           const { sortedTasks } = group
-          const collapsed = !isUnified && isCollapsed(group.label)
+          const collapsed = !isFlat && isCollapsed(group.label)
 
           // §7.3: show the first N, with everything else one tap away. Nothing
           // is ever truncated permanently — §1.1's constraint is that the
@@ -581,7 +632,7 @@ export function TaskList({
           // reachable while the day still reads at a glance. Every grouped view
           // previews — Today's slots at 5, the rest at 10 — and only the
           // unified flat list shows everything.
-          const previewed = !isUnified
+          const previewed = !isFlat
           const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
@@ -597,7 +648,7 @@ export function TaskList({
               {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
               {/* Skip group header in unified mode — all tasks render in a single flat list */}
-              {!isUnified && (
+              {!isFlat && (
                 <div
                   className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
                 >
@@ -643,26 +694,7 @@ export function TaskList({
                       }}
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
-                      {/* A PROJECT heading is a tag in its project's color
-                          (Trent, 2026-09-23, option C of four rendered: "I
-                          lose track of what color is for what"). The same
-                          tinted pair labels use, so it reads the same in
-                          light and dark. A project with no color, and every
-                          non-project grouping, keeps the plain heading. */}
-                      {group.color ? (
-                        <span
-                          data-project-heading-tag
-                          className={cn(
-                            'rounded-md px-2 py-0.5',
-                            LABEL_COLORS[group.color].bg,
-                            LABEL_COLORS[group.color].text,
-                          )}
-                        >
-                          {group.label}
-                        </span>
-                      ) : (
-                        group.label
-                      )}
+                      {group.label}
                       <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
                     </button>
                   </div>
@@ -709,8 +741,6 @@ export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
 export interface TaskGroup {
   label: string
   tasks: Task[]
-  /** The project's color, on project groups — drawn as the heading's tag. */
-  color?: LabelColor | null
 }
 
 function groupByTime(tasks: Task[], timezone: string, now: Date): TaskGroup[] {
@@ -778,67 +808,6 @@ function groupByTime(tasks: Task[], timezone: string, now: Date): TaskGroup[] {
  *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
  *    so a fully-empty day collapses to no groups and the caught-up state shows.
  */
-function groupByProject(tasks: Task[], projects: Project[], now: Date): TaskGroup[] {
-  const projectMap = new Map<number, Project>()
-  for (const p of projects) {
-    projectMap.set(p.id, p)
-  }
-
-  // Group tasks by project
-  const byProject = new Map<number, Task[]>()
-  for (const task of tasks) {
-    const list = byProject.get(task.project_id) || []
-    list.push(task)
-    byProject.set(task.project_id, list)
-  }
-
-  // The order Settings shows: sort_order, then NAME — the same rule as the
-  // server's project list (`ORDER BY sort_order, name` in core/projects). It
-  // used to break ties by Map insertion order, which follows the tasks'
-  // soonest-first sort: several projects sharing sort_order 0 then swapped
-  // places whenever a project's soonest task was completed (Trent,
-  // 2026-09-23: completing an Inbox task made the Inbox section jump away).
-  const sortedProjectIds = [...byProject.keys()].sort((a, b) => {
-    const pa = projectMap.get(a)
-    const pb = projectMap.get(b)
-    return (
-      (pa?.sort_order ?? 999) - (pb?.sort_order ?? 999) ||
-      (pa?.name ?? '').localeCompare(pb?.name ?? '')
-    )
-  })
-
-  const groups: TaskGroup[] = []
-
-  for (const projectId of sortedProjectIds) {
-    const project = projectMap.get(projectId)
-    const projectTasks = byProject.get(projectId) || []
-
-    // Sort within project: overdue first, then by due_at, then by anchor_time
-    const nowMs = now.getTime()
-    projectTasks.sort((a, b) => {
-      const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
-      const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
-      const aOverdue = aDue < nowMs ? 0 : 1
-      const bOverdue = bDue < nowMs ? 0 : 1
-
-      if (aOverdue !== bOverdue) return aOverdue - bOverdue
-      if (aDue !== bDue) return aDue - bDue
-      // Fall back to anchor_time
-      const aAnchor = a.anchor_time || '99:99'
-      const bAnchor = b.anchor_time || '99:99'
-      return aAnchor.localeCompare(bAnchor)
-    })
-
-    groups.push({
-      label: project?.name || `Project ${projectId}`,
-      tasks: projectTasks,
-      color: project?.color ?? null,
-    })
-  }
-
-  return groups
-}
-
 function GroupCheckbox({
   groupTaskIds,
   selection,
@@ -975,14 +944,12 @@ function NowSeparator({ timezone }: { timezone: string }) {
  */
 export function buildTaskGroups(
   tasks: Task[],
-  projects: Project[],
   grouping: GroupingMode,
   timezone: string,
   timeSlots: TimeSlot[] = [],
   now: Date = new Date(),
 ): TaskGroup[] {
-  if (grouping === 'unified') return [{ label: '_unified', tasks }]
-  if (grouping === 'project') return groupByProject(tasks, projects, now)
+  if (isFlatGrouping(grouping)) return [{ label: '_unified', tasks }]
   if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
   return groupByTime(tasks, timezone, now)
 }

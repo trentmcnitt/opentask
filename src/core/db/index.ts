@@ -296,6 +296,27 @@ function runMigrations(database: Database.Database): void {
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
   clearQuotaDueDates(database)
+  retireProjectGrouping(database)
+}
+
+/**
+ * The Projects view left the dashboard's view switch (Today · All · New, Trent,
+ * 2026-09-29) — rewrite a stored `default_grouping = 'project'` to `'time'` (All).
+ *
+ * Every reader already coerces 'project' to 'time' (`coerceGrouping`,
+ * `src/lib/grouping.ts`), so this is not what makes those users land on All; it
+ * makes the column say what they see, so nothing downstream has to keep
+ * remembering the old value. It also covers users created after this shipped on
+ * a database whose `users` table predates it: SQLite keeps the column's old
+ * `DEFAULT 'project'` (only a fresh `schema.sql` has `DEFAULT 'time'`), so such a
+ * user holds 'project' until the next start runs this again.
+ *
+ * Data-only and idempotent by construction — the WHERE clause matches nothing
+ * once it has run — so, like `clearQuotaDueDates`, it runs on every start.
+ * Exported so a behavioral test can call it directly.
+ */
+export function retireProjectGrouping(database: Database.Database): void {
+  database.exec(`UPDATE users SET default_grouping = 'time' WHERE default_grouping = 'project'`)
 }
 
 /**

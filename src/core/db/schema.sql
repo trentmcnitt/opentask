@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   ntfy_server   TEXT,           -- Vestigial (ntfy removed); kept for existing DB compat
   pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat
   pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
-  default_grouping TEXT NOT NULL DEFAULT 'project',
+  default_grouping TEXT NOT NULL DEFAULT 'time', -- All; 'project' (retired 2026-09-29) was the default before, see src/lib/grouping.ts
   default_sort TEXT NOT NULL DEFAULT 'due_date',
   default_sort_reversed INTEGER NOT NULL DEFAULT 0,
   -- §7.3: dashboard filter-chip section starts collapsed; this remembers the

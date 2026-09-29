@@ -892,7 +892,7 @@ private struct ReminderSlotStrip: View {
 /// `.frame(maxWidth: .infinity)` fills whatever the marker's fixed
 /// `WidgetTheme.rowMarkerSize` column doesn't take; nothing here relies on
 /// hit-testing precedence between overlapping views (the community-reported
-/// failure mode `ios/CLAUDE.md`'s tap-targets note warns about).
+/// failure mode `ios/AGENTS.md`'s tap-targets note warns about).
 ///
 /// A reminder is a THOUGHT, not an errand ("Done is better than perfect. Start
 /// small."), and half a thought prompts nothing — so the title wraps to its

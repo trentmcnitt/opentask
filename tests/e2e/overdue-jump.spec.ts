@@ -108,8 +108,11 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
   test.beforeEach(async ({ authenticatedPage: page }) => {
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
       .default_grouping as string
+    // New: one flat, uncapped list, so every filtered row is on the page and
+    // it is tall enough to scroll. (The Projects view, used here until it was
+    // retired, capped each project at 10.)
     const written = await page.request.patch('/api/user/preferences', {
-      data: { filters_expanded: false, default_grouping: 'project' },
+      data: { filters_expanded: false, default_grouping: 'new' },
     })
     expect(written.ok()).toBeTruthy()
 

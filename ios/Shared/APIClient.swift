@@ -264,7 +264,7 @@ final class APIClient {
     /// What `POST /api/quota-prompts/consider` and `/did` answer: how many
     /// were acted on, and every quota touched AS THE SERVER LEFT IT — which
     /// callers write straight into their caches, so counts stay server-true
-    /// (the confirmProgress lesson, `ios/CLAUDE.md`).
+    /// (the confirmProgress lesson, `ios/AGENTS.md`).
     struct PromptActionResult: Decodable {
         let considered: Int
         let did: Int

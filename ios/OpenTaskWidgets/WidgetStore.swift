@@ -1226,7 +1226,7 @@ enum WidgetStore {
     /// cached Tasks/Quotas payload, replacing each by id — `confirmProgress`
     /// without a staged delta to retire, since a prompt action stages none on
     /// the Quotas side. Keeps the Quotas widget server-true when it repaints
-    /// from cache (the stale-count lesson, `ios/CLAUDE.md`). A task the cache
+    /// from cache (the stale-count lesson, `ios/AGENTS.md`). A task the cache
     /// doesn't hold is left out: the next real fetch brings it.
     static func confirmTasks(_ confirmed: [TaskDTO]) {
         guard !confirmed.isEmpty else { return }

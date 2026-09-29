@@ -56,7 +56,7 @@ final class WatchViewModel: ObservableObject {
     /// quota settled after that — a fetch sent before the server applied a
     /// tap can land after the tap's response and would otherwise put the
     /// pre-tap count back (the phone's "a fetch that STARTED after" rule,
-    /// `ios/CLAUDE.md`'s stale-count note).
+    /// `ios/AGENTS.md`'s stale-count note).
     private var settleCounter = 0
     private var settledAt: [Int: Int] = [:]
     /// Quotas that had two or more taps in flight at once. Their responses

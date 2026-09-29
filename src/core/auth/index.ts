@@ -59,7 +59,7 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
         email: user.email || '',
         name: user.name || '',
         timezone: user.timezone || 'America/Chicago',
-        default_grouping: user.default_grouping || 'project',
+        default_grouping: user.default_grouping || 'time',
         is_demo: user.is_demo ? 1 : 0,
       })
     }

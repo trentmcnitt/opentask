@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarClock, FolderTree, List } from 'lucide-react'
+import { CalendarClock, List, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { GroupingMode } from '@/components/TaskList'
 
@@ -22,17 +22,23 @@ interface ViewModeToggleProps {
  * the redesign is fewer decisions at the front door, and a picker with six
  * entries would just be the 20-filter-chip problem in miniature.
  *
- * Every option here is a grouping of the same task list. The Reminders surface
+ * Every option here is a view of the same task list. The Reminders surface
  * (§6) used to ride along as a fourth chip — it is now a real route (`/reminders`)
  * with its own tab, so this control is back to doing exactly one job.
+ *
+ * Today · All · New (Trent, 2026-09-29). New replaced Projects: he never used
+ * the per-project grouping, and wanted one tap to everything newest-added first
+ * (a flat list, each row naming its project — `'new'` in `src/lib/grouping.ts`).
+ * The project filter chips still narrow any view to one project. Its Sparkles
+ * icon is the one the Just added card uses for the same idea, "newly added".
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
   // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as an
   // extra option would let the two controls disagree about what's active.
   const options: { value: GroupingMode; label: string; icon: typeof List; hint: string }[] = [
     { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
-    { value: 'project', label: 'Projects', icon: FolderTree, hint: 'Group by project' },
     { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
+    { value: 'new', label: 'New', icon: Sparkles, hint: 'Everything, newest added first' },
   ]
 
   return (

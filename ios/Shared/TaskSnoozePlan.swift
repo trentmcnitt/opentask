@@ -24,7 +24,7 @@ enum TaskSnoozeTarget: String {
 /// becomes `POST /api/tasks/bulk/snooze` requests. Pure — no store, no
 /// network (except `send`, below) — so the rules can be exercised outside a
 /// widget process: `TaskSnoozePlanTests` (`OpenTaskLogicTests`, 2026-09-25 —
-/// see ios/CLAUDE.md § Tests).
+/// see ios/AGENTS.md § Tests).
 ///
 /// THE RULE (Trent, 2026-09-24 — replacing 2026-09-23's "one hour from now
 /// for everything", which was the wrong instruction): a snooze counts from

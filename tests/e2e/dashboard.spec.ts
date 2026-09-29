@@ -102,7 +102,7 @@ test.describe('Undated pile', () => {
     backdateCreated(ids)
     // The view toggle persists server-side for the shared test user, so the
     // view this test finds is put back at the end for the specs that follow.
-    const views = ['Today', 'Projects', 'All'] as const
+    const views = ['Today', 'All', 'New'] as const
     const pressedView = async () => {
       for (const v of views) {
         const b = page.getByRole('button', { name: v, exact: true })
@@ -317,7 +317,7 @@ test.describe('?task=<id> deep link', () => {
   // section tests above: `default_grouping` is a server preference on the one
   // test user every spec in the run shares, so "a Today/Overdue/Undated group
   // exists to find the row in" is only true here if nothing earlier in the
-  // run left it on Projects/Unified. Restored in `finally`.
+  // run left it on New/Unified. Restored in `finally`.
   async function withGrouping(
     page: Page,
     grouping: 'time' | 'slot',
@@ -645,7 +645,7 @@ test.describe('Dashboard filter facets', () => {
 
 /**
  * `/?project=<id>` — the widget's dashboard-header deep link (native side
- * built separately, ios/CLAUDE.md). Applies the project filter exclusively
+ * built separately, ios/AGENTS.md). Applies the project filter exclusively
  * and scrolls to top; consumes the param. See `DashboardClient.tsx`'s
  * `?project=` effect.
  */
@@ -705,9 +705,9 @@ test.describe('Top bar total', () => {
 
   /**
    * Reload into a view and wait until the page is IN it. Until the
-   * preferences fetch settles the dashboard groups by the `'project'`
+   * preferences fetch settles the dashboard groups by the `'time'`
    * fallback (see `useDefaultGrouping`), and a count read in that window is
-   * the Projects view's, not the one asked for.
+   * All's, not the one asked for.
    */
   async function reloadInto(page: Page, view: 'Today' | 'All'): Promise<void> {
     await page.reload()

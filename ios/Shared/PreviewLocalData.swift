@@ -13,7 +13,7 @@ import Foundation
 /// This repo is public, so no real account's titles live in it.
 ///
 /// To render against a real account locally, run
-/// `scripts/dump-preview-data.ts` (see `ios/CLAUDE.md` § Previews with local
+/// `scripts/dump-preview-data.ts` (see `ios/AGENTS.md` § Previews with local
 /// data). It writes raw API responses into `ios/Previews.local/`, which is
 /// gitignored and sits outside every target's `sources` path, so xcodegen
 /// never picks it up and nothing about the project changes. Each corpus asks
