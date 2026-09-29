@@ -1,7 +1,14 @@
 /**
  * How the dashboard's task list is grouped and ordered — pure functions, no
- * React, so the list (`TaskList`), keyboard navigation (`useDashboardKeyboard`,
- * `DashboardClient`'s orderedIds) and the behavioral tests all share one copy.
+ * React, so the list and the behavioral tests share one copy.
+ *
+ * The dashboard (`HomeContent` in `DashboardClient`) sorts ONCE: it builds the
+ * groups, runs `sortTaskGroups` with the effective sort (`effectiveSort`) and
+ * the AI score map, and hands the result to everything that reads the visual
+ * order — `TaskList` renders it, `orderedTaskIds` feeds arrow keys, Home/End
+ * and shift-click ranges, and `useDashboardKeyboard` copies from it. Sorting
+ * separately in each of those once let them drift: under the AI sort the list
+ * was drawn by score while the keyboard and clipboard ran in due-date order.
  * The grouping modes themselves are defined in `src/lib/grouping.ts`; the Today
  * view's slot grouping lives in `src/lib/slot-view.ts`.
  */
@@ -216,4 +223,38 @@ export function buildTaskGroups(
   if (isFlatGrouping(grouping)) return [{ label: '_unified', tasks }]
   if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
   return groupByTime(tasks, timezone, now)
+}
+
+/** A group with its rows in the order the list draws them. */
+export interface SortedTaskGroup extends TaskGroup {
+  sortedTasks: Task[]
+}
+
+/**
+ * Sort every group's rows — THE visual order of the dashboard list. Pass the
+ * sort after `effectiveSort`, and the same AI score map the rows show, or the
+ * `ai_insights` sort puts every row in the "unscored" tail.
+ */
+export function sortTaskGroups(
+  groups: TaskGroup[],
+  sortOption: SortOption,
+  reversed: boolean,
+  insightsScoreMap?: Map<number, number>,
+): SortedTaskGroup[] {
+  return groups.map((g) => ({
+    ...g,
+    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
+  }))
+}
+
+/**
+ * The ids of the rows a user can reach, top to bottom: a collapsed group's
+ * rows are off screen, so keyboard navigation and shift-click ranges skip
+ * them. Rows past a group's "Show all" preview cap are included.
+ */
+export function orderedTaskIds(
+  sortedGroups: SortedTaskGroup[],
+  isCollapsed: (label: string) => boolean,
+): number[] {
+  return sortedGroups.flatMap((g) => (isCollapsed(g.label) ? [] : g.sortedTasks.map((t) => t.id)))
 }

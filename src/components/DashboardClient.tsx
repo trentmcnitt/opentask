@@ -4,7 +4,14 @@ import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'rea
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList } from '@/components/TaskList'
-import { buildTaskGroups, effectiveSort, sortTasks, type SortOption } from '@/lib/task-grouping'
+import {
+  buildTaskGroups,
+  effectiveSort,
+  orderedTaskIds,
+  sortTaskGroups,
+  type SortOption,
+  type SortedTaskGroup,
+} from '@/lib/task-grouping'
 import type { GroupingMode } from '@/lib/grouping'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useJustAddedClock } from '@/hooks/useJustAddedClock'
@@ -1046,15 +1053,19 @@ function HomeContent({
   const justAddedNow = useJustAddedClock(visibleTasks)
   const justAddedSource = searchQuery ? null : visibleTasks
 
-  // Apply per-group sorting to match the visual order in TaskList.
-  // Exclude tasks in collapsed groups so keyboard navigation skips them.
+  // THE visual order, computed once (`src/lib/task-grouping.ts`): TaskList
+  // draws these groups, and the keyboard, shift-click ranges and Cmd+C read
+  // the same order — including the AI sort, which needs the score map the
+  // rows show. Collapsed groups drop out of `orderedIds` so navigation skips
+  // them.
+  const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+  const sortedGroups = useMemo(
+    () => sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap),
+    [taskGroups, listSort, listReversed, listScoreMap],
+  )
   const orderedIds = useMemo(
-    () =>
-      taskGroups.flatMap((g) => {
-        if (isCollapsed(g.label)) return []
-        return sortTasks(g.tasks, listSort, listReversed).map((t) => t.id)
-      }),
-    [taskGroups, listSort, listReversed, isCollapsed],
+    () => orderedTaskIds(sortedGroups, isCollapsed),
+    [sortedGroups, isCollapsed],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -1189,7 +1200,7 @@ function HomeContent({
     keyboardFocusedId,
     setKeyboardFocusedId,
     selection,
-    taskGroups,
+    sortedGroups,
     sortOption: listSort,
     reversed: listReversed,
     timezone,
@@ -1333,6 +1344,8 @@ function HomeContent({
       />
       <DashboardView
         tasks={tasks_}
+        sortedGroups={sortedGroups}
+        orderedIds={orderedIds}
         allTasks={baseTasks}
         quotaSource={tasks}
         projects={projects}
@@ -1667,6 +1680,8 @@ function notifyOverdueFilterCleared() {
 
 function DashboardView({
   tasks,
+  sortedGroups,
+  orderedIds,
   allTasks,
   quotaSource,
   projects,
@@ -1783,6 +1798,9 @@ function DashboardView({
   onTrackRefresh,
 }: {
   tasks: Task[]
+  /** The list's groups in drawn order, and its reachable ids — see HomeContent. */
+  sortedGroups: SortedTaskGroup[]
+  orderedIds: number[]
   allTasks: Task[]
   /**
    * The unfiltered corpus, for the Track panel only. `allTasks` deliberately
@@ -2258,9 +2276,10 @@ function DashboardView({
         >
           <TaskList
             tasks={tasks}
+            sortedGroups={sortedGroups}
+            orderedIds={orderedIds}
             projects={projects}
             grouping={grouping}
-            timeSlots={timeSlots}
             now={now}
             highlightTaskId={highlightTaskId}
             onHighlightDone={onHighlightDone}

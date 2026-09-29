@@ -16,8 +16,7 @@ import { NotesMarker } from '@/components/NotesMarker'
 import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
-import { saveTaskChanges } from '@/lib/save-task-changes'
-import { showToast } from '@/lib/toast'
+import { saveReminderDetail } from '@/lib/save-reminder-detail'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 
@@ -83,7 +82,8 @@ const NARROW_CAP = 5
 /**
  * The row's press-and-hold editor: `ReminderDetailModal`, wired to the exact
  * same writes `RemindersView`'s own Details editor uses for a single
- * reminder — `saveTaskChanges` (same toast, same Undo), and `useReminders`'
+ * reminder — `saveReminderDetail` (same toast, same Undo, same `ai-failed`
+ * rule), and `useReminders`'
  * own `completeMany`/`remove` for Considered/delete (same soft-delete-with-
  * undo everything else on this dashboard goes through). A local hook, not
  * inline state in `DashboardRemindersPanel`, so the panel's own render stays
@@ -107,34 +107,8 @@ function useRowEditor({
   const open = useCallback((task: Task) => setEditing([task]), [])
 
   const saveDetail = useCallback(
-    async (taskId: number, changes: QuickActionPanelChanges) => {
-      try {
-        // A schedule set by hand makes an earlier AI failure moot — the same
-        // rule RemindersView's own saveDetail applies (see its comment there
-        // for the "why"); duplicated here, in a few lines, rather than lifted
-        // out of that file, which this branch is not otherwise touching.
-        const failed = editing.find((t) => t.id === taskId)?.labels.includes('ai-failed')
-        const { description } = await saveTaskChanges(
-          taskId,
-          failed
-            ? { ...changes, labels_remove: [...(changes.labels_remove ?? []), 'ai-failed'] }
-            : changes,
-        )
-        showToast({
-          message: description || 'Reminder updated',
-          type: 'success',
-          action: { label: 'Undo', onClick: onUndo },
-        })
-        onCompleted()
-        void refresh()
-      } catch (err) {
-        showToast({
-          message: err instanceof Error && err.message ? err.message : 'Save failed',
-          type: 'error',
-        })
-        throw err
-      }
-    },
+    (taskId: number, changes: QuickActionPanelChanges) =>
+      saveReminderDetail(taskId, changes, { source: editing, onUndo, onCompleted, refresh }),
     [editing, onUndo, onCompleted, refresh],
   )
 

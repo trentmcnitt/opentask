@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback } from 'react'
 import { DetailModalShell } from '@/components/DetailModalShell'
+import { DirtyCard } from '@/components/DirtyCard'
 import { QuotaDetail, type QuotaChanges, type QuotaCreateDraft } from '@/components/QuotaDetail'
-import { cn } from '@/lib/utils'
+import { useEditorHost } from '@/hooks/useEditorHost'
 import type { Task } from '@/types'
 
 /**
@@ -36,20 +37,11 @@ export function QuotaDetailModal({
   onDelete: (tasks: Task[]) => void
   onOpenPage: (taskId: number) => void
 }) {
-  const [isDirty, setIsDirty] = useState(false)
-  const saveRef = useRef<(() => Promise<void> | void) | null>(null)
+  // Dirtiness lives in a ref for the dismiss guard and in state for the
+  // stripe — see useEditorHost for why both.
+  const { isDirty, dirtyRef, onDirtyChange, saveRef, commit } = useEditorHost()
   const single = tasks.length === 1 ? tasks[0] : null
   const creating = tasks.length === 0 && !!create
-
-  // The ref is written synchronously here, the state drives rendering. The
-  // dismissal guard reads the ref: a callback closing over state trails the
-  // editor's report by a render, and an Escape right after an edit used to
-  // reach a guard that still believed the editor was clean.
-  const isDirtyRef = useRef(false)
-  const handleDirtyChange = useCallback((dirty: boolean) => {
-    isDirtyRef.current = dirty
-    setIsDirty(dirty)
-  }, [])
 
   const handleSave = useCallback(
     async (changes: QuotaChanges) => {
@@ -70,19 +62,11 @@ export function QuotaDetailModal({
     [onCreate, onClose],
   )
 
-  /** Commit whatever the editor has staged — used by the unsaved-changes guard. */
-  const handleCommit = useCallback(() => saveRef.current?.(), [])
-
   if (tasks.length === 0 && !creating) return null
 
   const name = creating ? 'New quota' : single ? 'Quota' : 'Quotas'
   const panel = (
-    <div
-      className={cn(
-        'rounded-lg border p-3',
-        isDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-      )}
-    >
+    <DirtyCard dirty={isDirty}>
       <QuotaDetail
         key={creating ? 'new' : tasks.map((t) => t.id).join(',')}
         tasks={tasks}
@@ -107,10 +91,10 @@ export function QuotaDetailModal({
               }
             : undefined
         }
-        onDirtyChange={handleDirtyChange}
+        onDirtyChange={onDirtyChange}
         saveRef={saveRef}
       />
-    </div>
+    </DirtyCard>
   )
 
   return (
@@ -119,9 +103,9 @@ export function QuotaDetailModal({
       title={name}
       description="Change how often this is counted"
       isDirty={isDirty}
-      dirtyRef={isDirtyRef}
+      dirtyRef={dirtyRef}
       onClose={onClose}
-      onSave={handleCommit}
+      onSave={commit}
     >
       {panel}
     </DetailModalShell>

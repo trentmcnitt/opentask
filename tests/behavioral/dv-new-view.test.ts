@@ -9,7 +9,14 @@
  *   idempotent startup step `retireProjectGrouping`.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'vitest'
-import { buildTaskGroups, effectiveSort, isFlatGrouping, sortTasks } from '@/lib/task-grouping'
+import {
+  buildTaskGroups,
+  effectiveSort,
+  isFlatGrouping,
+  orderedTaskIds,
+  sortTaskGroups,
+  sortTasks,
+} from '@/lib/task-grouping'
 import { coerceGrouping, GROUPINGS } from '@/lib/grouping'
 import { toAuthUser } from '@/core/auth/helpers'
 import { getDb, retireProjectGrouping } from '@/core/db'
@@ -63,6 +70,54 @@ describe('DV-NEW: the New view', () => {
     for (const g of ['slot', 'time', 'unified'] as const) {
       expect(effectiveSort(g, 'priority', true)).toEqual({ sortOption: 'priority', reversed: true })
     }
+  })
+})
+
+/**
+ * The dashboard sorts once (`sortTaskGroups`) and every reader of the visual
+ * order — the list, arrow keys and shift-click (`orderedTaskIds`), Cmd+C —
+ * takes it from there. Before, HomeContent and the clipboard re-sorted without
+ * the AI score map, so under the AI sort the keyboard walked due-date order
+ * while the list was drawn by score. These pin the shared helper.
+ */
+describe('DV-ORDER: one visual order for the list, keyboard and clipboard', () => {
+  const a = task(1, 1, '2026-01-10T10:00:00Z', '2026-01-15T15:00:00Z')
+  const b = task(2, 1, '2026-01-11T10:00:00Z', '2026-01-16T15:00:00Z')
+  const c = task(3, 1, '2026-01-12T10:00:00Z', '2026-01-17T15:00:00Z')
+
+  test('the AI sort orders by the score map, unscored last', () => {
+    const scores = new Map([
+      [3, 90],
+      [1, 40],
+    ])
+    const [group] = sortTaskGroups(
+      [{ label: '_unified', tasks: [a, b, c] }],
+      'ai_insights',
+      false,
+      scores,
+    )
+    expect(group.sortedTasks.map((t) => t.id)).toEqual([3, 1, 2])
+    expect(orderedTaskIds([group], () => false)).toEqual([3, 1, 2])
+  })
+
+  test('a collapsed group drops out of the reachable ids; the rest keep group order', () => {
+    const groups = sortTaskGroups(
+      [
+        { label: 'Overdue', tasks: [b, a] },
+        { label: 'Today', tasks: [c] },
+        {
+          label: 'Later',
+          tasks: [
+            task(4, 1, '2026-01-13T10:00:00Z', null),
+            task(5, 1, '2026-01-09T10:00:00Z', null),
+          ],
+        },
+      ],
+      'age',
+      false,
+    )
+    expect(groups.map((g) => g.sortedTasks.map((t) => t.id))).toEqual([[2, 1], [3], [4, 5]])
+    expect(orderedTaskIds(groups, (label) => label === 'Today')).toEqual([2, 1, 4, 5])
   })
 })
 

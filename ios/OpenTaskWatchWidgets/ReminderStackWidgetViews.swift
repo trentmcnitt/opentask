@@ -379,21 +379,12 @@ private struct SnoozedCardView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            // Only the counts that apply this run, like `BulkSnoozeSheetView`.
-            if result.snoozedHigh > 0 {
-                Text("Included \(result.snoozedHigh) High")
+            // Only the counts that apply this run — the same lines as
+            // `BulkSnoozeSheetView` (`SweepLine`).
+            ForEach(Array(result.summaryLines.enumerated()), id: \.offset) { _, line in
+                Text(line.text)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            if result.skippedHigh > 0 {
-                Text("\(result.skippedHigh) High still overdue")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            if result.skippedUrgent > 0 {
-                Text("\(result.skippedUrgent) Urgent still overdue")
-                    .font(.caption2)
-                    .foregroundStyle(WatchTheme.overdue)
+                    .foregroundStyle(line.isUrgent ? WatchTheme.overdue : .secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

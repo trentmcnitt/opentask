@@ -214,6 +214,9 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  * Only the pre-choice default moved; `shut` is untouched and the phone's
  * section toggle still works exactly as it did.
  *
+ * The card is still open by default on a phone, but as of 2026-09-29 each
+ * PERIOD inside it starts folded to its bar there — see `PERIOD_BODY`.
+ *
  * "Shut" only hides it BELOW `sm`, which is not a typo. The section fold is a
  * phone affordance and its button is `sm:hidden`; a user who shuts the panel on
  * a phone and then widens the window would otherwise be left with a hidden card
@@ -451,6 +454,8 @@ export function TrackPanel({
   const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh })
   const section = useResponsiveFold('track-section')
   const clusters = useResponsiveFolds('track-cluster')
+  // Shut on a phone until tapped — see `PERIOD_BODY`.
+  const periods = useResponsiveFolds('track-period', false)
   const quotas = trackedItems(tasks)
 
   // SEARCH (standalone only) narrows what is RENDERED, never what the panel's
@@ -507,6 +512,7 @@ export function TrackPanel({
       >
         <TrackSectionsList
           sections={sections}
+          periods={standalone || searching ? null : periods}
           open={open}
           labelConfig={labelConfig}
           isPutAway={isPutAway}
@@ -761,17 +767,66 @@ function sectionBodyItems(
   return stream
 }
 
-/** A thin divider between period sections — never before the first. */
-const SECTION_DIVIDER = 'border-foreground/10 mt-3 border-t pt-3'
+/**
+ * The space above a period section, and the thin divider between sections —
+ * never before the first. Tighter on a phone while the periods are folded to
+ * their bars (`PERIOD_BODY`): three bars stacked with a desktop section's
+ * breathing room between them read as three separate panels, not one gauge.
+ * Once a section is opened on the phone it takes the full spacing, since it
+ * has chips under it again.
+ */
+const SECTION_DIVIDER: FoldClasses = {
+  open: 'border-foreground/10 mt-3 border-t pt-3',
+  shut: 'border-foreground/10 mt-1.5 border-t pt-1.5 sm:mt-3 sm:pt-3',
+  auto: 'border-foreground/10 mt-1.5 border-t pt-1.5 sm:mt-3 sm:pt-3',
+}
 
 /**
- * The panel's body: one `<li data-quota-period>` per section, each holding its
- * heading and — unless every quota in it was put away (`sectionBodyItems`
- * returns empty) — its label clusters, as chips or as rows depending on
- * `open`. A fully met section renders ONLY its heading (Trent, 2026-09-23: no
- * body text once a section says "M of M") — that is this length check, not a
- * separate case, since `putAwayMet` only ever empties a section by putting
- * away everything in it.
+ * A period section's body — its label clusters and chips (or rows) — FOLDED
+ * AWAY ON A PHONE BY DEFAULT (Trent, 2026-09-29: "on mobile, I want quotas to
+ * start collapsed … segments: day, week, month. They have the bars fill up so
+ * I can see how far I am towards completing today, this week, and this month.
+ * Desktop doesn't need it.").
+ *
+ * So below `sm` the dashboard's panel opens as one line per period — its
+ * existing `PeriodHeading`, bar and "M of N" and all, nothing new drawn — and
+ * tapping a line opens that period's chips (`PeriodFoldButton`). This walks
+ * back part of the 2026-09-21 reversal ("Everything should be expanded for the
+ * track on mobile. Otherwise I can't check things off easily"): the whole
+ * panel still opens by default (`SECTION_CARD`), and a period is one tap from
+ * its chips, rather than the whole card being one tap away as it was before
+ * 09-21.
+ *
+ * `sm`, not the `xl` at which the panel moves to its own column: every other
+ * phone-only fold in this file is `sm`, so a tablet-width window keeps the
+ * full panel, as it keeps the section fold's desktop behaviour.
+ *
+ * `shut` still shows the body at `sm` and up, for `SECTION_CARD`'s reason: the
+ * toggle is `sm:hidden`, and a period shut on a phone must not leave a widened
+ * window with hidden chips and no control to bring them back.
+ *
+ * WHERE THE CHOICE LIVES: the shared fold store (`FoldStateProvider`), like
+ * every other fold on this panel — so an opened period stays open across a
+ * trip to /quotas and back, and a reload (or a cold PWA launch) starts folded
+ * again. Not on /quotas (`standalone`), nor during a search: those render
+ * every body open with no toggle.
+ */
+const PERIOD_BODY: FoldClasses = {
+  open: 'block',
+  shut: 'hidden sm:block',
+  auto: 'hidden sm:block',
+}
+
+/** As `PERIOD_BODY`, for the chips view's wrapping row. */
+const PERIOD_BODY_FLEX: FoldClasses = {
+  open: 'flex',
+  shut: 'hidden sm:flex',
+  auto: 'hidden sm:flex',
+}
+
+/**
+ * The panel's body: one `<li data-quota-period>` per section — see
+ * `PeriodSection`.
  *
  * ONE outer `<ul aria-label="Quotas">` — sections are `<li>`s inside it,
  * rather than one list per section, so `getByRole('list', { name: 'Quotas' })`
@@ -779,16 +834,39 @@ const SECTION_DIVIDER = 'border-foreground/10 mt-3 border-t pt-3'
  */
 function TrackSectionsList({
   sections,
-  open,
-  labelConfig,
-  isPutAway,
-  isLeaving,
-  summaries,
-  clusters,
-  detail,
-  locked = false,
-}: {
+  periods,
+  ...rest
+}: Omit<PeriodSectionProps, 'section' | 'first' | 'period'> & {
   sections: TrackSection[]
+  /** The phone's period folds, or null where periods never fold (standalone, search). */
+  periods: ReturnType<typeof useResponsiveFolds> | null
+}) {
+  return (
+    <ul aria-label="Quotas">
+      {sections.map((s, i) => (
+        <PeriodSection
+          key={s.key}
+          section={s}
+          first={i === 0}
+          period={
+            periods && {
+              state: periods.stateOf(s.key),
+              open: periods.isOpen(s.key),
+              toggle: () => periods.toggle(s.key),
+            }
+          }
+          {...rest}
+        />
+      ))}
+    </ul>
+  )
+}
+
+interface PeriodSectionProps {
+  section: TrackSection
+  first: boolean
+  /** This section's phone fold (`PERIOD_BODY`), or null if it never folds. */
+  period: { state: FoldState; open: boolean; toggle: () => void } | null
   open: boolean
   labelConfig: LabelConfig[]
   isPutAway: (task: Task) => boolean
@@ -799,80 +877,158 @@ function TrackSectionsList({
   detail: ReturnType<typeof useTrackChipDetail>
   /** Search results: clusters render open and cannot be folded (`SEARCH_CLUSTERS`). */
   locked?: boolean
-}) {
+}
+
+/**
+ * One period section: its heading and — unless every quota in it was put away
+ * (`sectionBodyItems` returns empty) — its label clusters, as chips or as rows
+ * depending on `open`. A fully met section renders ONLY its heading (Trent,
+ * 2026-09-23: no body text once a section says "M of M") — that is this
+ * length check, not a separate case, since `putAwayMet` only ever empties a
+ * section by putting away everything in it. Such a section gets no phone fold
+ * button either: there is nothing behind it to open.
+ */
+function PeriodSection({
+  section: s,
+  first,
+  period,
+  open,
+  labelConfig,
+  isPutAway,
+  isLeaving,
+  summaries,
+  clusters,
+  detail,
+  locked = false,
+}: PeriodSectionProps) {
+  const bodyItems = sectionBodyItems(s, labelConfig, isPutAway)
+  const bodyId = `track-period-${s.key}`
+  // No fold (standalone, search): the body's plain display, as before.
+  const bodyClass = (classes: FoldClasses) =>
+    period ? foldClass(period.state, classes) : classes.open
   return (
-    <ul aria-label="Quotas">
-      {sections.map((s, i) => {
-        const bodyItems = sectionBodyItems(s, labelConfig, isPutAway)
-        return (
-          <li key={s.key} data-quota-period={s.key} className={cn(i > 0 && SECTION_DIVIDER)}>
-            <PeriodHeading section={s} />
-            {bodyItems.length > 0 &&
-              (open ? (
-                <ul>
-                  {bodyItems.map(({ item, cluster }) =>
-                    item.kind === 'title' ? (
-                      <ClusterTitle
-                        key={`title-${cluster}`}
-                        item={item}
-                        summary={summaries.get(cluster)}
-                        state={clusters.stateOf(cluster)}
-                        open={clusters.isOpen(cluster)}
-                        onToggle={() => clusters.toggle(cluster)}
-                        locked={locked}
-                        className="px-2 pt-3 pb-1 first:pt-1"
-                      />
-                    ) : (
-                      <TrackRow
-                        key={item.task.id}
-                        task={item.task}
-                        foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
-                        leaving={isLeaving(item.task)}
-                      />
-                    ),
-                  )}
-                </ul>
+    <li
+      data-quota-period={s.key}
+      className={cn(!first && foldClass(period ? period.state : true, SECTION_DIVIDER))}
+    >
+      <div className="relative">
+        <PeriodHeading section={s} />
+        {period && bodyItems.length > 0 && (
+          <PeriodFoldButton
+            section={s}
+            open={period.open}
+            onToggle={period.toggle}
+            controls={bodyId}
+          />
+        )}
+      </div>
+      {bodyItems.length > 0 &&
+        (open ? (
+          <ul id={bodyId} className={bodyClass(PERIOD_BODY)}>
+            {bodyItems.map(({ item, cluster }) =>
+              item.kind === 'title' ? (
+                <ClusterTitle
+                  key={`title-${cluster}`}
+                  item={item}
+                  summary={summaries.get(cluster)}
+                  state={clusters.stateOf(cluster)}
+                  open={clusters.isOpen(cluster)}
+                  onToggle={() => clusters.toggle(cluster)}
+                  locked={locked}
+                  className="px-2 pt-3 pb-1 first:pt-1"
+                />
               ) : (
-                // One wrapping row per section: titles and chips are peers in
-                // it, the section's own trick inherited from the label-first
-                // panel — see the block comment above.
-                <ul className="flex flex-wrap items-center gap-1.5">
-                  {bodyItems.map(({ item, cluster }) =>
-                    item.kind === 'title' ? (
-                      <ClusterTitle
-                        key={`title-${cluster}`}
-                        item={item}
-                        summary={summaries.get(cluster)}
-                        state={clusters.stateOf(cluster)}
-                        open={clusters.isOpen(cluster)}
-                        onToggle={() => clusters.toggle(cluster)}
-                        locked={locked}
-                        className={CLUSTER_TITLE_ROW}
-                      />
-                    ) : (
-                      <TrackChip
-                        key={item.task.id}
-                        task={item.task}
-                        color={item.color}
-                        foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
-                        leaving={isLeaving(item.task)}
-                        detailOpen={detail.openId === item.task.id}
-                        onOpenDetail={detail.openPopover}
-                        onCloseDetail={detail.closePopover}
-                        onEdit={detail.openEditor}
-                        onDeleteQuota={detail.deleteFromPopover}
-                        periods={
-                          detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined
-                        }
-                      />
-                    ),
-                  )}
-                </ul>
-              ))}
-          </li>
-        )
-      })}
-    </ul>
+                <TrackRow
+                  key={item.task.id}
+                  task={item.task}
+                  foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
+                  leaving={isLeaving(item.task)}
+                />
+              ),
+            )}
+          </ul>
+        ) : (
+          // One wrapping row per section: titles and chips are peers in
+          // it, the section's own trick inherited from the label-first
+          // panel — see the block comment above.
+          <ul
+            id={bodyId}
+            className={cn('flex-wrap items-center gap-1.5', bodyClass(PERIOD_BODY_FLEX))}
+          >
+            {bodyItems.map(({ item, cluster }) =>
+              item.kind === 'title' ? (
+                <ClusterTitle
+                  key={`title-${cluster}`}
+                  item={item}
+                  summary={summaries.get(cluster)}
+                  state={clusters.stateOf(cluster)}
+                  open={clusters.isOpen(cluster)}
+                  onToggle={() => clusters.toggle(cluster)}
+                  locked={locked}
+                  className={CLUSTER_TITLE_ROW}
+                />
+              ) : (
+                <TrackChip
+                  key={item.task.id}
+                  task={item.task}
+                  color={item.color}
+                  foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
+                  leaving={isLeaving(item.task)}
+                  detailOpen={detail.openId === item.task.id}
+                  onOpenDetail={detail.openPopover}
+                  onCloseDetail={detail.closePopover}
+                  onEdit={detail.openEditor}
+                  onDeleteQuota={detail.deleteFromPopover}
+                  periods={
+                    detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined
+                  }
+                />
+              ),
+            )}
+          </ul>
+        ))}
+    </li>
+  )
+}
+
+/**
+ * The phone's handle on a period section's fold: a transparent button laid
+ * over the WHOLE heading row, so the bar and the "M of N" are the thing you
+ * tap — Trent's rule that an affordance is made of the text, not a glyph
+ * beside it, and this panel's chevrons are already spent on the section and
+ * cluster folds. The only visible trace is the pressed tint.
+ *
+ * AN OVERLAY, NOT THE HEADING TURNED INTO A BUTTON. `sm:hidden` takes it out
+ * of the layout and the accessibility tree on a desktop, where the heading is
+ * plain text and nothing folds — a heading that was itself a button would sit
+ * in the desktop's tab order announcing an `aria-expanded` nothing honours.
+ * And one heading means one `progressbar` per section at every width.
+ *
+ * It overhangs the ~26px heading by 6px top and bottom (`-inset-y-1.5`) so the
+ * tap target is a comfortable ~38px without making the folded rows taller.
+ */
+function PeriodFoldButton({
+  section,
+  open,
+  onToggle,
+  controls,
+}: {
+  section: TrackSection
+  open: boolean
+  onToggle: () => void
+  controls: string
+}) {
+  const verb = open ? 'hide' : 'show'
+  return (
+    <button
+      type="button"
+      data-track-period-toggle
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls={controls}
+      aria-label={`${section.heading}: ${section.summary.met} of ${section.summary.count} met — ${verb} its quotas`}
+      className="active:bg-foreground/5 absolute inset-x-0 -inset-y-1.5 rounded-lg transition-colors sm:hidden"
+    />
   )
 }
 
@@ -931,7 +1087,10 @@ function PeriodHeading({ section }: { section: TrackSection }) {
           />
         )}
       </span>
-      <span className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap tabular-nums">
+      <span
+        data-track-period-count
+        className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap tabular-nums"
+      >
         <span className="text-foreground font-semibold">{section.summary.met}</span> of{' '}
         {section.summary.count}
       </span>

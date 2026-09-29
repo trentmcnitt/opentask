@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
+import { DirtyCard } from '@/components/DirtyCard'
 import { QuickActionPanel, type QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { Task, Project } from '@/types'
 
@@ -13,6 +12,14 @@ interface TaskDetailProps {
   projects?: Project[]
   onDelete?: () => void
   onMarkDone?: () => void
+  /**
+   * Whether the editor holds unsaved edits, as the host last heard through
+   * `onDirtyChange`. The host owns the dirty state (it also guards navigation
+   * with it); this only paints the stripe. The card wraps the editor alone,
+   * not the Created/Updated rows below it, so it is drawn here rather than by
+   * the page as for the Quota and Reminder editors.
+   */
+  dirty: boolean
   /** Called when QuickActionPanel dirty state changes (for navigation protection) */
   onDirtyChange?: (isDirty: boolean) => void
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
@@ -34,6 +41,7 @@ export function TaskDetail({
   projects = [],
   onDelete,
   onMarkDone,
+  dirty,
   onDirtyChange,
   saveRef,
   onSaveAll,
@@ -42,26 +50,11 @@ export function TaskDetail({
 }: TaskDetailProps) {
   const timezone = useTimezone()
 
-  // Track dirty state locally for border indicator, while also propagating to parent
-  const [isDirty, setIsDirty] = useState(false)
-  const handleDirtyChange = useCallback(
-    (dirty: boolean) => {
-      setIsDirty(dirty)
-      onDirtyChange?.(dirty)
-    },
-    [onDirtyChange],
-  )
-
   return (
     <div className="space-y-6">
       <div className="space-y-4">
         {/* Quick Action Panel — title, date/time grid, and actions */}
-        <div
-          className={cn(
-            'rounded-lg border p-3',
-            isDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-          )}
-        >
+        <DirtyCard dirty={dirty}>
           <QuickActionPanel
             key={task.id}
             task={task}
@@ -74,12 +67,12 @@ export function TaskDetail({
             onSaveAll={onSaveAll}
             onDelete={onDelete}
             onMarkDone={onMarkDone}
-            onDirtyChange={handleDirtyChange}
+            onDirtyChange={onDirtyChange}
             saveRef={saveRef}
             annotation={annotation}
             insightsCommentary={insightsCommentary}
           />
-        </div>
+        </DirtyCard>
 
         {/* Only show "Snoozed" for recurring tasks - for one-offs, it's just a due date change */}
         {task.original_due_at && task.rrule && (
