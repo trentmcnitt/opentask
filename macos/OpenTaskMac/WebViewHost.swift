@@ -52,7 +52,7 @@ struct WebViewHost: NSViewRepresentable {
         if let deviceToken = AppConfig.shared.deviceToken {
             config.userContentController.addUserScript(
                 WKUserScript(
-                    source: Coordinator.deviceInfoJS(token: deviceToken),
+                    source: WebBridge.deviceInfoJS(token: deviceToken),
                     injectionTime: .atDocumentStart,
                     forMainFrameOnly: true
                 )
@@ -61,7 +61,7 @@ struct WebViewHost: NSViewRepresentable {
 
         config.userContentController.addUserScript(
             WKUserScript(
-                source: Coordinator.tokenFlagsJS(),
+                source: WebBridge.tokenFlagsJS(),
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             )
@@ -236,7 +236,7 @@ struct WebViewHost: NSViewRepresentable {
 
             guard isMainFrame,
                   url.host == serverHost,
-                  isLoginPage(url),
+                  WebBridge.isLoginPath(url),
                   SessionBootstrapper.hasCredentials,
                   !loginRescueAttempted
             else {
@@ -247,7 +247,11 @@ struct WebViewHost: NSViewRepresentable {
             loginRescueAttempted = true
             decisionHandler(.cancel)
             showLoadingCover(over: webView)
-            let resume = Self.resumePath(fromLoginURL: url)
+            let resume = WebBridge.resumePath(
+                fromLoginURL: url,
+                wasPreempted: false,
+                fallback: WebViewManager.shared.lastRequestedPath
+            )
             Task { @MainActor in
                 if await SessionBootstrapper.bootstrap() {
                     print("[OpenTask] /login intercepted — session re-minted, resuming \(resume)")
@@ -278,18 +282,6 @@ struct WebViewHost: NSViewRepresentable {
             return nil
         }
 
-        /// Destination to resume after a rescued /login bounce: the login URL's
-        /// own callbackUrl when present, falling back to the last path the app
-        /// asked for. Same-origin relative paths only.
-        static func resumePath(fromLoginURL url: URL) -> String {
-            if let cb = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "callbackUrl" })?.value,
-                cb.hasPrefix("/"), !cb.hasPrefix("//") {
-                return cb
-            }
-            return WebViewManager.shared.lastRequestedPath
-        }
-
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             print("[OpenTask] Loaded \(webView.url?.absoluteString ?? "(no URL)")")
             hideLoadingCover()
@@ -297,7 +289,7 @@ struct WebViewHost: NSViewRepresentable {
             injectTokenFlags(into: webView)
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { _ in }
 
-            if isLoginPage(webView.url) {
+            if WebBridge.isLoginPath(webView.url) {
                 rescueFromLogin(webView)
             } else {
                 loginRescueAttempted = false
@@ -323,14 +315,6 @@ struct WebViewHost: NSViewRepresentable {
             }
         }
 
-        /// NextAuth's login route, with or without a `callbackUrl` query or a
-        /// trailing slash.
-        private func isLoginPage(_ url: URL?) -> Bool {
-            guard var path = url?.path else { return false }
-            if path.count > 1 && path.hasSuffix("/") { path.removeLast() }
-            return path == "/login"
-        }
-
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             handleNavigationFailure(error)
         }
@@ -354,63 +338,16 @@ struct WebViewHost: NSViewRepresentable {
 
         // MARK: - JavaScript injection
 
-        static func deviceInfoJS(token: String) -> String {
-            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            // Follows the signing entitlement, not the build configuration
-            // (read from the embedded provisioning profile): the app is
-            // installed as a Release build signed for development, and
-            // `#if DEBUG` registered it as "production", so every push to
-            // the Mac was rejected and its token deleted. See `ApsEnvironment`.
-            let environment = ApsEnvironment.current
-            return "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', "
-                + "bundleId: '\(bundleId)', environment: '\(environment)' };"
-        }
-
         /// Re-inject after every navigation: the document-start user script is
         /// a snapshot from web-view creation, and APNs usually answers after
         /// that.
         private func injectDeviceInfo(into webView: WKWebView) {
             guard let token = AppConfig.shared.deviceToken else { return }
-            webView.evaluateJavaScript(Self.deviceInfoJS(token: token))
+            webView.evaluateJavaScript(WebBridge.deviceInfoJS(token: token))
         }
 
         private func injectTokenFlags(into webView: WKWebView) {
-            webView.evaluateJavaScript(Self.tokenFlagsJS())
-        }
-
-        /// `window.__OPENTASK_HAS_TOKEN` / `window.__OPENTASK_TOKEN_PREVIEW`.
-        ///
-        /// The preview is the last 8 characters of the stored Bearer token —
-        /// the same suffix the server keeps in `api_tokens.token_preview` — so
-        /// the web app can tell that the native token belongs to a different
-        /// user than the one whose session is loaded. Never the token itself.
-        static func tokenFlagsJS() -> String {
-            let token = KeychainHelper.read(key: "bearerToken")
-            let preview = token.map { String($0.suffix(8)) }
-            return """
-                window.__OPENTASK_HAS_TOKEN = \(token != nil);
-                window.__OPENTASK_TOKEN_PREVIEW = \(jsStringLiteral(preview));
-                """
-        }
-
-        /// Render a Swift string as a JS single-quoted literal (or `null`).
-        /// Token previews are opaque server-generated strings — escape rather
-        /// than assume they are alphanumeric.
-        static func jsStringLiteral(_ value: String?) -> String {
-            guard let value else { return "null" }
-            var escaped = ""
-            for character in value.unicodeScalars {
-                switch character {
-                case "\\": escaped += "\\\\"
-                case "'": escaped += "\\'"
-                case "\n": escaped += "\\n"
-                case "\r": escaped += "\\r"
-                case "\u{2028}": escaped += "\\u2028"
-                case "\u{2029}": escaped += "\\u2029"
-                default: escaped.unicodeScalars.append(character)
-                }
-            }
-            return "'\(escaped)'"
+            webView.evaluateJavaScript(WebBridge.tokenFlagsJS())
         }
 
         // MARK: - JavaScript bridge

@@ -61,84 +61,11 @@ struct OpenTaskApp: App {
         }
     }
 
-    /// Resolve an `opentask://` deep link from the widget extension to a web path.
-    ///
-    /// The app is a WKWebView over the PWA and has no native routes, so every
-    /// link becomes a path on the configured server. `today` and anything
-    /// unrecognized fall through to the dashboard.
+    /// Resolve an `opentask://` deep link from the widget extension to a web
+    /// path and load it. The route table is `DeepLinkRouter` (ios/Shared),
+    /// shared with the macOS app; a non-`opentask://` URL does nothing.
     private func handleWidgetLink(_ url: URL) {
-        guard url.scheme == "opentask" else { return }
-
-        switch url.host {
-        case "task":
-            // `&highlight=1`, not `navigateToTask(id)`: a widget tap means
-            // "bring it into view", the same thing a reminder tap means (see
-            // `reminder` below) — not "open the editor". A NOTIFICATION tap on
-            // a task (`AppDelegate.handleNotificationAction`) is the one place
-            // that still wants the editor, and it calls `navigateToTask`
-            // directly, bypassing this switch entirely — so the flag is the
-            // only thing that tells `DashboardClient`'s identical `/?task=`
-            // apart from the two callers. See `DashboardClient.tsx`'s
-            // `?task=` effect for the other half of this.
-            let id = url.pathComponents.last.flatMap(Int.init)
-            if let id {
-                WebViewManager.shared.navigate(path: "/?task=\(id)&highlight=1")
-            } else {
-                WebViewManager.shared.navigate(path: "/")
-            }
-        case "reminder":
-            // A reminder opens ON the Reminders surface, and opens nothing:
-            // `?reminder=<id>` brings that row into view and highlights it.
-            // Tapping a reminder means "show me that one" — routing it through
-            // `task` instead put it on the dashboard with an editor open, which
-            // is the wrong tab and more than was asked for.
-            if let id = url.pathComponents.last.flatMap(Int.init) {
-                WebViewManager.shared.navigate(path: "/reminders?reminder=\(id)")
-            } else {
-                WebViewManager.shared.navigate(path: "/reminders")
-            }
-        case "reminders":
-            // `/slot/<id>` (2026-09-23, item 2) scopes the header title Link
-            // to bring that slot into view — see `WidgetLink.reminders(slot:)`.
-            // Bare `reminders` (2×2, Lock Screen, "+N more"/background tap)
-            // still opens the surface unscoped.
-            if url.pathComponents.count >= 3, url.pathComponents[url.pathComponents.count - 2] == "slot",
-               let slotId = url.pathComponents.last.flatMap(Int.init) {
-                WebViewManager.shared.navigate(path: "/reminders?slot=\(slotId)")
-            } else if let promptKey = PromptDeepLink.promptKey(from: url) {
-            // A quota PROMPT row (`/prompt/<key>`, `PromptDeepLink`) opens
-            // ON the Reminders surface too — it was tapped on the Reminders
-            // widget — with that exact row (by `prompt_key`) highlighted.
-                WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
-            } else {
-                WebViewManager.shared.navigate(path: "/reminders")
-            }
-        case "project":
-            // A project-scoped Tasks header link (2026-09-23, item 2) — see
-            // `WidgetLink.project(_:)`.
-            if let id = url.pathComponents.last.flatMap(Int.init) {
-                WebViewManager.shared.navigate(path: "/?project=\(id)")
-            } else {
-                WebViewManager.shared.navigate(path: "/")
-            }
-        case "quota":
-            // A quota opens ON the Quotas surface, and opens nothing — same
-            // shape as `reminder` above. Tapping a quota from Track means
-            // "show me that one", not "open its full detail page", which is
-            // where `task/<id>` would send a tracked id instead.
-            if let id = url.pathComponents.last.flatMap(Int.init) {
-                WebViewManager.shared.navigate(path: "/quotas?quota=\(id)")
-            } else {
-                WebViewManager.shared.navigate(path: "/quotas")
-            }
-        case "quotas":
-            WebViewManager.shared.navigate(path: "/quotas")
-        case "overdue":
-            // The Tasks widget's header on its Overdue page (2026-09-25) —
-            // the dashboard with its Overdue chip on. See `WidgetLink.overdue`.
-            WebViewManager.shared.navigate(path: "/?filter=overdue")
-        default:
-            WebViewManager.shared.navigate(path: "/")
-        }
+        guard let path = DeepLinkRouter.webPath(for: url) else { return }
+        WebViewManager.shared.navigate(path: path)
     }
 }
