@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useJustAddedClock } from '@/hooks/useJustAddedClock'
+import { useStickyColumn } from '@/hooks/useStickyColumn'
 import { UNDATED_LABEL } from '@/lib/slot-view'
 import { isTracked } from '@/lib/track'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
@@ -1580,8 +1581,10 @@ function mainClass(twoColumn: boolean): string {
  * `items-start` for every child, so this repeats it rather than introducing it —
  * kept explicit because it is this element that would silently stop sticking if
  * the container's alignment ever changed. The top offset clears the sticky
- * header, and the max-height keeps a tall panel's bottom reachable rather than
- * stranded below the fold.
+ * header. The column never scrolls on its own — no height cap, no inner
+ * scrollbar ("It can't have two scrollbars shown", Trent 09-28); instead
+ * `useStickyColumn` lowers `top` when the column is taller than the viewport,
+ * so it rides the page scroll until its bottom is in view and sticks there.
  *
  * It spans BOTH rows at `xl` (`row-span-2`), and the row template that makes
  * that safe is on `<main>` — see `mainClass`, which explains why a spanning
@@ -1593,7 +1596,7 @@ function mainClass(twoColumn: boolean): string {
  * The Reminders panel (`DashboardRemindersPanel`) lives here too now, ABOVE
  * `<TrackPanel>` — a second sibling INSIDE this same wrapper, not a second grid
  * child. Same reasoning as Track's own placement: one instance, one DOM
- * position, sticky and scrollable as part of this one column at every width.
+ * position, sticky as part of this one column at every width.
  * It shares Track's `!searching` gate for the same reason Track has it —
  * "results stay results" while a task search is running — even though the
  * Reminders panel's own data has nothing to do with that search.
@@ -1630,12 +1633,14 @@ function TrackColumn({
   timeSlots: TimeSlot[]
   timezone: string
 }) {
+  const stickyRef = useStickyColumn<HTMLDivElement>(twoColumn)
   return (
     <div
+      ref={stickyRef}
       className={cn(
         'min-w-0',
         twoColumn &&
-          'xl:sticky xl:top-[4.5rem] xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-y-auto',
+          'xl:sticky xl:top-[4.5rem] xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start',
       )}
     >
       {!searching && (
