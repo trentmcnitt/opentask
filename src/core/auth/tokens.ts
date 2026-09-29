@@ -7,8 +7,9 @@
  * 8 characters (the preview the UI shows) are stored — see `token-hash.ts`.
  * The caller hands `raw` back to the user once; it can't be recovered later.
  *
- * Kept out of `./index.ts` on purpose: that module imports the NextAuth
- * config, which a plain `tsx` script can't load.
+ * Its own module (re-exported from `./index.ts` for routes) so the script can
+ * import it directly: `./index.ts` imports the NextAuth config, which a plain
+ * `tsx` script can't load.
  */
 
 import crypto from 'crypto'
