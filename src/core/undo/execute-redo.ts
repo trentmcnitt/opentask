@@ -6,31 +6,19 @@
 
 import Database from 'better-sqlite3'
 import { reinsertCompletion } from './completion-row'
-import { getDb, withTransaction } from '@/core/db'
-import { emitSyncEvent } from '@/lib/sync-events'
-import type { UndoSnapshot, RedoResult, SlotUndoState } from '@/types'
+import { withTransaction } from '@/core/db'
+import type { RedoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
-import { applyPromptDefault, applySlotRow, parseSlotState } from './slot-row'
-import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
-
-/** Parsed undo_log entry ready for redoEntry() */
-export interface ParsedRedoEntry {
-  id: number
-  action: string
-  description: string | null
-  fieldsChanged: string[]
-  snapshots: UndoSnapshot[]
-  /** Set only on time_slot_edit / time_slot_delete entries. */
-  slotState?: SlotUndoState | null
-}
+import { applyPromptDefault, applySlotRow } from './slot-row'
+import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
  * Redo a single parsed entry within an existing transaction.
  * Used by both executeRedo (single) and executeBatchRedo (batch).
  */
-export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
+export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   // A slot edit/delete: re-apply the slot change alongside its reminders and
   // quota prompt periods.
   if (entry.slotState) {
@@ -77,44 +65,11 @@ export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
  * @returns The result of the redo operation, or null if nothing to redo
  */
 export function executeRedo(userId: number): RedoResult | null {
-  const db = getDb()
-
-  // Find the most recently undone action for this user
-  // (the oldest action where undone = 1 and it's the next in the undo sequence)
-  const entry = db
-    .prepare(
-      `
-    SELECT id, user_id, action, description, fields_changed, snapshot, slot_state, undone
-    FROM undo_log
-    WHERE user_id = ? AND undone = 1
-    ORDER BY id ASC
-    LIMIT 1
-  `,
-    )
-    .get(userId) as
-    | {
-        id: number
-        user_id: number
-        action: string
-        description: string | null
-        fields_changed: string
-        snapshot: string
-        slot_state: string | null
-        undone: number
-      }
-    | undefined
-
-  if (!entry) {
+  // The most recently undone action for this user: the oldest undone entry,
+  // since undo marks entries from the top of the stack down
+  const [parsed] = selectUndoEntries(userId, { undone: true, limit: 1 })
+  if (!parsed) {
     return null
-  }
-
-  const parsed: ParsedRedoEntry = {
-    id: entry.id,
-    action: entry.action,
-    description: entry.description,
-    fieldsChanged: JSON.parse(entry.fields_changed),
-    snapshots: JSON.parse(entry.snapshot),
-    slotState: parseSlotState(entry.slot_state),
   }
 
   const result = withTransaction((tx) => {
@@ -127,9 +82,7 @@ export function executeRedo(userId: number): RedoResult | null {
     }
   })
 
-  emitSyncEvent(userId)
-
-  dispatchUndoRedoWebhooks(userId, parsed.snapshots, parsed.fieldsChanged, 'redo')
+  afterUndoRedo(userId, [parsed], 'redo')
 
   return result
 }

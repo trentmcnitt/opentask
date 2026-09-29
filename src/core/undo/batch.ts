@@ -8,23 +8,11 @@
  * - count: undo/redo a specific number of entries
  */
 
-import { getDb, withTransaction } from '@/core/db'
-import { emitSyncEvent } from '@/lib/sync-events'
-import type { UndoSnapshot } from '@/types'
-import { undoEntry, type ParsedUndoEntry } from './execute-undo'
-import { redoEntry, type ParsedRedoEntry } from './execute-redo'
-import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
-import { parseSlotState } from './slot-row'
+import { withTransaction } from '@/core/db'
+import { undoEntry } from './execute-undo'
+import { redoEntry } from './execute-redo'
+import { afterUndoRedo, selectUndoEntries } from './entries'
 import { countUndoable, countRedoable } from './index'
-
-interface RawEntry {
-  id: number
-  action: string
-  description: string | null
-  fields_changed: string
-  snapshot: string
-  slot_state: string | null
-}
 
 export interface BatchUndoOptions {
   sessionStartId?: number
@@ -51,34 +39,13 @@ export interface BatchResult {
  * either all succeed or none do.
  */
 export function executeBatchUndo(userId: number, options: BatchUndoOptions): BatchResult {
-  const db = getDb()
-
-  // Build the query to find entries to undo
-  let sql = `
-    SELECT id, action, description, fields_changed, snapshot, slot_state
-    FROM undo_log
-    WHERE user_id = ? AND undone = 0
-  `
-  const params: (number | string)[] = [userId]
-
-  if (options.sessionStartId !== undefined) {
-    sql += ' AND id > ?'
-    params.push(options.sessionStartId)
-  }
-
-  if (options.throughId !== undefined) {
-    sql += ' AND id >= ?'
-    params.push(options.throughId)
-  }
-
-  sql += ' ORDER BY id DESC'
-
-  if (options.count !== undefined) {
-    sql += ' LIMIT ?'
-    params.push(options.count)
-  }
-
-  const entries = db.prepare(sql).all(...params) as RawEntry[]
+  // From the top of the stack down to the boundary
+  const entries = selectUndoEntries(userId, {
+    undone: false,
+    afterId: options.sessionStartId,
+    fromId: options.throughId,
+    limit: options.count,
+  })
 
   if (entries.length === 0) {
     return {
@@ -88,29 +55,16 @@ export function executeBatchUndo(userId: number, options: BatchUndoOptions): Bat
     }
   }
 
-  const parsed: ParsedUndoEntry[] = entries.map((e) => ({
-    id: e.id,
-    action: e.action,
-    description: e.description,
-    fieldsChanged: JSON.parse(e.fields_changed),
-    snapshots: JSON.parse(e.snapshot) as UndoSnapshot[],
-    slotState: parseSlotState(e.slot_state),
-  }))
-
   withTransaction((tx) => {
-    for (const entry of parsed) {
+    for (const entry of entries) {
       undoEntry(tx, entry)
     }
   })
 
-  emitSyncEvent(userId)
-
-  for (const entry of parsed) {
-    dispatchUndoRedoWebhooks(userId, entry.snapshots, entry.fieldsChanged, 'undo')
-  }
+  afterUndoRedo(userId, entries, 'undo')
 
   return {
-    count: parsed.length,
+    count: entries.length,
     remaining_undoable: countUndoable(userId),
     remaining_redoable: countRedoable(userId),
   }
@@ -124,29 +78,13 @@ export function executeBatchUndo(userId: number, options: BatchUndoOptions): Bat
  * transaction.
  */
 export function executeBatchRedo(userId: number, options: BatchRedoOptions): BatchResult {
-  const db = getDb()
-
-  let sql = `
-    SELECT id, action, description, fields_changed, snapshot, slot_state
-    FROM undo_log
-    WHERE user_id = ? AND undone = 1
-  `
-  const params: (number | string)[] = [userId]
-
-  if (options.throughId !== undefined) {
-    sql += ' AND id <= ?'
-    params.push(options.throughId)
-  }
-
-  // Redo in ascending order (oldest undone first) to maintain consistency
-  sql += ' ORDER BY id ASC'
-
-  if (options.count !== undefined) {
-    sql += ' LIMIT ?'
-    params.push(options.count)
-  }
-
-  const entries = db.prepare(sql).all(...params) as RawEntry[]
+  // Oldest undone first, up to the boundary, so entries are redone in the
+  // order they were originally made
+  const entries = selectUndoEntries(userId, {
+    undone: true,
+    throughId: options.throughId,
+    limit: options.count,
+  })
 
   if (entries.length === 0) {
     return {
@@ -156,29 +94,16 @@ export function executeBatchRedo(userId: number, options: BatchRedoOptions): Bat
     }
   }
 
-  const parsed: ParsedRedoEntry[] = entries.map((e) => ({
-    id: e.id,
-    action: e.action,
-    description: e.description,
-    fieldsChanged: JSON.parse(e.fields_changed),
-    snapshots: JSON.parse(e.snapshot) as UndoSnapshot[],
-    slotState: parseSlotState(e.slot_state),
-  }))
-
   withTransaction((tx) => {
-    for (const entry of parsed) {
+    for (const entry of entries) {
       redoEntry(tx, entry)
     }
   })
 
-  emitSyncEvent(userId)
-
-  for (const entry of parsed) {
-    dispatchUndoRedoWebhooks(userId, entry.snapshots, entry.fieldsChanged, 'redo')
-  }
+  afterUndoRedo(userId, entries, 'redo')
 
   return {
-    count: parsed.length,
+    count: entries.length,
     remaining_undoable: countUndoable(userId),
     remaining_redoable: countRedoable(userId),
   }
