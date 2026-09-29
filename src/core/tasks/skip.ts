@@ -25,6 +25,7 @@ import { logActivity } from '@/core/activity'
 import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { isTracked } from '@/lib/track'
@@ -143,6 +144,8 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
   })
 
   emitSyncEvent(userId)
+  // The occurrence is gone either way, so its notification should be too.
+  dismissNotificationsForTasks(userId, [taskId])
 
   // §7.5: a skip is NOT a completion. Anything downstream that counts
   // completions must never see this as one.

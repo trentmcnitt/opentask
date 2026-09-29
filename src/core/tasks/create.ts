@@ -10,6 +10,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { syncBadgeCount } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
@@ -249,9 +250,18 @@ export function createTask(options: CreateTaskOptions): Task {
 
   emitSyncEvent(userId)
   emitTaskCreatedEvent(userId, { taskId: createdTask.id, title: createdTask.title })
+  syncBadgeIfBornOverdue(userId, createdTask)
   dispatchWebhookEvent(userId, 'task.created', { task: formatTaskResponse(createdTask) })
 
   return createdTask
+}
+
+/**
+ * A task created already overdue changes the app-icon badge now; without this
+ * the badge would wait for the overdue checker's next run.
+ */
+function syncBadgeIfBornOverdue(userId: number, task: Task): void {
+  if (task.due_at && new Date(task.due_at) < new Date()) syncBadgeCount(userId)
 }
 
 /**

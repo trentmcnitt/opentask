@@ -196,7 +196,7 @@ For bulk operations, use the corresponding `bulk_*` action type (e.g., `bulk_don
 
 **Log an entry even when nothing changed** (a −1 at zero, restoring a prompt that's already waiting). Clients offer Undo on the toast for every tap; without an entry of its own, that Undo would reverse whatever came before it (see `src/core/tasks/progress.ts`).
 
-**After the transaction commits**, a core mutation also calls `emitSyncEvent(userId)` (refreshes open tabs and pushes to widgets) and `dispatchWebhookEvent(...)`, and usually records `logActivity(...)` inside the transaction — see `createTask()`. Pass `emitSyncEvent(userId, { widgets: false })` only for a change no widget can show: iOS budgets widget pushes, so skipping invisible changes saves budget, but a wrongly-skipped push leaves a widget stale.
+**After the transaction commits**, a core mutation also calls `emitSyncEvent(userId)` (refreshes open tabs and pushes to widgets) and `dispatchWebhookEvent(...)`, and usually records `logActivity(...)` inside the transaction — see `createTask()`. A mutation that moves a task's `due_at`, completes, skips or deletes it also calls `dismissNotificationsForTasks(userId, ids)` (`@/core/notifications/dismiss`), which clears the delivered notification on every device and resyncs the app-icon badge; one that can change the overdue count without making a banner stale (create, restore, undo/redo) calls `syncBadgeCount(userId)`. Routes never make these calls — the header comment of `dismiss.ts` lists which mutation does which. Pass `emitSyncEvent(userId, { widgets: false })` only for a change no widget can show: iOS budgets widget pushes, so skipping invisible changes saves budget, but a wrongly-skipped push leaves a widget stale.
 
 ### All deletions must be soft deletes
 
@@ -312,7 +312,7 @@ Follow the pattern above, and verify:
 - [ ] If you created a new core mutation function, ensure it uses `withTransaction()` and calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
 - [ ] Format task responses with `formatTaskResponse()` from `@/lib/format-task`
 - [ ] If the route mutates data itself rather than through a core function that already does it, call `emitSyncEvent(user.id)` after the write, so open tabs and widgets update
-- [ ] If it changes a task's `due_at` or `done`, call `dismissNotificationsForTasks()` (`@/core/notifications/dismiss`) so the old notification doesn't linger — as the task, snooze and `bulk/*` routes do
+- [ ] Don't dismiss notifications or sync the badge in the route: the core mutations do it (see [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo)). A new core mutation that changes a task's `due_at` or `done`, or deletes it, calls `dismissNotificationsForTasks()` itself
 - [ ] Return using response helpers: `success()`, `badRequest()`, `unauthorized()`, `forbidden()`, `notFound()`, `conflict()`, `internalError()`, `handleZodError()`, `handleError()` — success format: `{ data: ... }`, error format: `{ error, code, details? }`
 - [ ] Wrap handlers with `withLogging()` from `@/lib/with-logging` (use named function expression for stack traces)
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing

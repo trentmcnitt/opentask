@@ -13,7 +13,6 @@ import { requireAuth } from '@/core/auth'
 import { AppError } from '@/core/errors'
 import { success, badRequest, handleError, parseRouteId } from '@/lib/api-response'
 import { skipOccurrence } from '@/core/tasks/skip'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -31,9 +30,6 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       userTimezone: user.timezone,
       taskId,
     })
-
-    // The occurrence is gone either way, so its notification should be too.
-    dismissNotificationsForTasks(user.id, [taskId])
 
     return success({ ...formatTaskResponse(task), was_recurring: wasRecurring, description })
   } catch (err) {

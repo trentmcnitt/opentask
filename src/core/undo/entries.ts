@@ -14,6 +14,7 @@
 
 import { getDb } from '@/core/db'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { syncBadgeCount } from '@/core/notifications/dismiss'
 import type { UndoSnapshot, SlotUndoState } from '@/types'
 import { parseSlotState } from './slot-row'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
@@ -104,8 +105,12 @@ export function selectUndoEntries(
 }
 
 /**
- * After an undo/redo transaction commits: refresh open tabs and widgets, then
- * send a task.updated webhook for every task each entry touched.
+ * After an undo/redo transaction commits: refresh open tabs and widgets,
+ * resync the app-icon badge (an undo can put a task back in the past or take
+ * it out), then send a task.updated webhook for every task each entry touched.
+ *
+ * Undo and redo don't dismiss notifications: they can't tell which delivered
+ * banners the restored state makes stale, so only the badge follows.
  */
 export function afterUndoRedo(
   userId: number,
@@ -113,6 +118,7 @@ export function afterUndoRedo(
   kind: 'undo' | 'redo',
 ): void {
   emitSyncEvent(userId)
+  syncBadgeCount(userId)
   for (const entry of entries) {
     dispatchUndoRedoWebhooks(userId, entry.snapshots, entry.fieldsChanged, kind)
   }

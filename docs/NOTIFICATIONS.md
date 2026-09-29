@@ -41,7 +41,7 @@ Task becomes overdue
 
 ### Notification dismissal
 
-When a task is snoozed, completed, or deleted from any device/web UI, `dismissNotificationsForTasks()` sends dismiss signals to both Web Push and APNs. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
+When a task is snoozed, completed, skipped, deleted or has its date moved, from any device, the web UI or the API, `dismissNotificationsForTasks()` sends dismiss signals to both Web Push and APNs. The core mutation makes the call (`markDone`, `updateTask`, `bulkSnooze`, …), not the route, so every caller gets it; the header of `src/core/notifications/dismiss.ts` lists them. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
 
 ### Notification coalescing
 

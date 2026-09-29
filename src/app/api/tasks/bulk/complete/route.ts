@@ -17,7 +17,6 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkDone } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkComplete } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -39,9 +38,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       closePeriod: input.close_period === true,
       prompts: input.prompts,
     })
-
-    // The items are handled, so their banners should go too.
-    if (input.ids.length > 0) dismissNotificationsForTasks(user.id, input.ids)
 
     return success({
       tasks_affected: result.tasksAffected,

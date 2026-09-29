@@ -16,27 +16,28 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import {
-  success,
-  unauthorized,
-  badRequest,
-  handleError,
-  handleZodError,
-  conflict,
-} from '@/lib/api-response'
+import { success, unauthorized, handleError, handleZodError, conflict } from '@/lib/api-response'
 import { getReviewSession, resolveSeqNumbers, deleteReviewSession } from '@/core/review/session'
 import { bulkDone, bulkSnooze } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { z, ZodError } from 'zod'
 import { dateTimeString } from '@/core/validation/task'
 
-const reviewActionSchema = z.object({
-  type: z.enum(['done', 'snooze', 'skip']),
-  targets: z.array(z.string()).min(1),
-  until: dateTimeString.optional(),
-})
+// A snooze without `until` is refused here, before any action runs. Checked
+// inside the loop instead, it returned 400 only after the earlier actions had
+// already committed — a `[done, snooze]` body completed its done targets and
+// then reported failure, and the session was never cleaned up.
+const reviewActionSchema = z
+  .object({
+    type: z.enum(['done', 'snooze', 'skip']),
+    targets: z.array(z.string()).min(1),
+    until: dateTimeString.optional(),
+  })
+  .refine((action) => action.type !== 'snooze' || action.until !== undefined, {
+    message: 'snooze action requires "until" field',
+    path: ['until'],
+  })
 
 const reviewExecuteSchema = z.object({
   session_id: z.string().min(1),
@@ -69,21 +70,20 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         case 'done': {
           const result = bulkDone({ userId: user.id, taskIds, userTimezone: user.timezone })
           results.push({ type: 'done', taskIds, count: result.tasksAffected })
-          dismissNotificationsForTasks(user.id, taskIds)
           break
         }
         case 'snooze': {
-          if (!action.until) {
-            return badRequest('snooze action requires "until" field')
-          }
+          // Review targets are named one by one, so they are explicit picks:
+          // `includeTaskIds` lets High and Urgent ones move too, where a sweep
+          // would hold them back (`filterForBulkSnooze`).
           const result = bulkSnooze({
             userId: user.id,
             userTimezone: user.timezone,
             taskIds,
-            until: action.until,
+            until: action.until!,
+            includeTaskIds: taskIds,
           })
           results.push({ type: 'snooze', taskIds, count: result.tasksAffected })
-          dismissNotificationsForTasks(user.id, taskIds)
           break
         }
         case 'skip': {

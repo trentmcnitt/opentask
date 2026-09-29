@@ -1,6 +1,28 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { apiFetch, resetTestData } from './helpers'
 
+/** Create overdue tasks and open a review session; returns each task's seq by id. */
+async function reviewWith(tasks: { title: string; priority?: number }[]) {
+  const dueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const ids: number[] = []
+  for (const t of tasks) {
+    const res = await apiFetch('/api/tasks', { method: 'POST', body: { ...t, due_at: dueAt } })
+    expect(res.status).toBe(201)
+    ids.push((await res.json()).data.id)
+  }
+  const session = (await (await apiFetch('/api/review')).json()).data
+  const seqOf = new Map<number, string>()
+  for (const group of session.groups) {
+    for (const task of group.tasks) seqOf.set(task.id, String(task.seq))
+  }
+  for (const id of ids) expect(seqOf.has(id)).toBe(true)
+  return { sessionId: session.session_id as string, ids, seqOf }
+}
+
+async function getTask(id: number) {
+  return (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+}
+
 describe('Review workflow integration', () => {
   beforeEach(async () => {
     await resetTestData()
@@ -68,5 +90,52 @@ describe('Review workflow integration', () => {
       },
     })
     expect(res.status).toBe(409)
+  })
+
+  test('a snooze action without until is refused before any action runs', async () => {
+    const { sessionId, ids, seqOf } = await reviewWith([{ title: 'Review — done target' }])
+    const [doneId] = ids
+
+    const res = await apiFetch('/api/review/execute', {
+      method: 'POST',
+      body: {
+        session_id: sessionId,
+        actions: [
+          { type: 'done', targets: [seqOf.get(doneId)] },
+          { type: 'snooze', targets: [seqOf.get(doneId)] },
+        ],
+      },
+    })
+    expect(res.status).toBe(400)
+
+    // Nothing ran: the done target is still open, and the session still works.
+    expect((await getTask(doneId)).done).toBe(false)
+    const retry = await apiFetch('/api/review/execute', {
+      method: 'POST',
+      body: { session_id: sessionId, actions: [{ type: 'done', targets: [seqOf.get(doneId)] }] },
+    })
+    expect(retry.status).toBe(200)
+  })
+
+  test('snooze moves High and Urgent targets, because review targets are explicit', async () => {
+    const { sessionId, ids, seqOf } = await reviewWith([
+      { title: 'Review — plain', priority: 0 },
+      { title: 'Review — high', priority: 3 },
+      { title: 'Review — urgent', priority: 4 },
+    ])
+    const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+    const res = await apiFetch('/api/review/execute', {
+      method: 'POST',
+      body: {
+        session_id: sessionId,
+        actions: [{ type: 'snooze', targets: ids.map((id) => seqOf.get(id)), until }],
+      },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.results[0].count).toBe(3)
+    for (const id of ids) {
+      expect(new Date((await getTask(id)).due_at).getTime()).toBe(new Date(until).getTime())
+    }
   })
 })
