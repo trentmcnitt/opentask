@@ -124,7 +124,7 @@ NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials 
 
 - **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. The raw token is displayed once when generated and cannot be retrieved afterward.
 - **Login rate limiting**: In-memory; 5 failures per username in 15 minutes trigger a lockout with exponential backoff (30s, 60s, 120s...).
-- **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+- **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(self), geolocation=()` (the microphone is allowed for the app's own voice input).
 - **JWT sessions**: `maxAge` set to 7 days (NextAuth default is 30 days).
 
 ### Background jobs
@@ -152,6 +152,7 @@ npm test                 # Behavioral tests (vitest, no HTTP/UI)
 npm run test:integration # Integration tests (HTTP against built server)
 npm run test:e2e         # Playwright E2E tests (headless)
 npm run test:e2e:ui      # Playwright with UI
+npm run test:perf        # Dashboard load-time measurement, by hand (not in CI; tests/perf/)
 npm run test:quality     # AI prompt quality tests (Layer 1 — see below for setup)
 npm run test:quality:retry  # Re-run failed scenarios from last quality run
 npm run test:quality:run # Run specific scenarios: npm run test:quality:run -- <id> [id ...]
@@ -245,7 +246,7 @@ Don't add buffers, timeouts, or tolerances to work around symptoms. If something
 
 - **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`. Common failures: Prettier formatting (fix with `npx prettier --write <files>`), ESLint errors (fix the code, do not suppress).
 - **Node version**: Pinned in `.node-version` at the project root.
-- **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). CI fails on unformatted files (`format:check`). Run from the main checkout, `npm run format` and `format:check` also cover every agent worktree under `.claude/worktrees/` (`.prettierignore` doesn't exclude them), so they rewrite or flag other sessions' files — format only your own with `npx prettier --write <files>`.
+- **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). CI fails on unformatted files (`format:check`). `.prettierignore` excludes `.claude/`, so `npm run format` from the main checkout leaves other sessions' agent worktrees alone.
 - **CI** (`.github/workflows/ci.yml`, on PRs and pushes to `main`): Quality (type-check, lint, format:check), Test, Build, Integration, E2E, Dependency Review. PRs that only touch `ios/` or `macos/` skip the web jobs; `native-logic-tests.yml` runs the Swift `OpenTaskLogicTests` when `ios/`, `macos/` or `tests/fixtures/contract/` change.
 
 ## Route Handler Guide

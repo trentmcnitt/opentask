@@ -5,7 +5,7 @@
  * Run before and after optimizations to quantify improvement.
  *
  * Usage:
- *   npx playwright test tests/perf/load-time.spec.ts
+ *   npm run test:perf   (see playwright.perf.config.ts)
  *
  * Results are printed to stdout and saved to .tmp/perf-baseline.json
  */
@@ -13,15 +13,13 @@
 import { test, expect } from '@playwright/test'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
-
-const USERNAME = 'Test User'
-const PASSWORD = 'testpass123'
+import { TEST_EMAIL, TEST_PASSWORD } from '../e2e/fixtures'
 
 test('measure dashboard load performance', async ({ page }) => {
   // Login
   await page.goto('/login')
-  await page.getByLabel('Username').fill(USERNAME)
-  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByLabel('Username').fill(TEST_EMAIL)
+  await page.getByLabel('Password').fill(TEST_PASSWORD)
   await page.getByRole('button', { name: /sign in/i }).click()
   await page.waitForURL('/', { timeout: 10_000 })
 
