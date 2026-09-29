@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- the day), and the user's own off switch for the whole feature.
   quota_prompt_slot_id INTEGER DEFAULT NULL,
   quota_prompts_enabled INTEGER NOT NULL DEFAULT 1,
+  -- The quiet "AI finished" push for a just-added task
+  -- (src/core/notifications/enrichment-notify.ts). On by default.
+  enrichment_notifications_enabled INTEGER NOT NULL DEFAULT 1,
   is_demo       INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

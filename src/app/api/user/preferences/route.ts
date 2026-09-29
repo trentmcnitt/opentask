@@ -256,6 +256,13 @@ function validateGeneralFields(
     changes.notifications_enabled = body.notifications_enabled ? 1 : 0
   }
 
+  // The "AI finished" push for a just-added task (enrichment-notify.ts).
+  if (body.enrichment_notifications_enabled !== undefined) {
+    if (typeof body.enrichment_notifications_enabled !== 'boolean')
+      return 'enrichment_notifications_enabled must be a boolean'
+    changes.enrichment_notifications_enabled = body.enrichment_notifications_enabled ? 1 : 0
+  }
+
   if (body.critical_alert_volume !== undefined) {
     const val = body.critical_alert_volume
     if (typeof val !== 'number' || val < 0 || val > 1)
@@ -509,6 +516,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     wake_time: row.wake_time,
     sleep_time: row.sleep_time,
     notifications_enabled: row.notifications_enabled !== 0,
+    enrichment_notifications_enabled: row.enrichment_notifications_enabled !== 0,
     critical_alert_volume: row.critical_alert_volume,
     ai_context: row.ai_context,
     ai_mode: row.ai_mode,
