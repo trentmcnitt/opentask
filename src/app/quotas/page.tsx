@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Header } from '@/components/Header'
 import { QuotasView } from '@/components/QuotasView'
 import { QuotasSummary, QuotasViewSwitch, type QuotasPageView } from '@/components/QuotasSummary'
@@ -53,7 +53,7 @@ import type { Task } from '@/types'
 const NO_TASKS: Task[] = []
 
 export default function QuotasPage() {
-  const { status } = useRequireSession()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
 
   // The view populates this, so an undo/redo from the header or the keyboard
@@ -90,9 +90,7 @@ export default function QuotasPage() {
   // Wait for the preferences as well as the session: until they land,
   // `quotasDetails` is the default, and a user who chose Details would watch
   // the summary paint and then swap out from under him.
-  if (status === 'loading' || (status === 'authenticated' && !loaded)) return <PageLoading />
-
-  if (status === 'unauthenticated') return null
+  if (!ready || !loaded) return <PageLoading />
 
   return (
     <div className="flex-1">

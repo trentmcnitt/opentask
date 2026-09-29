@@ -56,7 +56,7 @@ function EmptyTrashConfirm({
 }
 
 export default function TrashPage() {
-  const { status, ready } = useRequireSession()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
   const [tasks, setTasks] = useState<TrashedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
@@ -123,7 +123,7 @@ export default function TrashPage() {
     }
   }
 
-  if (status === 'loading') return <PageLoading />
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">

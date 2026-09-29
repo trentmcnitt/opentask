@@ -14,7 +14,7 @@ interface ArchivedTask {
 }
 
 export default function ArchivePage() {
-  const { status, ready } = useRequireSession()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
@@ -70,7 +70,7 @@ export default function ArchivePage() {
     fetchTasks(debouncedSearch)
   }, [ready, debouncedSearch, fetchTasks])
 
-  if (status === 'loading') return <PageLoading />
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">

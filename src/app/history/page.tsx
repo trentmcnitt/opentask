@@ -55,7 +55,7 @@ interface UndoEntry {
 type TabId = 'completions' | 'activity' | 'ai'
 
 export default function HistoryPage() {
-  const { status, ready } = useRequireSession()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
   const [tab, setTab] = useState<TabId>('activity')
   const [completions, setCompletions] = useState<CompletionEntry[]>([])
@@ -131,7 +131,7 @@ export default function HistoryPage() {
     fetchData()
   }, [ready, tab, date, timezone, fetchActivity])
 
-  if (status === 'loading') return <PageLoading />
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">

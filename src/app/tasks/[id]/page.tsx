@@ -42,7 +42,7 @@ import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream, type EnrichmentCompleteData } from '@/hooks/useSyncStream'
 
 export default function TaskDetailPage() {
-  const { status, ready } = useRequireSession()
+  const { ready } = useRequireSession()
   const router = useRouter()
   const params = useParams()
   const taskId = params.id as string
@@ -271,7 +271,7 @@ export default function TaskDetailPage() {
     }
   }
 
-  if (status === 'loading' || loading) return <PageLoading className="min-h-screen flex-none" />
+  if (!ready || loading) return <PageLoading className="min-h-screen flex-none" />
 
   if (error) {
     return (

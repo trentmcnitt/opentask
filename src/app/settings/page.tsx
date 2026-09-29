@@ -53,7 +53,7 @@ import { cn } from '@/lib/utils'
 import type { LabelColor, LabelConfig, PriorityDisplayConfig, Project } from '@/types'
 
 export default function SettingsPage() {
-  const { session, status } = useRequireSession()
+  const { session, ready } = useRequireSession()
   const { theme, setTheme } = useTheme()
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
@@ -512,7 +512,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (status === 'loading') return <PageLoading />
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">

@@ -45,7 +45,7 @@ import type { Task } from '@/types'
 const NO_TASKS: Task[] = []
 
 export default function RemindersPage() {
-  const { status } = useRequireSession()
+  const { ready } = useRequireSession()
   const timezone = useTimezone()
 
   // Searching narrows the slots to matching thoughts; the surface filters what
@@ -92,9 +92,7 @@ export default function RemindersPage() {
   // device, so this surface joins the same SSE refresh chain the dashboard uses.
   useSyncStream({ onSync: refresh })
 
-  if (status === 'loading') return <PageLoading />
-
-  if (status === 'unauthenticated') return null
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">
