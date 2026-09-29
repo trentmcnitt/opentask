@@ -309,6 +309,17 @@ describe('contract fixtures match the TS types', () => {
     expect(byTitle('Call a friend')[0]).toMatchObject({ done: false, considered: false })
   })
 
+  test('preferences carry the label_config the Quotas widget colours from', () => {
+    // The apps decode only `label_config` from this payload
+    // (`UserPreferencesLabelConfigPage`): an array of { name, color }.
+    const labels = data('user-preferences').label_config as Obj[]
+    for (const l of labels) {
+      expect(Object.keys(l).sort()).toEqual(['color', 'name'])
+      expect(LABEL_COLORS).toContain(l.color)
+    }
+    expect(labels).toEqual([{ name: 'personal', color: 'purple' }])
+  })
+
   test('the task counts are exactly a TaskCounts (the apps’ foreground badge)', () => {
     const counts = data('task-counts')
     expectShape(counts, TASK_COUNTS, 'task-counts')

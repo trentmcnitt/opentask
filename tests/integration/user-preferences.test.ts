@@ -540,6 +540,67 @@ describe('round trip: every remaining preference', () => {
  * depends on today's weekday; tests/behavioral/tr-week-start.test.ts covers
  * that with a frozen clock.)
  */
+/**
+ * The exact 400 messages of the shared range and HH:MM checks (`intInRange`,
+ * `hhmm` in the route). Clients show these strings, so they are pinned word
+ * for word, one field per ceiling.
+ */
+describe('validation messages are exact', () => {
+  const cases: { body: Record<string, unknown>; error: string }[] = [
+    {
+      body: { auto_snooze_minutes: 0 },
+      error: 'auto_snooze_minutes must be an integer between 1 and 360',
+    },
+    {
+      body: { auto_snooze_urgent_minutes: 1.5 },
+      error: 'auto_snooze_urgent_minutes must be an integer between 1 and 360',
+    },
+    {
+      body: { auto_snooze_low_minutes: 1441 },
+      error: 'auto_snooze_low_minutes must be an integer between 1 and 1440',
+    },
+    {
+      body: { auto_snooze_medium_minutes: '60' },
+      error: 'auto_snooze_medium_minutes must be an integer between 1 and 1440',
+    },
+    {
+      body: { auto_snooze_high_minutes: 361 },
+      error: 'auto_snooze_high_minutes must be an integer between 1 and 360',
+    },
+    { body: { morning_time: '9:00' }, error: 'morning_time must be in HH:MM format' },
+    {
+      body: { wake_time: '07:60' },
+      error: 'wake_time must have valid hours (0-23) and minutes (0-59)',
+    },
+    { body: { sleep_time: 2200 }, error: 'sleep_time must be in HH:MM format' },
+    { body: {}, error: 'No preferences to update' },
+  ]
+
+  test.each(cases)('$error', async ({ body, error }) => {
+    const res = await apiFetch('/api/user/preferences', { method: 'PATCH', body })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe(error)
+  })
+
+  test('the ceilings themselves are accepted', async () => {
+    const before = (await (await apiFetch('/api/user/preferences')).json()).data
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { auto_snooze_low_minutes: 1440, auto_snooze_high_minutes: 360 },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.auto_snooze_high_minutes).toBe(360)
+    // The response doesn't echo auto_snooze_low_minutes; 240 is its default.
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: {
+        auto_snooze_low_minutes: 240,
+        auto_snooze_high_minutes: before.auto_snooze_high_minutes,
+      },
+    })
+  })
+})
+
 describe('week_start anchors weekly quotas on the chosen day', () => {
   test('PATCH week_start: monday anchors a new weekly quota to Monday 00:00 local', async () => {
     const created = await apiFetch('/api/tasks', {
