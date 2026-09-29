@@ -16,11 +16,12 @@ export type QuickPanelSaveRequest =
   | { kind: 'bulk'; url: '/api/tasks/bulk/snooze' | '/api/tasks/bulk/edit'; body: object }
 
 /**
- * Single entry point for persisting QuickActionPanel changes — used by both
- * the desktop QuickActionPopover (single task) and the mobile SelectionActionSheet
- * (1..N tasks). Unifying on one utility guarantees the two mount points stay
- * in sync and prevents the "works on desktop, silently fails on mobile" class
- * of bug that led to this refactor.
+ * Persists QuickActionPanel changes for the selection action bar
+ * (`SelectionActionSheet`, 1..N tasks) — its one caller is the dashboard's
+ * `bulkSaveAll`. A single task goes through `saveTaskChanges`, the same PATCH
+ * the quick-action popover and task detail page use (via `useTaskActions`), so
+ * every editor shares one single-task save path; several tasks go out as one
+ * bulk request (see `planQuickPanelSave`).
  *
  * `dateTaskIds`, when given, scopes the date part of the change to a subset of
  * `taskIds` (the snooze confirmation dialog opted the others out); every other

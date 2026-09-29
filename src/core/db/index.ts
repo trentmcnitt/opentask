@@ -86,7 +86,8 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'ai_insights_score_chips')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_insights_score_chips INTEGER NOT NULL DEFAULT 1')
   }
-  // Quick Take user toggle (2026-02) — default OFF for alpha
+  // Quick Take user toggle (2026-02). VESTIGIAL: nothing reads or writes it
+  // any more; kept rather than dropped (no destructive migration).
   if (!hasColumn(database, 'users', 'ai_quick_take')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_quick_take INTEGER NOT NULL DEFAULT 0')
   }
@@ -117,21 +118,14 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'critical_alert_volume')) {
     database.exec('ALTER TABLE users ADD COLUMN critical_alert_volume REAL NOT NULL DEFAULT 1.0')
   }
-  // AI provider selection (2026-03)
+  // AI provider selection (2026-03). VESTIGIAL: nothing reads or writes it
+  // now except the one-time per-feature mode backfill below, which needs the
+  // column to exist. Kept rather than dropped (no destructive migration).
   if (!hasColumn(database, 'users', 'ai_provider')) {
     database.exec("ALTER TABLE users ADD COLUMN ai_provider TEXT NOT NULL DEFAULT 'default'")
   }
   if (!hasColumn(database, 'ai_activity_log', 'provider')) {
     database.exec('ALTER TABLE ai_activity_log ADD COLUMN provider TEXT')
-  }
-  // Rename 'api' → 'anthropic' in ai_provider (2026-03)
-  const apiCount = (
-    database.prepare("SELECT COUNT(*) as c FROM users WHERE ai_provider = 'api'").get() as {
-      c: number
-    }
-  ).c
-  if (apiCount > 0) {
-    database.exec("UPDATE users SET ai_provider = 'anthropic' WHERE ai_provider = 'api'")
   }
   // Per-feature AI backend modes (2026-03)
   if (!hasColumn(database, 'users', 'ai_enrichment_mode')) {
