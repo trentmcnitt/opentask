@@ -7,12 +7,30 @@ export interface SaveTaskResult {
 }
 
 /**
+ * The changes with `ai-failed` added to `labels_remove` when `task` carries it.
+ *
+ * A schedule set by hand makes an earlier AI failure moot: the mark says
+ * "until you edit it", so editing it takes the mark off. Applied by the
+ * reminder editors (`saveReminderDetail`); the task page does not apply it.
+ * `task` may be undefined (the editor no longer holds it) — the changes then
+ * go out unchanged.
+ */
+export function withAiFailedCleared(
+  task: Pick<Task, 'labels'> | undefined,
+  changes: QuickActionPanelChanges,
+): QuickActionPanelChanges {
+  if (!task?.labels.includes('ai-failed')) return changes
+  return { ...changes, labels_remove: [...(changes.labels_remove ?? []), 'ai-failed'] }
+}
+
+/**
  * Shared utility for saving QuickActionPanel changes to ONE task via PATCH, so
  * every single-task editor sends identical payloads and handles errors the
  * same way. Callers:
  * - `useTaskActions` — the dashboard's quick-action popover and the task
  *   detail page (tasks/[id]/page.tsx)
- * - `RemindersView` and `DashboardRemindersPanel` — the reminder detail editor
+ * - `saveReminderDetail` — the reminder detail editor in `RemindersView` and
+ *   `DashboardRemindersPanel`
  * - `saveQuickPanelChanges` — a single-task save from the selection action bar
  *
  * Returns the updated task and the server-generated description for use in toasts.

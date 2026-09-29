@@ -16,7 +16,7 @@ import {
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
-import { saveTaskChanges } from '@/lib/save-task-changes'
+import { saveReminderDetail } from '@/lib/save-reminder-detail'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import { scrollRowIntoView, scrollSectionIntoView } from '@/lib/scroll-row-into-view'
 import { NotesMarker } from '@/components/NotesMarker'
@@ -32,6 +32,11 @@ import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { MIN_SEGMENT_PX } from '@/components/ReminderSlotBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
+import {
+  focusAfterRow,
+  measureLeavingRow,
+  onSurfaceRowAnimationEnd,
+} from '@/components/reminders/row-shell'
 import { QuickAdd } from '@/components/QuickAdd'
 import type { ReminderBulkChanges, ReminderCreateDraft } from '@/components/ReminderDetail'
 import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
@@ -584,32 +589,8 @@ export function RemindersView({
     [refresh],
   )
   const saveDetail = useCallback(
-    async (taskId: number, changes: QuickActionPanelChanges) => {
-      try {
-        // A schedule set by hand makes an earlier AI failure moot: the mark
-        // says "until you edit it", so editing it takes the mark off.
-        const failed = detailTasks.find((t) => t.id === taskId)?.labels.includes('ai-failed')
-        const { description } = await saveTaskChanges(
-          taskId,
-          failed
-            ? { ...changes, labels_remove: [...(changes.labels_remove ?? []), 'ai-failed'] }
-            : changes,
-        )
-        showToast({
-          message: description || 'Reminder updated',
-          type: 'success',
-          action: { label: 'Undo', onClick: onUndo },
-        })
-        onCompleted?.()
-        void refresh()
-      } catch (err) {
-        showToast({
-          message: err instanceof Error && err.message ? err.message : 'Save failed',
-          type: 'error',
-        })
-        throw err
-      }
-    },
+    (taskId: number, changes: QuickActionPanelChanges) =>
+      saveReminderDetail(taskId, changes, { source: detailTasks, onUndo, onCompleted, refresh }),
     [detailTasks, onUndo, onCompleted, refresh],
   )
   // Several at once: each reminder's own new rule in ONE bulk edit, so the
@@ -1873,32 +1854,6 @@ function reminderRowClasses({
 }
 
 /**
- * Move focus off a row that is about to be considered: the next row, else the
- * one before it, else the slot's own header. Keyboard work down a slot should
- * carry on where it was, and focus must never end up on <body>.
- */
-function focusAfterRow(row: HTMLElement): void {
-  const next = row.nextElementSibling as HTMLElement | null
-  const prev = row.previousElementSibling as HTMLElement | null
-  const header = row
-    .closest('[data-slot-group]')
-    ?.querySelector<HTMLElement>('button[aria-expanded]')
-  ;(next ?? prev ?? header)?.focus()
-}
-
-/**
- * Hand the leaving animation the height it has to collapse from.
- *
- * A callback ref rather than an effect: React attaches refs during the commit,
- * before the browser paints, so the row is measured at full size and the first
- * painted frame of the animation already has the value. An effect would run
- * after paint and leave one frame at `height: auto`.
- */
-const measureLeavingRow = (el: HTMLElement | null) => {
-  if (el) el.style.setProperty('--reminder-row-h', `${el.offsetHeight}px`)
-}
-
-/**
  * A row's gestures (Trent, 2026-09-11): "I should be able to just tap reminders
  * pretty much anywhere to mark them done. I can press and hold any item to turn
  * on select mode, a little bit like the way tasks are set up… If you want to
@@ -2004,20 +1959,13 @@ function useReminderRowGestures({
   )
 
   /**
-   * What an animation ending on this row MEANS. The list closes the gap only
-   * once the row has visibly gone, and the deep link's flash is spent once it
-   * has played; both arrive here, so the name is checked rather than assumed.
+   * What an animation ending on this row MEANS — the shared reading in
+   * `onSurfaceRowAnimationEnd` (the list closes the gap once the row has
+   * visibly gone; the deep link's flash is spent once it has played).
    */
   const onAnimationEnd = useCallback(
-    (e: React.AnimationEvent) => {
-      if (e.target !== e.currentTarget) return
-      if (e.animationName === 'reminder-leaving') {
-        if (highlighted) onHighlightDone()
-        onLeft(reminder.id)
-      } else if (e.animationName === 'row-highlight') {
-        onHighlightDone()
-      }
-    },
+    (e: React.AnimationEvent) =>
+      onSurfaceRowAnimationEnd(e, { id: reminder.id, highlighted, onLeft, onHighlightDone }),
     [highlighted, onHighlightDone, onLeft, reminder.id],
   )
 
