@@ -52,7 +52,7 @@ export function getTodaysReminders(
   timezone: string,
   now: Date = new Date(),
 ): Task[] {
-  const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const all = getTasks({ userId, done: false, kind: 'reminder', limit: 1000 })
   const localToday = DateTime.fromJSDate(now).setZone(timezone)
 
   return all.filter((task) => {
@@ -168,7 +168,7 @@ export function getRemindersNotToday(
   timezone: string,
   now: Date = new Date(),
 ): Task[] {
-  const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const all = getTasks({ userId, done: false, kind: 'reminder', limit: 1000 })
   const today = new Set(getTodaysReminders(userId, timezone, now).map((t) => t.id))
   const considered = new Set(getConsideredToday(userId, timezone, now).map((t) => t.id))
   return all.filter((t) => !today.has(t.id) && !considered.has(t.id)).sort((a, b) => a.id - b.id)

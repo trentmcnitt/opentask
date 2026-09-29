@@ -9,7 +9,12 @@ import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { QUOTA_DUE_DATE_MESSAGE, QUOTA_PERIOD_MESSAGE } from '@/core/validation'
+import {
+  QUOTA_DUE_DATE_MESSAGE,
+  QUOTA_PERIOD_MESSAGE,
+  REMINDER_SNOOZE_MESSAGE,
+  TRACKED_REMINDER_MESSAGE,
+} from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 
@@ -72,6 +77,10 @@ function trackField<K extends keyof Task>(
  * - Project access validation
  * - rrule changes with anchor field derivation
  * - due_at changes with snooze detection
+ * - The row invariants every edit path shares, judged on the RESULTING row
+ *   (throws ValidationError): a quota has no date and always a period, is
+ *   never a reminder, and a reminder is never snoozed. Single PATCH, bulk
+ *   edit and period moves all come through here, so none can skip them.
  *
  * Does NOT:
  * - Execute any database writes
@@ -87,34 +96,17 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // §5: what this update leaves behind — a quota, or an ordinary task.
   //
   // Asked of the RESULTING row rather than of the payload, the way the
-  // reminder/track exclusivity check in updateTask is: `is_tracked: false` on
-  // its own retires a quota, and `is_tracked: true` on its own converts a task
-  // into one, and neither request mentions the other's fields.
+  // reminder/track exclusivity check in `assertQuotaInvariants` is:
+  // `is_tracked: false` on its own
+  // retires a quota, and `is_tracked: true` on its own converts a task into
+  // one, and neither request mentions the other's fields.
   const wasTracked = isTracked(task)
   const willBeTracked = isTracked({
     is_tracked: options.input.is_tracked ?? task.is_tracked,
     progress_target: options.input.progress_target ?? task.progress_target,
   })
-
-  // A quota has no due date, so it cannot be given one — by a snooze, by the
-  // task editor, or by a bulk edit that swept it up.
-  if (willBeTracked && options.input.due_at) {
-    throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
-  }
-
-  // A quota always has a period (QUOTA_PERIOD_MESSAGE) — asked of the
-  // resulting row, so it refuses making a period-less task a quota, clearing a
-  // quota's rule, and a bulk edit that would do either (which aborts the whole
-  // batch: a 400, not a skip). A row that is ALREADY a period-less quota (none
-  // exist in production; older data could hold one) stays editable as long as
-  // the write leaves its rule alone — the display paths still handle it.
-  const resultingRrule =
-    options.input.rrule !== undefined ? options.input.rrule : (task.rrule ?? null)
-  const legacyPeriodless =
-    wasTracked && quotaPeriodOf(task.rrule) === null && options.input.rrule === undefined
-  if (willBeTracked && quotaPeriodOf(resultingRrule) === null && !legacyPeriodless) {
-    throw new ValidationError(QUOTA_PERIOD_MESSAGE)
-  }
+  const willBeReminder = options.input.is_reminder ?? task.is_reminder
+  assertQuotaInvariants(task, options.input, willBeTracked, willBeReminder)
 
   // Retiring a quota takes its rule with it.
   //
@@ -151,7 +143,80 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
 
+  // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
+  // enforced here because a bare `{ due_at }` on a dated reminder is a snooze
+  // by every other measure (`isSnoozeScenario`: origin kept, count bumped,
+  // snooze stat) and used to walk straight past it. Here rather than in
+  // updateTask so the single PATCH and bulk edit refuse it alike.
+  //
+  // An EXPLICIT reschedule is still allowed: `reset_original_due_at: true`
+  // with the date (what the date picker sends) is not a snooze — it moves the
+  // occurrence and clears "snoozed from" — so `isSnoozeScenario` is false and
+  // this does not fire. Nor does giving an undated ("anytime") reminder its
+  // first date, or a schedule change that recomputes one (a period move sends
+  // the rule, or the date with `reset_original_due_at`).
+  //
+  // Asked of the RESULTING flag, like the exclusivity guard in
+  // `assertQuotaInvariants`, so
+  // `{ is_reminder: true, due_at }` — convert and snooze in one request — is
+  // refused too; the date has to be an explicit reschedule to travel with it.
+  if (data.isSnoozeScenario && willBeReminder) {
+    throw new ValidationError(
+      `${REMINDER_SNOOZE_MESSAGE}. To move one to a new time, send reset_original_due_at: true with the due_at.`,
+    )
+  }
+
   return data
+}
+
+/**
+ * The quota invariants an edit is refused on up front, all asked of the
+ * RESULTING row (`willBeTracked`, `willBeReminder`) rather than the payload.
+ * Each throws ValidationError, which in a bulk edit aborts the WHOLE batch (a
+ * 400, not a skip). The reminder-snooze refusal needs the collected changes,
+ * so it runs at the end of `collectFieldChanges` instead.
+ */
+function assertQuotaInvariants(
+  task: Task,
+  input: FieldChangesInput,
+  willBeTracked: boolean,
+  willBeReminder: boolean,
+): void {
+  // §5/§6 mutual exclusivity, checked against the RESULTING row rather than the
+  // payload. The schema-level refusal only sees fields sent together, so it
+  // cannot catch "flag this already-tracked task as a reminder" — the single
+  // most likely way to reach the incoherent state from the task editor, where
+  // the toggle sends `is_reminder` alone.
+  //
+  // `isTracked`, not `progress_target > 1`: a quota with target 1 is marked by
+  // the `is_tracked` flag alone ("date night, once a month"), and testing only
+  // the target let the editor toggle flip exactly those quotas into reminders.
+  //
+  // Here rather than in updateTask so bulk edit is held to it too: a bulk
+  // `is_reminder: true` over a selection holding a quota refuses the whole
+  // batch, like the other guards here.
+  if (willBeReminder && willBeTracked) {
+    throw new ValidationError(TRACKED_REMINDER_MESSAGE)
+  }
+
+  // A quota has no due date, so it cannot be given one — by a snooze, by the
+  // task editor, or by a bulk edit that swept it up.
+  if (willBeTracked && input.due_at) {
+    throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
+  }
+
+  // A quota always has a period (QUOTA_PERIOD_MESSAGE) — asked of the
+  // resulting row, so it refuses making a period-less task a quota, clearing a
+  // quota's rule, and a bulk edit that would do either. A row that is ALREADY
+  // a period-less quota (none exist in production; older data could hold one)
+  // stays editable as long as the write leaves its rule alone — the display
+  // paths still handle it.
+  const resultingRrule = input.rrule !== undefined ? input.rrule : (task.rrule ?? null)
+  const legacyPeriodless =
+    isTracked(task) && quotaPeriodOf(task.rrule) === null && input.rrule === undefined
+  if (willBeTracked && quotaPeriodOf(resultingRrule) === null && !legacyPeriodless) {
+    throw new ValidationError(QUOTA_PERIOD_MESSAGE)
+  }
 }
 
 /**

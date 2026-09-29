@@ -15,7 +15,6 @@
  */
 
 import { getDb } from '@/core/db'
-import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { getTasks } from './create'
 
@@ -28,9 +27,13 @@ import { getTasks } from './create'
  * Track panel already sorts through it. Ordering here too would give the two
  * views of the same eight things two different sources of truth, and SQLite's
  * `COLLATE NOCASE` and JS's `localeCompare` do not agree on accented titles.
+ *
+ * `kind: 'quota'` filters in SQL, before the LIMIT. Filtering the first 1000
+ * open tasks in JS instead would silently drop quotas once an account passed
+ * 1000 open tasks.
  */
 export function getQuotas(userId: number): Task[] {
-  return getTasks({ userId, done: false, limit: 1000 }).filter(isTracked)
+  return getTasks({ userId, done: false, kind: 'quota', limit: 1000 })
 }
 
 /**

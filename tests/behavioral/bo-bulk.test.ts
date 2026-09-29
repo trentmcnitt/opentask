@@ -2001,3 +2001,93 @@ describe('Bulk Snooze — the High tier', () => {
     expect(getTaskById(urgent.id)!.due_at).toBe(localTime(18, 0))
   })
 })
+
+/**
+ * BO-006..BO-009: bulk edit is held to the same quota/reminder invariants as
+ * the single PATCH. Both guards used to live only in `updateTask`, so a bulk
+ * edit could flag a quota as a reminder, or convert-and-snooze a dated task,
+ * with nothing stopping it. They now live in `collectFieldChanges`, which
+ * every edit path shares; a violating row refuses the whole batch.
+ */
+describe('Bulk Edit quota/reminder invariants', () => {
+  const base = { userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE }
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  test('BO-006: is_reminder on a quota refuses the whole batch', () => {
+    const quota = createTask({
+      ...base,
+      input: { title: 'Workouts', rrule: 'FREQ=WEEKLY', progress_target: 3 },
+    })
+    const plain = createTask({ ...base, input: { title: 'Plain' } })
+
+    expect(() =>
+      bulkEdit({ ...base, taskIds: [plain.id, quota.id], changes: { is_reminder: true } }),
+    ).toThrow(/both tracked .* and a reminder/)
+    expect(getTaskById(quota.id)!.is_reminder).toBe(false)
+    expect(getTaskById(plain.id)!.is_reminder).toBe(false)
+  })
+
+  test('BO-007: a flag-only (target 1) quota is refused too', () => {
+    const quota = createTask({
+      ...base,
+      input: { title: 'Date night', rrule: 'FREQ=MONTHLY', is_tracked: true },
+    })
+    expect(() =>
+      bulkEdit({ ...base, taskIds: [quota.id], changes: { is_reminder: true } }),
+    ).toThrow(/reminder/)
+    expect(getTaskById(quota.id)!.is_reminder).toBe(false)
+  })
+
+  test('BO-008: converting a dated task to a reminder and snoozing it at once is refused', () => {
+    const task = createTask({ ...base, input: { title: 'Dated', due_at: localTime(8, 0) } })
+
+    expect(() =>
+      bulkEdit({
+        ...base,
+        taskIds: [task.id],
+        changes: { is_reminder: true, due_at: localTime(18, 0) },
+      }),
+    ).toThrow(/Reminders cannot be snoozed/)
+    const after = getTaskById(task.id)!
+    expect(after.is_reminder).toBe(false)
+    expect(after.due_at).toBe(localTime(8, 0))
+    expect(after.snooze_count).toBe(0)
+  })
+
+  test('BO-009: moving reminders between periods still passes', () => {
+    // What the Reminders page's multi-edit sends: each reminder's new rule
+    // per task, no date.
+    const a = createTask({
+      ...base,
+      input: { title: 'Stretch', is_reminder: true, rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0' },
+    })
+    const b = createTask({
+      ...base,
+      input: { title: 'Water', is_reminder: true, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
+    })
+
+    const result = bulkEdit({
+      ...base,
+      taskIds: [a.id, b.id],
+      changes: {},
+      perTask: {
+        [a.id]: { rrule: 'FREQ=DAILY;BYHOUR=19;BYMINUTE=0' },
+        [b.id]: { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=0' },
+      },
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(getTaskById(a.id)!.rrule).toBe('FREQ=DAILY;BYHOUR=19;BYMINUTE=0')
+    expect(getTaskById(b.id)!.rrule).toBe('FREQ=DAILY;BYHOUR=20;BYMINUTE=0')
+    expect(getTaskById(a.id)!.snooze_count).toBe(0)
+  })
+})
