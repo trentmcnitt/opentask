@@ -17,7 +17,7 @@ import type { Task, Project } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { cn } from '@/lib/utils'
 import { isFlatGrouping, type SortOption, type SortedTaskGroup } from '@/lib/task-grouping'
-import { isTracked } from '@/lib/track'
+import { isOverdue } from '@/lib/task-counts'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
@@ -229,9 +229,10 @@ export function TaskList({
     }
   }, [selection.isSelectionMode])
 
-  // Swipe-left behavior depends on whether the task is overdue:
+  // Swipe-left behavior depends on whether the task is overdue (`isOverdue`):
   // - Overdue: snooze with default option (push forward from now)
-  // - Future or no due date: open QuickActionPanel (nothing to "snooze")
+  // - Future or no due date: open QuickActionPanel (nothing to "snooze").
+  //   A quota is never overdue, so it always gets this edit action (D13).
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
 
   // Every snooze originating from this list is a single-task interactive
@@ -299,7 +300,7 @@ export function TaskList({
 
   const handleSwipeLeft = useCallback(
     (task: Task) => {
-      if (isTaskOverdue(task, now)) {
+      if (isOverdue(task, now)) {
         const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
         requestSnooze(task, until)
       } else {
@@ -376,7 +377,7 @@ export function TaskList({
         key={task.id}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
-        leftAction={isTaskOverdue(task, now) ? 'snooze' : 'edit'}
+        leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
         onDragStart={() => cancelRef.current?.()}
         disabled={selection.isSelectionMode}
       >
@@ -384,10 +385,11 @@ export function TaskList({
           task={task}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
-          // §5: a quota is exempt from the overdue cadence and
-          // must never wear the red stripe — its period is what
-          // is "due", and the bar already says how it stands.
-          isOverdue={!isTracked(task) && isTaskOverdue(task, now)}
+          // `isOverdue` is the Tasks page's one definition (the
+          // top bar's pills use it too). §5: it never counts a
+          // quota — its period is what is "due", and the bar
+          // already says how it stands — so no red stripe there.
+          isOverdue={isOverdue(task, now)}
           isSelected={selection.selectedIds.has(task.id)}
           isSelectionMode={selection.isSelectionMode}
           onSelect={() => selection.toggle(task.id)}
@@ -588,11 +590,6 @@ export function TaskList({
       <SnoozeGuardDialog {...dialogProps} />
     </div>
   )
-}
-
-export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
-  if (!task.due_at) return false
-  return new Date(task.due_at) < now
 }
 
 function GroupCheckbox({
