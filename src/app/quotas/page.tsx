@@ -7,11 +7,10 @@ import { Header } from '@/components/Header'
 import { QuotasView } from '@/components/QuotasView'
 import { QuotasSummary, QuotasViewSwitch, type QuotasPageView } from '@/components/QuotasSummary'
 import { useQuotasPagePreference } from '@/components/PreferencesProvider'
-import { useTaskActions, type ListTaskActionsReturn } from '@/hooks/useTaskActions'
+import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useTimezone } from '@/hooks/useTimezone'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
-import type { Task } from '@/types'
 
 /**
  * Quotas as a route (REDESIGN-V03 §5).
@@ -50,9 +49,6 @@ import type { Task } from '@/types'
  * next plain visit opens wherever the user left it.
  */
 
-/** `useTaskActions` in list mode wants an array; only its undo half is used. */
-const NO_TASKS: Task[] = []
-
 export default function QuotasPage() {
   const { status } = useSession()
   const router = useRouter()
@@ -66,12 +62,7 @@ export default function QuotasPage() {
     refreshRef.current?.()
   }, [])
 
-  const actions = useTaskActions({
-    mode: 'list',
-    onRefresh: refresh,
-    tasks: NO_TASKS,
-    setTasks: () => {},
-  }) as ListTaskActionsReturn
+  const actions = useUndoRedo({ onRefresh: refresh })
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 

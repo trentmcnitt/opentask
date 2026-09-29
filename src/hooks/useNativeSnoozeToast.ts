@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { showToast } from '@/lib/toast'
 import { bulkSnoozeMessage } from '@/lib/snooze'
+import { postUndoRedo } from '@/lib/undo-client'
 import { APP_ACTIVE_EVENT } from '@/hooks/useSyncStream'
 
 /** The event the iOS app fires once a Home Screen quick action's snooze lands. */
@@ -38,10 +39,11 @@ declare global {
  * this hook — then the global is read on mount — while a warm launch has the
  * page up already and the event is what arrives.
  *
- * Undo is a plain `POST /api/undo`, not the page's session-scoped undo: that
- * one only reaches actions newer than the page's load, and on a cold launch
- * the snooze can land before the page records where its session starts. The
- * toast appears the moment the snooze lands, so the latest action is it.
+ * Undo is an unscoped `postUndoRedo('undo', null)`, not the page's
+ * session-scoped undo: that one only reaches actions newer than the page's
+ * load, and on a cold launch the snooze can land before the page records where
+ * its session starts. The toast appears the moment the snooze lands, so the
+ * latest action is it.
  * Mounted once, in the app's `Toaster` (see the comment there), so it works on
  * whichever page is showing.
  */
@@ -77,14 +79,13 @@ export function useNativeSnoozeToast() {
 
 async function undoLatest() {
   try {
-    const res = await fetch('/api/undo', { method: 'POST' })
-    if (!res.ok) {
+    const data = await postUndoRedo('undo', null)
+    if (!data) {
       showToast({ message: 'Nothing to undo' })
       return
     }
-    const data = await res.json()
     window.dispatchEvent(new CustomEvent(APP_ACTIVE_EVENT))
-    showToast({ message: `Undid: ${data.data.description}`, type: 'success' })
+    showToast({ message: `Undid: ${data.description}`, type: 'success' })
   } catch {
     showToast({ message: 'Undo failed', type: 'error' })
   }
