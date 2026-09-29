@@ -20,7 +20,6 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
 import { nextPeriodStart, nextSlotStart } from '@/lib/time-slot-assign'
@@ -101,37 +100,18 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     // bulkSnooze handles priority filtering internally: P0-P2 always, P3 (High)
     // once nothing lower is left in the batch, P4 never — unless explicitly
     // included via includeTaskIds. See `filterForBulkSnooze`.
+    //
+    // It also dismisses the moved tasks' notifications. `dueBeforeIds` hands it
+    // the due set measured above, so the badge count after the sweep comes
+    // from arithmetic instead of another rrule walk (`stillDueAfterSnooze`).
     const result = bulkSnooze({
       userId: user.id,
       userTimezone: user.timezone,
       taskIds,
       until,
       includeTaskIds,
+      dueBeforeIds: dueNow,
     })
-
-    // Dismiss only the tasks that were actually snoozed, not tasks that were
-    // skipped by priority filtering (P4 Urgent may still be overdue).
-    //
-    // PERF (2026-09-06): this used to walk `getCurrentlyDueTaskIds()` a second
-    // time and diff, and `dismissNotificationsForTasks` then walked it a THIRD
-    // time for the badge. Each walk evaluates an rrule per recurring task —
-    // measured at 69ms on Trent's 512-task/193-recurring account, so ~208ms of
-    // the request was the same question asked three times. `bulkSnooze` already
-    // knows exactly which ids it moved, and the surviving overdue count follows
-    // from arithmetic: everything snoozed went to `until`, which is in the
-    // future, so what stays due is precisely what was due and did not move.
-    if (result.tasksAffected > 0) {
-      // The arithmetic only holds while `until` is genuinely in the future.
-      // bulkSnooze deliberately permits a past target ("tasks will just appear
-      // overdue immediately"), and in that case a snoozed task is still due —
-      // so fall back to measuring rather than report a badge that is too low.
-      const untilIsFuture = new Date(until).getTime() > Date.now()
-      const snoozedSet = new Set(result.snoozedIds)
-      const stillOverdue = untilIsFuture
-        ? dueNow.filter((id) => !snoozedSet.has(id)).length
-        : undefined
-      dismissNotificationsForTasks(user.id, result.snoozedIds, stillOverdue)
-    }
 
     notifyDemoEngagement(user.name, 'update')
     return success({

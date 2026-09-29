@@ -12,6 +12,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
@@ -250,6 +251,12 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   })
 
   emitSyncEvent(userId)
+  // The completed items are handled, so their banners go too. A prompt-only
+  // batch completes no task and leaves notifications (and the badge) alone.
+  dismissNotificationsForTasks(
+    userId,
+    tasks.map((t) => t.id),
+  )
   dispatchProgressed(userId, result.progressed)
 
   for (const task of tasks) {
@@ -354,6 +361,13 @@ export interface BulkSnoozeOptions {
   deltaMinutes?: number
   /** Task IDs to include regardless of priority (bypasses the High/Urgent filter) */
   includeTaskIds?: number[]
+  /**
+   * The ids that were currently due just before this snooze, when the caller
+   * has already measured them (`getCurrentlyDueTaskIds`). Lets the post-snooze
+   * badge count be worked out by arithmetic instead of measured again — see
+   * the dismissal at the end of `bulkSnooze`.
+   */
+  dueBeforeIds?: number[]
 }
 
 export interface BulkSnoozeResult {
@@ -401,7 +415,8 @@ export interface BulkSnoozeResult {
  * nothing lower is left in the batch, P4 never.
  */
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
-  const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds } = options
+  const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds, dueBeforeIds } =
+    options
 
   if (taskIds.length === 0) {
     return {
@@ -566,6 +581,11 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   })
 
   emitSyncEvent(userId)
+  dismissNotificationsForTasks(
+    userId,
+    result.snoozedIds,
+    stillDueAfterSnooze(dueBeforeIds, result.snoozedIds, until),
+  )
 
   for (const task of snoozeable) {
     const fresh = getTaskById(task.id)
@@ -578,6 +598,39 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   }
 
   return result
+}
+
+/**
+ * The overdue count after a snooze, when it can be known without measuring.
+ *
+ * Only the tasks actually moved (`snoozedIds`) have their notifications
+ * dismissed — a P4 the priority filter skipped may still be overdue and keep
+ * its banner.
+ *
+ * PERF (2026-09-06): the snooze-overdue sweep used to walk
+ * `getCurrentlyDueTaskIds()` a second time and diff, and the dismissal then
+ * walked it a THIRD time for the badge. Each walk evaluates an rrule per
+ * recurring task — measured at 69ms on a 512-task/193-recurring account, so
+ * ~208ms of the request was the same question asked three times. When the
+ * caller already measured what was due (`dueBeforeIds`), the surviving count
+ * follows from arithmetic: everything snoozed went to `until`, so what stays
+ * due is precisely what was due and did not move.
+ *
+ * That only holds while `until` is an absolute time genuinely in the future.
+ * bulkSnooze deliberately permits a past target ("tasks will just appear
+ * overdue immediately"), and a relative move can land anywhere, so in those
+ * cases this returns undefined and the badge is measured — rather than report
+ * one that is too low.
+ */
+function stillDueAfterSnooze(
+  dueBeforeIds: number[] | undefined,
+  snoozedIds: number[],
+  until: string | undefined,
+): number | undefined {
+  if (!dueBeforeIds || until === undefined) return undefined
+  if (new Date(until).getTime() <= Date.now()) return undefined
+  const snoozed = new Set(snoozedIds)
+  return dueBeforeIds.filter((id) => !snoozed.has(id)).length
 }
 
 /** Type alias for bulk edit changes — same as FieldChangesInput (TaskUpdateInput + label operations) */
@@ -930,6 +983,12 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   })
 
   emitSyncEvent(userId)
+  // Only a task whose date actually moved has a stale notification; a
+  // priority or label edit leaves the banner as true as it was.
+  dismissNotificationsForTasks(
+    userId,
+    [...perTaskFields].filter(([, fields]) => fields.includes('due_at')).map(([id]) => id),
+  )
 
   for (const snapshot of snapshots) {
     const fresh = getTaskById(snapshot.task_id)
@@ -1006,6 +1065,10 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
   })
 
   emitSyncEvent(userId)
+  dismissNotificationsForTasks(
+    userId,
+    tasks.map((t) => t.id),
+  )
 
   for (const task of tasks) {
     dispatchWebhookEvent(userId, 'task.deleted', { task_id: task.id, title: task.title })
