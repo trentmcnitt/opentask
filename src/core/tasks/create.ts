@@ -10,6 +10,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { getInboxId } from '@/core/projects'
 import { syncBadgeCount } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
@@ -79,13 +80,11 @@ export function createTask(options: CreateTaskOptions): Task {
   // Get user's inbox project if no project_id specified
   let projectId = input.project_id
   if (!projectId) {
-    const inbox = db
-      .prepare('SELECT id FROM projects WHERE owner_id = ? AND name = ?')
-      .get(userId, 'Inbox') as { id: number } | undefined
-    if (!inbox) {
+    const inboxId = getInboxId(userId)
+    if (inboxId === null) {
       throw new Error('User inbox project not found')
     }
-    projectId = inbox.id
+    projectId = inboxId
   }
 
   // Validate project exists and user has access
