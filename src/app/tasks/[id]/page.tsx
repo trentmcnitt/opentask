@@ -6,8 +6,9 @@ import { ChevronLeft, Undo2, Redo2, Menu, Settings } from 'lucide-react'
 import { TaskDetail } from '@/components/TaskDetail'
 import { ReminderDetail } from '@/components/ReminderDetail'
 import { QuotaDetail } from '@/components/QuotaDetail'
-import { isTracked } from '@/lib/track'
-import { cn } from '@/lib/utils'
+import { taskKind, type TaskKind } from '@/lib/track'
+import { DirtyCard } from '@/components/DirtyCard'
+import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -16,16 +17,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { GuardedLink } from '@/components/GuardedLink'
@@ -40,6 +31,19 @@ import { useAiInsights } from '@/hooks/useAiInsights'
 import { useInsightsData } from '@/hooks/useInsightsData'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream, type EnrichmentCompleteData } from '@/hooks/useSyncStream'
+import { useEditorHost } from '@/hooks/useEditorHost'
+
+/**
+ * What differs by kind: where "back" (and "done", and "deleted") lead, what
+ * the header says, and the noun in the trash toast. A reminder's home is the
+ * Reminders surface, a quota's the Quotas surface, a task's the dashboard.
+ * Trent (2026-09-05): back from a reminder's details landed on Tasks.
+ */
+const KIND: Record<TaskKind, { home: string; back: string; title: string; noun: string }> = {
+  quota: { home: '/quotas', back: 'Back to quotas', title: 'Quota', noun: 'Quota' },
+  reminder: { home: '/reminders', back: 'Back to reminders', title: 'Reminder', noun: 'Reminder' },
+  task: { home: '/', back: 'Back to dashboard', title: 'Task Details', noun: 'Task' },
+}
 
 export default function TaskDetailPage() {
   const { ready } = useRequireSession()
@@ -60,25 +64,50 @@ export default function TaskDetailPage() {
   // so sidebar/bottom tab links show a confirmation dialog before navigating away.
   const { setDirty, pendingNavigation, requestNavigation, clearPendingNavigation } =
     useNavigationGuard()
-  const saveRef = useRef<(() => Promise<void> | void) | null>(null)
-
-  const isDirtyRef = useRef(false)
   const pendingRefreshRef = useRef(false)
-  // Rendered state for the reminder card's dirty stripe (the ref above is for
-  // the refresh logic and does not re-render).
-  const [panelDirty, setPanelDirty] = useState(false)
+
+  // Task-only refresh for SSE sync events (projects rarely change)
+  const refreshTask = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setTask(data.data as Task)
+    } catch {
+      // Silently ignore sync refresh failures — next sync will retry
+    }
+  }, [taskId])
+
+  // Beyond the ref and the stripe (useEditorHost), a dirtiness report also
+  // reaches the app-level navigation guard, and a clean report flushes a
+  // refresh deferred while there were edits.
+  const handleDirtyReport = useCallback(
+    (dirty: boolean) => {
+      setDirty(dirty)
+      if (!dirty && pendingRefreshRef.current) {
+        pendingRefreshRef.current = false
+        refreshTask()
+      }
+    },
+    [setDirty, refreshTask],
+  )
+  const {
+    isDirty: panelDirty,
+    dirtyRef: isDirtyRef,
+    onDirtyChange: handleDirtyChange,
+    saveRef,
+    commit,
+  } = useEditorHost(handleDirtyReport)
 
   // Clean up guard registration on unmount
   useEffect(() => {
     return () => setDirty(false)
   }, [setDirty])
 
-  // Where "back" (and "done", and "deleted") lead: a reminder's home is the
-  // Reminders surface, a task's is the Tasks page. Trent (2026-09-05): back
-  // from a reminder's details landed on Tasks. Read through a ref so the
-  // callbacks handed to useTaskActions see the task after it loads.
+  // Where "back" (and "done", and "deleted") lead — see KIND. Read through a
+  // ref so the callbacks handed to useTaskActions see the task after it loads.
   const homeRef = useRef('/')
-  homeRef.current = task?.is_reminder ? '/reminders' : task && isTracked(task) ? '/quotas' : '/'
+  homeRef.current = task ? KIND[taskKind(task)].home : '/'
 
   const handleBackClick = useCallback(() => {
     if (requestNavigation(homeRef.current)) {
@@ -103,7 +132,7 @@ export default function TaskDetailPage() {
 
   const handleSaveAndLeave = useCallback(async () => {
     saveLandedRef.current = false
-    await saveRef.current?.()
+    await commit()
     if (!saveLandedRef.current) {
       clearPendingNavigation()
       return
@@ -114,7 +143,7 @@ export default function TaskDetailPage() {
     const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
-  }, [pendingNavigation, clearPendingNavigation, router])
+  }, [commit, pendingNavigation, clearPendingNavigation, router])
 
   const numericTaskId = Number(taskId)
 
@@ -151,18 +180,6 @@ export default function TaskDetailPage() {
     }
   }, [taskId, router])
 
-  // Task-only refresh for SSE sync events (projects rarely change)
-  const refreshTask = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`)
-      if (!res.ok) return
-      const data = await res.json()
-      setTask(data.data as Task)
-    } catch {
-      // Silently ignore sync refresh failures — next sync will retry
-    }
-  }, [taskId])
-
   // Refresh or defer based on dirty state. When dirty, queues a refresh
   // that fires when the panel becomes clean (save or cancel).
   const refreshOrDefer = useCallback(() => {
@@ -171,20 +188,7 @@ export default function TaskDetailPage() {
     } else {
       pendingRefreshRef.current = true
     }
-  }, [refreshTask])
-
-  const handleDirtyChange = useCallback(
-    (dirty: boolean) => {
-      isDirtyRef.current = dirty
-      setPanelDirty(dirty)
-      setDirty(dirty)
-      if (!dirty && pendingRefreshRef.current) {
-        pendingRefreshRef.current = false
-        refreshTask()
-      }
-    },
-    [setDirty, refreshTask],
-  )
+  }, [isDirtyRef, refreshTask])
 
   useEffect(() => {
     if (ready) fetchTask()
@@ -211,7 +215,7 @@ export default function TaskDetailPage() {
         showToast({ message: `AI enriched: ${data.title}`, type: 'success' })
       }
     },
-    [refreshOrDefer, numericTaskId],
+    [isDirtyRef, refreshOrDefer, numericTaskId],
   )
 
   useSyncStream({
@@ -237,11 +241,7 @@ export default function TaskDetailPage() {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
       showToast({
-        message: task.is_reminder
-          ? 'Reminder moved to trash'
-          : isTracked(task)
-            ? 'Quota moved to trash'
-            : 'Task moved to trash',
+        message: `${KIND[taskKind(task)].noun} moved to trash`,
         type: 'success',
         action: { label: 'Undo', onClick: actions.handleUndo },
       })
@@ -292,6 +292,7 @@ export default function TaskDetailPage() {
   if (!task) return null
 
   const project = projects.find((p) => p.id === task.project_id)
+  const kind = taskKind(task)
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -303,22 +304,14 @@ export default function TaskDetailPage() {
               variant="ghost"
               size="icon"
               onClick={handleBackClick}
-              aria-label={
-                task.is_reminder
-                  ? 'Back to reminders'
-                  : isTracked(task)
-                    ? 'Back to quotas'
-                    : 'Back to dashboard'
-              }
+              aria-label={KIND[kind].back}
               className="-ml-2"
             >
               <ChevronLeft className="size-5" />
             </Button>
 
             {/* Title - takes remaining space */}
-            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">
-              {task.is_reminder ? 'Reminder' : isTracked(task) ? 'Quota' : 'Task Details'}
-            </h1>
+            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{KIND[kind].title}</h1>
 
             {/* Undo button */}
             <Tooltip>
@@ -360,18 +353,13 @@ export default function TaskDetailPage() {
         </header>
 
         <main className="mx-auto w-full max-w-2xl px-4 py-6">
-          {isTracked(task) ? (
+          {kind === 'quota' ? (
             /* A quota gets its own editor (§5). It used to fall through to the
                task editor, which showed it a due date, a snooze grid and a
                Done button — none of which mean anything for "four times a
                week", and all of which implied a debt the app never chases
                (Trent, 2026-09-06). */
-            <div
-              className={cn(
-                'rounded-lg border p-3',
-                panelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-              )}
-            >
+            <DirtyCard dirty={panelDirty}>
               <QuotaDetail
                 key={task.id}
                 tasks={[task]}
@@ -380,18 +368,13 @@ export default function TaskDetailPage() {
                 onDirtyChange={handleDirtyChange}
                 saveRef={saveRef}
               />
-            </div>
-          ) : task.is_reminder ? (
+            </DirtyCard>
+          ) : kind === 'reminder' ? (
             /* A reminder gets its own editor (§6) — the same component the
                Reminders bar opens in a dialog — in the same card the task
                editor sits in, dirty stripe included. "Make this a task" flips
                the flag and this page becomes the task editor in place. */
-            <div
-              className={cn(
-                'rounded-lg border p-3',
-                panelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-              )}
-            >
+            <DirtyCard dirty={panelDirty}>
               <ReminderDetail
                 key={task.id}
                 tasks={[task]}
@@ -401,7 +384,7 @@ export default function TaskDetailPage() {
                 onDirtyChange={handleDirtyChange}
                 saveRef={saveRef}
               />
-            </div>
+            </DirtyCard>
           ) : (
             <TaskDetail
               task={task}
@@ -409,6 +392,7 @@ export default function TaskDetailPage() {
               projects={projects}
               onDelete={handleDelete}
               onMarkDone={actions.handleDone}
+              dirty={panelDirty}
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}
               onSaveAll={handleSaveAll}
@@ -419,28 +403,14 @@ export default function TaskDetailPage() {
         </main>
 
         {/* Unsaved changes confirmation dialog — shown when navigation is attempted while dirty */}
-        <AlertDialog
+        <UnsavedChangesDialog
           open={pendingNavigation !== null}
           onOpenChange={(open) => {
             if (!open) clearPendingNavigation()
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-              <AlertDialogDescription>
-                You have unsaved changes. What would you like to do?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction variant="outline" onClick={handleConfirmLeave}>
-                Don&apos;t Save
-              </AlertDialogAction>
-              <AlertDialogAction onClick={handleSaveAndLeave}>Save</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          onDiscard={handleConfirmLeave}
+          onSave={handleSaveAndLeave}
+        />
       </div>
     </TooltipProvider>
   )

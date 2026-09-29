@@ -25,6 +25,20 @@ export function isTracked(task: Pick<Task, 'progress_target' | 'is_tracked'>): b
   return task.is_tracked === true || (task.progress_target ?? 1) > 1
 }
 
+export type TaskKind = 'quota' | 'reminder' | 'task'
+
+/**
+ * Which of the three things a task row is — each has its own editor, its own
+ * home surface and its own noun. Quota is checked first, matching the order
+ * the task page picks an editor in.
+ */
+export function taskKind(
+  task: Pick<Task, 'progress_target' | 'is_tracked' | 'is_reminder'>,
+): TaskKind {
+  if (isTracked(task)) return 'quota'
+  return task.is_reminder ? 'reminder' : 'task'
+}
+
 export interface TrackState {
   current: number
   target: number
