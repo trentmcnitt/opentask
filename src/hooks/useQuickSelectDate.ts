@@ -92,7 +92,7 @@ export function useQuickSelectDate({
   const headerText = formatQuickSelectHeader(workingDate, timezone)
   const isPast = new Date(workingDate) < now
 
-  const relativeText = formatRelativeTime(workingDate, now)
+  const relativeText = formatRelativeTime(workingDate, now, timezone)
 
   // Compute delta from actual difference between initialDate and workingDate.
   // This works for all change types (preset, relative, smart buttons) and

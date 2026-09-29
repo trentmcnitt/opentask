@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { formatRelativeTime } from '@/lib/quick-select-dates'
+import { useTimezone } from '@/hooks/useTimezone'
 import { showToast, showAiSuccessToast, showErrorToast } from '@/lib/toast'
 import type { WhatsNextResult } from '@/core/ai/types'
 import type { Task } from '@/types'
@@ -36,6 +37,7 @@ export interface UseAiInsightsReturn {
  * - Silent failure on 503 (AI disabled) — returns empty maps
  */
 export function useAiInsights(tasks: Task[], enabled = true): UseAiInsightsReturn {
+  const timezone = useTimezone()
   const [data, setData] = useState<WhatsNextResult | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -105,7 +107,9 @@ export function useAiInsights(tasks: Task[], enabled = true): UseAiInsightsRetur
   const aiTaskIds = useMemo(() => new Set(annotationMap.keys()), [annotationMap])
 
   const summary = data?.summary || null
-  const freshnessText = data?.generated_at ? formatRelativeTime(data.generated_at) : null
+  const freshnessText = data?.generated_at
+    ? formatRelativeTime(data.generated_at, undefined, timezone)
+    : null
   const hasData = annotationMap.size > 0
 
   const refresh = useCallback(() => {
