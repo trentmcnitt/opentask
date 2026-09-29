@@ -16,6 +16,17 @@ interface PushPayload {
   data?: { url?: string; taskId?: number }
   tag?: string
   test?: boolean
+  /** Show without sound or vibration (`showNotification`'s `silent`, in public/sw.js). */
+  silent?: boolean
+}
+
+/**
+ * Delivery options for the push service. `urgency: 'low'` lets the service
+ * hold the message until the device is awake or charging — for pushes that
+ * inform rather than interrupt (the "AI finished" notification).
+ */
+interface PushSendOptions {
+  urgency?: 'very-low' | 'low' | 'normal' | 'high'
 }
 
 interface PushSubscriptionRow {
@@ -34,7 +45,11 @@ export function isWebPushConfigured(): boolean {
  * Shared between regular notifications and dismiss signals.
  * Cleans up stale subscriptions (410/404) automatically.
  */
-async function sendToAllSubscriptions(userId: number, jsonPayload: string): Promise<void> {
+async function sendToAllSubscriptions(
+  userId: number,
+  jsonPayload: string,
+  options?: PushSendOptions,
+): Promise<void> {
   const db = getDb()
   const subscriptions = db
     .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?')
@@ -51,6 +66,7 @@ async function sendToAllSubscriptions(userId: number, jsonPayload: string): Prom
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
           jsonPayload,
+          options,
         )
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number }).statusCode
@@ -73,7 +89,11 @@ async function sendToAllSubscriptions(userId: number, jsonPayload: string): Prom
   }
 }
 
-export async function sendPushNotification(userId: number, payload: PushPayload): Promise<void> {
+export async function sendPushNotification(
+  userId: number,
+  payload: PushPayload,
+  options?: PushSendOptions,
+): Promise<void> {
   if (!isWebPushConfigured()) {
     log.warn('web-push', 'VAPID keys not configured, skipping push')
     return
@@ -85,7 +105,7 @@ export async function sendPushNotification(userId: number, payload: PushPayload)
     }
   ).c
   log.info('web-push', `Sending notification to ${count} subscription(s) for user ${userId}`)
-  await sendToAllSubscriptions(userId, JSON.stringify(payload))
+  await sendToAllSubscriptions(userId, JSON.stringify(payload), options)
 }
 
 /**

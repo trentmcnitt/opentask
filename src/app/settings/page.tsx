@@ -88,6 +88,8 @@ export default function SettingsPage() {
   const {
     notificationsEnabled,
     setNotificationsEnabled,
+    enrichmentNotificationsEnabled,
+    setEnrichmentNotificationsEnabled,
     criticalAlertVolume,
     setCriticalAlertVolume,
   } = useNotificationConfig()
@@ -218,6 +220,17 @@ export default function SettingsPage() {
         apply: () => setNotificationsEnabled(checked),
         revert: () => setNotificationsEnabled(prev),
         successMessage: checked ? 'Notifications enabled' : 'Notifications disabled',
+      },
+    )
+  }
+
+  const handleEnrichmentNotificationsChange = (checked: boolean) => {
+    const prev = enrichmentNotificationsEnabled
+    return savePreference(
+      { enrichment_notifications_enabled: checked },
+      {
+        apply: () => setEnrichmentNotificationsEnabled(checked),
+        revert: () => setEnrichmentNotificationsEnabled(prev),
       },
     )
   }
@@ -531,6 +544,25 @@ export default function SettingsPage() {
               aria-label="Toggle notifications"
             />
           </div>
+          {/* The quiet "AI finished" push (src/core/notifications/enrichment-notify.ts).
+              Only where AI runs, like the AI section below; greyed out while
+              notifications as a whole are off, since the server sends none then. */}
+          {aiAvailable && (
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-sm">Notify when AI finishes a new task</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  A quiet notification with what AI filled in — project, due date, priority
+                </div>
+              </div>
+              <Switch
+                checked={enrichmentNotificationsEnabled}
+                disabled={!notificationsEnabled}
+                onCheckedChange={(checked) => void handleEnrichmentNotificationsChange(checked)}
+                aria-label="Notify when AI finishes a new task"
+              />
+            </div>
+          )}
           <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
             How often to repeat notifications for overdue tasks, by priority tier.
           </p>

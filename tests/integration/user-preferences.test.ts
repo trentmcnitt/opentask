@@ -442,6 +442,8 @@ describe('round trip: every remaining preference', () => {
     { field: 'morning_time', initial: '09:00', next: '07:45', invalid: '24:00' },
     { field: 'default_snooze_option', initial: '60', next: 'tomorrow', invalid: '0' },
     { field: 'quota_prompts_enabled', initial: true, next: false, invalid: 'off' },
+    // The quiet "AI finished" push for a just-added task: on unless turned off.
+    { field: 'enrichment_notifications_enabled', initial: true, next: false, invalid: 1 },
   ]
 
   async function readPref(field: string): Promise<unknown> {
