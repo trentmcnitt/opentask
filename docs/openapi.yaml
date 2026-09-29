@@ -251,6 +251,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -313,6 +315,8 @@ paths:
                           message:
                             type: string
                             example: Task moved to trash
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -397,6 +401,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -453,6 +459,12 @@ paths:
                           description:
                             type: string
                             example: '3/2'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/tasks/{id}/skip-occurrence:
     parameters:
@@ -492,6 +504,12 @@ paths:
                             type: boolean
                           description:
                             type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/tasks/{id}/confirm:
     parameters:
@@ -519,6 +537,12 @@ paths:
                         properties:
                           confirmed:
                             type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/labels:
     get:
@@ -832,6 +856,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -855,6 +881,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1656,6 +1684,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2173,6 +2203,8 @@ paths:
                     properties:
                       deleted:
                         type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2205,6 +2237,8 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/WebhookDelivery'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2315,6 +2349,8 @@ paths:
                     properties:
                       deleted:
                         type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -3567,6 +3603,7 @@ components:
       name: id
       in: path
       required: true
+      description: Digits only. A malformed id (e.g. `abc` or `12abc`) is a 400 on every `{id}` route.
       schema:
         type: integer
 

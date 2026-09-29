@@ -7,33 +7,14 @@
  * data is useful for prompt tuning and cost analysis).
  */
 
-import { getDb } from '@/core/db'
-import { log } from '@/lib/logger'
-
-const DEFAULT_RETENTION_DAYS = 90
+import { purgeOlderThan } from '@/core/db/purge'
 
 export function purgeOldAIActivity(): number {
-  const retentionDays = parseInt(
-    process.env.OPENTASK_RETENTION_AI_ACTIVITY_DAYS || String(DEFAULT_RETENTION_DAYS),
-    10,
-  )
-
-  const db = getDb()
-
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
-  const cutoffIso = cutoffDate.toISOString()
-
-  const result = db
-    .prepare(`DELETE FROM ai_activity_log WHERE datetime(created_at) < datetime(?)`)
-    .run(cutoffIso)
-
-  if (result.changes > 0) {
-    log.info(
-      'cron',
-      `Deleted ${result.changes} AI activity log entries older than ${retentionDays} days`,
-    )
-  }
-
-  return result.changes
+  return purgeOlderThan({
+    table: 'ai_activity_log',
+    column: 'created_at',
+    envVar: 'OPENTASK_RETENTION_AI_ACTIVITY_DAYS',
+    defaultDays: 90,
+    label: 'AI activity log entries',
+  })
 }

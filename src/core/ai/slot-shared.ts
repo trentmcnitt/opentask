@@ -81,11 +81,8 @@ export function validateSchemaWarmup(
   return validateWarmup(text)
 }
 
-/** Parse an integer from an env var with a default fallback. Returns the default if the value is not a valid integer. */
-export function parseEnvInt(envVar: string | undefined, defaultValue: number): number {
-  const parsed = parseInt(envVar || '', 10)
-  return isNaN(parsed) ? defaultValue : parsed
-}
+/** Re-exported for the slot modules, which import it from here. It lives in `@/lib/env`. */
+export { parseEnvInt } from '@/lib/env'
 
 /**
  * Compute the cooldown duration before the slot may attempt re-init.

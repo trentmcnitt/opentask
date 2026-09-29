@@ -5,8 +5,16 @@
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, forbidden, notFound, handleError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import {
+  success,
+  forbidden,
+  badRequest,
+  notFound,
+  handleError,
+  parseRouteId,
+} from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -22,10 +30,8 @@ export const DELETE = withLogging(async function DELETE(
       return forbidden('API tokens cannot be deleted in demo mode')
     }
     const { id } = await context.params
-    const tokenId = parseInt(id)
-    if (isNaN(tokenId)) {
-      return notFound('Token not found')
-    }
+    const tokenId = parseRouteId(id)
+    if (tokenId === null) return badRequest('Invalid token ID')
 
     const db = getDb()
     const result = db
@@ -38,8 +44,7 @@ export const DELETE = withLogging(async function DELETE(
 
     return success({ deleted: true })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'DELETE /api/tokens/:id error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'DELETE /api/tokens/:id error:', err)
     return handleError(err)
   }
 })

@@ -9,6 +9,7 @@ import { auth } from '@/app/api/auth/[...nextauth]/auth'
 import { extractBearerToken, validateBearerToken } from './bearer'
 import { getProxyAuthUser } from './proxy'
 import { toAuthUser } from './helpers'
+import { AuthError } from '@/core/errors'
 import type { AuthUser } from '@/types'
 
 export { validateBearerToken, extractBearerToken } from './bearer'
@@ -77,21 +78,14 @@ export async function requireAuth(request: NextRequest): Promise<AuthUser> {
   const user = await getAuthUser(request)
 
   if (!user) {
-    throw new AuthError('Authentication required', 'UNAUTHORIZED')
+    throw new AuthError('Authentication required')
   }
 
   return user
 }
 
 /**
- * Authentication error class
+ * Authentication error class. It lives in `@/core/errors` as an `AppError`
+ * (401, UNAUTHORIZED), so `handleError()` maps it without a per-route branch.
  */
-export class AuthError extends Error {
-  constructor(
-    message: string,
-    public code: 'UNAUTHORIZED' | 'FORBIDDEN',
-  ) {
-    super(message)
-    this.name = 'AuthError'
-  }
-}
+export { AuthError }

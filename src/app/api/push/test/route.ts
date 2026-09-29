@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError } from '@/lib/api-response'
+import { requireAuth } from '@/core/auth'
+import { AppError } from '@/core/errors'
+import { success, handleError } from '@/lib/api-response'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
-
-const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
+import { APP_URL } from '@/core/notifications/format'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -24,8 +24,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     return success({ sent: true })
   } catch (err) {
-    if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'POST /api/push/test error:', err)
+    if (!(err instanceof AppError)) log.error('api', 'POST /api/push/test error:', err)
     return handleError(err)
   }
 })

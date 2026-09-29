@@ -39,3 +39,14 @@ export class ForbiddenError extends AppError {
     this.name = 'ForbiddenError'
   }
 }
+
+/**
+ * Missing or invalid credentials. `requireAuth()` throws it; re-exported from
+ * `@/core/auth`. Being an AppError, `handleError()` turns it into a 401.
+ */
+export class AuthError extends AppError {
+  constructor(message: string = 'Authentication required') {
+    super(message, 401, 'UNAUTHORIZED')
+    this.name = 'AuthError'
+  }
+}
