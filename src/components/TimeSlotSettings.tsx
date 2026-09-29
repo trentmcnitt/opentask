@@ -34,8 +34,8 @@ import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { showToast } from '@/lib/toast'
-import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
-import { formatMinutes } from '@/lib/reminder-rule'
+import { sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
+import { formatClockTime } from '@/lib/time-utils'
 
 /**
  * Same look as the Snooze section's wake/sleep time inputs, but sized: those
@@ -65,15 +65,6 @@ interface SlotChange {
   undo_id: number | null
 }
 
-function byStart(slots: TimeSlot[]): TimeSlot[] {
-  return [...slots].sort((a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0))
-}
-
-function formatStart(startTime: string): string {
-  const minutes = parseHHMM(startTime)
-  return minutes === null ? startTime : formatMinutes(minutes)
-}
-
 function remindersMoved(n: number): string {
   return n === 0 ? '' : ` · moved ${n} reminder${n === 1 ? '' : 's'}`
 }
@@ -98,7 +89,7 @@ export function TimeSlotSettings() {
   // The same hook every other slot consumer reads through; each change
   // re-reads it, so the list is always what the server stored.
   const { timeSlots, loading, refresh } = useTimeSlots()
-  const slots = byStart(timeSlots)
+  const slots = sortSlotsByStart(timeSlots)
   const load = refresh
 
   // Undo exactly this change and nothing else. `through_id` alone would also
@@ -150,7 +141,7 @@ export function TimeSlotSettings() {
         await load()
         if (changes.start_time !== undefined) {
           toastWithUndo(
-            `${result.slot.label} now starts at ${formatStart(result.slot.start_time)}` +
+            `${result.slot.label} now starts at ${formatClockTime(result.slot.start_time)}` +
               remindersMoved(result.reminders_moved),
             result.undo_id,
           )

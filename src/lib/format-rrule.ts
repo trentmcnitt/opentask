@@ -5,6 +5,8 @@
  * into readable text like "Daily at 8:00 AM"
  */
 
+import { ordinal } from '@/lib/quota-prompts'
+
 const DAY_NAMES: Record<string, string> = {
   MO: 'Monday',
   TU: 'Tuesday',
@@ -264,12 +266,6 @@ function formatMonthlyCompact(
 function formatYearlyCompact(interval: number, timeStr: string): string {
   const base = interval === 1 ? 'Yearly' : `Every ${interval} years`
   return `${base}${timeStr}`
-}
-
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
 /**

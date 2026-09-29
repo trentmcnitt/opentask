@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb } from 'lucide-react'
-import { DateTime } from 'luxon'
 import { cn, fromRowControl } from '@/lib/utils'
+import { formatClockTime } from '@/lib/time-utils'
+import { slotGroupKey, slotLabel, UNSLOTTED_LABEL } from '@/lib/reminder-slots'
 import { parseHHMM } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 import {
@@ -79,9 +80,6 @@ import type { Task } from '@/types'
  * because that is the satisfying part.
  */
 
-/** Un-slotted reminders (no anchor_time and no due time) group under this label. */
-const UNSLOTTED_LABEL = 'Anytime'
-
 /** How many rows a not-yet-started slot shows before "Show all" (§7.3). */
 const SLOT_PREVIEW_COUNT = 5
 
@@ -150,11 +148,6 @@ interface ReminderRowHandlers {
   renderPrompt: (prompt: QuotaPrompt) => React.ReactNode
   /** Put a handled quota prompt back (2026-09-25) — threaded the same way. */
   onPutBackPrompt: (prompt: QuotaPrompt) => void
-}
-
-/** Stable identity for a group across refetches — slot id, or the un-slotted bucket. */
-function groupKey(group: ReminderGroup): string {
-  return group.slot ? String(group.slot.id) : 'unslotted'
 }
 
 export function RemindersView({
@@ -363,7 +356,7 @@ export function RemindersView({
     if (group) {
       // A slot the user folded, or one still ahead in the day showing only its
       // first few, would leave the linked row unrendered. Open and uncap it.
-      const key = groupKey(group)
+      const key = slotGroupKey(group)
       setOpen(key, true)
       setExpanded(key, true)
       setHighlightId(id)
@@ -385,7 +378,7 @@ export function RemindersView({
   /**
    * `?slot=<slotId>` — the widget's per-slot header deep link (a Time Slot's
    * numeric `id`, or the literal `"unslotted"` for Anytime — same identity
-   * `groupKey` gives every slot group). Brings that slot's whole SECTION into
+   * `slotGroupKey` gives every slot group). Brings that slot's whole SECTION into
    * view, opening it if folded — the same shape as `?reminder=<id>` above,
    * but for a section rather than a single row: the widget's slot header
    * links here, and there is no one row to highlight.
@@ -433,8 +426,8 @@ export function RemindersView({
     }
     slotDeepLinkDone.current = true
     // Among the slots on screen: an empty slot has no section to go to.
-    const group = visibleGroups.find((g) => groupKey(g) === raw)
-    if (group) goToSlot(groupKey(group))
+    const group = visibleGroups.find((g) => slotGroupKey(g) === raw)
+    if (group) goToSlot(slotGroupKey(group))
     params.delete('slot')
     const query = params.toString()
     window.history.replaceState(
@@ -735,7 +728,7 @@ export function RemindersView({
           {
             <div className="space-y-3">
               {[...summary.started, ...summary.later].map((group) => {
-                const key = groupKey(group)
+                const key = slotGroupKey(group)
                 return (
                   <ReminderSlotGroup
                     key={key}
@@ -848,11 +841,14 @@ function useRenderedSelection({
       return searchGroups.map((group) => ({ reminders: group.reminders, prompts: group.prompts }))
     }
     return visibleGroups
-      .filter((group) => isOpen(groupKey(group)))
+      .filter((group) => isOpen(slotGroupKey(group)))
       .map((group) => ({
         // Must mirror ReminderSlotGroup's own slice, or a shift-click range
         // would span rows that are not on screen.
-        reminders: slotShowsEverything(started.includes(group), expandedKeys.has(groupKey(group)))
+        reminders: slotShowsEverything(
+          started.includes(group),
+          expandedKeys.has(slotGroupKey(group)),
+        )
           ? group.reminders
           : group.reminders.slice(0, SLOT_PREVIEW_COUNT),
         prompts: group.prompts.filter(promptWaiting),
@@ -1061,7 +1057,7 @@ function RemindersHeadline({
         </span>
         <span className="text-muted-foreground">
           {' '}
-          &middot; {formatSlotTime(summary.nextUp.slot.start_time)}
+          &middot; {formatClockTime(summary.nextUp.slot.start_time)}
         </span>
       </>
     )
@@ -1114,9 +1110,9 @@ function RemindersHeadline({
             const considered = groupConsidered(g)
             const slotTotal = groupWaiting(g) + considered
             const done = slotTotal > 0 && considered >= slotTotal
-            const label = g.slot?.label ?? UNSLOTTED_LABEL
+            const label = slotLabel(g)
             const started = summary.started.includes(g)
-            const key = groupKey(g)
+            const key = slotGroupKey(g)
             return (
               <button
                 key={key}
@@ -1233,12 +1229,12 @@ function usePromptDeepLink({
     const raw = new URLSearchParams(window.location.search).get('prompt')
     const found = raw ? findLinkedPrompt(groups, raw) : null
     if (found && promptWaiting(found.prompt)) {
-      const key = groupKey(found.group)
+      const key = slotGroupKey(found.group)
       setOpen(key, true)
       setExpanded(key, true)
       setHighlightPromptKey(found.prompt.prompt_key)
     } else if (found) {
-      goToSlot(groupKey(found.group))
+      goToSlot(slotGroupKey(found.group))
     }
   }
   // Spending the param is the one side effect, so it is the effect: only its
@@ -1433,7 +1429,7 @@ function ReminderSlotGroup({
   expanded: boolean
   /** Search results: the slot cannot be folded and offers no sweep. */
   locked?: boolean
-  /** Identity for the `?slot=<slotId>` deep link (`groupKey`'s value) and E2E targeting. */
+  /** Identity for the `?slot=<slotId>` deep link (`slotGroupKey`'s value) and E2E targeting. */
   slotKey?: string
   /** A pending `goToSlot` request for THIS slot (its sequence number) — the
    *  `?slot=<slotId>` deep link or a tap on the day bar. Scrolls it into view. */
@@ -1452,8 +1448,8 @@ function ReminderSlotGroup({
   /** Open one considered thought in the editor — see `ConsideredDisclosure`. */
   onOpenDetail: (task: Task) => void
 }) {
-  const label = group.slot?.label ?? UNSLOTTED_LABEL
-  const time = group.slot ? formatSlotTime(group.slot.start_time) : null
+  const label = slotLabel(group)
+  const time = group.slot ? formatClockTime(group.slot.start_time) : null
   // Waiting and considered count quota prompts exactly as reminders.
   const count = groupWaiting(group)
   const considered = groupConsidered(group)
@@ -2296,7 +2292,7 @@ function SearchResults({
         <div className="space-y-3">
           {groups.map((group) => (
             <ReminderSlotGroup
-              key={groupKey(group)}
+              key={slotGroupKey(group)}
               group={group}
               started
               open
@@ -2436,12 +2432,6 @@ function prominenceClasses(priority: number): string {
   if (priority >= 3) return 'text-foreground font-medium'
   if (priority === 2) return 'text-foreground'
   return 'text-foreground/70'
-}
-
-/** "07:00" → "7:00 AM". Falls back to the raw value if it isn't HH:MM. */
-function formatSlotTime(startTime: string): string {
-  const parsed = DateTime.fromFormat(startTime, 'HH:mm')
-  return parsed.isValid ? parsed.toFormat('h:mm a') : startTime
 }
 
 /**

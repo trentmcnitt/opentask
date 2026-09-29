@@ -8,7 +8,13 @@
 import { DateTime } from 'luxon'
 import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
-import { quotaPeriodEnd, startOfWeek, WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
+import {
+  quotaPeriodEnd,
+  startOfWeek,
+  WEEK_START_DEFAULT,
+  type PeriodUnit,
+  type WeekStart,
+} from '@/lib/week-start'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
@@ -111,6 +117,19 @@ export function quotaPeriodOf(
 const FREQ_UNIT = { DAILY: 'days', WEEKLY: 'weeks', MONTHLY: 'months', YEARLY: 'years' } as const
 
 /**
+ * `quotaPeriodOf` in the calendar units luxon and `quotaPeriodEnd` step by —
+ * `FREQ=WEEKLY;INTERVAL=2` is `{ unit: 'weeks', interval: 2 }`. The rollover
+ * cron and `effectiveProgress` both read a quota's period through here, so
+ * they can't disagree about when it ends.
+ */
+export function quotaPeriodUnit(
+  rrule: string | null | undefined,
+): { unit: PeriodUnit; interval: number } | null {
+  const period = quotaPeriodOf(rrule)
+  return period ? { unit: FREQ_UNIT[period.freq], interval: period.interval } : null
+}
+
+/**
  * The count that is TRUE right now: `progress_current`, or 0 once its period
  * has ended.
  *
@@ -131,13 +150,13 @@ export function effectiveProgress(
   weekStart: WeekStart = WEEK_START_DEFAULT,
 ): number {
   const current = Math.max(0, task.progress_current ?? 0)
-  const period = quotaPeriodOf(task.rrule)
+  const period = quotaPeriodUnit(task.rrule)
   if (!period || !task.progress_period_start) return current
   const start = DateTime.fromISO(task.progress_period_start, { zone: 'utc' }).setZone(timezone)
   if (!start.isValid) return current
   // The rollover's own end rule — a weekly anchor off the user's week-start
   // boundary ends at the next boundary, not a full week on.
-  const end = quotaPeriodEnd(start, FREQ_UNIT[period.freq], period.interval, weekStart)
+  const end = quotaPeriodEnd(start, period.unit, period.interval, weekStart)
   return DateTime.fromJSDate(now) >= end ? 0 : current
 }
 

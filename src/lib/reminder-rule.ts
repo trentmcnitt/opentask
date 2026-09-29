@@ -23,6 +23,7 @@
 import { DateTime } from 'luxon'
 import { formatRRule, formatTime, parseRRuleParts } from '@/lib/format-rrule'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { ordinal } from '@/lib/quota-prompts'
 
 export type ReminderCadence = 'daily' | 'weekly' | 'monthly' | 'once' | 'custom'
 
@@ -195,12 +196,6 @@ export function formatMinutes(minutes: number): string {
 
 const LONG_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const SHORT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return n + (s[(v - 20) % 10] || s[v] || s[0])
-}
 
 /** "Every day", "Weekdays", "Mon, Wed, Fri", "Monthly on the 1st", "Once". */
 export function describeCadence(schedule: Omit<ReminderSchedule, 'time'>): string {

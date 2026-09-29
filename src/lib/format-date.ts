@@ -8,6 +8,18 @@
 
 import { DateTime } from 'luxon'
 
+/**
+ * Whole calendar days from `a` to `b` (negative when `b` is earlier), counted
+ * midnight to midnight in `timezone`, or the process's zone when omitted.
+ * Luxon's startOf('day') keeps DST's 23- and 25-hour days at one day each.
+ */
+export function calendarDaysBetween(a: Date, b: Date, timezone?: string): number {
+  const opts = timezone ? { zone: timezone } : {}
+  const dayA = DateTime.fromJSDate(a, opts).startOf('day')
+  const dayB = DateTime.fromJSDate(b, opts).startOf('day')
+  return Math.round(dayB.diff(dayA, 'days').days)
+}
+
 export interface DayBoundaries {
   yesterdayStart: Date
   todayStart: Date
@@ -215,11 +227,7 @@ function formatOverdue(
   }
 
   // Days/weeks/months ago (based on calendar days in timezone)
-  const dueDateStr = due.toLocaleDateString('en-US', { timeZone: timezone })
-  const todayStr = now.toLocaleDateString('en-US', { timeZone: timezone })
-  const dueDate = new Date(dueDateStr)
-  const today = new Date(todayStr)
-  const calendarDays = Math.round((today.getTime() - dueDate.getTime()) / (24 * 60 * 60 * 1000))
+  const calendarDays = calendarDaysBetween(due, now, timezone)
 
   if (calendarDays < 7) {
     return { relative: `${calendarDays}d ago`, absolute: dateAndTime }
@@ -287,11 +295,7 @@ export function formatOriginalDueAt(isoUtc: string, timezone: string): string | 
   // Day names are only unambiguous within 6 calendar days — e.g., if today is Friday,
   // "Sat" (6 days ago) clearly means last Saturday, but "Fri" (7 days ago) is ambiguous
   // with today.
-  const snoozedDateStr = snoozedDate.toLocaleDateString('en-US', { timeZone: timezone })
-  const todayStr = now.toLocaleDateString('en-US', { timeZone: timezone })
-  const calendarDays = Math.round(
-    (new Date(todayStr).getTime() - new Date(snoozedDateStr).getTime()) / (24 * 60 * 60 * 1000),
-  )
+  const calendarDays = calendarDaysBetween(snoozedDate, now, timezone)
 
   if (calendarDays <= 6) {
     const dayName = snoozedDate.toLocaleDateString('en-US', {
@@ -380,12 +384,7 @@ export function formatTaskAge(anchorIsoUtc: string, timezone: string): string | 
 
   if (anchor > now) return null
 
-  // Use timezone-aware calendar day math (same pattern as formatOverdue)
-  const anchorDateStr = anchor.toLocaleDateString('en-US', { timeZone: timezone })
-  const todayStr = now.toLocaleDateString('en-US', { timeZone: timezone })
-  const anchorDate = new Date(anchorDateStr)
-  const today = new Date(todayStr)
-  const calendarDays = Math.round((today.getTime() - anchorDate.getTime()) / (24 * 60 * 60 * 1000))
+  const calendarDays = calendarDaysBetween(anchor, now, timezone)
 
   if (calendarDays < 1) return null
 

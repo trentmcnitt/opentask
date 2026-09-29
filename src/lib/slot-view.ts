@@ -4,7 +4,8 @@
  * item silently missing from Today looks identical to an empty day.
  */
 import { DateTime } from 'luxon'
-import { groupBySlot, type TimeSlot } from '@/lib/time-slot-assign'
+import { groupBySlot, sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
+import { formatClockTime } from '@/lib/time-utils'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
@@ -22,10 +23,9 @@ export const UNDATED_LABEL = 'Undated'
  * first slot starts at 7:00) get a group named by that boundary, first.
  */
 export function earlySlotLabel(slots: TimeSlot[]): string {
-  const first = [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time))[0]
+  const first = sortSlotsByStart(slots)[0]
   if (!first) return 'Timed'
-  const parsed = DateTime.fromFormat(first.start_time, 'HH:mm')
-  return `Before ${parsed.isValid ? parsed.toFormat('h:mm a') : first.start_time}`
+  return `Before ${formatClockTime(first.start_time)}`
 }
 
 export interface SlotViewGroup {

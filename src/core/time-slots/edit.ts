@@ -80,7 +80,8 @@ import { nowUtc } from '@/core/recurrence'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { emitSyncEvent } from '@/lib/sync-events'
-import { buildSchedule, formatMinutes, parseCadence } from '@/lib/reminder-rule'
+import { buildSchedule, parseCadence } from '@/lib/reminder-rule'
+import { formatClockTime } from '@/lib/time-utils'
 import {
   assignSlot,
   itemTimeOfDayMinutes,
@@ -338,11 +339,6 @@ function notifyMoved(userId: number, outcome: MoveOutcome): void {
   }
 }
 
-function formatStart(startTime: string): string {
-  const minutes = parseHHMM(startTime)
-  return minutes === null ? startTime : formatMinutes(minutes)
-}
-
 function reminderCount(n: number): string {
   return `${n} reminder${n === 1 ? '' : 's'}`
 }
@@ -404,7 +400,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
 
     const moved = outcome.snapshots.length
     const description =
-      `Moved "${label}" to ${formatStart(startTime)}` +
+      `Moved "${label}" to ${formatClockTime(startTime)}` +
       (moved > 0 ? ` (${reminderCount(moved)})` : '')
     return logAction(userId, 'time_slot_edit', description, outcome.fields, outcome.snapshots, {
       before,

@@ -894,7 +894,7 @@ test.describe('Reminders surface', () => {
   test('?slot=<slotId> brings that slot’s section into view', async ({
     authenticatedPage: page,
   }) => {
-    // The widget's per-slot header deep link. `groupKey` (RemindersView.tsx)
+    // The widget's per-slot header deep link. `slotGroupKey` (reminder-slots.ts)
     // gives every slot group its identity from the Time Slot's numeric id, so
     // the link's target is that id, not a label or index.
     await page.setViewportSize({ width: 1280, height: 800 })
