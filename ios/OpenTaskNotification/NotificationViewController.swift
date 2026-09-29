@@ -339,9 +339,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
             }
 
-            // Badge from the server's count, not guessed from the payload —
-            // see `refreshBadgeFromServer()`.
-            await refreshBadgeFromServer()
+            // No local badge update here. The server's badge-only push lands
+            // about a second after the mutation, and a count fetch before
+            // `.dismiss` would add a second round trip to every tap. (This
+            // used to set "payload count − 1", from a count that was never
+            // the badge total.)
 
             // Dismiss only — the extension already handled the action via API call.
             // Using .dismissAndForwardAction would cause AppDelegate's didReceive to

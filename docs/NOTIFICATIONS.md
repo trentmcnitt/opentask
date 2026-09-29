@@ -167,7 +167,7 @@ The last value sent per user is kept in memory (`badge-state.ts`, on `globalThis
 
 - `willPresent` returns `.badge` (iOS always; macOS in both branches). In the foreground iOS and macOS apply `aps.badge` only when asked, so without it the badge would go stale whenever the app is open.
 - On activation the apps do NOT zero the badge any more. They fetch `GET /api/tasks/counts` (the Tasks page's own `countTasks`, the red pill's number) and set the badge from `overdue` (`refreshBadgeFromServer()` in `NotificationConstants.swift`). A failed fetch leaves the badge alone.
-- After a notification action (Done, +1hr, All +1hr, a slot snooze — app delegate or content extension) the apps do the same fetch, instead of guessing "the payload's count minus one".
+- After a notification action handled by the app delegate (Done, +1hr, All +1hr, a slot snooze), the app does the same fetch, instead of guessing "the payload's count minus one" (a count that was never the badge total). The content extension doesn't fetch: that would add a second round trip before the notification dismisses, and the server's badge push lands about a second later anyway.
 - The legacy `type: "badge-update"` handler stays in both app delegates, for servers older than this change.
 
 **Badge vs the Overdue pill.** Same population and the same answer for every task with a due date. Two edges differ: a recurring task with no `due_at` counts in the badge once today's scheduled time passes (the pill never counts an undated task), and the pill also counts other users' overdue tasks in a shared project. Neither existed on prod on 2026-09-29.
