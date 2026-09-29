@@ -14,66 +14,33 @@ import Foundation
 /// rule here rather than inventing an endpoint.
 enum TasksTimeline {
 
-    /// The shared rules live in `TaskLists` (ios/Shared) since 2026-09-28, so
-    /// the Mac menu bar item counts "overdue" exactly as the widget does.
-    private static func eligibleTasks(from tasks: [TaskDTO]) -> [TaskDTO] {
-        TaskLists.eligible(tasks)
-    }
+    // The list rules themselves (exclusions, order, the overdue test, the
+    // sweep estimate) live in `TaskLists` (ios/Shared) since 2026-09-28, so
+    // the Mac menu bar item counts "overdue" exactly as the widget does. The
+    // page functions below forward to it; each doc says only which page uses it.
 
-    private static func sortedSoonestFirst(_ tasks: [TaskDTO]) -> [TaskDTO] {
-        TaskLists.sortedSoonestFirst(tasks)
-    }
-
-    /// How many tasks `POST /api/tasks/bulk/snooze-overdue` would actually
-    /// move right now (2026-09-23, Phase 2's "All overdue" snooze-mode bar)
-    /// — an HONEST CLIENT-SIDE ESTIMATE, not an authoritative count. Mirrors
-    /// `filterForBulkSnooze`'s ceiling rule (`src/core/tasks/bulk.ts`): P0-P2
-    /// always eligible; P3 (High) joins in ONLY once none of P0-P2 remain in
-    /// the overdue-and-snoozable set; P4 (Urgent) never counts. `tasks`
-    /// should be the FULL open-tasks cache (unscoped) — the sweep acts
-    /// server-wide, not on whatever scope/page happens to be on screen.
-    ///
-    /// Two honest gaps versus the server, both accepted rather than chased:
-    /// (1) "overdue" here is `TaskDTO.isOverdue(now:)` (`due_at < now`), the
-    /// SAME check every row's red styling already uses — the server's actual
-    /// sweep instead queries `getCurrentlyDueTaskIds` (§4.6: a recurring
-    /// task's frozen `due_at` needs its own "is this actually due today"
-    /// logic that a raw date comparison can't replicate client-side without
-    /// a dedicated endpoint neither this widget nor its API surface has).
-    /// (2) `eligibleTasks` already drops reminders/tracked items, matching
-    /// `filterForBulkSnooze`'s own "reminders and quotas are never late"
-    /// exclusion — no separate filter needed here. Both gaps only ever
-    /// affect what number this bar PRINTS and whether it shows at all
-    /// (N > 0); the server remains the sole authority on what actually moves
-    /// when the button is tapped.
+    /// The "All overdue" snooze-mode bar's count (2026-09-23, Phase 2) — an
+    /// estimate; see `TaskLists.overdueSweepEligibleCount` for the rule and its
+    /// two accepted gaps versus the server.
     static func overdueSweepEligibleCount(from tasks: [TaskDTO], now: Date = Date()) -> Int {
-        let overdue = eligibleTasks(from: tasks).filter { $0.isOverdue(now: now) }
-        let lowCount = overdue.filter { $0.priority < 3 }.count
-        if lowCount > 0 { return lowCount }
-        return overdue.filter { $0.priority == 3 }.count
+        TaskLists.overdueSweepEligibleCount(tasks, now: now)
     }
 
     /// Due or overdue as of the end of the local day — the "Today" unified
     /// page (2026-09-23, item 4) and, unchanged, what every per-project page
     /// still shows.
     static func todaysTasks(from tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
-        let calendar = Calendar.current
-        guard let endOfDay = calendar.date(
-            byAdding: .day, value: 1, to: calendar.startOfDay(for: now)
-        ) else {
-            return []
-        }
-        return sortedSoonestFirst(eligibleTasks(from: tasks).filter { ($0.dueDate ?? .distantFuture) < endOfDay })
+        TaskLists.dueToday(tasks, now: now)
     }
 
     /// "Up next" (2026-09-23, item 4) — Trent: "Instead of Up Next I'd also
     /// like to have just a Today one… We need a Today one as well." This is
     /// what "Up next" used to mean before that request split it in two:
     /// every dated open task the widget considers at all, soonest (most
-    /// overdue) first, with NO end-of-today cutoff — `eligibleTasks`'
+    /// overdue) first, with NO end-of-today cutoff — `TaskLists.eligible`'s
     /// exclusions apply exactly as `todaysTasks` uses them.
     static func upNextTasks(from tasks: [TaskDTO]) -> [TaskDTO] {
-        sortedSoonestFirst(eligibleTasks(from: tasks))
+        TaskLists.upNext(tasks)
     }
 
     /// Projects that actually have something in TODAY's set, in the order
@@ -96,7 +63,7 @@ enum TasksTimeline {
     /// The DONE list for "show completed" (2026-09-23) — today's completions,
     /// scoped the same way `todaysTasks`/`upNextTasks` scope the OPEN list:
     /// reminders and tracked items are excluded ALWAYS (their own widgets own
-    /// that data — same exclusions `eligibleTasks` applies), and a
+    /// that data — same exclusions `TaskLists.eligible` applies), and a
     /// per-project page filters further by `project_id`. The unified pages
     /// (Overdue/Today/Up next) show every one of today's matching
     /// completions, unfiltered by project.
@@ -150,31 +117,12 @@ enum TasksTimeline {
     // MARK: Overdue (2026-09-25)
 
     /// The "Overdue" page — Trent: "if things are overdue, I'd like that to be
-    /// the default widget screen for the tasks." Every eligible task (dated,
-    /// not a reminder, not a quota — `eligibleTasks`) whose due time has
-    /// passed, by `TaskDTO.isOverdue(now:)`, the same test every row's red
-    /// time already uses.
-    ///
-    /// That is the web dashboard's Overdue chip exactly (`classifyTaskDueDate`
-    /// in `DueDateFilterBar.tsx`: `due_at < now` over the dashboard's list,
-    /// which drops reminders and quotas the same way), so the header's count
-    /// is the count the chip shows when the header link opens the dashboard
-    /// filtered to it (`/?filter=overdue`). It is the server badge's set
-    /// (`getCurrentlyDueTaskIds`, `?overdue=true`) for every task with a
-    /// `due_at`, recurring ones included; the one gap is a recurring task
-    /// with NO `due_at` whose schedule fell earlier today, which the badge
-    /// derives from its rrule and nothing client-side can — the same accepted
-    /// gap `overdueSweepEligibleCount`'s doc describes. A second fetch of
-    /// `?overdue=true` to close it is ruled out (one `/api/tasks` read, shared
-    /// with Quotas — ios/AGENTS.md "Data").
-    ///
-    /// Most overdue first: the order every other Tasks page uses
-    /// (`sortedSoonestFirst`), the server's own due-candidate order
-    /// (`fetchDueCandidates`' `ORDER BY due_at ASC`), and §4.5's stale-first
-    /// rule — the oldest debt is the one most likely to have been forgotten,
-    /// so it is the one the first page must not bury.
+    /// the default widget screen for the tasks." `TaskLists.overdue`: every
+    /// eligible task whose due time has passed, most overdue first (the
+    /// order every other Tasks page uses). Its doc has why that matches the
+    /// web dashboard's Overdue chip, which the header link opens.
     static func overdueTasks(from tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
-        sortedSoonestFirst(eligibleTasks(from: tasks).filter { $0.isOverdue(now: now) })
+        TaskLists.overdue(tasks, now: now)
     }
 
     /// The page the widget opens on when the user hasn't chosen one (or their

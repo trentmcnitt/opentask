@@ -43,6 +43,7 @@
 		51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */ = {isa = PBXBuildFile; fileRef = 37C29187973C3150F91CA3B7 /* reminders-initial.json */; };
 		52209900BB7B38B4D5C46CBE /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
 		555E58F6C1F1328E6D692AED /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8191D69C950AB5453FA795F7 /* WidgetTheme.swift */; };
+		58A1CB55EF9E06BD0CD0FEB4 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
 		5ACFC5419BA8178CCBDD0D35 /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */; };
 		5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D351611FEE1FDCC48702D /* SampleData.swift */; };
 		5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */ = {isa = PBXBuildFile; fileRef = F781F8F4FFD0805CBC5D5068 /* completions.json */; };
@@ -52,14 +53,17 @@
 		64977AFF9CC42B0353EA7674 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		64EBD90DFBC8DA583CA054D6 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52EC8E5A66C3C3ECE4A13D0 /* StatusItemController.swift */; };
 		65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
+		69E395ADE46A3F056A24AE8C /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
 		6A9B5E10389B15AE08DA8BD4 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
 		6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */ = {isa = PBXBuildFile; fileRef = 225E098B934AE9962181E731 /* task-progress.json */; };
 		6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		7131F2552F88AC5619E5A431 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
+		770EF3B5D76EE47517B10CFF /* QuotaRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EBB1F0D8B23725D4EB9DC21 /* QuotaRulesTests.swift */; };
 		78931D4AFF9A62A3E49A51AA /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		8465F733F4E375E70C51CEA8 /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */; };
 		86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */; };
 		8C9F8E56346CBA5A1599E800 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
+		8EAFA71E827C988DFEB26D54 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
 		9068C2E58CE2C69E562698A3 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */; };
 		909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		932B4699D3B795BB16459BE5 /* QuotaPromptDTOTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */; };
@@ -138,6 +142,7 @@
 		016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-after-did.json"; sourceTree = "<group>"; };
 		01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewManager.swift; sourceTree = "<group>"; };
 		063D351611FEE1FDCC48702D /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
+		0EBB1F0D8B23725D4EB9DC21 /* QuotaRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaRulesTests.swift; sourceTree = "<group>"; };
 		117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptDeepLink.swift; sourceTree = "<group>"; };
 		124940586D73E6C268F9E443 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
@@ -149,6 +154,7 @@
 		25EEEE55FFA907613ED3849C /* OpenTaskWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenTaskWidgets.entitlements; sourceTree = "<group>"; };
 		2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
 		2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
+		318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaRules.swift; sourceTree = "<group>"; };
 		31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSlotLogic.swift; sourceTree = "<group>"; };
 		32C45DA1904EB29E34155A58 /* OpenTaskLogicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenTaskLogicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStoreCacheTests.swift; sourceTree = "<group>"; };
@@ -259,6 +265,7 @@
 				7F814F05408288A5A627F9CC /* OpenTaskModels.swift */,
 				A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */,
 				117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */,
+				318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */,
 				B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */,
 				6E710EC06D677571B16557AD /* TaskLists.swift */,
 				A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */,
@@ -320,6 +327,7 @@
 				370309049F393EDDAD8042C0 /* DueLabelTests.swift */,
 				3AF75FD7803D1BDC240C8EDF /* PromptDeepLinkTests.swift */,
 				81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */,
+				0EBB1F0D8B23725D4EB9DC21 /* QuotaRulesTests.swift */,
 				A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */,
 				AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */,
 				47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */,
@@ -580,6 +588,7 @@
 				6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */,
 				1065DE5F13ABB56144BC9136 /* PreviewLocalData.swift in Sources */,
 				E96A95A44A30F64C80592FB7 /* PromptDeepLink.swift in Sources */,
+				8EAFA71E827C988DFEB26D54 /* QuotaRules.swift in Sources */,
 				9068C2E58CE2C69E562698A3 /* SegmentWidths.swift in Sources */,
 				86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */,
 				16E01EEDD0FF0DD9247D3962 /* SetupView.swift in Sources */,
@@ -610,6 +619,8 @@
 				09C50C125EE5772431D0238A /* PromptDeepLink.swift in Sources */,
 				1ADEF2C6F042962055818FAE /* PromptDeepLinkTests.swift in Sources */,
 				932B4699D3B795BB16459BE5 /* QuotaPromptDTOTests.swift in Sources */,
+				69E395ADE46A3F056A24AE8C /* QuotaRules.swift in Sources */,
+				770EF3B5D76EE47517B10CFF /* QuotaRulesTests.swift in Sources */,
 				A2128E6CAB247BBB42C2BB69 /* SegmentWidths.swift in Sources */,
 				3EE6F7B84B2317550D8CC09A /* SegmentWidthsTests.swift in Sources */,
 				F865511EB1C704B8459AB6A1 /* TaskLists.swift in Sources */,
@@ -642,6 +653,7 @@
 				CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */,
 				6A9B5E10389B15AE08DA8BD4 /* PreviewLocalData.swift in Sources */,
 				78931D4AFF9A62A3E49A51AA /* PromptDeepLink.swift in Sources */,
+				58A1CB55EF9E06BD0CD0FEB4 /* QuotaRules.swift in Sources */,
 				34B70C4530803D25110BE465 /* RemindersWidget.swift in Sources */,
 				9556B8E8A59E161239E3988F /* RemindersWidgetViews.swift in Sources */,
 				5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */,

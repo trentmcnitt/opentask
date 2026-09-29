@@ -349,47 +349,10 @@ enum TrackTimeline {
 
 // MARK: - Quota periods, sections and clusters (`feat/quotas-widget`)
 
-/// The four periods a quota can count within, plus the period-less bucket —
-/// mirrors `QUOTA_PERIODS` (`src/lib/track.ts`), narrowed to just the FREQ →
-/// heading mapping this widget needs (the web table also carries an editor
-/// label, a suffix and a noun the widget has no use for).
-enum QuotaPeriodKey: String {
-    case daily, weekly, monthly, yearly, none
-
-    /// Day → year, period-less last — the section list's fixed order
-    /// (`QuotaSectionBuilder.sections`), matching `groupByPeriod`'s.
-    static let order: [QuotaPeriodKey] = [.daily, .weekly, .monthly, .yearly, .none]
-
-    var heading: String {
-        switch self {
-        case .daily: return "Today"
-        case .weekly: return "This week"
-        case .monthly: return "This month"
-        case .yearly: return "This year"
-        case .none: return "No period"
-        }
-    }
-
-    /// The period a quota's rrule counts within — mirrors `quotaFreqOf`
-    /// (`src/lib/track.ts`): only `FREQ` matters, `INTERVAL` is ignored (a
-    /// biweekly quota still groups under "This week", the same period a
-    /// weekly one does — §5's four sections don't distinguish the two).
-    static func from(rrule: String?) -> QuotaPeriodKey {
-        guard let rrule, !rrule.isEmpty else { return .none }
-        let body = rrule.uppercased()
-        for part in body.split(separator: ";") {
-            let pair = part.split(separator: "=", maxSplits: 1)
-            guard pair.count == 2, pair[0].trimmingCharacters(in: .whitespaces) == "FREQ" else { continue }
-            switch pair[1] {
-            case "DAILY": return .daily
-            case "WEEKLY": return .weekly
-            case "MONTHLY": return .monthly
-            case "YEARLY": return .yearly
-            default: return .none
-            }
-        }
-        return .none
-    }
+/// The widget's calendar math for a quota period. The period itself
+/// (`QuotaPeriodKey`: its order, heading and `from(rrule:)`) lives in
+/// ios/Shared/QuotaRules.swift, shared with the watch's Quotas page.
+extension QuotaPeriodKey {
 
     /// `Calendar` weekday numbers (1 = Sunday, 2 = Monday) for the two week
     /// starts the server allows (`users.week_start`, `src/lib/week-start.ts`).
@@ -551,19 +514,11 @@ struct QuotaCluster: Identifiable {
 
 /// Builds `QuotaSection`s from a flat quota corpus — the pure half of the
 /// Quotas widget's business logic, ported from `src/lib/track.ts`'s
-/// `trackSections`/`groupByPeriod`/`groupByLabel`/`quotaLabelOf` rather than
-/// sharing code with them (that file is a Next.js client bundle; this is a
-/// widget extension target, and neither can import the other).
+/// `trackSections`/`groupByPeriod`/`groupByLabel` rather than sharing code
+/// with them (that file is a Next.js client bundle; this is a widget
+/// extension target, and neither can import the other). The per-quota rules
+/// (period, label, stripe color) are `QuotaRules`, shared with the watch.
 enum QuotaSectionBuilder {
-
-    /// `quotaLabelOf` (`src/lib/track.ts`): the first label that isn't
-    /// machinery. Reserved labels are a case-SENSITIVE `ai-` prefix
-    /// (`RESERVED_LABEL_PREFIX`, `src/lib/label-vocabulary.ts`) — created by
-    /// enrichment/`createTask`, often without the user ever typing one, so
-    /// taking `labels[0]` blindly would file a quota under "AI-FAILED".
-    static func quotaLabelOf(_ task: TaskDTO) -> String? {
-        task.labels.first { !$0.hasPrefix("ai-") }
-    }
 
     /// Every period section with at least one quota in it, day → year then
     /// the period-less bucket — `QuotaPeriodKey.order`, `groupByPeriod`'s
@@ -631,7 +586,7 @@ enum QuotaSectionBuilder {
         var hasUnlabeled = false
 
         for task in tasks {
-            let label = quotaLabelOf(task)
+            let label = QuotaRules.label(of: task)
             let key = label?.lowercased() ?? ""
             if let label {
                 if display[key] == nil {
@@ -662,13 +617,10 @@ enum QuotaSectionBuilder {
             }
             guard !visible.isEmpty else { return nil }
 
-            let configColor = label.flatMap { l in
-                labelConfig.first { $0.name.localizedCaseInsensitiveCompare(l) == .orderedSame }?.color
-            }
             // Green is "met"'s own color everywhere on this widget — a
-            // green-configured label draws neutral instead, matching the
-            // web's `trackStripeClass`.
-            let color = configColor == "green" ? nil : configColor
+            // green-configured label draws neutral instead
+            // (`QuotaRules.stripeColor`, the web's `trackStripeClass`).
+            let color = QuotaRules.stripeColor(forLabel: label, labelConfig: labelConfig)
 
             return QuotaCluster(
                 id: "\(sectionId):\(key)",
