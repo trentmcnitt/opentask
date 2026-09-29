@@ -2,7 +2,7 @@
 
 import type React from 'react'
 import { useEffect } from 'react'
-import { sortTasks, type SortOption, type TaskGroup } from '@/lib/task-grouping'
+import type { SortOption, SortedTaskGroup } from '@/lib/task-grouping'
 import type { Project } from '@/types'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { showToast } from '@/lib/toast'
@@ -25,7 +25,9 @@ interface UseDashboardKeyboardOptions {
     removeAll: (ids: number[]) => void
     clear: () => void
   }
-  taskGroups: TaskGroup[]
+  /** The list's groups in drawn order (`sortTaskGroups`) — Cmd+C copies in this order. */
+  sortedGroups: SortedTaskGroup[]
+  /** The effective sort, for the clipboard's group-header annotation only. */
   sortOption: SortOption
   reversed: boolean
   timezone: string
@@ -52,7 +54,7 @@ export function useDashboardKeyboard({
   keyboardFocusedId,
   setKeyboardFocusedId,
   selection,
-  taskGroups,
+  sortedGroups,
   sortOption,
   reversed,
   timezone,
@@ -99,10 +101,9 @@ export function useDashboardKeyboard({
         selection.selectedIds.size > 0
       ) {
         e.preventDefault()
-        const clipboardGroups: ClipboardGroup[] = taskGroups
+        const clipboardGroups: ClipboardGroup[] = sortedGroups
           .map((g) => {
-            const sorted = sortTasks(g.tasks, sortOption, reversed)
-            const selected = sorted.filter((t) => selection.selectedIds.has(t.id))
+            const selected = g.sortedTasks.filter((t) => selection.selectedIds.has(t.id))
             return { label: g.label, tasks: selected, sort: sortOption, reversed }
           })
           .filter((g) => g.tasks.length > 0)
@@ -196,6 +197,20 @@ export function useDashboardKeyboard({
         return
       }
 
+      // The list's own handler (`useKeyboardNavigation`, the listbox's
+      // onKeyDown) also handles Home, End, Cmd+A and Cmd+Shift+A when focus is
+      // in the list, and React runs it before this document listener sees the
+      // same event. It calls preventDefault on each, so skip what it already
+      // did. Without this check the only thing keeping the key from being
+      // handled twice was timing: the list's state change re-renders and
+      // re-registers this listener mid-dispatch, and a listener added during
+      // dispatch does not fire. When nothing changed (Home on the row already
+      // focused) this block ran again — and had it run on Cmd+Shift+A with
+      // focus in the second group, it would have selected the FIRST group too.
+      // The list handler never takes ?, Cmd+K, Cmd+C, Delete or Cmd+L; the
+      // arrow blocks above are left as they were.
+      if (e.defaultPrevented) return
+
       // Home: Focus first task (works globally, even when not in keyboard mode)
       if (e.key === 'Home' && !isInInput) {
         e.preventDefault()
@@ -223,8 +238,8 @@ export function useDashboardKeyboard({
       // Cmd+Shift+A: Select all tasks in first group (works globally)
       if (cmdKey && e.shiftKey && e.key.toLowerCase() === 'a' && !isInInput) {
         e.preventDefault()
-        if (taskGroups.length > 0 && orderedIds.length > 0) {
-          const firstGroup = taskGroups[0]
+        if (sortedGroups.length > 0 && orderedIds.length > 0) {
+          const firstGroup = sortedGroups[0]
           const firstGroupTaskIds = new Set(firstGroup.tasks.map((t) => t.id))
           const groupIds = orderedIds.filter((id) => firstGroupTaskIds.has(id))
 
@@ -274,7 +289,7 @@ export function useDashboardKeyboard({
     keyboardFocusedId,
     setKeyboardFocusedId,
     selection,
-    taskGroups,
+    sortedGroups,
     sortOption,
     reversed,
     timezone,
