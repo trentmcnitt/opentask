@@ -53,9 +53,13 @@ APNs notifications include `collapseId: "task-{id}"`. iOS replaces (not stacks) 
 | ----------- | ---------------- | ---------------------------- |
 | P4 (Urgent) | 5 min            | `auto_snooze_urgent_minutes` |
 | P3 (High)   | 15 min           | `auto_snooze_high_minutes`   |
-| P0-P2       | 30 min           | `auto_snooze_minutes`        |
+| P2 (Medium) | 60 min           | `auto_snooze_medium_minutes` |
+| P1 (Low)    | 240 min          | `auto_snooze_low_minutes`    |
+| P0 (Unset)  | 30 min           | `auto_snooze_minutes`        |
 
 Per-task `auto_snooze_minutes` overrides the user default.
+
+Intervals count from each task's due time, not from the clock: a P3 task due at 8:07 notifies at 8:07, 8:22, 8:37. The first notification goes out on the checker's tick at the due minute (the query takes `due_at <= now`), and only once — see `isNotificationBoundary()` in `overdue-checker.ts`.
 
 ### Files
 

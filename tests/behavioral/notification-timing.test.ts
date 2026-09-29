@@ -255,9 +255,9 @@ describe('isNotificationBoundary', () => {
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:30:00.000Z'))).toBe(false)
   })
 
-  test('task 1 minute overdue (exact minute boundary) → fires immediately', () => {
-    // This is the common case: UI sets due time to a round minute (e.g., 10:00:00).
-    // SQL strict < means the task first appears at minutesSinceDue = 1.
+  test('task due on a round minute fires at that minute, not again one minute later', () => {
+    // The common case: UI sets due time to a round minute (e.g., 10:00:00).
+    // The query takes due_at <= now, so the 10:00 tick is the first to see it.
     const dueAt = '2026-01-15T10:00:00.000Z'
     const task = {
       id: 1,
@@ -280,9 +280,11 @@ describe('isNotificationBoundary', () => {
       timezone: 'America/Chicago',
       effective_due_at: dueAt,
     }
-    // 1 minute overdue → should fire (first notification)
-    expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(true)
-    // 2 minutes overdue → should NOT fire (not a boundary)
+    // At the due minute → fires (the first notification)
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
+    // 1 minute overdue → must NOT fire again (it used to: the 9:01 duplicate)
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(false)
+    // 2 minutes overdue → not a boundary either
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:02:00.000Z'))).toBe(false)
   })
 
@@ -311,9 +313,7 @@ describe('isNotificationBoundary', () => {
     }
     // 1440 minutes later (24h) — 1440 % 30 === 0 → boundary
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
-    // 1441 minutes later — minutesSinceDue === 1 is handled by the first-notification
-    // special case, but for a task 1 day old this is still technically minute 1441.
-    // 1441 % 30 !== 0 AND 1441 !== 1, so not a boundary.
+    // 1441 minutes later — 1441 % 30 !== 0, so not a boundary.
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(false)
   })
 
@@ -405,14 +405,29 @@ describe('checkOverdueTasks', () => {
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
   })
 
-  test('sends notification for task 1 minute overdue', async () => {
-    // Task due at 10:00, check at 10:01 → minutesSinceDue = 1, fires via special case
+  test('notifies once across the due-minute tick and the tick after it', async () => {
+    // Task due at 10:00: the 10:00 tick sends, the 10:01 tick must not send
+    // the same notification again (the old "fire at minute 1" rule did).
     insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
 
+    await checkOverdueTasks(new Date('2026-01-15T10:00:00.000Z'))
     await checkOverdueTasks(new Date('2026-01-15T10:01:00.000Z'))
 
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
+  })
+
+  test('a due time with seconds notifies once, at the first tick after it', async () => {
+    // Due 10:00:30: the 10:00 tick is before it, the 10:01 tick sees 0 whole
+    // minutes elapsed and sends, the 10:02 tick sees 1 and must not.
+    insertTask(1, 'Buy groceries', '2026-01-15T10:00:30.000Z', 0)
+
+    await checkOverdueTasks(new Date('2026-01-15T10:00:00.000Z'))
+    expect(sendPushNotification).not.toHaveBeenCalled()
+    await checkOverdueTasks(new Date('2026-01-15T10:01:00.000Z'))
+    await checkOverdueTasks(new Date('2026-01-15T10:02:00.000Z'))
+
+    expect(sendPushNotification).toHaveBeenCalledTimes(1)
   })
 
   test('does NOT include task that is not yet due', async () => {
