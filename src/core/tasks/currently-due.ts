@@ -1,8 +1,8 @@
 /**
  * "Which tasks are due right now" — the one place that answers it (§4.6).
  *
- * Three call sites needed this: the notifier, the badge, and the bulk
- * snooze-overdue sweep. Each used to carry its own `due_at < now` SQL. Now that
+ * Four call sites need this: the notifier, the badge, the bulk
+ * snooze-overdue sweep, and each project's overdue_count (`getProjects`). Each used to carry its own `due_at < now` SQL. Now that
  * due-ness is derived rather than stored, three hand-rolled copies would drift
  * — and drift here means the badge, the notification, and the sweep disagree
  * about what is overdue, which is precisely the "app I can't trust" problem the
@@ -18,6 +18,7 @@ import { isCurrentlyDue } from '@/core/recurrence/occurrence'
 
 interface DueCandidate {
   id: number
+  project_id: number
   due_at: string | null
   rrule: string | null
   recurrence_mode: 'from_due' | 'from_completion' | null
@@ -35,7 +36,7 @@ interface DueCandidate {
 function fetchDueCandidates(userId: number): DueCandidate[] {
   return getDb()
     .prepare(
-      `SELECT t.id, t.due_at, t.rrule, t.recurrence_mode, t.anchor_time, u.timezone
+      `SELECT t.id, t.project_id, t.due_at, t.rrule, t.recurrence_mode, t.anchor_time, u.timezone
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
         WHERE t.user_id = ?
@@ -62,11 +63,29 @@ function fetchDueCandidates(userId: number): DueCandidate[] {
     .all(userId) as DueCandidate[]
 }
 
+function fetchCurrentlyDue(userId: number, now: Date): DueCandidate[] {
+  return fetchDueCandidates(userId).filter((row) => isCurrentlyDue(row, row.timezone, now))
+}
+
 /** IDs of the user's tasks that are due or overdue as of `now`. */
 export function getCurrentlyDueTaskIds(userId: number, now: Date = new Date()): number[] {
-  return fetchDueCandidates(userId)
-    .filter((row) => isCurrentlyDue(row, row.timezone, now))
-    .map((row) => row.id)
+  return fetchCurrentlyDue(userId, now).map((row) => row.id)
+}
+
+/**
+ * How many of the user's tasks are due or overdue as of `now`, per project id.
+ * One candidate pass for every project, so the project list never evaluates
+ * the rrules once per project. A project with nothing due is absent.
+ */
+export function countCurrentlyDueByProject(
+  userId: number,
+  now: Date = new Date(),
+): Map<number, number> {
+  const counts = new Map<number, number>()
+  for (const row of fetchCurrentlyDue(userId, now)) {
+    counts.set(row.project_id, (counts.get(row.project_id) ?? 0) + 1)
+  }
+  return counts
 }
 
 /** How many of the user's tasks are due or overdue as of `now`. */

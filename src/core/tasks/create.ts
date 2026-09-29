@@ -18,6 +18,7 @@ import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { normalizeDayState } from '@/lib/quota-prompts'
 import { assertPromptSlotsOwned, defaultReminderRule } from '@/core/time-slots'
 import { getCurrentlyDueTaskIds } from './currently-due'
+import { getInboxId } from '@/core/projects'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
@@ -74,13 +75,11 @@ export function createTask(options: CreateTaskOptions): Task {
   // Get user's inbox project if no project_id specified
   let projectId = input.project_id
   if (!projectId) {
-    const inbox = db
-      .prepare('SELECT id FROM projects WHERE owner_id = ? AND name = ?')
-      .get(userId, 'Inbox') as { id: number } | undefined
-    if (!inbox) {
+    const inboxId = getInboxId(userId)
+    if (inboxId === null) {
       throw new Error('User inbox project not found')
     }
-    projectId = inbox.id
+    projectId = inboxId
   }
 
   // Validate project exists and user has access

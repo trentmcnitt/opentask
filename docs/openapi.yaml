@@ -1695,6 +1695,8 @@ paths:
       summary: Update project
       operationId: updateProject
       tags: [Projects]
+      description: |
+        Owner only. The Inbox cannot be renamed (400); its other fields can change.
       requestBody:
         required: true
         content:
@@ -1737,8 +1739,9 @@ paths:
       operationId: deleteProject
       tags: [Projects]
       description: |
-        Permanently deletes the project and moves all of its tasks to the
-        user's Inbox. Not undoable. The Inbox itself cannot be deleted (400).
+        Permanently deletes the project and moves each of its tasks to its
+        owner's Inbox (in a shared project, every member's tasks go to that
+        member's own Inbox). Not undoable. The Inbox itself cannot be deleted (400).
       responses:
         '200':
           description: Deletion result
@@ -4234,8 +4237,12 @@ components:
           enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
         active_count:
           type: integer
+          description: The caller's own open tasks in the project, quotas excluded
         overdue_count:
           type: integer
+          description: >-
+            The caller's own tasks in the project that are due right now (the
+            same rule as the badge); reminders and quotas are never counted
         created_at:
           type: string
           format: date-time
