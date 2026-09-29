@@ -22,4 +22,23 @@ test.describe('Authentication', () => {
     await page.waitForURL('/', { timeout: 10_000 })
     await expect(page.getByRole('img', { name: 'OpenTask' })).toBeVisible()
   })
+
+  // The signed-in pages share one client-side guard (useRequireSession): a
+  // visitor with no session lands on the login page, which remembers where
+  // they were headed.
+  for (const path of [
+    '/archive',
+    '/trash',
+    '/history',
+    '/quotas',
+    '/reminders',
+    '/settings',
+    '/tasks/1',
+  ]) {
+    test(`signed-out visit to ${path} redirects to login with a callbackUrl`, async ({ page }) => {
+      await page.goto(path)
+      await page.waitForURL(`/login?callbackUrl=${encodeURIComponent(path)}`)
+      await expect(page.getByLabel('Username')).toBeVisible()
+    })
+  }
 })
