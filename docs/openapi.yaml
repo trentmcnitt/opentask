@@ -3339,7 +3339,8 @@ paths:
         seconds later, sends a notification for it to every configured
         channel (Web Push and APNs), so Done and Snooze can be tried end to
         end. `high` sends a High (P3) notification; `urgent` and `critical`
-        send an Urgent (P4) one, and `critical` uses an Apple Critical Alert.
+        both send an Urgent (P4) one as an Apple Critical Alert, the same as a
+        real overdue P4.
       requestBody:
         required: true
         content:
