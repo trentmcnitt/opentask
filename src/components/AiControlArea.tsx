@@ -127,7 +127,9 @@ export function AiControlArea({
       .catch(() => setAiSlotState('unknown'))
   }, [])
 
-  const insightsFreshnessText = insightsGeneratedAt ? formatRelativeTime(insightsGeneratedAt) : null
+  const insightsFreshnessText = insightsGeneratedAt
+    ? formatRelativeTime(insightsGeneratedAt, undefined, timezone)
+    : null
 
   const handleRefreshAnnotations = useCallback(() => {
     if (!annotationRefreshLoading) onRefreshAnnotations()

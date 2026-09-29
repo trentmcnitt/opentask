@@ -12,6 +12,7 @@ import {
   parseInTimezone,
   getTimezoneDayBoundaries,
 } from '@/lib/format-date'
+import { DateTime } from 'luxon'
 import { snapToHour } from '@/lib/snooze'
 
 /** Preset time slots (24h format in user's local timezone) */
@@ -192,6 +193,18 @@ export function formatQuickSelectHeader(isoUtc: string, timezone: string): strin
 }
 
 /**
+ * Whole calendar days from `a` to `b` (negative when `b` is earlier), counted
+ * midnight to midnight in `timezone`, or the process's zone when omitted.
+ * Luxon's startOf('day') keeps DST's 23- and 25-hour days at one day each.
+ */
+function calendarDaysBetween(a: Date, b: Date, timezone?: string): number {
+  const opts = timezone ? { zone: timezone } : {}
+  const dayA = DateTime.fromJSDate(a, opts).startOf('day')
+  const dayB = DateTime.fromJSDate(b, opts).startOf('day')
+  return Math.round(dayB.diff(dayA, 'days').days)
+}
+
+/**
  * Format the relative time portion: "in 26 mins", "3h ago", "in 2 days", etc.
  *
  * Rules:
@@ -199,8 +212,12 @@ export function formatQuickSelectHeader(isoUtc: string, timezone: string): strin
  * - Tomorrow & <12 hours away: Show hours ("in 8h", "in 11h")
  * - Tomorrow & 12+ hours away: Show "in 1 day"
  * - Beyond tomorrow: Count calendar days ("in 2 days", "in 5 days")
+ *
+ * Calendar days are counted in `timezone` (the account's) when given, so the
+ * text agrees with the Today/Tomorrow header even when the device clock is set
+ * to another zone. Without one, the process's own zone is used.
  */
-export function formatRelativeTime(isoUtc: string, now?: Date): string {
+export function formatRelativeTime(isoUtc: string, now?: Date, timezone?: string): string {
   const target = new Date(isoUtc)
   const reference = now ?? new Date()
   const diffMs = target.getTime() - reference.getTime()
@@ -211,12 +228,7 @@ export function formatRelativeTime(isoUtc: string, now?: Date): string {
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
 
-  // Get calendar dates (using browser's local timezone)
-  // Note: toDateString() strips time, leaving just the date at midnight
-  const targetDate = new Date(target.toDateString())
-  const referenceDate = new Date(reference.toDateString())
-  const calendarDiffMs = targetDate.getTime() - referenceDate.getTime()
-  const calendarDays = Math.abs(Math.round(calendarDiffMs / (24 * 60 * 60 * 1000)))
+  const calendarDays = Math.abs(calendarDaysBetween(reference, target, timezone))
 
   let text: string
 

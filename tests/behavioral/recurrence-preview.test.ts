@@ -108,6 +108,29 @@ describe('Recurrence preview timezone handling', () => {
     expect(preview).toBeNull()
   })
 
+  test('late-evening weekly rule matches the server when the process runs in New York', () => {
+    // The old client copy anchored its pattern with new Date(2020, 0, 1, h, m),
+    // i.e. in the process's own timezone. In New York 23:00 local is 04:00Z the
+    // next day, so rrule.js (which works in UTC) moved every occurrence a
+    // weekday late. The server anchors in UTC; the preview must agree with it.
+    const originalTz = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(300)
+      const rrule = 'FREQ=WEEKLY;BYDAY=WE;BYHOUR=23;BYMINUTE=0'
+      const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+      const server = computeFirstOccurrence(rrule, null, TIMEZONE_CHICAGO)
+      expect(preview).not.toBeNull()
+      expect(DateTime.fromISO(preview!).toMillis()).toBe(server.getTime())
+      const local = DateTime.fromISO(preview!).setZone(TIMEZONE_CHICAGO)
+      expect(local.weekday).toBe(3) // Wednesday
+      expect(local.hour).toBe(23)
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ
+      else process.env.TZ = originalTz
+    }
+  })
+
   test('rrule without BYHOUR defaults to midnight', () => {
     const rrule = 'FREQ=DAILY'
 

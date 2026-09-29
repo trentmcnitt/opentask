@@ -276,14 +276,14 @@ export function useBulkQuickSelectDate({
     }
     if (allSame) {
       return {
-        relativeText: formatRelativeTime(earliestDueAt, now),
+        relativeText: formatRelativeTime(earliestDueAt, now, timezone),
         isPast: new Date(earliestDueAt) < now,
       }
     }
     // Mixed dates - show "Earliest:" prefix so users know it's not all tasks
     const dueDates = tasks.map((t) => t.due_at).filter((d): d is string => d !== null)
     return {
-      relativeText: `Earliest: ${formatRelativeTime(earliestDueAt, now)}`,
+      relativeText: `Earliest: ${formatRelativeTime(earliestDueAt, now, timezone)}`,
       isPast: hasMixedDates && dueDates.some((d) => new Date(d) < now),
     }
   }
@@ -295,7 +295,7 @@ export function useBulkQuickSelectDate({
   if (operationType === 'preset' && presetTime) {
     // Show the absolute target time
     headerText = formatQuickSelectHeader(presetTime, timezone)
-    relativeText = formatRelativeTime(presetTime, now)
+    relativeText = formatRelativeTime(presetTime, now, timezone)
     isPast = new Date(presetTime) < now
   } else if (operationType === 'delta' && deltaMinutes !== 0) {
     // Delta mode: show actual new time if all tasks share the same due date,
@@ -308,7 +308,7 @@ export function useBulkQuickSelectDate({
       const newTimeIso = newTime.toISOString()
       headerText = formatQuickSelectHeader(newTimeIso, timezone)
       // Show relative time only; delta is displayed separately below
-      relativeText = formatRelativeTime(newTimeIso, now)
+      relativeText = formatRelativeTime(newTimeIso, now, timezone)
       isPast = newTime < now
     } else {
       // Mixed dates: show original header with "+Xh from each"
