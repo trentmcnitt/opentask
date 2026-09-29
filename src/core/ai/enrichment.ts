@@ -8,7 +8,9 @@
  * State machine:
  *   [New title-only task] → add `ai-to-process` label
  *   [Fire-and-forget or cron picks up task with `ai-to-process`]
- *     → Success: remove `ai-to-process`, apply enrichment
+ *     → Success: remove `ai-to-process`, apply enrichment, and — for a task
+ *       added in the last 10 minutes — one quiet "AI finished" push
+ *       (`announceEnrichmentFinished`, src/core/notifications/enrichment-notify.ts)
  *     → Failure attempt 1: keep `ai-to-process` (retry on next cycle)
  *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`
  *   [Task has both `ai-locked` + `ai-to-process`] → skip (ai-locked wins),
@@ -60,6 +62,7 @@ import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
 import { validateLabelsExist, filterAutoCreatableLabels } from '@/core/labels'
+import { notifyEnrichmentFinished } from '@/core/notifications/enrichment-notify'
 
 // --- Pipeline state ---
 //
@@ -336,8 +339,11 @@ export async function processEnrichmentQueue(): Promise<void> {
       }
 
       let succeeded = false
+      let modelRan = false
       try {
-        const enrichedFields = await enrichTask(row)
+        const outcome = await enrichTask(row)
+        const enrichedFields = outcome ?? []
+        modelRan = outcome !== null
         retryCount.delete(row.id)
         processed++
         succeeded = true
@@ -363,6 +369,10 @@ export async function processEnrichmentQueue(): Promise<void> {
       // Notify connected tabs so the AI glow stops and enriched data appears.
       // A failure only moves `ai-*` labels, which no widget reads.
       emitSyncEvent(row.user_id, { widgets: succeeded })
+
+      // The "AI finished" push, outside the try so a push failure can never
+      // count as an enrichment failure (and trip the circuit breaker).
+      if (succeeded && modelRan) announceEnrichmentFinished(row.id, row.user_id)
     }
 
     log.info(
@@ -430,9 +440,12 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   if (!row) return
 
   let enrichmentSucceeded = false
+  let modelRan = false
   let enrichedFields: string[] = []
   try {
-    enrichedFields = await enrichTask(row)
+    const outcome = await enrichTask(row)
+    enrichedFields = outcome ?? []
+    modelRan = outcome !== null
     retryCount.delete(taskId)
     enrichmentSucceeded = true
   } catch (err) {
@@ -449,6 +462,23 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   // Tell open tabs what the AI did, so the change can be explained rather than
   // just appearing.
   if (enrichmentSucceeded) emitEnrichmentComplete(taskId, userId, enrichedFields)
+  if (enrichmentSucceeded && modelRan) announceEnrichmentFinished(taskId, userId)
+}
+
+/**
+ * Fire the "AI finished" push (`notifyEnrichmentFinished`) without awaiting it.
+ *
+ * Called from BOTH entry points after a successful model run — never from the
+ * failure path (`handleFailure` → `ai-failed` sends nothing) and never when the
+ * user's enrichment mode is off (`enrichTask` returns null: no model ran).
+ * Whether it actually sends — a task added in the last 10 minutes, first time
+ * only, the user's settings, not the demo user — is decided there; see the
+ * header of `src/core/notifications/enrichment-notify.ts`.
+ */
+function announceEnrichmentFinished(taskId: number, userId: number): void {
+  notifyEnrichmentFinished(taskId, userId).catch((err) => {
+    log.error('ai', `Enrichment notification failed for task ${taskId}:`, err)
+  })
 }
 
 /**
@@ -553,7 +583,13 @@ function buildPromptFor(
  * Sends the raw title text with the user's timezone to the model,
  * gets back structured output, validates it, and applies changes.
  */
-async function enrichTask(row: PendingTaskRow): Promise<string[]> {
+/**
+ * Returns the user-facing fields the enrichment changed, or null when no model
+ * ran because the user's enrichment mode is off (the trigger label is simply
+ * removed) — which is a success for the pipeline, but not an enrichment to
+ * announce.
+ */
+async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   const db = getDb()
 
   // Get user's timezone, AI context, and schedule preferences
@@ -600,7 +636,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
       'ai',
       `Task ${row.id}: enrichment disabled for user ${row.user_id}, removing ai-to-process`,
     )
-    return []
+    return null
   }
 
   const timeoutMs = resolveFeatureTimeout(row.user_id, 'enrichment', modes.enrichment)

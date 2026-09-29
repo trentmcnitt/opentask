@@ -9,7 +9,7 @@
  * library doesn't have a convenience property for it.
  */
 
-import { ApnsClient, Host, Notification, SilentNotification, Errors } from 'apns2'
+import { ApnsClient, Host, Notification, SilentNotification, Errors, Priority } from 'apns2'
 import type { ApnsError, PushType } from 'apns2'
 import { readFileSync } from 'fs'
 import { getDb } from '@/core/db'
@@ -386,6 +386,67 @@ export async function sendApnsSlotReminder(
       log.info(
         'apns',
         `Sending slot reminder "${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
+      )
+    },
+  )
+}
+
+export interface ApnsEnrichedPayload {
+  title: string
+  body: string
+  taskId: number
+}
+
+/**
+ * The "AI finished" notification for a just-added task (enrichment-notify.ts).
+ *
+ * Built to land quietly: `interruption-level: passive` (Notification Center
+ * only, no banner, doesn't light the screen), no `sound` key, APNs priority 5.
+ * No `category`, so none of the overdue notification's buttons (Done, +1hr,
+ * All +1hr) or its content extension. No `badge`: this says nothing about the
+ * overdue count, so it leaves the icon alone.
+ *
+ * `data.taskId` is the key the apps read: with no category, a tap lands in the
+ * apps' individual-task branch (`UNNotificationDefaultActionIdentifier` →
+ * `navigateToTask`, i.e. `/?task=<id>`), and the `dismiss` silent push that a
+ * done/snooze/delete sends for the task clears this notification too.
+ *
+ * `threadId` and `collapseId` are `enriched-<id>`: each task is its own stack,
+ * and a second push for the same task would replace, not stack.
+ *
+ * Sent to every registered device, the watch app included — the same set as
+ * overdue alerts (`sendApnsNotification`). Only the badge push skips the watch,
+ * and that is because watchOS has no icon badge.
+ */
+export function buildEnrichedNotification(
+  deviceToken: string,
+  topic: string,
+  payload: ApnsEnrichedPayload,
+): Notification {
+  const id = `enriched-${payload.taskId}`
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    threadId: id,
+    collapseId: id,
+    priority: Priority.throttled,
+    data: { taskId: payload.taskId },
+    aps: { 'interruption-level': 'passive' },
+  })
+}
+
+export async function sendApnsEnrichedNotification(
+  userId: number,
+  payload: ApnsEnrichedPayload,
+): Promise<void> {
+  await sendToAllDevices(
+    userId,
+    (device) => buildEnrichedNotification(device.device_token, device.bundle_id, payload),
+    'enrichment notifications',
+    (devices) => {
+      log.info(
+        'apns',
+        `Sending enrichment notification for task ${payload.taskId} to ${devices.length} device(s)`,
       )
     },
   )
