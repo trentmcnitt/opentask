@@ -582,8 +582,7 @@ function buildPromptFor(
  *
  * Sends the raw title text with the user's timezone to the model,
  * gets back structured output, validates it, and applies changes.
- */
-/**
+ *
  * Returns the user-facing fields the enrichment changed, or null when no model
  * ran because the user's enrichment mode is off (the trigger label is simply
  * removed) — which is a success for the pipeline, but not an enrichment to
