@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Task, Project } from '@/types'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { showToast } from '@/lib/toast'
@@ -90,29 +91,25 @@ export default function TaskDetailPage() {
     router.push(href)
   }, [pendingNavigation, clearPendingNavigation, router])
 
-  // Use a ref to access the shared undo handler in the save-and-leave callback,
-  // since actions is created after this callback in the hook order.
-  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
+  // Whether the last save reached the server. `saveRef` resolves either way:
+  // the editors swallow a failed save (the host has already shown the error,
+  // and the staged edits stay for a retry), and an editor may decline to send
+  // anything at all (QuotaDetail's `canSave`, e.g. a target out of range, with
+  // its own inline message saying why). This page is the host (handleSaveAll
+  // below), so it records a save that landed, and save-and-leave leaves only
+  // then. Anything else stays on the page, with no claim that it saved.
+  const saveLandedRef = useRef(false)
 
   const handleSaveAndLeave = useCallback(async () => {
-    try {
-      await saveRef.current?.()
-      showToast({
-        message: 'Changes saved',
-        type: 'success',
-        action: {
-          label: 'Undo',
-          onClick: async () => {
-            await handleUndoRef.current?.()
-            window.location.reload()
-          },
-        },
-      })
-    } catch {
-      showToast({ message: 'Save failed', type: 'error' })
+    saveLandedRef.current = false
+    await saveRef.current?.()
+    if (!saveLandedRef.current) {
       clearPendingNavigation()
       return
     }
+    // No toast of our own: the save already showed its description with Undo
+    // (the same single toast the Reminders and Quotas surfaces show). Undo
+    // still reaches the page left for, which refreshes on the sync event.
     const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
@@ -226,8 +223,17 @@ export default function TaskDetailPage() {
     onEnrichmentComplete: handleEnrichmentComplete,
   })
 
-  // Keep handleSaveAndLeave's undo ref in sync with the shared handler
-  handleUndoRef.current = actions.handleUndo
+  // Every editor on this page saves through here, so save-and-leave learns
+  // that the save landed (see saveLandedRef). A failure rejects to the editor,
+  // which keeps its staged edits.
+  const { handleSaveAllChanges } = actions
+  const handleSaveAll = useCallback(
+    async (changes: QuickActionPanelChanges) => {
+      await handleSaveAllChanges(changes)
+      saveLandedRef.current = true
+    },
+    [handleSaveAllChanges],
+  )
 
   const handleDelete = async () => {
     if (!task) return
@@ -379,7 +385,7 @@ export default function TaskDetailPage() {
               <QuotaDetail
                 key={task.id}
                 tasks={[task]}
-                onSave={actions.handleSaveAllChanges}
+                onSave={handleSaveAll}
                 onDelete={handleDelete}
                 onDirtyChange={handleDirtyChange}
                 saveRef={saveRef}
@@ -399,7 +405,7 @@ export default function TaskDetailPage() {
               <ReminderDetail
                 key={task.id}
                 tasks={[task]}
-                onSaveAll={actions.handleSaveAllChanges}
+                onSaveAll={handleSaveAll}
                 onConsidered={handleConsidered}
                 onDelete={handleDelete}
                 onDirtyChange={handleDirtyChange}
@@ -416,7 +422,7 @@ export default function TaskDetailPage() {
               onMarkDone={actions.handleDone}
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}
-              onSaveAll={actions.handleSaveAllChanges}
+              onSaveAll={handleSaveAll}
               annotation={annotationMap.get(task.id)}
               insightsCommentary={insightsData.annotationMap.get(task.id)}
             />
