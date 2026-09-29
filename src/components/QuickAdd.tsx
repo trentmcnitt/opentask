@@ -14,6 +14,21 @@ interface QuickAddProps {
   /** Another surface's prompt (the Reminders page: "Add a thought…"); fixed, never rotated. */
   placeholder?: string
   ariaLabel?: string
+  /** Focus the field on mount (the phone's quick-add sheet, `QuickAddSheet`). */
+  autoFocus?: boolean
+  /**
+   * How the "open the full form" affordance is drawn. `icon` (default): the
+   * `+` inside the field's left edge. `link`: an "Add manually" text link
+   * under the field — the quick-add sheet, opened by the tab bar's `+` right
+   * below it, where a second `+` would read as the same button.
+   */
+  manualAdd?: 'icon' | 'link'
+  /**
+   * Called after a successful submit INSTEAD of re-focusing the field for the
+   * next entry. The quick-add sheet closes here; re-focusing an input inside a
+   * closing sheet would hold the iOS keyboard up through the exit animation.
+   */
+  onSubmitted?: () => void
 }
 
 // Rotating placeholder text for the quick-add input — for the DEMO account only. The
@@ -33,7 +48,15 @@ const PLACEHOLDER_EXAMPLES = [
 ]
 const PLACEHOLDER_ROTATE_MS = 3200
 
-export function QuickAdd({ onAdd, onOpenAddForm, placeholder, ariaLabel }: QuickAddProps) {
+export function QuickAdd({
+  onAdd,
+  onOpenAddForm,
+  placeholder,
+  ariaLabel,
+  autoFocus,
+  manualAdd = 'icon',
+  onSubmitted,
+}: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
@@ -91,10 +114,17 @@ export function QuickAdd({ onAdd, onOpenAddForm, placeholder, ariaLabel }: Quick
     try {
       await onAdd(trimmed)
       setTitle('')
-      inputRef.current?.focus()
+      if (onSubmitted) onSubmitted()
+      else inputRef.current?.focus()
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // The typed title goes with it, so switching to the full form loses nothing.
+  const openAddForm = () => {
+    onOpenAddForm?.(title)
+    setTitle('')
   }
 
   return (
@@ -107,19 +137,19 @@ export function QuickAdd({ onAdd, onOpenAddForm, placeholder, ariaLabel }: Quick
           'transition-all',
         )}
       >
-        <button
-          type="button"
-          onClick={() => {
-            onOpenAddForm?.(title)
-            setTitle('')
-          }}
-          className="hover:text-primary hover:bg-accent text-muted-foreground flex-shrink-0 rounded p-0.5 transition-colors"
-          aria-label="Open full add form"
-        >
-          <Plus className="size-5" />
-        </button>
+        {manualAdd === 'icon' && (
+          <button
+            type="button"
+            onClick={openAddForm}
+            className="hover:text-primary hover:bg-accent text-muted-foreground flex-shrink-0 rounded p-0.5 transition-colors"
+            aria-label="Open full add form"
+          >
+            <Plus className="size-5" />
+          </button>
+        )}
         <Input
           ref={inputRef}
+          autoFocus={autoFocus}
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -157,6 +187,15 @@ export function QuickAdd({ onAdd, onOpenAddForm, placeholder, ariaLabel }: Quick
           </button>
         )}
       </div>
+      {manualAdd === 'link' && (
+        <button
+          type="button"
+          onClick={openAddForm}
+          className="text-muted-foreground hover:text-foreground mt-2 cursor-pointer px-1 py-1 text-sm underline-offset-2 hover:underline"
+        >
+          Add manually
+        </button>
+      )}
     </div>
   )
 }

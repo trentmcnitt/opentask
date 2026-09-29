@@ -7,6 +7,7 @@ import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
 import { OfflineBanner } from './OfflineBanner'
 import { useProjects } from './ProjectsProvider'
+import { OPEN_QUICK_ADD_EVENT, QUICK_ADD_ACTION } from './QuickAddSheet'
 import dynamic from 'next/dynamic'
 
 const CreateTaskPanel = dynamic(() =>
@@ -44,6 +45,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
     setShowAddForm(true)
   }, [pathname, router])
+
+  // The phone tab bar's `+` (Trent, 2026-09-29): a one-line quick-add sheet at
+  // thumb level (`QuickAddSheet`, owned by the dashboard) instead of the full
+  // form, which its "Add manually" link still opens. Reminders and Quotas keep
+  // their own in-place add, as above. From any other page it navigates to the
+  // dashboard with `?action=quick-add`, which the dashboard reads on mount (an
+  // event would fire before the dashboard exists to hear it). The desktop
+  // Sidebar's Add button keeps `handleAddClick` and the full form.
+  const handleAddTabClick = useCallback(() => {
+    if (pathname.startsWith('/reminders') || pathname.startsWith('/quotas')) {
+      handleAddClick()
+      return
+    }
+    if (pathname === '/') {
+      window.dispatchEvent(new CustomEvent(OPEN_QUICK_ADD_EVENT))
+      return
+    }
+    router.push(`/?action=${QUICK_ADD_ACTION}`)
+  }, [pathname, router, handleAddClick])
 
   useEffect(() => {
     // Handle ?action=create from iOS quick action (check URL directly to avoid
@@ -114,7 +134,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">{children}</div>
 
-      <BottomTabs onAddClick={handleAddClick} />
+      <BottomTabs onAddClick={handleAddTabClick} />
 
       <CreateTaskPanel
         open={showAddForm}
