@@ -208,7 +208,6 @@ export type UndoAction =
   | 'progress'
   // §7.5: declining an occurrence without recording a completion.
   | 'skip'
-  | 'bulk_skip'
   // Editable time slots: a slot's start moved / a slot removed, with the
   // reminders that moved to stay in (or find) a slot. The entry also carries
   // the slot row (`undo_log.slot_state`) so undo restores both together.

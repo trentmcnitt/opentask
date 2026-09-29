@@ -2,6 +2,8 @@
 out/
 build/
 node_modules/
+# Agent worktrees: other sessions' checkouts, not this tree's files
+.claude/
 data/
 *.db
 package-lock.json
