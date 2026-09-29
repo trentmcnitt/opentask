@@ -571,37 +571,24 @@ final class WatchViewModel: ObservableObject {
     // MARK: - Bulk overdue
 
     /// Snooze every overdue task (server-side set, not just what's on
-    /// screen) to the next period. P3 (High) is only included once nothing
-    /// lower is left in the sweep, P4 (Urgent) never — see `bulkSnooze()` /
-    /// `docs/TASK-MODEL.md`'s due-date philosophy. Same endpoint the
-    /// notification "All → Next period" action and the phone's clock button
-    /// use.
+    /// screen) to the next period or by +1 hour. P3 (High) is only included
+    /// once nothing lower is left in the sweep, P4 (Urgent) never — see
+    /// `bulkSnooze()` / `docs/TASK-MODEL.md`'s due-date philosophy. Same
+    /// endpoint the notification "All → Next period" action and the phone's
+    /// clock button use.
     ///
     /// `async`, returning the server's real result (`nil` on failure) rather
     /// than firing-and-forgetting internally — `BulkSnoozeSheetView` awaits
     /// this so it can show what actually happened (N snoozed, High included,
-    /// Urgent still overdue) instead of just closing on tap and hoping.
+    /// High or Urgent still overdue) instead of just closing on tap and hoping.
     @discardableResult
-    func bulkSnoozeOverdueNextPeriod() async -> APIClient.BulkSnoozeResult? {
+    func bulkSnoozeOverdue(_ target: TaskSnoozeTarget) async -> APIClient.BulkSnoozeResult? {
         WKInterfaceDevice.current().play(.click)
         do {
-            let result = try await api.snoozeOverdue(slot: "next")
-            WKInterfaceDevice.current().play(result.tasksAffected > 0 ? .success : .failure)
-            WidgetCenter.shared.reloadAllTimelines()
-            await load()
-            return result
-        } catch {
-            WKInterfaceDevice.current().play(.failure)
-            await load()
-            return nil
-        }
-    }
-
-    @discardableResult
-    func bulkSnoozeOverduePlusHour() async -> APIClient.BulkSnoozeResult? {
-        WKInterfaceDevice.current().play(.click)
-        do {
-            let result = try await api.snoozeOverdue(deltaMinutes: 60)
+            let result = switch target {
+            case .nextPeriod: try await api.snoozeOverdue(slot: "next")
+            case .plusOneHour: try await api.snoozeOverdue(deltaMinutes: 60)
+            }
             WKInterfaceDevice.current().play(result.tasksAffected > 0 ? .success : .failure)
             WidgetCenter.shared.reloadAllTimelines()
             await load()
