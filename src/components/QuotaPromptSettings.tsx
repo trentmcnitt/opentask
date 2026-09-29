@@ -72,8 +72,12 @@ export function QuotaPromptSettings() {
               Where a reminder goes when you don&rsquo;t say when
             </div>
           </div>
+          {/* Always controlled: '' (Radix's "no value", which shows the
+              placeholder) until the prefs load, never undefined — flipping
+              from undefined to an id made Radix warn "Select is changing from
+              uncontrolled to controlled". */}
           <Select
-            value={current ? String(current.id) : undefined}
+            value={current ? String(current.id) : ''}
             onValueChange={(value) => void update({ slotId: Number(value) })}
           >
             <SelectTrigger
