@@ -51,8 +51,8 @@ async function getPrefs(page: Page): Promise<Record<string, unknown>> {
 }
 
 test.describe('New view', () => {
-  test('the switch reads Today · All · New — no Projects', async ({ authenticatedPage: page }) => {
-    await expect(toggle(page).getByRole('button')).toHaveText(['Today', 'All', 'New'])
+  test('the switch reads All · Today · New — no Projects', async ({ authenticatedPage: page }) => {
+    await expect(toggle(page).getByRole('button')).toHaveText(['All', 'Today', 'New'])
   })
 
   test('is one flat list, newest added first whatever the saved sort, with project names', async ({
