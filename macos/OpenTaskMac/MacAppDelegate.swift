@@ -275,9 +275,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 switch response.actionIdentifier {
                 case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                    if result.tasksAffected > 0 {
-                        await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                    }
+                    await dismissNotificationsAfterSweep(result)
 
                 case UNNotificationDefaultActionIdentifier:
                     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -286,9 +284,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 default:
                     if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                         let result = try await APIClient.shared.snoozeOverdue(slot: slot)
-                        if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                        }
+                        await dismissNotificationsAfterSweep(result)
                     }
                 }
             } catch {
@@ -366,9 +362,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                         deltaMinutes: 60,
                         includeTaskId: taskId
                     )
-                    if result.tasksAffected > 0 {
-                        await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                    }
+                    await dismissNotificationsAfterSweep(result)
 
                 case UNNotificationDefaultActionIdentifier:
                     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -377,9 +371,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 default:
                     if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                         let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
-                        if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                        }
+                        await dismissNotificationsAfterSweep(result)
                     }
                 }
             } catch {

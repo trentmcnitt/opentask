@@ -62,11 +62,9 @@ struct SetupView: View {
         isValidating = true
         errorMessage = nil
 
-        // Normalize URL: strip trailing slash
-        var url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while url.hasSuffix("/") {
-            url.removeLast()
-        }
+        // Trim, drop trailing slashes, and assume https:// when no scheme was
+        // typed — shared with the Mac's setup (`ServerURL.normalize`).
+        let url = ServerURL.normalize(serverURL)
 
         // Verify the server is reachable by loading the login page
         guard let checkURL = URL(string: "\(url)/login") else {

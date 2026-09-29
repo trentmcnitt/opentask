@@ -4,11 +4,12 @@ import Foundation
 /// and its Smart Stack widget (`OpenTaskWatchWidgets`) — the two watchOS
 /// targets that both need "which slot is current" and "what counts as an
 /// up-next task" to agree, without either importing `ios/OpenTaskWidgets`
-/// (out of bounds tonight — see `WatchTheme.swift`'s doc). The phone widgets'
-/// equivalent logic (`RemindersTimeline`/`TasksTimeline`, private to that
-/// extension) was read for reference but not copied line-for-line; this is a
-/// smaller, independent implementation sized for the watch's simpler UI (no
-/// paging, no auto-advance).
+/// (the phone widget extension's private code — see `WatchTheme.swift`'s
+/// doc). The slot half is the watch's own, smaller than the phone's
+/// `RemindersTimeline` (no paging, no auto-advance). The task lists are NOT
+/// the watch's own: they forward to `TaskLists` (`ios/Shared`), the rules the
+/// phone Tasks widget and the Mac menu bar use, so every surface agrees on
+/// what is overdue and in what order.
 enum WatchSlotLogic {
 
     // MARK: - Reminders: current slot
@@ -72,18 +73,18 @@ enum WatchSlotLogic {
 
     // MARK: - Tasks: "Up next"
 
-    /// Same scope as the phone Tasks widget's "Up next": every open task with
-    /// a due date, excluding reminders and tracked (quota) items — no
-    /// end-of-day cutoff, soonest first. Shared by the app's Tasks page and
-    /// the widget's timeline so the two surfaces never disagree about what
-    /// "Up next" means.
+    /// The phone Tasks widget's "Up next" (`TaskLists.upNext`): every open
+    /// task with a due date, excluding reminders and tracked (quota) items —
+    /// no end-of-day cutoff, soonest first, higher priority first on a tie.
+    /// Shared by the app's Tasks page and the widget's timeline so the two
+    /// surfaces never disagree about what "Up next" means.
     static func upNextTasks(from tasks: [TaskDTO]) -> [TaskDTO] {
-        tasks
-            .filter { $0.dueDate != nil && !$0.isReminder && !$0.isTracked }
-            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+        TaskLists.upNext(tasks)
     }
 
+    /// `TaskLists.overdue`: the "Up next" tasks already past due, most
+    /// overdue first.
     static func overdueTasks(from tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
-        upNextTasks(from: tasks).filter { $0.isOverdue(now: now) }
+        TaskLists.overdue(tasks, now: now)
     }
 }

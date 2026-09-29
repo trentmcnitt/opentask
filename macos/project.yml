@@ -239,10 +239,12 @@ targets:
   # It compiles the SAME source files the phone/watch/Mac targets do (by
   # path, never copies): ios/Shared, the widget extension's WidgetStore and
   # TasksTimeline (the Tasks widget's lists and scope ring/default) and
-  # DueLabel (its due-label words), and the
-  # watch's two pure-logic files. All Foundation-only. Left out:
-  #   - NotificationConstants.swift — UserNotifications registration, no
-  #     logic worth testing, and it would pull the framework into the bundle.
+  # DueLabel (its due-label words), the watch's two pure-logic files, and
+  # the Smart Stack card's WatchWidgetState (its pending maps and claim).
+  # All Foundation-only. Left out:
+  #   - NotificationConstants.swift — UserNotifications registration, and it
+  #     would pull the framework into the bundle. Its one testable rule, which
+  #     banners a sweep clears, lives in SweepDismissal.swift for that reason.
   #   - everything else in OpenTaskWidgets/WatchShared (SwiftUI/WidgetKit).
   # KeychainHelper stays in: APIClient calls it and TaskSnoozePlan calls
   # APIClient, and nothing touches either at load. No test calls the network
@@ -250,9 +252,9 @@ targets:
   #
   # WidgetStore's only non-Foundation references are two widget kind
   # strings; ios/Tests/Logic/Support/WidgetKindShims.swift stands in for
-  # them. And WidgetStore.suiteOverride (DEBUG-only) keeps every test off the
-  # real App Group suite, which on this Mac is the installed app's widget
-  # cache.
+  # them. And WidgetStore.suiteOverride and WatchWidgetState.suiteOverride
+  # (DEBUG-only) keep every test off the real App Group suite, which on this
+  # Mac is the installed app's widget cache.
   #
   # Resources: the server contract fixtures (tests/fixtures/contract/*.json),
   # written by tests/integration/contract-fixtures.test.ts.
@@ -268,6 +270,7 @@ targets:
       - path: ../ios/OpenTaskWidgets/DueLabel.swift
       - path: ../ios/WatchShared/WatchQuotaLogic.swift
       - path: ../ios/WatchShared/WatchSlotLogic.swift
+      - path: ../ios/WatchShared/WatchWidgetState.swift
       - path: ../ios/Tests/Logic
       - path: ../tests/fixtures/contract
         buildPhase: resources

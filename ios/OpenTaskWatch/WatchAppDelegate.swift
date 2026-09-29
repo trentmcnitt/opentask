@@ -252,10 +252,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     case NotificationAction.snoozeAll1hr:
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
                         print("[OpenTaskWatch] Summary: snoozed all +1hr (\(result.tasksAffected) tasks)")
-                        if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                        }
-                        updateBadge(result.skippedUrgent)
+                        await dismissNotificationsAfterSweep(result)
                         playHaptic(.success)
 
                     case UNNotificationDefaultActionIdentifier:
@@ -265,10 +262,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                         if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                             let result = try await APIClient.shared.snoozeOverdue(slot: slot)
                             print("[OpenTaskWatch] Summary: snoozed all to slot \(slot) (\(result.tasksAffected) tasks)")
-                            if result.tasksAffected > 0 {
-                                await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                            }
-                            updateBadge(result.skippedUrgent)
+                            await dismissNotificationsAfterSweep(result)
                             playHaptic(.success)
                         }
                     }
@@ -295,9 +289,14 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     case NotificationAction.completeAll:
                         let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
                         print("[OpenTaskWatch] Slot \(slotId): completed \(affected) reminders")
-                        center.removeDeliveredNotifications(
-                            withIdentifiers: [response.notification.request.identifier]
-                        )
+                        // Same rule as the phone and Mac: the banner goes only
+                        // when something was completed. Nothing completed means
+                        // the slot's reminders are still waiting, so it stays.
+                        if affected > 0 {
+                            center.removeDeliveredNotifications(
+                                withIdentifiers: [response.notification.request.identifier]
+                            )
+                        }
                         playHaptic(affected > 0 ? .success : .failure)
 
                     case UNNotificationDefaultActionIdentifier:
@@ -320,8 +319,10 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         }
 
         // Individual task notifications: require taskId
+        // No badge handling anywhere on the Watch: watchOS has no app icon
+        // badge (the phone and Mac re-read theirs from the server after an
+        // action, `refreshBadgeFromServer`).
         let taskId = userInfo["taskId"] as? Int
-        let overdueCount = userInfo["overdueCount"] as? Int
 
         // Clear this specific notification on any action
         if taskId != nil {
@@ -340,23 +341,18 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                 switch response.actionIdentifier {
                 case NotificationAction.done:
                     try await APIClient.shared.markDone(taskId: taskId)
-                    if let count = overdueCount { updateBadge(count - 1) }
                     print("[OpenTaskWatch] Done: task \(taskId)")
                     playHaptic(.success)
 
                 case NotificationAction.snooze1hr:
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
-                    if let count = overdueCount { updateBadge(count - 1) }
                     print("[OpenTaskWatch] Snoozed +1hr: task \(taskId)")
                     playHaptic(.success)
 
                 case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     print("[OpenTaskWatch] Snoozed all +1hr (\(result.tasksAffected) tasks)")
-                    if result.tasksAffected > 0 {
-                        await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                    }
-                    updateBadge(result.skippedUrgent)
+                    await dismissNotificationsAfterSweep(result)
                     playHaptic(.success)
 
                 case UNNotificationDefaultActionIdentifier:
@@ -367,10 +363,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                         let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
                         print("[OpenTaskWatch] Snoozed all to slot \(slot) (\(result.tasksAffected) tasks)")
-                        if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                        }
-                        updateBadge(result.skippedUrgent)
+                        await dismissNotificationsAfterSweep(result)
                         playHaptic(.success)
                     }
                 }
