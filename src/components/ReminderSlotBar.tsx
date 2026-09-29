@@ -1,10 +1,10 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { parseHHMM } from '@/lib/time-slot-assign'
+import { slotHasStarted } from '@/lib/reminders-summary'
+import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
-import { DateTime } from 'luxon'
 
 /**
  * The whole day's slots as one thin bar, under the pager.
@@ -85,21 +85,6 @@ function slotState(group: ReminderGroup, startedAlready: boolean): SlotState {
   return 'upcoming'
 }
 
-/**
- * Has this slot's time arrived?
- *
- * The un-slotted "Anytime" bucket has no start time and is always available,
- * so it counts as started — it is never "coming up later".
- */
-function hasStarted(group: ReminderGroup, timezone: string, now: Date): boolean {
-  if (!group.slot) return true
-  const start = parseHHMM(group.slot.start_time)
-  if (start === null) return true
-  const local = DateTime.fromJSDate(now).setZone(timezone)
-  if (!local.isValid) return true
-  return local.hour * 60 + local.minute >= start
-}
-
 export function ReminderSlotBar({
   groups,
   currentIndex,
@@ -143,7 +128,7 @@ export function ReminderSlotBar({
       aria-label="Today's reminder slots"
     >
       {shown.map(({ group, index: i, considered, total }) => {
-        const started = hasStarted(group, timezone, now)
+        const started = slotHasStarted(group.slot, timezone, now)
         const state = slotState(group, started)
         const fraction = considered / total
         // Gated on the numbers, not on `state`: `state` only calls a slot
@@ -151,15 +136,15 @@ export function ReminderSlotBar({
         // ahead of its own start time (still 'upcoming') and the fill must
         // not call that "still filling" — see the header comment.
         const complete = considered >= total
-        const label = group.slot?.label ?? 'Anytime'
+        const label = slotLabel(group)
         const current = i === currentIndex
 
         return (
           <button
-            key={group.slot?.id ?? 'unslotted'}
+            key={slotGroupKey(group)}
             type="button"
             onClick={() => onJump(i)}
-            data-slot-segment={group.slot?.id ?? 'unslotted'}
+            data-slot-segment={slotGroupKey(group)}
             data-slot-state={state}
             aria-current={current ? 'true' : undefined}
             // The name carries what the colour cannot: which slot, and how far

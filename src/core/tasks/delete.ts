@@ -9,9 +9,9 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { ValidationError } from '@/core/errors'
+import { getTaskById } from './read'
+import { loadTaskForMutation } from './access'
 
 export interface DeleteTaskOptions {
   userId: number
@@ -29,21 +29,9 @@ export interface RestoreTaskOptions {
 export function deleteTask(options: DeleteTaskOptions): Task {
   const { userId, taskId } = options
 
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
-
-  // Cannot delete already trashed task
-  if (task.deleted_at) {
-    throw new ValidationError('Task is already in trash')
-  }
+  const task = loadTaskForMutation(userId, taskId, {
+    trashed: { reject: 'Task is already in trash' },
+  })
 
   const now = nowUtc()
 
@@ -89,16 +77,8 @@ export function deleteTask(options: DeleteTaskOptions): Task {
 export function restoreTask(options: RestoreTaskOptions): Task {
   const { userId, taskId } = options
 
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
+  // 'allow': restoring is only for a trashed task — the inverse check follows.
+  const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
 
   // Cannot restore non-trashed task
   if (!task.deleted_at) {

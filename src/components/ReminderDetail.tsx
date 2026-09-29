@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Check, Lightbulb, Pencil, Repeat, Trash2 } from 'lucide-react'
-import { DateTime } from 'luxon'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -17,6 +16,7 @@ import type { ReminderCreateInput } from '@/hooks/useReminders'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
+import { formatClockTime } from '@/lib/time-utils'
 import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { resolvePromptSlot } from '@/lib/quota-prompts'
@@ -893,7 +893,7 @@ function TimeOfDaySection({
             >
               {slot.label}
               <span className={cn('text-xs', selected ? 'opacity-80' : 'text-muted-foreground')}>
-                {formatSlotStart(slot.start_time)}
+                {formatClockTime(slot.start_time)}
               </span>
             </Button>
           )
@@ -1021,10 +1021,4 @@ function NotesSection({
       )}
     </section>
   )
-}
-
-/** "07:00" → "7:00 AM"; the raw value if it isn't HH:MM. */
-function formatSlotStart(startTime: string): string {
-  const parsed = DateTime.fromFormat(startTime, 'HH:mm')
-  return parsed.isValid ? parsed.toFormat('h:mm a') : startTime
 }

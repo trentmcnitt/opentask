@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon'
 import { taskWord } from '@/lib/utils'
+import { formatClockTime } from '@/lib/time-utils'
 
 const HOUR_ROUND_THRESHOLD = 35
 
@@ -45,12 +46,10 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
 /**
  * Format a morning time string for display.
  * '09:00' -> '9:00 AM', '14:30' -> '2:30 PM'
+ * `formatClockTime` under the name the snooze and AI-prompt callers use.
  */
 export function formatMorningTime(morningTime: string): string {
-  const [h, m] = morningTime.split(':').map(Number)
-  const period = h >= 12 ? 'PM' : 'AM'
-  const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h
-  return `${displayHour}:${String(m).padStart(2, '0')} ${period}`
+  return formatClockTime(morningTime)
 }
 
 /**

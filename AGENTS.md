@@ -35,7 +35,7 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 - `src/core/` — Business logic (no UI): auth, db, errors, projects, tasks, labels, time-slots, recurrence, undo, validation, notifications, webhooks, review, stats, ai, activity, export. Quota and reminder logic lives in `src/core/tasks/` (`quotas.ts`, `progress.ts`, `quota-prompts.ts`, `quota-prompt-actions.ts`, `reminders.ts`, `period-rollover.ts`)
 - `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
-- `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
+- `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
 - `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
 - `src/app/` — Pages (App Router): root (`/`, the dashboard), reminders, quotas, login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
@@ -530,7 +530,7 @@ Changes to these require manual testing on the native apps. Nearly every call go
 | `POST /api/auth/session-from-token`                        | Keeping the web view logged in from the stored API token                                                                     |
 | `GET /api/user/preferences`                                | Connection check during setup; label config for the Quotas widget and watch                                                  |
 | `POST`, `DELETE /api/push/apns/register`                   | Device token registration                                                                                                    |
-| `POST`, `DELETE /api/push/apns/widget-token`               | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
+| `POST /api/push/apns/widget-token`                         | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
 | `POST /api/notifications/actions`                          | Done/snooze from notification action buttons                                                                                 |
 | `POST /api/notifications/dismiss-all`                      | Clearing delivered notifications                                                                                             |
 | `GET /api/tasks/counts`                                    | The app icon / Dock badge on foreground and after a notification action (`overdue`, the Tasks page's red-pill number)        |
@@ -557,4 +557,4 @@ CONTRACT_WRITE=1 npx vitest run --config vitest.integration.config.ts tests/inte
 
 The fixtures (`tests/fixtures/contract/*.json`) are the live responses of a fixed synthetic scenario, normalised (ids → integer placeholders, timestamps pinned). Without `CONTRACT_WRITE=1` that test fails on any drift, shape first. They are read by `tests/behavioral/contract-types.test.ts` (against the TS types) and by the Swift `ContractDecodeTests` (against the DTOs, asserting values) — re-run both after rewriting, and update the Swift assertions if a pinned value legitimately changed.
 
-Only some endpoints are captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/quota-prompts/restore`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`, `GET /api/tasks/counts`. Changing an uncaptured one is a good moment to add its capture; a new endpoint the apps call should get one from the start.
+Only some endpoints are captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/quota-prompts/restore`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`, `GET /api/tasks/counts`, `GET /api/user/preferences` (minus the server-environment AI fields). Changing an uncaptured one is a good moment to add its capture; a new endpoint the apps call should get one from the start.

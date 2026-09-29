@@ -11,8 +11,8 @@ import {
   parseLocalDatetimeInput,
   parseInTimezone,
   getTimezoneDayBoundaries,
+  calendarDaysBetween,
 } from '@/lib/format-date'
-import { DateTime } from 'luxon'
 import { snapToHour } from '@/lib/snooze'
 
 /** Preset time slots (24h format in user's local timezone) */
@@ -190,18 +190,6 @@ export function formatQuickSelectHeader(isoUtc: string, timezone: string): strin
   })
 
   return `${dayLabel}, ${datePart}, ${timePart}`
-}
-
-/**
- * Whole calendar days from `a` to `b` (negative when `b` is earlier), counted
- * midnight to midnight in `timezone`, or the process's zone when omitted.
- * Luxon's startOf('day') keeps DST's 23- and 25-hour days at one day each.
- */
-function calendarDaysBetween(a: Date, b: Date, timezone?: string): number {
-  const opts = timezone ? { zone: timezone } : {}
-  const dayA = DateTime.fromJSDate(a, opts).startOf('day')
-  const dayB = DateTime.fromJSDate(b, opts).startOf('day')
-  return Math.round(dayB.diff(dayA, 'days').days)
 }
 
 /**

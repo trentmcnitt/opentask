@@ -2,7 +2,7 @@
 
 import { ArrowDownWideNarrow, CalendarClock, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { GroupingMode } from '@/components/TaskList'
+import type { GroupingMode } from '@/lib/grouping'
 
 interface ViewModeToggleProps {
   grouping: GroupingMode

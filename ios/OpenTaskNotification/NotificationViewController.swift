@@ -273,26 +273,23 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
 
         Task {
-            var wasBulkSnooze = false
+            var sweep: APIClient.BulkSnoozeResult?
 
             do {
                 if isBulkMode {
                     // Bulk mode: all actions are bulk snooze (no Done or single-task snooze)
                     switch response.actionIdentifier {
                     case NotificationAction.snoozeAll1hr:
-                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                        wasBulkSnooze = result.tasksAffected > 0
+                        sweep = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
 
                     case NotificationAction.snoozeAllCustom:
                         if let dueAt = selectedDueAt {
-                            let result = try await APIClient.shared.snoozeOverdue(until: dueAt)
-                            wasBulkSnooze = result.tasksAffected > 0
+                            sweep = try await APIClient.shared.snoozeOverdue(until: dueAt)
                         }
 
                     default:
                         if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                            let result = try await APIClient.shared.snoozeOverdue(slot: slot)
-                            wasBulkSnooze = result.tasksAffected > 0
+                            sweep = try await APIClient.shared.snoozeOverdue(slot: slot)
                         }
                     }
                 } else {
@@ -305,8 +302,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                         try await APIClient.shared.snoozeNextHour(taskId: taskId)
 
                     case NotificationAction.snoozeAll1hr:
-                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
-                        wasBulkSnooze = result.tasksAffected > 0
+                        sweep = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
 
                     case NotificationAction.snoozeCustom:
                         if let dueAt = selectedDueAt {
@@ -315,14 +311,12 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
                     case NotificationAction.snoozeAllCustom:
                         if let dueAt = selectedDueAt {
-                            let result = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
-                            wasBulkSnooze = result.tasksAffected > 0
+                            sweep = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
                         }
 
                     default:
                         if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                            let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
-                            wasBulkSnooze = result.tasksAffected > 0
+                            sweep = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
                         }
                     }
                 }
@@ -333,10 +327,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 return
             }
 
-            // After bulk snooze, dismiss notifications for the tasks that were snoozed.
-            // P3 (High) and P4 (Urgent) are never bulk-snoozed, so those remain.
-            if wasBulkSnooze {
-                await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
+            // After a bulk snooze, dismiss the notifications of the tiers it
+            // moved (`dismissNotificationsAfterSweep`): P0-P2, plus High when
+            // the sweep took the High tier. Urgent is never swept, so it stays.
+            if let sweep {
+                await dismissNotificationsAfterSweep(sweep)
             }
 
             // No local badge update here. The server's badge-only push lands

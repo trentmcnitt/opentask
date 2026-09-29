@@ -134,4 +134,24 @@ final class WatchSlotLogicTests: XCTestCase {
         )
         XCTAssertEqual(WatchSlotLogic.state(for: partly, now: noon), .notStarted)
     }
+
+    /// The watch's Up next and Overdue lists are the phone widget's
+    /// (`TaskLists`): soonest first, and on an equal due time the higher
+    /// priority first. The watch used to sort by due time alone, so two tasks
+    /// due at the same minute could come out in either order.
+    func testTasksWithTheSameDueTimeSortByPriority() {
+        let now = at(12)
+        let earlier = DateHelpers.formatISO(now.addingTimeInterval(-3600))
+        let later = DateHelpers.formatISO(now.addingTimeInterval(3600))
+        let tasks = [
+            TaskDTO(id: 1, title: "Low, late", priority: 0, dueAt: earlier),
+            TaskDTO(id: 2, title: "High, late", priority: 3, dueAt: earlier),
+            TaskDTO(id: 3, title: "Normal, upcoming", priority: 1, dueAt: later),
+            TaskDTO(id: 4, title: "Urgent, upcoming", priority: 4, dueAt: later),
+            TaskDTO(id: 5, title: "Undated", priority: 4),
+        ]
+        XCTAssertEqual(WatchSlotLogic.upNextTasks(from: tasks).map(\.id), [2, 1, 4, 3])
+        XCTAssertEqual(WatchSlotLogic.overdueTasks(from: tasks, now: now).map(\.id), [2, 1])
+        XCTAssertEqual(WatchSlotLogic.upNextTasks(from: tasks.reversed()).map(\.id), [2, 1, 4, 3])
+    }
 }

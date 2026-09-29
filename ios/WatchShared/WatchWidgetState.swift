@@ -20,7 +20,30 @@ enum WatchWidgetState {
     static let kind = "OpenTaskWatchReminders"
 
     private static let appGroup = "group.io.mcnitt.opentask"
-    private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
+    private static var defaults: UserDefaults? {
+        #if DEBUG
+        if let suiteOverride { return suiteOverride }
+        #endif
+        return UserDefaults(suiteName: appGroup)
+    }
+
+    #if DEBUG
+    /// Test seam (`OpenTaskLogicTests`), the twin of `WidgetStore.suiteOverride`:
+    /// when set, every read and write goes here instead of the App Group
+    /// suite, so a test never touches a real widget's state.
+    static var suiteOverride: UserDefaults?
+    #endif
+
+    /// Serializes the read-modify-write of the pending maps and the claim map.
+    ///
+    /// Two quick taps on the card arrive as CONCURRENT `perform()` calls in
+    /// one process. Without a lock both read the map, each adds its own entry,
+    /// and the second write drops the first: a lost check-off tombstone draws
+    /// the reminder back, and two claims read as free lets a double tap fire
+    /// twice. The phone's `WidgetStore.pendingLock` exists for the same
+    /// reason. It is not a cross-process barrier and doesn't need to be.
+    /// `NSLock` is not recursive, so no locked function calls another.
+    private static let lock = NSLock()
 
     private static let skipKey = "watch.widget.skip.v2"
     private static let pendingDoneKey = "watch.widget.pendingDone.v1"
@@ -108,12 +131,16 @@ enum WatchWidgetState {
     }
 
     static func stagePendingPrompt(key: String, did: Bool, now: Date = Date()) {
+        lock.lock()
+        defer { lock.unlock() }
         var map = loadPendingPrompts().filter { now.timeIntervalSince($0.value.at) < pendingDoneTTL }
         map[key] = PendingPromptAction(at: now, did: did)
         savePendingPrompts(map)
     }
 
     static func clearPendingPrompt(key: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var map = loadPendingPrompts()
         map.removeValue(forKey: key)
         savePendingPrompts(map)
@@ -121,7 +148,9 @@ enum WatchWidgetState {
 
     /// Live entries, `prompt_key -> did`.
     static func pendingPrompts(now: Date = Date()) -> [String: Bool] {
-        loadPendingPrompts()
+        lock.lock()
+        defer { lock.unlock() }
+        return loadPendingPrompts()
             .filter { now.timeIntervalSince($0.value.at) < pendingDoneTTL }
             .mapValues(\.did)
     }
@@ -147,6 +176,8 @@ enum WatchWidgetState {
     }
 
     static func stagePendingDone(taskId: Int, now: Date = Date()) {
+        lock.lock()
+        defer { lock.unlock() }
         var map = loadPendingDone().filter { now.timeIntervalSince($0.value) < pendingDoneTTL }
         map[String(taskId)] = now
         savePendingDone(map)
@@ -155,6 +186,8 @@ enum WatchWidgetState {
     /// Server call failed — drop the tombstone so the reminder honestly
     /// reappears (the widget has no alert surface to report the failure).
     static func clearPendingDone(taskId: Int) {
+        lock.lock()
+        defer { lock.unlock() }
         var map = loadPendingDone()
         map.removeValue(forKey: String(taskId))
         savePendingDone(map)
@@ -164,6 +197,8 @@ enum WatchWidgetState {
     /// pruned on the next `stagePendingDone` write via the TTL filter below —
     /// the map is at most a handful of entries, so no separate sweep.
     static func pendingDoneIds(now: Date = Date()) -> Set<Int> {
+        lock.lock()
+        defer { lock.unlock() }
         let live = loadPendingDone().filter { now.timeIntervalSince($0.value) < pendingDoneTTL }
         return Set(live.keys.compactMap(Int.init))
     }
@@ -220,6 +255,8 @@ enum WatchWidgetState {
     private static let claimTTL: TimeInterval = 15
 
     static func tryClaim(_ action: String, now: Date = Date()) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         if let data = defaults?.data(forKey: claimKey),
            let map = try? JSONDecoder().decode([String: Date].self, from: data),
            let at = map[action], now.timeIntervalSince(at) < claimTTL {
@@ -238,6 +275,8 @@ enum WatchWidgetState {
     }
 
     static func releaseClaim(_ action: String) {
+        lock.lock()
+        defer { lock.unlock() }
         guard let data = defaults?.data(forKey: claimKey),
               var map = try? JSONDecoder().decode([String: Date].self, from: data)
         else { return }

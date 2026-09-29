@@ -8,7 +8,6 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, forbidden, badRequest, handleError } from '@/lib/api-response'
-import { getDb } from '@/core/db'
 import { isAIEnabled } from '@/core/ai/sdk'
 import { isSdkAvailableSync } from '@/core/ai/provider'
 import { getFeatureInfo, isAnyApiProviderAvailable } from '@/core/ai/models'
@@ -18,7 +17,15 @@ import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { coerceWeekStart, WEEK_STARTS, type WeekStart } from '@/lib/week-start'
 import { ACCEPTED_GROUPING_INPUTS, coerceGrouping, GROUPINGS } from '@/lib/grouping'
-import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
+import {
+  DEFAULT_PRIORITY_DISPLAY,
+  getPreferences,
+  ownsTimeSlot,
+  updatePreferences,
+  type PreferenceChanges,
+  type PreferenceColumn,
+  type PreferencesRow,
+} from '@/core/users/preferences'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 // `default_grouping` accepts the live groupings (`GROUPINGS`: slot, time, new,
@@ -39,13 +46,6 @@ const VALID_SORT_OPTIONS = [
 ] as const
 const VALID_AI_MODES = ['off', 'on'] as const
 const VALID_FEATURE_MODES = ['off', 'sdk', 'api'] as const
-const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
-  trailingDot: true,
-  badgeStyle: 'words',
-  colorTitle: false,
-  rightBorder: false,
-  colorCheckbox: true,
-}
 
 /**
  * Parse label_config and priority_display JSON columns from a preferences row,
@@ -79,11 +79,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const user = await getAuthUser(request)
     if (!user) return unauthorized()
 
-    const db = getDb()
-    const row = db.prepare(PREFERENCES_SELECT).get(user.id) as PreferencesRow | undefined
-    if (!row) return success(formatPreferencesResponse(DEFAULT_PREFERENCES_ROW))
-
-    return success(formatPreferencesResponse(row))
+    return success(formatPreferencesResponse(getPreferences(user.id)))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'GET /api/user/preferences error:', err)
@@ -151,126 +147,120 @@ function validatePriorityDisplay(input: unknown): PriorityDisplayConfig | string
   }
 }
 
-type ValidatedPatch = { updates: string[]; params: unknown[] }
+/** The error for a value that isn't an integer in [min, max], or null if it is. */
+function intInRange(val: unknown, field: string, min: number, max: number): string | null {
+  if (typeof val !== 'number' || !Number.isInteger(val) || val < min || val > max)
+    return `${field} must be an integer between ${min} and ${max}`
+  return null
+}
+
+/** The error for a value that isn't a valid "HH:MM" time of day, or null if it is. */
+function hhmm(val: unknown, field: string): string | null {
+  if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
+    return `${field} must be in HH:MM format`
+  const [hours, minutes] = val.split(':').map(Number)
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
+    return `${field} must have valid hours (0-23) and minutes (0-59)`
+  return null
+}
 
 /** Validate general preference fields (grouping, labels, priority display, snooze, time). */
 function validateGeneralFields(
   body: Record<string, unknown>,
-  updates: string[],
-  params: unknown[],
+  changes: PreferenceChanges,
 ): string | null {
   if (body.default_grouping !== undefined) {
     if (!ACCEPTED_GROUPING_INPUTS.includes(body.default_grouping as string))
       return `default_grouping must be one of: ${GROUPINGS.join(', ')}`
-    updates.push('default_grouping = ?')
-    params.push(coerceGrouping(body.default_grouping))
+    changes.default_grouping = coerceGrouping(body.default_grouping)
   }
 
   if (body.default_sort !== undefined) {
     if (!VALID_SORT_OPTIONS.includes(body.default_sort as (typeof VALID_SORT_OPTIONS)[number]))
       return 'default_sort must be one of: ' + VALID_SORT_OPTIONS.join(', ')
-    updates.push('default_sort = ?')
-    params.push(body.default_sort)
+    changes.default_sort = body.default_sort
   }
 
   if (body.default_sort_reversed !== undefined) {
     if (typeof body.default_sort_reversed !== 'boolean')
       return 'default_sort_reversed must be a boolean'
-    updates.push('default_sort_reversed = ?')
-    params.push(body.default_sort_reversed ? 1 : 0)
+    changes.default_sort_reversed = body.default_sort_reversed ? 1 : 0
   }
 
   // §7.3: whether the dashboard's filter-chip section is pinned open.
   if (body.filters_expanded !== undefined) {
     if (typeof body.filters_expanded !== 'boolean') return 'filters_expanded must be a boolean'
-    updates.push('filters_expanded = ?')
-    params.push(body.filters_expanded ? 1 : 0)
+    changes.filters_expanded = body.filters_expanded ? 1 : 0
   }
 
   // §5: whether the Track panel is pinned open.
   if (body.track_expanded !== undefined) {
     if (typeof body.track_expanded !== 'boolean') return 'track_expanded must be a boolean'
-    updates.push('track_expanded = ?')
-    params.push(body.track_expanded ? 1 : 0)
+    changes.track_expanded = body.track_expanded ? 1 : 0
   }
 
   // §5: whether /quotas opens on the detailed list rather than the summary.
   if (body.quotas_details !== undefined) {
     if (typeof body.quotas_details !== 'boolean') return 'quotas_details must be a boolean'
-    updates.push('quotas_details = ?')
-    params.push(body.quotas_details ? 1 : 0)
+    changes.quotas_details = body.quotas_details ? 1 : 0
   }
 
   if (body.label_config !== undefined) {
     const validated = validateLabelConfig(body.label_config)
     if (typeof validated === 'string') return validated
-    updates.push('label_config = ?')
-    params.push(JSON.stringify(validated))
+    changes.label_config = JSON.stringify(validated)
   }
 
   if (body.priority_display !== undefined) {
     const validated = validatePriorityDisplay(body.priority_display)
     if (typeof validated === 'string') return validated
-    updates.push('priority_display = ?')
-    params.push(JSON.stringify(validated))
+    changes.priority_display = JSON.stringify(validated)
   }
 
   if (body.auto_snooze_minutes !== undefined) {
-    const val = body.auto_snooze_minutes
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 360)
-      return 'auto_snooze_minutes must be an integer between 1 and 360'
-    updates.push('auto_snooze_minutes = ?')
-    params.push(val)
+    const err = intInRange(body.auto_snooze_minutes, 'auto_snooze_minutes', 1, 360)
+    if (err) return err
+    changes.auto_snooze_minutes = body.auto_snooze_minutes
   }
 
   if (body.auto_snooze_urgent_minutes !== undefined) {
-    const val = body.auto_snooze_urgent_minutes
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 360)
-      return 'auto_snooze_urgent_minutes must be an integer between 1 and 360'
-    updates.push('auto_snooze_urgent_minutes = ?')
-    params.push(val)
+    const err = intInRange(body.auto_snooze_urgent_minutes, 'auto_snooze_urgent_minutes', 1, 360)
+    if (err) return err
+    changes.auto_snooze_urgent_minutes = body.auto_snooze_urgent_minutes
   }
 
   // §4.1 cadence ladder
   if (body.auto_snooze_low_minutes !== undefined) {
-    const val = body.auto_snooze_low_minutes
     // Ceiling is 1440 (24h), not 360 like the upper tiers: P1 is deliberately
     // rare, so "a few times a day" must be expressible.
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 1440)
-      return 'auto_snooze_low_minutes must be an integer between 1 and 1440'
-    updates.push('auto_snooze_low_minutes = ?')
-    params.push(val)
+    const err = intInRange(body.auto_snooze_low_minutes, 'auto_snooze_low_minutes', 1, 1440)
+    if (err) return err
+    changes.auto_snooze_low_minutes = body.auto_snooze_low_minutes
   }
 
   if (body.auto_snooze_medium_minutes !== undefined) {
-    const val = body.auto_snooze_medium_minutes
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 1440)
-      return 'auto_snooze_medium_minutes must be an integer between 1 and 1440'
-    updates.push('auto_snooze_medium_minutes = ?')
-    params.push(val)
+    const err = intInRange(body.auto_snooze_medium_minutes, 'auto_snooze_medium_minutes', 1, 1440)
+    if (err) return err
+    changes.auto_snooze_medium_minutes = body.auto_snooze_medium_minutes
   }
 
   if (body.auto_snooze_high_minutes !== undefined) {
-    const val = body.auto_snooze_high_minutes
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 360)
-      return 'auto_snooze_high_minutes must be an integer between 1 and 360'
-    updates.push('auto_snooze_high_minutes = ?')
-    params.push(val)
+    const err = intInRange(body.auto_snooze_high_minutes, 'auto_snooze_high_minutes', 1, 360)
+    if (err) return err
+    changes.auto_snooze_high_minutes = body.auto_snooze_high_minutes
   }
 
   if (body.notifications_enabled !== undefined) {
     if (typeof body.notifications_enabled !== 'boolean')
       return 'notifications_enabled must be a boolean'
-    updates.push('notifications_enabled = ?')
-    params.push(body.notifications_enabled ? 1 : 0)
+    changes.notifications_enabled = body.notifications_enabled ? 1 : 0
   }
 
   if (body.critical_alert_volume !== undefined) {
     const val = body.critical_alert_volume
     if (typeof val !== 'number' || val < 0 || val > 1)
       return 'critical_alert_volume must be a number between 0.0 and 1.0'
-    updates.push('critical_alert_volume = ?')
-    params.push(val)
+    changes.critical_alert_volume = val
   }
 
   if (body.default_snooze_option !== undefined) {
@@ -281,49 +271,32 @@ function validateGeneralFields(
       if (isNaN(num) || num < 1 || num > 1440 || String(num) !== val)
         return 'default_snooze_option must be "tomorrow" or a string integer 1-1440'
     }
-    updates.push('default_snooze_option = ?')
-    params.push(val)
+    changes.default_snooze_option = val
   }
 
   if (body.bulk_snooze_default !== undefined) {
     const val = body.bulk_snooze_default
     if (val !== 'next_period' && val !== 'default_option')
       return 'bulk_snooze_default must be "next_period" or "default_option"'
-    updates.push('bulk_snooze_default = ?')
-    params.push(val)
+    changes.bulk_snooze_default = val
   }
 
   if (body.morning_time !== undefined) {
-    const val = body.morning_time
-    if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
-      return 'morning_time must be in HH:MM format'
-    const [hours, minutes] = val.split(':').map(Number)
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
-      return 'morning_time must have valid hours (0-23) and minutes (0-59)'
-    updates.push('morning_time = ?')
-    params.push(val)
+    const err = hhmm(body.morning_time, 'morning_time')
+    if (err) return err
+    changes.morning_time = body.morning_time
   }
 
   if (body.wake_time !== undefined) {
-    const val = body.wake_time
-    if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
-      return 'wake_time must be in HH:MM format'
-    const [hours, minutes] = val.split(':').map(Number)
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
-      return 'wake_time must have valid hours (0-23) and minutes (0-59)'
-    updates.push('wake_time = ?')
-    params.push(val)
+    const err = hhmm(body.wake_time, 'wake_time')
+    if (err) return err
+    changes.wake_time = body.wake_time
   }
 
   if (body.sleep_time !== undefined) {
-    const val = body.sleep_time
-    if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
-      return 'sleep_time must be in HH:MM format'
-    const [hours, minutes] = val.split(':').map(Number)
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
-      return 'sleep_time must have valid hours (0-23) and minutes (0-59)'
-    updates.push('sleep_time = ?')
-    params.push(val)
+    const err = hhmm(body.sleep_time, 'sleep_time')
+    if (err) return err
+    changes.sleep_time = body.sleep_time
   }
 
   return null
@@ -332,9 +305,8 @@ function validateGeneralFields(
 /** Validate a per-feature AI mode field. */
 function validateFeatureMode(
   body: Record<string, unknown>,
-  field: string,
-  updates: string[],
-  params: unknown[],
+  field: PreferenceColumn,
+  changes: PreferenceChanges,
 ): string | null {
   if (body[field] === undefined) return null
   if (!VALID_FEATURE_MODES.includes(body[field] as (typeof VALID_FEATURE_MODES)[number]))
@@ -343,16 +315,14 @@ function validateFeatureMode(
   // The UI shows an amber warning for unavailable modes, and the feature info
   // popover explains what's missing. This lets users pre-configure modes before
   // the admin sets up the provider.
-  updates.push(`${field} = ?`)
-  params.push(body[field])
+  changes[field] = body[field]
   return null
 }
 
 /** Validate AI-related preference fields (context, mode, show scores/signals, per-feature modes). */
 function validateAiFields(
   body: Record<string, unknown>,
-  updates: string[],
-  params: unknown[],
+  changes: PreferenceChanges,
 ): string | null {
   if (body.ai_context !== undefined) {
     const val = body.ai_context
@@ -363,66 +333,58 @@ function validateAiFields(
       if (trimmed.length > 1000) return 'ai_context must be at most 1000 characters'
       resolved = trimmed.length > 0 ? trimmed : null
     }
-    updates.push('ai_context = ?')
-    params.push(resolved)
+    changes.ai_context = resolved
   }
 
   if (body.ai_mode !== undefined) {
     if (!VALID_AI_MODES.includes(body.ai_mode as (typeof VALID_AI_MODES)[number]))
       return 'ai_mode must be "off" or "on"'
-    updates.push('ai_mode = ?')
-    params.push(body.ai_mode)
+    changes.ai_mode = body.ai_mode
   }
 
   if (body.ai_show_scores !== undefined) {
     if (typeof body.ai_show_scores !== 'boolean') return 'ai_show_scores must be a boolean'
-    updates.push('ai_show_scores = ?')
-    params.push(body.ai_show_scores ? 1 : 0)
+    changes.ai_show_scores = body.ai_show_scores ? 1 : 0
   }
 
   if (body.ai_show_signals !== undefined) {
     if (typeof body.ai_show_signals !== 'boolean') return 'ai_show_signals must be a boolean'
-    updates.push('ai_show_signals = ?')
-    params.push(body.ai_show_signals ? 1 : 0)
+    changes.ai_show_signals = body.ai_show_signals ? 1 : 0
   }
 
   // Per-feature AI mode fields
-  const featureModeFields = [
+  const featureModeFields: PreferenceColumn[] = [
     'ai_enrichment_mode',
     'ai_quicktake_mode',
     'ai_whats_next_mode',
     'ai_insights_mode',
   ]
   for (const field of featureModeFields) {
-    const err = validateFeatureMode(body, field, updates, params)
+    const err = validateFeatureMode(body, field, changes)
     if (err) return err
   }
 
   if (body.ai_wn_commentary_unfiltered !== undefined) {
     if (typeof body.ai_wn_commentary_unfiltered !== 'boolean')
       return 'ai_wn_commentary_unfiltered must be a boolean'
-    updates.push('ai_wn_commentary_unfiltered = ?')
-    params.push(body.ai_wn_commentary_unfiltered ? 1 : 0)
+    changes.ai_wn_commentary_unfiltered = body.ai_wn_commentary_unfiltered ? 1 : 0
   }
 
   if (body.ai_wn_highlight !== undefined) {
     if (typeof body.ai_wn_highlight !== 'boolean') return 'ai_wn_highlight must be a boolean'
-    updates.push('ai_wn_highlight = ?')
-    params.push(body.ai_wn_highlight ? 1 : 0)
+    changes.ai_wn_highlight = body.ai_wn_highlight ? 1 : 0
   }
 
   if (body.ai_insights_signal_chips !== undefined) {
     if (typeof body.ai_insights_signal_chips !== 'boolean')
       return 'ai_insights_signal_chips must be a boolean'
-    updates.push('ai_insights_signal_chips = ?')
-    params.push(body.ai_insights_signal_chips ? 1 : 0)
+    changes.ai_insights_signal_chips = body.ai_insights_signal_chips ? 1 : 0
   }
 
   if (body.ai_insights_score_chips !== undefined) {
     if (typeof body.ai_insights_score_chips !== 'boolean')
       return 'ai_insights_score_chips must be a boolean'
-    updates.push('ai_insights_score_chips = ?')
-    params.push(body.ai_insights_score_chips ? 1 : 0)
+    changes.ai_insights_score_chips = body.ai_insights_score_chips ? 1 : 0
   }
 
   // Per-feature AI query timeouts
@@ -439,18 +401,13 @@ function validateAiFields(
         if (typeof val !== 'number' || !Number.isInteger(val) || val < min || val > max)
           return `${field} must be null or an integer between ${min} and ${max}`
       }
-      updates.push(`${field} = ?`)
-      params.push(val)
+      changes[field] = val
     }
   }
 
   return null
 }
 
-/**
- * Validate all PATCH fields and build the SQL updates/params arrays.
- * Returns a string error message on validation failure, or the validated result.
- */
 /**
  * The DEFAULT REMINDER SLOT and the quota-reminders switch.
  *
@@ -467,8 +424,7 @@ function validateAiFields(
 function validateQuotaPromptFields(
   body: Record<string, unknown>,
   userId: number,
-  updates: string[],
-  params: unknown[],
+  changes: PreferenceChanges,
 ): string | null {
   const alias = body.default_reminder_slot_id
   if (
@@ -483,137 +439,46 @@ function validateQuotaPromptFields(
     if (val !== null) {
       if (typeof val !== 'number' || !Number.isInteger(val) || val <= 0)
         return `${slotField} must be a time slot id or null`
-      const owned = getDb()
-        .prepare('SELECT 1 FROM time_slots WHERE id = ? AND user_id = ?')
-        .get(val, userId)
-      if (!owned) return `${slotField} must be one of your reminder periods`
+      if (!ownsTimeSlot(userId, val)) return `${slotField} must be one of your reminder periods`
     }
-    updates.push('quota_prompt_slot_id = ?')
-    params.push(val)
+    changes.quota_prompt_slot_id = val
   }
   if (body.quota_prompts_enabled !== undefined) {
     if (typeof body.quota_prompts_enabled !== 'boolean')
       return 'quota_prompts_enabled must be a boolean'
-    updates.push('quota_prompts_enabled = ?')
-    params.push(body.quota_prompts_enabled ? 1 : 0)
+    changes.quota_prompts_enabled = body.quota_prompts_enabled ? 1 : 0
   }
   // Where weekly quota periods start and end (src/lib/week-start.ts).
   if (body.week_start !== undefined) {
     if (!WEEK_STARTS.includes(body.week_start as WeekStart))
       return `week_start must be one of: ${WEEK_STARTS.join(', ')}`
-    updates.push('week_start = ?')
-    params.push(body.week_start)
+    changes.week_start = body.week_start
   }
   return null
 }
 
+/**
+ * Validate all PATCH fields and build the column → value changes to store.
+ * Returns a string error message on validation failure, or the validated result.
+ */
 function validatePatchFields(
   body: Record<string, unknown>,
   userId: number,
-): ValidatedPatch | string {
-  const updates: string[] = []
-  const params: unknown[] = []
+): PreferenceChanges | string {
+  const changes: PreferenceChanges = {}
 
-  const generalErr = validateGeneralFields(body, updates, params)
+  const generalErr = validateGeneralFields(body, changes)
   if (generalErr) return generalErr
 
-  const quotaErr = validateQuotaPromptFields(body, userId, updates, params)
+  const quotaErr = validateQuotaPromptFields(body, userId, changes)
   if (quotaErr) return quotaErr
 
-  const aiErr = validateAiFields(body, updates, params)
+  const aiErr = validateAiFields(body, changes)
   if (aiErr) return aiErr
 
-  if (updates.length === 0) return 'No preferences to update'
+  if (Object.keys(changes).length === 0) return 'No preferences to update'
 
-  return { updates, params }
-}
-
-const PREFERENCES_SELECT =
-  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, track_expanded, quotas_details, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, bulk_snooze_default, week_start, quota_prompt_slot_id, quota_prompts_enabled, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
-
-interface PreferencesRow {
-  default_grouping: string
-  default_sort: string
-  default_sort_reversed: number
-  filters_expanded: number
-  track_expanded: number
-  quotas_details: number
-  label_config: string
-  priority_display: string
-  auto_snooze_minutes: number
-  auto_snooze_urgent_minutes: number
-  auto_snooze_high_minutes: number
-  auto_snooze_low_minutes: number
-  auto_snooze_medium_minutes: number
-  default_snooze_option: string
-  bulk_snooze_default: 'next_period' | 'default_option'
-  week_start: string
-  quota_prompt_slot_id: number | null
-  quota_prompts_enabled: number
-  morning_time: string
-  wake_time: string
-  sleep_time: string
-  notifications_enabled: number
-  critical_alert_volume: number
-  ai_context: string | null
-  ai_mode: string
-  ai_show_scores: number
-  ai_show_signals: number
-  ai_enrichment_mode: string
-  ai_quicktake_mode: string
-  ai_whats_next_mode: string
-  ai_insights_mode: string
-  ai_wn_commentary_unfiltered: number
-  ai_wn_highlight: number
-  ai_insights_signal_chips: number
-  ai_insights_score_chips: number
-  ai_enrichment_timeout_ms: number | null
-  ai_quicktake_timeout_ms: number | null
-  ai_whats_next_timeout_ms: number | null
-  ai_insights_timeout_ms: number | null
-}
-
-/** Fallback row when user record is missing (should not happen in practice). */
-const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
-  default_grouping: 'time',
-  default_sort: 'due_date',
-  default_sort_reversed: 0,
-  filters_expanded: 0,
-  track_expanded: 0,
-  quotas_details: 0,
-  label_config: '[]',
-  priority_display: JSON.stringify(DEFAULT_PRIORITY_DISPLAY),
-  auto_snooze_minutes: 30,
-  auto_snooze_urgent_minutes: 5,
-  auto_snooze_high_minutes: 15,
-  auto_snooze_low_minutes: 240,
-  auto_snooze_medium_minutes: 60,
-  default_snooze_option: '60',
-  bulk_snooze_default: 'next_period',
-  week_start: 'sunday',
-  quota_prompt_slot_id: null,
-  quota_prompts_enabled: 1,
-  morning_time: '09:00',
-  wake_time: '07:00',
-  sleep_time: '22:00',
-  notifications_enabled: 1,
-  critical_alert_volume: 1.0,
-  ai_context: null,
-  ai_mode: 'on',
-  ai_show_scores: 1,
-  ai_show_signals: 1,
-  ai_enrichment_mode: 'api',
-  ai_quicktake_mode: 'api',
-  ai_whats_next_mode: 'api',
-  ai_insights_mode: 'api',
-  ai_wn_commentary_unfiltered: 0,
-  ai_wn_highlight: 1,
-  ai_insights_signal_chips: 1,
-  ai_insights_score_chips: 1,
-  ai_enrichment_timeout_ms: null,
-  ai_quicktake_timeout_ms: null,
-  ai_whats_next_timeout_ms: null,
-  ai_insights_timeout_ms: null,
+  return changes
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -700,19 +565,8 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest) {
     const result = validatePatchFields(body, user.id)
     if (typeof result === 'string') return badRequest(result)
 
-    const db = getDb()
-    const { updates, params } = result
-    params.push(user.id)
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
-
-    // A new first day of the week moves every weekly quota's boundary. Close
-    // what that ends now (it may be in the past — flipping to Monday on a
-    // Wednesday ends a Sunday-anchored week at Monday), so the Quotas panel
-    // shows the new week at once instead of after the next cron tick.
-    if (body.week_start !== undefined) rolloverTrackedPeriods(new Date(), user.id)
-
-    const row = db.prepare(PREFERENCES_SELECT).get(user.id) as PreferencesRow
-    return success(formatPreferencesResponse(row))
+    // Also closes weekly quota periods a new `week_start` ends (see updatePreferences).
+    return success(formatPreferencesResponse(updatePreferences(user.id, result)))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'PATCH /api/user/preferences error:', err)

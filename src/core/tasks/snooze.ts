@@ -7,13 +7,13 @@
  */
 
 import type { Task } from '@/types'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { isTracked } from '@/lib/track'
 import { REMINDER_SNOOZE_MESSAGE } from '@/core/validation'
-import { getTaskById } from './create'
-import { canUserAccessTask, updateTask } from './update'
+import { loadTaskForMutation } from './access'
+import { updateTask } from './update'
 
 export interface SnoozeTaskOptions {
   userId: number
@@ -40,14 +40,9 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   const { userId, userTimezone, taskId, until } = options
 
   // Pre-validation (snooze-specific checks)
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
+  // 'allow': the trashed refusal comes later, after the reminder/quota/done
+  // refusals it has always followed.
+  const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
 
   // Validate snooze target is a valid datetime
   const snoozeTarget = new Date(until)
