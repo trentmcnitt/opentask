@@ -163,6 +163,60 @@ function applyToQuota(
 }
 
 /**
+ * Group planned actions by quota and hand each one to `fn` with its task
+ * freshly read AFTER closing its expired period (`rolloverQuotaNow`), so an
+ * action at 00:02 works on today's count. Quotas are visited in the order
+ * their first action appears; a task that has vanished is skipped.
+ */
+function forEachPlannedQuota(
+  planned: PlannedAction[],
+  now: Date,
+  fn: (task: Task, actions: PlannedAction[]) => void,
+): void {
+  const byTask = new Map<number, PlannedAction[]>()
+  for (const action of planned) {
+    byTask.set(action.taskId, [...(byTask.get(action.taskId) ?? []), action])
+  }
+  for (const [taskId, actions] of byTask) {
+    rolloverQuotaNow(taskId, now)
+    const task = getTaskById(taskId)
+    if (!task) continue
+    fn(task, actions)
+  }
+}
+
+/**
+ * Write one quota's new count and today's record, inside the caller's
+ * transaction: the row, a `progress_events` entry when the count moved
+ * (`delta`, signed), and the undo snapshot.
+ *
+ * The snapshot carries `progress_current` only when the count moved, so a
+ * consider-only (or no-op put-back) snapshot never carries a count for undo
+ * to write back over a +1 logged in between.
+ */
+function writeQuotaCount(
+  tx: Database.Database,
+  task: Task,
+  userId: number,
+  current: number,
+  day: QuotaDayState,
+  delta: number,
+  nowStr: string,
+): { snapshot: UndoSnapshot; fields: string[]; after: Task } {
+  tx.prepare(
+    'UPDATE tasks SET progress_current = ?, quota_day_state = ?, updated_at = ? WHERE id = ?',
+  ).run(current, JSON.stringify(day), nowStr, task.id)
+  if (delta !== 0) {
+    tx.prepare(
+      'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
+    ).run(task.id, userId, delta, nowStr)
+  }
+  const fields = delta !== 0 ? ['progress_current', 'quota_day_state'] : ['quota_day_state']
+  const after = { ...task, progress_current: current, quota_day_state: day }
+  return { snapshot: createQuotaSnapshot(task, after, fields), fields, after }
+}
+
+/**
  * Apply planned actions inside the caller's transaction. Does NOT log to
  * undo — the caller owns the entry (its own, or `bulkDone`'s batch entry).
  */
@@ -175,11 +229,6 @@ export function executePromptActions(
 ): ExecutedPromptActions {
   const today = localDate(timezone, now)
   const nowStr = now.toISOString()
-  const byTask = new Map<number, PlannedAction[]>()
-  for (const action of planned) {
-    byTask.set(action.taskId, [...(byTask.get(action.taskId) ?? []), action])
-  }
-
   const out: ExecutedPromptActions = {
     snapshots: [],
     fieldsChanged: [],
@@ -189,31 +238,15 @@ export function executePromptActions(
   }
   const fields = new Set<string>()
 
-  for (const [taskId, actions] of byTask) {
-    rolloverQuotaNow(taskId, now)
-    const task = getTaskById(taskId)
-    if (!task) continue
+  forEachPlannedQuota(planned, now, (task, actions) => {
     const { current, day, applied } = applyToQuota(task, actions, today)
-
-    tx.prepare(
-      'UPDATE tasks SET progress_current = ?, quota_day_state = ?, updated_at = ? WHERE id = ?',
-    ).run(current, JSON.stringify(day), nowStr, taskId)
-    if (applied > 0) {
-      tx.prepare(
-        'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
-      ).run(taskId, userId, applied, nowStr)
-    }
-
-    // Per-task fields, so a consider-only snapshot never carries a count for
-    // undo to write back over a +1 logged in between.
-    const taskFields = applied > 0 ? ['progress_current', 'quota_day_state'] : ['quota_day_state']
-    for (const f of taskFields) fields.add(f)
-    const after = { ...task, progress_current: current, quota_day_state: day }
-    out.snapshots.push(createQuotaSnapshot(task, after, taskFields))
-    if (applied > 0) out.progressed.push(after)
+    const written = writeQuotaCount(tx, task, userId, current, day, applied, nowStr)
+    for (const f of written.fields) fields.add(f)
+    out.snapshots.push(written.snapshot)
+    if (applied > 0) out.progressed.push(written.after)
     out.did += actions.filter((a) => a.did).length
     out.considered += actions.filter((a) => !a.did).length
-  }
+  })
   out.fieldsChanged = [...fields]
   return out
 }
@@ -345,36 +378,23 @@ export function restorePrompts(options: {
   )
   const today = localDate(userTimezone, now)
   const nowStr = now.toISOString()
-  const byTask = new Map<number, string[]>()
-  for (const p of planned) byTask.set(p.taskId, [...(byTask.get(p.taskId) ?? []), p.key])
+  const taskIds = [...new Set(planned.map((p) => p.taskId))]
 
   const { restored, progressed } = withTransaction((tx) => {
     const snapshots: UndoSnapshot[] = []
     const fields = new Set<string>()
     const progressed: Task[] = []
     let restored = 0
-    for (const [taskId, taskKeys] of byTask) {
-      rolloverQuotaNow(taskId, now)
-      const task = getTaskById(taskId)
-      if (!task) continue
-      const { current, day, taken, restored: n } = restoreOnQuota(task, taskKeys, today)
+    forEachPlannedQuota(planned, now, (task, actions) => {
+      const keys = actions.map((a) => a.key)
+      const { current, day, taken, restored: n } = restoreOnQuota(task, keys, today)
       restored += n
-      tx.prepare(
-        'UPDATE tasks SET progress_current = ?, quota_day_state = ?, updated_at = ? WHERE id = ?',
-      ).run(current, JSON.stringify(day), nowStr, taskId)
-      if (taken > 0) {
-        tx.prepare(
-          'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
-        ).run(taskId, userId, -taken, nowStr)
-      }
-      // A count only in the snapshot that moved one — see `executePromptActions`.
-      const taskFields = taken > 0 ? ['progress_current', 'quota_day_state'] : ['quota_day_state']
-      for (const f of taskFields) fields.add(f)
-      const after = { ...task, progress_current: current, quota_day_state: day }
-      snapshots.push(createQuotaSnapshot(task, after, taskFields))
-      if (taken > 0) progressed.push(after)
-    }
-    const single = byTask.size === 1 ? getTaskById(planned[0].taskId) : null
+      const written = writeQuotaCount(tx, task, userId, current, day, -taken, nowStr)
+      for (const f of written.fields) fields.add(f)
+      snapshots.push(written.snapshot)
+      if (taken > 0) progressed.push(written.after)
+    })
+    const single = taskIds.length === 1 ? getTaskById(planned[0].taskId) : null
     logAction(
       userId,
       'quota_prompt',
@@ -391,6 +411,6 @@ export function restorePrompts(options: {
   dispatchProgressed(userId, progressed)
   return {
     restored,
-    tasks: [...byTask.keys()].map((id) => getTaskById(id)).filter((t): t is Task => t !== null),
+    tasks: taskIds.map((id) => getTaskById(id)).filter((t): t is Task => t !== null),
   }
 }
