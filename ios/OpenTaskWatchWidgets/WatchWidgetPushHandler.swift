@@ -14,10 +14,11 @@ private let pushLog = Logger(subsystem: "io.mcnitt.opentask.watchapp.widgets", c
 /// A copy of the phone/Mac widgets' `OpenTaskWidgetPushHandler`
 /// (`ios/OpenTaskWidgets/WidgetPushHandler.swift` — not shared: that
 /// directory is the phone extension's private code, and this target can't
-/// compile it), including its two hard-won lessons: the token is persisted
+/// compile it), including its three hard-won lessons: the token is persisted
 /// BEFORE the network call and retried from every `getTimeline` until the
 /// server confirms it (WidgetKit hands a token over once and a single lost
-/// request used to leave a device unregistered indefinitely), and the APNs
+/// request used to leave a device unregistered indefinitely); an empty
+/// widget list never unregisters (see `pushTokenDidChange`); and the APNs
 /// environment follows the signing entitlement, not the build configuration.
 /// The server side is unchanged apart from accepting `platform: "watchos"`:
 /// the same `widget_push_tokens` row, the same debounced
@@ -38,18 +39,17 @@ struct WatchWidgetPushHandler: WidgetPushHandler {
         let token = pushInfo.token.map { String(format: "%02.2hhx", $0) }.joined()
         pushLog.notice("pushTokenDidChange: \(widgets.count, privacy: .public) widget(s), token \(String(token.prefix(8)), privacy: .public)")
 
-        // Empty `widgets`: the last OpenTask card was removed from the Smart
-        // Stack / watch face. Nothing reads this token any more — unregister
-        // it rather than leave the server spending push budget on it.
+        // An EMPTY `widgets` list is only logged, never taken as "the last
+        // card was removed" — the phone/Mac handler's rule (2026-09-25; its
+        // `pushTokenDidChange` has the full story). On the Mac, chronod sends
+        // an empty list every time it starts, while the widgets are still
+        // placed, and unregistering then deleted the server's row for up to
+        // 14 hours. Nothing shows watchOS behaves differently, so the watch
+        // follows the same rule until it does. A token with no card behind it
+        // costs one ignored push; APNs reports a truly dead one as
+        // Unregistered and the server deletes it then (`sendApnsWidgetReload`).
         guard !widgets.isEmpty else {
-            WatchWidgetPushRegistration.clear()
-            Task {
-                do {
-                    try await WatchWidgetPushRegistrar.unregister(token: token)
-                } catch {
-                    pushLog.error("unregister failed: \(String(describing: error), privacy: .public)")
-                }
-            }
+            pushLog.notice("pushTokenDidChange with no widgets; keeping the registration")
             return
         }
 
@@ -78,17 +78,11 @@ enum WatchWidgetPushRegistration {
 
     /// Also forgets any earlier confirmation, so every delivery from
     /// WidgetKit is sent even when it's a token the server once confirmed —
-    /// the server may have dropped it since (the phone/Mac twin,
-    /// `WidgetPushRegistration.savePending`, has the 2026-09-25 bug).
+    /// the server may have dropped it since. Same as the phone/Mac twin,
+    /// `WidgetPushRegistration.savePending`.
     static func savePending(token: String, widgetKind: String) {
         defaults?.set(token, forKey: pendingTokenKey)
         defaults?.set(widgetKind, forKey: pendingKindsKey)
-        defaults?.removeObject(forKey: registeredTokenKey)
-    }
-
-    static func clear() {
-        defaults?.removeObject(forKey: pendingTokenKey)
-        defaults?.removeObject(forKey: pendingKindsKey)
         defaults?.removeObject(forKey: registeredTokenKey)
     }
 
@@ -111,9 +105,10 @@ enum WatchWidgetPushRegistration {
     }
 }
 
-/// `POST`/`DELETE /api/push/apns/widget-token`, talking to the server directly
-/// for the same reason the phone handler does: `APIClient`'s request helpers
-/// are `private` to its file.
+/// `POST /api/push/apns/widget-token`, talking to the server directly for the
+/// same reason the phone handler does: `APIClient`'s request helpers are
+/// `private` to its file. Like the phone handler it never sends the route's
+/// `DELETE` (see the empty-`widgets` guard above).
 private enum WatchWidgetPushRegistrar {
     /// The CONTAINING WATCH APP's bundle id, not this extension's own
     /// (`io.mcnitt.opentask.watchapp.widgets`): the server computes the APNs
@@ -135,10 +130,6 @@ private enum WatchWidgetPushRegistrar {
             "environment": environment,
             "widget_kind": widgetKind,
         ])
-    }
-
-    static func unregister(token: String) async throws {
-        try await send(method: "DELETE", body: ["push_token": token])
     }
 
     private static func send(method: String, body: [String: Any]) async throws {

@@ -157,14 +157,22 @@ enum WidgetStore {
 
     private static let lastInteractionKey = "widget.lastInteraction"
 
-    /// Serializes the read-modify-write of the progress map.
+    /// Serializes every read-modify-write of the pending maps — the progress
+    /// map, the completion, restore and prompt tombstones, the undo/redo
+    /// claim — and the confirm* cache edits.
     ///
     /// Rapid taps arrive as CONCURRENT `perform()` calls in the widget
     /// extension process, and "read the map, add one, write it back" without a
     /// lock loses updates — which is exactly the bug the net count below exists
-    /// to fix, reintroduced one layer down. It guards the taps that actually
-    /// race (all in one process); it is not, and does not need to be, a
-    /// cross-process barrier.
+    /// to fix, reintroduced one layer down. Two quick check-offs could each
+    /// read the tombstone map before either wrote it back, and the second
+    /// write dropped the first tombstone, so that row reappeared until the
+    /// fetch landed. It guards the taps that actually race (all in one
+    /// process); it is not, and does not need to be, a cross-process barrier.
+    ///
+    /// An `NSLock` is not recursive: a function that already holds it calls
+    /// the `…Locked` variant of a helper (`clearPendingCompletionLocked`,
+    /// `liveIdsLocked`, `subtractPendingProgressLocked`), never the public one.
     private static let pendingLock = NSLock()
 
     /// "An interaction happened seconds ago" — providers use this to skip the
@@ -269,12 +277,21 @@ enum WidgetStore {
     }
 
     static func stagePendingCompletion(_ id: Int, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
         var map = pendingMap(pendingCompletionsKey)
         map[String(id)] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingCompletionsKey)
     }
 
     static func clearPendingCompletion(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        clearPendingCompletionLocked(id)
+    }
+
+    /// `clearPendingCompletion` for a caller that already holds `pendingLock`.
+    private static func clearPendingCompletionLocked(_ id: Int) {
         var map = pendingMap(pendingCompletionsKey)
         map.removeValue(forKey: String(id))
         defaults?.set(map, forKey: pendingCompletionsKey)
@@ -285,7 +302,16 @@ enum WidgetStore {
         liveIds(pendingCompletionsKey, now: now)
     }
 
+    /// Takes `pendingLock`: the expiry prune below is a write, and an unlocked
+    /// one could put back a map a concurrent stage or clear just changed.
     private static func liveIds(_ key: String, now: Date) -> Set<Int> {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        return liveIdsLocked(key, now: now)
+    }
+
+    /// `liveIds` for a caller that already holds `pendingLock`.
+    private static func liveIdsLocked(_ key: String, now: Date) -> Set<Int> {
         var map = pendingMap(key)
         let cutoff = now.timeIntervalSince1970 - pendingTTL
         var live = Set<Int>()
@@ -550,7 +576,7 @@ enum WidgetStore {
                 TasksCache(tasks: tasks, projects: cached.value.projects, completions: completions),
                 forKey: tasksKey, at: cached.fetchedAt)
         }
-        clearPendingRestore(id)
+        clearPendingRestoreLocked(id)
     }
 
     /// Remove tombstoned (in-flight) completions from a fetched or cached
@@ -609,12 +635,21 @@ enum WidgetStore {
     private static let pendingRestoresKey = "widget.pendingRestores"
 
     static func stagePendingRestore(_ id: Int, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
         var map = pendingMap(pendingRestoresKey)
         map[String(id)] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingRestoresKey)
     }
 
     static func clearPendingRestore(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        clearPendingRestoreLocked(id)
+    }
+
+    /// `clearPendingRestore` for a caller that already holds `pendingLock`.
+    private static func clearPendingRestoreLocked(_ id: Int) {
         var map = pendingMap(pendingRestoresKey)
         map.removeValue(forKey: String(id))
         defaults?.set(map, forKey: pendingRestoresKey)
@@ -681,7 +716,7 @@ enum WidgetStore {
                 TasksCache(tasks: cached.value.tasks, projects: cached.value.projects, completions: completions),
                 forKey: tasksKey, at: cached.fetchedAt)
         }
-        clearPendingCompletion(id)
+        clearPendingCompletionLocked(id)
     }
 
     // MARK: - Undo/redo counts (2026-09-23, replaces the 60s Undo window)
@@ -787,6 +822,8 @@ enum WidgetStore {
     }
 
     static func releaseUndoRedoClaim() {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
         defaults?.removeObject(forKey: undoRedoInFlightKey)
     }
 
