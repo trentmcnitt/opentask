@@ -6,7 +6,7 @@
  * - `'time'` — **All**: everything, grouped by due date.
  * - `'new'` — **New**: every open task in one flat list, newest-added first, each
  *   row naming its project. The order is fixed (the `age` sort); see
- *   `effectiveSort` in `TaskList.tsx`.
+ *   `effectiveSort` in `src/lib/task-grouping.ts`.
  * - `'unified'` — the flat list the AI-sort toggle and the list header's
  *   "Unified" button switch to. Not a chip in the view switch.
  *
