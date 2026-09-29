@@ -58,6 +58,31 @@ export default function QuotasPage() {
   const router = useRouter()
   const timezone = useTimezone()
 
+  // Searching narrows the quotas to matching ones, in whichever view is
+  // showing — the views filter what they already hold, so there is no request
+  // behind this. Held here rather than in a view so it survives the
+  // Summary/Details switch. Mirrors the Reminders page exactly.
+  const [searchQuery, setSearchQuery] = useState('')
+  const clearSearch = useCallback(() => setSearchQuery(''), [])
+  const searchFocusRef = useRef<(() => void) | null>(null)
+
+  // Cmd/Ctrl+K focuses search here as it does on Tasks and Reminders.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inInput =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable === true
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !inInput) {
+        e.preventDefault()
+        searchFocusRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   // The view populates this, so an undo/redo from the header or the keyboard
   // actually refreshes what is on screen — the same wiring the Reminders page
   // uses. Passing a no-op here left ⌘Z firing against a list that never moved.
@@ -120,6 +145,10 @@ export default function QuotasPage() {
         onRedo={actions.handleRedo}
         undoCount={actions.undoCount}
         redoCount={actions.redoCount}
+        onSearch={setSearchQuery}
+        onSearchClear={clearSearch}
+        searchFocusRef={searchFocusRef}
+        searchSubject="quotas"
         timezone={timezone}
       />
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
@@ -128,6 +157,7 @@ export default function QuotasPage() {
             onUndo={actions.handleUndo}
             onCompleted={actions.bumpUndoCount}
             refreshRef={refreshRef}
+            searchQuery={searchQuery}
             viewSwitch={<QuotasViewSwitch view={view} onChange={onViewChange} />}
           />
         ) : (
@@ -135,6 +165,7 @@ export default function QuotasPage() {
             onUndo={actions.handleUndo}
             onCompleted={actions.bumpUndoCount}
             refreshRef={refreshRef}
+            searchQuery={searchQuery}
             viewSwitch={<QuotasViewSwitch view={view} onChange={onViewChange} />}
           />
         )}
