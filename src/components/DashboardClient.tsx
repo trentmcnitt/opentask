@@ -31,6 +31,8 @@ import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { OverdueJumpFab } from '@/components/OverdueJumpFab'
+import { JumpToTasksFab } from '@/components/JumpToTasksFab'
+import { QuickAddSheet, useQuickAddSheet } from '@/components/QuickAddSheet'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
 import { showToast, showSuccessToastWithAction, showAiSuccessToastWithAction } from '@/lib/toast'
 import dynamic from 'next/dynamic'
@@ -525,6 +527,9 @@ function HomeContent({
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
   const [createPanelOpen, setCreatePanelOpen] = useState(false)
+  // The phone `+` tab's quick-add sheet (`QuickAddSheet`) — here, not in
+  // AppLayout, because its submit is this page's `onQuickAdd`.
+  const quickAddSheet = useQuickAddSheet()
   const bulkSheetOpenRef = useRef<(() => void) | null>(null)
   const searchFocusRef = useRef<(() => void) | null>(null)
 
@@ -1101,7 +1106,8 @@ function HomeContent({
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
-  const keyboardNavEnabled = !quickActionOpen && !showShortcutsDialog && !createPanelOpen
+  const keyboardNavEnabled =
+    !quickActionOpen && !showShortcutsDialog && !createPanelOpen && !quickAddSheet.open
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -1309,9 +1315,22 @@ function HomeContent({
     )
   }
 
+  // One submit for both quick-add fields: the one at the top of the page and
+  // the phone `+` tab's sheet.
+  const quickAdd =
+    aiAvailable && aiQuickTakeMode !== 'off' ? handleQuickAddWithQuickTake : actions.handleQuickAdd
+
   return (
     <>
       <DemoTour />
+      <QuickAddSheet
+        open={quickAddSheet.open}
+        onOpenChange={quickAddSheet.setOpen}
+        onAdd={quickAdd}
+        onOpenAddForm={(title) => {
+          window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
+        }}
+      />
       <DashboardView
         tasks={tasks_}
         allTasks={baseTasks}
@@ -1429,11 +1448,7 @@ function HomeContent({
         onQuickActionDone={actions.handleDone}
         onQuickActionDelete={handleQuickActionDelete}
         onReprocess={handleReprocess}
-        onQuickAdd={
-          aiAvailable && aiQuickTakeMode !== 'off'
-            ? handleQuickAddWithQuickTake
-            : actions.handleQuickAdd
-        }
+        onQuickAdd={quickAdd}
         bannerState={bannerState}
         onQuickTakeDismiss={handleQuickTakeDismiss}
         onQuickTakeViewTask={
@@ -2343,6 +2358,15 @@ function DashboardView({
         overdueFilterOn={overdueFilterOn}
         isSelectionMode={selection.isSelectionMode}
         onJump={onOverdueJump}
+      />
+      {/* Phone only; tops the FAB column — directly above the overdue button,
+          or in its slot when that one is absent (same condition it uses). */}
+      <JumpToTasksFab
+        listRef={taskListRef}
+        aboveOverdueFab={headerCounts.overdueCount > 0}
+        isSelectionMode={selection.isSelectionMode}
+        searching={!!searchQuery}
+        onJump={requestJump}
       />
 
       <QuickActionPopover

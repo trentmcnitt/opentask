@@ -50,6 +50,10 @@ interface OverdueJumpFabProps {
  * the two share a right edge, and its bottom clears the snooze FAB (`4.5rem` +
  * its `3rem`) plus a `0.75rem` gap — the snooze FAB's red badge pokes 4px
  * above its top (`-top-1`), so this leaves 8px of air above the badge.
+ * 80% opaque while the filter is off (Trent, 2026-09-29: "a little more
+ * transparency" — it floats over rows), full on press/hover; while the filter
+ * is ON it is fully opaque, so the pressed toggle state stays unmistakable.
+ * `JumpToTasksFab` may stack above it.
  *
  * **Desktop (`placement="desktop"`, `md` and up) — added the same day at
  * Trent's request.** It was first phone-only, on the reasoning that the top
@@ -100,7 +104,9 @@ export function OverdueJumpFab({
         aria-pressed={overdueFilterOn}
         title={`${overdueCount} overdue`}
         data-overdue-jump-fab="phone"
-        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 flex cursor-pointer transition-colors md:hidden`}
+        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 flex cursor-pointer transition-[background-color,opacity] md:hidden ${
+          overdueFilterOn ? '' : 'opacity-80 hover:opacity-100 active:opacity-100'
+        }`}
       >
         {content}
       </button>
