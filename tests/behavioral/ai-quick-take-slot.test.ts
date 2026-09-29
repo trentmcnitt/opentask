@@ -23,6 +23,11 @@ vi.mock('@/core/ai/activity', () => ({
   logAIActivity: vi.fn(),
 }))
 
+const mockNotifyError = vi.fn()
+vi.mock('@/lib/error-notify', () => ({
+  notifyError: (...args: unknown[]) => mockNotifyError(...args),
+}))
+
 vi.mock('@/core/ai/quick-take', () => ({
   QUICK_TAKE_SYSTEM_PROMPT: 'test quick take system prompt',
 }))
@@ -111,6 +116,12 @@ describe('quick take slot initialization', () => {
     await initPromise
 
     expect(getQuickTakeSlotStats().state).toBe('dead')
+    // A dead slot alerts the same way enrichment's does
+    expect(mockNotifyError).toHaveBeenCalledWith(
+      'slot-failure',
+      'Quick Take slot warmup validation failed',
+      'warmup validation failed',
+    )
   })
 
   test('warmup with empty text → dead', async () => {
@@ -431,6 +442,12 @@ describe('circuit breaker', () => {
 
     expect(getQuickTakeSlotStats().state).toBe('dead')
     expect(getQuickTakeSlotStats().totalRecycles).toBe(5)
+    expect(mockNotifyError).toHaveBeenCalledTimes(1)
+    expect(mockNotifyError).toHaveBeenCalledWith(
+      'slot-failure',
+      'Quick Take slot died (circuit breaker)',
+      'Recycled 5 times rapidly',
+    )
 
     vi.unstubAllEnvs()
   })

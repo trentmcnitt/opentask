@@ -12,6 +12,7 @@
  */
 
 import { log } from '@/lib/logger'
+import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { QUICK_TAKE_SYSTEM_PROMPT } from './quick-take'
@@ -225,7 +226,13 @@ export async function initQuickTakeSlot(): Promise<void> {
 
 /**
  * Record a failed init/warmup: increment failure count, schedule the next
- * allowed re-init attempt, mark the slot dead.
+ * allowed re-init attempt, mark the slot dead, and notify.
+ *
+ * Quick take falls back to a cold query when the slot is dead, so the user
+ * still gets a result — the alert is there because a dead slot means every
+ * quick take pays the cold-start latency until it recovers, and the cause
+ * (rate limit, broken CLI) usually hits enrichment next. Same `slot-failure`
+ * category as enrichment, so the two share one rate limit in error-notify.
  */
 function markInitFailure(reason: string, err: unknown): void {
   g.slot.consecutiveInitFailures++
@@ -236,6 +243,11 @@ function markInitFailure(reason: string, err: unknown): void {
     'ai',
     `Quick Take slot ${reason} (attempt ${g.slot.consecutiveInitFailures}, next attempt in ${Math.round(backoffMs / 1000)}s):`,
     err,
+  )
+  notifyError(
+    'slot-failure',
+    `Quick Take slot ${reason}`,
+    err instanceof Error ? err.message : String(err ?? reason),
   )
 }
 
@@ -531,6 +543,11 @@ function recycleSlot(): void {
       'ai',
       `Quick Take slot recycled ${cb.newCount} times rapidly — marking dead ` +
         `(circuit breaker, next attempt in ${Math.round(backoffMs / 1000)}s)`,
+    )
+    notifyError(
+      'slot-failure',
+      'Quick Take slot died (circuit breaker)',
+      `Recycled ${cb.newCount} times rapidly`,
     )
     g.slot.generation++
     g.slot.deliverResult?.(null)
