@@ -751,8 +751,13 @@ private struct ReminderSlotStrip: View {
             let considered = group.consideredCount
             guard waiting + considered > 0 else { return nil }
             let started = RemindersTimeline.hasStarted(group, now: now)
+            // Fully considered reads as done whatever the clock says — a
+            // period finished EARLY (Trent, 2026-09-28: pre-bedtime and
+            // evening done at 8 PM drew gray) is finished, the web
+            // `ReminderSlotBar`'s rule. The track below still tells started
+            // from not-yet.
             let state: SlotState
-            if started, waiting == 0 { state = .done } else if started { state = .behind } else {
+            if waiting == 0 { state = .done } else if started { state = .behind } else {
                 state = .upcoming
             }
             return Segment(
@@ -847,7 +852,9 @@ private struct ReminderSlotStrip: View {
                 // Fainter for a period whose time hasn't come — which is
                 // what makes the clock's period read as "now" (type doc).
                 Capsule().fill(Color.primary.opacity(segment.state == .upcoming ? 0.055 : 0.14))
-                if segment.state != .upcoming, segment.fraction > 0 {
+                // Any progress fills, started or not — indigo while something
+                // waits, green once nothing does (`color(for:)`), as on the web.
+                if segment.fraction > 0 {
                     Capsule()
                         .fill(color(for: segment.state))
                         .frame(width: max(geo.size.height, geo.size.width * segment.fraction))
@@ -864,8 +871,9 @@ private struct ReminderSlotStrip: View {
         // the "show completed" dot's ON state now uses, so this
         // segment's fill and that toggle can never drift into two
         // different indigos.
-        case .behind: return WidgetTheme.indigoAccent
-        case .upcoming: return Color.secondary.opacity(0.15)
+        // A period not yet started but with some already considered fills
+        // indigo too, as far as it goes (its faint track says "not yet").
+        case .behind, .upcoming: return WidgetTheme.indigoAccent
         }
     }
 }

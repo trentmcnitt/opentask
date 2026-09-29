@@ -564,6 +564,22 @@ private enum ReminderPreviewData {
         )
     }
 
+    /// 4:30 PM with Evening (20:30, not started yet) already finished — a
+    /// period done EARLY draws green, not a gray placeholder (2026-09-28).
+    static func eveningDoneEarlyEntry() -> RemindersEntry {
+        var gs = groups
+        let i = eveningIndex
+        let g = gs[i]
+        gs[i] = ReminderGroupDTO(
+            slot: g.slot, reminders: [], considered: g.considered + g.reminders.count,
+            consideredItems: g.consideredItems + g.reminders, prompts: g.prompts.map { $0.handled(did: false) }
+        )
+        return RemindersEntry(
+            date: afternoon, groups: gs, slotIndex: 3, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
     /// `entry()` with Early morning's first reminder (Breakfast) gone,
     /// so the paragraph-long one is `reminders[0]`.
     static func paragraphFirstEntry() -> RemindersEntry {
@@ -729,6 +745,13 @@ private enum ReminderPreviewData {
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
     ReminderPreviewData.entry(slotIndex: 3, at: ReminderPreviewData.afternoon)
+}
+
+#Preview("Reminders Large — Evening finished early, 4:30 PM", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.eveningDoneEarlyEntry()
 }
 
 #Preview("Reminders Large — Evening page 1", as: .systemLarge) {

@@ -137,4 +137,21 @@ final class WatchSlotLogicTests: XCTestCase {
         let handled = morning.replacingPrompts(morning.prompts.map { $0.handled(did: false) })
         XCTAssertEqual(WatchSlotLogic.state(for: handled, now: noon), .finished)
     }
+
+    /// A period finished before its start time reads as finished, not "not
+    /// started" (2026-09-28); an empty one that hasn't started stays a
+    /// placeholder, and one with something still waiting stays not started.
+    func testFinishedEarlyIsFinished() {
+        let later = TimeSlotDTO(id: 90, label: "Evening", startTime: "20:30")
+        let noon = at(12, 30)
+        let doneEarly = ReminderGroupDTO(slot: later, reminders: [], considered: 2, consideredItems: [], prompts: [])
+        XCTAssertEqual(WatchSlotLogic.state(for: doneEarly, now: noon), .finished)
+        let empty = ReminderGroupDTO(slot: later, reminders: [], considered: 0, consideredItems: [], prompts: [])
+        XCTAssertEqual(WatchSlotLogic.state(for: empty, now: noon), .notStarted)
+        let partly = ReminderGroupDTO(
+            slot: later, reminders: [TaskDTO(id: 1, title: "Wind down", priority: 0, isReminder: true)],
+            considered: 1, consideredItems: [], prompts: []
+        )
+        XCTAssertEqual(WatchSlotLogic.state(for: partly, now: noon), .notStarted)
+    }
 }

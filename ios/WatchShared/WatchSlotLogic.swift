@@ -53,15 +53,20 @@ enum WatchSlotLogic {
         /// Started and still has pending reminders or quota prompts — the
         /// accent fill.
         case waiting
-        /// Started and everything in it has been handled — the done fill.
+        /// Everything in it has been handled — the done fill. Also a period
+        /// that hasn't started yet but was finished EARLY (2026-09-28, Trent:
+        /// pre-bedtime and evening done at 8 PM still drew gray) — the web's
+        /// `ReminderSlotBar` rule: fully considered reads as finished whatever
+        /// the clock says.
         case finished
     }
 
     static func state(for group: ReminderGroupDTO, now: Date = Date()) -> SlotState {
+        // Waiting quota prompts count like reminders (2026-09-24).
+        if group.hasNothingWaiting, group.consideredCount > 0 { return .finished }
         if let start = group.slot?.startMinutes, start > minutesSinceMidnight(now) {
             return .notStarted
         }
-        // Waiting quota prompts count like reminders (2026-09-24).
         return group.hasNothingWaiting ? .finished : .waiting
     }
 
