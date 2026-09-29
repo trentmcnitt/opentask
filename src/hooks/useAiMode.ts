@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import { useAiPreferences } from '@/components/PreferencesProvider'
 import type { FeatureMode } from '@/components/PreferencesProvider'
 
@@ -38,15 +38,11 @@ function patchPreference(fields: Record<string, unknown>) {
  * - Signal/score chip visibility
  *
  * Backed by PreferencesProvider (server-persisted per user).
- *
- * On first load, migrates any leftover localStorage keys to the server
- * and deletes them.
  */
 export function useAiMode(): UseAiModeReturn {
   const {
     aiMode,
     setAiMode,
-    setAiShowScores,
     aiInsightsMode,
     setAiInsightsMode,
     aiWnCommentaryUnfiltered,
@@ -58,41 +54,6 @@ export function useAiMode(): UseAiModeReturn {
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
   } = useAiPreferences()
-  const migrated = useRef(false)
-
-  // One-time migration from localStorage → server
-  useEffect(() => {
-    if (migrated.current || typeof window === 'undefined') return
-    migrated.current = true
-
-    const storedMode = localStorage.getItem('ai-mode')
-    const storedScores = localStorage.getItem('ai-show-scores')
-    if (!storedMode && !storedScores) return
-
-    const fields: Record<string, unknown> = {}
-    if (storedMode === 'off') {
-      setAiMode('off')
-      fields.ai_mode = 'off'
-    } else if (
-      storedMode === 'on' ||
-      storedMode === 'bubble' ||
-      storedMode === 'insight' ||
-      storedMode === 'insights'
-    ) {
-      // Legacy migration: map all non-off values to 'on'
-      setAiMode('on')
-      fields.ai_mode = 'on'
-    }
-    if (storedScores !== null) {
-      const val = storedScores !== 'false'
-      setAiShowScores(val)
-      fields.ai_show_scores = val
-    }
-
-    if (Object.keys(fields).length > 0) patchPreference(fields)
-    localStorage.removeItem('ai-mode')
-    localStorage.removeItem('ai-show-scores')
-  }, [setAiMode, setAiShowScores])
 
   const setMode = useCallback(
     (mode: AiMode) => {

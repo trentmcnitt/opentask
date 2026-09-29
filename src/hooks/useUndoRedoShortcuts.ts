@@ -5,7 +5,7 @@ import { useEffect, type MutableRefObject } from 'react'
 /**
  * Keyboard shortcuts for undo (Cmd+Z) and redo (Cmd+Shift+Z).
  *
- * Used by the dashboard, project page, and task detail page.
+ * Used by the dashboard, reminders, quotas, history and task detail pages.
  *
  * Ignores keystrokes when focused on an input, textarea, or contentEditable
  * element so that the browser's native undo/redo still works in text fields.

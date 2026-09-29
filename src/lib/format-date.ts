@@ -121,25 +121,6 @@ export function formatDateTime(isoUtc: string, timezone: string): string {
   })
 }
 
-/**
- * For datetime-local input value: "2025-01-05T09:00"
- */
-export function toLocalDatetimeInput(isoUtc: string, timezone: string): string {
-  const d = new Date(isoUtc)
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(d)
-
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
-}
-
 export interface DueTimeParts {
   relative: string // "in 47m", "5:00 PM", "Tomorrow 9:00 AM", "3h ago", etc.
   absolute?: string // "2:25 PM" — only present when relative is "in X"

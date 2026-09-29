@@ -107,7 +107,6 @@ interface SelectionActionSheetProps {
    * out of the snooze). Non-date fields always apply to every selected task.
    */
   onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
-  onMoveToProject?: () => void
   onClear: () => void
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
@@ -123,7 +122,6 @@ export function SelectionActionSheet({
   onDone,
   onDelete,
   onSaveAll,
-  onMoveToProject,
   onClear,
   onNavigateToDetail,
   projects,
@@ -264,12 +262,6 @@ export function SelectionActionSheet({
     onClear() // Exit selection mode
   }, [onDelete, onClear])
 
-  const handleMoveToProject = useCallback(() => {
-    onMoveToProject?.()
-    setSheetOpen(false)
-    onClear() // Exit selection mode
-  }, [onMoveToProject, onClear])
-
   // On dismiss without explicit save/cancel: intercept when dirty to show confirmation
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -378,7 +370,6 @@ export function SelectionActionSheet({
         saveRef={panelSaveRef}
         recurrenceSummary={recurrenceSummary}
         onDelete={handleDelete}
-        onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
         onNavigateToDetail={
           selectedCount === 1 && onNavigateToDetail ? handleNavigateToDetail : undefined
         }

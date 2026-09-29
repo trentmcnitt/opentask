@@ -48,9 +48,6 @@ const KeyboardShortcutsDialog = dynamic(() =>
     default: mod.KeyboardShortcutsDialog,
   })),
 )
-const ProjectPickerSheet = dynamic(() =>
-  import('@/components/ProjectPickerSheet').then((mod) => ({ default: mod.ProjectPickerSheet })),
-)
 
 import {
   useSnoozePreferences,
@@ -195,15 +192,15 @@ function useBulkActions(
   fetchTasks: () => Promise<void>,
   handleUndo: () => Promise<void>,
   bumpUndoCount: () => void,
-  setShowProjectPicker: (show: boolean) => void,
   setSearchQuery: (q: string | null) => void,
   setSearchResults: React.Dispatch<React.SetStateAction<Task[]>>,
 ) {
-  // Bulk "Done" from the floating selection action bar. This is the only
-  // remaining direct bulk endpoint call from the dashboard — all panel-driven
-  // mutations (date, priority, labels, project, recurrence) flow through
-  // `bulkSaveAll` → `saveQuickPanelChanges`, which keeps the mobile selection
-  // sheet and the desktop quick-action popover on exactly one save path.
+  // Bulk "Done" from the floating selection action bar. `bulkDone` and
+  // `bulkDelete` are the only remaining direct bulk endpoint calls from the
+  // dashboard — all panel-driven mutations (date, priority, labels, project,
+  // recurrence) flow through `bulkSaveAll` → `saveQuickPanelChanges`, which
+  // keeps the mobile selection sheet and the desktop quick-action popover on
+  // exactly one save path.
   const bulkDone = async () => {
     const count = selection.selectedIds.size
     try {
@@ -281,32 +278,6 @@ function useBulkActions(
     }
   }
 
-  const handleBulkMoveToProject = async (projectId: number) => {
-    const count = selection.selectedIds.size
-    setShowProjectPicker(false)
-    try {
-      const res = await fetch('/api/tasks/bulk/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ids: [...selection.selectedIds],
-          changes: { project_id: projectId },
-        }),
-      })
-      if (!res.ok) throw new Error('Move failed')
-      selection.clear()
-      bumpUndoCount()
-      fetchTasks()
-      showToast({
-        message: `${count} ${taskWord(count)} moved`,
-        type: 'success',
-        action: { label: 'Undo', onClick: handleUndo },
-      })
-    } catch {
-      showToast({ message: 'Move failed', type: 'error' })
-    }
-  }
-
   const handleSearch = async (query: string) => {
     selection.clear() // Clear selection when search changes
     setSearchQuery(query)
@@ -320,7 +291,7 @@ function useBulkActions(
     }
   }
 
-  return { bulkDone, bulkSaveAll, bulkDelete, handleBulkMoveToProject, handleSearch }
+  return { bulkDone, bulkSaveAll, bulkDelete, handleSearch }
 }
 
 function HomeContent({
@@ -555,7 +526,6 @@ function HomeContent({
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
   const { defaultSnoozeOption, bulkSnoozeDefault, morningTime } = useSnoozePreferences()
 
-  const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
@@ -1136,8 +1106,7 @@ function HomeContent({
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
-  const keyboardNavEnabled =
-    !showProjectPicker && !quickActionOpen && !showShortcutsDialog && !createPanelOpen
+  const keyboardNavEnabled = !quickActionOpen && !showShortcutsDialog && !createPanelOpen
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -1207,7 +1176,6 @@ function HomeContent({
     refreshAll,
     actions.handleUndo,
     actions.bumpUndoCount,
-    setShowProjectPicker,
     setSearchQuery,
     setSearchResults,
   )
@@ -1373,7 +1341,6 @@ function HomeContent({
         overdueCount={overdueCount}
         selection={selection}
         selectedTasks={selectedTasks}
-        showProjectPicker={showProjectPicker}
         actions={actions}
         selectedLabels={selectedLabels}
         onToggleLabel={toggleLabel}
@@ -1413,8 +1380,6 @@ function HomeContent({
         onBulkDone={bulk.bulkDone}
         onBulkSaveAll={bulk.bulkSaveAll}
         onBulkDelete={bulk.bulkDelete}
-        onBulkMoveToProject={bulk.handleBulkMoveToProject}
-        onShowProjectPicker={setShowProjectPicker}
         onSnoozeOverdue={handleSnoozeAllOverdue}
         focusedTask={focusedTask}
         quickActionOpen={quickActionOpen}
@@ -1709,7 +1674,6 @@ function DashboardView({
   overdueCount,
   selection,
   selectedTasks,
-  showProjectPicker,
   actions,
   selectedLabels,
   onToggleLabel,
@@ -1745,8 +1709,6 @@ function DashboardView({
   onBulkDone,
   onBulkSaveAll,
   onBulkDelete,
-  onBulkMoveToProject,
-  onShowProjectPicker,
   onSnoozeOverdue,
   focusedTask,
   quickActionOpen,
@@ -1843,7 +1805,6 @@ function DashboardView({
   overdueCount: number
   selection: ReturnType<typeof useSelection>
   selectedTasks: Task[]
-  showProjectPicker: boolean
   actions: ReturnType<typeof useDashboardActions>
   selectedLabels: string[]
   onToggleLabel: (label: string) => void
@@ -1881,8 +1842,6 @@ function DashboardView({
   onBulkDone: () => Promise<void>
   onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
   onBulkDelete: () => Promise<void>
-  onBulkMoveToProject: (projectId: number) => Promise<void>
-  onShowProjectPicker: (show: boolean) => void
   onSnoozeOverdue: (until?: string) => void
   focusedTask: Task | null
   quickActionOpen: boolean
@@ -2362,7 +2321,6 @@ function DashboardView({
         onDone={onBulkDone}
         onSaveAll={onBulkSaveAll}
         onDelete={onBulkDelete}
-        onMoveToProject={() => onShowProjectPicker(true)}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
         projects={projects}
@@ -2391,14 +2349,6 @@ function DashboardView({
         isSelectionMode={selection.isSelectionMode}
         onJump={onOverdueJump}
       />
-
-      {showProjectPicker && (
-        <ProjectPickerSheet
-          projects={projects}
-          onSelect={onBulkMoveToProject}
-          onClose={() => onShowProjectPicker(false)}
-        />
-      )}
 
       <QuickActionPopover
         focusedTask={focusedTask}
