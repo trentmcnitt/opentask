@@ -27,8 +27,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     /// (snooze grid vs. reminder checklist); only `view` is used from here.
     private var hostingController: UIViewController?
 
-    // Task data from APNs payload
-    private var taskId: Int = 0
+    // Task data from APNs payload. (The task id is read from the response's
+    // own payload when an action runs — `NotificationActionRunner`.)
     private var dueAt: String = ""
     private var selectedDueAt: String?
     private var selectedDeltaMinutes: Int?
@@ -109,7 +109,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             // Use "now" as the base time for bulk mode (no single task's dueAt)
             dueAt = DateHelpers.formatISO(Date())
         } else {
-            taskId = userInfo["taskId"] as? Int ?? 0
             dueAt = userInfo["dueAt"] as? String ?? ""
             mode = .individual(taskTitle: title, originalDueAt: dueAt)
         }
@@ -263,6 +262,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     /// Called when the user taps an action button while the extension is visible.
     /// Fires the API call and dismisses the notification.
+    ///
+    /// Which call each button makes is `NotificationActionRunner` — the same
+    /// dispatch the phone, Mac and Watch delegates use — given the time picked
+    /// in the grid for the custom snoozes. It also clears the banners of the
+    /// tiers a bulk snooze moved (`dismissNotificationsAfterSweep`): P0-P2,
+    /// plus High when the sweep took the High tier. Urgent is never swept, so
+    /// it stays. This notification's own banner goes with `.dismiss`.
     func didReceive(
         _ response: UNNotificationResponse,
         completionHandler completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
@@ -272,66 +278,22 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             return
         }
 
+        let content = response.notification.request.content
         Task {
-            var sweep: APIClient.BulkSnoozeResult?
-
             do {
-                if isBulkMode {
-                    // Bulk mode: all actions are bulk snooze (no Done or single-task snooze)
-                    switch response.actionIdentifier {
-                    case NotificationAction.snoozeAll1hr:
-                        sweep = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-
-                    case NotificationAction.snoozeAllCustom:
-                        if let dueAt = selectedDueAt {
-                            sweep = try await APIClient.shared.snoozeOverdue(until: dueAt)
-                        }
-
-                    default:
-                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                            sweep = try await APIClient.shared.snoozeOverdue(slot: slot)
-                        }
-                    }
-                } else {
-                    // Individual mode: task-specific + bulk actions
-                    switch response.actionIdentifier {
-                    case NotificationAction.done:
-                        try await APIClient.shared.markDone(taskId: taskId)
-
-                    case NotificationAction.snooze1hr:
-                        try await APIClient.shared.snoozeNextHour(taskId: taskId)
-
-                    case NotificationAction.snoozeAll1hr:
-                        sweep = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
-
-                    case NotificationAction.snoozeCustom:
-                        if let dueAt = selectedDueAt {
-                            try await APIClient.shared.snoozeTo(taskId: taskId, dueAt: dueAt)
-                        }
-
-                    case NotificationAction.snoozeAllCustom:
-                        if let dueAt = selectedDueAt {
-                            sweep = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
-                        }
-
-                    default:
-                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                            sweep = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
-                        }
-                    }
-                }
+                _ = try await NotificationActionRunner.perform(
+                    category: content.categoryIdentifier,
+                    action: NotificationActionRunner.Action(actionIdentifier: response.actionIdentifier),
+                    userInfo: content.userInfo,
+                    customDueAt: selectedDueAt,
+                    api: APIClient.shared,
+                    dismissAfterSweep: dismissNotificationsAfterSweep
+                )
             } catch {
                 print("[OpenTask] Content extension action error: \(error)")
                 // Keep notification visible so the user knows it failed
                 completion(.doNotDismiss)
                 return
-            }
-
-            // After a bulk snooze, dismiss the notifications of the tiers it
-            // moved (`dismissNotificationsAfterSweep`): P0-P2, plus High when
-            // the sweep took the High tier. Urgent is never swept, so it stays.
-            if let sweep {
-                await dismissNotificationsAfterSweep(sweep)
             }
 
             // No local badge update here. The server's badge-only push lands
@@ -342,7 +304,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
             // Dismiss only — the extension already handled the action via API call.
             // Using .dismissAndForwardAction would cause AppDelegate's didReceive to
-            // fire the same API call again (double action).
+            // fire the same API call again (double action). A body tap makes no
+            // call here and is not forwarded either, as before.
             completion(.dismiss)
         }
     }

@@ -1,71 +1,11 @@
 import UserNotifications
 
-/// Shared notification category and action identifiers.
-/// Used by AppDelegate (iOS), WatchAppDelegate (watchOS), and the content extension.
-/// Must match the `category` field sent by the server in APNs payloads.
-enum NotificationCategory {
-    static let taskReminder = "TASK_REMINDER"
-    static let taskSummary = "TASK_SUMMARY"
-    /// REDESIGN-V03 §6: the time SLOT notifies, not the reminder. Long-pressing
-    /// one of these expands into the batch checklist (§6.1).
-    static let slotReminder = "SLOT_REMINDER"
-}
-
-enum NotificationAction {
-    static let done = "DONE"
-    static let snooze1hr = "SNOOZE_1HR"
-    static let snoozeAll1hr = "SNOOZE_ALL_1HR"
-    static let snoozeCustom = "SNOOZE_CUSTOM"
-    static let snoozeAllCustom = "SNOOZE_ALL_CUSTOM"
-    /// §6.1 batch checklist: commit the rows the user checked in the extension.
-    /// Only ever offered by the content extension — from the lock screen there
-    /// is nothing to check, so the registered category omits it.
-    static let completeChecked = "COMPLETE_CHECKED"
-    /// Complete every pending reminder in the slot. Meaningful with or without
-    /// the expanded UI, so this one IS registered on the category.
-    static let completeAll = "COMPLETE_ALL"
-
-    /// Bulk-snooze-to-a-time-slot actions, one per cached `TimeSlotStore` entry
-    /// plus a "next period" sentinel, dynamically built by `slotSnoozeActions()`
-    /// below — there is no fixed case per slot because slots are user-configurable.
-    ///
-    /// Identifier shape: `SNOOZE_ALL_SLOT:<value>`, where `<value>` is either a
-    /// slot's `start_time` ("07:00") or the literal `next`. That value is sent
-    /// verbatim as the server's `slot` body field on
-    /// `POST /api/tasks/bulk/snooze-overdue` — the device never computes a time,
-    /// it only carries the slot's identity (or "next") to the server, which
-    /// resolves it in the user's timezone.
-    static let snoozeAllSlotPrefix = "SNOOZE_ALL_SLOT:"
-
-    /// "All → Next period": the first slot whose start is after now, resolved
-    /// server-side (wrapping to tomorrow's first slot past the last one today).
-    static let snoozeAllSlotNext = snoozeAllSlotPrefix + "next"
-
-    /// Build the identifier for a concrete slot's `start_time` ("07:00").
-    static func snoozeAllSlotIdentifier(startTime: String) -> String {
-        snoozeAllSlotPrefix + startTime
-    }
-
-    /// Parse a `SNOOZE_ALL_SLOT:` identifier back to the value to send as the
-    /// `slot` body field — "next" or an "HH:MM" start time. Nil for any other
-    /// (non-slot) action identifier.
-    static func parseSnoozeAllSlot(_ identifier: String) -> String? {
-        guard identifier.hasPrefix(snoozeAllSlotPrefix) else { return nil }
-        let value = String(identifier.dropFirst(snoozeAllSlotPrefix.count))
-        return value.isEmpty ? nil : value
-    }
-}
-
-/// userInfo keys carried by a SLOT_REMINDER push (see `sendApnsSlotReminder`
-/// in `src/core/notifications/apns.ts` — this is the whole contract).
-enum SlotReminderKey {
-    /// `time_slots.id`, or -1 for the un-slotted ("Anytime") group.
-    static let slotId = "slot_id"
-    static let slotLabel = "slot_label"
-    /// Pending count at SEND time — a header fallback only. The expanded
-    /// checklist always re-fetches, because by long-press time this is stale.
-    static let reminderCount = "reminder_count"
-}
+/// The UserNotifications half of the notification plumbing: category
+/// registration, delivered-notification removal and the badge. The identifiers
+/// themselves (`NotificationCategory`, `NotificationAction`, `SlotReminderKey`)
+/// live in the Foundation-only `NotificationIdentifiers.swift`, and the action
+/// dispatch in `NotificationActionRunner.swift`, so `OpenTaskLogicTests` —
+/// which leaves this file out to stay off UserNotifications — can test them.
 
 /// Slot-snooze actions built from the cached `GET /api/time-slots` list
 /// (`TimeSlotStore.cachedSlots`), appended after the existing bulk-snooze
@@ -191,12 +131,98 @@ func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
 /// High tier (`sweepDismissCeiling`, in `SweepDismissal.swift`); P4 (Urgent)
 /// never, since it is never swept. A sweep that moved nothing clears nothing.
 ///
-/// Every sweep path calls this — the phone, Mac and Watch action handlers,
-/// the content extension and the Mac's menu items — so they can't drift on
-/// which banners a sweep clears.
+/// Every sweep path calls this — the notification actions on every device
+/// (through `NotificationActionRunner`, which the phone, Mac and Watch
+/// delegates and the content extension share) and the Mac's menu items — so
+/// they can't drift on which banners a sweep clears.
 func dismissNotificationsAfterSweep(_ result: APIClient.BulkSnoozeResult) async {
     guard result.tasksAffected > 0 else { return }
     await dismissNotifications(atOrBelowPriority: sweepDismissCeiling(result))
+}
+
+/// The silent `dismiss` push (`dismissNotificationsForTasks`,
+/// `src/core/notifications/dismiss.ts`): those tasks were handled somewhere
+/// else, so clear their delivered banners here. A banner is matched by its
+/// payload's `taskId`. Returns how many were removed — the phone and Watch
+/// answer their background-fetch handler `.newData`/`.noData` from it.
+///
+/// Shared by the phone, Mac and Watch delegates; each keeps its own handling
+/// of the other silent types (`badge-update`, `dismiss-all`).
+func removeDeliveredNotifications(forTaskIds taskIds: [Int]) async -> Int {
+    let center = UNUserNotificationCenter.current()
+    let idsToRemove = await center.deliveredNotifications()
+        .filter { notification in
+            guard let id = notification.request.content.userInfo["taskId"] as? Int else { return false }
+            return taskIds.contains(id)
+        }
+        .map(\.request.identifier)
+
+    if !idsToRemove.isEmpty {
+        center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
+    }
+    return idsToRemove.count
+}
+
+extension NotificationActionRunner.Action {
+    /// Map a response's `actionIdentifier`: the body tap is
+    /// `UNNotificationDefaultActionIdentifier`, anything else is a button.
+    init(actionIdentifier: String) {
+        self = actionIdentifier == UNNotificationDefaultActionIdentifier ? .bodyTap : .button(actionIdentifier)
+    }
+}
+
+extension NotificationActionRunner {
+    /// A notification action as the phone, Mac and Watch app delegates handle
+    /// it: `perform` against the real API, plus the delivered banners around
+    /// it. The content extension calls `perform` itself — its banner goes
+    /// with its own `.dismiss`/`.doNotDismiss` answer, not by identifier.
+    ///
+    /// Banner rules (the same on every device):
+    /// - summary, or task with a `taskId`: its own banner goes BEFORE the call
+    ///   (belt-and-suspenders — the action was taken, whatever the server says).
+    /// - slot "Complete all": its banner goes only when something was
+    ///   completed. Nothing completed means the slot's reminders are still
+    ///   waiting, so it stays.
+    /// - body tap: every delivered banner goes for a summary or task (the user
+    ///   is opening the app to deal with them); only its own for a slot.
+    /// - after a sweep, the moved tiers' banners (`dismissNotificationsAfterSweep`).
+    ///
+    /// The caller still owns navigation, haptics, error reporting, the badge
+    /// and its completion handler.
+    static func handle(_ response: UNNotificationResponse) async throws -> Outcome {
+        let request = response.notification.request
+        let category = request.content.categoryIdentifier
+        let userInfo = request.content.userInfo
+        let center = UNUserNotificationCenter.current()
+        let ownBanner = [request.identifier]
+
+        let isSlot = category == NotificationCategory.slotReminder
+        let isSummary = category == NotificationCategory.taskSummary
+        if isSummary || (!isSlot && userInfo["taskId"] as? Int != nil) {
+            center.removeDeliveredNotifications(withIdentifiers: ownBanner)
+        }
+
+        let outcome = try await perform(
+            category: category,
+            action: Action(actionIdentifier: response.actionIdentifier),
+            userInfo: userInfo,
+            customDueAt: nil,
+            api: APIClient.shared,
+            dismissAfterSweep: dismissNotificationsAfterSweep
+        )
+
+        switch outcome {
+        case .slotCompleted(let affected) where affected > 0:
+            center.removeDeliveredNotifications(withIdentifiers: ownBanner)
+        case .openDashboard where isSlot:
+            center.removeDeliveredNotifications(withIdentifiers: ownBanner)
+        case .openDashboard, .openTask:
+            center.removeAllDeliveredNotifications()
+        default:
+            break
+        }
+        return outcome
+    }
 }
 
 /// Set the app icon badge (iOS) or the Dock tile badge (macOS) — same call,

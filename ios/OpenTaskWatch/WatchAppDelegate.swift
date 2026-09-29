@@ -167,22 +167,12 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             return
         }
 
-        center.getDeliveredNotifications { notifications in
-            let idsToRemove = notifications
-                .filter { notification in
-                    guard let notifTaskId = notification.request.content.userInfo["taskId"] as? Int else {
-                        return false
-                    }
-                    return taskIds.contains(notifTaskId)
-                }
-                .map { $0.request.identifier }
-
-            if !idsToRemove.isEmpty {
-                center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
-                print("[OpenTaskWatch] Dismissed \(idsToRemove.count) notifications for tasks \(taskIds)")
+        Task {
+            let removed = await removeDeliveredNotifications(forTaskIds: taskIds)
+            if removed > 0 {
+                print("[OpenTaskWatch] Dismissed \(removed) notifications for tasks \(taskIds)")
             }
-
-            completionHandler(idsToRemove.isEmpty ? .noData : .newData)
+            completionHandler(removed == 0 ? .noData : .newData)
         }
     }
 
@@ -216,8 +206,15 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
 
     /// Called when the user taps a notification action button on the Watch.
     /// Makes API calls directly from the Watch — no forwarding to iPhone.
-    /// Branches on category: TASK_SUMMARY actions are bulk-only (no taskId),
-    /// while TASK_REMINDER actions target a specific task.
+    ///
+    /// The server call and the banner removal are `NotificationActionRunner`,
+    /// shared with the phone, the Mac and the content extension. This keeps
+    /// the Watch's part: haptics (success, or failure for a "Complete all"
+    /// that completed nothing), a local error banner when a call fails, and
+    /// the not-configured guard. No navigation — a body tap just clears the
+    /// banners — and no badge: watchOS has no app icon badge (the phone and
+    /// Mac re-read theirs from the server after an action,
+    /// `refreshBadgeFromServer`).
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -240,132 +237,17 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             return
         }
 
-        // Summary notifications: bulk-only actions, no taskId
-        if categoryId == NotificationCategory.taskSummary {
-            center.removeDeliveredNotifications(
-                withIdentifiers: [response.notification.request.identifier]
-            )
-
-            Task {
-                do {
-                    switch response.actionIdentifier {
-                    case NotificationAction.snoozeAll1hr:
-                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                        print("[OpenTaskWatch] Summary: snoozed all +1hr (\(result.tasksAffected) tasks)")
-                        await dismissNotificationsAfterSweep(result)
-                        playHaptic(.success)
-
-                    case UNNotificationDefaultActionIdentifier:
-                        center.removeAllDeliveredNotifications()
-
-                    default:
-                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                            let result = try await APIClient.shared.snoozeOverdue(slot: slot)
-                            print("[OpenTaskWatch] Summary: snoozed all to slot \(slot) (\(result.tasksAffected) tasks)")
-                            await dismissNotificationsAfterSweep(result)
-                            playHaptic(.success)
-                        }
-                    }
-                } catch {
-                    print("[OpenTaskWatch] Summary action failed: \(error)")
-                    playHaptic(.failure)
-                    postLocalErrorNotification("Action failed: \(error.localizedDescription)")
-                }
-
-                completionHandler()
-            }
-            return
-        }
-
-        // §6 slot reminders: no taskId — the slot is the unit. The Watch has no
-        // content extension, so only "Complete all" is reachable here; without
-        // this branch the registered button would silently do nothing.
-        if categoryId == NotificationCategory.slotReminder {
-            let slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
-
-            Task {
-                do {
-                    switch response.actionIdentifier {
-                    case NotificationAction.completeAll:
-                        let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
-                        print("[OpenTaskWatch] Slot \(slotId): completed \(affected) reminders")
-                        // Same rule as the phone and Mac: the banner goes only
-                        // when something was completed. Nothing completed means
-                        // the slot's reminders are still waiting, so it stays.
-                        if affected > 0 {
-                            center.removeDeliveredNotifications(
-                                withIdentifiers: [response.notification.request.identifier]
-                            )
-                        }
-                        playHaptic(affected > 0 ? .success : .failure)
-
-                    case UNNotificationDefaultActionIdentifier:
-                        center.removeDeliveredNotifications(
-                            withIdentifiers: [response.notification.request.identifier]
-                        )
-
-                    default:
-                        break
-                    }
-                } catch {
-                    print("[OpenTaskWatch] Slot reminder action failed: \(error)")
-                    playHaptic(.failure)
-                    postLocalErrorNotification("Action failed: \(error.localizedDescription)")
-                }
-
-                completionHandler()
-            }
-            return
-        }
-
-        // Individual task notifications: require taskId
-        // No badge handling anywhere on the Watch: watchOS has no app icon
-        // badge (the phone and Mac re-read theirs from the server after an
-        // action, `refreshBadgeFromServer`).
-        let taskId = userInfo["taskId"] as? Int
-
-        // Clear this specific notification on any action
-        if taskId != nil {
-            center.removeDeliveredNotifications(
-                withIdentifiers: [response.notification.request.identifier]
-            )
-        }
-
-        guard let taskId = taskId else {
-            completionHandler()
-            return
-        }
-
         Task {
             do {
-                switch response.actionIdentifier {
-                case NotificationAction.done:
-                    try await APIClient.shared.markDone(taskId: taskId)
-                    print("[OpenTaskWatch] Done: task \(taskId)")
+                let outcome = try await NotificationActionRunner.handle(response)
+                print("[OpenTaskWatch] \(categoryId) \(response.actionIdentifier): \(outcome)")
+                switch outcome {
+                case .taskUpdated, .swept:
                     playHaptic(.success)
-
-                case NotificationAction.snooze1hr:
-                    try await APIClient.shared.snoozeNextHour(taskId: taskId)
-                    print("[OpenTaskWatch] Snoozed +1hr: task \(taskId)")
-                    playHaptic(.success)
-
-                case NotificationAction.snoozeAll1hr:
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
-                    print("[OpenTaskWatch] Snoozed all +1hr (\(result.tasksAffected) tasks)")
-                    await dismissNotificationsAfterSweep(result)
-                    playHaptic(.success)
-
-                case UNNotificationDefaultActionIdentifier:
-                    // User tapped the notification body — just clear all
-                    center.removeAllDeliveredNotifications()
-
-                default:
-                    if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                        let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
-                        print("[OpenTaskWatch] Snoozed all to slot \(slot) (\(result.tasksAffected) tasks)")
-                        await dismissNotificationsAfterSweep(result)
-                        playHaptic(.success)
-                    }
+                case .slotCompleted(let affected):
+                    playHaptic(affected > 0 ? .success : .failure)
+                case .ignored, .missingTaskId, .openDashboard, .openTask:
+                    break
                 }
             } catch {
                 print("[OpenTaskWatch] Action failed: \(error)")
