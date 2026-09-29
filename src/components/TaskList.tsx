@@ -16,20 +16,12 @@ import {
 import type { Task, Project } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { cn } from '@/lib/utils'
-import {
-  buildTaskGroups,
-  effectiveSort,
-  isFlatGrouping,
-  sortTasks,
-  type SortOption,
-  type TaskGroup,
-} from '@/lib/task-grouping'
-import { isTracked } from '@/lib/track'
+import { isFlatGrouping, type SortOption, type SortedTaskGroup } from '@/lib/task-grouping'
+import { isOverdue } from '@/lib/task-counts'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
-import type { TimeSlot } from '@/lib/time-slot-assign'
 import { isJustAdded } from '@/lib/just-added'
 
 /**
@@ -62,10 +54,16 @@ import { useSelection, type SelectionContextType } from './SelectionProvider'
 
 interface TaskListProps {
   tasks: Task[]
+  /**
+   * `tasks` grouped and sorted — the one visual order, computed by the
+   * dashboard (`sortTaskGroups` in `src/lib/task-grouping.ts`) so the keyboard,
+   * shift-click ranges and the clipboard follow exactly what is drawn here.
+   */
+  sortedGroups: SortedTaskGroup[]
+  /** The reachable rows' ids in that order (collapsed groups left out). */
+  orderedIds: number[]
   projects?: Project[]
   grouping?: GroupingMode
-  /** Time slots for `grouping === 'slot'` (§6.0). */
-  timeSlots?: TimeSlot[]
   /**
    * The dashboard's one clock (`useDashboardNow`): the groups and every row's
    * overdue state use it, so they agree with the top bar's pills to the
@@ -87,9 +85,9 @@ interface TaskListProps {
   onListFocus?: (e: React.FocusEvent) => void
   /** Blur handler for list container */
   onListBlur?: (e: React.FocusEvent) => void
-  /** Sort option (from the dashboard's persisted preferences) */
+  /** Sort option (the saved preference; drives the sort dropdown only) */
   sortOption: SortOption
-  /** Reversed state (from the dashboard's persisted preferences) */
+  /** Reversed state (the saved preference; drives the sort dropdown only) */
   reversed: boolean
   /** Set sort option (from the dashboard's persisted preferences) */
   setSortOption: (option: SortOption) => void
@@ -174,9 +172,10 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
 
 export function TaskList({
   tasks,
+  sortedGroups,
+  orderedIds,
   projects = [],
   grouping = 'time',
-  timeSlots = [],
   now,
   onDone,
   onSnooze,
@@ -187,8 +186,8 @@ export function TaskList({
   onKeyDown,
   onListFocus,
   onListBlur,
-  sortOption: sortOptionProp,
-  reversed: reversedProp,
+  sortOption,
+  reversed,
   setSortOption,
   onActivate,
   onDoubleClick,
@@ -213,9 +212,10 @@ export function TaskList({
   revealRef,
 }: TaskListProps) {
   // Sort and collapse state are lifted into the dashboard (it owns the sort
-  // dropdown's preference and the collapsed-group set); `effectiveSort` pins
-  // the New view to its own order whatever the saved sort says.
-  const { sortOption, reversed } = effectiveSort(grouping, sortOptionProp, reversedProp)
+  // dropdown's preference and the collapsed-group set), and so is the order
+  // itself: `sortedGroups` arrives already sorted, with `effectiveSort`
+  // applied (New pins newest-added first whatever the saved sort says). The
+  // saved `sortOption`/`reversed` only label the dropdown, which New hides.
   const selection = useSelection()
   const timezone = useTimezone()
   const isMobile = useIsMobile()
@@ -229,9 +229,10 @@ export function TaskList({
     }
   }, [selection.isSelectionMode])
 
-  // Swipe-left behavior depends on whether the task is overdue:
+  // Swipe-left behavior depends on whether the task is overdue (`isOverdue`):
   // - Overdue: snooze with default option (push forward from now)
-  // - Future or no due date: open QuickActionPanel (nothing to "snooze")
+  // - Future or no due date: open QuickActionPanel (nothing to "snooze").
+  //   A quota is never overdue, so it always gets this edit action (D13).
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
 
   // Every snooze originating from this list is a single-task interactive
@@ -290,9 +291,7 @@ export function TaskList({
   if (highlightTaskId !== undefined && highlightTaskId !== prevHighlightTaskId) {
     setPrevHighlightTaskId(highlightTaskId ?? null)
     if (highlightTaskId) {
-      const group = buildTaskGroups(tasks, grouping, timezone, timeSlots, now).find((g) =>
-        g.tasks.some((t) => t.id === highlightTaskId),
-      )
+      const group = sortedGroups.find((g) => g.tasks.some((t) => t.id === highlightTaskId))
       if (group && !expandedGroups.has(group.label)) {
         setExpandedGroups((prev) => new Set(prev).add(group.label))
       }
@@ -301,7 +300,7 @@ export function TaskList({
 
   const handleSwipeLeft = useCallback(
     (task: Task) => {
-      if (isTaskOverdue(task, now)) {
+      if (isOverdue(task, now)) {
         const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
         requestSnooze(task, until)
       } else {
@@ -323,18 +322,14 @@ export function TaskList({
     if (!revealRef) return
     revealRef.current = (task: Task) => {
       const unified = isFlatGrouping(grouping)
-      const group = buildTaskGroups(tasks, grouping, timezone, timeSlots, now).find((g) =>
-        g.tasks.some((t) => t.id === task.id),
-      )
+      const group = sortedGroups.find((g) => g.tasks.some((t) => t.id === task.id))
       if (!group) {
         onDoubleClick?.(task)
         return
       }
       if (!unified && isCollapsed(group.label)) toggleCollapse(group.label)
       const cap = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
-      const index = sortTasks(group.tasks, sortOption, reversed, insightsScoreMap).findIndex(
-        (t) => t.id === task.id,
-      )
+      const index = group.sortedTasks.findIndex((t) => t.id === task.id)
       if (!unified && index >= cap && !expandedGroups.has(group.label)) {
         toggleGroupExpanded(group.label)
       }
@@ -368,18 +363,9 @@ export function TaskList({
   const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
   const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
-  const groups: TaskGroup[] = buildTaskGroups(tasks, grouping, timezone, timeSlots, now)
-
-  // Compute sorted groups once, reuse for both orderedIds and rendering
-  const sortedGroups = groups.map((g) => ({
-    ...g,
-    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
-  }))
-  const orderedIds = sortedGroups.flatMap((g) => g.sortedTasks.map((t) => t.id))
-
   // Determine if we should show the "now" separator
-  const hasOverdue = grouping === 'time' && groups.some((g) => g.label === 'Overdue')
-  const hasUpcoming = grouping === 'time' && groups.some((g) => g.label !== 'Overdue')
+  const hasOverdue = grouping === 'time' && sortedGroups.some((g) => g.label === 'Overdue')
+  const hasUpcoming = grouping === 'time' && sortedGroups.some((g) => g.label !== 'Overdue')
 
   const newBadge = (task: Task) =>
     justAddedSource && isJustAdded(task, justAddedNow) ? 'New' : undefined
@@ -391,7 +377,7 @@ export function TaskList({
         key={task.id}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
-        leftAction={isTaskOverdue(task, now) ? 'snooze' : 'edit'}
+        leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
         onDragStart={() => cancelRef.current?.()}
         disabled={selection.isSelectionMode}
       >
@@ -399,10 +385,11 @@ export function TaskList({
           task={task}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
-          // §5: a quota is exempt from the overdue cadence and
-          // must never wear the red stripe — its period is what
-          // is "due", and the bar already says how it stands.
-          isOverdue={!isTracked(task) && isTaskOverdue(task, now)}
+          // `isOverdue` is the Tasks page's one definition (the
+          // top bar's pills use it too). §5: it never counts a
+          // quota — its period is what is "due", and the bar
+          // already says how it stands — so no red stripe there.
+          isOverdue={isOverdue(task, now)}
           isSelected={selection.selectedIds.has(task.id)}
           isSelectionMode={selection.isSelectionMode}
           onSelect={() => selection.toggle(task.id)}
@@ -603,11 +590,6 @@ export function TaskList({
       <SnoozeGuardDialog {...dialogProps} />
     </div>
   )
-}
-
-export function isTaskOverdue(task: Task, now: Date = new Date()): boolean {
-  if (!task.due_at) return false
-  return new Date(task.due_at) < now
 }
 
 function GroupCheckbox({
