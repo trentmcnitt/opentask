@@ -209,7 +209,7 @@ db.prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?').run(now, taskId)
 These undo and soft-delete requirements apply to task mutations specifically. Outside tasks:
 
 - **Undoable:** editing or deleting a period (time slot) — the entry carries the slot row in `undo_log.slot_state`, and undo restores a deleted slot under its original id.
-- **Not undoable:** creating a period; projects (deleting one hard-deletes it and moves its tasks to Inbox); labels (hard delete); user preferences, webhooks, API tokens.
+- **Not undoable:** creating a period; projects (deleting one hard-deletes it and moves each task to its owner's Inbox); labels (hard delete); user preferences, webhooks, API tokens.
 - **Deliberately not in the undo log:** the quota period rollover cron (`period-rollover.ts`) — it writes only the activity log.
 
 ### Reject invalid tokens immediately
