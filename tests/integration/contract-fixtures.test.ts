@@ -33,6 +33,8 @@
  * then, in this order (each POST's response is itself a fixture, and the
  * undo counts depend on exactly this many mutations):
  *
+ *  0. GET  /api/user/preferences                → user-preferences.json (right after
+ *        the label_config PATCH above; the apps read `label_config` from it)
  *  1. GET  /api/reminders                       → reminders-initial.json (all waiting)
  *  2. POST /api/quota-prompts/did  [daily #1]    → quota-prompts-did.json
  *  3. GET  /api/reminders                       → reminders-after-did.json
@@ -263,6 +265,25 @@ async function checkFixture(name: string, raw: Json, ids: IdMap): Promise<Json> 
   return live
 }
 
+/**
+ * `GET /api/user/preferences` also reports what AI the SERVER can reach
+ * (`ai_available`, `ai_sdk_available`, `ai_api_available`, `ai_feature_info`).
+ * That is the machine's environment (API keys, whether Claude Code is
+ * installed), not the contract, so it would differ between a laptop and CI.
+ * The three booleans are pinned to `false` (still checked as booleans) and
+ * `ai_feature_info` is left out. No native client reads any of them — the
+ * apps decode only `label_config` (`UserPreferencesLabelConfigPage`).
+ */
+function pinServerEnvironment(raw: Json): Json {
+  const data = { ...((raw as { data: Record<string, Json> }).data ?? {}) }
+  for (const key of ['ai_available', 'ai_sdk_available', 'ai_api_available']) {
+    if (typeof data[key] !== 'boolean') throw new Error(`preferences: ${key} is not a boolean`)
+    data[key] = false
+  }
+  delete data.ai_feature_info
+  return { ...(raw as Record<string, Json>), data }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario
 // ---------------------------------------------------------------------------
@@ -315,6 +336,7 @@ describe('contract fixtures (native clients)', () => {
       { label_config: [{ name: 'personal', color: 'purple' }] },
       'PATCH',
     )
+    captured['user-preferences'] = pinServerEnvironment(await call('/api/user/preferences'))
 
     let placeholder = 101
     const make = async (name: string, body: Record<string, unknown>) => {
@@ -404,6 +426,7 @@ describe('contract fixtures (native clients)', () => {
   })
 
   const names = [
+    'user-preferences',
     'reminders-initial',
     'quota-prompts-did',
     'reminders-after-did',
