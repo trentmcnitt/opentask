@@ -6,12 +6,11 @@ import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { RemindersCountBadges } from '@/components/RemindersCountBadges'
 import { RemindersView } from '@/components/RemindersView'
-import { useTaskActions, type ListTaskActionsReturn } from '@/hooks/useTaskActions'
+import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useTimezone } from '@/hooks/useTimezone'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
-import type { Task } from '@/types'
 
 /**
  * The Reminders surface (REDESIGN-V03 §6) as a route.
@@ -34,16 +33,6 @@ import type { Task } from '@/types'
  * basic" next to Tasks (2026-09-05). The pills carry this surface's numbers —
  * waiting so far, considered today — in place of the task counts.
  */
-
-/**
- * `useTaskActions` in list mode wants a task array; this page has none.
- *
- * Only its undo/redo half is used here — reminders own their own state and their
- * own completion path, so the list handlers (done, snooze, save) are never called
- * and have nothing to act on. A module-level constant keeps the hook's config
- * referentially stable rather than handing it a fresh array every render.
- */
-const NO_TASKS: Task[] = []
 
 export default function RemindersPage() {
   const { status } = useSession()
@@ -81,12 +70,7 @@ export default function RemindersPage() {
     refreshRef.current?.()
   }, [])
 
-  const actions = useTaskActions({
-    mode: 'list',
-    onRefresh: refresh,
-    tasks: NO_TASKS,
-    setTasks: () => {},
-  }) as ListTaskActionsReturn
+  const actions = useUndoRedo({ onRefresh: refresh })
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
