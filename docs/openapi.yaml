@@ -2657,7 +2657,10 @@ paths:
       description: |
         Applies actions to tasks by their `seq` numbers from `GET /api/review`.
         Actions run in order, each as its own bulk operation (and undo entry);
-        they are not one transaction. The session is discarded afterwards.
+        they are not one transaction. The whole body is validated first, so a
+        `snooze` without `until` is a 400 before any action runs. Review
+        targets are explicit picks: `snooze` moves High and Urgent targets too,
+        where a sweep would hold them back. The session is discarded afterwards.
       requestBody:
         required: true
         content:
@@ -2689,7 +2692,7 @@ paths:
                       until:
                         type: string
                         format: date-time
-                        description: Required for `snooze`.
+                        description: Required for `snooze` (400 without it).
       responses:
         '200':
           description: What each action did

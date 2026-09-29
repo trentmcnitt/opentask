@@ -10,7 +10,6 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkDone } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkDone } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -34,7 +33,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       closePeriod: input.close_period === true,
     })
 
-    dismissNotificationsForTasks(user.id, input.ids)
     notifyDemoEngagement(user.name, 'done')
 
     return success({

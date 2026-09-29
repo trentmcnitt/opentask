@@ -12,6 +12,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
@@ -180,6 +181,13 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   emitSyncEvent(userId, {
     widgets: isWidgetVisibleEdit(result.fieldsChanged, task.labels, result.task.labels),
   })
+
+  // A moved date (a snooze, via snoozeTask too) or a completion makes the
+  // task's delivered notification stale: dismiss it everywhere and resync the
+  // badge. Any other field leaves the notification as true as it was.
+  if (result.fieldsChanged.includes('due_at') || result.fieldsChanged.includes('done')) {
+    dismissNotificationsForTasks(userId, [taskId])
+  }
 
   // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event
   if (!skipWebhookDispatch) {

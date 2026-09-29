@@ -5,12 +5,22 @@
  * and updates the iOS app icon badge to reflect the current overdue count.
  * Fire-and-forget — errors are logged but never thrown to callers.
  *
- * Every mutation that could change the overdue count (snooze, done, delete,
- * edit due_at, bulk ops, notification actions, review) calls
- * dismissNotificationsForTasks, which handles both dismiss and badge update.
+ * Called from the CORE task mutations, after their transaction commits — not
+ * from routes (decision D11, 2026-09-29). When each route made the call
+ * itself, the routes drifted: bulk edit never dismissed a moved date, restore
+ * never resynced the badge, bulk snooze dismissed tasks it had skipped. In
+ * core, every caller (web, native apps, notification actions, review) gets it.
  *
- * Mutations that don't dismiss notifications but still change overdue count
- * (undo, redo) call syncBadgeCount directly.
+ * - dismissNotificationsForTasks (dismiss + badge): markDone, bulkDone,
+ *   updateTask when `due_at` or `done` changed (so snoozeTask too), bulkEdit
+ *   for the tasks whose date moved, bulkSnooze for the tasks it moved,
+ *   deleteTask, bulkDelete, skipOccurrence.
+ * - syncBadgeCount alone (the overdue count may change, but no delivered
+ *   banner is known to be stale): createTask when the task is born overdue,
+ *   restoreTask, and undo/redo (`afterUndoRedo`).
+ *
+ * The one route-level caller left is APNs device registration, which is not a
+ * task mutation.
  */
 
 import {
@@ -48,7 +58,7 @@ export function getOverdueCount(userId: number): number {
 /**
  * Send a badge update to iOS and macOS with the current overdue count.
  * Fire-and-forget — errors are logged but never thrown.
- * Called by dismissNotificationsForTasks and directly by undo/redo routes.
+ * Called by dismissNotificationsForTasks and directly by the mutations listed above.
  *
  * Always sends, even when the number is the same as last time: a user action
  * is exactly when a device's badge is most likely to be wrong (another device

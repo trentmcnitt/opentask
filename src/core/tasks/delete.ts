@@ -9,6 +9,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { dismissNotificationsForTasks, syncBadgeCount } from '@/core/notifications/dismiss'
 import { ValidationError } from '@/core/errors'
 import { getTaskById } from './read'
 import { loadTaskForMutation } from './access'
@@ -67,6 +68,7 @@ export function deleteTask(options: DeleteTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  dismissNotificationsForTasks(userId, [taskId])
   dispatchWebhookEvent(userId, 'task.deleted', { task_id: taskId, title: task.title })
   return deletedTask
 }
@@ -119,6 +121,9 @@ export function restoreTask(options: RestoreTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  // A restored task that is past due is overdue again, so the app-icon badge
+  // has to count it now rather than at the overdue checker's next change.
+  syncBadgeCount(userId)
   return restoredTask
 }
 

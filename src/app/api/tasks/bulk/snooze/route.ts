@@ -11,7 +11,6 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -37,7 +36,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       includeTaskIds: input.include_task_ids,
     })
 
-    dismissNotificationsForTasks(user.id, input.ids)
     notifyDemoEngagement(user.name, 'update')
 
     return success({
