@@ -116,11 +116,14 @@ export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
     (now.getTime() - new Date(task.effective_due_at).getTime()) / 60000,
   )
   if (minutesSinceDue < 0) return false
-  // First overdue minute: tasks due at exact minute boundaries (the common case
-  // from UI pickers) are first seen at minutesSinceDue = 1 because the SQL query
-  // uses strict < (datetime(due_at) < datetime('now')). Without this, the first
-  // notification wouldn't fire until the next interval boundary (e.g., 30 min).
-  if (minutesSinceDue === 1) return true
+  // The first notification is the tick where minutesSinceDue is 0: the query
+  // takes due_at <= now, so a task due at 9:00:00 is seen by the 9:00 tick, and
+  // one due at 9:00:30 by the 9:01 tick (still 0 whole minutes). 0 % interval
+  // is 0 for every interval, so that tick always fires. There used to be a
+  // second "fire at minute 1" rule from when the query was strict <; with <=
+  // it sent every overdue notification twice, at the due minute and one
+  // minute later (Trent, 09-29: "notifications at 9:01 ... I don't know where
+  // those are coming from"). Don't add it back.
   return minutesSinceDue % interval === 0
 }
 
