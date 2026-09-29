@@ -30,7 +30,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     // Task data from APNs payload
     private var taskId: Int = 0
     private var dueAt: String = ""
-    private var overdueCount: Int?
     private var selectedDueAt: String?
     private var selectedDeltaMinutes: Int?
     private var hasReceivedInitialNotification = false
@@ -112,7 +111,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         } else {
             taskId = userInfo["taskId"] as? Int ?? 0
             dueAt = userInfo["dueAt"] as? String ?? ""
-            overdueCount = userInfo["overdueCount"] as? Int
             mode = .individual(taskTitle: title, originalDueAt: dueAt)
         }
 
@@ -284,20 +282,17 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     case NotificationAction.snoozeAll1hr:
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
                         wasBulkSnooze = result.tasksAffected > 0
-                        updateBadge(result.skippedUrgent)
 
                     case NotificationAction.snoozeAllCustom:
                         if let dueAt = selectedDueAt {
                             let result = try await APIClient.shared.snoozeOverdue(until: dueAt)
                             wasBulkSnooze = result.tasksAffected > 0
-                            updateBadge(result.skippedUrgent)
                         }
 
                     default:
                         if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                             let result = try await APIClient.shared.snoozeOverdue(slot: slot)
                             wasBulkSnooze = result.tasksAffected > 0
-                            updateBadge(result.skippedUrgent)
                         }
                     }
                 } else {
@@ -305,35 +300,29 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     switch response.actionIdentifier {
                     case NotificationAction.done:
                         try await APIClient.shared.markDone(taskId: taskId)
-                        if let count = overdueCount { updateBadge(count - 1) }
 
                     case NotificationAction.snooze1hr:
                         try await APIClient.shared.snoozeNextHour(taskId: taskId)
-                        if let count = overdueCount { updateBadge(count - 1) }
 
                     case NotificationAction.snoozeAll1hr:
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                         wasBulkSnooze = result.tasksAffected > 0
-                        updateBadge(result.skippedUrgent)
 
                     case NotificationAction.snoozeCustom:
                         if let dueAt = selectedDueAt {
                             try await APIClient.shared.snoozeTo(taskId: taskId, dueAt: dueAt)
-                            if let count = overdueCount { updateBadge(count - 1) }
                         }
 
                     case NotificationAction.snoozeAllCustom:
                         if let dueAt = selectedDueAt {
                             let result = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
                             wasBulkSnooze = result.tasksAffected > 0
-                            updateBadge(result.skippedUrgent)
                         }
 
                     default:
                         if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
                             let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
                             wasBulkSnooze = result.tasksAffected > 0
-                            updateBadge(result.skippedUrgent)
                         }
                     }
                 }
@@ -349,6 +338,12 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             if wasBulkSnooze {
                 await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
             }
+
+            // No local badge update here. The server's badge-only push lands
+            // about a second after the mutation, and a count fetch before
+            // `.dismiss` would add a second round trip to every tap. (This
+            // used to set "payload count − 1", from a count that was never
+            // the badge total.)
 
             // Dismiss only — the extension already handled the action via API call.
             // Using .dismissAndForwardAction would cause AppDelegate's didReceive to

@@ -46,6 +46,9 @@
  *     GET  /api/undo/status                     → undo-status.json
  *  7. POST /api/quota-prompts/restore [daily #1] → quota-prompts-restore.json
  *        (after every other capture, so none of them changes)
+ *  8. POST /api/tasks (a one-off due three days ago), then
+ *     GET  /api/tasks/counts                    → task-counts.json
+ *        (what the iOS/Mac apps set the icon badge from when they come forward)
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -389,6 +392,15 @@ describe('contract fixtures (native clients)', () => {
     captured['quota-prompts-restore'] = await call('/api/quota-prompts/restore', {
       keys: [dailyOne.prompt_key],
     })
+
+    // 8. one overdue task (three days late: never "today"), then the counts
+    //    the apps set the badge from on foreground — last, so it changes
+    //    nothing captured above
+    await make('overdue', {
+      title: 'Renew the library card',
+      due_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+    })
+    captured['task-counts'] = await call('/api/tasks/counts')
   })
 
   const names = [
@@ -403,6 +415,7 @@ describe('contract fixtures (native clients)', () => {
     'completions',
     'undo-status',
     'quota-prompts-restore',
+    'task-counts',
   ]
 
   for (const name of names) {

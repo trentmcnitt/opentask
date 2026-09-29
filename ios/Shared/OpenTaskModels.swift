@@ -764,6 +764,15 @@ struct UndoStatusPage: Decodable {
     }
 }
 
+/// `GET /api/tasks/counts` (`countTasks`, src/lib/task-counts.ts). No
+/// defaults, unlike most DTOs here: a renamed key must fail to decode rather
+/// than read as 0 and clear the badge.
+struct TaskCountsPage: Decodable {
+    let total: Int
+    let overdue: Int
+    let today: Int
+}
+
 // MARK: - Label config (Quotas widget, `feat/quotas-widget`)
 
 /// One entry of `label_config` — the user's display color for a label name,

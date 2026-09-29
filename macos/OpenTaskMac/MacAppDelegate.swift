@@ -98,7 +98,11 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
 
     func applicationDidBecomeActive(_ notification: Notification) {
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-        updateBadge(0)
+        // The Dock badge is set from the server's overdue count, not zeroed
+        // (2026-09-29): zeroing it on every click into the window hid overdue
+        // tasks until the next push. Same as the iPhone app — see
+        // `refreshBadgeFromServer()`.
+        Task { await refreshBadgeFromServer() }
 
         // Refresh the slot-snooze action list on every foreground too, not
         // just launch — slots are user-configurable and this app can stay
@@ -193,6 +197,9 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         Task { @MainActor in await MenuBarModel.shared.refresh() }
 
         switch type {
+        // Legacy: servers before 2026-09-29 sent the badge as a silent push.
+        // Current servers send an alert-type push with only `aps.badge`,
+        // which macOS applies to the Dock tile itself.
         case "badge-update":
             if let badge = userInfo["badge"] as? Int {
                 updateBadge(badge)
@@ -271,7 +278,6 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                     if result.tasksAffected > 0 {
                         await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                     }
-                    updateBadge(result.skippedUrgent)
 
                 case UNNotificationDefaultActionIdentifier:
                     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -283,12 +289,12 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                         if result.tasksAffected > 0 {
                             await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                         }
-                        updateBadge(result.skippedUrgent)
                     }
                 }
             } catch {
                 print("[OpenTask] Summary action handler error: \(error)")
             }
+            await refreshBadgeFromServer()
             completionHandler()
         }
     }
@@ -336,7 +342,6 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         completionHandler: @escaping () -> Void
     ) {
         let taskId = userInfo["taskId"] as? Int
-        let overdueCount = userInfo["overdueCount"] as? Int
 
         if taskId != nil {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
@@ -352,11 +357,9 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 switch response.actionIdentifier {
                 case NotificationAction.done:
                     try await APIClient.shared.markDone(taskId: taskId)
-                    if let overdueCount { updateBadge(overdueCount - 1) }
 
                 case NotificationAction.snooze1hr:
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
-                    if let overdueCount { updateBadge(overdueCount - 1) }
 
                 case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(
@@ -366,7 +369,6 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                     if result.tasksAffected > 0 {
                         await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                     }
-                    updateBadge(result.skippedUrgent)
 
                 case UNNotificationDefaultActionIdentifier:
                     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -378,12 +380,12 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                         if result.tasksAffected > 0 {
                             await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                         }
-                        updateBadge(result.skippedUrgent)
                     }
                 }
             } catch {
                 print("[OpenTask] Action handler error: \(error)")
             }
+            await refreshBadgeFromServer()
             completionHandler()
         }
     }
@@ -395,16 +397,24 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
     /// suppressed only when the app is active AND has a window actually on
     /// screen; otherwise it is delivered, because the user is demonstrably
     /// looking at something else.
+    ///
+    /// `.badge` is in both answers: while the app is running, macOS applies a
+    /// push's `aps.badge` to the Dock tile only if this handler asks for it,
+    /// and the server's badge-only push is how the Dock learns the overdue
+    /// count changed. That push has no title or body, so it is never offered
+    /// a banner (an empty one would be worse than none).
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let content = notification.request.content
+        let badgeOnly = content.title.isEmpty && content.body.isEmpty
         let hasVisibleWindow = NSApp.windows.contains { $0.isVisible && !$0.isMiniaturized }
-        if NSApp.isActive && hasVisibleWindow {
-            completionHandler([])
+        if badgeOnly || (NSApp.isActive && hasVisibleWindow) {
+            completionHandler([.badge])
         } else {
-            completionHandler([.banner, .list, .sound])
+            completionHandler([.banner, .list, .sound, .badge])
         }
     }
 }

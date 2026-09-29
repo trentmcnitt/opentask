@@ -199,18 +199,39 @@ func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
     }
 }
 
-/// Update the app icon badge after a notification action.
-/// The server also sends a silent badge-update push, but it may not arrive
-/// reliably when the app is suspended (iOS throttles silent pushes). Updating
-/// locally ensures the badge reflects the action immediately.
-/// iOS badges the app icon, macOS badges the Dock tile — same call, same
-/// meaning. watchOS has no app icon badge, so there it is a no-op.
+/// Set the app icon badge (iOS) or the Dock tile badge (macOS) — same call,
+/// same meaning. watchOS has no app icon badge, so there it is a no-op.
 #if os(iOS) || os(macOS)
 func updateBadge(_ count: Int) {
     UNUserNotificationCenter.current().setBadgeCount(max(0, count))
 }
 #else
 func updateBadge(_ count: Int) {
+    // watchOS does not support app icon badges
+}
+#endif
+
+/// Set the badge to the server's overdue count — the Tasks page's red pill,
+/// from `GET /api/tasks/counts` (the same `countTasks` the pill uses).
+///
+/// Called when the app comes to the foreground, and after a notification
+/// action. The server also sends a badge-only push after every change (an
+/// alert-type push with just `aps.badge`, which iOS/macOS apply without waking
+/// the app), so this is the local half: the moment the user is in the app,
+/// or has just acted on a notification, the badge is the real number rather
+/// than a guess. (Before 2026-09-29 the actions guessed — "the payload's
+/// count minus one" — from a payload count that was never the badge total,
+/// and activation zeroed the badge outright.)
+///
+/// A failed fetch leaves the badge alone; it never zeroes it.
+#if os(iOS) || os(macOS)
+func refreshBadgeFromServer() async {
+    guard APIClient.shared.isConfigured,
+          let counts = try? await APIClient.shared.fetchTaskCounts() else { return }
+    updateBadge(counts.overdue)
+}
+#else
+func refreshBadgeFromServer() async {
     // watchOS does not support app icon badges
 }
 #endif

@@ -68,7 +68,8 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 | `src/core/notifications/overdue-checker.ts`  | Unified overdue checker with consolidation (all priorities)                                   |
 | `src/core/notifications/web-push.ts`         | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
 | `src/core/notifications/apns.ts`             | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
-| `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissNotificationsForTasks`)                                        |
+| `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                   |
+| `src/core/notifications/badge-state.ts`      | Last badge sent per user — the overdue checker's change gate                                  |
 | `src/core/notifications/slot-reminders.ts`   | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
 | `src/core/notifications/slot-nags.ts`        | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
 | `src/hooks/usePushSubscription.ts`           | Client-side push subscription management hook                                                 |
@@ -135,6 +136,41 @@ Token-based authentication with Apple's Push Notification service. Requires an A
 - **Collapse ID**: `task-{id}` prevents stacking — same task replaces its previous notification
 - **Silent push dismiss**: Server sends `content-available: 1` with dismiss payload to clear notifications
 - **Stale token cleanup**: Automatically removes device tokens on `BadDeviceToken`/`Unregistered` errors
+- **App icon badge**: the overdue count, on the iPhone icon and the Mac Dock tile — see below
+
+### App icon badge
+
+The badge is the user's overdue count (`getOverdueCount` in `dismiss.ts`: open tasks past due, no reminders, no quotas).
+
+**The push.** A badge-only APNs notification (`buildBadgeNotification` in `apns.ts`):
+
+```json
+{ "aps": { "badge": 2 } }
+```
+
+Push type `alert`, priority 10, `apns-collapse-id: badge-update`, topic = the device's `bundle_id`. It has no `alert`, no `sound` and no `content-available`, so iOS and macOS apply the number themselves: no banner, no sound, no app wake-up. It goes to every `apns_devices` row except watch apps (`deviceShowsBadge`: bundle ids ending `.watchapp`/`.watchkitapp`; watchOS has no icon badge). Widget push tokens never get one. Overdue alerts carry the same number in their own `aps.badge`.
+
+**Why not a silent push.** Until 2026-09-29 the badge went out as a silent push (`content-available: 1`, type `background`) that the app applied in `didReceiveRemoteNotification`. iOS delivers only a few of those an hour, and none while the app isn't running. The overdue checker sent one every minute to every device of a user with anything overdue (about 95 in 100 minutes to 5 devices one morning), so the one that mattered — the drop to 0 after a completion from a widget or the Mac — was dropped, and the icon kept saying 2.
+
+**When it's sent.**
+
+| Trigger                                                                        | Sends                                                                                                             |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| A mutation that can change the count (`syncBadgeCount`)                        | Always: done, snooze, delete, due-date edit, bulk ops, undo/redo, notification actions, device registration       |
+| An overdue alert                                                               | Its `aps.badge`                                                                                                   |
+| The overdue checker (every minute), badge-only                                 | Only when the user's count differs from the last badge sent to them — in practice, a task has just become overdue |
+| The checker, for a user last sent a non-zero badge who now has nothing overdue | The 0, even if no user action sent it                                                                             |
+
+The last value sent per user is kept in memory (`badge-state.ts`, on `globalThis`). A restart empties it, so the first tick re-sends each user's count once. A send that fails on any device clears the user's value, so the next tick retries.
+
+**On the device.**
+
+- `willPresent` returns `.badge` (iOS always; macOS in both branches). In the foreground iOS and macOS apply `aps.badge` only when asked, so without it the badge would go stale whenever the app is open.
+- On activation the apps do NOT zero the badge any more. They fetch `GET /api/tasks/counts` (the Tasks page's own `countTasks`, the red pill's number) and set the badge from `overdue` (`refreshBadgeFromServer()` in `NotificationConstants.swift`). A failed fetch leaves the badge alone.
+- After a notification action handled by the app delegate (Done, +1hr, All +1hr, a slot snooze), the app does the same fetch, instead of guessing "the payload's count minus one" (a count that was never the badge total). The content extension doesn't fetch: that would add a second round trip before the notification dismisses, and the server's badge push lands about a second later anyway.
+- The legacy `type: "badge-update"` handler stays in both app delegates, for servers older than this change.
+
+**Badge vs the Overdue pill.** Same population and the same answer for every task with a due date. Two edges differ: a recurring task with no `due_at` counts in the badge once today's scheduled time passes (the pill never counts an undated task), and the pill also counts other users' overdue tasks in a shared project. Neither existed on prod on 2026-09-29.
 
 ### Environment variables
 

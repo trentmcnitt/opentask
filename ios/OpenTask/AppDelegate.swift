@@ -141,14 +141,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// activation (Control Center pulled down and back) finds the list already
     /// cleared by the first one and stays local.
     ///
-    /// The local clear and badge reset stay unconditional. (The macOS app
-    /// never calls `dismiss-all` at all — see `MacAppDelegate`. The web app's
-    /// own visibility-change `dismiss-all` in `AppLayout.tsx` skips itself
-    /// inside either native shell, so this is the ONE place the phone app
-    /// decides.)
+    /// The local clear stays unconditional. (The macOS app never calls
+    /// `dismiss-all` at all — see `MacAppDelegate`. The web app's own
+    /// visibility-change `dismiss-all` in `AppLayout.tsx` skips itself inside
+    /// either native shell, so this is the ONE place the phone app decides.)
+    ///
+    /// The badge is NOT zeroed here any more (2026-09-29). It used to be, on
+    /// every activation, so opening the app — even for a second — wiped the
+    /// badge while tasks were still overdue, and nothing put it back until the
+    /// next push. Now activation asks the server for the Tasks page's own
+    /// overdue count (`refreshBadgeFromServer()`, `GET /api/tasks/counts`)
+    /// and shows that: the badge the user sees on leaving the app matches the
+    /// red pill they were just looking at.
     func applicationDidBecomeActive(_ application: UIApplication) {
         let center = UNUserNotificationCenter.current()
-        application.applicationIconBadgeNumber = 0
+        Task { await refreshBadgeFromServer() }
 
         // Refresh the slot-snooze action list on every foreground too, not
         // just launch — slots are user-configurable and this app can stay
@@ -240,7 +247,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         let center = UNUserNotificationCenter.current()
 
-        // Badge update: server sends current overdue count after mutations
+        // Legacy: servers before 2026-09-29 sent the badge as a SILENT push
+        // with the count in `badge`. Current servers send an alert-type push
+        // carrying only `aps.badge`, which iOS applies itself and which never
+        // reaches this method. Kept so this build still works against an
+        // older server.
         if type == "badge-update", let badge = userInfo["badge"] as? Int {
             UNUserNotificationCenter.current().setBadgeCount(badge)
             print("[OpenTask] Badge updated to \(badge)")
@@ -315,7 +326,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                         if result.tasksAffected > 0 {
                             await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                         }
-                        updateBadge(result.skippedUrgent)
 
                     case NotificationAction.snoozeAllCustom:
                         // Handled by the content extension directly via .dismiss completion.
@@ -331,12 +341,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                             if result.tasksAffected > 0 {
                                 await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                             }
-                            updateBadge(result.skippedUrgent)
                         }
                     }
                 } catch {
                     print("[OpenTask] Summary action handler error: \(error)")
                 }
+                await refreshBadgeFromServer()
 
                 completionHandler()
             }
@@ -386,7 +396,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         // Individual task notifications: require taskId
         let taskId = userInfo["taskId"] as? Int
-        let overdueCount = userInfo["overdueCount"] as? Int
 
         // Belt-and-suspenders: clear this specific notification on any action
         if taskId != nil {
@@ -405,18 +414,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 switch response.actionIdentifier {
                 case NotificationAction.done:
                     try await APIClient.shared.markDone(taskId: taskId)
-                    if let count = overdueCount { updateBadge(count - 1) }
 
                 case NotificationAction.snooze1hr:
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
-                    if let count = overdueCount { updateBadge(count - 1) }
 
                 case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     if result.tasksAffected > 0 {
                         await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                     }
-                    updateBadge(result.skippedUrgent)
 
                 case NotificationAction.snoozeCustom, NotificationAction.snoozeAllCustom:
                     // These actions are handled entirely by the content extension
@@ -436,12 +442,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                         if result.tasksAffected > 0 {
                             await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                         }
-                        updateBadge(result.skippedUrgent)
                     }
                 }
             } catch {
                 print("[OpenTask] Action handler error: \(error)")
             }
+            await refreshBadgeFromServer()
 
             completionHandler()
         }
@@ -451,11 +457,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Suppresses all notifications when the app is open — the user is already looking
     /// at their task list. This also prevents the remaining notifications from a cron
     /// batch from chiming after the user opens the app from the first one.
+    ///
+    /// `.badge` is the one option kept: in the foreground iOS applies a push's
+    /// `aps.badge` only if this handler asks for it. Without it, the server's
+    /// badge-only push (and the badge on an overdue alert) would be dropped
+    /// whenever the app is open, and the icon would keep a stale number.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([])
+        completionHandler([.badge])
     }
 }

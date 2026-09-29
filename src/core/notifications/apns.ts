@@ -14,6 +14,7 @@ import type { ApnsError, PushType } from 'apns2'
 import { readFileSync } from 'fs'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { forgetBadgeSent, recordBadgeSent } from '@/core/notifications/badge-state'
 
 const APNS_KEY_ID = process.env.APNS_KEY_ID || ''
 const APNS_TEAM_ID = process.env.APNS_TEAM_ID || ''
@@ -104,21 +105,29 @@ async function sendTryingBothEnvironments(
  * @param buildNotification - Callback that builds the notification for each device
  * @param logLabel - Label for failure log messages (e.g., "notification", "badge update")
  * @param preLog - Optional callback for pre-send logging, receives the device list
+ * @param includeDevice - Optional filter: only devices it returns true for are sent to
+ * @returns true when every device took the push (or there was none to send
+ *   to), false when at least one send failed for a reason other than a stale token
  */
 async function sendToAllDevices(
   userId: number,
   buildNotification: (device: ApnsDeviceRow) => Notification | SilentNotification,
   logLabel: string,
   preLog?: (devices: ApnsDeviceRow[]) => void,
-): Promise<void> {
-  if (!isApnsConfigured()) return
+  includeDevice?: (device: ApnsDeviceRow) => boolean,
+): Promise<boolean> {
+  if (!isApnsConfigured()) return true
 
   const db = getDb()
-  const devices = db
-    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
-    .all(userId) as ApnsDeviceRow[]
+  const devices = (
+    db
+      .prepare(
+        'SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?',
+      )
+      .all(userId) as ApnsDeviceRow[]
+  ).filter((device) => !includeDevice || includeDevice(device))
 
-  if (devices.length === 0) return
+  if (devices.length === 0) return true
 
   if (preLog) preLog(devices)
 
@@ -151,6 +160,7 @@ async function sendToAllDevices(
       `Failed to send ${failures.length}/${devices.length} APNs ${logLabel}: ${reasons}`,
     )
   }
+  return failures.length === 0
 }
 
 export interface ApnsPushPayload {
@@ -203,7 +213,7 @@ export async function sendApnsNotification(
 ): Promise<void> {
   const isCritical = payload.interruptionLevel === 'critical'
 
-  await sendToAllDevices(
+  const delivered = await sendToAllDevices(
     userId,
     (device) =>
       new Notification(device.device_token, {
@@ -237,6 +247,14 @@ export async function sendApnsNotification(
       )
     },
   )
+
+  // The alert carried `aps.badge`, so it set the badge too. The overdue
+  // checker's change gate (badge-state.ts) has to know, or it re-sends the
+  // same number as a badge-only push a minute later.
+  if (payload.badge !== undefined) {
+    if (delivered) recordBadgeSent(userId, payload.badge)
+    else forgetBadgeSent(userId)
+  }
 }
 
 /**
@@ -374,26 +392,68 @@ export async function sendApnsSlotReminder(
 }
 
 /**
- * Send a silent push that updates the app icon badge number.
- * Called after mutations that change the overdue count (via dismiss module)
- * and by the cron for users who have overdue tasks but didn't get visible
- * notifications that cycle.
+ * Whether a registered device shows an app-icon badge. The watch app registers
+ * its own APNs token (bundle id `<app>.watchapp`, Apple's naming for a watch
+ * app), and watchOS has no app icon badge, so badge pushes skip it. Widget
+ * push tokens live in their own table (`widget_push_tokens`) and never get one.
+ */
+export function deviceShowsBadge(device: { bundle_id: string }): boolean {
+  return !/\.watch(kit)?app$/.test(device.bundle_id)
+}
+
+/**
+ * The badge-only push: `{"aps":{"badge":N}}` and nothing else.
  *
- * iOS ignores the aps.badge field in pushes without an alert, so we send the
- * badge count in the data payload. The AppDelegate's didReceiveRemoteNotification
- * handler reads the count and calls setBadgeCount() programmatically.
+ * WHY AN ALERT-TYPE PUSH, NOT A SILENT ONE (2026-09-29). This used to be a
+ * silent push (`content-available: 1`, push type `background`) that the app
+ * had to wake up for and apply itself. iOS treats those as best-effort: a few
+ * an hour, and none while the app isn't running. The overdue checker sent one
+ * every minute to every device, so the push that mattered ("now 0", right
+ * after a completion from a widget or the Mac) was the one the phone dropped,
+ * and the icon kept saying 2.
+ *
+ * With push type `alert` (apns2's default for a `Notification`) and only
+ * `aps.badge`, iOS sets the badge itself on receipt, and macOS sets the Dock
+ * tile's. The app is not woken, and the background budget does not apply. It
+ * shows no banner and plays no sound, because there is no `alert` and no
+ * `sound` key. An old comment here said iOS ignores `aps.badge` without an
+ * alert; it doesn't — a badge-only notification is a documented APNs payload.
+ * Priority 10 (apns2's default), so a change reaches the icon right away.
+ * Volume is kept down by the overdue checker's change gate (badge-state.ts),
+ * not by the priority.
+ *
+ * `collapseId` keeps at most one pending badge push per device: the latest.
+ * No `data`: nothing on the device would read it, because an alert push
+ * without `content-available` never reaches the app's
+ * `didReceiveRemoteNotification`.
+ */
+export function buildBadgeNotification(
+  deviceToken: string,
+  topic: string,
+  badge: number,
+): Notification {
+  return new Notification(deviceToken, { topic, badge, collapseId: 'badge-update' })
+}
+
+/**
+ * Set the app-icon badge (iOS) and the Dock badge (macOS) on the user's
+ * devices. Called after mutations that change the overdue count
+ * (`syncBadgeCount` in the dismiss module) and by the overdue checker when a
+ * user's count differs from what was last sent.
+ *
+ * Records the value in badge-state.ts when every device took it, and forgets
+ * it when any send failed, so the checker's next tick tries again.
  */
 export async function sendApnsBadgeUpdate(userId: number, badge: number): Promise<void> {
-  await sendToAllDevices(
+  const delivered = await sendToAllDevices(
     userId,
-    (device) =>
-      new SilentNotification(device.device_token, {
-        topic: device.bundle_id,
-        collapseId: 'badge-update',
-        data: { type: 'badge-update', badge },
-      }),
+    (device) => buildBadgeNotification(device.device_token, device.bundle_id, badge),
     'badge updates',
+    undefined,
+    deviceShowsBadge,
   )
+  if (delivered) recordBadgeSent(userId, badge)
+  else forgetBadgeSent(userId)
 }
 
 /**
