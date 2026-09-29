@@ -7,8 +7,9 @@ info:
 
     ## Authentication
 
-    All endpoints (except `/api/health` and `/api/openapi`) require authentication
-    via one of:
+    All endpoints require authentication via one of the methods below, except
+    `/api/health`, `/api/openapi` and `/api/push/vapid-key` (public) and
+    `/api/notifications/actions` (takes the API token in its request body):
 
     - **Bearer token** — `Authorization: Bearer <token>` header
     - **Reverse proxy header** — configured via `OPENTASK_PROXY_AUTH_HEADER` env var
@@ -40,9 +41,10 @@ paths:
       operationId: getHealth
       tags: [System]
       security: []
+      description: Checks that the server is up and can query its database.
       responses:
         '200':
-          description: Server is running
+          description: Server is running and the database answers
           content:
             application/json:
               schema:
@@ -50,7 +52,20 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: running
+                    enum: [ok]
+        '503':
+          description: The database is unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [error]
+                  message:
+                    type: string
+                    example: Database unavailable
 
   /api/openapi:
     get:
@@ -148,9 +163,15 @@ paths:
                 type: object
                 properties:
                   data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Task'
+                    type: object
+                    properties:
+                      tasks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+                      count:
+                        type: integer
+                        description: Number of tasks in this page
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -285,7 +306,13 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/Task'
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Task moved to trash
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1509,6 +1536,7 @@ paths:
       summary: List projects
       operationId: listProjects
       tags: [Projects]
+      description: The user's own projects plus projects shared with them.
       responses:
         '200':
           description: List of projects with task counts
@@ -1518,9 +1546,14 @@ paths:
                 type: object
                 properties:
                   data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Project'
+                    type: object
+                    properties:
+                      projects:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Project'
+                      count:
+                        type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1538,12 +1571,21 @@ paths:
               properties:
                 name:
                   type: string
+                  minLength: 1
+                  maxLength: 200
+                shared:
+                  type: boolean
+                  default: false
+                sort_order:
+                  type: integer
+                  description: Position in the user's project order. Omitted = after the last project.
                 color:
                   type: string
                   enum: [red, orange, yellow, green, blue, purple, pink, gray]
                   nullable: true
+                  description: Omitted or null = a random colour not yet used by another of the user's projects.
       responses:
-        '200':
+        '201':
           description: Created project
           content:
             application/json:
@@ -1554,6 +1596,54 @@ paths:
                     $ref: '#/components/schemas/Project'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/projects/reorder:
+    patch:
+      summary: Reorder projects
+      operationId: reorderProjects
+      tags: [Projects]
+      description: |
+        Sets each project's `sort_order` to its position in `project_ids`
+        (0, 1, 2, ...). Only projects the user owns are reordered; ids of
+        shared projects owned by someone else, or unknown ids, are ignored and
+        the remaining owned projects keep their relative order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_ids]
+              properties:
+                project_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: integer
+                  description: Project ids in the desired order.
+      responses:
+        '200':
+          description: Number of projects reordered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      reordered:
+                        type: integer
+        '400':
+          description: |
+            `project_ids` is missing, empty or contains a non-integer, or none
+            of the ids is a project the user owns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1596,6 +1686,12 @@ paths:
               properties:
                 name:
                   type: string
+                  minLength: 1
+                  maxLength: 200
+                shared:
+                  type: boolean
+                sort_order:
+                  type: integer
                 color:
                   type: string
                   enum: [red, orange, yellow, green, blue, purple, pink, gray]
@@ -1610,8 +1706,12 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Only the project's owner can edit it
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1619,6 +1719,9 @@ paths:
       summary: Delete project
       operationId: deleteProject
       tags: [Projects]
+      description: |
+        Permanently deletes the project and moves all of its tasks to the
+        user's Inbox. Not undoable. The Inbox itself cannot be deleted (400).
       responses:
         '200':
           description: Deletion result
@@ -1630,10 +1733,17 @@ paths:
                   data:
                     type: object
                     properties:
-                      deleted:
+                      message:
+                        type: string
+                        example: Project deleted
+                      tasks_moved_to_inbox:
                         type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Only the project's owner can delete it
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1644,6 +1754,16 @@ paths:
       summary: Undo last action
       operationId: undo
       tags: [Undo]
+      description: |
+        Reverses the most recent undoable action. The body is optional; send
+        `session_start_id` to have the returned counts cover only entries after
+        that id (see `GET /api/undo/status`) instead of all time.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UndoSessionScope'
       responses:
         '200':
           description: Undo result
@@ -1654,16 +1774,29 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/UndoResult'
+        '400':
+          description: Nothing to undo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Nothing to undo
 
   /api/redo:
     post:
       summary: Redo last undone action
       operationId: redo
       tags: [Undo]
+      description: |
+        Re-applies the most recently undone action. The body is optional; send
+        `session_start_id` to scope the returned counts, as for `POST /api/undo`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UndoSessionScope'
       responses:
         '200':
           description: Redo result
@@ -1673,11 +1806,174 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/UndoResult'
+                    $ref: '#/components/schemas/RedoResult'
+        '400':
+          description: Nothing to redo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Nothing to redo
+
+  /api/undo/status:
+    get:
+      summary: Undo stack status
+      operationId: getUndoStatus
+      tags: [Undo]
+      description: |
+        The newest undo-log id and how many entries can be undone and redone.
+        A client can store `latest_id` when it starts and pass it back as
+        `session_start_id` to scope undo to its own session.
+      responses:
+        '200':
+          description: Undo stack status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      latest_id:
+                        type: integer
+                        nullable: true
+                        description: Newest undo-log entry id, or null when the user has none.
+                      undoable_count:
+                        type: integer
+                      redoable_count:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/undo/history:
+    get:
+      summary: Undo history
+      operationId: getUndoHistory
+      tags: [Undo]
+      description: The user's most recent undo-log entries, newest first, both undone and not.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 50
+      responses:
+        '200':
+          description: Undo history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      history:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UndoHistoryEntry'
+                      count:
+                        type: integer
+        '400':
+          description: Invalid `limit`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/undo/batch:
+    post:
+      summary: Undo several actions
+      operationId: undoBatch
+      tags: [Undo]
+      description: |
+        Undoes entries from the top of the stack, newest first, in one
+        transaction: all of them are undone or none are. Provide at least one
+        of the fields; when several are given, every limit applies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_start_id:
+                  type: integer
+                  minimum: 1
+                  description: Undo every entry newer than this id.
+                through_id:
+                  type: integer
+                  minimum: 1
+                  description: Undo entries down to and including this id.
+                count:
+                  type: integer
+                  minimum: 1
+                  description: Undo at most this many entries.
+      responses:
+        '200':
+          description: Batch undo result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UndoBatchResult'
+        '400':
+          description: No selector given, or nothing to undo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/redo/batch:
+    post:
+      summary: Redo several actions
+      operationId: redoBatch
+      tags: [Undo]
+      description: |
+        Redoes undone entries, oldest undone first, in one transaction.
+        Provide at least one of the fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                through_id:
+                  type: integer
+                  minimum: 1
+                  description: Redo entries up to and including this id.
+                count:
+                  type: integer
+                  minimum: 1
+                  description: Redo at most this many entries.
+      responses:
+        '200':
+          description: Batch redo result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UndoBatchResult'
+        '400':
+          description: No selector given, or nothing to redo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # --- Trash ---
 
@@ -1701,9 +1997,14 @@ paths:
                 type: object
                 properties:
                   data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Task'
+                    type: object
+                    properties:
+                      tasks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+                      count:
+                        type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1932,27 +2233,31 @@ paths:
       tags: [Tokens]
       responses:
         '200':
-          description: API tokens (previews only, not full tokens)
+          description: API tokens (previews only, not full tokens), newest first
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                        name:
-                          type: string
-                        token_preview:
-                          type: string
-                          description: Last 8 characters of the token
-                        created_at:
-                          type: string
-                          format: date-time
+                    type: object
+                    properties:
+                      tokens:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                            name:
+                              type: string
+                            token_preview:
+                              type: string
+                              nullable: true
+                              description: Last 8 characters of the token
+                            created_at:
+                              type: string
+                              format: date-time
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1969,10 +2274,13 @@ paths:
           application/json:
             schema:
               type: object
+              required: [name]
               properties:
                 name:
                   type: string
-                  default: API
+                  minLength: 1
+                  maxLength: 100
+                  description: Trimmed; a blank name is a 400.
       responses:
         '201':
           description: Created token (shown once)
@@ -1991,11 +2299,12 @@ paths:
                       token:
                         type: string
                         description: Full token value (shown once)
-                      created_at:
-                        type: string
-                        format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Tokens cannot be created by the demo account
 
   /api/tokens/{id}:
     parameters:
@@ -2065,6 +2374,45 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/me:
+    get:
+      summary: Current user
+      operationId: getCurrentUser
+      tags: [Auth]
+      description: The authenticated user's identity and core settings. Useful to check which account a token belongs to.
+      responses:
+        '200':
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      email:
+                        type: string
+                      name:
+                        type: string
+                        description: Username (the login name)
+                      timezone:
+                        type: string
+                        example: America/New_York
+                        description: IANA time zone
+                      default_grouping:
+                        type: string
+                        enum: [time, project, unified, slot]
+                        description: |
+                          Dashboard view: `slot` = Today, `project` = Projects,
+                          `time` = All; `unified` is the AI-sorted view.
+                      is_demo:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # --- Stats ---
 
   /api/stats:
@@ -2085,6 +2433,10 @@ paths:
             type: string
             format: date
           description: End date for daily stats range (YYYY-MM-DD)
+      description: |
+        Without `start` and `end`, returns a summary (today, this week, this
+        month, all time). With both, returns `{ stats: [...] }`, one row per
+        day that has stats in the range, oldest first.
       responses:
         '200':
           description: Stats summary or daily stats for date range
@@ -2094,7 +2446,16 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/StatsSummary'
+                    oneOf:
+                      - $ref: '#/components/schemas/StatsSummary'
+                      - type: object
+                        properties:
+                          stats:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DailyStat'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2187,9 +2548,1048 @@ paths:
                 type: object
                 properties:
                   data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Completion'
+                    type: object
+                    properties:
+                      completions:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Completion'
+                      count:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Review ---
+
+  /api/review:
+    get:
+      summary: Start a review session
+      operationId: createReviewSession
+      tags: [Review]
+      description: |
+        Numbers the user's overdue tasks and tasks due within the next 24
+        hours (overdue first, then by due date) so a client can act on them by
+        number with `POST /api/review/execute`. Sessions are held in server
+        memory: one is discarded once executed, sessions older than an hour
+        are purged when a new one starts, and all are lost on a server restart.
+      responses:
+        '200':
+          description: The review session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      session_id:
+                        type: string
+                        format: uuid
+                      groups:
+                        type: array
+                        description: Non-empty groups only, `Overdue` before `Today`.
+                        items:
+                          type: object
+                          properties:
+                            label:
+                              type: string
+                              enum: [Overdue, Today]
+                            tasks:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  seq:
+                                    type: integer
+                                    description: The task's number in this session, from 1.
+                                  id:
+                                    type: integer
+                                  title:
+                                    type: string
+                                  due_at:
+                                    type: string
+                                    format: date-time
+                                  priority:
+                                    type: integer
+                                  rrule:
+                                    type: string
+                                    nullable: true
+                                  labels:
+                                    type: array
+                                    items:
+                                      type: string
+                      total_tasks:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/review/execute:
+    post:
+      summary: Act on a review session
+      operationId: executeReview
+      tags: [Review]
+      description: |
+        Applies actions to tasks by their `seq` numbers from `GET /api/review`.
+        Actions run in order, each as its own bulk operation (and undo entry);
+        they are not one transaction. The session is discarded afterwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, actions]
+              properties:
+                session_id:
+                  type: string
+                actions:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [type, targets]
+                    properties:
+                      type:
+                        type: string
+                        enum: [done, snooze, skip]
+                        description: '`skip` changes nothing; it only counts the targets.'
+                      targets:
+                        type: array
+                        minItems: 1
+                        items:
+                          type: string
+                        description: Seq numbers or inclusive ranges.
+                        example: ['1', '3-5']
+                      until:
+                        type: string
+                        format: date-time
+                        description: Required for `snooze`.
+      responses:
+        '200':
+          description: What each action did
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      executed:
+                        type: boolean
+                      results:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              enum: [done, snooze, skip]
+                            taskIds:
+                              type: array
+                              description: Task ids the targets resolved to (note the camelCase name).
+                              items:
+                                type: integer
+                            count:
+                              type: integer
+                              description: Tasks the action changed.
+                      total_affected:
+                        type: integer
+        '400':
+          description: |
+            Invalid body, a `snooze` action without `until`, or a malformed
+            target
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: A target number is not in the session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Review session not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- AI ---
+  # Every AI endpoint except GET /api/ai/insights/results and
+  # GET /api/ai/insights/status returns 503 SERVICE_UNAVAILABLE when the
+  # server runs without AI enabled.
+
+  /api/ai/status:
+    get:
+      summary: AI status and activity
+      operationId: getAiStatus
+      tags: [AI]
+      description: |
+        Diagnostics for the AI features: the state of the warm model slots and
+        request queue (server-wide), work in progress for this user, and the
+        user's recent AI activity log. The slot objects use camelCase keys.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: Activity entries to return.
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: action
+          in: query
+          schema:
+            type: string
+            example: enrichment
+          description: Only activity entries of this action.
+      responses:
+        '200':
+          description: AI status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      enrichment_slot:
+                        allOf:
+                          - $ref: '#/components/schemas/AISlotStats'
+                          - type: object
+                            properties:
+                              currentOperation:
+                                type: object
+                                nullable: true
+                                properties:
+                                  taskId:
+                                    type: integer
+                                    nullable: true
+                                  inputText:
+                                    type: string
+                                    nullable: true
+                                  startedAt:
+                                    type: string
+                                    nullable: true
+                      quick_take_slot:
+                        allOf:
+                          - $ref: '#/components/schemas/AISlotStats'
+                          - type: object
+                            properties:
+                              totalSuperseded:
+                                type: integer
+                              currentOperation:
+                                type: object
+                                nullable: true
+                                properties:
+                                  inputText:
+                                    type: string
+                                    nullable: true
+                                  startedAt:
+                                    type: string
+                                    nullable: true
+                      queue:
+                        type: object
+                        properties:
+                          active:
+                            type: integer
+                          waiting:
+                            type: integer
+                          maxConcurrent:
+                            type: integer
+                      in_progress:
+                        type: object
+                        properties:
+                          enrichment:
+                            type: object
+                            properties:
+                              slot:
+                                type: object
+                                nullable: true
+                                description: Same as `enrichment_slot.currentOperation`.
+                              pipeline_task_ids:
+                                type: array
+                                items:
+                                  type: integer
+                              circuit_breaker_open:
+                                type: boolean
+                              pending_count:
+                                type: integer
+                                description: The user's tasks still waiting for enrichment.
+                          insights:
+                            type: object
+                            nullable: true
+                            properties:
+                              session_id:
+                                type: string
+                              status:
+                                type: string
+                                enum: [running, complete, failed]
+                              total_tasks:
+                                type: integer
+                              completed:
+                                type: integer
+                              started_at:
+                                type: string
+                                format: date-time
+                      recent_activity:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AIActivityEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AIUnavailable'
+
+  /api/ai/test:
+    post:
+      summary: Test an AI feature's model
+      operationId: testAiFeature
+      tags: [AI]
+      description: |
+        Sends a minimal prompt through the provider and model configured for
+        one feature, to check that it responds. A provider failure is reported
+        in the 200 body (`success: false`, `error`), not as an HTTP error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [feature]
+              properties:
+                feature:
+                  type: string
+                  enum: [enrichment, quick_take, whats_next, insights]
+      responses:
+        '200':
+          description: Test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      duration_ms:
+                        type: integer
+                      provider:
+                        type: string
+                      provider_display:
+                        type: string
+                      model:
+                        type: string
+                      model_display:
+                        type: string
+                      error:
+                        type: string
+                        nullable: true
+        '400':
+          description: |
+            Unknown feature, the feature is turned off for this user, or no
+            provider is available for it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AIUnavailable'
+
+  /api/ai/quick-take:
+    post:
+      summary: Quick take on a new task
+      operationId: getQuickTake
+      tags: [AI]
+      description: A one-line AI comment on a task title, in the context of the user's task list.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                has_due_date:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: The quick take
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      text:
+                        type: string
+                        nullable: true
+                        description: Null when the feature is off for this user, or the call failed or timed out.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AIUnavailable'
+
+  /api/ai/whats-next:
+    get:
+      summary: What's Next recommendations
+      operationId: getWhatsNext
+      tags: [AI]
+      description: |
+        Returns today's cached recommendations. Without `refresh=true` this
+        never generates: when nothing was generated today (UTC) `data` is
+        null. With `refresh=true` it runs the model and waits for the result.
+      parameters:
+        - name: refresh
+          in: query
+          schema:
+            type: boolean
+          description: Generate fresh recommendations now.
+      responses:
+        '200':
+          description: Recommendations, or null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+                    properties:
+                      tasks:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_id:
+                              type: integer
+                            reason:
+                              type: string
+                      summary:
+                        type: string
+                      generated_at:
+                        type: string
+                      duration_ms:
+                        type: integer
+                        nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: AI is not enabled, What's Next is turned off, or generation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ai/insights/generate:
+    post:
+      summary: Start Insights generation
+      operationId: generateInsights
+      tags: [AI]
+      description: |
+        Scores all of the user's active tasks in the background and returns at
+        once. Poll `GET /api/ai/insights/status` with the returned
+        `session_id`, then read `GET /api/ai/insights/results`.
+      responses:
+        '200':
+          description: |
+            Generation started. With no active tasks, `session_id` is null,
+            `total_tasks` is 0 and `message` says so.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      session_id:
+                        type: string
+                        nullable: true
+                      total_tasks:
+                        type: integer
+                      single_call:
+                        type: boolean
+                        description: All tasks fit in one model call.
+                      started_at:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                        example: No active tasks to analyze
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: |
+            A generation is already running; `details` carries its
+            `session_id`, `completed`, `total_tasks` and `started_at`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: AI is not enabled, or Insights is turned off
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ai/insights/status:
+    get:
+      summary: Insights generation progress
+      operationId: getInsightsStatus
+      tags: [AI]
+      description: Works whether or not AI is enabled (it only reads the stored session).
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      session_id:
+                        type: string
+                      status:
+                        type: string
+                        enum: [running, complete, failed]
+                      total_tasks:
+                        type: integer
+                      completed:
+                        type: integer
+                      progress_pct:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      started_at:
+                        type: string
+                        format: date-time
+                      finished_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      error:
+                        type: string
+                        nullable: true
+        '400':
+          description: Missing `session_id`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/ai/insights/results:
+    get:
+      summary: Insights results
+      operationId: getInsightsResults
+      tags: [AI]
+      description: |
+        The latest Insights scores for the user's tasks, highest score first,
+        with the signal vocabulary for display. Works whether or not AI is
+        enabled (it only reads stored results).
+      responses:
+        '200':
+          description: Insights results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      results:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_id:
+                              type: integer
+                            score:
+                              type: integer
+                              minimum: 0
+                              maximum: 100
+                              description: Attention score; higher = more worth a look.
+                            commentary:
+                              type: string
+                            signals:
+                              type: array
+                              maxItems: 2
+                              items:
+                                $ref: '#/components/schemas/InsightsSignalKey'
+                            generated_at:
+                              type: string
+                              format: date-time
+                      generated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      stale:
+                        type: boolean
+                        description: There are results, but not from today (UTC).
+                      duration_ms:
+                        type: integer
+                        nullable: true
+                        description: How long the last completed generation took.
+                      signal_counts:
+                        type: object
+                        description: Number of results carrying each signal.
+                        additionalProperties:
+                          type: integer
+                      signals:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            key:
+                              $ref: '#/components/schemas/InsightsSignalKey'
+                            label:
+                              type: string
+                            color:
+                              type: string
+                            icon:
+                              type: string
+                            description:
+                              type: string
+                      active_session:
+                        type: object
+                        nullable: true
+                        properties:
+                          session_id:
+                            type: string
+                          completed:
+                            type: integer
+                          total_tasks:
+                            type: integer
+                          started_at:
+                            type: string
+                            format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Notifications ---
+
+  /api/notifications/actions:
+    post:
+      summary: Act on a task from a notification
+      operationId: notificationAction
+      tags: [Notifications]
+      security: []
+      description: |
+        Done or snooze for a single task, as sent by notification action
+        buttons. The API token goes in the body, not the `Authorization`
+        header, because the iOS notification extension cannot set headers.
+
+        - `done` — mark the task done
+        - `snooze30` — snooze 30 minutes from now
+        - `snooze` — snooze 1 hour from now, rounded to the hour
+        - `snooze2h` — snooze 2 hours from now, rounded to the hour
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, task_id, token]
+              properties:
+                action:
+                  type: string
+                  enum: [done, snooze, snooze30, snooze2h]
+                task_id:
+                  type: integer
+                  minimum: 1
+                token:
+                  type: string
+                  description: An API token (the same value you would send as a Bearer token).
+      responses:
+        '200':
+          description: |
+            The action taken. `result` is the task operation's own result: its
+            `task` is the stored task, without the computed `is_recurring` and
+            `is_snoozed` fields.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      action:
+                        type: string
+                        enum: [done, snooze, snooze30, snooze2h]
+                      task_id:
+                        type: integer
+                      until:
+                        type: string
+                        format: date-time
+                        description: Snooze actions only.
+                      result:
+                        type: object
+                        properties:
+                          task:
+                            $ref: '#/components/schemas/Task'
+                          wasRecurring:
+                            type: boolean
+                            description: '`done` only.'
+                          nextDueAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: '`done` on a recurring task only.'
+                          previousDueAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: Snooze actions only.
+                          originalDueAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: Snooze actions only.
+                          description:
+                            type: string
+                            nullable: true
+                            description: Snooze actions only.
+        '400':
+          description: Invalid `task_id`, unknown action, or the task cannot take it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid `token`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The token's user cannot access this task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/notifications/dismiss-all:
+    post:
+      summary: Dismiss all notifications
+      operationId: dismissAllNotifications
+      tags: [Notifications]
+      description: Clears the user's delivered notifications on every channel and device.
+      responses:
+        '200':
+          description: Dismissal sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      dismissed:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/notifications/test:
+    post:
+      summary: Send a test notification
+      operationId: sendTestNotification
+      tags: [Notifications]
+      description: |
+        Creates a real task (labelled `test`, due a minute ago) and, about 3
+        seconds later, sends a notification for it to every configured
+        channel (Web Push and APNs), so Done and Snooze can be tried end to
+        end. `high` sends a High (P3) notification; `urgent` and `critical`
+        send an Urgent (P4) one, and `critical` uses an Apple Critical Alert.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [individual, high, bulk, urgent, critical]
+      responses:
+        '200':
+          description: Test scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      sent:
+                        type: boolean
+                      type:
+                        type: string
+                      task_id:
+                        type: integer
+                        description: The test task that was created.
+                      delay_seconds:
+                        type: integer
+                        example: 3
+        '400':
+          description: Invalid `type`, or no notification channel is configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Push ---
+
+  /api/push/vapid-key:
+    get:
+      summary: Web Push public key
+      operationId: getVapidKey
+      tags: [Push]
+      security: []
+      responses:
+        '200':
+          description: The server's VAPID public key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      publicKey:
+                        type: string
+                        description: Empty string when not configured.
+                      configured:
+                        type: boolean
+
+  /api/push/test:
+    post:
+      summary: Send a test Web Push notification
+      operationId: sendTestPush
+      tags: [Push]
+      description: Sends a test notification to the user's Web Push subscriptions only.
+      responses:
+        '200':
+          description: Whether it was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      sent:
+                        type: boolean
+                      reason:
+                        type: string
+                        example: VAPID keys not configured
+                        description: Present when `sent` is false.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/push/apns/register:
+    post:
+      summary: Register an APNs device
+      operationId: registerApnsDevice
+      tags: [Push]
+      description: |
+        Registers an Apple device token for push notifications. Re-registering
+        an existing token moves it to the calling user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_token, bundle_id]
+              properties:
+                device_token:
+                  type: string
+                bundle_id:
+                  type: string
+                  example: com.example.app
+                environment:
+                  type: string
+                  enum: [production, development]
+                  default: production
+                  description: Any value other than `development` is stored as `production`.
+      responses:
+        '200':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      registered:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      summary: Unregister an APNs device
+      operationId: unregisterApnsDevice
+      tags: [Push]
+      description: Removes the device token, whichever user registered it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_token]
+              properties:
+                device_token:
+                  type: string
+      responses:
+        '200':
+          description: Unregistered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      unregistered:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/push/apns/widget-token:
+    post:
+      summary: Register a widget push token
+      operationId: registerWidgetPushToken
+      tags: [Push]
+      description: |
+        Registers a WidgetKit push token (a widget extension's token, separate
+        from the app's device token) so the server can tell widgets to reload
+        when the user's data changes. Re-registering a token moves it to the
+        calling user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [push_token, bundle_id, platform]
+              properties:
+                push_token:
+                  type: string
+                bundle_id:
+                  type: string
+                  example: com.example.app
+                platform:
+                  type: string
+                  enum: [ios, macos, watchos]
+                environment:
+                  type: string
+                  enum: [production, development]
+                  default: production
+                  description: Any value other than `development` is stored as `production`.
+                widget_kind:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      registered:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      summary: Unregister a widget push token
+      operationId: unregisterWidgetPushToken
+      tags: [Push]
+      description: Removes the push token, whichever user registered it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [push_token]
+              properties:
+                push_token:
+                  type: string
+      responses:
+        '200':
+          description: Unregistered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      unregistered:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2225,6 +3625,13 @@ components:
 
     ValidationError:
       description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    AIUnavailable:
+      description: AI features are not enabled on this server
       content:
         application/json:
           schema:
@@ -3023,6 +4430,189 @@ components:
           nullable: true
         tasks_affected:
           type: integer
+        undoable_count:
+          type: integer
+          description: Entries left to undo (scoped by `session_start_id` when sent)
+        redoable_count:
+          type: integer
+          description: Entries left to redo (scoped by `session_start_id` when sent)
+
+    UndoSessionScope:
+      type: object
+      properties:
+        session_start_id:
+          type: integer
+          description: |
+            Count only undo-log entries newer than this id in the returned
+            `undoable_count` and `redoable_count`. Omitted = all entries.
+
+    RedoResult:
+      type: object
+      properties:
+        redone_action:
+          type: string
+        description:
+          type: string
+          nullable: true
+        tasks_affected:
+          type: integer
+        undoable_count:
+          type: integer
+        redoable_count:
+          type: integer
+
+    UndoBatchResult:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: Entries undone (or redone)
+        undoable_count:
+          type: integer
+          description: Entries left to undo (all time)
+        redoable_count:
+          type: integer
+          description: Entries left to redo (all time)
+
+    UndoHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+          enum:
+            - done
+            - undone
+            - snooze
+            - edit
+            - delete
+            - create
+            - restore
+            - bulk_done
+            - bulk_snooze
+            - bulk_edit
+            - bulk_delete
+            - progress
+            - skip
+            - bulk_skip
+            - time_slot_edit
+            - time_slot_delete
+            - quota_prompt
+        description:
+          type: string
+          nullable: true
+        tasks_affected:
+          type: integer
+          description: Number of task snapshots in the entry
+        created_at:
+          type: string
+          format: date-time
+        undone:
+          type: boolean
+        fields_changed:
+          type: array
+          items:
+            type: string
+        snapshot:
+          type: array
+          description: One entry per affected task.
+          items:
+            type: object
+            properties:
+              task_id:
+                type: integer
+              before_state:
+                type: object
+                description: The changed task fields before the action (a subset of `Task`).
+                additionalProperties: true
+              after_state:
+                type: object
+                description: The changed task fields after the action (a subset of `Task`).
+                additionalProperties: true
+              completion_id:
+                type: integer
+                description: The completion record this entry created, if any.
+
+    DailyStat:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        date:
+          type: string
+          format: date
+          description: YYYY-MM-DD in the user's timezone
+        completions:
+          type: integer
+        tasks_created:
+          type: integer
+        snoozes:
+          type: integer
+
+    AISlotStats:
+      type: object
+      description: A warm model slot (server-wide, not per user).
+      properties:
+        state:
+          type: string
+          enum: [uninitialized, initializing, available, busy, dead]
+        activatedAt:
+          type: string
+          nullable: true
+        totalRequests:
+          type: integer
+        totalRecycles:
+          type: integer
+        lastRequestAt:
+          type: string
+          nullable: true
+        model:
+          type: string
+
+    AIActivityEntry:
+      type: object
+      description: One row of the user's AI activity log.
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        task_id:
+          type: integer
+          nullable: true
+        action:
+          type: string
+        status:
+          type: string
+          enum: [success, error, skipped]
+        input:
+          type: string
+          nullable: true
+        output:
+          type: string
+          nullable: true
+          description: Raw model output (usually a JSON string)
+        model:
+          type: string
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+
+    InsightsSignalKey:
+      type: string
+      enum: [review, stale, act_soon, quick_win, vague, misprioritized]
 
     BulkResult:
       type: object
