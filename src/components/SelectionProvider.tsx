@@ -31,7 +31,3 @@ export function useSelection() {
   }
   return context
 }
-
-export function useSelectionOptional(): SelectionContextType | null {
-  return useContext(SelectionContext)
-}

@@ -5,10 +5,8 @@ import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ChevronLeft,
   Clock,
   Undo2,
   Redo2,
@@ -55,7 +53,6 @@ import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 
 interface HeaderProps {
-  backHref?: string
   title?: string
   headerAction?: React.ReactNode
   /**
@@ -115,7 +112,6 @@ interface HeaderProps {
 }
 
 export function Header({
-  backHref,
   title,
   headerAction,
   badges,
@@ -216,15 +212,6 @@ export function Header({
             wideAtXl && 'xl:max-w-[86.5rem] xl:px-10',
           )}
         >
-          {/* Back button (when navigating into a sub-page like project detail) */}
-          {backHref && (
-            <Link href={backHref}>
-              <Button variant="ghost" size="icon" aria-label="Back" className="-ml-2 flex-shrink-0">
-                <ChevronLeft className="size-5" />
-              </Button>
-            </Link>
-          )}
-
           {/* Logo or title with build info popover */}
           {title ? (
             <h1

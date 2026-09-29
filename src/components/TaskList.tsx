@@ -16,8 +16,7 @@ import {
 import type { Task, Project } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { cn } from '@/lib/utils'
-import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
-import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
+import type { SortOption } from '@/hooks/useGroupSort'
 import { isTracked } from '@/lib/track'
 import { groupByTimeSlot } from '@/lib/slot-view'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
@@ -86,20 +85,7 @@ export function effectiveSort(
   return grouping === 'new' ? { sortOption: 'age', reversed: false } : { sortOption, reversed }
 }
 
-import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
-
-const fallbackSelection: SelectionContextType = {
-  selectedIds: new Set(),
-  anchor: null,
-  isSelectionMode: false,
-  toggle: () => {},
-  rangeSelect: () => {},
-  selectAll: () => {},
-  selectOnly: () => {},
-  addAll: () => {},
-  removeAll: () => {},
-  clear: () => {},
-}
+import { useSelection, type SelectionContextType } from './SelectionProvider'
 
 interface TaskListProps {
   tasks: Task[]
@@ -128,20 +114,20 @@ interface TaskListProps {
   onListFocus?: (e: React.FocusEvent) => void
   /** Blur handler for list container */
   onListBlur?: (e: React.FocusEvent) => void
-  /** Optional: sort option (lifted from useGroupSort) */
-  sortOption?: SortOption
-  /** Optional: reversed state (lifted from useGroupSort) */
-  reversed?: boolean
-  /** Optional: set sort option (lifted from useGroupSort) */
-  setSortOption?: (option: SortOption) => void
+  /** Sort option (lifted from useGroupSort in the dashboard) */
+  sortOption: SortOption
+  /** Reversed state (lifted from useGroupSort in the dashboard) */
+  reversed: boolean
+  /** Set sort option (lifted from useGroupSort in the dashboard) */
+  setSortOption: (option: SortOption) => void
   /** Desktop click: set keyboard focus (blue glow) without selecting */
   onActivate?: (taskId: number) => void
   /** Desktop double-click: open QuickActionPanel */
   onDoubleClick?: (task: Task) => void
-  /** Optional: check if a group is collapsed (lifted from useCollapsedGroups) */
-  isCollapsed?: (groupLabel: string) => boolean
-  /** Optional: toggle collapse for a group (lifted from useCollapsedGroups) */
-  toggleCollapse?: (groupLabel: string) => void
+  /** Check if a group is collapsed (lifted from useCollapsedGroups in the dashboard) */
+  isCollapsed: (groupLabel: string) => boolean
+  /** Toggle collapse for a group (lifted from useCollapsedGroups in the dashboard) */
+  toggleCollapse: (groupLabel: string) => void
   /** Map of taskId -> AI annotation text */
   annotationMap?: Map<number, string>
   /** Whether to show annotation text below task metadata (sparkle icon always shows) */
@@ -162,8 +148,6 @@ interface TaskListProps {
   showAiInsights?: boolean
   /** When true, the AI Score sort option is visible but grayed out */
   aiScoreDisabled?: boolean
-  /** When true, hides the built-in sort dropdown (caller renders it externally) */
-  hideSortControl?: boolean
   /** Map of taskId -> insights commentary text (shown as indigo Lightbulb annotation) */
   insightsCommentaryMap?: Map<number, string>
   /** Whether unified view is active (toggle callback) */
@@ -307,11 +291,11 @@ export function TaskList({
   onListBlur,
   sortOption: sortOptionProp,
   reversed: reversedProp,
-  setSortOption: setSortOptionProp,
+  setSortOption,
   onActivate,
   onDoubleClick,
-  isCollapsed: isCollapsedProp,
-  toggleCollapse: toggleCollapseProp,
+  isCollapsed,
+  toggleCollapse,
   annotationMap,
   showAnnotations = false,
   wnTaskIds,
@@ -322,7 +306,6 @@ export function TaskList({
   insightsSignalMap,
   showAiInsights: showAiInsightsProp,
   aiScoreDisabled: aiScoreDisabledProp,
-  hideSortControl = false,
   insightsCommentaryMap,
   onUnifiedChange,
   highlightTaskId,
@@ -331,18 +314,11 @@ export function TaskList({
   justAddedNow = 0,
   revealRef,
 }: TaskListProps) {
-  // Use props if provided (lifted state), otherwise use internal hook
-  const internalSort = useGroupSort()
-  const { sortOption, reversed } = effectiveSort(
-    grouping,
-    sortOptionProp ?? internalSort.sortOption,
-    reversedProp ?? internalSort.reversed,
-  )
-  const setSortOption = setSortOptionProp ?? internalSort.setSortOption
-  const internalCollapse = useCollapsedGroups()
-  const isCollapsed = isCollapsedProp ?? internalCollapse.isCollapsed
-  const toggleCollapse = toggleCollapseProp ?? internalCollapse.toggleCollapse
-  const selection = useSelectionOptional() ?? fallbackSelection
+  // Sort and collapse state are lifted into the dashboard (it owns the sort
+  // dropdown's preference and the collapsed-group set); `effectiveSort` pins
+  // the New view to its own order whatever the saved sort says.
+  const { sortOption, reversed } = effectiveSort(grouping, sortOptionProp, reversedProp)
+  const selection = useSelection()
   const timezone = useTimezone()
   const isMobile = useIsMobile()
   const listRef = useRef<HTMLDivElement>(null)
@@ -570,57 +546,55 @@ export function TaskList({
       onBlur={onListBlur}
       className="outline-none"
     >
-      {!hideSortControl && (
-        <div className="mb-4 flex items-center justify-between px-1">
-          {headerLeft ?? <div />}
-          <div className="flex items-center gap-1">
-            {/* New is already flat, so the "Unified" button has nothing to
-                switch there — pressing it would leave New for Unified, a
-                second flat list in a different order. Hidden in New. */}
-            {onUnifiedChange && !isNew && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  'h-6 px-2 text-xs',
-                  isFlat
-                    ? 'text-foreground bg-muted font-medium'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-                onClick={() => onUnifiedChange(!isFlat)}
-                title={isFlat ? 'Show grouped again' : 'Show all tasks in one list'}
-              >
-                <Layers className="mr-1 size-3" />
-                Unified
-              </Button>
-            )}
-            {/* New ignores the sort preference (`effectiveSort`): its order is
-                what makes it New. A sort control there would either do
-                nothing (confusing) or turn New into a different view, so it
-                is replaced by a plain caption that says what the order is —
-                not a disabled dropdown, which would read as broken. The
-                caption sits where the dropdown was so the row doesn't jump
-                when switching views. */}
-            {isNew ? (
-              <span
-                data-new-order
-                className="text-muted-foreground flex h-6 items-center px-2 text-xs"
-              >
-                <ArrowUpDown className="mr-1 size-3" />
-                Newest added
-              </span>
-            ) : (
-              <SortDropdown
-                sortOption={sortOption}
-                reversed={reversed}
-                onSort={setSortOption}
-                showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
-                aiScoreDisabled={aiScoreDisabledProp ?? false}
-              />
-            )}
-          </div>
+      <div className="mb-4 flex items-center justify-between px-1">
+        {headerLeft ?? <div />}
+        <div className="flex items-center gap-1">
+          {/* New is already flat, so the "Unified" button has nothing to
+              switch there — pressing it would leave New for Unified, a
+              second flat list in a different order. Hidden in New. */}
+          {onUnifiedChange && !isNew && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-6 px-2 text-xs',
+                isFlat
+                  ? 'text-foreground bg-muted font-medium'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => onUnifiedChange(!isFlat)}
+              title={isFlat ? 'Show grouped again' : 'Show all tasks in one list'}
+            >
+              <Layers className="mr-1 size-3" />
+              Unified
+            </Button>
+          )}
+          {/* New ignores the sort preference (`effectiveSort`): its order is
+              what makes it New. A sort control there would either do
+              nothing (confusing) or turn New into a different view, so it
+              is replaced by a plain caption that says what the order is —
+              not a disabled dropdown, which would read as broken. The
+              caption sits where the dropdown was so the row doesn't jump
+              when switching views. */}
+          {isNew ? (
+            <span
+              data-new-order
+              className="text-muted-foreground flex h-6 items-center px-2 text-xs"
+            >
+              <ArrowUpDown className="mr-1 size-3" />
+              Newest added
+            </span>
+          ) : (
+            <SortDropdown
+              sortOption={sortOption}
+              reversed={reversed}
+              onSort={setSortOption}
+              showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
+              aiScoreDisabled={aiScoreDisabledProp ?? false}
+            />
+          )}
         </div>
-      )}
+      </div>
       <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
         {sortedGroups.map((group, groupIdx) => {
           const { sortedTasks } = group

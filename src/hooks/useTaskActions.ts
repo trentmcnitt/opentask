@@ -15,14 +15,16 @@ import { showToast } from '@/lib/toast'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 
 /**
- * Shared task action handlers used by dashboard, project, and task detail pages.
+ * Shared task action handlers used by the dashboard, the reminders and quotas
+ * pages, and the task detail page.
  *
  * Consolidates handleUndo, handleRedo, handleDone, handleSnooze, and
- * handleSaveAllChanges — which were previously duplicated across 3 pages
+ * handleSaveAllChanges — which were previously duplicated across pages
  * with slight behavioral differences.
  *
  * Config-based interface handles two modes:
- * - List mode (dashboard/project): operates on a task array with optimistic updates
+ * - List mode (dashboard, reminders, quotas): operates on a task array with
+ *   optimistic updates
  * - Single-task mode (task detail): operates on a single task by ID
  *
  * The config is stored in a ref so callbacks don't need it in their dependency
@@ -169,7 +171,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
   handleUndoRef.current = handleUndo
   handleRedoRef.current = handleRedo
 
-  // --- List-mode handlers (dashboard, project page) ---
+  // --- List-mode handlers (dashboard, reminders, quotas) ---
 
   const handleDoneList = useCallback(async (taskId: number) => {
     const cfg = configRef.current

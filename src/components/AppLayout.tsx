@@ -5,7 +5,6 @@ import { useSession } from 'next-auth/react'
 import { usePathname, useRouter } from 'next/navigation'
 import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
-// import { DemoBanner } from './DemoBanner'
 import { OfflineBanner } from './OfflineBanner'
 import { useProjects } from './ProjectsProvider'
 import dynamic from 'next/dynamic'
@@ -113,10 +112,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <OfflineBanner />
       <Sidebar onAddClick={handleAddClick} />
 
-      <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
-        {/* <DemoBanner /> */}
-        {children}
-      </div>
+      <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">{children}</div>
 
       <BottomTabs onAddClick={handleAddClick} />
 

@@ -1,8 +1,8 @@
 /**
  * Shared hook for the "snooze all overdue" action.
  *
- * Used by both the dashboard and project detail pages. Sends overdue task IDs
- * to the bulk snooze endpoint and shows a toast with results.
+ * Used by the dashboard. Sends overdue task IDs to the bulk snooze endpoint
+ * and shows a toast with results.
  *
  * P0-P2 are always eligible. P3 (High) joins in once nothing lower is left in
  * the batch, so a list of nothing but overdue High tasks takes two presses

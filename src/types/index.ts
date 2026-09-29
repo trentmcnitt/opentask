@@ -1,5 +1,7 @@
 // Core domain types for OpenTask
 
+import type { GroupingMode } from '@/lib/grouping'
+
 export type LabelColor = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'gray'
 
 export interface LabelConfig {
@@ -299,6 +301,6 @@ export interface AuthUser {
    * The dashboard's live view preference comes from `PreferencesProvider`,
    * which fetches `/api/user/preferences` directly.
    */
-  default_grouping: 'time' | 'unified' | 'slot' | 'new'
+  default_grouping: GroupingMode
   is_demo: boolean
 }
