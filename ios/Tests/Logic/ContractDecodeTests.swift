@@ -204,7 +204,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(task.progressTarget, 3)
         XCTAssertTrue(task.isTracked)
         XCTAssertFalse(task.isProgressMet)
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: task.rrule), .weekly)
+        XCTAssertEqual(QuotaPeriodKey.from(rrule: task.rrule), .weekly)
     }
 
     // MARK: POST /api/tasks/bulk/complete

@@ -50,7 +50,7 @@ enum WatchTheme {
 
     /// A quota row's stripe: its label's `label_config` color (same eight-name
     /// palette as projects), or a faint neutral for an unlabeled quota / a
-    /// label with no color / a green label (`WatchQuotaLogic.color(of:)`
+    /// label with no color / a green label (`QuotaRules.stripeColor(of:labelConfig:)`
     /// already maps green to nil — green means "met" on this surface).
     static func labelColor(_ name: String?) -> Color {
         guard name != nil else { return Color.secondary.opacity(0.35) }

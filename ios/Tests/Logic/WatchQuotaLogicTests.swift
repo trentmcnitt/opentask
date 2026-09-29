@@ -49,34 +49,14 @@ final class WatchQuotaLogicTests: XCTestCase {
         XCTAssertEqual(sections[0].rows.count, 0)
     }
 
-    func testPeriodFromRRule() {
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: "FREQ=DAILY"), .daily)
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: "FREQ=WEEKLY;INTERVAL=2"), .weekly, "INTERVAL is ignored")
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: "interval=1;freq=monthly"), .monthly)
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: "FREQ=YEARLY;BYMONTH=3"), .yearly)
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: "FREQ=HOURLY"), WatchQuotaPeriod.none)
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: ""), WatchQuotaPeriod.none)
-        XCTAssertEqual(WatchQuotaPeriod.from(rrule: nil), WatchQuotaPeriod.none)
-        // Sections run day → year, then the period-less bucket last.
+    /// Sections run day → year, then the period-less bucket last. (The
+    /// rrule → period rule itself is `QuotaRulesTests`.)
+    func testSectionOrder() {
         let quotas = [quota(1, "N", rrule: nil), quota(2, "Y", rrule: "FREQ=YEARLY"), quota(3, "D", rrule: "FREQ=DAILY")]
         XCTAssertEqual(
             WatchQuotaLogic.sections(quotas: quotas, labelConfig: [], showMet: true).map(\.summary),
             ["Today · 0 of 1 met", "This year · 0 of 1 met", "No period · 0 of 1 met"]
         )
-    }
-
-    func testLabelAndColorRules() {
-        let config = [
-            LabelConfigDTO(name: "health", color: "green"),
-            LabelConfigDTO(name: "home", color: "orange"),
-        ]
-        // `ai-` machinery labels are skipped.
-        let q = quota(1, "Q", labels: ["ai-added", "home"])
-        XCTAssertEqual(WatchQuotaLogic.label(of: q), "home")
-        XCTAssertEqual(WatchQuotaLogic.color(of: q, labelConfig: config), "orange")
-        // Green means "met" on quota chips, so a green label draws neutral.
-        XCTAssertNil(WatchQuotaLogic.color(of: quota(2, "Q", labels: ["Health"]), labelConfig: config))
-        XCTAssertNil(WatchQuotaLogic.color(of: quota(3, "Q"), labelConfig: config))
     }
 
     /// Label first (unlabeled last), then the FULL title, then id.
