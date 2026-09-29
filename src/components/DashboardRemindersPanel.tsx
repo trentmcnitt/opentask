@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
-import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
+import { formatClockTime } from '@/lib/time-utils'
+import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
 import { naturalSlotIndex, slotAfterFinishing, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup, type UseRemindersReturn } from '@/hooks/useReminders'
 import { useLongPress } from '@/hooks/useLongPress'
@@ -78,18 +79,6 @@ import type { Task } from '@/types'
  */
 const WIDE_CAP = 20
 const NARROW_CAP = 5
-
-const UNSLOTTED_KEY = 'unslotted'
-
-function groupKey(group: ReminderGroup): string {
-  return group.slot ? String(group.slot.id) : UNSLOTTED_KEY
-}
-
-/** "07:00" → "7:00 AM". Falls back to the raw value if it isn't HH:MM. */
-function formatSlotTime(startTime: string): string {
-  const parsed = DateTime.fromFormat(startTime, 'HH:mm')
-  return parsed.isValid ? parsed.toFormat('h:mm a') : startTime
-}
 
 /**
  * The row's press-and-hold editor: `ReminderDetailModal`, wired to the exact
@@ -183,15 +172,15 @@ function afterFinishing(
   index: number,
   natural: number,
 ): { seen: { key: string; waiting: number }; to: string | null } | null {
-  const key = groupKey(groups[index])
+  const key = slotGroupKey(groups[index])
   const waiting = groupWaiting(groups[index])
   if (seen?.key === key && seen.waiting === waiting) return null
   const finished = seen?.key === key && seen.waiting > 0 && waiting === 0
   const target = finished ? slotAfterFinishing(groups, index, natural) : null
   const landing = groups[target ?? index]
   return {
-    seen: { key: groupKey(landing), waiting: groupWaiting(landing) },
-    to: target === null ? null : groupKey(landing),
+    seen: { key: slotGroupKey(landing), waiting: groupWaiting(landing) },
+    to: target === null ? null : slotGroupKey(landing),
   }
 }
 
@@ -267,10 +256,10 @@ export function DashboardRemindersPanel({
   // that recomputes... on each render is sufficient" assumption.
   const now = new Date()
   const natural = naturalSlotIndex(groups, timezone, now)
-  const overrideIndex = overrideKey ? groups.findIndex((g) => groupKey(g) === overrideKey) : -1
+  const overrideIndex = overrideKey ? groups.findIndex((g) => slotGroupKey(g) === overrideKey) : -1
   const index = overrideIndex >= 0 ? overrideIndex : natural
   const group = groups[index]
-  const key = groupKey(group)
+  const key = slotGroupKey(group)
   const expanded = expandedKeys.has(key)
   const rows = slotRows(group)
   const count = rows.length
@@ -293,7 +282,7 @@ export function DashboardRemindersPanel({
 
   const goTo = (nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= groups.length) return
-    setOverrideKey(groupKey(groups[nextIndex]))
+    setOverrideKey(slotGroupKey(groups[nextIndex]))
     setShowConsidered(false)
   }
   const setExpanded = (next: boolean) => {
@@ -305,8 +294,8 @@ export function DashboardRemindersPanel({
     })
   }
 
-  const label = group.slot?.label ?? 'Anytime'
-  const time = group.slot ? formatSlotTime(group.slot.start_time) : null
+  const label = slotLabel(group)
+  const time = group.slot ? formatClockTime(group.slot.start_time) : null
   const total = count + considered
   // WHICH ROWS ARE ON SCREEN IS DECIDED IN CSS, NOT HERE.
   //
@@ -361,7 +350,7 @@ export function DashboardRemindersPanel({
         timezone={timezone}
         now={now}
         onJump={(next) => {
-          setOverrideKey(groupKey(groups[next]))
+          setOverrideKey(slotGroupKey(groups[next]))
           setPeekId(null)
           setShowConsidered(false)
         }}

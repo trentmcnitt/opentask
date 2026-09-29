@@ -48,7 +48,7 @@
  */
 import { DateTime } from 'luxon'
 import { getDb, withTransaction } from '@/core/db'
-import { parseRRule } from '@/core/recurrence/rrule-builder'
+import { quotaPeriodUnit } from '@/lib/track'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
@@ -81,26 +81,6 @@ export interface RolloverResult {
   anchored: number
   /** Periods closed. */
   rolled: number
-}
-
-function periodOf(rrule: string): { unit: Unit; interval: number } | null {
-  try {
-    const c = parseRRule(rrule)
-    const unit: Unit | null =
-      c.freq === 'DAILY'
-        ? 'days'
-        : c.freq === 'WEEKLY'
-          ? 'weeks'
-          : c.freq === 'MONTHLY'
-            ? 'months'
-            : c.freq === 'YEARLY'
-              ? 'years'
-              : null
-    if (!unit) return null
-    return { unit, interval: Math.max(1, c.interval ?? 1) }
-  } catch {
-    return null
-  }
 }
 
 /** The start of the calendar unit `now` falls in, by the user's clock. */
@@ -191,7 +171,7 @@ interface QuotaRolloverOutcome {
 function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   const none = { anchored: false, closed: 0 }
   const nowStr = now.toISOString()
-  const period = periodOf(q.rrule)
+  const period = quotaPeriodUnit(q.rrule)
   if (!period) return none
   const local = DateTime.fromJSDate(now).setZone(q.timezone)
   if (!local.isValid) return none
