@@ -19,7 +19,7 @@ import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickAct
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { showErrorToast, showSuccessToast, showSuccessToastWithAction } from '@/lib/toast'
-import { cn } from '@/lib/utils'
+import { DirtyCard } from '@/components/DirtyCard'
 import type { Project } from '@/types'
 
 /**
@@ -240,13 +240,7 @@ export function CreateTaskPanel({
   )
 
   const panel = (
-    <div
-      ref={panelRef}
-      className={cn(
-        'rounded-lg border p-3',
-        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-      )}
-    >
+    <DirtyCard ref={panelRef} dirty={isPanelDirty}>
       <QuickActionPanel
         task={null}
         timezone={timezone}
@@ -258,7 +252,7 @@ export function CreateTaskPanel({
         onCancel={handleCancel}
         onDirtyChange={setIsPanelDirty}
       />
-    </div>
+    </DirtyCard>
   )
 
   const handleDiscard = useCallback(() => {

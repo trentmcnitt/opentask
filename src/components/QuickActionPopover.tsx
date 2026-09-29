@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { cn } from '@/lib/utils'
+import { DirtyCard } from '@/components/DirtyCard'
 import type { Task, Project } from '@/types'
 
 interface QuickActionPopoverProps {
@@ -117,12 +117,7 @@ export function QuickActionPopover({
   if (!focusedTask) return null
 
   const panel = (
-    <div
-      className={cn(
-        'rounded-lg border p-3',
-        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-      )}
-    >
+    <DirtyCard dirty={isPanelDirty}>
       <QuickActionPanel
         key={focusedTask.id}
         task={focusedTask}
@@ -141,7 +136,7 @@ export function QuickActionPopover({
         annotation={annotation}
         insightsCommentary={insightsCommentary}
       />
-    </div>
+    </DirtyCard>
   )
 
   const confirmDialog = (

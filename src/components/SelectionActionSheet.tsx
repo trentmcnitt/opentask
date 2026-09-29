@@ -34,7 +34,8 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { formatTimeInTimezone } from '@/lib/format-date'
-import { cn, taskWord } from '@/lib/utils'
+import { taskWord } from '@/lib/utils'
+import { DirtyCard } from '@/components/DirtyCard'
 import type { Task, Project } from '@/types'
 
 interface SnoozeCategories {
@@ -349,12 +350,7 @@ export function SelectionActionSheet({
       : `${selectedCount} tasks selected`
 
   const panelContent = (
-    <div
-      className={cn(
-        'space-y-3 rounded-lg border p-3',
-        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-      )}
-    >
+    <DirtyCard dirty={isPanelDirty} className="space-y-3">
       <QuickActionPanel
         task={null}
         selectedTasks={selectedTasks}
@@ -376,7 +372,7 @@ export function SelectionActionSheet({
         projects={projects}
         onDirtyChange={setIsPanelDirty}
       />
-    </div>
+    </DirtyCard>
   )
 
   return (

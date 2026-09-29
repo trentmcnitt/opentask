@@ -1,15 +1,16 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback } from 'react'
 import { DetailModalShell } from '@/components/DetailModalShell'
+import { DirtyCard } from '@/components/DirtyCard'
 import {
   ReminderDetail,
   type ReminderBulkChanges,
   type ReminderCreateDraft,
 } from '@/components/ReminderDetail'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import { useEditorHost } from '@/hooks/useEditorHost'
 import type { ReminderCreateInput } from '@/hooks/useReminders'
-import { cn } from '@/lib/utils'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
@@ -58,28 +59,11 @@ export function ReminderDetailModal({
   onDelete,
   onOpenPage,
 }: ReminderDetailModalProps) {
-  const [isDirty, setIsDirty] = useState(false)
-  const saveRef = useRef<(() => Promise<void> | void) | null>(null)
+  // Dirtiness lives in a ref for the dismiss guard and in state for the
+  // stripe — see useEditorHost for why both.
+  const { isDirty, dirtyRef, onDirtyChange, saveRef, commit } = useEditorHost()
   const single = tasks.length === 1 ? tasks[0] : null
   const creating = tasks.length === 0 && !!create
-
-  // The dismiss guard reads dirtiness through a ref, not the state. Radix
-  // hands a dismissal (Escape, a click outside) to whichever `onOpenChange`
-  // it last captured, and a callback that closes over state trails the
-  // editor's report by a render — under load, an Escape that follows a chip
-  // tap closely reached a guard that still believed the editor was clean, and
-  // the staged edit was dropped without asking (seen in the full E2E run).
-  // The ref is current the moment the editor reports; the state only paints
-  // the stripe.
-  // The ref is written synchronously here, the state drives rendering. The
-  // dismissal guard reads the ref: a callback closing over state trails the
-  // editor's report by a render, and an Escape right after an edit used to
-  // reach a guard that still believed the editor was clean.
-  const isDirtyRef = useRef(false)
-  const handleDirtyChange = useCallback((dirty: boolean) => {
-    isDirtyRef.current = dirty
-    setIsDirty(dirty)
-  }, [])
 
   const handleSaveAll = useCallback(
     async (changes: QuickActionPanelChanges) => {
@@ -106,19 +90,11 @@ export function ReminderDetailModal({
     [onCreate, onClose],
   )
 
-  /** Commit whatever the editor has staged — used by the unsaved-changes guard. */
-  const handleCommit = useCallback(() => saveRef.current?.(), [])
-
   if (tasks.length === 0 && !creating) return null
 
   const name = creating ? 'New reminder' : single ? 'Reminder' : 'Reminders'
   const panel = (
-    <div
-      className={cn(
-        'rounded-lg border p-3',
-        isDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-      )}
-    >
+    <DirtyCard dirty={isDirty}>
       <ReminderDetail
         key={creating ? 'new' : tasks.map((t) => t.id).join(',')}
         tasks={tasks}
@@ -153,10 +129,10 @@ export function ReminderDetailModal({
               }
             : undefined
         }
-        onDirtyChange={handleDirtyChange}
+        onDirtyChange={onDirtyChange}
         saveRef={saveRef}
       />
-    </div>
+    </DirtyCard>
   )
 
   return (
@@ -165,9 +141,9 @@ export function ReminderDetailModal({
       title={name}
       description="Change when this comes up"
       isDirty={isDirty}
-      dirtyRef={isDirtyRef}
+      dirtyRef={dirtyRef}
       onClose={onClose}
-      onSave={handleCommit}
+      onSave={commit}
     >
       {panel}
     </DetailModalShell>
