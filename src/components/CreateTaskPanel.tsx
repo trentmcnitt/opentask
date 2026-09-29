@@ -222,12 +222,6 @@ export function CreateTaskPanel({
     [onCreated, router],
   )
 
-  const handleSave = useCallback(() => {
-    // In create mode, Save is replaced by Create Task — this is the onSave callback
-    // that QuickActionPanel calls after handleCreate completes
-    onClose()
-  }, [onClose])
-
   const handleCancel = useCallback(() => {
     onClose()
   }, [onClose])
@@ -261,7 +255,6 @@ export function CreateTaskPanel({
         initialTitle={initialTitle}
         onCreate={handleCreate}
         projects={projects as Project[]}
-        onSave={handleSave}
         onCancel={handleCancel}
         onDirtyChange={setIsPanelDirty}
       />
