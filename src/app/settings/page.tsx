@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useSession, signOut } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { signOut } from 'next-auth/react'
 import { useTheme } from 'next-themes'
 import { X, Trash2, Info, Loader2, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
@@ -45,7 +44,8 @@ import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { usePushSubscription } from '@/hooks/usePushSubscription'
 import { showToast } from '@/lib/toast'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
@@ -53,8 +53,7 @@ import { cn } from '@/lib/utils'
 import type { LabelColor, LabelConfig, PriorityDisplayConfig, Project } from '@/types'
 
 export default function SettingsPage() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
+  const { session, status } = useRequireSession()
   const { theme, setTheme } = useTheme()
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
@@ -138,10 +137,6 @@ export default function SettingsPage() {
       setAiContextSynced(true)
     }
   }, [aiContext, aiContextSynced])
-
-  useEffect(() => {
-    if (status === 'unauthenticated') router.push(loginUrlFromLocation())
-  }, [status, router])
 
   // Detect if running inside the native iOS app wrapper (injected by WKWebView)
   useEffect(() => {
@@ -517,13 +512,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (status === 'loading') {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="animate-pulse text-zinc-500">Loading...</div>
-      </div>
-    )
-  }
+  if (status === 'loading') return <PageLoading />
 
   return (
     <div className="flex-1">

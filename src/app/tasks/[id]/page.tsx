@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { ChevronLeft, Undo2, Redo2, Menu, Settings } from 'lucide-react'
 import { TaskDetail } from '@/components/TaskDetail'
@@ -33,6 +32,8 @@ import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { showToast } from '@/lib/toast'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
@@ -41,7 +42,7 @@ import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream, type EnrichmentCompleteData } from '@/hooks/useSyncStream'
 
 export default function TaskDetailPage() {
-  const { status } = useSession()
+  const { status, ready } = useRequireSession()
   const router = useRouter()
   const params = useParams()
   const taskId = params.id as string
@@ -186,13 +187,8 @@ export default function TaskDetailPage() {
   )
 
   useEffect(() => {
-    if (status === 'loading') return
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-      return
-    }
-    fetchTask()
-  }, [status, router, fetchTask])
+    if (ready) fetchTask()
+  }, [ready, fetchTask])
 
   const actions = useTaskActions({
     mode: 'single',
@@ -275,13 +271,7 @@ export default function TaskDetailPage() {
     }
   }
 
-  if (status === 'loading' || loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-pulse text-zinc-500">Loading...</div>
-      </div>
-    )
-  }
+  if (status === 'loading' || loading) return <PageLoading className="min-h-screen flex-none" />
 
   if (error) {
     return (

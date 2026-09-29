@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { useTimezone } from '@/hooks/useTimezone'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 import { showToast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import type { Project } from '@/types'
@@ -57,8 +56,7 @@ function EmptyTrashConfirm({
 }
 
 export default function TrashPage() {
-  const { status } = useSession()
-  const router = useRouter()
+  const { status, ready } = useRequireSession()
   const timezone = useTimezone()
   const [tasks, setTasks] = useState<TrashedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
@@ -93,13 +91,8 @@ export default function TrashPage() {
   }, [])
 
   useEffect(() => {
-    if (status === 'loading') return
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-      return
-    }
-    fetchData()
-  }, [status, router, fetchData])
+    if (ready) fetchData()
+  }, [ready, fetchData])
 
   async function handleRestore(taskId: number) {
     setRestoringId(taskId)
@@ -130,13 +123,7 @@ export default function TrashPage() {
     }
   }
 
-  if (status === 'loading') {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-muted-foreground animate-pulse">Loading...</div>
-      </div>
-    )
-  }
+  if (status === 'loading') return <PageLoading />
 
   return (
     <div className="flex-1">

@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { useTimezone } from '@/hooks/useTimezone'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 import type { Project } from '@/types'
 
 interface ArchivedTask {
@@ -15,8 +14,7 @@ interface ArchivedTask {
 }
 
 export default function ArchivePage() {
-  const { status } = useSession()
-  const router = useRouter()
+  const { status, ready } = useRequireSession()
   const timezone = useTimezone()
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
@@ -50,14 +48,9 @@ export default function ArchivePage() {
     }
   }, [])
 
+  // Fetch projects once, when the session is in
   useEffect(() => {
-    if (status === 'loading') return
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-      return
-    }
-
-    // Fetch projects once
+    if (!ready) return
     fetch('/api/projects')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -70,17 +63,14 @@ export default function ArchivePage() {
         }
       })
       .catch(() => {})
+  }, [ready])
 
+  useEffect(() => {
+    if (!ready) return
     fetchTasks(debouncedSearch)
-  }, [status, router, debouncedSearch, fetchTasks])
+  }, [ready, debouncedSearch, fetchTasks])
 
-  if (status === 'loading') {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="animate-pulse text-zinc-500">Loading...</div>
-      </div>
-    )
-  }
+  if (status === 'loading') return <PageLoading />
 
   return (
     <div className="flex-1">

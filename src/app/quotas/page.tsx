@@ -1,8 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { QuotasView } from '@/components/QuotasView'
 import { QuotasSummary, QuotasViewSwitch, type QuotasPageView } from '@/components/QuotasSummary'
@@ -10,7 +8,8 @@ import { useQuotasPagePreference } from '@/components/PreferencesProvider'
 import { useTaskActions, type ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useTimezone } from '@/hooks/useTimezone'
-import { loginUrlFromLocation } from '@/lib/login-redirect'
+import { useRequireSession } from '@/hooks/useRequireSession'
+import { PageLoading } from '@/components/PageLoading'
 import type { Task } from '@/types'
 
 /**
@@ -54,8 +53,7 @@ import type { Task } from '@/types'
 const NO_TASKS: Task[] = []
 
 export default function QuotasPage() {
-  const { status } = useSession()
-  const router = useRouter()
+  const { status } = useRequireSession()
   const timezone = useTimezone()
 
   // The view populates this, so an undo/redo from the header or the keyboard
@@ -89,22 +87,10 @@ export default function QuotasPage() {
     setQuotasDetails(next === 'details')
   }
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push(loginUrlFromLocation())
-    }
-  }, [status, router])
-
   // Wait for the preferences as well as the session: until they land,
   // `quotasDetails` is the default, and a user who chose Details would watch
   // the summary paint and then swap out from under him.
-  if (status === 'loading' || (status === 'authenticated' && !loaded)) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-muted-foreground animate-pulse">Loading...</div>
-      </div>
-    )
-  }
+  if (status === 'loading' || (status === 'authenticated' && !loaded)) return <PageLoading />
 
   if (status === 'unauthenticated') return null
 
