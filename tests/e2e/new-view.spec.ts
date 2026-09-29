@@ -51,8 +51,10 @@ async function getPrefs(page: Page): Promise<Record<string, unknown>> {
 }
 
 test.describe('New view', () => {
-  test('the switch reads All · Today · New — no Projects', async ({ authenticatedPage: page }) => {
-    await expect(toggle(page).getByRole('button')).toHaveText(['All', 'Today', 'New'])
+  test('the switch reads All · Today · Newest — no Projects', async ({
+    authenticatedPage: page,
+  }) => {
+    await expect(toggle(page).getByRole('button')).toHaveText(['All', 'Today', 'Newest'])
   })
 
   test('is one flat list, newest added first whatever the saved sort, with project names', async ({
@@ -83,7 +85,7 @@ test.describe('New view', () => {
         { default_grouping: 'new', default_sort: 'due_date', default_sort_reversed: false },
         async () => {
           await waitForPrefsLoaded(page, () => page.goto('/'), realRow(page, older))
-          await expect(viewButton(page, 'New')).toHaveAttribute('aria-pressed', 'true')
+          await expect(viewButton(page, 'Newest')).toHaveAttribute('aria-pressed', 'true')
 
           const order = await rowOrder(page)
           expect(order.indexOf(String(newer))).toBeGreaterThanOrEqual(0)
@@ -120,12 +122,12 @@ test.describe('New view', () => {
       await waitForPrefsLoaded(page, () => page.goto('/'), toggle(page))
       await expect(viewButton(page, 'All')).toHaveAttribute('aria-pressed', 'true')
       const saved = waitForPreferenceSave(page, 'default_grouping')
-      await viewButton(page, 'New').click()
+      await viewButton(page, 'Newest').click()
       await saved
       expect((await getPrefs(page)).default_grouping).toBe('new')
 
       await waitForPrefsLoaded(page, () => page.reload(), toggle(page))
-      await expect(viewButton(page, 'New')).toHaveAttribute('aria-pressed', 'true')
+      await expect(viewButton(page, 'Newest')).toHaveAttribute('aria-pressed', 'true')
     })
   })
 

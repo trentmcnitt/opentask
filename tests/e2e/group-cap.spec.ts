@@ -14,7 +14,7 @@ import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 async function pressedView(page: Page): Promise<string | null> {
-  for (const v of ['Today', 'All', 'New']) {
+  for (const v of ['Today', 'All', 'Newest']) {
     const b = page.getByRole('button', { name: v, exact: true })
     if ((await b.getAttribute('aria-pressed')) === 'true') return v
   }
@@ -62,11 +62,11 @@ test('All shows 10 per group with the rest behind "Show all"; New shows every ro
     await expect(page.getByRole('button', { name: 'Show less' })).toBeVisible()
 
     // New is one flat list: every row, no cap, no "Show all".
-    await switchView(page, 'New')
+    await switchView(page, 'Newest')
     await expect(rows).toHaveCount(12)
     await expect(page.getByRole('button', { name: /Show all/ })).toHaveCount(0)
   } finally {
-    if (before && before !== 'New') await switchView(page, before)
+    if (before && before !== 'Newest') await switchView(page, before)
     for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
     await page.request.delete(`/api/projects/${projectId}`)
   }

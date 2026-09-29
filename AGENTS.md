@@ -59,7 +59,7 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Period, "Reminder periods" (Settings) | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                                                                                            |
 | Quota                                 | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests                                                               |
-| Today / All / New (view toggle)       | `default_grouping` `'slot'` / `'time'` / `'new'` (`'unified'` is set by the AI-sort toggle, not this one; the retired `'project'` is read as `'time'` — `src/lib/grouping.ts`) |
+| All / Today / Newest (view toggle)    | `default_grouping` `'slot'` / `'time'` / `'new'` (`'unified'` is set by the AI-sort toggle, not this one; the retired `'project'` is read as `'time'` — `src/lib/grouping.ts`) |
 
 ### Database
 
@@ -114,7 +114,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'unified' | 'slot' | 'new', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and what an unrecognized value coerces to (`coerceGrouping` in `src/lib/grouping.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot". `'new'` is New: every open task in one flat list, newest added first, whatever the saved sort. The retired `'project'` (Projects view, 2026-09-29) is accepted on PATCH but stored, returned and shown as `'time'` (All); new users start on `'time'`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'unified' | 'slot' | 'new', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and what an unrecognized value coerces to (`coerceGrouping` in `src/lib/grouping.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot". `'new'` is Newest: every open task in one flat list, newest added first, whatever the saved sort. The retired `'project'` (Projects view, 2026-09-29) is accepted on PATCH but stored, returned and shown as `'time'` (All); new users start on `'time'`.
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 

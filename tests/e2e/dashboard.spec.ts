@@ -102,7 +102,7 @@ test.describe('Undated pile', () => {
     backdateCreated(ids)
     // The view toggle persists server-side for the shared test user, so the
     // view this test finds is put back at the end for the specs that follow.
-    const views = ['Today', 'All', 'New'] as const
+    const views = ['Today', 'All', 'Newest'] as const
     const pressedView = async () => {
       for (const v of views) {
         const b = page.getByRole('button', { name: v, exact: true })
