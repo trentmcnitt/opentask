@@ -14,6 +14,14 @@ import { defineConfig, devices } from '@playwright/test'
  */
 const build = process.env.E2E_PREBUILT === '1' ? '' : 'npm run build && '
 
+/**
+ * `E2E_PORT` picks the server's port (default 3333). Each worktree already has
+ * its own build (`.next`) and database (`data/test-e2e.db`, cwd-relative), so
+ * the port was the only thing two parallel runs fought over: set a different
+ * one per worktree and they no longer collide.
+ */
+const port = Number(process.env.E2E_PORT ?? 3333)
+
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/globalSetup.ts',
@@ -29,7 +37,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list'], ['json', { outputFile: 'test-results/e2e.json' }]],
   use: {
-    baseURL: 'http://localhost:3333',
+    baseURL: `http://localhost:${port}`,
     trace: 'on-first-retry',
   },
   projects: [
@@ -39,8 +47,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `${build}npx next start -p 3333`,
-    url: 'http://localhost:3333',
+    command: `${build}npx next start -p ${port}`,
+    url: `http://localhost:${port}`,
     // Always start fresh: globalSetup recreates the database, so a reused
     // server would still hold the old (deleted) DB connection via its singleton.
     reuseExistingServer: false,

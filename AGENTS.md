@@ -414,7 +414,7 @@ Helpers: `tests/integration/helpers.ts`, `tests/integration/globalSetup.ts`
 
 Location: `tests/e2e/`
 
-Playwright with headless Chromium, one test at a time, against a **production build**: the web server is `npm run build && next start -p 3333` (set `E2E_PREBUILT=1` to skip the rebuild when nothing changed). Port 3333 is fixed, so two E2E runs at once — e.g. from two worktrees — collide. Uses a separate DB (`data/test-e2e.db`), which `tests/e2e/globalSetup.ts` builds and seeds itself. In CI a test that only passes on retry fails the run. The `authenticatedPage` fixture provides a pre-logged-in browser page by logging in via the real login form.
+Playwright with headless Chromium, one test at a time, against a **production build**: the web server is `npm run build && next start -p 3333` (set `E2E_PREBUILT=1` to skip the rebuild when nothing changed). The port defaults to 3333; two runs at once (e.g. from two worktrees) collide unless each sets its own `E2E_PORT` (e.g. `E2E_PORT=3341 npm run test:e2e`) — the build and database are already per worktree. Uses a separate DB (`data/test-e2e.db`), which `tests/e2e/globalSetup.ts` builds and seeds itself. In CI a test that only passes on retry fails the run. The `authenticatedPage` fixture provides a pre-logged-in browser page by logging in via the real login form.
 
 Helpers: `tests/e2e/fixtures.ts`, `tests/e2e/globalSetup.ts`
 
