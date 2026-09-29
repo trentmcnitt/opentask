@@ -17,6 +17,7 @@ import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
+import { measureLeavingRow, onSurfaceRowAnimationEnd } from '@/components/reminders/row-shell'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
@@ -185,7 +186,12 @@ export function QuotaPromptRow({
       onPointerLeave={press.onPointerLeave}
       onPointerCancel={press.onPointerUp}
       onAnimationEnd={(e) =>
-        onRowAnimationEnd(e, { key, highlighted: !!highlighted, onLeft, onHighlightDone })
+        onSurfaceRowAnimationEnd(e, {
+          id: key,
+          highlighted: !!highlighted,
+          onLeft,
+          onHighlightDone,
+        })
       }
       className={promptRowClasses({
         panel,
@@ -542,32 +548,6 @@ function DashedRing({ px }: { px: number }) {
   )
 }
 
-/**
- * What an animation ending on a prompt row MEANS. The collapse after an action
- * and the deep link's flash both end here, so the name is checked rather than
- * assumed — the same split as `ReminderRow`'s `onAnimationEnd`.
- */
-function onRowAnimationEnd(
-  e: React.AnimationEvent,
-  {
-    key,
-    highlighted,
-    onLeft,
-    onHighlightDone,
-  }: Pick<QuotaPromptRowProps, 'onLeft' | 'onHighlightDone'> & {
-    key: string
-    highlighted: boolean
-  },
-): void {
-  if (e.target !== e.currentTarget) return
-  if (e.animationName === 'reminder-leaving') {
-    if (highlighted) onHighlightDone?.()
-    onLeft?.(key)
-  } else if (e.animationName === 'row-highlight') {
-    onHighlightDone?.()
-  }
-}
-
 /** The row's classes — the reminder row's (`reminderRowClasses`), in both sizes. */
 function promptRowClasses({
   panel,
@@ -602,11 +582,6 @@ function promptRowClasses({
 function rowRef(completing: boolean, highlighted: boolean | undefined) {
   if (completing) return measureLeavingRow
   return highlighted ? scrollRowIntoView : undefined
-}
-
-/** The leaving animation's starting height — see `measureLeavingRow` in RemindersView. */
-const measureLeavingRow = (el: HTMLElement | null) => {
-  if (el) el.style.setProperty('--reminder-row-h', `${el.offsetHeight}px`)
 }
 
 /** `useReminders().movePrompt`'s shape. */

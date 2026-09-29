@@ -214,6 +214,20 @@ function parseGroups(json: unknown): ReminderGroup[] {
 }
 
 /**
+ * A whole `/api/reminders` body, parsed — the shape the module cache holds.
+ * One reader for both fetchers (the surface's `refresh` and the navs'
+ * `loadRemindersCache`), so they cannot disagree about a field.
+ */
+function parseRemindersPayload(json: unknown): NonNullable<typeof remindersCache> {
+  const data = (json as { data?: { has_any?: unknown; not_today?: Task[] } } | null)?.data
+  return {
+    groups: parseGroups(json),
+    hasAny: data?.has_any === true,
+    notToday: data?.not_today ?? [],
+  }
+}
+
+/**
  * Apply what is still in flight to a payload the server just sent: ids being
  * considered leave `reminders` for `consideredItems`, ids being put back go
  * the other way. Without this a refresh landing mid-request re-inserted the
@@ -369,10 +383,10 @@ export function useReminders({
       // current one, so this (older) payload must not overwrite it — nor the
       // shared cache the nav badge reads.
       if (!requestGuard.isLatest(seq)) return
-      const nextGroups = stripPending(parseGroups(json))
-      const nextHasAny = json?.data?.has_any === true
-      const nextNotToday = ((json as { data?: { not_today?: Task[] } })?.data?.not_today ??
-        []) as Task[]
+      const parsed = parseRemindersPayload(json)
+      const nextGroups = stripPending(parsed.groups)
+      const nextHasAny = parsed.hasAny
+      const nextNotToday = parsed.notToday
       setRemindersCache({ groups: nextGroups, hasAny: nextHasAny, notToday: nextNotToday })
       setGroups(nextGroups)
       setHasAny(nextHasAny)
@@ -1043,11 +1057,7 @@ function loadRemindersCache(): Promise<void> {
       const res = await fetch('/api/reminders')
       if (!res.ok) return
       const json = await res.json()
-      setRemindersCache({
-        groups: parseGroups(json),
-        hasAny: json?.data?.has_any === true,
-        notToday: ((json as { data?: { not_today?: Task[] } })?.data?.not_today ?? []) as Task[],
-      })
+      setRemindersCache(parseRemindersPayload(json))
     } catch {
       // A badge that stays at its last value beats one that flickers.
     } finally {
