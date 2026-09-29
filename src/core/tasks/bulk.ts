@@ -166,11 +166,17 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const batchId = crypto.randomUUID()
   let recurringCount = 0
   let oneOffCount = 0
+  // The undo entry's `fieldsChanged` is the union of what each completion
+  // changed, taken from `computeMarkDone` itself rather than restated here. A
+  // hand-built list drifted once already: it left out `progress_current`, so
+  // undoing a `closePeriod` batch put a quota's date back but not its count.
+  const fieldsChanged = new Set<string>()
 
   const result = withTransaction((tx) => {
     for (const task of tasks) {
       // Compute state changes using shared helper
       const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
+      computation.fieldsChanged.forEach((f) => fieldsChanged.add(f))
 
       // Track counts
       if (computation.type === 'recurring') {
@@ -199,16 +205,8 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
       })
     }
 
-    // Single undo entry for entire batch (BO-004)
-    // Include stats fields in all cases since they're always updated
-    const baseStatsFields = ['completion_count', 'first_completed_at', 'last_completed_at']
-    const fieldsChanged =
-      recurringCount > 0 && oneOffCount > 0
-        ? ['due_at', 'original_due_at', 'done', 'done_at', 'archived_at', ...baseStatsFields]
-        : recurringCount > 0
-          ? ['due_at', 'original_due_at', ...baseStatsFields]
-          : ['done', 'done_at', 'archived_at', ...baseStatsFields]
-
+    // Single undo entry for entire batch (BO-004).
+    //
     // Prompt actions ride the same entry. `fieldsChanged` is one list for the
     // whole entry, so it becomes the union — safe because `applyFieldsToTask`
     // skips any field a snapshot does not carry, and each snapshot carries
@@ -560,7 +558,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksSkipped: skippedCount,
       urgentSkipped,
       highSkipped,
-      highSnoozed: snoozeable.filter((t) => t.priority === 3).length,
+      highSnoozed: snoozeable.filter((t) => t.priority === HIGH_PRIORITY_THRESHOLD).length,
       reminderSkipped,
       noDueDateSkipped,
       snoozedIds: snoozeable.map((t) => t.id),
