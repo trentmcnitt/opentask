@@ -7,9 +7,13 @@ export interface SaveTaskResult {
 }
 
 /**
- * Shared utility for saving QuickActionPanel changes via PATCH.
- * Used by both the dashboard (page.tsx) and task detail page (tasks/[id]/page.tsx)
- * to ensure identical payloads and error handling.
+ * Shared utility for saving QuickActionPanel changes to ONE task via PATCH, so
+ * every single-task editor sends identical payloads and handles errors the
+ * same way. Callers:
+ * - `useTaskActions` — the dashboard's quick-action popover and the task
+ *   detail page (tasks/[id]/page.tsx)
+ * - `RemindersView` and `DashboardRemindersPanel` — the reminder detail editor
+ * - `saveQuickPanelChanges` — a single-task save from the selection action bar
  *
  * Returns the updated task and the server-generated description for use in toasts.
  */

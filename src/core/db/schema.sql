@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS users (
   ai_wn_highlight INTEGER NOT NULL DEFAULT 1,
   ai_insights_signal_chips INTEGER NOT NULL DEFAULT 1,
   ai_insights_score_chips INTEGER NOT NULL DEFAULT 1,
-  ai_quick_take INTEGER NOT NULL DEFAULT 0,
-  ai_provider   TEXT NOT NULL DEFAULT 'default',
+  ai_quick_take INTEGER NOT NULL DEFAULT 0,    -- vestigial (unused; kept, not dropped)
+  ai_provider   TEXT NOT NULL DEFAULT 'default', -- vestigial (read only by the per-feature mode backfill in runMigrations)
   ai_enrichment_mode  TEXT NOT NULL DEFAULT 'api',
   ai_quicktake_mode   TEXT NOT NULL DEFAULT 'api',
   ai_whats_next_mode  TEXT NOT NULL DEFAULT 'api',

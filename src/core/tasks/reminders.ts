@@ -175,22 +175,6 @@ export function getRemindersNotToday(
 }
 
 /**
- * How many reminders are pending in each slot. Reminders only — the slot
- * notifications count quota prompts too, through `waitingBySlot` in
- * `src/core/notifications/slot-reminders.ts`, not through this.
- */
-export function countRemindersBySlot(
-  userId: number,
-  timezone: string,
-  now: Date = new Date(),
-): { slot: TimeSlot | null; count: number }[] {
-  return getRemindersBySlot(userId, timezone, now).map((g) => ({
-    slot: g.slot,
-    count: g.reminders.length,
-  }))
-}
-
-/**
  * Does this user have any reminders at all (done or not, excluding trash)?
  *
  * Only the empty state depends on it: someone who has never made a reminder needs
@@ -206,12 +190,4 @@ export function hasAnyReminders(userId: number): boolean {
     )
     .get(userId) as { found: number } | undefined
   return row !== undefined
-}
-
-/** Is this task on the Reminders surface? Cheap check without loading the row. */
-export function isReminderTask(taskId: number): boolean {
-  const row = getDb().prepare('SELECT is_reminder FROM tasks WHERE id = ?').get(taskId) as
-    | { is_reminder: number }
-    | undefined
-  return row?.is_reminder === 1
 }

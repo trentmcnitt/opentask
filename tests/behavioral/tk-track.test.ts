@@ -1,5 +1,6 @@
 /**
- * Track / Quota Behavioral Tests (TK-001 through TK-014)
+ * Track / Quota Behavioral Tests (TK-001 through TK-016; TK-013/014 tested the
+ * removed `computePace`)
  *
  * Covers REDESIGN-V03 §5. The decisive behavior is period-anchored at-target
  * (TK-004..TK-007): reaching the target marks the row "met" but does NOT
@@ -11,7 +12,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, updateTask, markDone } from '@/core/tasks'
-import { incrementProgress, computePace } from '@/core/tasks/progress'
+import { incrementProgress } from '@/core/tasks/progress'
 import { isTracked } from '@/lib/track'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { executeUndo } from '@/core/undo'
@@ -225,27 +226,6 @@ describe('Track (quotas)', () => {
       .prepare('SELECT COUNT(*) as c FROM progress_events WHERE task_id = ?')
       .get(task.id) as { c: number }
     expect(rows.c).toBe(2)
-  })
-
-  /**
-   * TK-013: Pace is deterministic view logic. Behind means the shortfall is
-   * real — but callers must treat it as information, not failure: per L1 a low
-   * count late in a period may mean UNLOGGED, not undone.
-   */
-  test('TK-013: pace reports behind, on-pace, and met', () => {
-    expect(computePace({ progress_current: 0, progress_target: 4 }, 0.9).state).toBe('behind')
-    expect(computePace({ progress_current: 3, progress_target: 4 }, 0.5).state).toBe('on-pace')
-    expect(computePace({ progress_current: 4, progress_target: 4 }, 0.5).state).toBe('met')
-    // Overflow still reads as met, never as an error state.
-    expect(computePace({ progress_current: 6, progress_target: 4 }, 1).state).toBe('met')
-  })
-
-  /**
-   * TK-014: With no period to measure, pace never accuses. An instrument that
-   * treats "no information" as failure is broken (§1.2).
-   */
-  test('TK-014: pace with no measurable period is never behind', () => {
-    expect(computePace({ progress_current: 0, progress_target: 4 }, null).state).toBe('on-pace')
   })
 
   /**

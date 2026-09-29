@@ -64,11 +64,12 @@ function executeRecurringMarkDone(
 
   // Update task: advance due_at, set original_due_at to new occurrence origin, update completion stats
   //
-  // §5: advancing to the next occurrence IS the period rolling over, so this is
-  // where a tracked task's progress resets to 0. That is what makes at-target
-  // behavior period-anchored rather than auto-completing: reaching the target
-  // only marks the row "met", and it stays open — accumulating observable
-  // overflow like 3/2 — until this boundary.
+  // §5: `progress_current = 0` only matters for a quota, and a quota reaches
+  // this path only through `close_period` — an API-only early close (see
+  // progress.ts). Quota periods normally end in the period-rollover cron
+  // (`period-rollover.ts`), which records a `progress_periods` row; this early
+  // close writes none and leaves the period anchor where it is. For an
+  // ordinary recurring task the column is normally 0 already.
   tx.prepare(
     `
     UPDATE tasks
