@@ -8,7 +8,6 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { executeUndo, canUndo, countUndoable, countRedoable } from '@/core/undo'
-import { syncBadgeCount } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 
@@ -39,8 +38,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     if (!result) {
       return badRequest('Nothing to undo')
     }
-
-    syncBadgeCount(user.id)
 
     return success({
       undone_action: result.undone_action,

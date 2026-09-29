@@ -12,13 +12,19 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
-import { getTaskById } from './create'
+import { getTaskById } from './read'
+import { canUserAccessTask } from './access'
 import { collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
+
+// `canUserAccessTask` moved to `./access`; re-exported so existing `./update`
+// imports keep working.
+export { canUserAccessTask }
 
 export interface UpdateTaskOptions {
   userId: number
@@ -176,6 +182,13 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     widgets: isWidgetVisibleEdit(result.fieldsChanged, task.labels, result.task.labels),
   })
 
+  // A moved date (a snooze, via snoozeTask too) or a completion makes the
+  // task's delivered notification stale: dismiss it everywhere and resync the
+  // badge. Any other field leaves the notification as true as it was.
+  if (result.fieldsChanged.includes('due_at') || result.fieldsChanged.includes('done')) {
+    dismissNotificationsForTasks(userId, [taskId])
+  }
+
   // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event
   if (!skipWebhookDispatch) {
     dispatchWebhookEvent(userId, 'task.updated', {
@@ -185,18 +198,4 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   }
 
   return result
-}
-
-/**
- * Check if a user can access a task
- */
-export function canUserAccessTask(userId: number, task: Task): boolean {
-  if (task.user_id === userId) return true
-
-  const db = getDb()
-  const project = db.prepare('SELECT shared FROM projects WHERE id = ?').get(task.project_id) as
-    | { shared: number }
-    | undefined
-
-  return project?.shared === 1
 }

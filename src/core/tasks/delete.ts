@@ -9,9 +9,10 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { dismissNotificationsForTasks, syncBadgeCount } from '@/core/notifications/dismiss'
+import { ValidationError } from '@/core/errors'
+import { getTaskById } from './read'
+import { loadTaskForMutation } from './access'
 
 export interface DeleteTaskOptions {
   userId: number
@@ -29,21 +30,9 @@ export interface RestoreTaskOptions {
 export function deleteTask(options: DeleteTaskOptions): Task {
   const { userId, taskId } = options
 
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
-
-  // Cannot delete already trashed task
-  if (task.deleted_at) {
-    throw new ValidationError('Task is already in trash')
-  }
+  const task = loadTaskForMutation(userId, taskId, {
+    trashed: { reject: 'Task is already in trash' },
+  })
 
   const now = nowUtc()
 
@@ -79,6 +68,7 @@ export function deleteTask(options: DeleteTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  dismissNotificationsForTasks(userId, [taskId])
   dispatchWebhookEvent(userId, 'task.deleted', { task_id: taskId, title: task.title })
   return deletedTask
 }
@@ -89,16 +79,8 @@ export function deleteTask(options: DeleteTaskOptions): Task {
 export function restoreTask(options: RestoreTaskOptions): Task {
   const { userId, taskId } = options
 
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
+  // 'allow': restoring is only for a trashed task — the inverse check follows.
+  const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
 
   // Cannot restore non-trashed task
   if (!task.deleted_at) {
@@ -139,6 +121,9 @@ export function restoreTask(options: RestoreTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  // A restored task that is past due is overdue again, so the app-icon badge
+  // has to count it now rather than at the overdue checker's next change.
+  syncBadgeCount(userId)
   return restoredTask
 }
 

@@ -20,7 +20,6 @@ import {
 } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById, updateTask, deleteTask, canUserAccessTask } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateTaskUpdate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -77,11 +76,6 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       input,
     })
 
-    // Dismiss notifications when due_at or done changes (snooze/completion via PATCH)
-    if (fieldsChanged.includes('due_at') || fieldsChanged.includes('done')) {
-      dismissNotificationsForTasks(user.id, [taskId])
-    }
-
     notifyDemoEngagement(user.name, 'update')
     return success({
       ...formatTaskResponse(task),
@@ -115,8 +109,6 @@ export const DELETE = withLogging(async function DELETE(
       userId: user.id,
       taskId,
     })
-
-    dismissNotificationsForTasks(user.id, [taskId])
 
     notifyDemoEngagement(user.name, 'delete')
     return success({

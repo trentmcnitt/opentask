@@ -39,6 +39,11 @@ export function parseHHMM(value: string): number | null {
   return parseInt(match[1], 10) * 60 + parseInt(match[2], 10)
 }
 
+/** A copy of `slots` in time-of-day order, earliest start first. */
+export function sortSlotsByStart<T extends { start_time: string }>(slots: readonly T[]): T[] {
+  return [...slots].sort((a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0))
+}
+
 /**
  * The item shape slot assignment needs.
  *
@@ -138,9 +143,7 @@ export function groupBySlot<T extends SlottableItem>(
   slots: TimeSlot[],
   timezone: string,
 ): { slot: TimeSlot | null; items: T[] }[] {
-  const ordered = [...slots].sort(
-    (a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0),
-  )
+  const ordered = sortSlotsByStart(slots)
   const groups = new Map<number | null, T[]>()
   for (const slot of ordered) groups.set(slot.id, [])
   groups.set(null, [])

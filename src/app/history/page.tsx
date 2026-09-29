@@ -22,6 +22,7 @@ import { DateTime } from 'luxon'
 const BatchUndoDialog = dynamic(() =>
   import('@/components/BatchUndoDialog').then((mod) => ({ default: mod.BatchUndoDialog })),
 )
+import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
 import { useAiFeatureInfo } from '@/components/PreferencesProvider'
@@ -631,51 +632,12 @@ function ActivityTab({
   const [batchThroughId, setBatchThroughId] = useState<number | null>(null)
 
   // --- Cmd+Z / Cmd+Shift+Z keyboard shortcuts for single undo/redo ---
-  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
-  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
-
-  const handleUndo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/undo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to undo' })
-        return
-      }
-      const data = await res.json()
-      onRefresh()
-      showToast({
-        message: `Undid: ${data.data.description}`,
-        type: 'success',
-        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Undo failed', type: 'error' })
-    }
-  }, [onRefresh])
-
-  const handleRedo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/redo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to redo' })
-        return
-      }
-      const data = await res.json()
-      onRefresh()
-      showToast({
-        message: `Redid: ${data.data.description}`,
-        type: 'success',
-        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Redo failed', type: 'error' })
-    }
-  }, [onRefresh])
-
-  useEffect(() => {
-    handleUndoRef.current = handleUndo
-    handleRedoRef.current = handleRedo
-  }, [handleUndo, handleRedo])
+  // Unscoped, unlike every other page: History is where you go to reach an
+  // action from before this page loaded (an earlier visit, another device), so
+  // Cmd+Z undoes the newest entry in the log whatever its age, matching the
+  // list below. Without a session scope the server's counts are the whole
+  // log's, so the toast leaves off the "· N left" suffix.
+  const { handleUndoRef, handleRedoRef } = useUndoRedo({ onRefresh, sessionScoped: false })
 
   useUndoRedoShortcuts(handleUndoRef, handleRedoRef)
 

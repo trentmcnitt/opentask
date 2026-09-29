@@ -49,6 +49,20 @@ export function showErrorToast(message: string) {
   sonnerToast.error(message)
 }
 
+/**
+ * Report a failed save.
+ *
+ * `saveTaskChanges` rethrows the server's own message, so a rule-based refusal
+ * (e.g. §5/§6's tracked-vs-reminder exclusivity) reaches the user as the reason
+ * it was refused. Unexpected failures fall back to a generic message.
+ */
+export function showSaveError(err: unknown): void {
+  showToast({
+    message: err instanceof Error && err.message ? err.message : 'Save failed',
+    type: 'error',
+  })
+}
+
 // createElement produces a plain descriptor object (not a rendered component), so it's
 // safe to create once at module scope and reuse. Sonner accepts ReactNode for its icon option.
 const sparkleIcon = createElement(Sparkles, { className: 'size-4' })

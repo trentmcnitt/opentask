@@ -19,7 +19,6 @@ import {
 } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { snoozeTask } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -48,7 +47,6 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       until: input.until,
     })
 
-    dismissNotificationsForTasks(user.id, [taskId])
     notifyDemoEngagement(user.name, 'update')
 
     return success({

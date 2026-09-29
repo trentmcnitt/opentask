@@ -14,7 +14,6 @@ import { AppError } from '@/core/errors'
 import { success, unauthorized, badRequest, handleError, parseRouteId } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { markDone } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
@@ -45,7 +44,6 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       closePeriod,
     })
 
-    dismissNotificationsForTasks(user.id, [taskId])
     notifyDemoEngagement(user.name, 'done')
 
     return success({

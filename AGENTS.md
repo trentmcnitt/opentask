@@ -35,7 +35,7 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 - `src/core/` — Business logic (no UI): auth, db, errors, projects, tasks, labels, time-slots, recurrence, undo, validation, notifications, webhooks, review, stats, ai, activity, export. Quota and reminder logic lives in `src/core/tasks/` (`quotas.ts`, `progress.ts`, `quota-prompts.ts`, `quota-prompt-actions.ts`, `reminders.ts`, `period-rollover.ts`)
 - `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
-- `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
+- `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
 - `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
 - `src/app/` — Pages (App Router): root (`/`, the dashboard), reminders, quotas, login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
@@ -196,7 +196,7 @@ For bulk operations, use the corresponding `bulk_*` action type (e.g., `bulk_don
 
 **Log an entry even when nothing changed** (a −1 at zero, restoring a prompt that's already waiting). Clients offer Undo on the toast for every tap; without an entry of its own, that Undo would reverse whatever came before it (see `src/core/tasks/progress.ts`).
 
-**After the transaction commits**, a core mutation also calls `emitSyncEvent(userId)` (refreshes open tabs and pushes to widgets) and `dispatchWebhookEvent(...)`, and usually records `logActivity(...)` inside the transaction — see `createTask()`. Pass `emitSyncEvent(userId, { widgets: false })` only for a change no widget can show: iOS budgets widget pushes, so skipping invisible changes saves budget, but a wrongly-skipped push leaves a widget stale.
+**After the transaction commits**, a core mutation also calls `emitSyncEvent(userId)` (refreshes open tabs and pushes to widgets) and `dispatchWebhookEvent(...)`, and usually records `logActivity(...)` inside the transaction — see `createTask()`. A mutation that moves a task's `due_at`, completes, skips or deletes it also calls `dismissNotificationsForTasks(userId, ids)` (`@/core/notifications/dismiss`), which clears the delivered notification on every device and resyncs the app-icon badge; one that can change the overdue count without making a banner stale (create, restore, undo/redo) calls `syncBadgeCount(userId)`. Routes never make these calls — the header comment of `dismiss.ts` lists which mutation does which. Pass `emitSyncEvent(userId, { widgets: false })` only for a change no widget can show: iOS budgets widget pushes, so skipping invisible changes saves budget, but a wrongly-skipped push leaves a widget stale.
 
 ### All deletions must be soft deletes
 
@@ -312,7 +312,7 @@ Follow the pattern above, and verify:
 - [ ] If you created a new core mutation function, ensure it uses `withTransaction()` and calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
 - [ ] Format task responses with `formatTaskResponse()` from `@/lib/format-task`
 - [ ] If the route mutates data itself rather than through a core function that already does it, call `emitSyncEvent(user.id)` after the write, so open tabs and widgets update
-- [ ] If it changes a task's `due_at` or `done`, call `dismissNotificationsForTasks()` (`@/core/notifications/dismiss`) so the old notification doesn't linger — as the task, snooze and `bulk/*` routes do
+- [ ] Don't dismiss notifications or sync the badge in the route: the core mutations do it (see [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo)). A new core mutation that changes a task's `due_at` or `done`, or deletes it, calls `dismissNotificationsForTasks()` itself
 - [ ] Return using response helpers: `success()`, `badRequest()`, `unauthorized()`, `forbidden()`, `notFound()`, `conflict()`, `internalError()`, `handleZodError()`, `handleError()` — success format: `{ data: ... }`, error format: `{ error, code, details? }`
 - [ ] Wrap handlers with `withLogging()` from `@/lib/with-logging` (use named function expression for stack traces)
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing
@@ -530,7 +530,7 @@ Changes to these require manual testing on the native apps. Nearly every call go
 | `POST /api/auth/session-from-token`                        | Keeping the web view logged in from the stored API token                                                                     |
 | `GET /api/user/preferences`                                | Connection check during setup; label config for the Quotas widget and watch                                                  |
 | `POST`, `DELETE /api/push/apns/register`                   | Device token registration                                                                                                    |
-| `POST`, `DELETE /api/push/apns/widget-token`               | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
+| `POST /api/push/apns/widget-token`                         | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
 | `POST /api/notifications/actions`                          | Done/snooze from notification action buttons                                                                                 |
 | `POST /api/notifications/dismiss-all`                      | Clearing delivered notifications                                                                                             |
 | `GET /api/tasks/counts`                                    | The app icon / Dock badge on foreground and after a notification action (`overdue`, the Tasks page's red-pill number)        |
@@ -557,4 +557,4 @@ CONTRACT_WRITE=1 npx vitest run --config vitest.integration.config.ts tests/inte
 
 The fixtures (`tests/fixtures/contract/*.json`) are the live responses of a fixed synthetic scenario, normalised (ids → integer placeholders, timestamps pinned). Without `CONTRACT_WRITE=1` that test fails on any drift, shape first. They are read by `tests/behavioral/contract-types.test.ts` (against the TS types) and by the Swift `ContractDecodeTests` (against the DTOs, asserting values) — re-run both after rewriting, and update the Swift assertions if a pinned value legitimately changed.
 
-Only some endpoints are captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/quota-prompts/restore`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`, `GET /api/tasks/counts`. Changing an uncaptured one is a good moment to add its capture; a new endpoint the apps call should get one from the start.
+Only some endpoints are captured today: `GET /api/reminders`, `GET /api/tasks?done=false`, `GET /api/time-slots`, `GET /api/completions`, `GET /api/undo/status`, `POST /api/quota-prompts/did`, `POST /api/quota-prompts/restore`, `POST /api/tasks/bulk/complete` (with `prompts`), `POST /api/tasks/{id}/progress`, `GET /api/tasks/counts`, `GET /api/user/preferences` (minus the server-environment AI fields). Changing an uncaptured one is a good moment to add its capture; a new endpoint the apps call should get one from the start.

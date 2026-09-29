@@ -8,9 +8,9 @@ import AppKit
 ///
 /// The three Snooze All items are the Mac's version of the iPhone's Home
 /// Screen quick actions (`ios/OpenTask/QuickActionHandler.swift`) and call the
-/// same endpoints, so the P3/P4 rule is the server's either way: High and
-/// Urgent tasks are never bulk-snoozed, because their due dates are real
-/// deadlines.
+/// same endpoints, so the P3/P4 rule is the server's either way: Urgent tasks
+/// are never bulk-snoozed, and High tasks only once nothing lower is left
+/// overdue, because their due dates are real deadlines (docs/TASK-MODEL.md).
 @MainActor
 enum MenuActions {
 
@@ -48,12 +48,15 @@ enum MenuActions {
         }
     }
 
-    /// "To Tomorrow" is the user's *default* snooze, not a hardcoded 24 hours —
-    /// the server owns what tomorrow means for this account, exactly as the
-    /// iPhone's quick action does.
-    static func snoozeAllToDefault(label: String) {
+    /// "To Tomorrow": tomorrow at the user's morning time (`tomorrow: true`),
+    /// not a hardcoded 24 hours — the server owns what tomorrow morning means
+    /// for this account, and this is the same call the iPhone's "Snooze All
+    /// to Tomorrow" Home Screen quick action makes. (It used to send an empty
+    /// body, which the server reads as the user's DEFAULT snooze — whatever
+    /// that is set to, not necessarily tomorrow.)
+    static func snoozeAllToTomorrow(label: String) {
         run(label: label) {
-            try await APIClient.shared.snoozeOverdueDefault()
+            try await APIClient.shared.snoozeOverdueTomorrow()
         }
     }
 
@@ -64,6 +67,11 @@ enum MenuActions {
     /// and any open editor. Only the two cases the user cannot see get a
     /// dialog — "nothing happened" and "it failed" — because a menu command
     /// that silently does nothing is indistinguishable from a broken one.
+    ///
+    /// The Dock badge is re-read from the server (`refreshBadgeFromServer`,
+    /// the same count the notification actions use). It used to be set to
+    /// the sweep's Urgent-only skipped count, which is not the overdue total:
+    /// it left out every High task the sweep skipped.
     private static func run(
         label: String,
         _ call: @escaping () async throws -> APIClient.BulkSnoozeResult
@@ -81,18 +89,14 @@ enum MenuActions {
         Task {
             do {
                 let result = try await call()
-                print("[OpenTask] \(label): snoozed \(result.tasksAffected), skipped \(result.skippedUrgent) urgent")
-                if result.tasksAffected > 0 {
-                    await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
-                }
-                updateBadge(result.skippedUrgent)
+                print("[OpenTask] \(label): snoozed \(result.tasksAffected), skipped \(result.skippedHigh) high, \(result.skippedUrgent) urgent")
+                await dismissNotificationsAfterSweep(result)
+                await refreshBadgeFromServer()
                 if result.tasksAffected == 0 {
                     alert(
                         style: .informational,
                         title: "Nothing to snooze",
-                        message: result.skippedUrgent > 0
-                            ? "\(result.skippedUrgent) urgent task\(result.skippedUrgent == 1 ? " is" : "s are") overdue. Urgent tasks are never bulk-snoozed."
-                            : "No overdue tasks."
+                        message: nothingToSnoozeMessage(result)
                     )
                 }
             } catch {
@@ -104,6 +108,26 @@ enum MenuActions {
                 )
             }
         }
+    }
+
+    /// Why a sweep moved nothing. Normally that means nothing was overdue,
+    /// but High tasks can be left behind too: the relative (+1hr/+2hr) items
+    /// count a dateless P0-P2 task as "lower and still left" for the server's
+    /// High-tier rule even though a relative snooze can't move it
+    /// (`filterForBulkSnooze` in `src/core/tasks/bulk.ts`). So both skipped
+    /// tiers are named, not just Urgent.
+    private static func nothingToSnoozeMessage(_ result: APIClient.BulkSnoozeResult) -> String {
+        var parts: [String] = []
+        if result.skippedHigh > 0 {
+            parts.append("\(result.skippedHigh) High")
+        }
+        if result.skippedUrgent > 0 {
+            parts.append("\(result.skippedUrgent) Urgent")
+        }
+        guard !parts.isEmpty else { return "No overdue tasks." }
+        let total = result.skippedHigh + result.skippedUrgent
+        return "\(parts.joined(separator: " and ")) task\(total == 1 ? " is" : "s are") still overdue. "
+            + "Urgent tasks are never bulk-snoozed, and High tasks only once nothing lower is left."
     }
 
     private static func alert(style: NSAlert.Style, title: String, message: String) {

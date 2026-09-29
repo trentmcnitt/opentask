@@ -41,12 +41,19 @@ export interface RemindersSummary<G extends SummaryGroup = SummaryGroup> {
   nextUp: { slot: TimeSlot; waiting: number } | null
 }
 
-/** Has this slot's window begun, by the user's local clock? */
+/**
+ * Has this slot's window begun, by the user's local clock?
+ *
+ * The un-slotted "Anytime" bucket has no start time and is always available,
+ * so it counts as started — it is never "coming up later". So does a slot
+ * whose time can't be read (a malformed start, or an invalid timezone).
+ */
 export function slotHasStarted(slot: TimeSlot | null, timezone: string, now: Date): boolean {
   if (!slot) return true
   const start = parseHHMM(slot.start_time)
   if (start === null) return true
   const local = DateTime.fromJSDate(now).setZone(timezone)
+  if (!local.isValid) return true
   return start <= local.hour * 60 + local.minute
 }
 

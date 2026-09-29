@@ -9,7 +9,7 @@
  *   idempotent startup step `retireProjectGrouping`.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'vitest'
-import { buildTaskGroups, effectiveSort, isFlatGrouping, sortTasks } from '@/components/TaskList'
+import { buildTaskGroups, effectiveSort, isFlatGrouping, sortTasks } from '@/lib/task-grouping'
 import { coerceGrouping, GROUPINGS } from '@/lib/grouping'
 import { toAuthUser } from '@/core/auth/helpers'
 import { getDb, retireProjectGrouping } from '@/core/db'

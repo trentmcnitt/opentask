@@ -140,5 +140,6 @@ describe('POST /api/tokens/provision', () => {
       body: JSON.stringify({ has_local_token: false }),
     })
     expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe('Session required')
   })
 })

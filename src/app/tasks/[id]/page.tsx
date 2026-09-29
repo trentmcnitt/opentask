@@ -407,7 +407,6 @@ export default function TaskDetailPage() {
               task={task}
               project={project}
               projects={projects}
-              editable
               onDelete={handleDelete}
               onMarkDone={actions.handleDone}
               onDirtyChange={handleDirtyChange}

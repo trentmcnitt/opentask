@@ -11,11 +11,12 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { ValidationError } from '@/core/errors'
+import { getTaskById } from './read'
+import { loadTaskForMutation } from './access'
 import { computeMarkDone, executeMarkDone } from './helpers'
 import { isTracked } from '@/lib/track'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
@@ -46,21 +47,9 @@ export interface MarkDoneResult {
 export function markDone(options: MarkDoneOptions): MarkDoneResult {
   const { userId, userTimezone, taskId, closePeriod = false } = options
 
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
-
-  // Cannot mark trashed task done
-  if (task.deleted_at) {
-    throw new ValidationError('Cannot mark trashed task done')
-  }
+  const task = loadTaskForMutation(userId, taskId, {
+    trashed: { reject: 'Cannot mark trashed task done' },
+  })
 
   // §5: `done` on a quota closes its period early and resets the count to 0
   // (`computeMarkDone`'s period reset) — silently losing whatever was logged
@@ -126,6 +115,8 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   })
 
   emitSyncEvent(userId)
+  // The task is handled, so its banner goes on every device (and the badge follows).
+  dismissNotificationsForTasks(userId, [taskId])
   dispatchWebhookEvent(userId, 'task.completed', { task: formatTaskResponse(result.task) })
   return result
 }
@@ -144,16 +135,8 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
 export function markUndone(options: MarkDoneOptions): Task {
   const { userId, taskId } = options
 
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new NotFoundError('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new ForbiddenError('Access denied')
-  }
+  // 'allow': putting back a completion has never checked the trash.
+  const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
 
   // §5: a quota's completions are written by the period rollover, not by a
   // done tap — a met period IS the completion (`period-rollover.ts`). Putting

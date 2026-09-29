@@ -95,7 +95,7 @@ function panel(page: Page) {
   return page.locator('[data-reminders-panel]')
 }
 
-/** `formatSlotTime` in the app: "07:00" → "7:00 AM". */
+/** `formatClockTime` in the app: "07:00" → "7:00 AM". */
 function formatSlotTime(startTime: string): string {
   return DateTime.fromFormat(startTime, 'HH:mm').toFormat('h:mm a')
 }
@@ -665,7 +665,7 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       // when nothing has started yet (see its own docs), and before that
       // slot's start time it genuinely has NOT started, which the bar must
       // read as 'upcoming' (Trent's rule: nothing wears colour before its
-      // time). Mirrors `ReminderSlotBar.hasStarted`.
+      // time). Mirrors `slotHasStarted` (reminders-summary.ts).
       const localNow = DateTime.now().setZone(TEST_TZ)
       const naturalStarted = parseHHMM(natural.start_time) <= localNow.hour * 60 + localNow.minute
       await expect(currentSeg).toHaveAttribute(

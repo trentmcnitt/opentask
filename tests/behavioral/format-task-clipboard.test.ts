@@ -9,7 +9,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import type { Task } from '@/types'
-import type { SortOption } from '@/hooks/useGroupSort'
+import type { SortOption } from '@/lib/task-grouping'
 
 const TIMEZONE = 'America/Chicago'
 

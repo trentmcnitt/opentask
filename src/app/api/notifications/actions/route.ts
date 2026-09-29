@@ -14,7 +14,6 @@ import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { withLogging } from '@/lib/with-logging'
@@ -47,9 +46,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     log.info('notifications', `Action received: ${action} on task ${task_id} by user ${user.id}`)
 
-    // Dismiss notifications fire-and-forget (before switch so it runs for all actions)
-    const dismissAfter = () => dismissNotificationsForTasks(user.id, [task_id])
-
+    // markDone and snoozeTask dismiss the task's notification on every device
+    // themselves (fire-and-forget), so nothing more is needed here.
     switch (action) {
       case 'done': {
         const result = markDone({
@@ -57,7 +55,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           taskId: task_id,
           userTimezone: user.timezone,
         })
-        dismissAfter()
         log.info('notifications', `Action complete: done on task ${task_id}`)
         return success({ action: 'done', task_id, result })
       }
@@ -73,7 +70,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           taskId: task_id,
           until,
         })
-        dismissAfter()
         log.info('notifications', `Action complete: ${action} on task ${task_id}`)
         return success({ action, task_id, until, result })
       }
