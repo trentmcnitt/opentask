@@ -479,6 +479,10 @@ export function TrackPanel({
   const isPutAway = (task: Task) => hideMet && putAway.has(task.id) && trackState(task).met
   const isLeaving = (task: Task) => hideMet && leaving.has(task.id) && trackState(task).met
 
+  // No match at all renders nothing; `QuotasSummary` says so. That also
+  // unmounts `detail.modal`, which is fine: the editor's overlay keeps the
+  // search field out of reach while it is open, and a save that drops the
+  // last match closes the editor anyway.
   if (quotas.length === 0 || sections.length === 0) return null
 
   const overall = quotaGroupSummary(quotas)
@@ -509,6 +513,7 @@ export function TrackPanel({
           isLeaving={isLeaving}
           summaries={summaries}
           clusters={searching ? SEARCH_CLUSTERS : clusters}
+          locked={searching}
           detail={detail}
         />
 
@@ -781,6 +786,7 @@ function TrackSectionsList({
   summaries,
   clusters,
   detail,
+  locked = false,
 }: {
   sections: TrackSection[]
   open: boolean
@@ -791,6 +797,8 @@ function TrackSectionsList({
   summaries: Map<string, { count: number; met: number }>
   clusters: ReturnType<typeof useResponsiveFolds>
   detail: ReturnType<typeof useTrackChipDetail>
+  /** Search results: clusters render open and cannot be folded (`SEARCH_CLUSTERS`). */
+  locked?: boolean
 }) {
   return (
     <ul aria-label="Quotas">
@@ -811,6 +819,7 @@ function TrackSectionsList({
                         state={clusters.stateOf(cluster)}
                         open={clusters.isOpen(cluster)}
                         onToggle={() => clusters.toggle(cluster)}
+                        locked={locked}
                         className="px-2 pt-3 pb-1 first:pt-1"
                       />
                     ) : (
@@ -837,6 +846,7 @@ function TrackSectionsList({
                         state={clusters.stateOf(cluster)}
                         open={clusters.isOpen(cluster)}
                         onToggle={() => clusters.toggle(cluster)}
+                        locked={locked}
                         className={CLUSTER_TITLE_ROW}
                       />
                     ) : (
@@ -1179,6 +1189,7 @@ function ClusterTitle({
   open,
   onToggle,
   className,
+  locked = false,
 }: {
   item: Extract<TrackStreamItem, { kind: 'title' }>
   summary: { count: number; met: number } | undefined
@@ -1186,6 +1197,12 @@ function ClusterTitle({
   open: boolean
   onToggle: () => void
   className: string
+  /**
+   * Search results: the cluster is shown open and cannot be folded, so the
+   * heading is plain text with no chevron — the Reminders surface's `locked`
+   * slot header, which drops its button the same way.
+   */
+  locked?: boolean
 }) {
   const count = summary?.count ?? 0
   const met = summary?.met ?? 0
@@ -1194,10 +1211,10 @@ function ClusterTitle({
 
   return (
     <li data-track-cluster={clusterKey(item.label)} className={className}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
+      <ClusterTitleShell
+        locked={locked}
+        onToggle={onToggle}
+        open={open}
         className={cn(
           'hover:text-foreground flex w-full items-center gap-1.5 text-left transition-opacity',
           allMet && foldClass(state, CLUSTER_MET_DIM),
@@ -1213,13 +1230,15 @@ function ClusterTitle({
         >
           {item.name}
         </span>
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            'text-muted-foreground size-3 shrink-0 transition-transform duration-200',
-            foldClass(state, FOLD_CHEVRON),
-          )}
-        />
+        {!locked && (
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              'text-muted-foreground size-3 shrink-0 transition-transform duration-200',
+              foldClass(state, FOLD_CHEVRON),
+            )}
+          />
+        )}
         {/* How many this label has closed, while it is open and still has
             more to do — "it'd be nice to see how many things were completed
             for a given category before the whole category is finished"
@@ -1269,8 +1288,30 @@ function ClusterTitle({
             <span>{shortfall.short}</span>
           )}
         </span>
-      </button>
+      </ClusterTitleShell>
     </li>
+  )
+}
+
+/** `ClusterTitle`'s outer element: the fold's button, or plain text while locked. */
+function ClusterTitleShell({
+  locked,
+  onToggle,
+  open,
+  className,
+  children,
+}: {
+  locked: boolean
+  onToggle: () => void
+  open: boolean
+  className: string
+  children: React.ReactNode
+}) {
+  if (locked) return <div className={className}>{children}</div>
+  return (
+    <button type="button" onClick={onToggle} aria-expanded={open} className={className}>
+      {children}
+    </button>
   )
 }
 

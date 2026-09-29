@@ -1717,6 +1717,17 @@ test.describe('Quotas page — search', () => {
       // no match.
       await expect(chip(walrus)).toHaveCount(0)
       await expect(panel.locator('[data-quota-period]')).toHaveCount(1)
+      // A result cannot be folded away: the cluster heading is plain text.
+      await expect(clusterToggle).toHaveCount(0)
+
+      // The chip's editor still opens from a result.
+      const pop = await holdChipOpen(page, chip(zebra))
+      await pop.getByRole('button', { name: 'Open', exact: true }).click()
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(editor).toHaveCount(0)
+      await expect(count).toHaveAttribute('data-search-count', '2')
 
       // Notes are searched too, matching the Tasks and Reminders pages.
       await field.fill(`okapi-${tag}`)
