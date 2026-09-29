@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Task, Project } from '@/types'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { showToast } from '@/lib/toast'
@@ -94,25 +95,32 @@ export default function TaskDetailPage() {
   // since actions is created after this callback in the hook order.
   const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
 
+  // Whether the last save failed. The editors swallow a rejected save — the
+  // host has already shown the error, and the staged edits stay for a retry —
+  // so `saveRef` resolves whether or not anything was stored. This page is the
+  // host (handleSaveAll below), so it records the failure here and
+  // save-and-leave reads it: leave only once the save has actually landed.
+  const saveFailedRef = useRef(false)
+
   const handleSaveAndLeave = useCallback(async () => {
-    try {
-      await saveRef.current?.()
-      showToast({
-        message: 'Changes saved',
-        type: 'success',
-        action: {
-          label: 'Undo',
-          onClick: async () => {
-            await handleUndoRef.current?.()
-            window.location.reload()
-          },
-        },
-      })
-    } catch {
-      showToast({ message: 'Save failed', type: 'error' })
+    saveFailedRef.current = false
+    await saveRef.current?.()
+    if (saveFailedRef.current) {
+      // The error toast is already up; stay on the page with the edits.
       clearPendingNavigation()
       return
     }
+    showToast({
+      message: 'Changes saved',
+      type: 'success',
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          await handleUndoRef.current?.()
+          window.location.reload()
+        },
+      },
+    })
     const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
@@ -228,6 +236,22 @@ export default function TaskDetailPage() {
 
   // Keep handleSaveAndLeave's undo ref in sync with the shared handler
   handleUndoRef.current = actions.handleUndo
+
+  // Every editor on this page saves through here, so a failure is recorded for
+  // save-and-leave (see saveFailedRef) and still rethrown to the editor, which
+  // keeps its staged edits.
+  const { handleSaveAllChanges } = actions
+  const handleSaveAll = useCallback(
+    async (changes: QuickActionPanelChanges) => {
+      try {
+        await handleSaveAllChanges(changes)
+      } catch (err) {
+        saveFailedRef.current = true
+        throw err
+      }
+    },
+    [handleSaveAllChanges],
+  )
 
   const handleDelete = async () => {
     if (!task) return
@@ -379,7 +403,7 @@ export default function TaskDetailPage() {
               <QuotaDetail
                 key={task.id}
                 tasks={[task]}
-                onSave={actions.handleSaveAllChanges}
+                onSave={handleSaveAll}
                 onDelete={handleDelete}
                 onDirtyChange={handleDirtyChange}
                 saveRef={saveRef}
@@ -399,7 +423,7 @@ export default function TaskDetailPage() {
               <ReminderDetail
                 key={task.id}
                 tasks={[task]}
-                onSaveAll={actions.handleSaveAllChanges}
+                onSaveAll={handleSaveAll}
                 onConsidered={handleConsidered}
                 onDelete={handleDelete}
                 onDirtyChange={handleDirtyChange}
@@ -416,7 +440,7 @@ export default function TaskDetailPage() {
               onMarkDone={actions.handleDone}
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}
-              onSaveAll={actions.handleSaveAllChanges}
+              onSaveAll={handleSaveAll}
               annotation={annotationMap.get(task.id)}
               insightsCommentary={insightsData.annotationMap.get(task.id)}
             />

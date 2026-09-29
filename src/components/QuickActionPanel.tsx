@@ -821,7 +821,14 @@ export function QuickActionPanel({
   ])
 
   const handleSave = useCallback(async () => {
-    await applyAllPendingChanges()
+    try {
+      await applyAllPendingChanges()
+    } catch {
+      // A host that rejects has already reported the failure (see the task
+      // page's single-task save). The staged edits stay so the save can be
+      // retried, and onSave (which closes or leaves) is not called.
+      return
+    }
     resetAllPending()
     // Reset whichever date hook is active (bulk or single) so the panel's
     // staged state clears on save — otherwise a re-open of the same selection
@@ -1008,7 +1015,12 @@ export function QuickActionPanel({
 
   const handleSaveAndDone = useCallback(async () => {
     setShowDoneConfirm(false)
-    await applyAllPendingChanges()
+    try {
+      await applyAllPendingChanges()
+    } catch {
+      // Reported by the host; don't complete a task whose edits didn't save.
+      return
+    }
     onMarkDone?.()
   }, [applyAllPendingChanges, onMarkDone])
 

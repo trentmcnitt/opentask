@@ -1,4 +1,24 @@
+import type { Page } from '@playwright/test'
 import { test, expect } from './fixtures'
+
+async function createTask(page: Page, title: string): Promise<number> {
+  const res = await page.request.post('/api/tasks', { data: { title } })
+  expect(res.ok()).toBeTruthy()
+  return (await res.json()).data.id as number
+}
+
+async function taskTitle(page: Page, id: number): Promise<string> {
+  return (await (await page.request.get(`/api/tasks/${id}`)).json()).data.title
+}
+
+/** Stage a title edit in the task page's panel without saving it. */
+async function stageTitle(page: Page, from: string, to: string): Promise<void> {
+  await page.getByText(from, { exact: true }).click()
+  const titleInput = page.locator('textarea').first()
+  await titleInput.fill(to)
+  await titleInput.press('Enter')
+  await expect(page.getByText(to, { exact: true })).toBeVisible()
+}
 
 test.describe('Task detail', () => {
   test('clicking task title navigates to detail page with fields visible', async ({
@@ -58,5 +78,71 @@ test.describe('Task detail', () => {
     await expect(page.getByText('Buy organic groceries')).toBeVisible({
       timeout: 5000,
     })
+  })
+
+  /*
+   * Leaving with unsaved edits asks first; "Save" must store the edit BEFORE
+   * the page goes, and a save that fails must keep the user (and the edit)
+   * on the page.
+   */
+  test('save-and-leave stores the edit before the next page loads', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, 'Leave-with-save probe')
+    try {
+      await page.goto(`/tasks/${id}`)
+      await stageTitle(page, 'Leave-with-save probe', 'Leave-with-save probe, renamed')
+
+      await page.getByRole('button', { name: 'Back to dashboard' }).click()
+      const dialog = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await page.waitForURL('/')
+
+      // Not polled: the page may only leave once the PATCH has landed, so the
+      // new title is already stored by the time the dashboard loads.
+      expect(await taskTitle(page, id)).toBe('Leave-with-save probe, renamed')
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
+  test('a failed save-and-leave stays on the page with the edit', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, 'Failed-save probe')
+    try {
+      await page.goto(`/tasks/${id}`)
+      await stageTitle(page, 'Failed-save probe', 'Failed-save probe, renamed')
+
+      // Refuse the save once.
+      await page.route(`**/api/tasks/${id}`, (route) =>
+        route.request().method() === 'PATCH'
+          ? route.fulfill({
+              status: 500,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: 'The server said no', code: 'INTERNAL_ERROR' }),
+            })
+          : route.fallback(),
+      )
+
+      await page.getByRole('button', { name: 'Back to dashboard' }).click()
+      const dialog = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+
+      await expect(page.getByText('The server said no')).toBeVisible()
+      await expect(dialog).toHaveCount(0)
+      await expect(page.getByText('Changes saved')).toHaveCount(0)
+      expect(await taskTitle(page, id)).toBe('Failed-save probe')
+
+      // Still here, edit still staged: the panel's own Save now stores it.
+      await page.unroute(`**/api/tasks/${id}`)
+      await expect(page).toHaveURL(`/tasks/${id}`)
+      await expect(page.getByText('Failed-save probe, renamed', { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect.poll(() => taskTitle(page, id)).toBe('Failed-save probe, renamed')
+      await expect(page).toHaveURL(`/tasks/${id}`)
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
   })
 })

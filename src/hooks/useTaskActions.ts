@@ -297,6 +297,10 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     } catch (err) {
       cfg.onRefresh()
       showSaveError(err)
+      // Reported above; rethrown so the editor keeps its staged edits and the
+      // task page's save-and-leave stays put instead of navigating as if the
+      // save had worked (the same contract RemindersView's saveDetail keeps).
+      throw err
     }
   }, [])
 
