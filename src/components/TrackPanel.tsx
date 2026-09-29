@@ -47,6 +47,7 @@ import {
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
+import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
@@ -399,6 +400,23 @@ interface TrackPanelProps {
    *   switch serves both, as it does on a desktop.
    */
   standalone?: boolean
+  /**
+   * The /quotas top bar's search (standalone only — the dashboard's search is
+   * the task list's, and never reaches this panel). See "SEARCH" in the body.
+   */
+  searchQuery?: string
+}
+
+/**
+ * The fold handles a search hands the sections list: every cluster open and
+ * none of them toggleable — the Reminders surface's `locked` slots. Nothing
+ * here writes the fold store, so clearing the search finds every fold exactly
+ * where the user left it.
+ */
+const SEARCH_CLUSTERS: ReturnType<typeof useResponsiveFolds> = {
+  stateOf: () => true,
+  isOpen: () => true,
+  toggle: () => {},
 }
 
 /**
@@ -423,6 +441,7 @@ export function TrackPanel({
   onCompleted,
   onRefresh,
   standalone = false,
+  searchQuery,
 }: TrackPanelProps) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
@@ -434,7 +453,21 @@ export function TrackPanel({
   const clusters = useResponsiveFolds('track-cluster')
   const quotas = trackedItems(tasks)
 
-  const sections = trackSections(quotas, timezone, now, weekStart)
+  // SEARCH (standalone only) narrows what is RENDERED, never what the panel's
+  // state is computed from — the Reminders surface's rule. `useMetPutAway`
+  // below still sees every quota: fed the matches alone, it would drop a met
+  // quota that fell out of the results from `putAway`, and on clearing greet
+  // it as newly met and fade it out for five seconds. While searching:
+  // - only matching quotas are sectioned, so a period with no match is gone;
+  // - every label cluster renders open (`SEARCH_CLUSTERS`), since a folded
+  //   result is a result nobody can see — without touching the fold store;
+  // - met quotas are shown even with "Show met" off, for the same reason.
+  // The header's overall count stays the whole set's: it describes the page.
+  const query = normalizeTaskSearch(searchQuery)
+  const searching = query.length > 0
+  const shown = searching ? quotas.filter((q) => matchesTaskSearch(q, query)) : quotas
+
+  const sections = trackSections(shown, timezone, now, weekStart)
   // What each cluster's shut header says. Keyed the same way the DOM is (one
   // key per period+label), so a heading and its summary can never be looking
   // at different groups.
@@ -442,10 +475,11 @@ export function TrackPanel({
 
   const showMet = useShowMet()
   const { putAway, leaving } = useMetPutAway(quotas)
-  const isPutAway = (task: Task) => !showMet.shown && putAway.has(task.id) && trackState(task).met
-  const isLeaving = (task: Task) => !showMet.shown && leaving.has(task.id) && trackState(task).met
+  const hideMet = !showMet.shown && !searching
+  const isPutAway = (task: Task) => hideMet && putAway.has(task.id) && trackState(task).met
+  const isLeaving = (task: Task) => hideMet && leaving.has(task.id) && trackState(task).met
 
-  if (quotas.length === 0) return null
+  if (quotas.length === 0 || sections.length === 0) return null
 
   const overall = quotaGroupSummary(quotas)
 
@@ -474,7 +508,7 @@ export function TrackPanel({
           isPutAway={isPutAway}
           isLeaving={isLeaving}
           summaries={summaries}
-          clusters={clusters}
+          clusters={searching ? SEARCH_CLUSTERS : clusters}
           detail={detail}
         />
 

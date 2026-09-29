@@ -16,6 +16,7 @@ import {
 } from '@/lib/quota-prompts'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
+import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import { scrollRowIntoView, scrollSectionIntoView } from '@/lib/scroll-row-into-view'
 import { NotesMarker } from '@/components/NotesMarker'
 import { showToast } from '@/lib/toast'
@@ -201,14 +202,12 @@ export function RemindersView({
   // user's disclosure state and leave it rearranged after the search cleared.
   // Instead every slot holding a match renders open and whole for the duration
   // of the query, and the moment it clears the surface is exactly as it was.
-  const query = (searchQuery ?? '').trim().toLowerCase()
+  const query = normalizeTaskSearch(searchQuery)
   const searching = query.length > 0
   const matchesQuery = useCallback(
-    // Title and notes, case-insensitive substring — the same fields and the
-    // same semantics as the Tasks page's search, so the two agree about what
-    // "matches" means.
-    (task: Task) =>
-      task.title.toLowerCase().includes(query) || (task.notes ?? '').toLowerCase().includes(query),
+    // Title and notes, case-insensitive substring — the Tasks page's semantics,
+    // shared with the Quotas page through `matchesTaskSearch`.
+    (task: Task) => matchesTaskSearch(task, query),
     [query],
   )
   const searchGroups = useMemo(() => {

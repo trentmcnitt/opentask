@@ -1637,3 +1637,201 @@ test.describe('Quota labels', () => {
     await page.keyboard.press('Escape')
   })
 })
+
+/** Three quotas under two run-unique labels, one of them met at load. */
+async function seedSearchable(page: Page) {
+  const tag = `srch${Date.now()}`
+  const labelA = `zz-${tag}-a`
+  const labelB = `zz-${tag}-b`
+  const zebra = await createTask(page, {
+    title: `${tag} Zebra open`,
+    progress_target: 2,
+    rrule: 'FREQ=WEEKLY',
+    labels: [labelA],
+    create_label: true,
+  })
+  const zebraMet = await createTask(page, {
+    title: `${tag} Zebra met`,
+    progress_target: 1,
+    // A target of 1 is only a quota when it says so.
+    is_tracked: true,
+    rrule: 'FREQ=WEEKLY',
+    labels: [labelA],
+    create_label: true,
+  })
+  const walrus = await createTask(page, {
+    title: `${tag} Walrus`,
+    notes: `okapi-${tag} lives in the notes`,
+    progress_target: 2,
+    rrule: 'FREQ=MONTHLY',
+    labels: [labelB],
+    create_label: true,
+  })
+  expect(
+    (await page.request.post(`/api/tasks/${zebraMet}/progress`, { data: { delta: 1 } })).ok(),
+  ).toBeTruthy()
+  return { tag, labelA, labelB, zebra, zebraMet, walrus }
+}
+
+/**
+ * Search on /quotas (Trent, 2026-09-29: "we need to be able to search quotas on
+ * the quotas screen. There's no search field."). The Reminders page's pattern
+ * and its matcher: title and notes, case-insensitive. Searching narrows what is
+ * rendered and never touches the user's folds or what "Show met" put away, so
+ * clearing it leaves the page exactly as it was.
+ */
+test.describe('Quotas page — search', () => {
+  test('summary: narrows across periods, opens folded clusters, and clearing restores the folds', async ({
+    authenticatedPage: page,
+  }) => {
+    const { tag, labelA, zebra, zebraMet, walrus } = await seedSearchable(page)
+    await withQuotasView(page, false, async () => {
+      await page.goto('/quotas')
+      const panel = page.getByRole('region', { name: 'Quotas' })
+      const chip = (id: number) => panel.locator(`[data-track-chip="${id}"]`)
+      const monthly = panel.locator('[data-quota-period="MONTHLY"]')
+      const clusterToggle = panel.locator(
+        `[data-quota-period="WEEKLY"] [data-track-cluster="${labelA}"] button`,
+      )
+
+      await expect(chip(zebra)).toBeVisible()
+      await expect(chip(walrus)).toBeVisible()
+      // Met at load: put away.
+      await expect(chip(zebraMet)).toHaveCount(0)
+
+      // Fold the zebra cluster shut — the state search must not disturb.
+      await clusterToggle.click()
+      await expect(clusterToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(chip(zebra)).toBeHidden()
+
+      const field = page.getByRole('textbox', { name: 'Search quotas' })
+      await expect(field).toBeVisible()
+      await field.fill(`${tag} zebra`)
+
+      const count = page.locator('[data-search-count]')
+      await expect(count).toHaveAttribute('data-search-count', '2')
+      // A match is never behind a fold, and a met match is not put away.
+      await expect(chip(zebra)).toBeVisible()
+      await expect(chip(zebraMet)).toBeVisible()
+      // The other label's quota is gone, and with it every period that held
+      // no match.
+      await expect(chip(walrus)).toHaveCount(0)
+      await expect(panel.locator('[data-quota-period]')).toHaveCount(1)
+
+      // Notes are searched too, matching the Tasks and Reminders pages.
+      await field.fill(`okapi-${tag}`)
+      await expect(count).toHaveAttribute('data-search-count', '1')
+      await expect(chip(walrus)).toBeVisible()
+      await expect(monthly).toBeVisible()
+      await expect(chip(zebra)).toHaveCount(0)
+
+      await field.fill(`nothing matches ${tag}`)
+      await expect(count).toHaveAttribute('data-search-count', '0')
+      await expect(page.getByText('No quota here says that.')).toBeVisible()
+
+      // Clearing restores the page as it was: the fold still shut, the met
+      // quota still put away, everything else back.
+      await page.getByRole('button', { name: 'Clear search' }).click()
+      await expect(count).toHaveCount(0)
+      await expect(chip(walrus)).toBeVisible()
+      await expect(clusterToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(chip(zebra)).toBeHidden()
+      await expect(chip(zebraMet)).toHaveCount(0)
+
+      // Put the fold back: the fold store is shared by every test.
+      await clusterToggle.click()
+      await expect(clusterToggle).toHaveAttribute('aria-expanded', 'true')
+
+      // Cmd/Ctrl+K focuses the field, as on Tasks and Reminders.
+      await page.locator('[data-quotas-summary] h1').click()
+      await expect(field).not.toBeFocused()
+      await page.keyboard.press('ControlOrMeta+k')
+      await expect(field).toBeFocused()
+    })
+  })
+
+  test('details: filters label groups, hides the empty ones, survives the view switch, and opens the editor', async ({
+    authenticatedPage: page,
+  }) => {
+    const { tag, labelA, labelB, zebra, zebraMet, walrus } = await seedSearchable(page)
+    await withQuotasView(page, false, async () => {
+      await page.goto('/quotas')
+      const field = page.getByRole('textbox', { name: 'Search quotas' })
+      const count = page.locator('[data-search-count]')
+      await field.fill(`${tag} zebra`)
+      await expect(count).toHaveAttribute('data-search-count', '2')
+
+      // The query lives on the page, so it carries across Summary → Details.
+      const saved = waitForPreferenceSave(page, 'quotas_details')
+      await quotasViewButton(page, 'Details').click()
+      await saved
+      const view = page.locator('[data-quotas-view]')
+      await expect(view).toBeVisible()
+      await expect(field).toHaveValue(`${tag} zebra`)
+      await expect(count).toHaveAttribute('data-search-count', '2')
+      await expect(view.locator(`[data-quota-group="${labelA}"] [data-quota-row]`)).toHaveCount(2)
+      await expect(view.locator(`[data-quota-row="${zebra}"]`)).toBeVisible()
+      await expect(view.locator(`[data-quota-row="${zebraMet}"]`)).toBeVisible()
+      // A label group with no match is not shown at all.
+      await expect(view.locator(`[data-quota-group="${labelB}"]`)).toHaveCount(0)
+      await expect(view.locator(`[data-quota-row="${walrus}"]`)).toHaveCount(0)
+
+      // The editor still opens from a result.
+      await view.locator(`[data-quota-row="${zebra}"]`).dblclick()
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(editor).toHaveCount(0)
+
+      await field.fill(`nothing matches ${tag}`)
+      await expect(count).toHaveAttribute('data-search-count', '0')
+      await expect(page.getByText('No quota here says that.')).toBeVisible()
+
+      await page.getByRole('button', { name: 'Clear search' }).click()
+      await expect(count).toHaveCount(0)
+      await expect(view.locator(`[data-quota-group="${labelB}"]`)).toBeVisible()
+      await expect(view.locator(`[data-quota-row="${walrus}"]`)).toBeVisible()
+    })
+  })
+
+  test('the ?quota= deep link still lands, and its row stays while it matches', async ({
+    authenticatedPage: page,
+  }) => {
+    const { tag, walrus } = await seedSearchable(page)
+    await withQuotasView(page, false, async () => {
+      await page.goto(`/quotas?quota=${walrus}`)
+      const row = page.locator(`[data-quota-row="${walrus}"]`)
+      await expect(row).toBeVisible()
+      const field = page.getByRole('textbox', { name: 'Search quotas' })
+      await field.fill(`okapi-${tag}`)
+      await expect(page.locator('[data-search-count]')).toHaveAttribute('data-search-count', '1')
+      await expect(row).toBeVisible()
+    })
+  })
+
+  test.describe('on a phone', () => {
+    test.use({ viewport: { width: 375, height: 812 } })
+
+    test('the search icon opens the field and narrows the quotas', async ({
+      authenticatedPage: page,
+    }) => {
+      const { tag, zebra, walrus } = await seedSearchable(page)
+      await withQuotasView(page, false, async () => {
+        await page.goto('/quotas')
+        const panel = page.getByRole('region', { name: 'Quotas' })
+        await expect(panel.locator(`[data-track-chip="${walrus}"]`)).toBeVisible()
+        await page.getByRole('button', { name: 'Search', exact: true }).click()
+        const field = page.getByRole('textbox', { name: 'Search quotas' })
+        await expect(field).toBeVisible()
+        await field.fill(`${tag} zebra`)
+        const count = page.locator('[data-search-count]')
+        await expect(count).toHaveAttribute('data-search-count', '2')
+        await expect(panel.locator(`[data-track-chip="${zebra}"]`)).toBeVisible()
+        await expect(panel.locator(`[data-track-chip="${walrus}"]`)).toHaveCount(0)
+        await page.getByRole('button', { name: 'Close search' }).click()
+        await expect(count).toHaveCount(0)
+        await expect(panel.locator(`[data-track-chip="${walrus}"]`)).toBeVisible()
+      })
+    })
+  })
+})
