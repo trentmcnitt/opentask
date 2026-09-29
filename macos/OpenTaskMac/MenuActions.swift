@@ -118,14 +118,19 @@ enum MenuActions {
     /// tiers are named, not just Urgent.
     private static func nothingToSnoozeMessage(_ result: APIClient.BulkSnoozeResult) -> String {
         var parts: [String] = []
-        if result.skippedHigh > 0 {
-            parts.append("\(result.skippedHigh) High")
-        }
-        if result.skippedUrgent > 0 {
-            parts.append("\(result.skippedUrgent) Urgent")
+        var total = 0
+        for line in result.summaryLines {
+            switch line {
+            case .includedHigh: break  // zero here: nothing moved
+            case .highStillOverdue(let n):
+                parts.append("\(n) High")
+                total += n
+            case .urgentStillOverdue(let n):
+                parts.append("\(n) Urgent")
+                total += n
+            }
         }
         guard !parts.isEmpty else { return "No overdue tasks." }
-        let total = result.skippedHigh + result.skippedUrgent
         return "\(parts.joined(separator: " and ")) task\(total == 1 ? " is" : "s are") still overdue. "
             + "Urgent tasks are never bulk-snoozed, and High tasks only once nothing lower is left."
     }
