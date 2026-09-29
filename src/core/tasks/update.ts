@@ -8,7 +8,7 @@
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
-import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logAction } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
@@ -19,7 +19,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './read'
 import { canUserAccessTask } from './access'
-import { collectFieldChanges } from './helpers'
+import { applyFieldChanges, collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
 
 // `canUserAccessTask` moved to `./access`; re-exported so existing `./update`
@@ -113,11 +113,6 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     return { task, fieldsChanged: [], description: '' }
   }
 
-  // Add updated_at and task ID for WHERE clause
-  data.setClauses.push('updated_at = ?')
-  data.values.push(nowUtc())
-  data.values.push(taskId)
-
   // Look up project name if project_id changed
   let projectName: string | undefined
   if (data.fieldsChanged.includes('project_id') && data.afterState.project_id) {
@@ -128,15 +123,8 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     if (project) projectName = project.name
   }
 
-  const result = withTransaction((db) => {
-    const sql = `UPDATE tasks SET ${data.setClauses.join(', ')} WHERE id = ?`
-    db.prepare(sql).run(...data.values)
-
-    const snapshot = createTaskSnapshot(
-      data.beforeState as Partial<Task> & { id: number },
-      data.afterState as Partial<Task> & { id: number },
-      data.fieldsChanged,
-    )
+  const result = withTransaction((tx) => {
+    const { snapshot, activity } = applyFieldChanges(tx, task, data, nowUtc())
     const description = formatEditDescription(task.title, data.fieldsChanged, {
       isSnooze: data.isSnoozeScenario,
       beforeState: data.beforeState,
@@ -146,11 +134,11 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     })
     logAction(userId, 'edit', description, data.fieldsChanged, [snapshot])
 
+    // The single edit records the snapshot's states (id, title and the changed
+    // fields) where the batch paths record `activity`'s collected ones.
     logActivity({
       userId,
-      taskId,
-      action: data.isSnoozeScenario ? 'snooze' : 'edit',
-      fields: data.fieldsChanged,
+      ...activity,
       before: snapshot.before_state,
       after: snapshot.after_state,
       metadata: data.isSnoozeScenario ? { snooze_detected: true } : undefined,

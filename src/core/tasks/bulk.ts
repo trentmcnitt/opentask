@@ -27,6 +27,7 @@ import {
   computeMarkDone,
   executeMarkDone,
   collectFieldChanges,
+  applyFieldChanges,
   type FieldChangesInput,
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
@@ -922,32 +923,9 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       })
 
       if (data.fieldsChanged.length > 0) {
-        // Add updated_at and task ID for WHERE clause
-        data.setClauses.push('updated_at = ?')
-        data.values.push(nowStr)
-        data.values.push(task.id)
-
-        const sql = `UPDATE tasks SET ${data.setClauses.join(', ')} WHERE id = ?`
-        tx.prepare(sql).run(...data.values)
-
-        snapshots.push(
-          createTaskSnapshot(
-            data.beforeState as Partial<Task> & { id: number },
-            data.afterState as Partial<Task> & { id: number },
-            data.fieldsChanged,
-          ),
-        )
-
-        activityEntries.push({
-          userId,
-          taskId: task.id,
-          action: data.isSnoozeScenario ? 'snooze' : 'edit',
-          source: 'bulk',
-          batchId,
-          fields: data.fieldsChanged,
-          before: data.beforeState,
-          after: data.afterState,
-        })
+        const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
+        snapshots.push(snapshot)
+        activityEntries.push({ userId, ...activity, source: 'bulk', batchId })
 
         data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
         perTaskFields.set(task.id, data.fieldsChanged)
