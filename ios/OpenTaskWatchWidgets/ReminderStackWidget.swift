@@ -33,11 +33,11 @@ struct ReminderStackProvider: TimelineProvider {
 
         Task {
             // Push-token registration rides every reload until the server
-            // confirms it — see `WatchWidgetPushRegistration`'s doc. A no-op
+            // confirms it — see `WidgetPushRegistration`'s doc. A no-op
             // once registered, and on watchOS < 26 (nothing is ever saved).
             // Awaited alongside the fetch, not before it, so a slow
             // registration never delays the card.
-            async let registration: Void = WatchWidgetPushRegistration.retryIfNeeded()
+            async let registration: Void = WidgetPushRegistration.watch.retryIfNeeded()
             let now = Date()
             let fetched = await fetchInputs()
             _ = await registration
