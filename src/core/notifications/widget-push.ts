@@ -56,7 +56,7 @@
  *    a push it never accepted, so the window protects nothing here.
  *
  * macOS is exempt from 2 and 3: chronod logs a Mac widget push as "free"
- * (`push … free`, ios/CLAUDE.md § Widgets "Budget"), so a Mac token keeps the
+ * (`push … free`, ios/AGENTS.md § Widgets "Budget"), so a Mac token keeps the
  * settle-only behavior and stays instantly in sync. iOS and watchOS are
  * budgeted and get the full policy.
  *

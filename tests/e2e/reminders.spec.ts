@@ -769,7 +769,7 @@ test.describe('Reminders surface', () => {
   test('is no longer a chip in the dashboard view toggle', async ({ authenticatedPage: page }) => {
     const toggle = page.getByRole('group', { name: 'View mode' })
 
-    await expect(toggle.getByRole('button')).toHaveText(['Today', 'Projects', 'All'])
+    await expect(toggle.getByRole('button')).toHaveText(['Today', 'All', 'New'])
   })
 
   test('a reminder with notes wears the notes mark after its title', async ({

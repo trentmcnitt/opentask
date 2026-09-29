@@ -290,13 +290,15 @@ export interface AuthUser {
   name: string
   timezone: string
   /**
-   * §7.3 adds 'slot' — today grouped by time slot, the new front door.
+   * The dashboard view — `'slot'` (Today), `'time'` (All), `'new'` (New) or
+   * `'unified'` (the AI-sort / "Unified" flat list). See `src/lib/grouping.ts`;
+   * the retired `'project'` is coerced to `'time'` by `toAuthUser`.
    *
    * Nothing reads this to make a decision: it is only ever echoed back out
    * (`/api/auth/me`, the NextAuth session, the iOS token-provision response).
    * The dashboard's live view preference comes from `PreferencesProvider`,
    * which fetches `/api/user/preferences` directly.
    */
-  default_grouping: 'time' | 'project' | 'unified' | 'slot'
+  default_grouping: 'time' | 'unified' | 'slot' | 'new'
   is_demo: boolean
 }

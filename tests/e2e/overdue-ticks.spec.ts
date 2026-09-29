@@ -40,10 +40,11 @@ test.describe('Overdue follows the clock', () => {
   test.beforeEach(async ({ authenticatedPage: page }) => {
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
       .default_grouping as string
-    // By-project view: every open task shows, so a task due a minute from now
-    // is on screen even when the suite runs just before midnight.
+    // All: every open task shows, so a task due a minute from now is on
+    // screen even when the suite runs just before midnight (Today would drop
+    // it past midnight). This was the Projects view until it was retired.
     const written = await page.request.patch('/api/user/preferences', {
-      data: { filters_expanded: false, default_grouping: 'project' },
+      data: { filters_expanded: false, default_grouping: 'time' },
     })
     expect(written.ok()).toBeTruthy()
     projectId = await post(page, '/api/projects', { name: uniqueTitle('Clock project') })

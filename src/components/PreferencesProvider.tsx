@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
-import type { GroupingMode } from '@/components/TaskList'
+import type { GroupingMode } from '@/lib/grouping'
 import type { SortOption } from '@/hooks/useGroupSort'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
@@ -138,7 +138,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setWakeTime: () => {},
   sleepTime: '22:00',
   setSleepTime: () => {},
-  defaultGrouping: 'project',
+  defaultGrouping: 'time',
   setDefaultGrouping: () => {},
   preferencesLoaded: false,
   defaultSort: 'due_date',
@@ -500,13 +500,14 @@ export function useSchedulePreferences() {
 /**
  * `groupingLoaded` is `preferencesLoaded` under this hook's own name: until
  * the `/api/user/preferences` fetch settles, `defaultGrouping` is the
- * hardcoded `'project'` fallback in this file, not the user's real
+ * hardcoded `'time'` fallback in this file, not the user's real
  * preference. Most consumers render fine either way — the fallback just
  * flashes briefly. But `DashboardClient`'s `?task=<id>&highlight=1` effect
  * groups tasks BY `defaultGrouping` to find and expand the linked row, and
  * resolving that against the fallback (rather than waiting a beat for the
- * real value) can expand the wrong group — found by browser-verifying
- * against Trent's own dev account, whose real default is `'slot'`.
+ * real value) can expand the wrong group for anyone on another view — found
+ * by browser-verifying against Trent's own dev account back when the
+ * fallback was `'project'` and his real default `'slot'`.
  */
 export function useDefaultGrouping() {
   const { defaultGrouping, setDefaultGrouping, preferencesLoaded } = useContext(PreferencesContext)

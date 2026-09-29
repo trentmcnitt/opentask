@@ -361,7 +361,7 @@ describe('combined preference updates', () => {
  * render and the API must stop accepting it.
  */
 describe('default_grouping preference', () => {
-  test.each(['time', 'project', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
+  test.each(['time', 'new', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: { default_grouping: grouping },
@@ -369,6 +369,20 @@ describe('default_grouping preference', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.data.default_grouping).toBe(grouping)
+  })
+
+  // The Projects view left the switch on 2026-09-29 (Today · All · New). An old
+  // client may still send 'project': it is accepted, not refused, and stored as
+  // 'time' (All), so the next GET — and the dashboard — say All.
+  test('PATCH with the retired "project" value is stored as time', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_grouping: 'project' },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.default_grouping).toBe('time')
+    const getRes = await apiFetch('/api/user/preferences')
+    expect((await getRes.json()).data.default_grouping).toBe('time')
   })
 
   // 'recent' was the short-lived "Recent" view, replaced by just-added pinning.
@@ -393,7 +407,7 @@ describe('default_grouping preference', () => {
   afterAll(async () => {
     await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { default_grouping: 'project' },
+      body: { default_grouping: 'time' },
     })
   })
 })

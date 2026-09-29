@@ -17,16 +17,17 @@ import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { coerceWeekStart, WEEK_STARTS, type WeekStart } from '@/lib/week-start'
+import { ACCEPTED_GROUPING_INPUTS, coerceGrouping, GROUPINGS } from '@/lib/grouping'
 import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
-// §7.3 adds 'slot' — today grouped by time slot, the new front door.
-// 'reminders' was briefly valid here, back when the §6 Reminders surface rode in
-// the dashboard's view toggle. It is now its own route (`/reminders`), so it is no
-// longer a grouping — clients coerce any lingering stored value to 'slot'.
-// 'recent' (the short-lived "Recent" view, replaced by just-added previews) is
-// retired the same way.
-const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot'] as const
+// `default_grouping` accepts the live groupings (`GROUPINGS`: slot, time, new,
+// unified) plus the retired 'project', which is stored as 'time' so an old
+// client's PATCH doesn't 400 (Projects left the view switch 2026-09-29; see
+// `src/lib/grouping.ts`). 'reminders' was briefly valid here, back when the §6
+// Reminders surface rode in the dashboard's view toggle; it and 'recent' (the
+// short-lived "Recent" view, replaced by just-added previews) are refused with
+// 400 — clients coerce any lingering stored value to 'slot'.
 const VALID_SORT_OPTIONS = [
   'due_date',
   'priority',
@@ -159,10 +160,10 @@ function validateGeneralFields(
   params: unknown[],
 ): string | null {
   if (body.default_grouping !== undefined) {
-    if (!VALID_GROUPINGS.includes(body.default_grouping as (typeof VALID_GROUPINGS)[number]))
-      return `default_grouping must be one of: ${VALID_GROUPINGS.join(', ')}`
+    if (!ACCEPTED_GROUPING_INPUTS.includes(body.default_grouping as string))
+      return `default_grouping must be one of: ${GROUPINGS.join(', ')}`
     updates.push('default_grouping = ?')
-    params.push(body.default_grouping)
+    params.push(coerceGrouping(body.default_grouping))
   }
 
   if (body.default_sort !== undefined) {
@@ -574,7 +575,7 @@ interface PreferencesRow {
 
 /** Fallback row when user record is missing (should not happen in practice). */
 const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
-  default_grouping: 'project',
+  default_grouping: 'time',
   default_sort: 'due_date',
   default_sort_reversed: 0,
   filters_expanded: 0,
@@ -619,7 +620,9 @@ function formatPreferencesResponse(row: PreferencesRow) {
   const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
   return {
     ai_available: isAIEnabled(),
-    default_grouping: row.default_grouping,
+    // Coerced on the way out too, so a 'project' written by anything that
+    // skipped this route reads as the 'time' the dashboard will show.
+    default_grouping: coerceGrouping(row.default_grouping),
     default_sort: row.default_sort,
     default_sort_reversed: row.default_sort_reversed !== 0,
     filters_expanded: row.filters_expanded !== 0,

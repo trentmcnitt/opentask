@@ -7,7 +7,7 @@
  *
  * The committed previews use realistic sample data (this repo is public);
  * `ios/Shared/PreviewLocalData.swift` reads these files first when they
- * exist. See ios/CLAUDE.md § "Previews: sample data and local data".
+ * exist. See ios/AGENTS.md § "Previews: sample data and local data".
  *
  * This script holds no data of its own. It writes each response in the API's
  * own `{ "data": ... }` shape, which is what the Swift DTOs decode, with one

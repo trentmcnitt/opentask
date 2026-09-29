@@ -2404,10 +2404,12 @@ paths:
                         description: IANA time zone
                       default_grouping:
                         type: string
-                        enum: [time, project, unified, slot]
+                        enum: [slot, time, new, unified]
                         description: |
-                          Dashboard view: `slot` = Today, `project` = Projects,
-                          `time` = All; `unified` is the AI-sorted view.
+                          Dashboard view: `slot` = Today, `time` = All, `new` =
+                          New (flat, newest added first); `unified` is the
+                          AI-sorted / "Unified" flat list. The retired `project`
+                          is returned as `time`.
                       is_demo:
                         type: boolean
         '401':
@@ -3661,6 +3663,20 @@ components:
       type: object
       additionalProperties: true
       properties:
+        default_grouping:
+          type: string
+          enum: [slot, time, new, unified]
+          description: |
+            The dashboard view the switch last chose: `slot` = Today (today's
+            tasks by time of day), `time` = All (everything by due date),
+            `new` = New (every open task in one flat list, newest added first,
+            each row naming its project; ignores `default_sort`). `unified` is
+            the flat list the AI-sort toggle and the list's "Unified" button
+            switch to.
+
+            `project` (the Projects view, retired 2026-09-29) is still
+            accepted on PATCH so older clients don't get a 400, but it is
+            stored and returned as `time`. Any other value is a 400.
         default_reminder_slot_id:
           type: integer
           nullable: true

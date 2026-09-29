@@ -4,6 +4,14 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 09-29-26
+
+### The view switch is Today · All · New
+
+**Trent's decision:** the dashboard's switch goes from Today · Projects · All to **Today · All · New**. He never used Projects, and wanted one tap to see everything he has added, newest first. New is every open task in one flat list, newest added first, each row naming its project; its order is fixed (the `age` sort, whatever the saved sort says), so the sort dropdown is replaced there by a "Newest added" caption, and the "Unified" button is hidden because New is already flat. It persists like the others, as `default_grouping = 'new'`. The project filter chips stay, so one project is still one tap away in any view. A stored `'project'` lands on All, the nearest view: the startup migration rewrites the column, every reader coerces it (`coerceGrouping`, `src/lib/grouping.ts`), and a PATCH of `'project'` is accepted and saved as `'time'` instead of refused, so an older client doesn't get a 400. The native apps never read `default_grouping`. New users start on All (`'time'`) as well, where they used to start on Projects.
+
+---
+
 ## 09-28-26
 
 ### Just added: a card of its own, not a copy of the row

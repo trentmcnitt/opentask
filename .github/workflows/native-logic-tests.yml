@@ -1,7 +1,7 @@
 name: Native logic tests
 
 # The Swift unit tests for the native clients' pure logic (OpenTaskLogicTests,
-# see ios/CLAUDE.md § Tests), including the decode tests over the server
+# see ios/AGENTS.md § Tests), including the decode tests over the server
 # contract fixtures. Only runs when native code or those fixtures change.
 #
 # NOT a required status check (deliberately left out of branch protection): a

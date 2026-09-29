@@ -40,7 +40,7 @@ async function cleanup(page: Page, taskIds: number[], projectId: number | null) 
   if (projectId !== null) await page.request.delete(`/api/projects/${projectId}`)
 }
 
-/** A Projects-view group, found by its collapse button. */
+/** A grouped view's group (All's due-date groups here), found by its collapse button. */
 function group(page: Page, name: string): Locator {
   return page.locator('section[data-task-group]', {
     has: page.getByRole('button', { name: `Collapse ${name}`, exact: true }),
@@ -58,11 +58,20 @@ function rowOrder(section: Locator): Promise<string[]> {
     .evaluateAll((els) => els.map((el) => el.id.replace('task-row-', '')))
 }
 
-const PROJECTS_BY_DUE = {
-  default_grouping: 'project',
+/**
+ * One flat list in due-date order: every open task has a row (no group cap to
+ * hide one behind "Show all"), and a fresh task's row sits where the sort puts
+ * it — so "not pulled to the top" is observable. These tests ran in the
+ * Projects view until it was retired (2026-09-29).
+ */
+const FLAT_BY_DUE = {
+  default_grouping: 'unified',
   default_sort: 'due_date',
   default_sort_reversed: false,
 }
+/** All's due-date groups, for the one test that needs a group to fold. */
+const ALL_BY_DUE = { ...FLAT_BY_DUE, default_grouping: 'time' }
+const taskList = (page: Page) => page.getByRole('listbox', { name: 'Task list' })
 
 test.describe('Just added: the card', () => {
   test('a quick add is listed in the card, and its real row stays in place with a New tag', async ({
@@ -78,9 +87,8 @@ test.describe('Just added: the card', () => {
       ids.push(inboxOld)
       backdateCreated([inboxOld])
 
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
-        const inbox = group(page, 'Inbox')
-        await waitForPrefsLoaded(page, () => page.goto('/'), inbox)
+      await withPreferences(page, FLAT_BY_DUE, async () => {
+        await waitForPrefsLoaded(page, () => page.goto('/'), realRow(page, inboxOld))
 
         const title = uniqueTitle('Carded quick add')
         const created = page.waitForResponse(
@@ -96,7 +104,7 @@ test.describe('Just added: the card', () => {
         await expect(entry(page, id)).toContainText('just now')
         // The real row is where the sort puts it (undated, so after the dated
         // old task), not pulled to the top — and it wears the tag.
-        const order = await rowOrder(inbox)
+        const order = await rowOrder(taskList(page))
         expect(order.indexOf(String(id))).toBeGreaterThan(order.indexOf(String(inboxOld)))
         await expect(realRow(page, id).locator('[data-just-added-badge]')).toHaveText('New')
         // Not a second task: the card is not in the list.
@@ -114,8 +122,8 @@ test.describe('Just added: the card', () => {
   }) => {
     const ids: number[] = []
     try {
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
-        await waitForPrefsLoaded(page, () => page.goto('/'), group(page, 'Inbox'))
+      await withPreferences(page, FLAT_BY_DUE, async () => {
+        await waitForPrefsLoaded(page, () => page.goto('/'), taskList(page))
 
         // Not through the page: the dashboard only learns of it over the
         // sync stream, as it would from an iOS Shortcut or the Mac menu bar.
@@ -140,7 +148,7 @@ test.describe('Just added: the card', () => {
         labels: ['ai-to-process'],
       })
       ids.push(id)
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
+      await withPreferences(page, FLAT_BY_DUE, async () => {
         await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
         await expect(entry(page, id)).toContainText('AI is filling in details')
       })
@@ -156,7 +164,7 @@ test.describe('Just added: the card', () => {
     try {
       const first = await post(page, '/api/tasks', { title: uniqueTitle('Clear first') })
       ids.push(first)
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
+      await withPreferences(page, FLAT_BY_DUE, async () => {
         await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, first))
         await card(page).getByRole('button', { name: 'Clear', exact: true }).click()
         await expect(entry(page, first)).toHaveCount(0)
@@ -191,10 +199,12 @@ test.describe('Just added: tapping through', () => {
       })
       ids.push(id)
 
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
-        const own = group(page, name)
+      // Undated, so its row is in All's "No Due Date" group — folded here, and
+      // possibly past that group's 10-row preview too; the tap must undo both.
+      await withPreferences(page, ALL_BY_DUE, async () => {
+        const own = group(page, 'No Due Date')
         await waitForPrefsLoaded(page, () => page.goto('/'), own)
-        await page.getByRole('button', { name: `Collapse ${name}`, exact: true }).click()
+        await page.getByRole('button', { name: 'Collapse No Due Date', exact: true }).click()
         await expect(realRow(page, id)).toHaveCount(0)
 
         await entry(page, id).click()
@@ -242,7 +252,7 @@ test.describe('Just added: age-out', () => {
       })
       ids.push(id)
 
-      await withPreferences(page, PROJECTS_BY_DUE, async () => {
+      await withPreferences(page, FLAT_BY_DUE, async () => {
         // The page's clock is Playwright's from here on; it still runs, and
         // `fastForward` jumps it (firing the age timers on the way).
         await page.clock.install()
@@ -264,6 +274,6 @@ test.describe('Just added: age-out', () => {
 
   test('the Recent view is gone from the view switch', async ({ authenticatedPage: page }) => {
     const toggle = page.getByRole('group', { name: 'View mode' })
-    await expect(toggle.getByRole('button')).toHaveText(['Today', 'Projects', 'All'])
+    await expect(toggle.getByRole('button')).toHaveText(['Today', 'All', 'New'])
   })
 })

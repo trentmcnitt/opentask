@@ -215,7 +215,7 @@ private struct ReminderCardView: View {
 /// last is load-bearing: `ViewThatFits` compares IDEAL sizes, and a plain
 /// `Text`'s ideal height is one unwrapped line — without it the first
 /// candidate always "fits", then gets squeezed and truncated at `.headline`
-/// (the same trap the phone widgets documented, `ios/CLAUDE.md` "Row counts").
+/// (the same trap the phone widgets documented, `ios/AGENTS.md` "Row counts").
 private struct FittingTitle: View {
     let title: String
 

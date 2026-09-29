@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Exists so the notification content extension — which cannot make its own
 /// setup network calls before the user long-presses, and which
-/// `ios/CLAUDE.md` documents as unverifiable in the simulator — and
+/// `ios/AGENTS.md` documents as unverifiable in the simulator — and
 /// launch-time notification category registration can both build the
 /// slot-snooze action list (`slotSnoozeActions()` in `NotificationConstants.swift`)
 /// without a network round trip. The main app, watch app and Mac app write

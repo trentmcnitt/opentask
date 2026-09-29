@@ -392,7 +392,7 @@ struct IncrementProgressIntent: AppIntent {
 /// different slots share one task id (`QuotaPromptDTO`'s doc).
 ///
 /// THE SEQUENCE (the `UncompleteTaskIntent`/`IncrementProgressIntent`
-/// discipline, `ios/CLAUDE.md` § Optimistic):
+/// discipline, `ios/AGENTS.md` § Optimistic):
 /// 1. Stage a tombstone by key and repaint Reminders from cache — the row
 ///    leaves the list at once (`WidgetStore.filterPending` draws it handled).
 /// 2. Call the server.
@@ -502,7 +502,7 @@ struct ActOnPromptIntent: AppIntent {
 ///    marks Reminders fetch-required where only the server knows the answer).
 /// 3. On failure the tombstone goes and Reminders fetches — the likeliest
 ///    failure is a key from before midnight (400).
-/// 4. Round 2 asks for Track, the OTHER kind (budget rules, `ios/CLAUDE.md`);
+/// 4. Round 2 asks for Track, the OTHER kind (budget rules, `ios/AGENTS.md`);
 ///    Reminders is the tapped kind — free on iOS, explicit on macOS.
 struct RestorePromptIntent: AppIntent {
     static var title: LocalizedStringResource = "Put Back Quota Reminder"
@@ -1429,7 +1429,7 @@ struct SnoozeSelectedTasksIntent: AppIntent {
 
 /// Complete every currently-selected task at once — the select-mode bottom
 /// bar's "✓ Done". `POST /api/tasks/bulk/complete` (the SAME endpoint the
-/// SLOT_REMINDER notification checklist already uses — see `ios/CLAUDE.md`'s
+/// SLOT_REMINDER notification checklist already uses — see `ios/AGENTS.md`'s
 /// "Slot batch checklist"). Reuses `CompleteTaskIntent`'s exact optimistic
 /// tombstone machinery per id (advisor review: "zero new mechanism") rather
 /// than inventing a bulk-shaped tombstone — completion is the one action in

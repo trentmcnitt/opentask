@@ -3,7 +3,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
+import {
+  TaskList,
+  buildTaskGroups,
+  effectiveSort,
+  sortTasks,
+  type GroupingMode,
+} from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useJustAddedClock } from '@/hooks/useJustAddedClock'
 import { useStickyColumn } from '@/hooks/useStickyColumn'
@@ -591,6 +597,14 @@ function HomeContent({
   // This preserves the user's real grouping preference for when AI sort is disabled.
   const [aiSortUnified, setAiSortUnified] = useState(false)
   const grouping: GroupingMode = aiSortUnified ? 'unified' : defaultGrouping
+  // The order the list is DRAWN in: New pins newest-added first over the saved
+  // sort (`effectiveSort`). Keyboard order and the group math below use this;
+  // the sort dropdown and the saved preference keep `sortOption`/`reversed`.
+  const { sortOption: listSort, reversed: listReversed } = effectiveSort(
+    grouping,
+    sortOption,
+    reversed,
+  )
 
   // Track the non-unified grouping so we can restore it when leaving manual unified toggle.
   const prevNonUnifiedGrouping = useRef<GroupingMode | null>(null)
@@ -618,7 +632,7 @@ function HomeContent({
    *
    * "A quota is not a task. It appears on the Quotas page and in the Track
    * panel and nowhere else" (Trent, 2026-09-08). It used to be a plain row in
-   * the All and Projects views wearing a "0 / 4" chip, which put a thing with
+   * the All and (since-retired) Projects views wearing a "0 / 4" chip, which put a thing with
    * no due date, no snooze and no Done in among things that have all three.
    *
    * Filtered in the client rather than server-side so `/api/tasks` keeps
@@ -746,7 +760,7 @@ function HomeContent({
   })
 
   // Support ?project=<id> from sidebar/project list links AND the widget's
-  // dashboard-header deep link (`WidgetLink`-style, ios/CLAUDE.md) — set the
+  // dashboard-header deep link (`WidgetLink`-style, ios/AGENTS.md) — set the
   // project filter exclusively, scroll to top, then clear the URL.
   // Uses useEffect (not useMemo+ref) because sidebar links navigate within the already-mounted dashboard.
   //
@@ -937,8 +951,8 @@ function HomeContent({
 
   // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
-    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots, now),
-    [tasks_, projects, grouping, timezone, timeSlots, now],
+    () => buildTaskGroups(tasks_, grouping, timezone, timeSlots, now),
+    [tasks_, grouping, timezone, timeSlots, now],
   )
   /**
    * The top bar's "N total tasks" pill counts what the list is SHOWING, which
@@ -1002,13 +1016,14 @@ function HomeContent({
     const isHighlightLink = searchParams.get('highlight') === '1'
     // The highlight branch groups by `defaultGrouping` to find the row's
     // group — but `defaultGrouping` starts at a hardcoded fallback
-    // ('project') until `PreferencesProvider`'s own fetch resolves (see
+    // ('time') until `PreferencesProvider`'s own fetch resolves (see
     // `useDefaultGrouping`'s doc comment), same shape as the `tasks.length
     // === 0` wait above: consuming the param against the fallback can expand
     // the wrong group and never revisit it. Found by browser-verifying
-    // against Trent's dev account, whose real default is `slot`, not
-    // `project` — a `?task=&highlight=1` tap resolved against the fallback
-    // before this guard landed on the wrong group every time.
+    // against Trent's dev account, whose real default (`slot`) differed from
+    // the fallback of the day (`project`) — a `?task=&highlight=1` tap
+    // resolved against the fallback before this guard landed on the wrong
+    // group every time.
     if (task && isHighlightLink && !isTracked(task) && !groupingLoaded) return
     taskParamProcessed.current = true
     if (task) {
@@ -1067,9 +1082,9 @@ function HomeContent({
     () =>
       taskGroups.flatMap((g) => {
         if (isCollapsed(g.label)) return []
-        return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
+        return sortTasks(g.tasks, listSort, listReversed).map((t) => t.id)
       }),
-    [taskGroups, sortOption, reversed, isCollapsed],
+    [taskGroups, listSort, listReversed, isCollapsed],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -1206,8 +1221,8 @@ function HomeContent({
     setKeyboardFocusedId,
     selection,
     taskGroups,
-    sortOption,
-    reversed,
+    sortOption: listSort,
+    reversed: listReversed,
     timezone,
     projects,
     annotationMap: effectiveAnnotationMap,
@@ -1480,8 +1495,10 @@ function HomeContent({
             if (defaultGrouping !== 'unified') prevNonUnifiedGrouping.current = defaultGrouping
             setDefaultGrouping('unified')
           } else {
-            // Manual unified off: restore previous grouping
-            setDefaultGrouping(prevNonUnifiedGrouping.current || 'project')
+            // Manual unified off: restore previous grouping. With nothing to
+            // restore (Unified was the saved view on load), land on All — the
+            // grouped view nearest a flat list of everything.
+            setDefaultGrouping(prevNonUnifiedGrouping.current || 'time')
             prevNonUnifiedGrouping.current = null
           }
         }}

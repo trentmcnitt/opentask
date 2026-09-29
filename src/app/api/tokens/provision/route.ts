@@ -104,7 +104,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       email: user.email || '',
       name: user.name || '',
       timezone: user.timezone || 'America/Chicago',
-      default_grouping: user.default_grouping || 'project',
+      default_grouping: user.default_grouping || 'time',
       is_demo: user.is_demo ? 1 : 0,
     })
 

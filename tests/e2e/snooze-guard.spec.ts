@@ -27,10 +27,12 @@
  * 3. The long-press was hand-timed: 500ms against the app's 400ms. Under load
  *    it registered as a tap, which instant-snoozes an overdue row. `holdUntil`
  *    holds until the menu is visible instead.
- * 4. The rows sat in Inbox, which the Projects view caps at 10 behind "Show
+ * 4. The rows sat in Inbox, which the Projects view capped at 10 behind "Show
  *    all", so earlier specs' leftovers could push the undated row out of
  *    sight. Each test now works in a project of its own, with the view pinned
- *    to Projects (a server preference every spec shares) and put back after.
+ *    (a server preference every spec shares) and put back after — to New
+ *    since the Projects view was retired (2026-09-29): one uncapped list,
+ *    newest first, so a test's fresh rows are the first rows on the page.
  */
 
 import { test, expect, holdUntil, uniqueTitle } from './fixtures'
@@ -53,7 +55,7 @@ async function createTask(page: Page, body: Record<string, unknown>): Promise<nu
 }
 
 /**
- * Give `run` a project of its own and the dashboard in Projects view, then put
+ * Give `run` a project of its own and the dashboard in the New view, then put
  * everything back. Tasks are deleted before the project, because deleting a
  * project moves its tasks to Inbox rather than removing them.
  */
@@ -64,9 +66,9 @@ async function inOwnProject(
   const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
   const grouping = prefs.default_grouping as string
   const res = await page.request.post('/api/projects', {
-    // First in the list (`sort_order: -1`), so the rows sit near the top of
-    // the viewport. The desktop snooze menu always opens BELOW its button, in
-    // a fixed-position portal that never flips or scrolls, so from a row near
+    // The rows must sit near the top of the viewport — New puts the newest
+    // first. The desktop snooze menu always opens BELOW its button, in a
+    // fixed-position portal that never flips or scrolls, so from a row near
     // the bottom its lower items are unreachable (a product gap, listed as a
     // follow-up; found 2026-09-25 when these rows moved out of Inbox).
     data: { name: uniqueTitle('Snooze guard'), sort_order: -1 },
@@ -75,9 +77,9 @@ async function inOwnProject(
   const projectId = (await res.json()).data.id as number
   const taskIds: number[] = []
   try {
-    if (grouping !== 'project') {
+    if (grouping !== 'new') {
       const set = await page.request.patch('/api/user/preferences', {
-        data: { default_grouping: 'project' },
+        data: { default_grouping: 'new' },
       })
       expect(set.ok()).toBeTruthy()
     }
@@ -85,7 +87,7 @@ async function inOwnProject(
   } finally {
     for (const id of taskIds) await page.request.delete(`/api/tasks/${id}`)
     await page.request.delete(`/api/projects/${projectId}`)
-    if (grouping !== 'project') {
+    if (grouping !== 'new') {
       await page.request.patch('/api/user/preferences', { data: { default_grouping: grouping } })
     }
   }

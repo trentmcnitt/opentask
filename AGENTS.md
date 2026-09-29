@@ -55,11 +55,11 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 
 **The UI and the code use different words for the same things** — search for the code word:
 
-| UI says                               | Code / DB / API says                                                                                             |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Period, "Reminder periods" (Settings) | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                              |
-| Quota                                 | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests |
-| Today / Projects / All (view toggle)  | `default_grouping` `'slot'` / `'project'` / `'time'` (`'unified'` is set by the AI-sort toggle, not this one)    |
+| UI says                               | Code / DB / API says                                                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Period, "Reminder periods" (Settings) | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                                                                                            |
+| Quota                                 | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests                                                               |
+| Today / All / New (view toggle)       | `default_grouping` `'slot'` / `'time'` / `'new'` (`'unified'` is set by the AI-sort toggle, not this one; the retired `'project'` is read as `'time'` — `src/lib/grouping.ts`) |
 
 ### Database
 
@@ -114,7 +114,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' | 'slot', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and the default a new/invalid value coerces to (`coerceGrouping` in `src/lib/preferences-state.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot".
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'unified' | 'slot' | 'new', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and what an unrecognized value coerces to (`coerceGrouping` in `src/lib/grouping.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot". `'new'` is New: every open task in one flat list, newest added first, whatever the saved sort. The retired `'project'` (Projects view, 2026-09-29) is accepted on PATCH but stored, returned and shown as `'time'` (All); new users start on `'time'`.
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 
@@ -329,7 +329,7 @@ If a change spans multiple rows in this table, combine the test suites from all 
 | API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                            |
 | AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                                |
 | UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                                     |
-| iOS / macOS app (Swift, project.yml)          | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/CLAUDE.md` § Tests), then manual testing on device. |
+| iOS / macOS app (Swift, project.yml)          | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/AGENTS.md` § Tests), then manual testing on device. |
 | Refactoring / code reorganization             | All test suites                                                                                                                                     |
 | Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed)                 |
 
@@ -515,9 +515,9 @@ The demo account showcases OpenTask with curated portfolio-style tasks, plus quo
 
 **Build:** `cd ios && xcodegen generate --spec project-sim.yml && xcodegen generate`. `project.yml` is canonical; `project-sim.yml` is generated from it without the watch targets (so it builds without the watchOS SDK) — never hand-edit it. Mac: `cd macos && xcodegen generate`.
 
-**Tests:** pure logic (wire DTOs, `WidgetStore`'s cache, snooze plans, the watch's quota/slot logic) is covered by `OpenTaskLogicTests` — sources in `ios/Tests/Logic/`, run from `macos/` (`ios/CLAUDE.md` § Tests has the command). UI and device behavior are tested manually.
+**Tests:** pure logic (wire DTOs, `WidgetStore`'s cache, snooze plans, the watch's quota/slot logic) is covered by `OpenTaskLogicTests` — sources in `ios/Tests/Logic/`, run from `macos/` (`ios/AGENTS.md` § Tests has the command). UI and device behavior are tested manually.
 
-`ios/CLAUDE.md` has the implementation detail: widget and watch behavior, notification mechanisms, previews, and XcodeBuildMCP workarounds.
+`ios/AGENTS.md` has the implementation detail: widget and watch behavior, notification mechanisms, previews, and XcodeBuildMCP workarounds.
 
 ### Server endpoints the native apps call
 

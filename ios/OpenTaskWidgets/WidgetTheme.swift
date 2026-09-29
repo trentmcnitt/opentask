@@ -1347,7 +1347,7 @@ struct ListPager<Previous: AppIntent, Next: AppIntent>: View {
 /// problem, and the only useful thing it can say is where to go fix it.
 ///
 /// Tap target follows the same family split as everywhere else (2026-09-23,
-/// the background-tap fix — see `ios/CLAUDE.md`'s tap-targets note):
+/// the background-tap fix — see `ios/AGENTS.md`'s tap-targets note):
 /// `compact` (systemSmall, and the Lock Screen families' own custom signed-out
 /// text) is glanceable-only with nothing else to hit, so the whole card stays
 /// a `.widgetURL`. Non-compact (systemMedium/systemLarge's signed-out state,
