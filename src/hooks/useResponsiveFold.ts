@@ -82,6 +82,10 @@ export function foldClass(state: FoldState, classes: FoldClasses): string {
  *
  * `shut` still exists and still works — this changes only what happens before
  * the user has expressed a preference.
+ *
+ * (2026-09-29: the Track panel's PERIOD sections now start shut on a phone —
+ * a bar per period, one tap to its chips. That is its own fold with its own
+ * classes, `PERIOD_BODY` in `TrackPanel.tsx`; these defaults are unchanged.)
  */
 export const FOLD_BODY_BLOCK: FoldClasses = {
   open: 'block',
@@ -124,26 +128,34 @@ export function useResponsiveFold(key: string) {
 }
 
 /**
- * Many independent folds — the Track panel's label groups.
+ * Many independent folds — the Track panel's label groups and period sections.
  *
  * `namespace` prefixes every key on the way into the shared map, so two
  * surfaces can both have a group called "health" without sharing its fold.
+ *
+ * `defaultOpen` is what an untouched fold shows WHERE ITS TOGGLE CAN BE
+ * PRESSED. It is `true` for the label groups (open at every width). The Track
+ * panel's period sections pass `false`: they start shut on a phone, and their
+ * toggle is `sm:hidden`, so the only place it can be pressed is the one place
+ * the untouched fold is shut — see `PERIOD_BODY` in `TrackPanel.tsx`. It feeds
+ * both `isOpen` (for `aria-expanded`) and the toggle's fallback, which must
+ * agree with the `auto` classes the caller paints or the first tap would be
+ * swallowed flipping an "open" nobody could see.
  */
-export function useResponsiveFolds(namespace: string) {
+export function useResponsiveFolds(namespace: string, defaultOpen = true) {
   const { choices, toggleChoice } = useFoldState()
 
   const stateOf = useCallback(
     (key: string): FoldState => choices.get(`${namespace}:${key}`) ?? null,
     [choices, namespace],
   )
-  // Open before the user has chosen — see `useResponsiveFold` above.
   const isOpen = useCallback(
-    (key: string) => choices.get(`${namespace}:${key}`) ?? true,
-    [choices, namespace],
+    (key: string) => choices.get(`${namespace}:${key}`) ?? defaultOpen,
+    [choices, namespace, defaultOpen],
   )
   const toggle = useCallback(
-    (key: string) => toggleChoice(`${namespace}:${key}`, true),
-    [namespace, toggleChoice],
+    (key: string) => toggleChoice(`${namespace}:${key}`, defaultOpen),
+    [namespace, toggleChoice, defaultOpen],
   )
 
   return { stateOf, isOpen, toggle }

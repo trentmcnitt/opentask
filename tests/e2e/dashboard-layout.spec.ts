@@ -293,7 +293,7 @@ test.describe('Tasks page layout — wide', () => {
 test.describe('Tasks page layout — phone', () => {
   test.use({ viewport: { width: 375, height: 812 } })
 
-  test('folds the filters, but leaves Track and its label groups open', async ({
+  test("folds the filters and Track's periods, but leaves the Track card and its label groups open", async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
@@ -316,13 +316,20 @@ test.describe('Tasks page layout — phone', () => {
         await filterToggle.click()
         await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
 
-        // TRACK: open by default now, chips and all, so a quota can be checked
-        // off without opening anything first. Trent reversed this on
-        // 2026-09-21 ("Everything should be expanded for the track on mobile.
-        // Otherwise I can't check things off easily"), accepting that it
-        // pushes the day down.
+        // TRACK: the card is open by default (Trent, 2026-09-21: "Everything
+        // should be expanded for the track on mobile"), but since 2026-09-29
+        // each period inside it starts folded to its bar on a phone — one tap
+        // from its chips. Open both periods here; the fold itself is pinned
+        // in track.spec.ts ("Track — periods fold to their bars on a phone").
         const card = page.locator('#track-card')
         await expect(card).toBeVisible()
+        await expect(page.locator(`[data-track-chip="${ids[0]}"]`)).toBeHidden()
+        for (const period of ['WEEKLY', 'DAILY']) {
+          const toggle = card.locator(`[data-quota-period="${period}"] [data-track-period-toggle]`)
+          await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+          await toggle.click()
+          await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        }
         const group = page.locator('[data-track-cluster="zz-alpha"]')
         await expect(group).toBeVisible()
         await expect(group.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
