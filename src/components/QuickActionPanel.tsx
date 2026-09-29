@@ -118,28 +118,12 @@ export interface QuickActionPanelProps {
   selectedCount?: number
   /** User's IANA timezone */
   timezone: string
-  /** "inline" shows Apply button; "popover"/"sheet" show Save/Cancel when dirty */
-  mode: 'inline' | 'popover' | 'sheet'
-  /** Called with the final date when saving (absolute mode) */
-  onDateChange?: (isoUtc: string) => void
-  /** Called with delta minutes when saving (relative mode, bulk only) */
-  onDateChangeRelative?: (deltaMinutes: number) => void
-  /** Called with absolute priority value (0=none, 1=low, 2=medium, 3=high, 4=urgent) */
-  onPriorityChange?: (priority: number) => void
-  /** Called when rrule changes (inline mode with RecurrencePicker) */
-  onRruleChange?: (rrule: string | null, recurrenceMode?: 'from_due' | 'from_completion') => void
-  /** Available projects for project picker popover (use with onProjectChange) */
+  /** Layout host: a desktop popover/dialog or a mobile sheet. Both show the Save/Reset/Cancel footer. */
+  mode: 'popover' | 'sheet'
+  /** Available projects for the project picker popover */
   projects?: Project[]
-  /** Called when project is changed via popover picker (requires projects prop) */
-  onProjectChange?: (projectId: number) => void
-  /** Called to open external project picker (alternative to projects+onProjectChange) */
-  onMoveToProject?: () => void
-  /** Called when labels are changed via inline editor */
-  onLabelsChange?: (labels: string[]) => void
   /** Called to delete task(s) */
   onDelete?: () => void
-  /** Whether the panel is open (used for auto-save on close in popover/sheet modes) */
-  open?: boolean
   /** Called when user clicks Cancel (resets changes, closes without saving) */
   onCancel?: () => void
   /** Called when user clicks Save (applies changes, closes) */
@@ -153,8 +137,6 @@ export interface QuickActionPanelProps {
   recurrenceSummary?: string | null
   /** Title size: 'compact' (default) or 'prominent' (larger for page context) */
   titleVariant?: 'compact' | 'prominent'
-  /** Called when title is edited (makes title editable when provided) */
-  onTitleChange?: (title: string) => void
   /** Show Completed badge when task.done is true */
   showCompletedBadge?: boolean
   /** Called when user marks task as done (single task only, popover mode) */
@@ -166,9 +148,9 @@ export interface QuickActionPanelProps {
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
   saveRef?: React.MutableRefObject<(() => Promise<void> | void) | null>
   /**
-   * Batched save callback - when provided, all changes are collected and sent
-   * in a single call instead of individual callbacks. This enables atomic saves
-   * with a single undo entry. Falls back to individual callbacks if not provided.
+   * Batched save callback: all staged changes are collected and sent in a single
+   * call, so the save is atomic with a single undo entry. Editing an existing task
+   * needs it; without it (and outside create mode) the fields render read-only.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
   /** AI annotation text to display (e.g., What's Next recommendation reason) */
@@ -201,22 +183,13 @@ export function QuickActionPanel({
   selectedCount,
   timezone,
   mode,
-  onDateChange,
-  onDateChangeRelative,
-  onPriorityChange,
-  onRruleChange,
   projects,
-  onProjectChange,
-  onMoveToProject,
-  onLabelsChange,
   onDelete,
-  open = true,
   onCancel,
   onSave,
   onNavigateToDetail,
   recurrenceSummary,
   titleVariant = 'compact',
-  onTitleChange,
   showCompletedBadge = false,
   onMarkDone,
   projectName,
@@ -255,7 +228,11 @@ export function QuickActionPanel({
   // Single task mode (either direct or via bulk selection)
   const isSingleTask = !!effectiveTask
 
-  // State for expandable recurrence picker (inline mode only)
+  // Whether the fields are editable: a batched-save host (onSaveAll) or create mode.
+  // Otherwise project, priority, labels and recurrence render read-only.
+  const canEdit = !!onSaveAll || isCreateMode
+
+  // State for expandable recurrence picker
   const [editingRecurrence, setEditingRecurrence] = useState(false)
 
   // State for title editing
@@ -319,8 +296,8 @@ export function QuickActionPanel({
   const [pendingProject, setPendingProject] = useState<number | null>(null)
   // pendingTitle stages title changes (previously auto-saved on blur)
   const [pendingTitle, setPendingTitle] = useState<string | null>(null)
-  // pendingDueAt stages date changes for batched save (onSaveAll mode) and as an explicit
-  // override in create mode where the hook's dirty detection fails (see handleSmartButtonClick)
+  // pendingDueAt is set only in create mode: an explicit override where the hook's dirty
+  // detection fails (see handleSmartButtonClick). Edit mode stages the date in the hook.
   const [pendingDueAt, setPendingDueAt] = useState<string | null>(null)
   // pendingDueAtCleared tracks when user wants to clear the due date (and recurrence)
   const [pendingDueAtCleared, setPendingDueAtCleared] = useState(false)
@@ -422,13 +399,14 @@ export function QuickActionPanel({
     return RRULE_DAYS[weekday - 1]
   }, [effectiveTask, timezone])
 
-  // Use the appropriate hook based on mode
-  // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook.
+  // Use the appropriate hook based on mode.
   // In bulk mode (multi-select OR single-task-via-selection-sheet), the bulk hook
-  // owns staging — we must read its dirty flag even when onSaveAll is provided.
+  // owns staging. In create mode a date can also be staged via pendingDueAt, the
+  // explicit override for when the hook's dirty detection misses it (see
+  // handleSmartButtonClick); in edit mode the hook alone tracks the date.
   const hasDateChanges = isBulkMode
     ? bulkHook.isDirty
-    : onSaveAll || isCreateMode
+    : isCreateMode
       ? pendingDueAt !== null || singleHook.isDirty
       : singleHook.isDirty
   // Title is dirty if staged (pendingTitle) OR if the user is mid-edit with changes.
@@ -505,9 +483,8 @@ export function QuickActionPanel({
   const deltaDisplay = isBulkMode ? bulkHook.deltaDisplay : singleHook.deltaDisplay
 
   // Whether the date specifically has changed — used for blue styling on the due date line.
-  // Differs from hasDateChanges: in edit mode with onSaveAll, hasDateChanges also checks
-  // pendingDueAt (for batched save staging), but isDateDirty only checks the hook because
-  // the hook's dirty detection works correctly in edit mode (initial = task's real due_at).
+  // Same rule as hasDateChanges: create mode also honors the pendingDueAt override, while
+  // edit mode reads the hook, whose dirty detection works there (initial = task's due_at).
   const isDateDirty = isCreateMode
     ? pendingDueAt !== null || singleHook.isDirty
     : isBulkMode
@@ -602,48 +579,6 @@ export function QuickActionPanel({
     },
     [handleSmartButton, isCreateMode],
   )
-
-  // Apply date changes - when onSaveAll provided, stage the change for batched save
-  const handleApply = useCallback(() => {
-    if (isBulkMode) {
-      const result = bulkHook.getResult()
-      if (result?.type === 'absolute') {
-        onDateChange?.(result.until)
-      } else if (result?.type === 'relative' && onDateChangeRelative) {
-        onDateChangeRelative(result.deltaMinutes)
-      }
-    } else if (onSaveAll) {
-      // Stage date change for batched save (single task mode with onSaveAll)
-      setPendingDueAt(workingDate)
-    } else {
-      onDateChange?.(workingDate)
-    }
-  }, [isBulkMode, bulkHook, workingDate, onDateChange, onDateChangeRelative, onSaveAll])
-
-  // Auto-save on dismiss for popover/sheet modes when NOT using explicit save/cancel
-  // (legacy behavior when onSave/onCancel are not provided)
-  const workingDateRef = useRef(workingDate)
-  const isDirtyRef = useRef(isDirty)
-  useEffect(() => {
-    workingDateRef.current = workingDate
-    isDirtyRef.current = isDirty
-  }, [workingDate, isDirty])
-
-  const prevOpenRef = useRef(open)
-  useEffect(() => {
-    // Only auto-save if no explicit save/cancel handlers (legacy mode)
-    if (
-      !onSave &&
-      !onCancel &&
-      prevOpenRef.current &&
-      !open &&
-      isDirtyRef.current &&
-      (mode === 'popover' || mode === 'sheet')
-    ) {
-      onDateChange?.(workingDateRef.current)
-    }
-    prevOpenRef.current = open
-  }, [open, mode, onDateChange, onSave, onCancel])
 
   // Collect all pending changes into a single QuickActionPanelChanges object.
   // Used by both handleSave and handleSaveAndDone to avoid duplicating the collection logic.
@@ -774,51 +709,15 @@ export function QuickActionPanel({
     singleHook.reset()
   }, [onCreate, collectPendingChanges, createTitle, resetAllPending, singleHook])
 
-  // Shared save logic: applies all pending changes via either batched or individual callbacks.
+  // Shared save logic: sends all pending changes in one batched onSaveAll call.
   // Used by both handleSave and handleSaveAndDone to avoid duplicating the dispatch logic.
   const applyAllPendingChanges = useCallback(async () => {
-    if (onSaveAll) {
-      const changes = collectPendingChanges()
-      if (Object.keys(changes).length > 0) {
-        await onSaveAll(changes)
-      }
-    } else {
-      // Individual callbacks mode (backward compatibility)
-      if (hasDateChanges) {
-        handleApply()
-      }
-      if (pendingPriority !== null) {
-        onPriorityChange?.(pendingPriority)
-      }
-      if (pendingLabels !== null) {
-        onLabelsChange?.(pendingLabels)
-      }
-      if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
-        const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
-        const resolvedRecurrenceMode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
-        onRruleChange?.(rrule, resolvedRecurrenceMode)
-      }
-      if (pendingProject !== null) {
-        onProjectChange?.(pendingProject)
-      }
+    if (!onSaveAll) return
+    const changes = collectPendingChanges()
+    if (Object.keys(changes).length > 0) {
+      await onSaveAll(changes)
     }
-  }, [
-    onSaveAll,
-    collectPendingChanges,
-    pendingPriority,
-    pendingLabels,
-    pendingRrule,
-    pendingRecurrenceMode,
-    pendingProject,
-    hasDateChanges,
-    handleApply,
-    effectiveTask?.rrule,
-    effectiveTask?.recurrence_mode,
-    onPriorityChange,
-    onLabelsChange,
-    onRruleChange,
-    onProjectChange,
-  ])
+  }, [onSaveAll, collectPendingChanges])
 
   const handleSave = useCallback(async () => {
     try {
@@ -870,8 +769,7 @@ export function QuickActionPanel({
 
   // Compute title:
   // - SelectionActionSheet (sheet mode with selectedCount): hide title, modal shows it
-  // - sheet mode without selectedCount: show task title
-  // - inline/popover: show count for bulk or task title
+  // - otherwise: show count for bulk or task title
   // When pendingTitle exists, show it instead of the task's current title
   const displayTitle = pendingTitle ?? effectiveTask?.title
   const title = isSelectionSheetMode
@@ -966,34 +864,27 @@ export function QuickActionPanel({
     return { label, timeAgo, fullDate }
   }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone])
 
-  // Toggle recurrence picker (for inline mode)
+  // Toggle the expandable recurrence picker
   const handleRecurrenceToggle = useCallback(() => {
     setEditingRecurrence((prev) => !prev)
   }, [])
 
-  // Handle title editing - stages the change when onSaveAll is provided,
-  // otherwise falls back to immediate save via onTitleChange
+  // Handle title editing - stages the change for the batched save
   const handleTitleSave = useCallback(() => {
     const trimmed = titleDraft.trim()
     if (trimmed && trimmed !== effectiveTask?.title) {
-      if (onSaveAll) {
-        // Stage the title change for batched save
-        setPendingTitle(trimmed)
-      } else {
-        // Fall back to immediate save
-        onTitleChange?.(trimmed)
-      }
+      setPendingTitle(trimmed)
     }
     setEditingTitle(false)
-  }, [titleDraft, effectiveTask?.title, onTitleChange, onSaveAll])
+  }, [titleDraft, effectiveTask?.title])
 
   const handleTitleClick = useCallback(() => {
-    if ((onTitleChange || onSaveAll) && effectiveTask) {
+    if (onSaveAll && effectiveTask) {
       // Use pendingTitle if it exists, otherwise use task's current title
       setTitleDraft(pendingTitle ?? effectiveTask.title)
       setEditingTitle(true)
     }
-  }, [onTitleChange, onSaveAll, effectiveTask, pendingTitle])
+  }, [onSaveAll, effectiveTask, pendingTitle])
 
   // Mark Done handlers
   const handleDoneClick = useCallback(() => {
@@ -1124,7 +1015,7 @@ export function QuickActionPanel({
           ) : (
             title && (
               <>
-                {(onTitleChange || onSaveAll) && editingTitle ? (
+                {onSaveAll && editingTitle ? (
                   titleVariant === 'prominent' ? (
                     <Textarea
                       value={titleDraft}
@@ -1167,11 +1058,11 @@ export function QuickActionPanel({
                             detailClasses?.scrollable && 'max-h-32 overflow-y-auto',
                             isTitleDirty
                               ? 'text-blue-500'
-                              : onTitleChange || onSaveAll
+                              : onSaveAll
                                 ? 'hover:text-primary cursor-pointer transition-colors'
                                 : 'select-text',
                           )}
-                          onClick={onTitleChange || onSaveAll ? handleTitleClick : undefined}
+                          onClick={onSaveAll ? handleTitleClick : undefined}
                         >
                           {title}
                         </p>
@@ -1360,10 +1251,7 @@ export function QuickActionPanel({
                 const displayProjectObj = projects?.find((p) => p.id === displayProject)
                 const displayProjectName =
                   displayProjectObj?.name ?? projectName ?? (isCreateMode ? 'Inbox' : undefined)
-                return displayProjectName &&
-                  (onProjectChange || onSaveAll || isCreateMode) &&
-                  projects &&
-                  projects.length > 0 ? (
+                return displayProjectName && canEdit && projects && projects.length > 0 ? (
                   <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
                     <PopoverTrigger asChild>
                       <button
@@ -1400,20 +1288,6 @@ export function QuickActionPanel({
                       ))}
                     </PopoverContent>
                   </Popover>
-                ) : displayProjectName && onMoveToProject ? (
-                  <button
-                    type="button"
-                    onClick={onMoveToProject}
-                    className={cn(
-                      'flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors',
-                      isProjectDirty
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
-                        : 'bg-muted text-muted-foreground hover:bg-accent active:bg-accent',
-                    )}
-                  >
-                    {displayProjectName}
-                    <ChevronDown className="size-3 opacity-50" />
-                  </button>
                 ) : displayProjectName ? (
                   <span
                     className={cn(
@@ -1428,7 +1302,7 @@ export function QuickActionPanel({
                 ) : null
               })()}
               {/* Priority picker — after project badge */}
-              {onPriorityChange || onSaveAll || isCreateMode ? (
+              {canEdit ? (
                 <Popover open={priorityPopoverOpen} onOpenChange={setPriorityPopoverOpen}>
                   <PopoverTrigger asChild>
                     <button
@@ -1504,7 +1378,7 @@ export function QuickActionPanel({
           {/* Labels + action icons row */}
           {(effectiveTask || isBulkMode || isCreateMode) && (
             <div className="mt-2 flex flex-wrap items-center gap-1">
-              {onLabelsChange || onSaveAll || isCreateMode ? (
+              {canEdit ? (
                 <div ref={labelWrapperRef} className="relative flex flex-wrap items-center gap-1">
                   {displayLabels.map((label) => {
                     const colorClasses = getLabelClasses(label, labelConfig)
@@ -1608,9 +1482,9 @@ export function QuickActionPanel({
               )}
               {/* Action icons — right-aligned */}
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {/* Recurrence button - show when onRruleChange, onSaveAll, or createMode is active */}
+                {/* Recurrence button - shown when the panel is editable (canEdit) */}
                 {/* Blue pill when recurrence is set (matching auto-snooze style), gray icon when unset */}
-                {(onRruleChange || onSaveAll || isCreateMode) &&
+                {canEdit &&
                   (displayRrule ? (
                     <button
                       type="button"
@@ -1836,7 +1710,7 @@ export function QuickActionPanel({
 
       {/* Expandable recurrence section - shown when recurrence button is clicked */}
       {/* Uses displayRrule (pending or current) and stages changes via setPendingRrule */}
-      {editingRecurrence && (onRruleChange || onSaveAll || isCreateMode) && (
+      {editingRecurrence && canEdit && (
         <div className="rounded-lg border p-3">
           <RecurrencePicker
             value={displayRrule}
@@ -1867,66 +1741,52 @@ export function QuickActionPanel({
         </p>
       )}
 
-      {/* Apply button (inline mode only) */}
-      {mode === 'inline' && (
-        <Button
-          onClick={handleApply}
-          disabled={!isDirty || isRecurrenceInvalid}
-          className="w-full"
-          size="sm"
-        >
-          Apply
-        </Button>
-      )}
-
-      {/* Bottom action bar - Save/Reset/Done/Cancel (popover/sheet with explicit handlers) */}
-      {mode !== 'inline' && onSave && onCancel && (
-        <div className="flex gap-2 border-t pt-3 select-none">
-          {isCreateMode ? (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleCreate}
-              disabled={!createTitle.trim() || isRecurrenceInvalid}
-              className="flex-1"
-            >
-              Create Task
-            </Button>
-          ) : (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleSave}
-              disabled={!isDirty || isRecurrenceInvalid}
-              className="flex-1"
-            >
-              Save
-            </Button>
-          )}
+      {/* Bottom action bar - Save/Reset/Done/Cancel (Create Task/Reset/Cancel in create mode) */}
+      <div className="flex gap-2 border-t pt-3 select-none">
+        {isCreateMode ? (
           <Button
-            variant="outline"
+            variant="default"
             size="sm"
-            onClick={handleReset}
-            disabled={isCreateMode ? !createModeNonTitleDirty : !isDirty}
+            onClick={handleCreate}
+            disabled={!createTitle.trim() || isRecurrenceInvalid}
             className="flex-1"
           >
-            Reset
+            Create Task
           </Button>
-          {!isCreateMode && isSingleTask && onMarkDone && !effectiveTask?.done && (
-            <Button
-              size="sm"
-              onClick={handleDoneClick}
-              className="flex-1 bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
-            >
-              <Check className="mr-1 size-4" />
-              Done
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={handleCancel} className="flex-1">
-            Cancel
+        ) : (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSave}
+            disabled={!isDirty || isRecurrenceInvalid}
+            className="flex-1"
+          >
+            Save
           </Button>
-        </div>
-      )}
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleReset}
+          disabled={isCreateMode ? !createModeNonTitleDirty : !isDirty}
+          className="flex-1"
+        >
+          Reset
+        </Button>
+        {!isCreateMode && isSingleTask && onMarkDone && !effectiveTask?.done && (
+          <Button
+            size="sm"
+            onClick={handleDoneClick}
+            className="flex-1 bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
+          >
+            <Check className="mr-1 size-4" />
+            Done
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={handleCancel} className="flex-1">
+          Cancel
+        </Button>
+      </div>
 
       {/* Notes section — inline editing below action buttons (single-task only) */}
       {!isBulkMode && (
