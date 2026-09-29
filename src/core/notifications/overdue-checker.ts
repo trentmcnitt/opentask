@@ -34,6 +34,7 @@ import {
   isApnsConfigured,
 } from '@/core/notifications/apns'
 import { getOverdueCount } from '@/core/notifications/dismiss'
+import { lastBadgeSent, usersWithNonZeroBadge } from '@/core/notifications/badge-state'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
 
 const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
@@ -247,6 +248,47 @@ async function sendBucket(
   await Promise.allSettled(sends)
 }
 
+/**
+ * Badge-only pushes, sent ONLY when a user's overdue count differs from the
+ * badge their devices were last sent (badge-state.ts).
+ *
+ * This used to send every minute to every device of every user with anything
+ * overdue, changed or not: ~95 badge pushes to 5 devices in 100 minutes on
+ * prod one morning (2026-09-29), all saying the same number. Those were
+ * silent pushes then, and iOS allows a few an hour, so the spam used up the
+ * allowance and the one push that mattered (the drop to 0 after a completion)
+ * was dropped. The badge push is an alert-type push now (see
+ * `buildBadgeNotification`), and this gate keeps it to one push per change.
+ *
+ * What changes the count without a user action is time: a task becoming
+ * overdue. User actions send their own badge (`syncBadgeCount`), which
+ * records the value, so they aren't repeated here.
+ *
+ * Users are:
+ * - everyone with something overdue this tick, except those who just got a
+ *   visible notification (it carried `aps.badge`, and recorded it);
+ * - anyone whose devices were last told a non-zero number but who has nothing
+ *   overdue in this tick's rows, so a stale badge falls back to the truth even
+ *   if no user action sent the zero. Their count is measured, not assumed 0:
+ *   this tick's rows leave out users with notifications switched off.
+ */
+async function sendChangedBadges(
+  overdueCounts: Map<number, number>,
+  notifiedUsers: Map<number, unknown>,
+): Promise<void> {
+  const counts = new Map(overdueCounts)
+  for (const userId of usersWithNonZeroBadge()) {
+    if (!counts.has(userId)) counts.set(userId, getOverdueCount(userId))
+  }
+
+  for (const [userId, badgeCount] of counts) {
+    if (notifiedUsers.has(userId)) continue
+    if (lastBadgeSent(userId) === badgeCount) continue
+    log.info('notifications', `Badge-only update for user ${userId}: ${badgeCount} overdue`)
+    await sendApnsBadgeUpdate(userId, badgeCount)
+  }
+}
+
 export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
   const webPushEnabled = isWebPushConfigured()
   const apnsEnabled = isApnsConfigured()
@@ -309,8 +351,14 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
       return [{ ...task, effective_due_at: effective.toISOString() }]
     })
 
-    // Collect unique user IDs with overdue tasks for badge updates
-    const usersWithOverdue = new Set(overdueTasks.map((t) => t.user_id))
+    // Each user's overdue count, from the rows already in hand. Same
+    // population as `getOverdueCount` (both exclude done, deleted, archived,
+    // quotas and reminders, and use `effectiveDueAt`) without walking every
+    // recurring task's rrule a second time per user per minute.
+    const overdueCounts = new Map<number, number>()
+    for (const t of overdueTasks) {
+      overdueCounts.set(t.user_id, (overdueCounts.get(t.user_id) ?? 0) + 1)
+    }
 
     // Filter to tasks whose due_at aligns with a notification boundary this minute
     const eligibleTasks = overdueTasks.filter((t) => isNotificationBoundary(t, now))
@@ -332,23 +380,14 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
 
       // Badge count: total overdue tasks for this user (all priorities).
       // Uses all overdue tasks, not just those eligible for notification this tick.
-      const badgeCount = getOverdueCount(userId)
+      const badgeCount = overdueCounts.get(userId) ?? 0
 
       await sendBucket(regular, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
       await sendBucket(high, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
       await sendBucket(urgent, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
     }
 
-    // Badge-only update for users who have overdue tasks but didn't get
-    // visible notifications this cycle. Keeps the app icon badge current.
-    if (apnsEnabled) {
-      for (const userId of usersWithOverdue) {
-        if (tasksByUser.has(userId)) continue // already got badge via visible notification
-        const badgeCount = getOverdueCount(userId)
-        log.info('notifications', `Badge-only update for user ${userId}: ${badgeCount} overdue`)
-        await sendApnsBadgeUpdate(userId, badgeCount)
-      }
-    }
+    if (apnsEnabled) await sendChangedBadges(overdueCounts, tasksByUser)
   } catch (err) {
     log.error('notifications', 'Overdue checker error:', err)
   }

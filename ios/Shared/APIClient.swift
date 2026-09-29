@@ -618,6 +618,14 @@ final class APIClient {
         return try await fetchCompletions(since: startOfDay, until: startOfTomorrow)
     }
 
+    /// The Tasks page's own counts — `{ total, overdue, today }` from
+    /// `GET /api/tasks/counts`, computed by the same function as the web top
+    /// bar's pills. `overdue` is what the app icon / Dock badge shows
+    /// (`refreshBadgeFromServer()`).
+    func fetchTaskCounts() async throws -> TaskCountsPage {
+        try await get(path: "/api/tasks/counts", as: TaskCountsPage.self)
+    }
+
     // MARK: - Notification Dismiss
 
     /// Tell the server to dismiss all notifications on all other devices.

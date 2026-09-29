@@ -32,6 +32,7 @@ import {
 } from '@/lib/quota-prompts'
 import type { FormattedTask } from '@/lib/format-task'
 import type { TimeSlot } from '@/lib/time-slot-assign'
+import type { TaskCounts } from '@/lib/task-counts'
 import type { LabelColor, QuotaDayState } from '@/types'
 
 const DIR = path.join(process.cwd(), 'tests', 'fixtures', 'contract')
@@ -129,6 +130,12 @@ const TASK: Record<keyof FormattedTask, Field> = {
   updated_at: STR,
   is_recurring: BOOL,
   is_snoozed: BOOL,
+}
+
+const TASK_COUNTS: Record<keyof TaskCounts, Field> = {
+  total: INT,
+  overdue: INT,
+  today: INT,
 }
 
 const TIME_SLOT: Record<keyof TimeSlot, Field> = {
@@ -300,5 +307,13 @@ describe('contract fixtures match the TS types', () => {
     expect(daily.every((p) => p.stripe_color === 'purple' && p.has_notes)).toBe(true)
     expect(byTitle('Go for a run')[0]).toMatchObject({ done: true, considered: true, current: 1 })
     expect(byTitle('Call a friend')[0]).toMatchObject({ done: false, considered: false })
+  })
+
+  test('the task counts are exactly a TaskCounts (the apps’ foreground badge)', () => {
+    const counts = data('task-counts')
+    expectShape(counts, TASK_COUNTS, 'task-counts')
+    // User B's seeded task (due tomorrow) and the one three days late; the
+    // quotas and reminders are not counted.
+    expect(counts).toEqual({ total: 2, overdue: 1, today: 0 })
   })
 })

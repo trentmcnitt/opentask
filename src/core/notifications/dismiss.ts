@@ -23,7 +23,6 @@ import {
   sendApnsBadgeUpdate,
   isApnsConfigured,
 } from '@/core/notifications/apns'
-import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { countCurrentlyDue } from '@/core/tasks/currently-due'
 
@@ -33,13 +32,28 @@ export function getOverdueCount(userId: number): number {
   // due_at freezes once the daily sweep stops, so counting `due_at < now` would
   // inflate the badge with items that aren't actually scheduled today — the
   // number the user glances at would stop meaning anything.
+  //
+  // Against the Tasks page's Overdue pill (`countTasks`, src/lib/task-counts.ts,
+  // which the native apps also read on foreground via GET /api/tasks/counts):
+  // same population (open, not deleted/archived, no reminders, no quotas), and
+  // the same answer for every task with a due_at. Two edges differ: a
+  // recurring task with NO due_at is counted here once today's scheduled time
+  // passes (the pill never counts an undated task), and the pill also counts
+  // another user's overdue tasks in a shared project. Neither existed on prod
+  // on 2026-09-29, when this was checked. The rule is kept because the notifier
+  // and the snooze-overdue sweep share it (currently-due.ts).
   return countCurrentlyDue(userId)
 }
 
 /**
- * Send a badge update to iOS with the current overdue count.
+ * Send a badge update to iOS and macOS with the current overdue count.
  * Fire-and-forget — errors are logged but never thrown.
  * Called by dismissNotificationsForTasks and directly by undo/redo routes.
+ *
+ * Always sends, even when the number is the same as last time: a user action
+ * is exactly when a device's badge is most likely to be wrong (another device
+ * made the change). `sendApnsBadgeUpdate` records what was sent, so the
+ * overdue checker's change gate doesn't send it again (badge-state.ts).
  */
 export function syncBadgeCount(userId: number, knownCount?: number): void {
   if (!isApnsConfigured()) return

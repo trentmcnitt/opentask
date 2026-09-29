@@ -259,4 +259,17 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(status.undoableCount, 9)
         XCTAssertEqual(status.redoableCount, 0)
     }
+
+    // MARK: GET /api/tasks/counts (the foreground badge)
+
+    func testTaskCounts() throws {
+        let counts = try Fixtures.decode(TaskCountsPage.self, "task-counts")
+        // User B's seeded task plus the one three days late; quotas and
+        // reminders are not counted.
+        XCTAssertEqual(counts.total, 2)
+        XCTAssertEqual(counts.overdue, 1, "the badge number")
+        XCTAssertEqual(counts.today, 0)
+        let raw = try Fixtures.object("task-counts")
+        XCTAssertEqual(Set(raw.keys), ["total", "overdue", "today"])
+    }
 }

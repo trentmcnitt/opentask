@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0397B213A2C11F51C7A2EBD2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3EBEF5EED37D51458C482AC4 /* Assets.xcassets */; };
+		04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */ = {isa = PBXBuildFile; fileRef = F18E00062C7779D38C364472 /* task-counts.json */; };
 		09C50C125EE5772431D0238A /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
 		0F675979F0E897179550119D /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
@@ -209,6 +210,7 @@
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
 		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
+		F18E00062C7779D38C364472 /* task-counts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-counts.json"; sourceTree = "<group>"; };
 		F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidgetViews.swift; sourceTree = "<group>"; };
 		F781F8F4FFD0805CBC5D5068 /* completions.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = completions.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -236,6 +238,7 @@
 				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
 				37C29187973C3150F91CA3B7 /* reminders-initial.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
+				F18E00062C7779D38C364472 /* task-counts.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
 				6676B0D8909B96B0AAA98C71 /* tasks.json */,
 				B7DD47E083E073FE32FA2C34 /* time-slots.json */,
@@ -527,6 +530,7 @@
 				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,
 				51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
+				04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
 				DBCA794BCC63F980AE658F47 /* tasks.json in Resources */,
 				EE5A06EF55B46C3132933303 /* time-slots.json in Resources */,
