@@ -16,9 +16,14 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
-import { getTaskById } from './create'
+import { getTaskById } from './read'
+import { canUserAccessTask } from './access'
 import { collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
+
+// `canUserAccessTask` moved to `./access`; re-exported so existing `./update`
+// imports keep working.
+export { canUserAccessTask }
 
 export interface UpdateTaskOptions {
   userId: number
@@ -185,18 +190,4 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   }
 
   return result
-}
-
-/**
- * Check if a user can access a task
- */
-export function canUserAccessTask(userId: number, task: Task): boolean {
-  if (task.user_id === userId) return true
-
-  const db = getDb()
-  const project = db.prepare('SELECT shared FROM projects WHERE id = ?').get(task.project_id) as
-    | { shared: number }
-    | undefined
-
-  return project?.shared === 1
 }
