@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useCallback, useMemo, useState, type MutableRefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,6 +14,7 @@ import {
 } from '@/components/QuotaPromptBulkField'
 import { isReservedLabel } from '@/lib/label-vocabulary'
 import { useDomainLabels } from '@/hooks/useDomainLabels'
+import { useStagedEditor } from '@/hooks/useStagedEditor'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import type { QuotaPromptConfig, Task } from '@/types'
@@ -138,8 +139,6 @@ export function QuotaDetail({
     canSave,
   } = describeDraft({ creating, base, title, target, period, label, notes, prompt })
 
-  useReportDirty(dirty, onDirtyChange)
-
   const buildChanges = useCallback((): QuotaChanges => {
     const changes: QuotaChanges = {}
     if (creating || titleTouched) changes.title = title.trim()
@@ -198,14 +197,11 @@ export function QuotaDetail({
     registeredLabels,
   ])
 
-  const [saving, setSaving] = useState(false)
-
-  const handleSave = useCallback(async () => {
-    // `saving` is the in-flight guard as well as the label: the modal only
-    // closes once the request resolves, so without it two taps on a slow
-    // connection made two quotas — or two PATCHes and two undo entries.
-    if (!canSave || saving) return
-    setSaving(true)
+  // The in-flight guard (a second tap while saving does nothing), the dirty
+  // and unmount-clean reports, beforeunload and the saveRef registration all
+  // come from useStagedEditor.
+  const save = useCallback(async () => {
+    if (!canSave) return
     try {
       const changes = buildChanges()
       if (creating) await onCreate?.(changes)
@@ -223,18 +219,15 @@ export function QuotaDetail({
       // unsaved-changes dialog finish its own close — a rejection escaping
       // this left that dialog up forever with an unhandled rejection behind
       // it. The staged edits are deliberately kept so the save can be retried.
-    } finally {
-      setSaving(false)
     }
-  }, [canSave, saving, buildChanges, creating, onCreate, onSave, reloadLabels])
+  }, [canSave, buildChanges, creating, onCreate, onSave, reloadLabels])
 
-  useEffect(() => {
-    if (!saveRef) return
-    saveRef.current = handleSave
-    return () => {
-      saveRef.current = null
-    }
-  }, [saveRef, handleSave])
+  const { saving, runSave: handleSave } = useStagedEditor({
+    dirty,
+    onDirtyChange,
+    saveRef,
+    save,
+  })
 
   function handleReset() {
     setTitle(base.title)
@@ -343,27 +336,6 @@ function EditorPromptSection({
       target={target}
     />
   )
-}
-
-/**
- * Report dirtiness, and report clean on the way out: the modal unmounts the
- * editor when it closes, and without the unmount clear the host stayed "dirty"
- * until the next mount's effect ran — one frame of blue stripe and a disabled
- * drag every time it reopened. ReminderDetail does the same through a ref.
- * (A hook of its own only to keep `QuotaDetail` inside the function-length
- * limit once the "Remind me daily" section arrived.)
- */
-function useReportDirty(dirty: boolean, onDirtyChange?: (dirty: boolean) => void) {
-  const onDirtyChangeRef = useRef(onDirtyChange)
-  useEffect(() => {
-    onDirtyChangeRef.current = onDirtyChange
-  }, [onDirtyChange])
-  useEffect(() => {
-    onDirtyChange?.(dirty)
-  }, [dirty, onDirtyChange])
-  useEffect(() => {
-    return () => onDirtyChangeRef.current?.(false)
-  }, [])
 }
 
 /** "N times · every week", shared by every mode of the editor. */

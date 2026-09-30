@@ -47,6 +47,7 @@ import { showToast } from '@/lib/toast'
 import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
+import { useStagedEditor } from '@/hooks/useStagedEditor'
 import { formatRRuleCompact, formatBulkRecurrence } from '@/lib/format-rrule'
 import {
   PRESET_TIMES,
@@ -468,11 +469,6 @@ export function QuickActionPanel({
     effectiveTask?.recurrence_mode,
   ])
 
-  // Notify parent of dirty state changes for navigation protection
-  useEffect(() => {
-    onDirtyChange?.(isDirty)
-  }, [isDirty, onDirtyChange])
-
   const headerText = isBulkMode ? bulkHook.headerText : singleHook.headerText
   const relativeText = isBulkMode ? bulkHook.relativeText : singleHook.relativeText
   // §6: a reminder is never late. Its time of day says where the thought
@@ -581,7 +577,7 @@ export function QuickActionPanel({
   )
 
   // Collect all pending changes into a single QuickActionPanelChanges object.
-  // Used by both handleSave and handleSaveAndDone to avoid duplicating the collection logic.
+  // Used by both save and handleSaveAndDone to avoid duplicating the collection logic.
   //
   // Bulk-mode note: for multi-task selections we emit `delta_minutes` for relative
   // snoozes and additive `labels_add`/`labels_remove` for labels. For single-task
@@ -681,7 +677,7 @@ export function QuickActionPanel({
   ])
 
   // Reset all pending state back to initial values.
-  // Used by handleSave, handleCancel, and handleReset to avoid duplicating the reset logic.
+  // Used by save, handleCancel, and handleReset to avoid duplicating the reset logic.
   const resetAllPending = useCallback(() => {
     setPendingTitle(null)
     setPendingPriority(null)
@@ -699,18 +695,25 @@ export function QuickActionPanel({
     setNotesExpanded(false)
   }, [])
 
-  // Create mode handler: collects all staged fields + title, calls onCreate, then resets
+  // Create mode handler: collects all staged fields + title, calls onCreate, then resets.
+  // A host that rejects has already reported the failure (CreateTaskPanel
+  // toasts the server's reason); the title and staged fields stay so the
+  // create can be retried instead of being wiped as if it had worked.
   const handleCreate = useCallback(async () => {
     if (!onCreate) return
     const changes = collectPendingChanges()
-    await onCreate({ ...changes, title: createTitle.trim() })
+    try {
+      await onCreate({ ...changes, title: createTitle.trim() })
+    } catch {
+      return
+    }
     resetAllPending()
     setCreateTitle('')
     singleHook.reset()
   }, [onCreate, collectPendingChanges, createTitle, resetAllPending, singleHook])
 
   // Shared save logic: sends all pending changes in one batched onSaveAll call.
-  // Used by both handleSave and handleSaveAndDone to avoid duplicating the dispatch logic.
+  // Used by both save and handleSaveAndDone to avoid duplicating the dispatch logic.
   const applyAllPendingChanges = useCallback(async () => {
     if (!onSaveAll) return
     const changes = collectPendingChanges()
@@ -719,13 +722,14 @@ export function QuickActionPanel({
     }
   }, [onSaveAll, collectPendingChanges])
 
-  const handleSave = useCallback(async () => {
+  const save = useCallback(async () => {
     try {
       await applyAllPendingChanges()
     } catch {
-      // A host that rejects has already reported the failure (see the task
-      // page's single-task save). The staged edits stay so the save can be
-      // retried, and onSave (which closes or leaves) is not called.
+      // A host that rejects has already reported the failure (the dashboard's
+      // popover and selection sheet, the task page: each toasts the server's
+      // reason). The staged edits stay so the save can be retried, and onSave
+      // (which closes or leaves) is not called.
       return
     }
     resetAllPending()
@@ -736,20 +740,15 @@ export function QuickActionPanel({
     onSave?.()
   }, [applyAllPendingChanges, resetAllPending, reset, onSave])
 
-  // Expose handleSave to parent via saveRef for external triggering (e.g., navigation dialog)
-  const handleSaveRef = useRef(handleSave)
-  useEffect(() => {
-    handleSaveRef.current = handleSave
-  }, [handleSave])
-
-  useEffect(() => {
-    if (saveRef) {
-      saveRef.current = () => handleSaveRef.current()
-      return () => {
-        saveRef.current = null
-      }
-    }
-  }, [saveRef])
+  // Dirty report (and clean on unmount), beforeunload while dirty, the saveRef
+  // a host's unsaved-changes dialog commits through, and the in-flight guard
+  // that disables Save until the request settles — see useStagedEditor.
+  const { saving, runSave: handleSave } = useStagedEditor({
+    dirty: isDirty,
+    onDirtyChange,
+    saveRef,
+    save,
+  })
 
   const handleCancel = useCallback(() => {
     reset()
@@ -953,18 +952,6 @@ export function QuickActionPanel({
       !displayLabels.some((l) => l.toLowerCase() === c.name.toLowerCase()) &&
       c.name.toLowerCase().includes(labelInput.toLowerCase()),
   )
-
-  // Browser beforeunload protection - warn when leaving page with unsaved changes
-  useEffect(() => {
-    if (!isDirty) return
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      // Modern browsers ignore custom messages but still show a generic prompt
-      e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [isDirty])
 
   return (
     <div className="space-y-3">
@@ -1757,8 +1744,8 @@ export function QuickActionPanel({
           <Button
             variant="default"
             size="sm"
-            onClick={handleSave}
-            disabled={!isDirty || isRecurrenceInvalid}
+            onClick={() => void handleSave()}
+            disabled={!isDirty || isRecurrenceInvalid || saving}
             className="flex-1"
           >
             Save

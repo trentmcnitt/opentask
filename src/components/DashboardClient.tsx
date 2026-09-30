@@ -42,7 +42,12 @@ import { OverdueJumpFab } from '@/components/OverdueJumpFab'
 import { JumpToTasksFab } from '@/components/JumpToTasksFab'
 import { QuickAddSheet, useQuickAddSheet } from '@/components/QuickAddSheet'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
-import { showToast, showSuccessToastWithAction, showAiSuccessToastWithAction } from '@/lib/toast'
+import {
+  showToast,
+  showSaveError,
+  showSuccessToastWithAction,
+  showAiSuccessToastWithAction,
+} from '@/lib/toast'
 import dynamic from 'next/dynamic'
 
 const QuickActionPopover = dynamic(() =>
@@ -238,6 +243,10 @@ function useBulkActions(
    * selection — used when the snooze confirmation dialog opts some tasks out
    * of the date change. Non-date fields still apply to the full selection, in
    * the same request, so the whole save is one Undo (Trent, 2026-09-27).
+   *
+   * A failure toasts the server's reason and rejects, so the sheet stays open
+   * with the staged edits and the selection intact (SelectionActionSheet
+   * closes and clears only after this resolves).
    */
   const bulkSaveAll = async (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => {
     const allIds = [...selection.selectedIds]
@@ -252,8 +261,9 @@ function useBulkActions(
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
-    } catch {
-      showToast({ message: 'Save failed', type: 'error' })
+    } catch (err) {
+      showSaveError(err)
+      throw err
     }
   }
 
@@ -1939,14 +1949,14 @@ function DashboardView({
   onSearch: (q: string) => void
   onSearchClear: () => void
   onBulkDone: () => Promise<void>
-  onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
+  onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
   onBulkDelete: () => Promise<void>
   onSnoozeOverdue: (until?: string) => void
   focusedTask: Task | null
   quickActionOpen: boolean
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
-  onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
+  onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   onQuickActionDone: (taskId: number) => void
   onQuickActionDelete: (taskId: number) => void
   onQuickActionNavigate: (taskId: number) => void
