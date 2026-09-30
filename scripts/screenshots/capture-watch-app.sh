@@ -37,13 +37,18 @@ mkdir -p "$OUT"
 
 skip() {
   echo "watch: $1 — skipped (no Apple Watch screenshots this run)"
-  (cd "$ROOT" && npx tsx -e "import { writeManifestPart } from './scripts/screenshots/manifest'; writeManifestPart(process.argv[1], 'watch', [])" "$RUN_DIR")
+  # No watch entries (what manifest.ts's writeManifestPart would write).
+  mkdir -p "$RUN_DIR/manifest.parts"
+  printf '[]\n' >"$RUN_DIR/manifest.parts/watch.json"
   exit 0
 }
 
 command -v xcodebuild >/dev/null 2>&1 || skip "no Xcode"
 command -v xcodegen >/dev/null 2>&1 || skip "no xcodegen"
-xcodebuild -showsdks 2>/dev/null | grep -q -- '-sdk watchsimulator' ||
+# (Captured first: under pipefail, `| grep -q` can fail as grep closes the
+# pipe early.)
+SDKS="$(xcodebuild -showsdks 2>/dev/null || true)"
+grep -qF -- '-sdk watchsimulator' <<<"$SDKS" ||
   skip "no watchOS simulator SDK (Xcode › Settings › Components)"
 
 # The newest available watchOS runtime, and a 46mm Series watch on it (the
