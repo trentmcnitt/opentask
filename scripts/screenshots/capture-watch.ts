@@ -26,8 +26,8 @@ const PAGES = [
   { page: 'quotas', shows: 'Quotas page: open quotas grouped by period' },
 ] as const
 
-/** The page the portfolio and the docs overview use. */
-const HERO = 'reminders'
+/** The page the portfolio and the docs overview use (Quotas: the cleanest page; Reminders' paging arrows overlap its list). */
+const HERO = 'quotas'
 
 const dataUrl = (file: string) =>
   `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`
