@@ -7,7 +7,7 @@ import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
 import { OfflineBanner } from './OfflineBanner'
 import { useProjects } from './ProjectsProvider'
-import { OPEN_QUICK_ADD_EVENT, QUICK_ADD_ACTION } from './QuickAddSheet'
+import { FOCUS_QUICK_ADD_EVENT, QUICK_ADD_ACTION } from './QuickAdd'
 import dynamic from 'next/dynamic'
 
 const CreateTaskPanel = dynamic(() =>
@@ -46,20 +46,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setShowAddForm(true)
   }, [pathname, router])
 
-  // The phone tab bar's `+` (Trent, 2026-09-29): a one-line quick-add sheet at
-  // thumb level (`QuickAddSheet`, owned by the dashboard) instead of the full
-  // form, which its "Add manually" link still opens. Reminders and Quotas keep
-  // their own in-place add, as above. From any other page it navigates to the
-  // dashboard with `?action=quick-add`, which the dashboard reads on mount (an
-  // event would fire before the dashboard exists to hear it). The desktop
-  // Sidebar's Add button keeps `handleAddClick` and the full form.
+  // The phone tab bar's `+` (Trent, 2026-09-30): on the dashboard it focuses
+  // the add field at the top of the page (the same one desktop uses, with its
+  // mic and AI chip) and scrolls up to it, so the keyboard comes up on that
+  // field. The dispatch is synchronous and so is the field's focus() (see
+  // `QuickAdd`'s listener), which keeps it inside the tap, the only way iOS
+  // raises the keyboard for a programmatic focus. While the dashboard is still
+  // loading the field isn't mounted, so the tap does nothing.
+  //
+  // Reminders and Quotas keep their own in-place add, as above. From any other
+  // page it navigates to the dashboard with `?action=quick-add`, which the
+  // dashboard reads on arrival and focuses the field (an event would fire
+  // before the dashboard exists to hear it). That focus lands after a
+  // navigation, outside the tap, so on iOS the field is focused but the
+  // keyboard may wait for a tap on it. The desktop Sidebar's Add button keeps
+  // `handleAddClick` and the full form.
   const handleAddTabClick = useCallback(() => {
     if (pathname.startsWith('/reminders') || pathname.startsWith('/quotas')) {
       handleAddClick()
       return
     }
     if (pathname === '/') {
-      window.dispatchEvent(new CustomEvent(OPEN_QUICK_ADD_EVENT))
+      window.dispatchEvent(new CustomEvent(FOCUS_QUICK_ADD_EVENT))
       return
     }
     router.push(`/?action=${QUICK_ADD_ACTION}`)

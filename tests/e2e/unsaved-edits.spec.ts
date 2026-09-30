@@ -112,16 +112,18 @@ test.describe('Unsaved edits survive', () => {
   })
 
   test('a failed create keeps the title and says why', async ({ authenticatedPage: page }) => {
-    // The full add form, reached the way a phone reaches it: `+` → quick add →
-    // "Add manually" carries the typed title over.
+    // The full add form, reached the way a phone reaches it: `+` focuses the
+    // add field at the top, and its "Open full add form" button carries the
+    // typed title over.
     await page.setViewportSize({ width: 375, height: 812 })
     await page.reload()
     await page.waitForSelector('[id^="task-row-"], .text-4xl', { timeout: 10_000 })
     await page.getByRole('button', { name: 'Add', exact: true }).click()
-    const quick = page.getByRole('dialog', { name: 'Quick add' })
+    const quick = page.getByRole('textbox', { name: 'Quick add task' })
+    await expect(quick).toBeFocused()
     const title = uniqueTitle('Failed-create probe')
-    await quick.getByRole('textbox', { name: 'Quick add task' }).fill(title)
-    await quick.getByRole('button', { name: 'Add manually' }).click()
+    await quick.fill(title)
+    await page.getByRole('button', { name: 'Open full add form' }).click()
     const form = page.getByRole('dialog', { name: 'New Task' })
     await expect(form.getByLabel('Task title')).toHaveValue(title)
 
