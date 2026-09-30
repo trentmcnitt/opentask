@@ -217,11 +217,16 @@ func kickWidgetOutbox() {
         ProcessInfo.processInfo.endActivity(activity)
     }
     #else
+    // The drain starts unconditionally; the activity only asks the system not
+    // to suspend the process while it runs. `performExpiringActivity` calls
+    // its block with `expired == true` straight away when it can't grant the
+    // time — gating the drain on it would leave every tap queued.
+    let drain = Task.detached { await widgetOutbox.drain() }
     ProcessInfo.processInfo.performExpiringActivity(withReason: "Sending widget check-offs") { expired in
         guard !expired else { return }
         let finished = DispatchSemaphore(value: 0)
         Task.detached {
-            await widgetOutbox.drain()
+            await drain.value
             finished.signal()
         }
         finished.wait()
