@@ -4,6 +4,7 @@ import { useCallback, useState, useEffect } from 'react'
 import type { SelectionContextType } from '@/components/SelectionProvider'
 import { debug } from '@/lib/logger'
 import { isMacPlatform } from '@/lib/utils'
+import { nextFocusAfterRemoval } from '@/lib/keyboard-nav'
 
 /**
  * Keyboard Navigation for Task List
@@ -338,30 +339,10 @@ export function useKeyboardNavigation({
               // Compute next focus BEFORE completion removes the task from state.
               // orderedIds still contains the completed task(s) here because React
               // batches state updates — the closure captures the pre-completion list.
-              const completionSet = new Set(idsToComplete)
-              let nextFocusId: number | null = null
-
-              if (keyboardFocusedId !== null) {
-                const currentIndex = orderedIds.indexOf(keyboardFocusedId)
-                if (currentIndex !== -1) {
-                  // Look forward first — enables rapid sequential completion
-                  for (let i = currentIndex + 1; i < orderedIds.length; i++) {
-                    if (!completionSet.has(orderedIds[i])) {
-                      nextFocusId = orderedIds[i]
-                      break
-                    }
-                  }
-                  // If nothing forward, look backward
-                  if (nextFocusId === null) {
-                    for (let i = currentIndex - 1; i >= 0; i--) {
-                      if (!completionSet.has(orderedIds[i])) {
-                        nextFocusId = orderedIds[i]
-                        break
-                      }
-                    }
-                  }
-                }
-              }
+              const nextFocusId =
+                keyboardFocusedId !== null
+                  ? nextFocusAfterRemoval(orderedIds, keyboardFocusedId, new Set(idsToComplete))
+                  : null
 
               onComplete(idsToComplete)
               selection.clear()

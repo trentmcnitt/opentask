@@ -207,33 +207,41 @@ function useBulkActions(
   setSearchQuery: (q: string | null) => void,
   setSearchResults: React.Dispatch<React.SetStateAction<Task[]>>,
 ) {
-  // Bulk "Done" from the floating selection action bar. `bulkDone` and
-  // `bulkDelete` are the only remaining direct bulk endpoint calls from the
-  // dashboard — all panel-driven mutations (date, priority, labels, project,
-  // recurrence) flow through `bulkSaveAll` → `saveQuickPanelChanges`, which
-  // keeps the mobile selection sheet and the desktop quick-action popover on
-  // exactly one save path.
-  const bulkDone = async () => {
-    const count = selection.selectedIds.size
-    try {
-      const res = await fetch('/api/tasks/bulk/done', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [...selection.selectedIds] }),
-      })
-      if (!res.ok) throw new Error('Bulk action failed')
-      selection.clear()
-      bumpUndoCount()
-      fetchTasks()
-      showToast({
-        message: `${count} ${taskWord(count)} completed`,
-        type: 'success',
-        action: { label: 'Undo', onClick: handleUndo },
-      })
-    } catch {
-      showToast({ message: 'Action failed', type: 'error' })
-    }
-  }
+  // Completing several tasks at once: the floating selection action bar's
+  // Done (`bulkDone`, which clears the selection) and keyboard Cmd+D on a
+  // multi-selection (`useKeyboardNavigation` clears the selection itself, so
+  // it passes `clearSelection: false`). `completeMany` and `bulkDelete` are the
+  // only remaining direct bulk endpoint calls from the dashboard — all
+  // panel-driven mutations (date, priority, labels, project, recurrence) flow
+  // through `bulkSaveAll` → `saveQuickPanelChanges`, which keeps the mobile
+  // selection sheet and the desktop quick-action popover on exactly one save
+  // path.
+  const completeMany = useCallback(
+    async (ids: number[], { clearSelection }: { clearSelection: boolean }) => {
+      const count = ids.length
+      try {
+        const res = await fetch('/api/tasks/bulk/done', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        })
+        if (!res.ok) throw new Error('Bulk action failed')
+        if (clearSelection) selection.clear()
+        bumpUndoCount()
+        fetchTasks()
+        showToast({
+          message: `${count} ${taskWord(count)} completed`,
+          type: 'success',
+          action: { label: 'Undo', onClick: handleUndo },
+        })
+      } catch {
+        showToast({ message: 'Action failed', type: 'error' })
+      }
+    },
+    [selection, bumpUndoCount, fetchTasks, handleUndo],
+  )
+
+  const bulkDone = () => completeMany([...selection.selectedIds], { clearSelection: true })
 
   /**
    * Unified save path for the SelectionActionSheet. Routes single-task saves
@@ -308,7 +316,7 @@ function useBulkActions(
     }
   }
 
-  return { bulkDone, bulkSaveAll, bulkDelete, handleSearch }
+  return { completeMany, bulkDone, bulkSaveAll, bulkDelete, handleSearch }
 }
 
 /**
@@ -765,6 +773,8 @@ function HomeContent({
     exclusiveProject,
     clearAllFilters,
     filteredTasks: displayTasks,
+    criteria: filterCriteria,
+    activeFilterCount,
   } = useFilterState({
     tasks: baseTasks,
     onLabelToggle,
@@ -1168,36 +1178,29 @@ function HomeContent({
     [isCollapsed, toggleCollapse, taskGroups, selection],
   )
 
-  // Keyboard completion handler
+  const bulk = useBulkActions(
+    selection,
+    refreshAll,
+    actions.handleUndo,
+    actions.bumpUndoCount,
+    setSearchQuery,
+    setSearchResults,
+  )
+
+  // Keyboard completion handler (Cmd+D): one task goes through the same
+  // `handleDone` as a row's checkbox; several go through the selection bar's
+  // bulk path. `useKeyboardNavigation` clears the selection itself.
+  const { completeMany } = bulk
   const handleKeyboardComplete = useCallback(
     async (taskIds: number[]) => {
       if (taskIds.length === 0) return
-
       if (taskIds.length === 1) {
         await actions.handleDone(taskIds[0])
       } else {
-        // Bulk complete
-        const count = taskIds.length
-        try {
-          const res = await fetch('/api/tasks/bulk/done', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: taskIds }),
-          })
-          if (!res.ok) throw new Error('Bulk action failed')
-          refreshAll()
-          actions.bumpUndoCount()
-          showToast({
-            message: `${count} ${taskWord(count)} completed`,
-            type: 'success',
-            action: { label: 'Undo', onClick: actions.handleUndo },
-          })
-        } catch {
-          showToast({ message: 'Action failed', type: 'error' })
-        }
+        await completeMany(taskIds, { clearSelection: false })
       }
     },
-    [actions, refreshAll],
+    [actions, completeMany],
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
@@ -1266,15 +1269,6 @@ function HomeContent({
     timeSlots,
     morningTime,
   })
-
-  const bulk = useBulkActions(
-    selection,
-    refreshAll,
-    actions.handleUndo,
-    actions.bumpUndoCount,
-    setSearchQuery,
-    setSearchResults,
-  )
 
   // Global keyboard shortcuts (extracted to hook)
   useDashboardKeyboard({
@@ -1487,6 +1481,8 @@ function HomeContent({
         onExcludeDateFilter={excludeDateFilter}
         onExcludeAttribute={excludeAttribute}
         onExcludeProject={excludeProject}
+        filterCriteria={filterCriteria}
+        activeFilterCount={activeFilterCount}
         timezone={timezone}
         onSearch={bulk.handleSearch}
         onSearchClear={() => {
@@ -1503,7 +1499,6 @@ function HomeContent({
         onTaskFocus={setFocusedTask}
         onQuickActionClose={() => setQuickActionOpen(false)}
         onQuickActionSaveAll={actions.handleSaveAllChanges}
-        onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
         onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
         keyboardFocusedId={keyboardFocusedId}
         isKeyboardActive={keyboard.isKeyboardActive}
@@ -1819,6 +1814,8 @@ function DashboardView({
   onExcludeDateFilter,
   onExcludeAttribute,
   onExcludeProject,
+  filterCriteria,
+  activeFilterCount,
   timezone,
   onSearch,
   onSearchClear,
@@ -1831,7 +1828,6 @@ function DashboardView({
   onTaskFocus,
   onQuickActionClose,
   onQuickActionSaveAll,
-  onQuickActionNavigate,
   onNavigateToDetail,
   keyboardFocusedId,
   isKeyboardActive,
@@ -1956,6 +1952,11 @@ function DashboardView({
   onExcludeDateFilter: (filter: DueDateFilter) => void
   onExcludeAttribute: (key: string) => void
   onExcludeProject: (projectId: number) => void
+  /** Every filter group's state as one memoized object (`useFilterState`) —
+   *  stable until a filter changes. */
+  filterCriteria: TaskFilterCriteria
+  /** Active include/exclude selections across every group (`useFilterState`). */
+  activeFilterCount: number
   timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -1970,7 +1971,7 @@ function DashboardView({
   onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   onQuickActionDone: (taskId: number) => void
   onQuickActionDelete: (taskId: number) => void
-  onQuickActionNavigate: (taskId: number) => void
+  /** Open a task's full page — from the selection bar's Details and the quick-action popover. */
   onNavigateToDetail: (taskId: number) => void
   keyboardFocusedId: number | null
   isKeyboardActive: boolean
@@ -2036,21 +2037,11 @@ function DashboardView({
    *  `TrackColumn`'s own `onTrackRefresh`. */
   onTrackRefresh: () => Promise<void>
 }) {
-  // Filters that live inside the collapsible block (§7.3). Counted rather than
-  // just flagged: the count is what the collapsed "Filters · 2" badge shows,
-  // and what decides whether the block auto-expands.
-  const activeFilterCount =
-    selectedLabels.length +
-    selectedPriorities.length +
-    selectedDateFilters.length +
-    attributeFilters.size +
-    selectedProjects.length +
-    excludedLabels.length +
-    excludedPriorities.length +
-    excludedDateFilters.length +
-    excludedAttributes.size +
-    excludedProjects.length
-
+  // Filters that live inside the collapsible block (§7.3). `activeFilterCount`
+  // (from `useFilterState`) is counted rather than just flagged: the count is
+  // what the collapsed "Filters · 2" badge shows, and what decides whether the
+  // block auto-expands.
+  //
   // The pinned Overdue chip in FilterBar's control row shows the Overdue date
   // filter's state on its own (solid red when selected), in the row that never
   // collapses. So an Overdue selection is not a filter the collapsed section
@@ -2067,34 +2058,10 @@ function DashboardView({
     useFilterSection(hiddenActiveFilterCount)
 
   // Top bar pills + pinned Overdue chip: one memo, one population (the date
-  // facet) — see `useDateFacetCounts` for why not the filtered list.
-  const dateFacetCriteria: TaskFilterCriteria = useMemo(
-    () => ({
-      selectedLabels,
-      excludedLabels,
-      selectedPriorities,
-      excludedPriorities,
-      selectedDateFilters,
-      excludedDateFilters,
-      attributeFilters,
-      excludedAttributes,
-      selectedProjects,
-      excludedProjects,
-    }),
-    [
-      selectedLabels,
-      excludedLabels,
-      selectedPriorities,
-      excludedPriorities,
-      selectedDateFilters,
-      excludedDateFilters,
-      attributeFilters,
-      excludedAttributes,
-      selectedProjects,
-      excludedProjects,
-    ],
-  )
-  const headerCounts = useDateFacetCounts(allTasks, dateFacetCriteria, timezone, now)
+  // facet) — see `useDateFacetCounts` for why not the filtered list. The
+  // criteria object is `useFilterState`'s own memo, so its identity changes
+  // only when a filter does (the auto-clear scope below depends on that).
+  const headerCounts = useDateFacetCounts(allTasks, filterCriteria, timezone, now)
   // The Overdue filter switches itself off when its last task stops being
   // overdue (done, snoozed, rescheduled — here or via sync), counted with the
   // same facet number the pill and pinned chip show. Rules and the deep-link
@@ -2104,8 +2071,8 @@ function DashboardView({
     [onDeselectDateFilter],
   )
   const overdueAutoClearScope = useMemo(
-    () => [dateFacetCriteria, searchQuery, searchHits, grouping],
-    [dateFacetCriteria, searchQuery, searchHits, grouping],
+    () => [filterCriteria, searchQuery, searchHits, grouping],
+    [filterCriteria, searchQuery, searchHits, grouping],
   )
   useAutoClearOverdueFilter(
     headerCounts.overdueCount,
@@ -2501,7 +2468,7 @@ function DashboardView({
         onSaveAll={onQuickActionSaveAll}
         onDelete={onQuickActionDelete}
         onMarkDone={onQuickActionDone}
-        onNavigateToDetail={onQuickActionNavigate}
+        onNavigateToDetail={onNavigateToDetail}
         projects={projects}
         annotation={focusedTask ? effectiveAnnotationMap.get(focusedTask.id) : undefined}
         insightsCommentary={focusedTask ? effectiveCommentaryMap.get(focusedTask.id) : undefined}

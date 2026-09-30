@@ -378,6 +378,23 @@ export function useFilterState({
     [tasks, criteria, timezone, now],
   )
 
+  // How many include/exclude selections are active across every group — the
+  // dashboard's collapsed "Filters · N" badge and its auto-expand rule read it.
+  const activeFilterCount = useMemo(
+    () =>
+      criteria.selectedLabels.length +
+      criteria.selectedPriorities.length +
+      criteria.selectedDateFilters.length +
+      criteria.attributeFilters.size +
+      criteria.selectedProjects.length +
+      criteria.excludedLabels.length +
+      criteria.excludedPriorities.length +
+      criteria.excludedDateFilters.length +
+      criteria.excludedAttributes.size +
+      criteria.excludedProjects.length,
+    [criteria],
+  )
+
   return {
     // Include state
     selectedLabels,
@@ -414,5 +431,10 @@ export function useFilterState({
     // Clear + filtered
     clearAllFilters,
     filteredTasks,
+    // Derived: the memoized criteria object (stable identity until a filter
+    // changes — the dashboard's date-facet counts and Overdue auto-clear scope
+    // key on it) and the active-selection count
+    criteria,
+    activeFilterCount,
   }
 }
