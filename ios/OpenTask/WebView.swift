@@ -92,6 +92,7 @@ struct WebView: UIViewRepresentable {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = false
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         #if DEBUG
         // Safari → Develop → <device> can attach Web Inspector to Debug
         // builds (iOS 16.4+ requires opting in). Never in Release.
@@ -170,7 +171,7 @@ struct WebView: UIViewRepresentable {
         // cold-launch session bootstrap kicked off in makeUIView.
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKHTTPCookieStoreObserver {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKHTTPCookieStoreObserver {
         var refreshControl: UIRefreshControl?
         var onNavigationError: ((Error) -> Void)?
         weak var webView: WKWebView?
@@ -304,6 +305,23 @@ struct WebView: UIViewRepresentable {
         }
 
         // MARK: - Navigation
+
+        /// `target="_blank"` links (Docs, Settings → Help) have nowhere to go
+        /// in a single web view: WebKit asks for a new one and silently drops
+        /// the navigation when it gets nil. Hand them to Safari instead, like
+        /// the Mac app does (`WebViewHost`).
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            if let url = navigationAction.request.url {
+                UIApplication.shared.open(url)
+            }
+            return nil
+        }
+
 
         /// Intercept navigations HEADED to /login before the page renders.
         ///

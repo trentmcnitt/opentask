@@ -17,6 +17,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  BookOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -44,6 +45,7 @@ import { useAiSlotState } from '@/hooks/useAiSlotState'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
 import { GuardedLink } from '@/components/GuardedLink'
+import { DOCS_URL } from '@/lib/docs-url'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 
 interface HeaderProps {
@@ -373,6 +375,12 @@ export function Header({
                     <Settings className="size-4" />
                     Settings
                   </GuardedLink>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+                    <BookOpen className="size-4" />
+                    Docs
+                  </a>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
