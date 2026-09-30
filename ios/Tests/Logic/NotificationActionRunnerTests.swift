@@ -12,6 +12,7 @@ final class NotificationActionRunnerTests: XCTestCase {
 
     private enum Call: Equatable {
         case markDone(Int)
+        case deleteTask(Int)
         case snoozeNextHour(Int)
         case snoozeTo(Int, String)
         case snoozeDelta(Int, Int?)
@@ -36,6 +37,7 @@ final class NotificationActionRunnerTests: XCTestCase {
         }
 
         func markDone(taskId: Int) async throws { try record(.markDone(taskId)) }
+        func deleteTask(taskId: Int) async throws { try record(.deleteTask(taskId)) }
         func snoozeNextHour(taskId: Int) async throws { try record(.snoozeNextHour(taskId)) }
         func snoozeTo(taskId: Int, dueAt: String) async throws { try record(.snoozeTo(taskId, dueAt)) }
 
@@ -183,6 +185,39 @@ final class NotificationActionRunnerTests: XCTestCase {
         XCTAssertEqual(done, .taskUpdated(taskId: 42))
         XCTAssertEqual(plusHour, .taskUpdated(taskId: 42))
         XCTAssertEqual(dismissed, [])
+    }
+
+    // MARK: - TASK_ADDED (the "AI finished" notification)
+
+    func testTaskAddedDoneAndDeleteActOnTheTask() async throws {
+        let added = NotificationCategory.taskAdded
+        let done = try await run(added, .button(NotificationAction.done), userInfo: taskInfo)
+        let delete = try await run(added, .button(NotificationAction.delete), userInfo: taskInfo)
+        XCTAssertEqual(api.calls, [.markDone(42), .deleteTask(42)])
+        XCTAssertEqual(done, .taskUpdated(taskId: 42))
+        XCTAssertEqual(delete, .taskUpdated(taskId: 42))
+        XCTAssertEqual(dismissed, [])
+    }
+
+    func testTaskAddedBodyTapOpensTheTask() async throws {
+        let outcome = try await run(NotificationCategory.taskAdded, .bodyTap, userInfo: taskInfo)
+        XCTAssertEqual(outcome, .openTask(taskId: 42))
+        XCTAssertEqual(api.calls, [])
+    }
+
+    func testTaskAddedWithoutTaskIdSendsNothing() async throws {
+        let outcome = try await run(NotificationCategory.taskAdded, .button(NotificationAction.delete))
+        XCTAssertEqual(outcome, .missingTaskId)
+        XCTAssertEqual(api.calls, [])
+    }
+
+    func testDeleteFailurePropagates() async throws {
+        api.shouldThrow = true
+        do {
+            _ = try await run(NotificationCategory.taskAdded, .button(NotificationAction.delete), userInfo: taskInfo)
+            XCTFail("expected the delete to throw")
+        } catch {}
+        XCTAssertEqual(api.calls, [.deleteTask(42)])
     }
 
     func testTaskSweepsIncludeTheTask() async throws {

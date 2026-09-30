@@ -531,7 +531,7 @@ Changes to these require manual testing on the native apps. Nearly every call go
 | `GET /api/user/preferences`                                | Connection check during setup; label config for the Quotas widget and watch                                                  |
 | `POST`, `DELETE /api/push/apns/register`                   | Device token registration                                                                                                    |
 | `POST /api/push/apns/widget-token`                         | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
-| `POST /api/notifications/actions`                          | Done/snooze from notification action buttons                                                                                 |
+| `POST /api/notifications/actions`                          | Done/snooze/delete from notification action buttons                                                                          |
 | `POST /api/notifications/dismiss-all`                      | Clearing delivered notifications                                                                                             |
 | `GET /api/tasks/counts`                                    | The app icon / Dock badge on foreground and after a notification action (`overdue`, the Tasks page's red-pill number)        |
 | `GET /api/tasks?done=false`, `GET /api/projects`           | The Tasks and Quotas widgets and watch pages                                                                                 |

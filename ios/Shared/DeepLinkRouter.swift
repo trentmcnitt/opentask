@@ -13,6 +13,20 @@ import Foundation
 /// Foundation only, in Shared/, so `OpenTaskLogicTests` (`DeepLinkRouterTests`)
 /// pins every row.
 enum DeepLinkRouter {
+    /// The web path a task NOTIFICATION's body tap loads (phone and Mac,
+    /// `WebViewManager.navigateToTask`): the bare `/?task=<id>`, the same URL
+    /// the server's Web Push notifications carry (`overdue-checker.ts`,
+    /// `enrichment-notify.ts`). The dashboard brings that task's row into view
+    /// and selects it — no editor, no sheet; a reminder goes on to
+    /// `/reminders?reminder=<id>`, and a task that is done or gone gets a toast.
+    ///
+    /// Kept bare rather than flagged (`&select=1`) so the builds already
+    /// installed, which load exactly this URL, got the new behavior from the
+    /// server alone.
+    static func notificationTaskPath(taskId: Int) -> String {
+        "/?task=\(taskId)"
+    }
+
     /// The web path for a widget link, or nil when the URL isn't an
     /// `opentask://` link at all (the app then does nothing).
     static func webPath(for url: URL) -> String? {
@@ -21,16 +35,14 @@ enum DeepLinkRouter {
 
         switch url.host {
         case "task":
-            // `&highlight=1`, not `navigateToTask(id)`: a widget tap means
-            // "bring it into view", the same thing a reminder tap means (see
-            // `reminder` below) — not "open the editor". A NOTIFICATION tap on
-            // a task (`AppDelegate.handleNotificationAction`, macOS:
-            // `MacAppDelegate`) is the one place that still wants the editor,
-            // and it calls `navigateToTask` directly, bypassing this router
-            // entirely — so the flag is the only thing that tells
-            // `DashboardClient`'s identical `/?task=` apart from the two
-            // callers. See `DashboardClient.tsx`'s `?task=` effect for the
-            // other half of this.
+            // `&highlight=1`: a widget tap means "bring it into view and
+            // flash it", the same thing a reminder tap means (see `reminder`
+            // below). A NOTIFICATION tap on a task (`notificationTaskPath`
+            // above, loaded by both apps' `navigateToTask`) is the bare
+            // `/?task=<id>`, which also brings the row into view but SELECTS
+            // it, so the action bar is up for the thing the notification was
+            // about. Neither opens the editor. See `DashboardClient.tsx`'s
+            // `?task=` effect for the other half of this.
             if let id = lastId { return "/?task=\(id)&highlight=1" }
             return "/"
         case "reminder":

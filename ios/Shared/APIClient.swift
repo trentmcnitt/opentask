@@ -56,6 +56,19 @@ final class APIClient {
         ] as [String: Any])
     }
 
+    /// Move a task to the trash from a notification's Delete button
+    /// (`TASK_ADDED`). Same endpoint and body-token auth as `markDone`; the
+    /// server's `deleteTask` is the app's soft delete, so Undo in the app
+    /// brings it back.
+    func deleteTask(taskId: Int) async throws {
+        guard let token = bearerToken else { throw APIError.notConfigured }
+        try await post(path: "/api/notifications/actions", body: [
+            "action": "delete",
+            "task_id": taskId,
+            "token": token,
+        ] as [String: Any])
+    }
+
     /// Create a task from a title alone — the web's quick add
     /// (`POST /api/tasks` `{ title }`). The server tags it for AI enrichment
     /// when AI is on, exactly as it does for the dashboard's quick add.

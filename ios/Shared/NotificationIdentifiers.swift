@@ -12,10 +12,19 @@ enum NotificationCategory {
     /// REDESIGN-V03 §6: the time SLOT notifies, not the reminder. Long-pressing
     /// one of these expands into the batch checklist (§6.1).
     static let slotReminder = "SLOT_REMINDER"
+    /// The "AI finished" notification for a just-added task
+    /// (`buildEnrichedNotification` in `src/core/notifications/apns.ts`):
+    /// Done and Delete. Not in the content extension's category list, so it
+    /// gets the system's expanded view.
+    static let taskAdded = "TASK_ADDED"
 }
 
 enum NotificationAction {
     static let done = "DONE"
+    /// Move the task to the trash (`action: "delete"` on
+    /// `/api/notifications/actions` — a soft delete, undoable in the app).
+    /// Offered only by `TASK_ADDED`.
+    static let delete = "DELETE"
     static let snooze1hr = "SNOOZE_1HR"
     static let snoozeAll1hr = "SNOOZE_ALL_1HR"
     static let snoozeCustom = "SNOOZE_CUSTOM"
