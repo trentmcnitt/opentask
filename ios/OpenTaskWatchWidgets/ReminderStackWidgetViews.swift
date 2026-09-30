@@ -256,7 +256,9 @@ private struct CaughtUpCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Label {
-                Text("All caught up")
+                // "All caught up" until 2026-09-29 — the phone widget's
+                // words now (`ReminderDayProgress`).
+                Text(card.isDayComplete ? "Day complete" : "All done")
                     .font(.headline)
             } icon: {
                 Image(systemName: "checkmark.circle.fill")

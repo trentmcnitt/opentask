@@ -66,7 +66,7 @@ final class WatchViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
     /// Whether `load()` has completed at least once. Both pages gate their
-    /// empty state on this — without it, "All caught up" / "No reminders
+    /// empty state on this — without it, "All done" / "No reminders
     /// configured yet" flash on screen for the first ~1-3s of every launch,
     /// before the first fetch has actually landed, which reads as false
     /// reassurance rather than "no empty chrome" (Trent's rule is about
