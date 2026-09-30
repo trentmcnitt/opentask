@@ -42,7 +42,7 @@ function autoSnoozeRow(page: Page, label: string) {
 test.describe('Settings sections', () => {
   test('every section renders, in order', async ({ authenticatedPage: page }) => {
     await page.goto('/settings')
-    await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    await expect(page.locator('main').getByRole('heading', { level: 2 })).toHaveText([
       'Account',
       'Theme',
       'Help',
