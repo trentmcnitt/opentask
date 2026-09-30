@@ -40,7 +40,13 @@ const entries: ShotEntry[] = []
 
 /** Hide what differs run to run or reads as noise in a still picture. */
 const CAPTURE_CSS = `
-  *, *::before, *::after { caret-color: transparent !important; }
+  *, *::before, *::after {
+    caret-color: transparent !important;
+    /* reducedMotion only reaches the media query; a hover's colour
+       transition still ran, and a row un-hovered by parking the pointer
+       was photographed mid-fade. */
+    transition: none !important;
+  }
   ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
   html, body { scrollbar-width: none !important; }
 `
@@ -178,7 +184,10 @@ async function settle(page: Page): Promise<void> {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   )
-  // Park the pointer off the page so no row wears a hover state.
+  // Park the pointer in the top-left corner so no row wears a hover state.
+  // Two moves, so an event is sent even when Playwright already believes the
+  // pointer is at 0,0 (a fresh page).
+  await page.mouse.move(1, 1)
   await page.mouse.move(0, 0)
 }
 
@@ -200,11 +209,17 @@ function record(file: string, shows: string, theme: Theme, destinations: string[
 }
 
 /** Downscale to exact widths, keeping the aspect ratio. Returns the paths. */
-function downscales(src: string, widths: number[]): { width: number; file: string }[] {
+function downscales(
+  src: string,
+  sizes: (number | [number, number])[],
+): { width: number; file: string }[] {
+  // A width keeps the aspect ratio; a [width, height] pair is exact — the
+  // iPhone set's published sizes (400x869, 200x435) follow no single rounding.
   const { width, height } = pngSize(src)
-  return widths.map((w) => {
+  return sizes.map((size) => {
+    const [w, h] = typeof size === 'number' ? [size, Math.round((height * size) / width)] : size
     const file = src.replace(/\.png$/, `-${w}.png`)
-    resizePng(src, file, w, Math.round((height * w) / width))
+    resizePng(src, file, w, h)
     return { width: w, file }
   })
 }
@@ -216,7 +231,9 @@ const dashboardReady = (page: Page) => page.locator('[id^="task-row-"]')
 /** The Just added card pushes the list down; clear it for the hero shots. */
 async function clearJustAdded(page: Page): Promise<void> {
   const card = page.getByRole('region', { name: 'Just added' })
-  if (await card.isVisible()) await card.getByRole('button', { name: 'Clear' }).click()
+  // Pressed with the keyboard: a click would leave the pointer over whatever
+  // row moves up into the card's place.
+  if (await card.isVisible()) await card.getByRole('button', { name: 'Clear' }).press('Enter')
   await card.waitFor({ state: 'hidden' })
 }
 
@@ -435,10 +452,34 @@ async function phoneShots(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promi
     ])
     await page.evaluate(() => window.scrollTo(0, 0))
 
+    // The buttons alone, on the page's own background. Everything else fades
+    // out (opacity, not visibility — a dropdown trigger in the list toolbar
+    // stayed visible under a visibility rule); the stack's ancestors are pinned
+    // back to 1 inline, which beats the rule. Undone for the shots that follow.
     const fab = page.locator('[data-fab-stack]')
     await settle(page)
     const fabFile = outPath(`phone-fab-column-${theme}.png`)
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.id = 'screenshots-fab-only'
+      style.textContent =
+        'body *:not([data-fab-stack]):not([data-fab-stack] *) { opacity: 0 !important; }'
+      document.head.appendChild(style)
+      const stack = document.querySelector('[data-fab-stack]')
+      for (let el = stack?.parentElement; el && el !== document.body; el = el.parentElement) {
+        el.style.setProperty('opacity', '1', 'important')
+        el.dataset.screenshotsPinned = ''
+      }
+    })
+    await settle(page)
     await shootWithPadding(page, fab, fabFile, 12)
+    await page.evaluate(() => {
+      document.getElementById('screenshots-fab-only')?.remove()
+      document.querySelectorAll<HTMLElement>('[data-screenshots-pinned]').forEach((el) => {
+        el.style.removeProperty('opacity')
+        delete el.dataset.screenshotsPinned
+      })
+    })
     record(fabFile, 'Phone floating buttons column (bottom right)', theme, [
       `docs:public/images/dashboard/phone-fab-column-${theme}.png`,
     ])
@@ -477,7 +518,10 @@ async function phoneShots(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promi
       `docs:public/images/dashboard/ios-dashboard-${theme}.png`,
       `portfolio:ios-dashboard-${theme}-full.png`,
     ])
-    for (const d of downscales(file, [400, 200])) {
+    for (const d of downscales(file, [
+      [400, 869],
+      [200, 435],
+    ])) {
       record(d.file, `iPhone app dashboard, ${d.width}px wide`, theme, [
         `docs:public/images/dashboard/ios-dashboard-${theme}-${d.width}.png`,
         ...(d.width === 400 ? [`portfolio:ios-dashboard-${theme}.png`] : []),

@@ -287,7 +287,8 @@ targets:
   # SCREENSHOTS_WIDGET_DATA, so building or running it by hand writes nothing.
   #
   # Compiles the whole widget extension (minus its @main bundle) and Shared,
-  # exactly as OpenTaskMacWidgets does, plus ios/Tests/Renders.
+  # exactly as OpenTaskMacWidgets does, the Mac app minus its @main (for the
+  # menu bar panel), plus ios/Tests/Renders.
   OpenTaskScreenshotRenders:
     type: bundle.unit-test
     platform: macOS
