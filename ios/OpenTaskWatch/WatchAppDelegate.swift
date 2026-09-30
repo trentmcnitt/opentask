@@ -44,7 +44,18 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         UNUserNotificationCenter.current().delegate = self
         registerNotificationCategories()
         activateWatchSession()
+        #if DEBUG
+        // The screenshot pipeline (scripts/screenshots/capture-watch-app.sh)
+        // boots a fresh simulator, where this prompt would cover the page
+        // it captures — and neither `simctl privacy` (no notifications
+        // service) nor a scripted tap can answer it. Environment-only, like
+        // the credential seeding above; compiled out of Release.
+        if ProcessInfo.processInfo.environment["OPENTASK_SIM_SKIP_NOTIFICATION_PROMPT"] != "1" {
+            requestNotificationPermission()
+        }
+        #else
         requestNotificationPermission()
+        #endif
 
         // Refresh the cached time slots (fire-and-forget) so the slot-snooze
         // notification actions catch up to any change made elsewhere, without

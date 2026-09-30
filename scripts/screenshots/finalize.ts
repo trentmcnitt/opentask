@@ -44,6 +44,12 @@ const PORTFOLIO: { name: string; from: string; size: [number, number]; optional?
     size: [1092, 1146],
     optional: true,
   },
+  {
+    name: 'apple-watch-app.png',
+    from: 'native/apple-watch-reminders.png',
+    size: [495, 558],
+    optional: true,
+  },
 ]
 const portfolioDir = path.join(out, 'portfolio')
 fs.rmSync(portfolioDir, { recursive: true, force: true })
@@ -63,7 +69,7 @@ for (const p of PORTFOLIO) {
   entries.push({
     file: path.relative(out, dest),
     shows: `Portfolio copy of ${p.from}`,
-    theme: 'light',
+    theme: p.name.startsWith('apple-watch') ? 'dark' : 'light',
     destinations: [`portfolio:${p.name}`],
     width,
     height,
