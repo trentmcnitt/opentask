@@ -22,8 +22,8 @@ interface PushPayload {
 
 /**
  * Delivery options for the push service. `urgency: 'low'` lets the service
- * hold the message until the device is awake or charging — for pushes that
- * inform rather than interrupt (the "AI finished" notification).
+ * hold the message until the device is awake or charging, for pushes that
+ * can wait; omitted, the service's default (`normal`) applies.
  */
 interface PushSendOptions {
   urgency?: 'very-low' | 'low' | 'normal' | 'high'
