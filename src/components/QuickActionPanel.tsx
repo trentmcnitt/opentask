@@ -13,10 +13,8 @@ import {
   Plus,
   ChevronDown,
   XCircle,
-  RotateCcw,
   Sparkles,
   CalendarDays,
-  Pencil,
   Mic,
   Lightbulb,
 } from 'lucide-react'
@@ -63,12 +61,15 @@ import { DateTime } from 'luxon'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import { useLabelConfig, useAutoSnoozeDefault } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { formatDateTime, formatTimeInTimezone } from '@/lib/format-date'
+import { formatDateTime, formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
 import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
 import { isPickedReschedule } from '@/lib/picked-reschedule'
+import { GridButton } from '@/components/quick-panel/GridButton'
+import { SinceAge } from '@/components/quick-panel/SinceAge'
+import { NotesInlineSection } from '@/components/quick-panel/NotesInlineSection'
 import type { Task, Project } from '@/types'
 
 /**
@@ -165,6 +166,37 @@ export interface QuickActionPanelProps {
   /** Called on submit in create mode with all staged fields including title */
   onCreate?: (fields: QuickActionPanelChanges & { title: string }) => void | Promise<void>
 }
+
+/** The panel's staged fields, one dirty flag each (see `fieldDirty` in QuickActionPanel). */
+type DirtyField =
+  | 'date'
+  | 'title'
+  | 'priority'
+  | 'labels'
+  | 'rrule'
+  | 'recurrenceMode'
+  | 'project'
+  | 'dueAtCleared'
+  | 'autoSnooze'
+  | 'resetOrigin'
+  | 'isReminder'
+  | 'notes'
+
+/**
+ * The fields that make create mode dirty (besides the title, which is compared
+ * against initialTitle on its own). recurrenceMode, isReminder, dueAtCleared and
+ * resetOrigin are deliberately left out: create mode has never counted them as a
+ * change from its defaults, and this list keeps that membership as it was.
+ */
+const CREATE_MODE_DIRTY_FIELDS: readonly DirtyField[] = [
+  'priority',
+  'labels',
+  'rrule',
+  'project',
+  'date',
+  'autoSnooze',
+  'notes',
+]
 
 /**
  * Tiered text sizing for the detail page (prominent) title.
@@ -400,10 +432,19 @@ export function QuickActionPanel({
     return RRULE_DAYS[weekday - 1]
   }, [effectiveTask, timezone])
 
-  // Use the appropriate hook based on mode.
-  // In bulk mode (multi-select OR single-task-via-selection-sheet), the bulk hook
-  // owns staging. In create mode a date can also be staged via pendingDueAt, the
-  // explicit override for when the hook's dirty detection misses it (see
+  // Per-field dirty flags, one per staged field. Each drives that field's blue
+  // "modified" indicator; fieldDirty below combines them into the panel's dirty
+  // state (Save and Reset enablement, and the unsaved-changes guards).
+  //
+  // They stay plain locals (not reads off fieldDirty) on purpose: the React
+  // Compiler can't tell a property read is a primitive, so a flag read off the
+  // object and then passed to cn() in the JSX would count as a possible mutation
+  // of the object and make it skip the useMemo/useCallback hooks that depend on
+  // these flags.
+  //
+  // Date: in bulk mode (multi-select OR single-task-via-selection-sheet), the bulk
+  // hook owns staging. In create mode a date can also be staged via pendingDueAt,
+  // the explicit override for when the hook's dirty detection misses it (see
   // handleSmartButtonClick); in edit mode the hook alone tracks the date.
   const hasDateChanges = isBulkMode
     ? bulkHook.isDirty
@@ -412,44 +453,40 @@ export function QuickActionPanel({
       : singleHook.isDirty
   // Title is dirty if staged (pendingTitle) OR if the user is mid-edit with changes.
   // Without the mid-edit check, clicking outside the dialog while typing in the title
-  // field bypasses the unsaved-changes confirmation because pendingTitle is only set on blur.
-  const hasTitleChanges =
+  // field bypasses the unsaved-changes confirmation because pendingTitle is only set on
+  // blur. (Create mode's title is createTitle, compared separately below.)
+  const isTitleDirty =
     pendingTitle !== null || (editingTitle && titleDraft.trim() !== (effectiveTask?.title ?? ''))
-  const hasPendingChanges =
-    pendingPriority !== null ||
-    pendingLabels !== null ||
-    pendingRrule !== undefined ||
-    pendingRecurrenceMode !== null ||
-    pendingProject !== null ||
-    hasTitleChanges ||
-    pendingDueAtCleared ||
-    pendingAutoSnooze !== undefined ||
-    pendingResetOrigin ||
-    pendingIsReminder !== null ||
-    pendingNotes !== undefined
+  const isPriorityDirty = pendingPriority !== null
+  const isLabelsDirty = pendingLabels !== null
+  const isRruleDirty = pendingRrule !== undefined
+  const isProjectDirty = pendingProject !== null
+  const isReminderDirty = pendingIsReminder !== null
+  const fieldDirty: Record<DirtyField, boolean> = {
+    date: hasDateChanges,
+    title: isTitleDirty,
+    priority: isPriorityDirty,
+    labels: isLabelsDirty,
+    rrule: isRruleDirty,
+    recurrenceMode: pendingRecurrenceMode !== null,
+    project: isProjectDirty,
+    dueAtCleared: pendingDueAtCleared,
+    autoSnooze: pendingAutoSnooze !== undefined,
+    resetOrigin: pendingResetOrigin,
+    isReminder: isReminderDirty,
+    notes: pendingNotes !== undefined,
+  }
+  // Edit mode: any staged field at all.
+  const hasPendingChanges = Object.values(fieldDirty).some(Boolean)
+  // Create mode, non-title fields only (see CREATE_MODE_DIRTY_FIELDS) — controls the
+  // Reset button, since the title is preserved on reset.
+  const createModeNonTitleDirty =
+    isCreateMode && CREATE_MODE_DIRTY_FIELDS.some((field) => fieldDirty[field])
   // In create mode, dirty means the user has changed something from the initial defaults:
   // typed a title (different from initialTitle), changed any field, or picked a date.
-  const createModeDirty = isCreateMode
-    ? createTitle.trim() !== (initialTitle ?? '').trim() ||
-      pendingPriority !== null ||
-      pendingLabels !== null ||
-      pendingRrule !== undefined ||
-      pendingProject !== null ||
-      hasDateChanges ||
-      pendingAutoSnooze !== undefined ||
-      pendingNotes !== undefined
-    : false
-  // Non-title dirty state for create mode — controls Reset button (title is preserved on reset)
-  const createModeNonTitleDirty = isCreateMode
-    ? pendingPriority !== null ||
-      pendingLabels !== null ||
-      pendingRrule !== undefined ||
-      pendingProject !== null ||
-      hasDateChanges ||
-      pendingAutoSnooze !== undefined ||
-      pendingNotes !== undefined
-    : false
-  const isDirty = isCreateMode ? createModeDirty : hasDateChanges || hasPendingChanges
+  const createModeDirty =
+    isCreateMode && (createTitle.trim() !== (initialTitle ?? '').trim() || createModeNonTitleDirty)
+  const isDirty = isCreateMode ? createModeDirty : hasPendingChanges
 
   // Recurrence is invalid when FREQ=WEEKLY has no BYDAY in from_due mode.
   // Only check when the user has the recurrence picker open or modified the rrule,
@@ -487,10 +524,6 @@ export function QuickActionPanel({
       ? bulkHook.isDirty
       : singleHook.isDirty
 
-  // Per-field dirty booleans — used for blue "modified" indicators on each field
-  const isTitleDirty = hasTitleChanges
-  const isPriorityDirty = pendingPriority !== null
-  const isLabelsDirty = pendingLabels !== null
   // Track which labels are newly added (not in original set) for per-label dirty indicators
   const newLabels = useMemo(() => {
     if (!isLabelsDirty) return new Set<string>()
@@ -498,9 +531,6 @@ export function QuickActionPanel({
     const origSet = new Set(origLabels.map((l) => l.toLowerCase()))
     return new Set(displayLabels.filter((l) => !origSet.has(l.toLowerCase())))
   }, [isLabelsDirty, effectiveTask?.labels, isBulkMode, bulkCommonLabels, displayLabels])
-  const isRruleDirty = pendingRrule !== undefined
-  const isProjectDirty = pendingProject !== null
-  const isReminderDirty = pendingIsReminder !== null
 
   // Whether ALL tasks genuinely have no due date — used for the "No due date" display.
   // In bulk mode, only show "No due date" when every task lacks a date.
@@ -795,72 +825,12 @@ export function QuickActionPanel({
   // Determine if recurrence is "One time" for styling purposes
   const isOneTime = !isBulkMode && !isSelectionSheetMode && !displayRrule
 
-  /**
-   * Task age — "since X" text shown on the recurrence line.
-   *
-   * For one-off tasks: age is based on original_due_at ?? created_at. When
-   * original_due_at exists, it shows how long since the task was first due
-   * (capturing deferral time). Falls back to created_at for tasks never deferred.
-   * For recurring tasks: age is based on original_due_at (when the current
-   * occurrence was originally due), but only shown when the occurrence is
-   * overdue (original_due_at is in the past). If the occurrence hasn't arrived
-   * yet, no age is shown.
-   */
+  // Task age — "since X" text shown on the recurrence line, for a single
+  // existing task only. The anchor rules live in formatTaskSince. The text is
+  // computed when the task or timezone changes, not on a clock tick.
   const sinceInfo = useMemo(() => {
     if (!effectiveTask || isBulkMode || isSelectionSheetMode || isCreateMode) return null
-
-    const isRecurring = !!effectiveTask.rrule
-    let anchorIso: string | null = null
-
-    if (isRecurring) {
-      // For recurring: use original_due_at (occurrence origin), only if in the past
-      anchorIso = effectiveTask.original_due_at ?? effectiveTask.due_at
-      if (!anchorIso) return null
-      if (new Date(anchorIso) > new Date()) return null // occurrence hasn't arrived yet
-    } else {
-      // For one-off: use original_due_at (if the task was deferred) or created_at
-      anchorIso = effectiveTask.original_due_at ?? effectiveTask.created_at
-    }
-
-    const anchor = DateTime.fromISO(anchorIso, { zone: 'utc' }).setZone(timezone)
-    const now = DateTime.now().setZone(timezone)
-    const fullDate = anchor.toFormat('ccc, LLL d, yyyy, h:mm a')
-
-    // Time ago: "2 hours ago", "3 days ago", "4 weeks ago", "2 months ago"
-    const diff = now.diff(anchor, ['months', 'weeks', 'days', 'hours', 'minutes'])
-    let timeAgo: string
-    if (diff.months >= 1) {
-      const m = Math.floor(diff.months)
-      timeAgo = `${m} month${m === 1 ? '' : 's'} ago`
-    } else if (diff.weeks >= 1) {
-      const w = Math.floor(diff.weeks)
-      timeAgo = `${w} week${w === 1 ? '' : 's'} ago`
-    } else if (diff.days >= 1) {
-      const d = Math.floor(diff.days)
-      timeAgo = `${d} day${d === 1 ? '' : 's'} ago`
-    } else if (diff.hours >= 1) {
-      const h = Math.floor(diff.hours)
-      timeAgo = `${h} hour${h === 1 ? '' : 's'} ago`
-    } else {
-      const m = Math.max(1, Math.floor(diff.minutes))
-      timeAgo = `${m} minute${m === 1 ? '' : 's'} ago`
-    }
-
-    // Compact label: "today", "yesterday", "Mon", "Jan 11", "Dec 20, 2025"
-    let label: string
-    if (anchor.hasSame(now, 'day')) {
-      label = 'today'
-    } else if (anchor.hasSame(now.minus({ days: 1 }), 'day')) {
-      label = 'yesterday'
-    } else if (now.diff(anchor, 'days').days < 7) {
-      label = anchor.toFormat('ccc')
-    } else if (anchor.year === now.year) {
-      label = anchor.toFormat('LLL d')
-    } else {
-      label = anchor.toFormat('LLL d, yyyy')
-    }
-
-    return { label, timeAgo, fullDate }
+    return formatTaskSince(effectiveTask, timezone)
   }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone])
 
   // Toggle the expandable recurrence picker
@@ -1806,295 +1776,6 @@ export function QuickActionPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  )
-}
-
-function GridButton({
-  label,
-  onClick,
-  variant = 'preset',
-  span = 1,
-}: {
-  label: string
-  onClick: () => void
-  variant?: 'preset' | 'increment' | 'decrement' | 'smart'
-  span?: 1 | 2
-}) {
-  // Tiered text sizing: use smaller text for longer labels to prevent overflow.
-  // Single-span buttons are narrower and need smaller text sooner.
-  const textSize =
-    span === 2
-      ? label.length <= 20
-        ? 'text-sm'
-        : 'text-xs'
-      : label.length <= 8
-        ? 'text-sm'
-        : 'text-xs'
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex items-center justify-center rounded-lg border px-2 py-2.5 text-center leading-tight font-medium transition-colors',
-        textSize,
-        'min-h-[44px]', // Apple HIG touch target
-        'active:scale-[0.97]',
-        span === 2 && 'col-span-2',
-        variant === 'preset' && 'bg-card hover:bg-accent active:bg-accent border-border',
-        variant === 'increment' &&
-          'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50 dark:active:bg-emerald-950/50',
-        variant === 'decrement' &&
-          'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 dark:active:bg-amber-950/50',
-        variant === 'smart' &&
-          'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 active:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 dark:active:bg-blue-950/50',
-      )}
-    >
-      {label}
-    </button>
-  )
-}
-
-/**
- * "since X" age indicator with hover (desktop) and tap (mobile) popover.
- *
- * Extracted as a separate component to isolate the open state and event
- * handlers from the main QuickActionPanel render (avoids hooks-in-conditionals
- * and keeps the main component clean).
- */
-function SinceAge({
-  label,
-  timeAgo,
-  fullDate,
-  onReset,
-}: {
-  label: string
-  timeAgo: string
-  fullDate: string
-  onReset?: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleOpen = () => {
-    if (closeTimeout.current) clearTimeout(closeTimeout.current)
-    setOpen(true)
-  }
-  const handleClose = () => {
-    // Small delay so moving from trigger → content doesn't flicker
-    closeTimeout.current = setTimeout(() => setOpen(false), 100)
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <span
-          className="text-muted-foreground/60 cursor-default"
-          onClick={() => setOpen((o) => !o)}
-          onMouseEnter={handleOpen}
-          onMouseLeave={handleClose}
-        >
-          {' · since '}
-          {label}
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
-        side="bottom"
-        align="start"
-        className="w-auto px-3 py-2 text-xs"
-        sideOffset={4}
-        onMouseEnter={handleOpen}
-        onMouseLeave={handleClose}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <div className="flex flex-col gap-0.5">
-          <span>{fullDate}</span>
-          <span className="text-muted-foreground">{timeAgo}</span>
-          {onReset && (
-            <button
-              onClick={() => {
-                onReset()
-                setOpen(false)
-              }}
-              className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1 text-xs"
-            >
-              <RotateCcw className="size-3" /> Reset origin to current due date
-            </button>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-/**
- * Inline notes section for QuickActionPanel.
- *
- * Create mode: shows "+ Add notes..." collapse link, expands to textarea.
- * Edit mode: shows read-only text (clamped to 3 lines) with pencil edit button,
- * or "+ Add notes..." if empty. Blue indicator when pendingNotes is set.
- */
-function NotesInlineSection({
-  isCreateMode,
-  currentNotes,
-  pendingNotes,
-  expanded,
-  onExpand,
-  onCollapse,
-  onChange,
-}: {
-  isCreateMode: boolean
-  currentNotes: string | null
-  pendingNotes: string | null | undefined
-  expanded: boolean
-  onExpand: () => void
-  onCollapse: () => void
-  onChange: (value: string | null | undefined) => void
-}) {
-  const [draft, setDraft] = useState('')
-  const [readExpanded, setReadExpanded] = useState(false)
-  const textRef = useRef<HTMLParagraphElement>(null)
-  const [isClamped, setIsClamped] = useState(false)
-  const displayNotes = pendingNotes !== undefined ? pendingNotes : currentNotes
-  const isDirty = pendingNotes !== undefined
-
-  // Detect whether the text overflows the 3-line clamp
-  useEffect(() => {
-    if (readExpanded) return
-    const el = textRef.current
-    if (el) {
-      setIsClamped(el.scrollHeight > el.clientHeight)
-    }
-  }, [displayNotes, readExpanded])
-
-  const handleStartEdit = () => {
-    setReadExpanded(false)
-    setDraft(displayNotes ?? '')
-    onExpand()
-  }
-
-  const handleDone = () => {
-    const trimmed = draft.trim()
-    const newValue = trimmed || null
-    // Only stage if different from current
-    if (newValue !== currentNotes) {
-      onChange(newValue)
-    } else {
-      onChange(undefined) // reset pending
-    }
-    onCollapse()
-  }
-
-  // Create mode: show link or textarea
-  if (isCreateMode) {
-    if (!expanded) {
-      return (
-        <button
-          type="button"
-          onClick={() => {
-            setDraft('')
-            onExpand()
-          }}
-          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-        >
-          + Add notes...
-        </button>
-      )
-    }
-    return (
-      <div className="space-y-1">
-        <Textarea
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value)
-            // Stage notes as user types in create mode
-            const trimmed = e.target.value.trim()
-            onChange(trimmed || null)
-          }}
-          placeholder="Add notes..."
-          className="min-h-[60px] text-sm"
-          autoFocus
-        />
-      </div>
-    )
-  }
-
-  // Edit mode: no notes and not expanded — show add link
-  if (!displayNotes && !expanded) {
-    return (
-      <button
-        type="button"
-        onClick={handleStartEdit}
-        className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-      >
-        + Add notes...
-      </button>
-    )
-  }
-
-  // Edit mode: has notes but not expanded — show read-only with optional expand
-  if (!expanded) {
-    return (
-      <div>
-        <div className="flex items-start gap-2">
-          {/* `break-words`: notes often hold an unbroken path or URL; without
-              it that line runs past the panel's edge once "more" unclamps it. */}
-          <p
-            ref={textRef}
-            className={cn(
-              'min-w-0 flex-1 text-xs break-words whitespace-pre-wrap',
-              !readExpanded && 'line-clamp-3',
-              isDirty ? 'text-blue-500' : 'text-muted-foreground',
-            )}
-          >
-            {displayNotes}
-          </p>
-          <button
-            type="button"
-            onClick={handleStartEdit}
-            className="text-muted-foreground hover:text-foreground shrink-0"
-          >
-            <Pencil className="size-3" />
-          </button>
-        </div>
-        {isClamped && (
-          <button
-            type="button"
-            onClick={() => setReadExpanded(!readExpanded)}
-            className="text-muted-foreground hover:text-foreground mt-0.5 text-xs"
-          >
-            {readExpanded ? 'less' : 'more'}
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  // Edit mode: expanded — show textarea with Done button
-  // Stage pendingNotes on every keystroke so dirty state is accurate and
-  // dismissing the parent dialog mid-edit doesn't silently lose changes.
-  return (
-    <div className="space-y-1">
-      <Textarea
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value)
-          const trimmed = e.target.value.trim()
-          const newValue = trimmed || null
-          if (newValue !== currentNotes) {
-            onChange(newValue)
-          } else {
-            onChange(undefined)
-          }
-        }}
-        placeholder="Add notes..."
-        className="min-h-[60px] text-sm"
-        autoFocus
-      />
-      <Button size="xs" variant="outline" onClick={handleDone}>
-        Done
-      </Button>
     </div>
   )
 }
