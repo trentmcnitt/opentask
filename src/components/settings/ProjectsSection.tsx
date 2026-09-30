@@ -20,6 +20,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
+import { savePreferenceField } from '@/lib/save-preference'
+import { useProjectPreviewCount } from '@/components/PreferencesProvider'
 import type { LabelColor, Project } from '@/types'
 import { ColorDot } from './ColorDot'
 import { SettingsSection } from './SettingsSection'
@@ -151,6 +153,8 @@ export function ProjectsSection() {
             Add
           </Button>
         </div>
+
+        <ProjectPreviewCountRow />
       </SettingsSection>
 
       <DeleteProjectDialog
@@ -159,6 +163,50 @@ export function ProjectsSection() {
         onConfirm={handleDeleteProject}
       />
     </>
+  )
+}
+
+/** The choices the per-project cap offers (the API takes any 1-50). */
+const PREVIEW_COUNT_PRESETS = [3, 4, 5, 6, 8, 10, 15, 20, 30, 50]
+
+/**
+ * How many tasks each project group in the dashboard's All view shows before
+ * its "Show all" button (`project_preview_count`, default 6). A preset select
+ * like the other Settings choices; a value set through the API that isn't a
+ * preset is listed too, so the select never shows a value it doesn't hold.
+ */
+function ProjectPreviewCountRow() {
+  const { projectPreviewCount, setProjectPreviewCount } = useProjectPreviewCount()
+  const options = PREVIEW_COUNT_PRESETS.includes(projectPreviewCount)
+    ? PREVIEW_COUNT_PRESETS
+    : [...PREVIEW_COUNT_PRESETS, projectPreviewCount].sort((a, b) => a - b)
+  return (
+    <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <div>
+        <div className="text-sm">Tasks shown per project</div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">The rest are behind Show all</div>
+      </div>
+      <select
+        aria-label="Tasks shown per project"
+        data-project-preview-count-select
+        value={projectPreviewCount}
+        onChange={(e) =>
+          void savePreferenceField(
+            'project_preview_count',
+            Number(e.target.value),
+            projectPreviewCount,
+            setProjectPreviewCount,
+          )
+        }
+        className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        {options.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 

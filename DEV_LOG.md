@@ -6,6 +6,16 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ## 09-30-26
 
+### All is the by-project view again; a per-project cap setting
+
+**This corrects the 09-29-26 entry below.** Retiring the Projects view was a misreading: "All" had meant the by-project view, not a due-date one, and the claim that Projects went unused was wrong. So **All now groups every open task by project** (Inbox, Personal, Work…, in the order Settings lists projects, each heading a tag in its project's color), and the due-date grouping (Overdue / Today / Tomorrow / This Week / Later / No Due Date) is gone — the date filter chips still narrow any view by due date. The switch keeps its order and names: All · Today · Newest.
+
+The stored value follows the view: the All chip stores `default_grouping = 'project'` again, and `'time'` becomes the retired value — accepted on PATCH so an older client doesn't 400, but stored, returned and rendered as `'project'` (`coerceGrouping`, `src/lib/grouping.ts`). A startup data step (`restoreProjectGrouping`) rewrites any stored `'time'`, the inverse of the 09-29 step, and new users start on `'project'`.
+
+What went with the due-date grouping: the "now (h:mm)" divider between Overdue and Today (there is no Overdue section to divide from). What stayed, unchanged: the overdue jump button and red pill still set the Overdue filter and scroll the first group under the top bar — under project grouping that is overdue tasks grouped by project, landing at the top of the list; a notification tap on a task Today hides still switches this visit to All.
+
+**New setting — Settings → Projects → "Tasks shown per project"** (`project_preview_count`, 1–50, default 6): how many tasks each project group shows before "Show all". It replaces the fixed 10 of 09-23. Today's time slots keep their fixed 5.
+
 ### The phone `+` focuses the add field at the top, not a sheet
 
 **Trent's decision:** the phone tab bar's `+` no longer opens its own quick-add sheet (added the day before, #173). It scrolls the dashboard to the top and focuses the "Add a task..." field there, the same field desktop uses, with its mic and AI chip, so there is one place to add a task and the keyboard comes up on it. `QuickAddSheet` and its "Add manually" link are gone; the field's own `+` icon still opens the full form.

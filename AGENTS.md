@@ -55,11 +55,11 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 
 **The UI and the code use different words for the same things** — search for the code word:
 
-| UI says                               | Code / DB / API says                                                                                                                                                           |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Period, "Reminder periods" (Settings) | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                                                                                            |
-| Quota                                 | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests                                                               |
-| All / Today / Newest (view toggle)    | `default_grouping` `'slot'` / `'time'` / `'new'` (`'unified'` is set by the AI-sort toggle, not this one; the retired `'project'` is read as `'time'` — `src/lib/grouping.ts`) |
+| UI says                               | Code / DB / API says                                                                                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Period, "Reminder periods" (Settings) | Time slot: `time_slots` table, `/api/time-slots`, `slot_id`, `src/core/time-slots/`                                                                                                                          |
+| Quota                                 | Tracked task: `is_tracked`, `progress_*` columns, `isTracked()` in `src/lib/track.ts`, `TrackPanel`, `tr-` tests                                                                                             |
+| All / Today / Newest (view toggle)    | `default_grouping` `'project'` / `'slot'` / `'new'` (All is grouped by project; `'unified'` is set by the AI-sort toggle, not this one; the retired `'time'` is read as `'project'` — `src/lib/grouping.ts`) |
 
 ### Database
 
@@ -88,7 +88,7 @@ if (!hasColumn(database, 'tasks', 'new_column')) {
 }
 ```
 
-`runMigrations()` also runs idempotent **data** steps on every startup (`backfillTimeSlots`, `backfillLabelRegistry`, `clearQuotaDueDates`, `migrateQuotaPrompts`) — each is safe to re-run because its `WHERE`/existence check makes a second run a no-op. Follow that shape for a backfill; there is no versioned migrations table.
+`runMigrations()` also runs idempotent **data** steps on every startup (`backfillTimeSlots`, `backfillLabelRegistry`, `clearQuotaDueDates`, `migrateQuotaPrompts`, `restoreProjectGrouping`) — each is safe to re-run because its `WHERE`/existence check makes a second run a no-op. Follow that shape for a backfill; there is no versioned migrations table.
 
 To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild. To test the migration path, keep an existing database and restart the app — `runMigrations()` applies the change idempotently.
 
@@ -114,7 +114,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'unified' | 'slot' | 'new', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and what an unrecognized value coerces to (`coerceGrouping` in `src/lib/grouping.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot". `'new'` is Newest: every open task in one flat list, newest added first, whatever the saved sort. The retired `'project'` (Projects view, 2026-09-29) is accepted on PATCH but stored, returned and shown as `'time'` (All); new users start on `'time'`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'project' | 'unified' | 'slot' | 'new', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and what an unrecognized value coerces to (`coerceGrouping` in `src/lib/grouping.ts`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot". `'new'` is Newest: every open task in one flat list, newest added first, whatever the saved sort. `'project'` is All: every open task grouped by project, each group showing the user's `project_preview_count` rows before "Show all". The retired `'time'` (All grouped by due date, 2026-09-29 to 2026-09-30) is accepted on PATCH but stored, returned and shown as `'project'`; new users start on `'project'`.
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 

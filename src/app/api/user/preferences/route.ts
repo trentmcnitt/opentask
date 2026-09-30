@@ -16,7 +16,13 @@ import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { coerceWeekStart, WEEK_STARTS, type WeekStart } from '@/lib/week-start'
-import { ACCEPTED_GROUPING_INPUTS, coerceGrouping, GROUPINGS } from '@/lib/grouping'
+import {
+  ACCEPTED_GROUPING_INPUTS,
+  coerceGrouping,
+  GROUPINGS,
+  PROJECT_PREVIEW_MAX,
+  PROJECT_PREVIEW_MIN,
+} from '@/lib/grouping'
 import {
   DEFAULT_PRIORITY_DISPLAY,
   getPreferences,
@@ -28,10 +34,10 @@ import {
 } from '@/core/users/preferences'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
-// `default_grouping` accepts the live groupings (`GROUPINGS`: slot, time, new,
-// unified) plus the retired 'project', which is stored as 'time' so an old
-// client's PATCH doesn't 400 (Projects left the view switch 2026-09-29; see
-// `src/lib/grouping.ts`). 'reminders' was briefly valid here, back when the §6
+// `default_grouping` accepts the live groupings (`GROUPINGS`: slot, project, new,
+// unified) plus the retired 'time', which is stored as 'project' so an old
+// client's PATCH doesn't 400 (All is the by-project view again since
+// 2026-09-30 and the due-date grouping is gone; see `src/lib/grouping.ts`). 'reminders' was briefly valid here, back when the §6
 // Reminders surface rode in the dashboard's view toggle; it and 'recent' (the
 // short-lived "Recent" view, replaced by just-added previews) are refused with
 // 400 — clients coerce any lingering stored value to 'slot'.
@@ -164,6 +170,24 @@ function hhmm(val: unknown, field: string): string | null {
   return null
 }
 
+/** The All view's per-project cap (`PROJECT_PREVIEW_MIN`..`PROJECT_PREVIEW_MAX`). */
+function validateProjectPreviewCount(
+  body: Record<string, unknown>,
+  changes: PreferenceChanges,
+): string | null {
+  const val = body.project_preview_count
+  if (val === undefined) return null
+  if (
+    typeof val !== 'number' ||
+    !Number.isInteger(val) ||
+    val < PROJECT_PREVIEW_MIN ||
+    val > PROJECT_PREVIEW_MAX
+  )
+    return `project_preview_count must be an integer from ${PROJECT_PREVIEW_MIN} to ${PROJECT_PREVIEW_MAX}`
+  changes.project_preview_count = val
+  return null
+}
+
 /** Validate general preference fields (grouping, labels, priority display, snooze, time). */
 function validateGeneralFields(
   body: Record<string, unknown>,
@@ -186,6 +210,9 @@ function validateGeneralFields(
       return 'default_sort_reversed must be a boolean'
     changes.default_sort_reversed = body.default_sort_reversed ? 1 : 0
   }
+
+  const previewErr = validateProjectPreviewCount(body, changes)
+  if (previewErr) return previewErr
 
   // §7.3: whether the dashboard's filter-chip section is pinned open.
   if (body.filters_expanded !== undefined) {
@@ -495,12 +522,13 @@ function formatPreferencesResponse(row: PreferencesRow) {
   const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
   return {
     ai_available: isAIEnabled(),
-    // Coerced on the way out too, so a 'project' written by anything that
-    // skipped this route reads as the 'time' the dashboard will show.
+    // Coerced on the way out too, so a 'time' written by anything that
+    // skipped this route reads as the 'project' the dashboard will show.
     default_grouping: coerceGrouping(row.default_grouping),
     default_sort: row.default_sort,
     default_sort_reversed: row.default_sort_reversed !== 0,
     filters_expanded: row.filters_expanded !== 0,
+    project_preview_count: row.project_preview_count,
     track_expanded: row.track_expanded !== 0,
     quotas_details: row.quotas_details !== 0,
     label_config: labelConfig,

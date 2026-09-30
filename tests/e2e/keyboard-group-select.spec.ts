@@ -12,12 +12,12 @@
  *
  * Isolation: the two tasks are created here under a unique search token and
  * trashed in `finally`; the search leaves only them on the page. The All view
- * (`default_grouping = 'time'`) is set with `withPreferences`, which puts the
- * old value back.
+ * (`default_grouping = 'project'`, grouped by project) is set with
+ * `withPreferences`, which puts the old value back.
  *
- * Time-agnostic: one task is due three hours ago (Overdue at any hour) and
- * the other has no due date ("No Due Date"), so they are always in two
- * different groups, Overdue first.
+ * Each task sits in a project of its own, created here with a `sort_order`
+ * that puts the overdue one's project first, so they are always two groups in
+ * a known order (All groups by project, in Settings' order).
  */
 import { test, expect, uniqueTitle, waitForPrefsLoaded, withPreferences } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -28,6 +28,12 @@ async function createTask(page: Page, data: Record<string, unknown>): Promise<nu
   return (await res.json()).data.id as number
 }
 
+async function createProject(page: Page, name: string, sort_order: number): Promise<number> {
+  const res = await page.request.post('/api/projects', { data: { name, sort_order } })
+  expect(res.ok(), `create project ${name}`).toBeTruthy()
+  return (await res.json()).data.id as number
+}
+
 const row = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
 test('Cmd+Shift+A with focus in the second group selects only that group', async ({
@@ -35,14 +41,21 @@ test('Cmd+Shift+A with focus in the second group selects only that group', async
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   const token = uniqueTitle('Qwvgroup').replace(' ', '')
+  const first = await createProject(page, `${token} first`, -2)
+  const second = await createProject(page, `${token} second`, -1)
   const overdue = await createTask(page, {
     title: `${token} overdue`,
+    project_id: first,
     due_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
     priority: 1,
   })
-  const undated = await createTask(page, { title: `${token} undated`, priority: 1 })
+  const undated = await createTask(page, {
+    title: `${token} undated`,
+    project_id: second,
+    priority: 1,
+  })
   try {
-    await withPreferences(page, { default_grouping: 'time' }, async () => {
+    await withPreferences(page, { default_grouping: 'project' }, async () => {
       const search = page.getByRole('textbox', { name: 'Search tasks' })
       await waitForPrefsLoaded(page, () => page.goto('/'), search)
       await search.fill(token)
@@ -67,5 +80,6 @@ test('Cmd+Shift+A with focus in the second group selects only that group', async
     })
   } finally {
     await page.request.post('/api/tasks/bulk/delete', { data: { ids: [overdue, undated] } })
+    for (const id of [first, second]) await page.request.delete(`/api/projects/${id}`)
   }
 })

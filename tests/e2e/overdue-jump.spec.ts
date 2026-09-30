@@ -109,8 +109,8 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
       .default_grouping as string
     // New: one flat, uncapped list, so every filtered row is on the page and
-    // it is tall enough to scroll. (The Projects view, used here until it was
-    // retired, capped each project at 10.)
+    // it is tall enough to scroll. (All, grouped by project, caps each
+    // project at the user's `project_preview_count`.)
     const written = await page.request.patch('/api/user/preferences', {
       data: { filters_expanded: false, default_grouping: 'new' },
     })

@@ -2436,12 +2436,12 @@ paths:
                         description: IANA time zone
                       default_grouping:
                         type: string
-                        enum: [slot, time, new, unified]
+                        enum: [slot, project, new, unified]
                         description: |
-                          Dashboard view: `slot` = Today, `time` = All, `new` =
-                          New (flat, newest added first); `unified` is the
-                          AI-sorted / "Unified" flat list. The retired `project`
-                          is returned as `time`.
+                          Dashboard view: `slot` = Today, `project` = All
+                          (grouped by project), `new` = New (flat, newest added
+                          first); `unified` is the AI-sorted / "Unified" flat
+                          list. The retired `time` is returned as `project`.
                       is_demo:
                         type: boolean
         '401':
@@ -3680,18 +3680,27 @@ components:
       properties:
         default_grouping:
           type: string
-          enum: [slot, time, new, unified]
+          enum: [slot, project, new, unified]
           description: |
             The dashboard view the switch last chose: `slot` = Today (today's
-            tasks by time of day), `time` = All (everything by due date),
-            `new` = New (every open task in one flat list, newest added first,
-            each row naming its project; ignores `default_sort`). `unified` is
-            the flat list the AI-sort toggle and the list's "Unified" button
-            switch to.
+            tasks by time of day), `project` = All (every open task, grouped
+            by project, each group showing `project_preview_count` rows before
+            "Show all"), `new` = New (every open task in one flat list, newest
+            added first, each row naming its project; ignores
+            `default_sort`). `unified` is the flat list the AI-sort toggle and
+            the list's "Unified" button switch to.
 
-            `project` (the Projects view, retired 2026-09-29) is still
-            accepted on PATCH so older clients don't get a 400, but it is
-            stored and returned as `time`. Any other value is a 400.
+            `time` (All grouped by due date, 2026-09-29 to 2026-09-30) is
+            retired: still accepted on PATCH so older clients don't get a 400,
+            but stored and returned as `project`. Any other value is a 400.
+        project_preview_count:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 6
+          description: |
+            How many tasks each project group in the All view shows before its
+            "Show all" button. Today's time slots are not affected.
         auto_snooze_minutes:
           type: integer
           minimum: 1

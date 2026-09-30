@@ -4,8 +4,9 @@
  * New is every open task in one flat list, newest-added first, each row naming
  * its project. Its order is fixed — the saved sort is ignored there and the
  * sort dropdown is replaced by a plain "Newest added" caption — and the choice
- * persists like the other views (`default_grouping = 'new'`). The Projects view
- * is gone; a user whose stored preference is still 'project' lands on All.
+ * persists like the other views (`default_grouping = 'new'`). All groups by
+ * project (`'project'`, restored 2026-09-30); a user whose stored preference is
+ * still the retired due-date 'time' lands on All.
  *
  * Isolation: tasks and projects are created per test and deleted in `finally`;
  * preferences are put back by `withPreferences` (every spec shares one user).
@@ -118,7 +119,7 @@ test.describe('New view', () => {
   })
 
   test('the switch remembers New across a reload', async ({ authenticatedPage: page }) => {
-    await withPreferences(page, { default_grouping: 'time' }, async () => {
+    await withPreferences(page, { default_grouping: 'project' }, async () => {
       await waitForPrefsLoaded(page, () => page.goto('/'), toggle(page))
       await expect(viewButton(page, 'All')).toHaveAttribute('aria-pressed', 'true')
       const saved = waitForPreferenceSave(page, 'default_grouping')
@@ -131,18 +132,18 @@ test.describe('New view', () => {
     })
   })
 
-  test("a stored 'project' preference lands on All", async ({ authenticatedPage: page }) => {
-    // Through the API it can't be stored any more (a PATCH of 'project' is
-    // saved as 'time'), so write it the way a pre-2026-09-29 database holds
-    // it. `withPreferences` puts the real value back afterwards.
+  test("a stored 'time' preference lands on All", async ({ authenticatedPage: page }) => {
+    // Through the API it can't be stored any more (a PATCH of 'time' is saved
+    // as 'project'), so write it the way a 2026-09-29 database holds it.
+    // `withPreferences` puts the real value back afterwards.
     await withPreferences(page, { default_grouping: 'slot' }, async () => {
       const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
       try {
-        db.prepare(`UPDATE users SET default_grouping = 'project' WHERE email = ?`).run(TEST_EMAIL)
+        db.prepare(`UPDATE users SET default_grouping = 'time' WHERE email = ?`).run(TEST_EMAIL)
       } finally {
         db.close()
       }
-      expect((await getPrefs(page)).default_grouping).toBe('time')
+      expect((await getPrefs(page)).default_grouping).toBe('project')
       await waitForPrefsLoaded(page, () => page.reload(), toggle(page))
       await expect(viewButton(page, 'All')).toHaveAttribute('aria-pressed', 'true')
       await expect(viewButton(page, 'Today')).toHaveAttribute('aria-pressed', 'false')
