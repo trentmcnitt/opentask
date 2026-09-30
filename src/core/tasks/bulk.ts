@@ -603,8 +603,9 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
  * reason as there — it is machine state, not a user-visible edit — so an undo
  * of the snooze leaves enrichment cancelled.
  *
- * `tasks` are the pre-snooze rows; the snooze wrote no `labels`, so their
- * label lists are still current.
+ * `tasks` are the pre-snooze rows; the snooze wrote no `labels`, and
+ * `bulkSnooze` is synchronous from its read to here (nothing interleaves), so
+ * their label lists are still current.
  */
 function cancelPendingEnrichment(tasks: Task[]): void {
   const pending = tasks.filter((t) => t.labels.includes('ai-to-process'))
