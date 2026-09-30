@@ -349,8 +349,13 @@ function HomeContent({
   const timezone = useTimezone()
   const { timeSlots, refresh: refreshTimeSlots } = useTimeSlots(initialTimeSlots)
   const data = useFetchData(router, initialTasks)
-  const { tasks, setTasks, loading, error, setError, setLoading, fetchTasks } = data
-  const { projects, refreshProjects } = useProjects()
+  const { tasks, setTasks, loading: tasksLoading, error, setError, setLoading, fetchTasks } = data
+  const { projects, projectsLoaded, refreshProjects } = useProjects()
+  // The page counts as loading until the projects are in too: All names each
+  // group after its project, and a notification link unfolds a group by that
+  // name, so rendering before the projects arrive would show "Project 12"
+  // headings for a moment and could unfold the wrong group.
+  const loading = tasksLoading || !projectsLoaded
   const handleViewTask = useCallback((task: Task) => {
     setFocusedTask(task)
     setQuickActionOpen(true)
