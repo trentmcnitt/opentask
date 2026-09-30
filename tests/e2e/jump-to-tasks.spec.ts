@@ -269,7 +269,8 @@ test.describe('FAB column — phone: the stack and the view button', () => {
     await expect(fab).toHaveAttribute('aria-label', 'Viewing Newest — tap to show All')
     await expect(fab.locator('svg')).toHaveClass(/lucide-arrow-down-wide-narrow/)
     // Drawn pressed: a ring around it, like the lit overdue button.
-    expect(await fab.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe('none')
+    await expect(fab).toHaveClass(/(^|\s)ring-2(\s|$)/)
+    await expect(fab).toHaveClass(/(^|\s)ring-offset-2(\s|$)/)
 
     // Today.
     let saved = waitForPreferenceSave(page, 'default_grouping')
