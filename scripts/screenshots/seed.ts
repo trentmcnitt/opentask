@@ -491,6 +491,13 @@ interface QuotaDef {
   target: number
   current: number
   notes?: string
+  /**
+   * The period (by label) its prompt shows in. Without one, every unmet
+   * quota prompts in the user's default — the first period — and crowds it.
+   */
+  promptIn?: string
+  /** Daily quotas: the period for prompt #1, #2, ... */
+  promptNumbers?: string[]
 }
 
 /** Unmet quotas also surface as prompts in a reminder period (quota-prompts.ts). */
@@ -502,6 +509,7 @@ const QUOTAS: QuotaDef[] = [
     period: 'day',
     target: 2,
     current: 1,
+    promptNumbers: ['Morning', 'Afternoon'],
   },
   {
     title: 'Read for 30 minutes',
@@ -510,6 +518,7 @@ const QUOTAS: QuotaDef[] = [
     period: 'day',
     target: 1,
     current: 0,
+    promptIn: 'Evening',
   },
   {
     title: 'Deep work block, no meetings',
@@ -519,8 +528,17 @@ const QUOTAS: QuotaDef[] = [
     target: 5,
     current: 2,
     notes: 'Ninety minutes, calendar blocked, notifications off.',
+    promptIn: 'Morning',
   },
-  { title: 'Workout', project: 'Personal', label: 'health', period: 'week', target: 3, current: 1 },
+  {
+    title: 'Workout',
+    project: 'Personal',
+    label: 'health',
+    period: 'week',
+    target: 3,
+    current: 1,
+    promptIn: 'Afternoon',
+  },
   {
     title: 'Cook dinner at home',
     project: 'Home',
@@ -536,6 +554,7 @@ const QUOTAS: QuotaDef[] = [
     period: 'month',
     target: 4,
     current: 2,
+    promptIn: 'Midday',
   },
   {
     title: 'Write up what I learned',
@@ -544,6 +563,7 @@ const QUOTAS: QuotaDef[] = [
     period: 'month',
     target: 2,
     current: 1,
+    promptIn: 'Evening',
   },
   {
     title: 'Review the monthly budget',
@@ -728,13 +748,27 @@ function seedQuotas(
       user_id, project_id, title, priority, due_at, rrule,
       anchor_time, anchor_dow, anchor_dom, labels, notes,
       progress_target, progress_current, progress_period_start, is_tracked,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, 0, NULL, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 1, ?, ?)
+      quota_prompt_config, created_at, updated_at
+    ) VALUES (?, ?, ?, 0, NULL, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 1, ?, ?, ?)
   `)
   const insertEvent = db.prepare(
     'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, 1, ?)',
   )
+  const slots = db.prepare('SELECT id, label FROM time_slots WHERE user_id = ?').all(userId) as {
+    id: number
+    label: string
+  }[]
+  const slotId = (label: string): number => {
+    const slot = slots.find((s) => s.label === label)
+    if (!slot) throw new Error(`No period labelled "${label}"`)
+    return slot.id
+  }
   for (const q of QUOTAS) {
+    const promptConfig = q.promptNumbers
+      ? { numbers: Object.fromEntries(q.promptNumbers.map((l, i) => [String(i + 1), slotId(l)])) }
+      : q.promptIn
+        ? { slot_id: slotId(q.promptIn) }
+        : null
     // Must equal period-rollover.ts's unitStart() for the frozen day, or the
     // rollover at server start closes the period and zeroes the count.
     const start = periodStart(q.period)
@@ -748,6 +782,7 @@ function seedQuotas(
       q.target,
       q.current,
       start.toUTC().toISO()!,
+      promptConfig ? JSON.stringify(promptConfig) : null,
       at(-60, 9),
       at(-60, 9),
     )

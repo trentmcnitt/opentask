@@ -220,6 +220,18 @@ async function clearJustAdded(page: Page): Promise<void> {
   await card.waitFor({ state: 'hidden' })
 }
 
+/**
+ * Scroll the task list to the top of the screen, just under the sticky top
+ * bar — the landing the app's own "Jump to tasks" uses (the list wrapper's
+ * `scroll-below-header` margin, globals.css). Reduced motion makes it instant.
+ */
+async function scrollToTasks(page: Page): Promise<void> {
+  await page
+    .getByRole('listbox', { name: 'Task list' })
+    .evaluate((el) => (el.closest('.scroll-below-header') ?? el).scrollIntoView({ block: 'start' }))
+  await settle(page)
+}
+
 async function desktopDashboards(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promise<void> {
   // Docs: 1440 x 1084 CSS px at 2x, like the March set (2880 x 2168, -1040, -520).
   {
@@ -234,6 +246,20 @@ async function desktopDashboards(browser: Browser, theme: Exclude<Theme, 'n/a'>)
     for (const d of downscales(file, [1040, 520])) {
       record(d.file, `Desktop dashboard, ${d.width}px wide`, theme, [
         `docs:public/images/dashboard/web-dashboard-full-${theme}-${d.width}.png`,
+      ])
+    }
+    await scrollToTasks(page)
+    const tasksFile = outPath(`web-dashboard-tasks-${theme}.png`)
+    await page.screenshot({ path: tasksFile })
+    record(
+      tasksFile,
+      'Desktop dashboard scrolled to the task list (AI scores and commentary)',
+      theme,
+      [`docs:public/images/dashboard/web-dashboard-tasks-${theme}.png`],
+    )
+    for (const d of downscales(tasksFile, [1040, 520])) {
+      record(d.file, `Desktop task list, ${d.width}px wide`, theme, [
+        `docs:public/images/dashboard/web-dashboard-tasks-${theme}-${d.width}.png`,
       ])
     }
     await page.context().close()
@@ -353,12 +379,14 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
     await views.getByRole('button', { name: view }).click()
     await views.getByRole('button', { name: view, pressed: true }).waitFor()
     await settle(page)
+    await scrollToTasks(page)
     const file = outPath(`web-dashboard-${view.toLowerCase()}-${theme}.png`)
     await page.screenshot({ path: file })
     record(file, `Dashboard, ${view} view`, theme, [
       `docs:public/images/dashboard/web-dashboard-${view.toLowerCase()}-${theme}.png`,
     ])
   }
+  await page.evaluate(() => window.scrollTo(0, 0))
   await views.getByRole('button', { name: 'All' }).click()
   await views.getByRole('button', { name: 'All', pressed: true }).waitFor()
   await settle(page)
@@ -398,6 +426,14 @@ async function phoneShots(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promi
     record(file, 'Dashboard in a phone browser, 393x852 @3x', theme, [
       `docs:public/images/dashboard/web-mobile-dashboard-${theme}.png`,
     ])
+
+    await scrollToTasks(page)
+    const mTasks = outPath(`web-mobile-dashboard-tasks-${theme}.png`)
+    await page.screenshot({ path: mTasks })
+    record(mTasks, 'Phone browser, scrolled to the task list', theme, [
+      `docs:public/images/dashboard/web-mobile-dashboard-tasks-${theme}.png`,
+    ])
+    await page.evaluate(() => window.scrollTo(0, 0))
 
     const fab = page.locator('[data-fab-stack]')
     await settle(page)

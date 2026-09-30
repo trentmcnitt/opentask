@@ -9,9 +9,17 @@ import WidgetKit
 /// double-height row answering "how far in" buried the ordinary rows answering
 /// "what's left".
 struct TasksWidgetView: View {
-    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetFamily) private var environmentFamily
 
     let entry: TasksEntry
+
+    /// Render-only: the family to draw when there is no WidgetKit host to set
+    /// `\.widgetFamily` (it is get-only), i.e. the screenshot renderer
+    /// (`ios/Tests/Renders/`, docs/SCREENSHOTS.md). Always nil in the widget
+    /// extension, where the environment's family is used unchanged.
+    var familyOverride: WidgetFamily? = nil
+
+    private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
     var body: some View {
         content
