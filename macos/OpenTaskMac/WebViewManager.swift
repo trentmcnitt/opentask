@@ -62,7 +62,7 @@ final class WebViewManager {
     }
 
     func navigateToTask(_ taskId: Int) {
-        navigate(path: "/?task=\(taskId)")
+        navigate(path: DeepLinkRouter.notificationTaskPath(taskId: taskId))
     }
 
     /// Returns and clears any parked path.

@@ -1,9 +1,15 @@
 /**
  * Notification action callbacks
  *
- * POST /api/notifications/actions - Handle notification action callbacks (done, snooze)
+ * POST /api/notifications/actions - Handle notification action callbacks (done, snooze, delete)
  *
- * Body: { action: "done" | "snooze" | "snooze30" | "snooze2h", task_id: number, token: string }
+ * Body: { action: "done" | "snooze" | "snooze30" | "snooze2h" | "delete", task_id: number, token: string }
+ *
+ * `delete` is the "AI finished" notification's Delete button (category
+ * `TASK_ADDED`, see `buildEnrichedNotification` in `apns.ts`): a just-added
+ * task the user doesn't want. It is the same soft delete as the app's Delete
+ * (`deleteTask`) — to the trash, undo-logged, notifications dismissed, open
+ * tabs and widgets synced — so Undo in the app brings it back.
  *
  * Auth: Token is passed in the request body (not the Authorization header) because iOS
  * Notification Content Extensions cannot set custom HTTP headers. The extension reads
@@ -13,7 +19,7 @@
 import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
-import { markDone, snoozeTask } from '@/core/tasks'
+import { markDone, snoozeTask, deleteTask } from '@/core/tasks'
 import { log } from '@/lib/logger'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { withLogging } from '@/lib/with-logging'
@@ -46,7 +52,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     log.info('notifications', `Action received: ${action} on task ${task_id} by user ${user.id}`)
 
-    // markDone and snoozeTask dismiss the task's notification on every device
+    // markDone, snoozeTask and deleteTask dismiss the task's notification on every device
     // themselves (fire-and-forget), so nothing more is needed here.
     switch (action) {
       case 'done': {
@@ -72,6 +78,14 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         })
         log.info('notifications', `Action complete: ${action} on task ${task_id}`)
         return success({ action, task_id, until, result })
+      }
+
+      case 'delete': {
+        // `{ task }`, the shape done and snooze return (deleteTask returns the
+        // bare task), so a client reads `result.task` for every action.
+        const task = deleteTask({ userId: user.id, taskId: task_id })
+        log.info('notifications', `Action complete: delete on task ${task_id}`)
+        return success({ action: 'delete', task_id, result: { task } })
       }
 
       default:

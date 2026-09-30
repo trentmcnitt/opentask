@@ -76,10 +76,11 @@ export function QuotasView({
   // it once; opens nothing — mirrors RemindersView's `?reminder=<id>` and
   // the dashboard's `?task=<id>&highlight=1`.
   //
-  // Bare, no `highlight` flag: unlike `/?task=`, nothing else currently
-  // links into `/quotas` with a query param — no notification tap, no Web
-  // Push — so there is no second meaning `?quota=<id>` has to be told apart
-  // from. If that changes, match the flag convention rather than inventing
+  // Bare, no `highlight` flag: nothing else links into `/quotas` with its
+  // own meaning for this param. (A notification tap that lands on a quota's
+  // id — the dashboard's `?task=` effect forwards one here — wants the same
+  // thing, so it reuses this link as is.) If that changes, match the flag
+  // convention rather than inventing
   // a third one.
   //
   // Read from `window.location.search` directly rather than

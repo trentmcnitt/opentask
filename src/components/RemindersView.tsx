@@ -192,7 +192,7 @@ export function RemindersView({
   const router = useRouter()
   // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
   const selection = useSelectionMode<number | string>()
-  const { selectedIds, clear } = selection
+  const { selectedIds, clear, selectAll } = selection
 
   // Searching narrows what is rendered; it deliberately does NOT touch which
   // slots the user has open. Both `defaultOpenKey` and `useSlotDisclosure`
@@ -316,12 +316,12 @@ export function RemindersView({
    * The row is brought on screen and flashed once; nothing is opened. The
    * widget's user tapped a thought to SEE it, and an editor over the top of the
    * surface would hide the five thoughts around it that are the reason they
-   * looked. (The dashboard's widget-tapped `?task=<id>&highlight=1` now does
-   * the same thing for tasks — see `DashboardClient.tsx`'s `?task=` effect.
-   * The bare `?task=<id>`, with no flag, still opens the panel: that shape is
-   * reserved for a notification tap, where a task is one thing to act on, not
-   * a place in a list.) A quota PROMPT row's link is `?prompt=<key>` —
-   * `usePromptDeepLink` below, the same move keyed by `prompt_key`.
+   * looked. (The dashboard's widget-tapped `?task=<id>&highlight=1` does the
+   * same thing for tasks — see `DashboardClient.tsx`'s `?task=` effect. The
+   * bare `?task=<id>` is a notification tap: it also selects the row, and for
+   * a reminder it forwards here with `&select=1`, handled below.) A quota
+   * PROMPT row's link is `?prompt=<key>` — `usePromptDeepLink` below, the
+   * same move keyed by `prompt_key`.
    *
    * The id is looked up once the fetch has resolved. Found or not, that answer
    * is definitive — unlike the dashboard's list, an empty payload here is a
@@ -348,7 +348,8 @@ export function RemindersView({
     // — a router.replace issues an RSC fetch that can remount this surface),
     // which the hook does not observe anyway, and reading window.location keeps
     // this component out of a Suspense boundary it otherwise would need.
-    const raw = new URLSearchParams(window.location.search).get('reminder')
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('reminder')
     if (!raw) {
       deepLinkDone.current = true
       return
@@ -365,12 +366,17 @@ export function RemindersView({
       setOpen(key, true)
       setExpanded(key, true)
       setHighlightId(id)
+      // `&select=1`: a NOTIFICATION tap on a reminder (the dashboard's
+      // `?task=` effect forwards one here — the "AI finished" push for a new
+      // reminder). As on the dashboard, a notification tap also selects the
+      // row, so the action bar is up for it; the widget's link doesn't.
+      if (params.get('select') === '1') selectAll([id])
     } else if (!Number.isNaN(id) && notToday.some((t) => t.id === id)) {
       setOpenNotToday(true)
       setHighlightId(id)
     }
     window.history.replaceState(window.history.state, '', window.location.pathname)
-  }, [hydrated, error, groups, notToday, setOpen, setExpanded])
+  }, [hydrated, error, groups, notToday, setOpen, setExpanded, selectAll])
 
   // NO SCROLL ON LOAD (Trent, 2026-09-22). The surface used to scroll to the
   // slot the day was in, so the afternoon did not open on breakfast — but at

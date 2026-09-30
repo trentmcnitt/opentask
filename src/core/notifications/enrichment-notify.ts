@@ -18,10 +18,14 @@
  *
  * It is PASSIVE on purpose: no sound, APNs `interruption-level: passive`,
  * priority 5, Web Push `urgency: low` + `silent`. It lands in Notification
- * Center without lighting the screen. No category, so it carries none of the
- * overdue notification's buttons; tapping opens the task (`/?task=<id>`, the
- * same deep link overdue notifications use). The collapse/thread id is
- * `enriched-<id>`, so one task never stacks two of these.
+ * Center without lighting the screen. APNs category `TASK_ADDED`: Done and
+ * Delete buttons (no snooze — a task added a minute ago isn't overdue), posted
+ * to `/api/notifications/actions` like the overdue notification's. Web Push
+ * has no buttons (the service worker shows none for any notification). Tapping
+ * reveals and selects the task on the dashboard (`/?task=<id>`, the same deep
+ * link overdue notifications use; see `DashboardClient.tsx`'s `?task=` effect
+ * — a reminder goes on to `/reminders?reminder=<id>`). The collapse/thread id
+ * is `enriched-<id>`, so one task never stacks two of these.
  *
  * WHEN (exactly once per task, and only for NEW tasks).
  * - Called from both enrichment entry points in `src/core/ai/enrichment.ts`
