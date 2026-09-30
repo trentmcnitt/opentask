@@ -8,7 +8,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useQuotaPromptPrefs } from '@/hooks/useQuotaPromptPrefs'
 import { resolvePromptSlot } from '@/lib/quota-prompts'
 import { parseHHMM, sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
@@ -38,10 +37,12 @@ import { showToast } from '@/lib/toast'
  * a removed period, shows the first period of the day, which is where the
  * reminders actually go (`resolvePromptSlot`, the server's own rule).
  *
+ * `timeSlots` is the section's shared list (settings/ScheduleSection.tsx), so
+ * a period renamed or added above shows here at once.
+ *
  * Saves on change like the section's other switches; only a failure speaks.
  */
-export function QuotaPromptSettings() {
-  const { timeSlots } = useTimeSlots()
+export function QuotaPromptSettings({ timeSlots }: { timeSlots: TimeSlot[] }) {
   const { prefs, save } = useQuotaPromptPrefs()
   const slots = sortSlotsByStart(timeSlots)
   const index = prefs ? resolvePromptSlot(slots, prefs.slotId, null) : -1
