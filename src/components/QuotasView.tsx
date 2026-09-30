@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuotasData } from '@/hooks/useQuotasData'
-import { useNavigationGuard } from '@/components/NavigationGuardProvider'
-import { useRouter } from 'next/navigation'
 import { Gauge, Minus, Plus, Trash2, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import type { QuotaCreateDraft } from '@/components/QuotaDetail'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
-import { useQuotaMutations } from '@/hooks/useQuotaMutations'
+import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { quotaGroupSummary, groupByLabel, periodLabel, periodShort } from '@/lib/track'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
@@ -60,15 +56,19 @@ export function QuotasView({
   /** The top bar's search — see "SEARCH" below. */
   searchQuery?: string
 }) {
-  const router = useRouter()
-  const { requestNavigation } = useNavigationGuard()
   const { tasks, error, refresh } = useQuotasData(refreshRef)
   const selection = useSelectionMode()
   const { selectedIds, toggle, rangeSelect, selectOnly, clear } = selection
 
-  /** A snapshot handed to the modal, so a refresh cannot move it underneath. */
-  const [editing, setEditing] = useState<Task[] | null>(null)
-  const [creating, setCreating] = useState<QuotaCreateDraft | null>(null)
+  // The editor — `useQuotaEditor` hands the modal a snapshot, so a refresh
+  // cannot move it underneath. `clear` drops the selection after a save or
+  // delete.
+  const { deleteQuotas, openEdit, openCreate, modal } = useQuotaEditor({
+    refresh,
+    clear,
+    onUndo,
+    onCompleted,
+  })
 
   // `?quota=<id>` — the Track widget's deep link (`WidgetLink.quota` →
   // `opentask://quota/<id>` → `/quotas?quota=<id>`, resolved in
@@ -106,14 +106,13 @@ export function QuotasView({
   // The sidebar's button and the phone's plus reach this surface through an
   // event, the way Reminders does, so "add" on /quotas makes a quota.
   useEffect(() => {
-    // Idempotent: a second event while the form is already open is a no-op
-    // rather than a fresh draft. A double-tap on the phone's plus dispatches
-    // twice, and re-setting the draft threw away anything already typed and
-    // re-ran the modal's open effects.
-    const open = () => setCreating((current) => current ?? { title: '' })
-    window.addEventListener('open-add-quota', open)
-    return () => window.removeEventListener('open-add-quota', open)
-  }, [])
+    // `openCreate` is idempotent: a second event while the form is already
+    // open is a no-op rather than a fresh draft. A double-tap on the phone's
+    // plus dispatches twice, and re-setting the draft threw away anything
+    // already typed and re-ran the modal's open effects.
+    window.addEventListener('open-add-quota', openCreate)
+    return () => window.removeEventListener('open-add-quota', openCreate)
+  }, [openCreate])
 
   // Escape clears the selection, as on the dashboard and Reminders.
   useEffect(() => {
@@ -123,13 +122,6 @@ export function QuotasView({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedIds, clear])
-
-  const { saveQuotas, createQuota, deleteQuotas } = useQuotaMutations({
-    refresh,
-    clear,
-    onUndo,
-    onCompleted,
-  })
 
   // SEARCH narrows the list to matching quotas — the Reminders surface's
   // pattern and its matcher (`matchesTaskSearch`: title and notes, as on the
@@ -163,11 +155,7 @@ export function QuotasView({
 
   return (
     <section aria-label="Quotas" data-quotas-view className="space-y-3 pb-24">
-      <QuotasHeaderRow
-        count={tasks.length}
-        onNew={() => setCreating({ title: '' })}
-        viewSwitch={viewSwitch}
-      />
+      <QuotasHeaderRow count={tasks.length} onNew={openCreate} viewSwitch={viewSwitch} />
 
       {tasks.length === 0 ? (
         <EmptyState />
@@ -187,7 +175,7 @@ export function QuotasView({
                 else if (e.metaKey || e.ctrlKey) toggle(task.id)
                 else selectOnly(task.id)
               }}
-              onOpen={(task) => setEditing([task])}
+              onOpen={(task) => openEdit([task])}
               highlightId={highlightId}
               onHighlightDone={clearHighlight}
             />
@@ -198,29 +186,13 @@ export function QuotasView({
       {selected.length > 0 && (
         <QuotaSelectionBar
           count={selected.length}
-          onEdit={() => setEditing(selected)}
+          onEdit={() => openEdit(selected)}
           onClear={clear}
           onDelete={() => void deleteQuotas(selected)}
         />
       )}
 
-      <QuotaDetailModal
-        tasks={editing ?? []}
-        create={creating}
-        open={editing !== null || creating !== null}
-        onClose={() => {
-          setEditing(null)
-          setCreating(null)
-        }}
-        onSave={saveQuotas}
-        onCreate={createQuota}
-        onDelete={(targets) => void deleteQuotas(targets)}
-        onOpenPage={(id) => {
-          // Through the navigation guard, like every other route change, so an
-          // unsaved editor still gets to ask before the page changes.
-          if (requestNavigation(`/tasks/${id}`)) router.push(`/tasks/${id}`)
-        }}
-      />
+      {modal}
     </section>
   )
 }

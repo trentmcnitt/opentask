@@ -12,10 +12,11 @@ import type { Task } from '@/types'
  * Lifted out of `QuotasView` (2026-09-21) so `TrackPanel`'s new in-place
  * editor — `QuotaDetailModal`, opened from a Track chip's popover — makes
  * the EXACT same writes the `/quotas` page does: same endpoints, same toast
- * wording, same Undo. `QuotasView` remains this hook's primary caller and
- * its own behavior is unchanged by the move; the alternative was a second,
- * independent implementation of "save/create/delete a quota" that could
- * silently drift from this one.
+ * wording, same Undo. The alternative was a second, independent
+ * implementation of "save/create/delete a quota" that could silently drift
+ * from this one. Its one caller now is `useQuotaEditor`, which every quota
+ * surface mounts (`QuotasView`, `QuotasSummary`, `TrackPanel`, the quota
+ * prompts) along with the modal these writes serve.
  */
 export function useQuotaMutations({
   refresh,
