@@ -18,12 +18,6 @@ interface JumpToTasksFabProps {
 }
 
 /**
- * How far below the viewport the IntersectionObserver's root reaches — past
- * any page. See "When it shows" below.
- */
-const BELOW_EVERYTHING_PX = 1_000_000
-
-/**
  * "Jump to tasks" button — phone only (Trent, 2026-09-29).
  *
  * On a phone the Reminders and Quotas panels sit above the task list, and on a
@@ -41,37 +35,27 @@ const BELOW_EVERYTHING_PX = 1_000_000
  * the landing line — the safe-area inset plus 4.5rem, 72px in a browser.
  *
  * **When it shows.** Whenever the page is scrolled ABOVE that landing — the
- * toolbar row's top at least 1px below the landing line — so it comes back
+ * toolbar row's top at least 1px below the landing line (the landing read from
+ * the wrapper's computed `scroll-margin-top`, so the iOS safe area is
+ * included and nothing is hardcoded) — so it comes back
  * the moment you scroll up at all from where a tap put you. At the landing or
  * anywhere past it, it is hidden. (It used to wait until the whole list had
  * dropped below the screen.)
  *
- * Computed without scroll events, by an IntersectionObserver on a zero-height
- * marker at the top of the list wrapper (`landingRef`). Its root is the
- * viewport cut down to a half-plane: the top edge pulled DOWN to 1px below
- * the landing line (`rootMargin` top = −(landing + 1)px, the landing read
- * from the wrapper's computed `scroll-margin-top`, so the iOS safe area is
- * included and nothing is hardcoded) and the bottom edge pushed a million
- * pixels down. So "marker inside the root" is exactly "toolbar row at least
- * 1px below the landing line" (a zero-area target on the root's edge counts
- * as intersecting), and the landing line is the ONLY boundary the marker can
- * cross. That matters because an observer only reports a CHANGE: with a
- * plain viewport root, a jump from far down the list straight back to the
- * top (scrollTo, iOS's tap-the-status-bar) takes a marker from "above the
- * viewport" to "below it" without ever intersecting, so nothing fires. Here
- * "below the viewport" is still inside the root, so every crossing of the
- * landing line, however fast, reports.
- *
- * **Never shows when the landing can't be reached** — a page too short to
- * scroll the toolbar row up to the line, where a tap would scroll a little
- * and stop with the button still showing. Reachable = the scroll position
- * that puts the row on the line is within 1px of the page's maximum scroll or
- * less. Measured whenever the observer reports and whenever the document's
- * size changes (a `ResizeObserver` on `<html>` — the panels above the list
- * load after the list does), again with no polling. A window resize
- * (rotation, which changes the safe-area inset) rebuilds the observer with
- * the new landing. A page that loads already at or past the landing never
- * shows it until scrolled above.
+ * **A short page still gets it** (Trent, 09-29 — in Today his list was too
+ * short to scroll the toolbar row all the way up to the line, and the button
+ * used to hide there, so it looked like the view button had replaced it). The
+ * target is the landing scroll position OR the page's maximum scroll,
+ * whichever comes first — a tap scrolls there (the browser stops at the
+ * bottom of a short page on its own), and the button shows whenever the page
+ * is scrolled above that target by more than 1px. So: shown while there is
+ * still somewhere to scroll toward the list, hidden at the target, and never
+ * shown on a page that can't scroll at all. Measured on scroll (a passive
+ * listener, coalesced to one read per frame — a scroll event also fires for a
+ * programmatic jump, so a jump straight to the top still reports), when the
+ * document's size changes (a `ResizeObserver` on `<html>` — the panels above
+ * the list load after the list does) and on window resize. A page that loads
+ * already at or past the target never shows it until scrolled above.
  *
  * **Hidden outright** (unmounted, no fade) while searching — the results ARE
  * the list, and the panels above it are hidden then — and in selection mode,
@@ -109,34 +93,31 @@ export function JumpToTasksFab({
     if (!list || !marker) return
 
     const landing = () => parseFloat(getComputedStyle(list).scrollMarginTop) || 0
-    let aboveLanding = false
     const publish = () => {
-      const targetScroll = marker.getBoundingClientRect().top + window.scrollY - landing()
+      const landingScroll = marker.getBoundingClientRect().top + window.scrollY - landing()
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight
-      const reachable = targetScroll - maxScroll < 1
-      setShow(aboveLanding && reachable)
+      const target = Math.min(landingScroll, maxScroll)
+      setShow(window.scrollY < target - 1)
     }
 
-    let io: IntersectionObserver | null = null
-    const observe = () => {
-      io?.disconnect()
-      io = new IntersectionObserver(
-        ([entry]) => {
-          aboveLanding = entry.isIntersecting
-          publish()
-        },
-        { rootMargin: `-${landing() + 1}px 0px ${BELOW_EVERYTHING_PX}px 0px` },
-      )
-      io.observe(marker)
+    let frame = 0
+    const onScroll = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        publish()
+      })
     }
-    observe()
-    const ro = new ResizeObserver(publish)
+    publish()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    const ro = new ResizeObserver(onScroll)
     ro.observe(document.documentElement)
-    window.addEventListener('resize', observe)
     return () => {
-      io?.disconnect()
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
       ro.disconnect()
-      window.removeEventListener('resize', observe)
     }
   }, [listRef, landingRef, hidden])
 

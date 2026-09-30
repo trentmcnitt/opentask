@@ -176,11 +176,13 @@ test.describe('FAB column — phone: jump to tasks', () => {
     await expect(button).toBeVisible()
   })
 
-  test('jump to tasks never shows when the landing cannot be scrolled to', async ({
+  test('on a page too short to reach the landing, jump to tasks still takes you down', async ({
     authenticatedPage: page,
   }) => {
     // A project with one future task and nothing else: the page is too short
-    // to bring the list's toolbar row up to the top bar.
+    // to bring the list's toolbar row up to the top bar. It used to hide the
+    // chevron outright here, which looked like the view button had replaced
+    // it (Trent, 09-29); now it scrolls as far as the page goes.
     const project = await post(page, '/api/projects', { name: uniqueTitle('Thumb short') })
     taskIds.push(
       await post(page, '/api/tasks', {
@@ -192,16 +194,26 @@ test.describe('FAB column — phone: jump to tasks', () => {
     try {
       await page.goto(`/?project=${project}`)
       await expect(page.locator('[data-task-group]')).toHaveCount(1)
-      const reachable = await page.evaluate(() => {
+      const { reachable, maxScroll } = await page.evaluate(() => {
         const marker = document.querySelector('[data-task-list-landing]')!
         const target = marker.getBoundingClientRect().top + window.scrollY - 72
-        return target - (document.documentElement.scrollHeight - window.innerHeight) < 1
+        const max = document.documentElement.scrollHeight - window.innerHeight
+        return { reachable: target - max < 1, maxScroll: max }
       })
-      // Precondition — otherwise the assertion below is vacuous.
+      // Preconditions — otherwise the assertions below are vacuous.
       expect(reachable).toBe(false)
-      expect(await landingTop(page)).toBeGreaterThan(LANDING_Y)
+      expect(maxScroll).toBeGreaterThan(1)
+      await page.evaluate(() => window.scrollTo(0, 0))
       await expect(viewFab(page)).toBeVisible()
+      await expect(jumpFab(page)).toBeVisible()
+      await jumpFab(page).click()
       await expect(jumpFab(page)).toBeHidden()
+      const atBottom = await page.evaluate(
+        () =>
+          Math.abs(window.scrollY - (document.documentElement.scrollHeight - window.innerHeight)) <
+          2,
+      )
+      expect(atBottom).toBe(true)
     } finally {
       await page.request.post('/api/tasks/bulk/delete', { data: { ids: taskIds.splice(-1) } })
       await page.request.delete(`/api/projects/${project}`)
