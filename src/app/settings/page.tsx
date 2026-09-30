@@ -1,5 +1,6 @@
 'use client'
 
+import { DOCS_URL } from '@/lib/docs-url'
 import { useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
@@ -70,7 +71,7 @@ export default function SettingsPage() {
 
         <SettingsSection title="Help">
           <a
-            href="https://opentask.mcnitt.io/docs/"
+            href={DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="-mx-2 flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"

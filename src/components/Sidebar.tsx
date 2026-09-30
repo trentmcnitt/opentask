@@ -11,8 +11,10 @@ import {
   Plus,
   Lightbulb,
   Gauge,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DOCS_URL } from '@/lib/docs-url'
 import { useRemindersBadge } from '@/hooks/useReminders'
 import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -171,6 +173,15 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             </GuardedLink>
           )
         })}
+        <a
+          href={DOCS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
+        >
+          <BookOpen className="size-4" />
+          Docs
+        </a>
       </div>
     </aside>
   )
