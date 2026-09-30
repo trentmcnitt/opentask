@@ -5,8 +5,8 @@ import WatchKit
 /// same payload the phone widgets render — read-only aside from checking
 /// items off, no create/edit on the watch). Title + "N left", a slim
 /// per-slot progress strip, ‹ › to page between slots, tap a row to consider
-/// (check off) it, and a toolbar Undo. A finished period reads "All done ·
-/// N reminders", and the clock's period "Day complete" once every period of
+/// (check off) it, and a toolbar Undo. A finished period reads "Complete",
+/// and every period "Congratulations · Day complete" once every period of
 /// the day is clear (`ReminderDayProgress`, shared with the phone widget).
 struct RemindersPageView: View {
     @ObservedObject var model: WatchViewModel
@@ -123,24 +123,18 @@ struct RemindersPageView: View {
     }
 
     /// The on-screen period has nothing waiting — the phone widget's words
-    /// (2026-09-29, `ReminderDayProgress.emptyBody`): "Congratulations · Day complete" on the
-    /// clock's period once every period of the day (upcoming ones too) is
-    /// clear, "All done · N reminders" for a finished period, and the plain
-    /// empty state for a period that never had anything. It used to read
-    /// "All caught up" for all three.
+    /// (2026-09-29, `ReminderDayProgress.emptyBody`): "Congratulations · Day
+    /// complete" on every period once every period of the day (upcoming ones
+    /// too) is clear, "Complete" for a finished period (no count line, as on
+    /// the phone widget), and the plain empty state for a period that never
+    /// had anything. It used to read "All caught up" for all three.
     @ViewBuilder
     private var periodFinishedView: some View {
-        let groups = model.reminderGroups
-        switch ReminderDayProgress.emptyBody(
-            groups: groups, displayedIndex: model.displayedSlotIndex,
-            naturalIndex: WatchSlotLogic.naturalSlotIndex(in: groups)
-        ) {
+        switch ReminderDayProgress.emptyBody(groups: model.reminderGroups, displayedIndex: model.displayedSlotIndex) {
         case .dayComplete:
             AllCaughtUpView(symbol: "checkmark.seal.fill", title: "Congratulations", detail: "Day complete")
-        case .periodDone(let count):
-            AllCaughtUpView(
-                symbol: "checkmark.seal.fill", title: "All done", detail: ReminderDayProgress.itemsText(count)
-            )
+        case .periodDone:
+            AllCaughtUpView(symbol: "checkmark.seal.fill", title: "Complete")
         case .noReminders, .nothingHere:
             AllCaughtUpView(title: "Nothing left here")
         }
@@ -372,7 +366,7 @@ struct PromptRowView: View {
 
 /// Shared empty state — the Tasks page's "All caught up" (nothing up next),
 /// and the Reminders page's finished-period states (`periodFinishedView`:
-/// "All done" / "Day complete", 2026-09-29), which pass their own words.
+/// "Complete" / "Day complete", 2026-09-29), which pass their own words.
 struct AllCaughtUpView: View {
     var symbol = "checkmark.circle.fill"
     var title = "All caught up"

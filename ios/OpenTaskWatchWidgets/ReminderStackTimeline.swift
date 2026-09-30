@@ -73,7 +73,7 @@ struct WatchWidgetEntry: TimelineEntry {
         let urgentOverdue: Int
         /// Every period of today — upcoming ones too — is clear, and
         /// something was handled (`ReminderDayProgress.isDayComplete`,
-        /// 2026-09-29): the card reads "Day complete" instead of "All done".
+        /// 2026-09-29): the card reads "Day complete" instead of "Complete".
         var isDayComplete = false
     }
 
@@ -132,7 +132,7 @@ enum ReminderStackTimeline {
     /// 2. Else, if any overdue task is bulk-SNOOZABLE (priority < 4), the card
     ///    is in overdue mode: one tap clears it, and until then it outranks a
     ///    reminder (tasks have debt, reminders never do — §6).
-    /// 3. Else reminders: the active slot's next reminder, or "All done"
+    /// 3. Else reminders: the active slot's next reminder, or "Complete"
     ///    ("Day complete" once every period of the day is clear).
     ///    Overdue Urgent-only (P4) does NOT take over: the sweep never moves
     ///    P4, so an overdue card for it would be a button that does nothing,
@@ -327,7 +327,7 @@ enum ReminderStackTimeline {
             return .init(count: overdue, fraction: 0, isOverdue: true, label: "Overdue")
         }
         guard let active else {
-            return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "All done")
+            return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "Complete")
         }
         // Quota prompts count like reminders (2026-09-24).
         let total = active.waitingCount + active.consideredCount

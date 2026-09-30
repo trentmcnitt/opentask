@@ -134,22 +134,19 @@ private struct RemindersSmallView: View {
 
     /// Nothing waiting in the on-screen period — the 2×2 keeps its one
     /// compact line, in the same words as the larger cards (2026-09-29):
-    /// "Day complete" on the clock's period once the whole day is done (the
-    /// card also takes the green wash), "All done" for a finished period.
-    /// There is no room here for the big seal or the "N reminders" line.
+    /// "Day complete" on any period once the whole day is done (the card
+    /// also takes the green wash), "Complete" for a finished period. There
+    /// is no room here for the big seal or "Congratulations".
     @ViewBuilder
     private var emptyState: some View {
-        let state = ReminderDayProgress.emptyBody(
-            groups: entry.groups, displayedIndex: entry.slotIndex,
-            naturalIndex: RemindersTimeline.naturalSlotIndex(in: entry.groups, now: entry.date)
-        )
+        let state = ReminderDayProgress.emptyBody(groups: entry.groups, displayedIndex: entry.slotIndex)
         switch state {
         case .noReminders:
             WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today", compact: true)
         case .dayComplete:
             WidgetEmptyView(symbol: "checkmark.seal.fill", message: "Day complete", compact: true)
         case .periodDone:
-            WidgetEmptyView(symbol: "checkmark.seal.fill", message: "All done", compact: true)
+            WidgetEmptyView(symbol: "checkmark.seal.fill", message: "Complete", compact: true)
         case .nothingHere:
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here", compact: true)
         }
@@ -494,30 +491,27 @@ private struct RemindersListView: View {
     /// `ReminderDayProgress.emptyBody` (tested in `ReminderDayProgressTests`):
     ///
     /// 1. **Day complete** — every period, started or not, has nothing
-    ///    waiting and something was handled — AND this is the clock's
-    ///    period: a big seal, "Congratulations", "Day complete". Any other
-    ///    period that day reads as #2, under the same green wash
-    ///    (`RemindersWidgetView`'s background).
-    /// 2. **This period is finished**: the seal, "All done", "7 reminders"
-    ///    (prompts counted as reminders — `ReminderDayProgress.itemsText`).
-    ///    The header already names the period, so the body doesn't.
+    ///    waiting and something was handled: a big seal, "Congratulations",
+    ///    "Day complete" on EVERY period, under the green wash
+    ///    (`RemindersWidgetView`'s background). #191 congratulated on the
+    ///    clock's period alone; Trent wanted it "on every segment".
+    /// 2. **This period is finished**: the seal and "Complete". No count
+    ///    line — the bottom-left "7 of 7" carries the count. The header
+    ///    already names the period, so the body doesn't.
     /// 3. **Never had anything** — the original "Nothing left here".
     ///
     /// No finish time and no "Next …" line: the strip above already shows
     /// what's left of the day (Trent's review of the mockups).
     @ViewBuilder
     private var emptySlotView: some View {
-        let state = ReminderDayProgress.emptyBody(
-            groups: entry.groups, displayedIndex: entry.slotIndex,
-            naturalIndex: RemindersTimeline.naturalSlotIndex(in: entry.groups, now: entry.date)
-        )
+        let state = ReminderDayProgress.emptyBody(groups: entry.groups, displayedIndex: entry.slotIndex)
         switch state {
         case .noReminders:
             WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today")
         case .dayComplete:
             DayCompleteView(isLarge: isLarge)
-        case .periodDone(let count):
-            PeriodDoneView(count: count, isLarge: isLarge)
+        case .periodDone:
+            PeriodDoneView(isLarge: isLarge)
         case .nothingHere:
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here")
         }
@@ -737,26 +731,29 @@ private struct RemindersListView: View {
     }
 }
 
-/// "Congratulations / Day complete" (2026-09-29, mockups r3-c/e/f): the
-/// clock's period once EVERY period of the day has nothing waiting
-/// (`ReminderDayProgress.isDayComplete`). The seal is about twice
-/// `PeriodDoneView`'s on systemLarge; systemMedium sizes everything down so
-/// the three lines fit its ~80pt body. No tint here — the green wash is the
-/// whole card's background (`RemindersWidgetView`).
+/// "Congratulations / Day complete" (2026-09-29, mockups r3-c/e/f): any
+/// period once EVERY period of the day has nothing waiting
+/// (`ReminderDayProgress.isDayComplete`). The seal is ~1.6x
+/// `PeriodDoneView`'s on systemLarge (35pt vs `.title2`'s 22). It was ~2x
+/// (44pt seal, `.title2` title, `.footnote` line) until Trent's "a tad too
+/// big": each of the three came down one step and still clearly outranks
+/// "Complete". systemMedium sizes everything down so the three lines fit its
+/// ~80pt body. No tint here — the green wash is the whole card's background
+/// (`RemindersWidgetView`).
 private struct DayCompleteView: View {
     let isLarge: Bool
 
     var body: some View {
         VStack(spacing: isLarge ? 6 : 2) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: isLarge ? 44 : 30))
+                .font(.system(size: isLarge ? 35 : 26))
                 .foregroundStyle(.green.opacity(0.85))
-                .padding(.bottom, isLarge ? 6 : 2)
+                .padding(.bottom, isLarge ? 4 : 2)
             Text("Congratulations")
-                .font(isLarge ? .title2.weight(.semibold) : .headline)
+                .font(isLarge ? .title3.weight(.semibold) : .callout.weight(.semibold))
                 .foregroundStyle(.primary)
             Text("Day complete")
-                .font(isLarge ? .footnote : .caption)
+                .font(isLarge ? .caption : .caption2)
                 .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
@@ -767,11 +764,11 @@ private struct DayCompleteView: View {
 }
 
 /// A finished period (2026-09-29, mockup r3-b1): the seal at
-/// `WidgetEmptyView`'s size, "All done" (semibold, primary) and
-/// "7 reminders" (`ReminderDayProgress.itemsText`, prompts included) under
-/// it. It replaced "<Period> done" and "All caught up".
+/// `WidgetEmptyView`'s size and "Complete" (semibold, primary). No count
+/// line under it — the bottom-left "7 of 7" carries the count (Trent's
+/// follow-up; #191 read "All done / 7 reminders"). It replaced
+/// "<Period> done" and "All caught up".
 private struct PeriodDoneView: View {
-    let count: Int
     let isLarge: Bool
 
     var body: some View {
@@ -779,14 +776,9 @@ private struct PeriodDoneView: View {
             Image(systemName: "checkmark.seal.fill")
                 .font(isLarge ? .title2 : .title3)
                 .foregroundStyle(.green.opacity(0.85))
-            VStack(spacing: 2) {
-                Text("All done")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(ReminderDayProgress.itemsText(count))
-                    .font(isLarge ? .footnote : .caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Complete")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
         }
         .multilineTextAlignment(.center)
         .minimumScaleFactor(0.8)

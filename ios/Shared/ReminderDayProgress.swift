@@ -9,12 +9,15 @@ import Foundation
 ///
 /// The vocabulary (approved from mockups r3, "remove the word considered"):
 /// - **Mid-period**: the list, and "4 of 7" at the bottom left (`countText`).
-/// - **A finished period** (nothing waiting, something handled): a seal,
-///   "All done", and "7 reminders" under it (`itemsText`). No tint.
+/// - **A finished period** (nothing waiting, something handled): a seal and
+///   "Complete" — no count line; the bottom-left "7 of 7" carries the count
+///   (Trent, 2026-09-29 follow-up). No tint.
 /// - **Day complete** (`isDayComplete`): every period has nothing waiting —
 ///   including the ones that haven't started — and at least one item was
-///   handled today. A faint green wash over the whole card on EVERY period,
-///   and the clock's period reads "Congratulations / Day complete".
+///   handled today. A faint green wash over the whole card, and EVERY period
+///   reads "Congratulations / Day complete" — not only the clock's (it was
+///   the clock's period alone in #191; Trent: congratulations on every
+///   segment).
 ///
 /// It replaced "All caught up", which fired once every STARTED period was
 /// finished — at 9 pm with Night's reminders still to come, it was a false
@@ -65,42 +68,28 @@ enum ReminderDayProgress {
         var text: String { "\(handled) of \(total)" }
     }
 
-    // MARK: Noun
-
-    /// "1 reminder" / "7 reminders" — under "All done".
-    ///
-    /// ONE noun, prompts included: the Reminders widget already counts a
-    /// quota prompt as a reminder everywhere ("N left", the strip, "DONE · N"),
-    /// and the prompts are "quota reminders" in the product's own words. A
-    /// noun that switched to "items" only when a period happened to hold a
-    /// prompt would make the same period read differently from one day to
-    /// the next.
-    static func itemsText(_ count: Int) -> String {
-        count == 1 ? "1 reminder" : "\(count) reminders"
-    }
-
     // MARK: What the body shows when the on-screen period has no rows
 
     /// The Reminders widget's body when the list for the on-screen period is
     /// empty (nothing waiting, and — with "show completed" on — nothing done
-    /// either). `displayedIndex` is the period on screen, `naturalIndex` the
-    /// one the clock is in (`RemindersTimeline.naturalSlotIndex`).
+    /// either). `displayedIndex` is the period on screen.
     enum EmptyBody: Equatable {
         /// No periods at all today.
         case noReminders
-        /// The whole day is done and this is the clock's period.
+        /// The whole day is done — shown on whichever period is on screen.
         case dayComplete
-        /// This period is finished: `count` items were handled in it.
-        case periodDone(count: Int)
+        /// This period is finished ("Complete"): something was handled in
+        /// it and nothing is waiting.
+        case periodDone
         /// This period never had anything.
         case nothingHere
     }
 
-    static func emptyBody(groups: [ReminderGroupDTO], displayedIndex: Int, naturalIndex: Int) -> EmptyBody {
+    static func emptyBody(groups: [ReminderGroupDTO], displayedIndex: Int) -> EmptyBody {
         guard !groups.isEmpty else { return .noReminders }
-        if isDayComplete(groups) && displayedIndex == naturalIndex { return .dayComplete }
+        if isDayComplete(groups) { return .dayComplete }
         if groups.indices.contains(displayedIndex), groups[displayedIndex].consideredCount > 0 {
-            return .periodDone(count: groups[displayedIndex].consideredCount)
+            return .periodDone
         }
         return .nothingHere
     }
