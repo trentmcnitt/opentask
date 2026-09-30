@@ -78,7 +78,7 @@ To refresh it: on a paired Apple Watch, get an OpenTask task notification (long 
 
 Some files are new (Reminders, Quotas, views, widgets, menu bar) and have no page yet; their destinations are suggestions.
 
-The README's three images (`docs/images/*-readme.png`) are cut from the iPhone and task-card shots by hand; they aren't produced here.
+The README's three images in `docs/images/` are straight copies of pipeline output: `ios-dashboard-{light,dark}-400.png` from `web/ios-dashboard-{light,dark}-400.png`, and `task-card-ai-insight.png` from `web/web-task-card-ai-insight-light.png`.
 
 ## Adding a shot
 
