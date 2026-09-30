@@ -404,6 +404,85 @@ export function formatTaskAge(anchorIsoUtc: string, timezone: string): string | 
   return `${years}y old`
 }
 
+/** "2 hours ago", "3 days ago", "4 weeks ago", "2 months ago" — the largest whole unit, at least 1 minute. */
+function formatTimeAgo(anchor: DateTime, now: DateTime): string {
+  const diff = now.diff(anchor, ['months', 'weeks', 'days', 'hours', 'minutes'])
+  if (diff.months >= 1) return plural(Math.floor(diff.months), 'month')
+  if (diff.weeks >= 1) return plural(Math.floor(diff.weeks), 'week')
+  if (diff.days >= 1) return plural(Math.floor(diff.days), 'day')
+  if (diff.hours >= 1) return plural(Math.floor(diff.hours), 'hour')
+  return plural(Math.max(1, Math.floor(diff.minutes)), 'minute')
+}
+
+function plural(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? '' : 's'} ago`
+}
+
+/** The "since X" text on QuickActionPanel's recurrence line (see `formatTaskSince`). */
+export interface TaskSince {
+  /** Compact label after "since": "today", "yesterday", "Mon", "Jan 11", "Dec 20, 2025" */
+  label: string
+  /** Popover line: "2 hours ago", "3 days ago", "4 weeks ago", "2 months ago" */
+  timeAgo: string
+  /** Popover line: the anchor in full, e.g. "Mon, Jan 12, 2026, 9:00 AM" */
+  fullDate: string
+}
+
+/**
+ * Task age for QuickActionPanel's "since X" indicator on the recurrence line.
+ *
+ * Unlike `formatTaskAge` (TaskRow's compact "Xd old"), this returns a label
+ * plus the full date and a relative time for the hover/tap popover.
+ *
+ * For one-off tasks: age is based on original_due_at ?? created_at. When
+ * original_due_at exists, it shows how long since the task was first due
+ * (capturing deferral time). Falls back to created_at for tasks never deferred.
+ * For recurring tasks: age is based on original_due_at ?? due_at (when the
+ * current occurrence was originally due), but only shown when the occurrence
+ * is overdue (the anchor is in the past). If the occurrence hasn't arrived
+ * yet — or a recurring task has no date at all — it returns null.
+ */
+export function formatTaskSince(
+  task: {
+    rrule: string | null
+    due_at: string | null
+    original_due_at: string | null
+    created_at: string
+  },
+  timezone: string,
+  now: Date = new Date(),
+): TaskSince | null {
+  let anchorIso: string | null
+  if (task.rrule) {
+    anchorIso = task.original_due_at ?? task.due_at
+    if (!anchorIso) return null
+    if (new Date(anchorIso) > now) return null // occurrence hasn't arrived yet
+  } else {
+    anchorIso = task.original_due_at ?? task.created_at
+  }
+
+  const anchor = DateTime.fromISO(anchorIso, { zone: 'utc' }).setZone(timezone)
+  const nowDt = DateTime.fromJSDate(now).setZone(timezone)
+  const fullDate = anchor.toFormat('ccc, LLL d, yyyy, h:mm a')
+
+  const timeAgo = formatTimeAgo(anchor, nowDt)
+
+  let label: string
+  if (anchor.hasSame(nowDt, 'day')) {
+    label = 'today'
+  } else if (anchor.hasSame(nowDt.minus({ days: 1 }), 'day')) {
+    label = 'yesterday'
+  } else if (nowDt.diff(anchor, 'days').days < 7) {
+    label = anchor.toFormat('ccc')
+  } else if (anchor.year === nowDt.year) {
+    label = anchor.toFormat('LLL d')
+  } else {
+    label = anchor.toFormat('LLL d, yyyy')
+  }
+
+  return { label, timeAgo, fullDate }
+}
+
 /**
  * Convert a local wall-clock "YYYY-MM-DDTHH:mm" in `timezone` to a UTC ISO string.
  *

@@ -1,15 +1,17 @@
 /**
  * Pure function tests for date and RRULE formatting utilities.
  *
- * No DB, no HTTP — tests formatDueTimeParts, formatOriginalDueAt, and formatRRuleCompact.
+ * No DB, no HTTP — tests formatDueTimeParts, formatOriginalDueAt, formatTaskAge,
+ * formatTaskSince and formatRRuleCompact.
  */
 
-import { describe, test, expect, vi, afterEach } from 'vitest'
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
 import {
   formatDueTimeParts,
   formatOriginalDueAt,
   formatDurationDelta,
   formatTaskAge,
+  formatTaskSince,
   getTimezoneDayBoundaries,
 } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -448,5 +450,95 @@ describe('getTimezoneDayBoundaries DST', () => {
     // 7 calendar days spanning DST: 6 normal days (144h) + 1 short day (23h) = 167h
     const diffHours = (nextWeekStart.getTime() - todayStart.getTime()) / (60 * 60 * 1000)
     expect(diffHours).toBe(167)
+  })
+})
+
+describe('formatTaskSince', () => {
+  // Thu Jan 15, 2026, 10:00 AM Chicago (16:00 UTC)
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const oneOff = (created_at: string, original_due_at: string | null = null) => ({
+    rrule: null,
+    due_at: null,
+    original_due_at,
+    created_at,
+  })
+  const recurring = (due_at: string | null, original_due_at: string | null = null) => ({
+    rrule: 'FREQ=DAILY',
+    due_at,
+    original_due_at,
+    created_at: '2025-06-01T12:00:00Z',
+  })
+
+  test('recurring: null while the occurrence has not arrived yet', () => {
+    expect(formatTaskSince(recurring('2026-01-16T15:00:00Z'), TZ)).toBeNull()
+  })
+
+  test('recurring: null with no due date at all', () => {
+    expect(formatTaskSince(recurring(null), TZ)).toBeNull()
+  })
+
+  test('recurring: an overdue occurrence is aged from original_due_at', () => {
+    // due_at was snoozed into the future; the occurrence was first due yesterday
+    expect(formatTaskSince(recurring('2026-01-16T15:00:00Z', '2026-01-14T15:00:00Z'), TZ)).toEqual({
+      label: 'yesterday',
+      timeAgo: '1 day ago',
+      fullDate: 'Wed, Jan 14, 2026, 9:00 AM',
+    })
+  })
+
+  test('recurring: falls back to due_at when never snoozed', () => {
+    expect(formatTaskSince(recurring('2026-01-15T15:00:00Z'), TZ)).toEqual({
+      label: 'today',
+      timeAgo: '1 hour ago',
+      fullDate: 'Thu, Jan 15, 2026, 9:00 AM',
+    })
+  })
+
+  test('one-off: aged from created_at when never deferred', () => {
+    expect(formatTaskSince(oneOff('2026-01-15T13:00:00Z'), TZ)?.timeAgo).toBe('3 hours ago')
+  })
+
+  test('one-off: original_due_at wins over created_at', () => {
+    const since = formatTaskSince(oneOff('2025-11-10T16:00:00Z', '2026-01-12T16:00:00Z'), TZ)
+    expect(since?.label).toBe('Mon')
+    expect(since?.timeAgo).toBe('3 days ago')
+  })
+
+  test('minutes: at least "1 minute ago", singular and plural', () => {
+    expect(formatTaskSince(oneOff('2026-01-15T15:59:30Z'), TZ)?.timeAgo).toBe('1 minute ago')
+    expect(formatTaskSince(oneOff('2026-01-15T15:58:00Z'), TZ)?.timeAgo).toBe('2 minutes ago')
+  })
+
+  test('a week or more this year: "Jan 2", weeks ago', () => {
+    expect(formatTaskSince(oneOff('2026-01-02T16:00:00Z'), TZ)).toEqual({
+      label: 'Jan 2',
+      timeAgo: '1 week ago',
+      fullDate: 'Fri, Jan 2, 2026, 10:00 AM',
+    })
+  })
+
+  test('an earlier year shows the year, months ago', () => {
+    const since = formatTaskSince(oneOff('2025-11-10T16:00:00Z'), TZ)
+    expect(since?.label).toBe('Nov 10, 2025')
+    expect(since?.timeAgo).toBe('2 months ago')
+  })
+
+  test('the day boundary is the user timezone, not UTC', () => {
+    // 05:00 UTC Jan 15 is 11:00 PM Jan 14 in Chicago
+    const task = oneOff('2026-01-15T05:00:00Z')
+    expect(formatTaskSince(task, TZ)?.label).toBe('yesterday')
+    expect(formatTaskSince(task, 'UTC')?.label).toBe('today')
+  })
+
+  test('an explicit now overrides the clock', () => {
+    const now = new Date('2026-01-15T15:30:00Z')
+    expect(formatTaskSince(oneOff('2026-01-15T15:00:00Z'), TZ, now)?.timeAgo).toBe('30 minutes ago')
   })
 })
