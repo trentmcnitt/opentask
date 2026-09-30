@@ -816,8 +816,8 @@ private enum ReminderPreviewData {
 // MARK: - Day complete (2026-09-29, synthetic sample data)
 //
 // The finished states approved from mockups r3: "4 of 7" mid-period, a
-// finished period's "All done / N reminders", and "Congratulations / Day
-// complete" under the green wash. Six invented periods, 35 reminders plus
+// finished period's "Complete", and "Congratulations / Day complete" under
+// the green wash on every period of a complete day. Six invented periods, 35 reminders plus
 // one quota prompt (handled in Morning), so the done list pages.
 
 private enum DayCompletePreviewData {
@@ -902,7 +902,8 @@ private enum DayCompletePreviewData {
         entry(at: at(21, 8), groups: groups(doneThrough: 5), slotIndex: 5)
     }
 
-    /// The same day, paged back to Morning (its reminders + the prompt).
+    /// The same day, paged back to Morning (its reminders + the prompt) —
+    /// Congratulations here too, not only on the clock's period.
     static var dayCompleteOtherPeriod: RemindersEntry {
         entry(at: at(21, 8), groups: groups(doneThrough: 5), slotIndex: 1)
     }
@@ -967,6 +968,13 @@ private enum DayCompletePreviewData {
 } timeline: {
     let _ = DayCompletePreviewData.prepare(showCompleted: false)
     DayCompletePreviewData.dayComplete
+}
+
+#Preview("Reminders Small — period done", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.periodDone
 }
 
 #endif

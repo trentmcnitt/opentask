@@ -2,7 +2,8 @@ import XCTest
 
 /// The Reminders widget's "day complete" rules (`ReminderDayProgress`,
 /// 2026-09-29): the day-complete predicate, the per-period "N of M", the
-/// "N reminders" noun and which empty state a period shows.
+/// which empty state a period shows (Congratulations on every period of a
+/// complete day; "Complete" with no count line for a finished period).
 final class ReminderDayProgressTests: XCTestCase {
 
     // MARK: Fixtures (synthetic)
@@ -55,8 +56,7 @@ final class ReminderDayProgressTests: XCTestCase {
         ]
         XCTAssertFalse(ReminderDayProgress.isDayComplete(groups))
         XCTAssertEqual(
-            ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 1, naturalIndex: 1),
-            .periodDone(count: 2)
+            ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 1), .periodDone
         )
     }
 
@@ -74,10 +74,10 @@ final class ReminderDayProgressTests: XCTestCase {
         let groups = [period(1, start: "07:00"), period(2, start: "12:00")]
         XCTAssertFalse(ReminderDayProgress.isDayComplete(groups))
         XCTAssertEqual(
-            ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 0, naturalIndex: 0), .nothingHere,
+            ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 0), .nothingHere,
             "no Congratulations for work that was never there"
         )
-        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: [], displayedIndex: 0, naturalIndex: 0), .noReminders)
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: [], displayedIndex: 0), .noReminders)
     }
 
     func testAnUnslottedGroupCountsAsAPeriod() {
@@ -87,23 +87,35 @@ final class ReminderDayProgressTests: XCTestCase {
 
     // MARK: Empty body
 
-    func testCongratulationsOnlyOnTheClocksPeriod() {
+    func testCongratulationsOnEveryPeriodOfACompleteDay() {
         let groups = [
             period(1, start: "07:00", done: 7),
             period(2, start: "12:00", done: 3),
             period(3, start: "21:00", done: 7),
         ]
-        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 2, naturalIndex: 2), .dayComplete)
-        // Paging to another period while the day is complete: its own "All done".
-        XCTAssertEqual(
-            ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 0, naturalIndex: 2), .periodDone(count: 7)
-        )
+        // Every period reads "Congratulations / Day complete" — the clock's
+        // period and any other one paged to (2026-09-29 follow-up; it was the
+        // clock's period alone in #191).
+        for index in groups.indices {
+            XCTAssertEqual(
+                ReminderDayProgress.emptyBody(groups: groups, displayedIndex: index), .dayComplete,
+                "period \(index)"
+            )
+        }
     }
 
-    func testAPeriodThatNeverHadAnythingReadsNothingHereEvenOnACompleteDay() {
+    func testAPeriodThatNeverHadAnythingAlsoCongratulatesOnACompleteDay() {
         let groups = [period(1, start: "07:00", done: 2), period(2, start: "12:00")]
         XCTAssertTrue(ReminderDayProgress.isDayComplete(groups))
-        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 1, naturalIndex: 0), .nothingHere)
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 1), .dayComplete)
+    }
+
+    func testAFinishedPeriodEarlierInAnOpenDayReadsComplete() {
+        // Morning finished, Evening still waiting: Morning is "Complete"
+        // (`.periodDone` carries no count — the body has no count line; the
+        // bottom-left "N of M" does), Evening's own list isn't empty.
+        let groups = [period(1, start: "07:00", done: 4), period(2, start: "21:00", waiting: 2)]
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 0), .periodDone)
     }
 
     // MARK: Counts
@@ -123,21 +135,11 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(count.text, "7 of 7")
     }
 
-    func testPeriodDoneCountIncludesHandledPrompts() {
+    func testAPeriodWhosePromptsAreTheOnlyHandledItemsIsComplete() {
         let groups = [
-            period(1, start: "07:00", done: 2, prompts: [prompt(8, handled: true)]),
+            period(1, start: "07:00", prompts: [prompt(8, handled: true)]),
             period(2, start: "12:00", waiting: 1),
         ]
-        XCTAssertEqual(
-            ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 0, naturalIndex: 1), .periodDone(count: 3)
-        )
-    }
-
-    // MARK: Noun
-
-    func testItemsTextIsSingularForOne() {
-        XCTAssertEqual(ReminderDayProgress.itemsText(1), "1 reminder")
-        XCTAssertEqual(ReminderDayProgress.itemsText(3), "3 reminders")
-        XCTAssertEqual(ReminderDayProgress.itemsText(0), "0 reminders")
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, displayedIndex: 0), .periodDone)
     }
 }

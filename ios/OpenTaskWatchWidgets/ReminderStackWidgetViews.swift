@@ -258,7 +258,7 @@ private struct CaughtUpCardView: View {
             Label {
                 // "All caught up" until 2026-09-29 — the phone widget's
                 // words now (`ReminderDayProgress`).
-                Text(card.isDayComplete ? "Day complete" : "All done")
+                Text(card.isDayComplete ? "Day complete" : "Complete")
                     .font(.headline)
             } icon: {
                 Image(systemName: "checkmark.circle.fill")
