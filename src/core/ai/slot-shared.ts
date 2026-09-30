@@ -1,10 +1,11 @@
 /**
  * Shared utilities for warm slot infrastructure
  *
- * Both enrichment-slot.ts and quick-take-slot.ts share identical warmup
- * validation, circuit breaker logic, and configuration patterns. This module
- * extracts those common pieces while leaving concurrency-specific logic
- * (FIFO queue vs latest-wins) in each slot file.
+ * Types, constants and pure helpers for the warm-slot engine (warm-slot.ts)
+ * and its two slots, enrichment-slot.ts and quick-take-slot.ts: warmup
+ * validation, re-init backoff and the circuit breaker check. The lifecycle
+ * itself, and the FIFO-queue vs latest-wins concurrency policies, live in
+ * warm-slot.ts.
  *
  * Error handling asymmetry (intentional):
  * - Enrichment slot THROWS on errors — callers retry via the enrichment pipeline
@@ -98,8 +99,8 @@ export function computeReinitBackoff(consecutiveInitFailures: number): number {
  * Pure circuit breaker check for rapid recycle detection.
  *
  * Returns whether the breaker tripped and updated tracking values.
- * Each slot file handles the tripped case differently (enrichment
- * rejects waiters; quick-take just marks dead).
+ * warm-slot.ts marks the slot dead on a trip; the FIFO policy also rejects
+ * its waiters (latest-wins has none).
  */
 export function checkCircuitBreaker(
   lastRecycleTime: number,

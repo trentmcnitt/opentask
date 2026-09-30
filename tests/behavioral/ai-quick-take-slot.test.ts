@@ -107,6 +107,19 @@ describe('quick take slot initialization', () => {
     expect(stats.activatedAt).not.toBeNull()
   })
 
+  // The shared warm-slot engine builds the SDK options from each slot's config;
+  // quick take answers in plain text, so no schema is pinned.
+  test('subprocess is started without a schema and with its own turn limit', async () => {
+    await initWithWarmup()
+
+    const { options } = mockQuery.mock.calls[0][0] as {
+      options: { maxTurns: number; outputFormat?: unknown; systemPrompt: string }
+    }
+    expect(options.maxTurns).toBe(15)
+    expect(options.outputFormat).toBeUndefined()
+    expect(options.systemPrompt).toBe('test quick take system prompt')
+  })
+
   test('warmup failure: response without READY → dead', async () => {
     const initPromise = initQuickTakeSlot()
     await waitForStream()
