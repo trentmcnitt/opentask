@@ -15,12 +15,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Task, Project } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
+import { LABEL_COLORS } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
 import { isFlatGrouping, type SortOption, type SortedTaskGroup } from '@/lib/task-grouping'
 import { isOverdue } from '@/lib/task-counts'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useProjectPreviewCount, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { isJustAdded } from '@/lib/just-added'
 
@@ -38,14 +39,13 @@ import { isJustAdded } from '@/lib/just-added'
  */
 /** Today's time slots show this many before "Show more" (§7.3). */
 const SLOT_PREVIEW_COUNT = 5
-/**
- * Every other grouped view (All's due-date groups) shows this many per group
- * before "Show more" (Trent, 2026-09-23: "cap the number of to-dos that are
- * shown at 10… otherwise it's too hard to scroll through the projects when
- * it's not in unified mode" — said of the since-retired Projects view). The
- * flat lists (New, Unified) are not capped.
+/*
+ * All's project groups show the user's `project_preview_count` (Settings →
+ * Projects, default 6) before "Show all" — `useProjectPreviewCount`. The cap
+ * began as a fixed 10 (2026-09-23: "otherwise it's too hard to scroll through
+ * the projects when it's not in unified mode") and became a setting on
+ * 2026-09-30. The flat lists (New, Unified) are not capped.
  */
-const GROUP_PREVIEW_COUNT = 10
 
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
@@ -175,7 +175,7 @@ export function TaskList({
   sortedGroups,
   orderedIds,
   projects = [],
-  grouping = 'time',
+  grouping = 'project',
   now,
   onDone,
   onSnooze,
@@ -219,6 +219,9 @@ export function TaskList({
   const selection = useSelection()
   const timezone = useTimezone()
   const isMobile = useIsMobile()
+  const { projectPreviewCount } = useProjectPreviewCount()
+  // Today's slots preview 5 (§7.3); All's project groups the user's setting.
+  const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : projectPreviewCount
   const listRef = useRef<HTMLDivElement>(null)
 
   // Focus the listbox when entering selection mode (e.g., when clicking a task)
@@ -328,9 +331,8 @@ export function TaskList({
         return
       }
       if (!unified && isCollapsed(group.label)) toggleCollapse(group.label)
-      const cap = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
       const index = group.sortedTasks.findIndex((t) => t.id === task.id)
-      if (!unified && index >= cap && !expandedGroups.has(group.label)) {
+      if (!unified && index >= previewCount && !expandedGroups.has(group.label)) {
         toggleGroupExpanded(group.label)
       }
       setFlashTaskId(task.id)
@@ -362,10 +364,6 @@ export function TaskList({
   // Build project lookups for the flat views (project badge + color on each task row)
   const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
   const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
-
-  // Determine if we should show the "now" separator
-  const hasOverdue = grouping === 'time' && sortedGroups.some((g) => g.label === 'Overdue')
-  const hasUpcoming = grouping === 'time' && sortedGroups.some((g) => g.label !== 'Overdue')
 
   const newBadge = (task: Task) =>
     justAddedSource && isJustAdded(task, justAddedNow) ? 'New' : undefined
@@ -481,7 +479,7 @@ export function TaskList({
         </div>
       </div>
       <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
-        {sortedGroups.map((group, groupIdx) => {
+        {sortedGroups.map((group) => {
           const { sortedTasks } = group
           const collapsed = !isFlat && isCollapsed(group.label)
 
@@ -489,10 +487,9 @@ export function TaskList({
           // is ever truncated permanently — §1.1's constraint is that the
           // harness adapts to the scale, so a 40-item slot stays fully
           // reachable while the day still reads at a glance. Every grouped view
-          // previews — Today's slots at 5, the rest at 10 — and only the
-          // unified flat list shows everything.
+          // previews — Today's slots at 5, All's projects at the user's
+          // `project_preview_count` — and only the flat lists show everything.
           const previewed = !isFlat
-          const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
             previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : sortedTasks
@@ -503,9 +500,6 @@ export function TaskList({
             // overdue/today jump scrolls the FIRST of these to just under the
             // top bar (`useJumpToTaskList`).
             <section key={group.label} data-task-group className="scroll-below-header">
-              {/* "Now" separator between Overdue and the next group */}
-              {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
-
               {/* Skip group header in unified mode — all tasks render in a single flat list */}
               {!isFlat && (
                 <div
@@ -553,7 +547,26 @@ export function TaskList({
                       }}
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
-                      {group.label}
+                      {/* A PROJECT heading is a tag in its project's color
+                          (2026-09-23, option C of four rendered: "I lose
+                          track of what color is for what"). The same tinted
+                          pair labels use, so it reads the same in light and
+                          dark. A project with no color, and Today's slot
+                          headings, keep the plain heading. */}
+                      {group.color ? (
+                        <span
+                          data-project-heading-tag
+                          className={cn(
+                            'rounded-md px-2 py-0.5',
+                            LABEL_COLORS[group.color].bg,
+                            LABEL_COLORS[group.color].text,
+                          )}
+                        >
+                          {group.label}
+                        </span>
+                      ) : (
+                        group.label
+                      )}
                       <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
                     </button>
                   </div>
@@ -699,25 +712,5 @@ export function SortDropdown({
         })}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-function NowSeparator({ timezone }: { timezone: string }) {
-  const now = new Date()
-  const timeStr = now.toLocaleTimeString('en-US', {
-    timeZone: timezone,
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-
-  return (
-    <div className="mb-4 flex items-center gap-3 py-3" aria-label={`Current time: ${timeStr}`}>
-      <div className="bg-border h-px flex-1" />
-      <span className="text-muted-foreground text-xs font-medium whitespace-nowrap">
-        now ({timeStr})
-      </span>
-      <div className="bg-border h-px flex-1" />
-    </div>
   )
 }

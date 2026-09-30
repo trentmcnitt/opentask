@@ -7,7 +7,7 @@ interface ViewModeFabProps {
   /** The dashboard's effective grouping — the one `ViewModeToggle` shows. */
   grouping: GroupingMode
   isSelectionMode: boolean
-  /** Back to All — the same `onGroupingChange('time')` a tap on "All" makes. */
+  /** Back to All — the same `onGroupingChange('project')` a tap on "All" makes. */
   onShowAll: () => void
 }
 

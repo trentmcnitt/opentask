@@ -398,7 +398,7 @@ describe('combined preference updates', () => {
  * render and the API must stop accepting it.
  */
 describe('default_grouping preference', () => {
-  test.each(['time', 'new', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
+  test.each(['project', 'new', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: { default_grouping: grouping },
@@ -408,18 +408,23 @@ describe('default_grouping preference', () => {
     expect(body.data.default_grouping).toBe(grouping)
   })
 
-  // The Projects view left the switch on 2026-09-29 (Today · All · New). An old
-  // client may still send 'project': it is accepted, not refused, and stored as
-  // 'time' (All), so the next GET — and the dashboard — say All.
-  test('PATCH with the retired "project" value is stored as time', async () => {
+  // All is the by-project view again since 2026-09-30, and the due-date
+  // grouping ('time', All from 2026-09-29) is retired. An old client may still
+  // send 'time': it is accepted, not refused, and stored as 'project' (All), so
+  // the next GET — and the dashboard — say All.
+  test('PATCH with the retired "time" value is stored as project', async () => {
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_grouping: 'slot' },
+    })
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { default_grouping: 'project' },
+      body: { default_grouping: 'time' },
     })
     expect(res.status).toBe(200)
-    expect((await res.json()).data.default_grouping).toBe('time')
+    expect((await res.json()).data.default_grouping).toBe('project')
     const getRes = await apiFetch('/api/user/preferences')
-    expect((await getRes.json()).data.default_grouping).toBe('time')
+    expect((await getRes.json()).data.default_grouping).toBe('project')
   })
 
   // 'recent' was the short-lived "Recent" view, replaced by just-added pinning.
@@ -444,7 +449,54 @@ describe('default_grouping preference', () => {
   afterAll(async () => {
     await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { default_grouping: 'time' },
+      body: { default_grouping: 'project' },
+    })
+  })
+})
+
+/**
+ * `project_preview_count`: how many tasks each project group in All shows
+ * before "Show all". Default 6; an integer from 1 to 50.
+ */
+describe('project_preview_count preference', () => {
+  test('defaults to 6', async () => {
+    const body = await (await apiFetch('/api/user/preferences')).json()
+    expect(body.data.project_preview_count).toBe(6)
+  })
+
+  test.each([1, 12, 50])('PATCH accepts %s and GET reads it back', async (n) => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { project_preview_count: n },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.project_preview_count).toBe(n)
+    const getRes = await apiFetch('/api/user/preferences')
+    expect((await getRes.json()).data.project_preview_count).toBe(n)
+  })
+
+  test.each([0, 51, -3, 2.5, '8', null, true])(
+    'PATCH with %j returns 400 and changes nothing',
+    async (bad) => {
+      await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { project_preview_count: 9 },
+      })
+      const res = await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { project_preview_count: bad },
+      })
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toMatch(/project_preview_count/)
+      const getRes = await apiFetch('/api/user/preferences')
+      expect((await getRes.json()).data.project_preview_count).toBe(9)
+    },
+  )
+
+  afterAll(async () => {
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { project_preview_count: 6 },
     })
   })
 })

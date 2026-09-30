@@ -68,7 +68,7 @@ export function resolveTaskLink(input: TaskLinkInput): TaskLinkStep {
   if (!listed.some((t) => t.id === taskId)) {
     return tried.narrowing ? { kind: 'unreachable', task } : { kind: 'clear-narrowing' }
   }
-  if (!tried.view && grouping !== 'time' && !isFlatGrouping(grouping)) {
+  if (!tried.view && grouping !== 'project' && !isFlatGrouping(grouping)) {
     return { kind: 'switch-view' }
   }
   return { kind: 'unreachable', task }

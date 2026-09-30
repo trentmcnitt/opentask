@@ -40,7 +40,7 @@ async function cleanup(page: Page, taskIds: number[], projectId: number | null) 
   if (projectId !== null) await page.request.delete(`/api/projects/${projectId}`)
 }
 
-/** A grouped view's group (All's due-date groups here), found by its collapse button. */
+/** A grouped view's group (All's project groups here), found by its collapse button. */
 function group(page: Page, name: string): Locator {
   return page.locator('section[data-task-group]', {
     has: page.getByRole('button', { name: `Collapse ${name}`, exact: true }),
@@ -61,16 +61,16 @@ function rowOrder(section: Locator): Promise<string[]> {
 /**
  * One flat list in due-date order: every open task has a row (no group cap to
  * hide one behind "Show all"), and a fresh task's row sits where the sort puts
- * it — so "not pulled to the top" is observable. These tests ran in the
- * Projects view until it was retired (2026-09-29).
+ * it — so "not pulled to the top" is observable. (All, grouped by project,
+ * caps each project behind "Show all", so it can't promise every row.)
  */
 const FLAT_BY_DUE = {
   default_grouping: 'unified',
   default_sort: 'due_date',
   default_sort_reversed: false,
 }
-/** All's due-date groups, for the one test that needs a group to fold. */
-const ALL_BY_DUE = { ...FLAT_BY_DUE, default_grouping: 'time' }
+/** All's project groups, for the one test that needs a group to fold. */
+const ALL_BY_DUE = { ...FLAT_BY_DUE, default_grouping: 'project' }
 const taskList = (page: Page) => page.getByRole('listbox', { name: 'Task list' })
 
 test.describe('Just added: the card', () => {
@@ -199,12 +199,12 @@ test.describe('Just added: tapping through', () => {
       })
       ids.push(id)
 
-      // Undated, so its row is in All's "No Due Date" group — folded here, and
-      // possibly past that group's 10-row preview too; the tap must undo both.
+      // Its row is in All's group for its own project — folded here, which
+      // the tap must undo.
       await withPreferences(page, ALL_BY_DUE, async () => {
-        const own = group(page, 'No Due Date')
+        const own = group(page, name)
         await waitForPrefsLoaded(page, () => page.goto('/'), own)
-        await page.getByRole('button', { name: 'Collapse No Due Date', exact: true }).click()
+        await page.getByRole('button', { name: `Collapse ${name}`, exact: true }).click()
         await expect(realRow(page, id)).toHaveCount(0)
 
         await entry(page, id).click()

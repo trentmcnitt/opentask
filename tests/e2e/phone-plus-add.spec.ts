@@ -118,11 +118,13 @@ test.describe('Phone + focuses the dashboard add field', () => {
     await expect(page.locator('[data-just-added-card]').getByText(title)).toBeVisible({
       timeout: 5000,
     })
-    await expect(page.getByRole('link', { name: title })).toBeVisible({ timeout: 5000 })
+    // The Just added card is the check that it landed on screen: under All a
+    // new Inbox task's own row can sit past the group's "Show all" cap.
     const res = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
     const created = ((await res.json()).data.tasks as { id: number; title: string }[]).find(
       (t) => t.title === title,
     )
+    expect(created).toBeDefined()
     if (created) taskIds.push(created.id)
   })
 

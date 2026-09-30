@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
-import type { GroupingMode } from '@/lib/grouping'
+import { PROJECT_PREVIEW_DEFAULT, type GroupingMode } from '@/lib/grouping'
 import type { SortOption } from '@/lib/task-grouping'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
@@ -48,6 +48,9 @@ interface PreferencesContextValue {
   /** First day of the week (Settings) — the Quotas panel's week boundary. */
   weekStart: WeekStart
   setWeekStart: (value: WeekStart) => void
+  /** All's per-project cap before "Show all" (Settings → Projects). */
+  projectPreviewCount: number
+  setProjectPreviewCount: (value: number) => void
   morningTime: string
   setMorningTime: (time: string) => void
   wakeTime: string
@@ -131,13 +134,15 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setBulkSnoozeDefault: () => {},
   weekStart: WEEK_START_DEFAULT,
   setWeekStart: () => {},
+  projectPreviewCount: PROJECT_PREVIEW_DEFAULT,
+  setProjectPreviewCount: () => {},
   morningTime: '09:00',
   setMorningTime: () => {},
   wakeTime: '07:00',
   setWakeTime: () => {},
   sleepTime: '22:00',
   setSleepTime: () => {},
-  defaultGrouping: 'time',
+  defaultGrouping: 'project',
   setDefaultGrouping: () => {},
   preferencesLoaded: false,
   defaultSort: 'due_date',
@@ -271,6 +276,7 @@ function makeFieldSetters(set: FieldSet) {
     setDefaultSnoozeOption: field('defaultSnoozeOption'),
     setBulkSnoozeDefault: field('bulkSnoozeDefault'),
     setWeekStart: field('weekStart'),
+    setProjectPreviewCount: field('projectPreviewCount'),
     setMorningTime: field('morningTime'),
     setWakeTime: field('wakeTime'),
     setSleepTime: field('sleepTime'),
@@ -487,6 +493,16 @@ export function useWeekStart() {
   return { weekStart, setWeekStart }
 }
 
+/**
+ * How many tasks each project group in All shows before "Show all". Like
+ * `useWeekStart`, the setter only changes local state — Settings PATCHes
+ * `project_preview_count` itself.
+ */
+export function useProjectPreviewCount() {
+  const { projectPreviewCount, setProjectPreviewCount } = useContext(PreferencesContext)
+  return { projectPreviewCount, setProjectPreviewCount }
+}
+
 export function useSchedulePreferences() {
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useContext(PreferencesContext)
   return { wakeTime, setWakeTime, sleepTime, setSleepTime }
@@ -495,14 +511,14 @@ export function useSchedulePreferences() {
 /**
  * `groupingLoaded` is `preferencesLoaded` under this hook's own name: until
  * the `/api/user/preferences` fetch settles, `defaultGrouping` is the
- * hardcoded `'time'` fallback in this file, not the user's real
+ * hardcoded `'project'` fallback in this file, not the user's real
  * preference. Most consumers render fine either way — the fallback just
  * flashes briefly. But `DashboardClient`'s `?task=<id>&highlight=1` effect
  * groups tasks BY `defaultGrouping` to find and expand the linked row, and
  * resolving that against the fallback (rather than waiting a beat for the
  * real value) can expand the wrong group for anyone on another view — found
- * by browser-verifying against Trent's own dev account back when the
- * fallback was `'project'` and his real default `'slot'`.
+ * by browser-verifying against a dev account whose real default (`'slot'`)
+ * differed from the fallback.
  */
 export function useDefaultGrouping() {
   const { defaultGrouping, setDefaultGrouping, preferencesLoaded } = useContext(PreferencesContext)

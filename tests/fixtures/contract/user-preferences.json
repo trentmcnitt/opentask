@@ -1,10 +1,11 @@
 {
   "data": {
     "ai_available": false,
-    "default_grouping": "time",
+    "default_grouping": "project",
     "default_sort": "due_date",
     "default_sort_reversed": false,
     "filters_expanded": false,
+    "project_preview_count": 6,
     "track_expanded": false,
     "quotas_details": false,
     "label_config": [{ "name": "personal", "color": "purple" }],

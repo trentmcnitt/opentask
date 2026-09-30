@@ -27,6 +27,7 @@ export interface PreferencesRow {
   default_sort: string
   default_sort_reversed: number
   filters_expanded: number
+  project_preview_count: number
   track_expanded: number
   quotas_details: number
   label_config: string
@@ -76,10 +77,11 @@ export type PreferenceChanges = Partial<Record<PreferenceColumn, unknown>>
 
 /** Fallback row when user record is missing (should not happen in practice). */
 const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
-  default_grouping: 'time',
+  default_grouping: 'project',
   default_sort: 'due_date',
   default_sort_reversed: 0,
   filters_expanded: 0,
+  project_preview_count: 6,
   track_expanded: 0,
   quotas_details: 0,
   label_config: '[]',

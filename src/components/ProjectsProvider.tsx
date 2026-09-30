@@ -7,11 +7,18 @@ import type { Project } from '@/types'
 
 interface ProjectsContextValue {
   projects: Project[]
+  /**
+   * The first load has finished (successfully or not). The dashboard's All view
+   * names each group after its project, so it waits for this rather than
+   * rendering placeholder "Project 12" headings for a moment.
+   */
+  projectsLoaded: boolean
   refreshProjects: () => Promise<void>
 }
 
 const ProjectsContext = createContext<ProjectsContextValue>({
   projects: [],
+  projectsLoaded: false,
   refreshProjects: async () => {},
 })
 
@@ -31,6 +38,7 @@ async function fetchProjects(): Promise<Project[] | null> {
 export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
   const [projects, setProjects] = useState<Project[]>([])
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
 
   const refreshProjects = useCallback(async () => {
     const list = await fetchProjects()
@@ -46,7 +54,9 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
     if (status !== 'authenticated') return
     let cancelled = false
     fetchProjects().then((list) => {
-      if (!cancelled && list) setProjects(list)
+      if (cancelled) return
+      if (list) setProjects(list)
+      setProjectsLoaded(true)
     })
     return () => {
       cancelled = true
@@ -61,7 +71,7 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   }, [refreshProjects])
 
   return (
-    <ProjectsContext.Provider value={{ projects, refreshProjects }}>
+    <ProjectsContext.Provider value={{ projects, projectsLoaded, refreshProjects }}>
       {children}
     </ProjectsContext.Provider>
   )
