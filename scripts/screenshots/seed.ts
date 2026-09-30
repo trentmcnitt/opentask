@@ -88,6 +88,9 @@ const LABELS: Record<string, LabelColor> = {
   'deep-work': 'purple',
   quick: 'gray',
   health: 'orange',
+  // Its own label so "Read for 30 minutes" (learning) leads Today's quotas:
+  // the dashboard and the watch order a period's quotas by label, A–Z.
+  mobility: 'orange',
   focus: 'blue',
   learning: 'purple',
   connection: 'pink',
@@ -505,7 +508,7 @@ const QUOTAS: QuotaDef[] = [
   {
     title: 'Stretch for ten minutes',
     project: 'Personal',
-    label: 'health',
+    label: 'mobility',
     period: 'day',
     target: 2,
     current: 1,
