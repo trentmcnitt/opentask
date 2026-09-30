@@ -1115,3 +1115,33 @@ test.describe('Quota prompts — widget deep link', () => {
     await expect(page).toHaveURL(/\/reminders$/)
   })
 })
+
+// The keyboard path, apart from the pointer tests above (the reminder row's
+// twin lives in reminders.spec.ts).
+test.describe('Quota prompts — keyboard', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('Enter on a focused prompt considers it and hands focus to the next row', async ({
+    authenticatedPage: page,
+  }) => {
+    // Two prompts, so the first one in the list has a row after it.
+    await makeQuota(page, 'E2E prompt focus one')
+    await makeQuota(page, 'E2E prompt focus two')
+    await page.goto('/reminders')
+    const rows = page.locator('li[data-prompt-key]', { hasText: /E2E prompt focus/ })
+    await expect(rows).toHaveCount(2)
+    const row = rows.first()
+    const key = await row.getAttribute('data-prompt-key')
+    // Mark whatever follows it now: that is where focus must land, not <body>
+    // (the collapsing row goes inert and then unmounts under the focus).
+    await row.evaluate((el) => el.nextElementSibling?.setAttribute('data-e2e-next-row', ''))
+    await expect(page.locator('[data-e2e-next-row]')).toHaveCount(1)
+
+    await row.focus()
+    const considered = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/consider'))
+    await page.keyboard.press('Enter')
+    expect((await considered).ok()).toBeTruthy()
+    await expect(page.locator(`li[data-prompt-key="${key}"]`)).toHaveCount(0)
+    await expect(page.locator('[data-e2e-next-row]')).toBeFocused()
+  })
+})
