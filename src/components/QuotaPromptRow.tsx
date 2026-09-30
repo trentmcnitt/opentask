@@ -17,7 +17,11 @@ import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
-import { measureLeavingRow, onSurfaceRowAnimationEnd } from '@/components/reminders/row-shell'
+import {
+  focusAfterRow,
+  measureLeavingRow,
+  onSurfaceRowAnimationEnd,
+} from '@/components/reminders/row-shell'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
@@ -432,8 +436,14 @@ function usePromptRowGestures({
     }
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
-    if (isSelectionMode) onSelect?.(prompt)
-    else onConsider(prompt)
+    if (isSelectionMode) {
+      onSelect?.(prompt)
+      return
+    }
+    // The reminder row's rule: hand focus on before the row goes, or it falls
+    // to <body> and the next Tab starts again from the top of the page.
+    focusAfterRow(e.currentTarget as HTMLElement)
+    onConsider(prompt)
   }
   return { press, onClick, onKeyDown }
 }
