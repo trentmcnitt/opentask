@@ -122,6 +122,33 @@ struct TasksEntry: TimelineEntry {
     /// every one of them (7 entries per `getTimeline` pass) for a single
     /// number would be pure waste.
     var overdueSweepCount = 0
+    /// The next few tasks due after today (2026-09-29) — the "Up next" list
+    /// under the Today page's "Nothing due today". At most
+    /// `TaskDayProgress.upcomingLimit`, and empty on every entry that can't
+    /// show it (any page but Today, or a Today with rows): WidgetKit archives
+    /// every entry, so it carries three tasks only when they are drawn.
+    /// Built by `TasksTimeline.upcomingForEmptyToday`.
+    var upcoming: [TaskDTO] = []
+
+    // MARK: Day complete (2026-09-29) — see `TaskDayProgress`
+
+    /// Today page only: nothing open on it and something done today. The
+    /// card takes the green wash, and the body the seal + "Congratulations".
+    var isDayComplete: Bool {
+        TasksTimeline.isDayComplete(scope: scope, openTasks: tasks, done: doneTasks, now: date)
+    }
+
+    /// Tasks completed on this entry's local day — `doneTasks` checked
+    /// against the date (a cache drawn after midnight still holds
+    /// yesterday's).
+    var doneTodayCount: Int {
+        TaskDayProgress.doneToday(doneTasks, now: date).count
+    }
+
+    /// The Today page's bottom-left "N of M"; nil on every other page.
+    var todayCount: TaskDayProgress.TodayCount? {
+        TasksTimeline.todayCount(scope: scope, openTasks: tasks, done: doneTasks, now: date)
+    }
 }
 
 // MARK: - Provider
@@ -183,9 +210,21 @@ struct TasksProvider: TimelineProvider {
                         actionDescription: nil,
                         colorProjects: entry.colorProjects,
                         doneTasks: entry.doneTasks,
-                        overdueSweepCount: entry.overdueSweepCount
+                        overdueSweepCount: entry.overdueSweepCount,
+                        upcoming: entry.upcoming
                     )
                 )
+            }
+            // Local midnight, rebuilt as of then (2026-09-29): tomorrow's
+            // tasks become Today's and yesterday's completions stop counting,
+            // so a "Day complete" card can't carry "5 done today" into the
+            // next day while it waits for a refresh.
+            if let snapshot,
+                let midnight = Calendar.current.date(
+                    byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: entry.date)
+                ),
+                !entries.contains(where: { $0.date == midnight }) {
+                entries.append(makeEntry(snapshot, now: midnight))
             }
             entries.sort { $0.date < $1.date }
 
@@ -269,7 +308,10 @@ struct TasksProvider: TimelineProvider {
             // From the FULL open-tasks cache (`tasks`, unscoped) — see
             // `TasksEntry.overdueSweepCount`'s doc for why this must not be
             // `displayedTasks`.
-            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks, now: now)
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks, now: now),
+            upcoming: TasksTimeline.upcomingForEmptyToday(
+                scope: scope, openOnPage: displayedTasks, allTasks: tasks, now: now
+            )
         )
     }
 }
@@ -711,6 +753,162 @@ private func resetTasksPreviewState(page: Int = 0) {
 } timeline: {
     let _ = resetTasksPreviewState(page: 0)
     TasksPreviewData.entry()
+}
+
+// MARK: - Day complete (2026-09-29, synthetic sample data)
+//
+// The Today page's finished states (mockups t1b/t2/t3/t5b): "2 of 6"
+// mid-day, "Congratulations / Day complete" under the green wash, and
+// "Nothing due today" with the Up next list. Invented titles — the repo is
+// public. Each entry is built through the provider's own functions
+// (`todaysTasks`, `doneTasks`, `upcomingForEmptyToday`), so the previews
+// exercise the same rules the widget does.
+
+private enum DayCompletePreviewData {
+    /// The sample's clock: 4:20 PM local today.
+    static var now: Date {
+        Calendar.current.date(bySettingHour: 16, minute: 20, second: 0, of: Date()) ?? Date()
+    }
+
+    static let projects = [
+        ProjectDTO(id: 1, name: "Inbox", color: nil),
+        ProjectDTO(id: 2, name: "Work", color: "red"),
+        ProjectDTO(id: 3, name: "Home", color: "blue"),
+        ProjectDTO(id: 4, name: "Health", color: "green"),
+    ]
+
+    private static func at(day: Int, hour: Int, minute: Int = 0) -> String {
+        let calendar = Calendar.current
+        let base = calendar.date(byAdding: .day, value: day, to: calendar.startOfDay(for: now)) ?? now
+        return DateHelpers.formatISO(
+            calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base) ?? base
+        )
+    }
+
+    /// Five tasks done today, the earliest at 9:10 am.
+    static var done: [CompletionDTO] {
+        let rows: [(String, Int, Int)] = [
+            ("Send the weekly status update", 2, 9), ("Pick up the dry cleaning", 3, 11),
+            ("Book the dentist appointment", 4, 12), ("Review the budget draft", 2, 14),
+            ("Water the plants", 3, 15),
+        ]
+        return rows.enumerated().map { index, row in
+            CompletionDTO(
+                id: 7000 + index, taskId: 700 + index, completedAt: at(day: 0, hour: row.2, minute: 10),
+                taskTitle: row.0, projectId: row.1
+            )
+        }
+    }
+
+    /// Nothing due today; three tasks later in the week, one undated.
+    static var later: [TaskDTO] {
+        [
+            TaskDTO(id: 901, projectId: 2, title: "Prepare slides for the team sync", priority: 2, dueAt: at(day: 1, hour: 9)),
+            TaskDTO(id: 902, projectId: 3, title: "Renew the car registration", priority: 1, dueAt: at(day: 1, hour: 17)),
+            TaskDTO(id: 903, projectId: 4, title: "Schedule the annual checkup", priority: 1, dueAt: at(day: 3, hour: 10)),
+            TaskDTO(id: 904, projectId: 3, title: "Clean out the garage", priority: 1, dueAt: at(day: 6, hour: 10)),
+            TaskDTO(id: 905, projectId: 1, title: "Someday: learn to juggle", priority: 0, dueAt: nil),
+        ]
+    }
+
+    /// Four still due today (one overdue) — with two of `done`, "2 of 6".
+    static var dueToday: [TaskDTO] {
+        [
+            TaskDTO(id: 801, projectId: 2, title: "Reply to the vendor about the contract renewal", priority: 3, dueAt: at(day: 0, hour: 14)),
+            TaskDTO(id: 802, projectId: 3, title: "Order more printer ink", priority: 1, dueAt: at(day: 0, hour: 17)),
+            TaskDTO(id: 803, projectId: 4, title: "Evening walk", priority: 1, dueAt: at(day: 0, hour: 19)),
+            TaskDTO(id: 804, projectId: 1, title: "Call back about the insurance claim", priority: 2, dueAt: at(day: 0, hour: 20, minute: 30)),
+        ]
+    }
+
+    static func entry(open: [TaskDTO], done: [CompletionDTO]) -> TasksEntry {
+        let scope = WidgetStore.allProjects
+        let today = TasksTimeline.todaysTasks(from: open, now: now)
+        return TasksEntry(
+            date: now,
+            tasks: today,
+            projects: TasksTimeline.scopedProjects(tasks: open, projects: projects, now: now),
+            scope: scope,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil,
+            colorProjects: projects,
+            doneTasks: TasksTimeline.doneTasks(from: done, scope: scope),
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: open, now: now),
+            upcoming: TasksTimeline.upcomingForEmptyToday(scope: scope, openOnPage: today, allTasks: open, now: now)
+        )
+    }
+
+    static var dayComplete: TasksEntry { entry(open: later, done: done) }
+    static var nothingDue: TasksEntry { entry(open: later, done: []) }
+    static var midDay: TasksEntry { entry(open: dueToday + later, done: Array(done.prefix(2))) }
+
+    /// Today, page 0, no chevron choice, every mode off — then the done
+    /// filter as asked.
+    static func prepare(showCompleted: Bool = false) {
+        resetTasksPreviewState()
+        WidgetStore.setTasksPage(0, for: WidgetStore.allProjects)
+        WidgetStore.clearTasksScopeChoice()
+        WidgetStore.setShowCompleted(showCompleted, for: TasksWidget.kind)
+    }
+}
+
+#Preview("Tasks Large — Day complete", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Tasks Large — Nothing due, Up next", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.nothingDue
+}
+
+#Preview("Tasks Large — Today mid-day (2 of 6)", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.midDay
+}
+
+#Preview("Tasks Large — Day complete, done filter on", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: true)
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Tasks Medium — Day complete", as: .systemMedium) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Tasks Medium — Nothing due", as: .systemMedium) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.nothingDue
+}
+
+#Preview("Tasks Small — Day complete", as: .systemSmall) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Tasks Small — Nothing due", as: .systemSmall) {
+    TasksWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare()
+    DayCompletePreviewData.nothingDue
 }
 
 #endif
