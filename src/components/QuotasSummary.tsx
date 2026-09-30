@@ -127,11 +127,10 @@ export type QuotasPageView = 'summary' | 'details'
  *
  * A two-option segmented control styled exactly like the dashboard's
  * `ViewModeToggle` (Today / Projects / All) — the app's one pattern for "the
- * same things, shown another way". Deliberately NOT another "Show as …" text
- * button: in the summary the panel keeps its own "Show as rows / Show as chips"
- * switch, which is a different thing (a server preference shared with the
- * dashboard's panel), and two look-alike verbs a few pixels apart would read as
- * one control said twice. Words only, no icons — the words are the affordance.
+ * same things, shown another way". (It was deliberately not a "Show as …"
+ * text button, because the panel then had its own "Show as rows / Show as
+ * chips" switch; that switch is gone as of 2026-09-29.) Words only, no icons —
+ * the words are the affordance.
  */
 export function QuotasViewSwitch({
   view,

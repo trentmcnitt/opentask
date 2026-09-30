@@ -379,8 +379,10 @@
 /* Where a scroll-to-section lands: just under the sticky top bar. The bar is
    `safe-top` (it grows by the top inset in the iOS app's WKWebView, which uses
    `viewport-fit=cover`) plus its ~61px row; 4.5rem leaves a small gap below
-   it. Used by the dashboard's overdue/today jump (`useJumpToTaskList`) on the
-   first task group and on the list wrapper it falls back to. */
+   it. Used by the dashboard's jumps (`useJumpToTaskList`): the overdue/today
+   jump on the first task group, and the "Jump to tasks" chevron on the list
+   wrapper (so the list's toolbar row lands here). `JumpToTasksFab` reads this
+   margin back as its landing line. */
 .scroll-below-header {
   scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
 }

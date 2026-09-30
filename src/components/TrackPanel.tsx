@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
 import {
@@ -37,13 +37,8 @@ import {
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
-import {
-  useLabelConfig,
-  useTrackPanelPreference,
-  useWeekStart,
-} from '@/components/PreferencesProvider'
+import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
@@ -62,17 +57,23 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   The control cluster has fixed widths and sits flush right, so the lines
  *   align as one object. No circle, no AI commentary, no recurrence glyph —
  *   none of that is what a counter is about.
- * - The panel is a plain group header ("TRACK") over ONE card. Two states,
- *   remembered as a user preference like the filter section. FOLDED (the
- *   default) the card holds its quotas as tight CHIPS with their full titles,
- *   wrapping wherever the width runs out (Trent, 2026-09-05: eight open rows
- *   pushed the first task of the day below the fold on his phone, and a folded
- *   one-liner hid the quotas). A chip is as wide as its title needs, up to the
- *   card; past that the title ellipsises, which on a phone the longest few do.
- *   The count never truncates — it is the thing the chip is for. Open the panel,
- *   or hold a chip, to read a title in full. Tap a chip: +1. Hold, or shift-click: −1.
- *   The chip's background fills as the count climbs and turns green at the
- *   target, so each chip is its own bar. OPEN, it is the full rows.
+ * - The panel is a plain group header ("TRACK") over ONE card, which holds its
+ *   quotas as tight CHIPS with their full titles, wrapping wherever the width
+ *   runs out (Trent, 2026-09-05: eight open rows pushed the first task of the
+ *   day below the fold on his phone, and a folded one-liner hid the quotas).
+ *   A chip is as wide as its title needs, up to the card; past that the title
+ *   ellipsises, which on a phone the longest few do. The count never
+ *   truncates — it is the thing the chip is for. Hold a chip to read a title
+ *   in full. Tap a chip: +1. Hold, or shift-click: −1. The chip's background
+ *   fills as the count climbs and turns green at the target, so each chip is
+ *   its own bar.
+ * - CHIPS ONLY (Trent, 2026-09-29). There used to be a second, "rows" layout —
+ *   one full line per quota with a bar, a count, − and +1 — behind a "Show as
+ *   rows / Show as chips" switch, remembered in the server preference
+ *   `track_expanded`. It is gone: the switch, the rows and the client's use of
+ *   that preference. (The `users.track_expanded` column and the preferences
+ *   API field remain, unread by the web app, so older clients and the native
+ *   apps' decoding are unaffected.)
  * - Order is by label then title, and never changes on a tap — the widget's
  *   "order jumps under your finger" complaint applied verbatim here.
  * - "Met" is a state, not an exit: green check, count keeps going (3/2).
@@ -151,10 +152,6 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   3px label-colour stripe, the neutral fallback, and green's exclusion for
  *   "met" (`trackStripeClass`) are unchanged.
  *
- * OPEN, the same sections and clusters become headings over the full rows —
- * unchanged in spirit from the 09-09 design, just nested inside a period
- * section now instead of standing alone.
- *
  * This panel and the Quotas page are the ONLY places a quota appears (Trent,
  * 2026-09-08: "a quota is not a task"). It used to be a plain row in the All
  * and Projects lists too, wearing a "0 / 4" chip and no controls; the
@@ -173,21 +170,7 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *
  * 1. THE SECTION FOLD hides the whole card, leaving one line: `TRACK · 8 of 22
  *    left`. It is a header button, `sm:hidden`, sitting beside the desktop
- *    heading rather than sharing a control with the chips/rows switch. That
- *    switch means something else entirely — chips versus full rows — and
- *    folding that meaning into a single chevron would have made one control
- *    mean two things depending on the width it was pressed at. (The desktop
- *    heading used to BE that switch; as of 2026-09-24 it is plain text and the
- *    switch is `TrackViewSwitch`, a labelled button at the header's right.)
- *
- *    That pair left the phone with no handle on chips-versus-rows at all, and
- *    `track_expanded` is a SERVER preference: a user who switched to rows at a
- *    desk arrived on his phone stuck in the taller view with nothing to press.
- *    So the card carries its own `sm:hidden` "Show as chips / Show as rows"
- *    link at its foot. Inside the card rather than beside the header, because
- *    it is only worth offering once there is something to look at, and a word
- *    rather than a chevron because the two folds on this panel already own
- *    every chevron in sight.
+ *    heading (plain text).
  * 2. THE GROUP FOLDS make each label cluster independently collapsible. A shut
  *    cluster shows a 30×3 meter filled to met/count and "{n} left" — or "✓ all
  *    met", at which point the whole header steps back in opacity so a finished
@@ -251,13 +234,6 @@ const CLUSTER_MET_DIM: FoldClasses = {
   open: '',
   shut: 'opacity-60',
   auto: '',
-}
-
-/** A quota row in the open panel. As `FOLD_BODY_BLOCK`, for a row that is a flex line. */
-const CLUSTER_ROW: FoldClasses = {
-  open: 'flex',
-  shut: 'hidden',
-  auto: 'flex',
 }
 
 /** `useQuotaMutations`'s `clear` — there is no selection on this panel to clear. */
@@ -390,7 +366,7 @@ interface TrackPanelProps {
   onRefresh: () => Promise<void>
   /**
    * On its own page (/quotas' default view, 2026-09-25) rather than above the
-   * task list. The panel is the same — chips/rows, "Show met", tap/hold — but
+   * task list. The panel is the same — chips, "Show met", tap/hold — but
    * the parts that only exist to get it out of the task list's way go:
    *
    * - the phone's SECTION FOLD. It shuts the card so the first task of the day
@@ -398,9 +374,6 @@ interface TrackPanelProps {
    *   on the dashboard (it is stored in the shared fold state) would otherwise
    *   open this page onto one line and nothing else. The card is always shown.
    * - the "QUOTAS" heading — the top bar and the page's own h1 already say it.
-   * - the phone-only foot link. With no fold button in the header there is
-   *   room for the header's chips/rows switch at every width, so the one
-   *   switch serves both, as it does on a desktop.
    */
   standalone?: boolean
   /**
@@ -446,7 +419,6 @@ export function TrackPanel({
   standalone = false,
   searchQuery,
 }: TrackPanelProps) {
-  const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
   const { weekStart } = useWeekStart()
@@ -494,14 +466,7 @@ export function TrackPanel({
 
   return (
     <section aria-label="Quotas" data-track-panel className={cn(!standalone && 'mb-6')}>
-      <TrackHeader
-        standalone={standalone}
-        section={section}
-        open={open}
-        onToggleView={() => setOpen(!open)}
-        overall={overall}
-        showMet={showMet}
-      />
+      <TrackHeader standalone={standalone} section={section} overall={overall} showMet={showMet} />
 
       <div
         id="track-card"
@@ -513,7 +478,6 @@ export function TrackPanel({
         <TrackSectionsList
           sections={sections}
           periods={standalone || searching ? null : periods}
-          open={open}
           labelConfig={labelConfig}
           isPutAway={isPutAway}
           isLeaving={isLeaving}
@@ -522,24 +486,6 @@ export function TrackPanel({
           locked={searching}
           detail={detail}
         />
-
-        {/* The phone's only route between chips and rows. See the block comment
-            above: the desktop header's `TrackViewSwitch` is `sm:hidden`'s
-            opposite number, and without this one a `track_expanded` pinned on a
-            desktop was unreachable on a phone. Right-aligned and muted — it is
-            a way out of a view, not a thing to press on the way in. */}
-        {!standalone && (
-          <div className="mt-1 flex justify-end sm:hidden">
-            <button
-              type="button"
-              data-track-view-toggle
-              onClick={() => setOpen(!open)}
-              className="text-muted-foreground hover:text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
-            >
-              {open ? 'Show as chips' : 'Show as rows'}
-            </button>
-          </div>
-        )}
       </div>
 
       {detail.modal}
@@ -782,7 +728,7 @@ const SECTION_DIVIDER: FoldClasses = {
 }
 
 /**
- * A period section's body — its label clusters and chips (or rows) — FOLDED
+ * A period section's body — its label clusters and chips — FOLDED
  * AWAY ON A PHONE BY DEFAULT (Trent, 2026-09-29: "on mobile, I want quotas to
  * start collapsed … segments: day, week, month. They have the bars fill up so
  * I can see how far I am towards completing today, this week, and this month.
@@ -812,13 +758,6 @@ const SECTION_DIVIDER: FoldClasses = {
  * every body open with no toggle.
  */
 const PERIOD_BODY: FoldClasses = {
-  open: 'block',
-  shut: 'hidden sm:block',
-  auto: 'hidden sm:block',
-}
-
-/** As `PERIOD_BODY`, for the chips view's wrapping row. */
-const PERIOD_BODY_FLEX: FoldClasses = {
   open: 'flex',
   shut: 'hidden sm:flex',
   auto: 'hidden sm:flex',
@@ -867,7 +806,6 @@ interface PeriodSectionProps {
   first: boolean
   /** This section's phone fold (`PERIOD_BODY`), or null if it never folds. */
   period: { state: FoldState; open: boolean; toggle: () => void } | null
-  open: boolean
   labelConfig: LabelConfig[]
   isPutAway: (task: Task) => boolean
   /** Met this session and fading out before it is put away (`useMetPutAway`). */
@@ -881,8 +819,8 @@ interface PeriodSectionProps {
 
 /**
  * One period section: its heading and — unless every quota in it was put away
- * (`sectionBodyItems` returns empty) — its label clusters, as chips or as rows
- * depending on `open`. A fully met section renders ONLY its heading (Trent,
+ * (`sectionBodyItems` returns empty) — its label clusters of chips. A fully
+ * met section renders ONLY its heading (Trent,
  * 2026-09-23: no body text once a section says "M of M") — that is this
  * length check, not a separate case, since `putAwayMet` only ever empties a
  * section by putting away everything in it. Such a section gets no phone fold
@@ -892,7 +830,6 @@ function PeriodSection({
   section: s,
   first,
   period,
-  open,
   labelConfig,
   isPutAway,
   isLeaving,
@@ -922,71 +859,41 @@ function PeriodSection({
           />
         )}
       </div>
-      {bodyItems.length > 0 &&
-        (open ? (
-          <ul id={bodyId} className={bodyClass(PERIOD_BODY)}>
-            {bodyItems.map(({ item, cluster }) =>
-              item.kind === 'title' ? (
-                <ClusterTitle
-                  key={`title-${cluster}`}
-                  item={item}
-                  summary={summaries.get(cluster)}
-                  state={clusters.stateOf(cluster)}
-                  open={clusters.isOpen(cluster)}
-                  onToggle={() => clusters.toggle(cluster)}
-                  locked={locked}
-                  className="px-2 pt-3 pb-1 first:pt-1"
-                />
-              ) : (
-                <TrackRow
-                  key={item.task.id}
-                  task={item.task}
-                  foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
-                  leaving={isLeaving(item.task)}
-                />
-              ),
-            )}
-          </ul>
-        ) : (
-          // One wrapping row per section: titles and chips are peers in
-          // it, the section's own trick inherited from the label-first
-          // panel — see the block comment above.
-          <ul
-            id={bodyId}
-            className={cn('flex-wrap items-center gap-1.5', bodyClass(PERIOD_BODY_FLEX))}
-          >
-            {bodyItems.map(({ item, cluster }) =>
-              item.kind === 'title' ? (
-                <ClusterTitle
-                  key={`title-${cluster}`}
-                  item={item}
-                  summary={summaries.get(cluster)}
-                  state={clusters.stateOf(cluster)}
-                  open={clusters.isOpen(cluster)}
-                  onToggle={() => clusters.toggle(cluster)}
-                  locked={locked}
-                  className={CLUSTER_TITLE_ROW}
-                />
-              ) : (
-                <TrackChip
-                  key={item.task.id}
-                  task={item.task}
-                  color={item.color}
-                  foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
-                  leaving={isLeaving(item.task)}
-                  detailOpen={detail.openId === item.task.id}
-                  onOpenDetail={detail.openPopover}
-                  onCloseDetail={detail.closePopover}
-                  onEdit={detail.openEditor}
-                  onDeleteQuota={detail.deleteFromPopover}
-                  periods={
-                    detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined
-                  }
-                />
-              ),
-            )}
-          </ul>
-        ))}
+      {bodyItems.length > 0 && (
+        // One wrapping row per section: titles and chips are peers in
+        // it, the section's own trick inherited from the label-first
+        // panel — see the block comment above.
+        <ul id={bodyId} className={cn('flex-wrap items-center gap-1.5', bodyClass(PERIOD_BODY))}>
+          {bodyItems.map(({ item, cluster }) =>
+            item.kind === 'title' ? (
+              <ClusterTitle
+                key={`title-${cluster}`}
+                item={item}
+                summary={summaries.get(cluster)}
+                state={clusters.stateOf(cluster)}
+                open={clusters.isOpen(cluster)}
+                onToggle={() => clusters.toggle(cluster)}
+                locked={locked}
+                className={CLUSTER_TITLE_ROW}
+              />
+            ) : (
+              <TrackChip
+                key={item.task.id}
+                task={item.task}
+                color={item.color}
+                foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
+                leaving={isLeaving(item.task)}
+                detailOpen={detail.openId === item.task.id}
+                onOpenDetail={detail.openPopover}
+                onCloseDetail={detail.closePopover}
+                onEdit={detail.openEditor}
+                onDeleteQuota={detail.deleteFromPopover}
+                periods={detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined}
+              />
+            ),
+          )}
+        </ul>
+      )}
     </li>
   )
 }
@@ -1106,49 +1013,9 @@ const MET_COUNT: FoldClasses = {
 }
 
 /**
- * The desktop chips/rows switch: a small text button at the header's right,
- * just left of the met count. Moved off the "Quotas" heading (Trent,
- * 2026-09-24) because tapping the heading flipped the view by accident.
- *
- * A WORD, NOT AN ICON. The same "Show as rows / Show as chips" wording as the
- * phone's switch at the card's foot, so one control reads the same at every
- * width, and styled exactly like the met-count box beside it (text-xs, muted,
- * the hover box) so the header's two small controls read as a pair. It names
- * what a press DOES, so it needs no pressed state of its own. `hidden
- * sm:inline-flex`: below `sm` the foot link is the switch, and a second copy
- * here would put two controls for one thing on a phone. The data attribute
- * differs from the foot link's `data-track-view-toggle` for the same reason
- * — each width's tests find exactly one.
- */
-function TrackViewSwitch({
-  open,
-  onToggleView,
-  everyWidth,
-}: {
-  open: boolean
-  onToggleView: () => void
-  /** Standalone (/quotas): no foot link, so this is the switch at every width. */
-  everyWidth: boolean
-}) {
-  return (
-    <button
-      type="button"
-      data-track-view-switch
-      onClick={onToggleView}
-      className={cn(
-        'text-muted-foreground hover:bg-foreground/5 hover:text-foreground shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap transition-colors',
-        everyWidth ? 'inline-flex' : 'hidden sm:inline-flex',
-      )}
-    >
-      {open ? 'Show as chips' : 'Show as rows'}
-    </button>
-  )
-}
-
-/**
- * The panel's header: the phone's section fold, the desktop heading and its
- * chips/rows switch, and — top right, as on every Reminders slot — the met
- * count that shows and hides the met quotas.
+ * The panel's header: the phone's section fold, the desktop heading, and — top
+ * right, as on every Reminders slot — the met count that shows and hides the
+ * met quotas.
  *
  * THE COUNT COPIES THE REMINDERS SLOT'S "X of Y" EXACTLY (Trent, 2026-09-22:
  * "That's where we find things for the reminders. It's in the top right. You
@@ -1160,16 +1027,12 @@ function TrackViewSwitch({
 function TrackHeader({
   standalone,
   section,
-  open,
-  onToggleView,
   overall,
   showMet,
 }: {
   /** On /quotas: no section fold, no heading — see `TrackPanelProps.standalone`. */
   standalone: boolean
   section: { state: FoldState; open: boolean; toggle: () => void }
-  open: boolean
-  onToggleView: () => void
   overall: { count: number; met: number }
   showMet: { shown: boolean; toggle: () => void }
 }) {
@@ -1178,7 +1041,6 @@ function TrackHeader({
     // The met count is never folded away here, because the card never folds.
     return (
       <div className="mb-2 flex min-h-7 items-center justify-end gap-2">
-        <TrackViewSwitch open={open} onToggleView={onToggleView} everyWidth />
         <TrackMetCount overall={overall} showMet={showMet} foldClassName="flex" />
       </div>
     )
@@ -1220,11 +1082,11 @@ function TrackHeader({
         </span>
       </button>
 
-      {/* Desktop: the heading is PLAIN TEXT. It used to be the chips/rows
-          switch itself (a caret button, "Expand/Collapse Quotas"), and Trent
-          kept flipping the view by tapping the heading without meaning to
-          (2026-09-24). The switch now lives in its own labelled control at the
-          right — see `TrackViewSwitch`. `hidden … sm:flex` rather than a bare
+      {/* Desktop: the heading is PLAIN TEXT. It used to be a chips/rows
+          switch (a caret button, "Expand/Collapse Quotas"), and Trent kept
+          flipping the view by tapping the heading without meaning to
+          (2026-09-24); the rows layout itself is gone as of 2026-09-29.
+          `hidden … sm:flex` rather than a bare
           `flex`: this is the desktop half of the header pair, and the two
           display utilities would otherwise fight over which one wins. */}
       <div data-track-heading className="hidden min-h-7 min-w-0 flex-1 items-center px-1 sm:flex">
@@ -1232,8 +1094,6 @@ function TrackHeader({
           Quotas
         </span>
       </div>
-
-      <TrackViewSwitch open={open} onToggleView={onToggleView} everyWidth={false} />
 
       <TrackMetCount
         overall={overall}
@@ -1622,108 +1482,6 @@ function TrackChip({
           </span>
         </button>
       </TrackChipPopover>
-    </li>
-  )
-}
-
-function TrackRow({
-  task,
-  foldClassName,
-  leaving = false,
-}: {
-  task: Task
-  foldClassName: string
-  /** Met this session: fading out before it is put away (`useMetPutAway`). */
-  leaving?: boolean
-}) {
-  const { state, period, log } = useTrackProgress(task)
-
-  return (
-    <li
-      data-track-row={task.id}
-      data-track-leaving={leaving ? '' : undefined}
-      className={cn(
-        'hover:bg-background flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors',
-        foldClassName,
-        leaving && 'animate-met-leave',
-      )}
-    >
-      {/* The rows view is the keyboard-reachable route into a quota. The chips'
-          press-and-hold has no keyboard equivalent, and the popover it opens is
-          anchored to a chip that does not exist here — so this goes straight to
-          the editor, which is the fuller thing and where a row has the room to
-          send you. */}
-      <GuardedLink
-        href={`/tasks/${task.id}`}
-        title={`${task.title} — open`}
-        className={cn(
-          'hover:text-foreground basis-full truncate rounded text-left text-[15px] underline-offset-4 hover:underline sm:flex-1 sm:basis-0',
-          state.met ? 'text-foreground/70' : 'text-foreground',
-        )}
-      >
-        {task.title}
-      </GuardedLink>
-
-      {/* Fixed-width cluster, flush right: the same columns on every line. */}
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div
-          className="bg-muted relative h-1.5 w-24 overflow-hidden rounded-full sm:w-28"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={state.target}
-          aria-valuenow={state.current}
-          aria-label={`${state.current} of ${state.target}${period ? ` ${period}` : ''}`}
-        >
-          <div
-            className={cn(
-              'h-full rounded-full transition-[width] duration-300 ease-out',
-              state.met ? 'bg-green-600' : 'bg-foreground/60',
-            )}
-            style={{ width: `${state.fraction * 100}%` }}
-          />
-        </div>
-
-        <span
-          data-track-count
-          className={cn(
-            'flex w-16 items-center justify-end gap-1 text-sm whitespace-nowrap tabular-nums',
-            state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
-          )}
-        >
-          {state.met && <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />}
-          <span>
-            <span className="text-foreground font-medium">{state.current}</span> / {state.target}
-          </span>
-          {period && <span className="sr-only"> {period}</span>}
-        </span>
-
-        <button
-          type="button"
-          onClick={() => void log(-1)}
-          disabled={state.current === 0}
-          aria-label={`Remove one from "${task.title}"`}
-          title="Remove one"
-          className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground flex size-7 items-center justify-center rounded-full border transition-colors disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          <Minus className="size-3.5" strokeWidth={2.5} />
-        </button>
-        <button
-          type="button"
-          onClick={() => void log(1)}
-          // The count is IN the accessible name, not beside it. `aria-label`
-          // replaces a button's contents wholesale, so the count on screen and
-          // any sr-only run inside are never announced — and in the folded
-          // panel this chip is now the only progress there is, the period
-          // card's `progressbar` having gone with the cards.
-          aria-label={`Log one more for "${task.title}" — ${state.current} of ${state.target}${
-            period ? ` ${period}` : ''
-          }`}
-          title="Log one more"
-          className="text-foreground hover:bg-foreground/5 flex h-7 w-14 items-center justify-center gap-1 rounded-full border text-xs font-medium transition-colors"
-        >
-          <Plus className="size-3.5" strokeWidth={2.5} />1
-        </button>
-      </div>
     </li>
   )
 }

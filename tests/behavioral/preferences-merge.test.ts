@@ -22,7 +22,7 @@ import {
 /** A GET /api/user/preferences `data` payload, trimmed to what these tests read. */
 const SERVER = {
   filters_expanded: false,
-  track_expanded: true,
+  quotas_details: true,
   default_grouping: 'slot',
   default_sort: 'priority',
   default_sort_reversed: true,
@@ -47,7 +47,7 @@ describe('mergeLoadedPrefs', () => {
 
     const merged = mergeLoadedPrefs(local, dirty.take(), parseServerPrefs(SERVER))
     expect(merged.filtersExpanded).toBe(true) // the click, not the server's false
-    expect(merged.trackExpanded).toBe(true) // untouched → server
+    expect(merged.quotasDetails).toBe(true) // untouched → server
     expect(merged.defaultGrouping).toBe('slot')
     expect(merged.defaultSort).toBe('priority')
     expect(merged.morningTime).toBe('08:30')
@@ -57,19 +57,19 @@ describe('mergeLoadedPrefs', () => {
     const dirty = createDirtyTracker()
     const loaded = mergeLoadedPrefs(DEFAULT_PREFS, dirty.take(), parseServerPrefs(SERVER))
     expect(loaded.filtersExpanded).toBe(false)
-    expect(loaded.trackExpanded).toBe(true)
+    expect(loaded.quotasDetails).toBe(true)
 
-    const after = click(loaded, dirty, 'trackExpanded', false)
-    expect(after.trackExpanded).toBe(false)
+    const after = click(loaded, dirty, 'quotasDetails', false)
+    expect(after.quotasDetails).toBe(false)
   })
 
   test('rapid toggle before load: the final local value survives, even when it matches the default', () => {
     const dirty = createDirtyTracker()
-    let local = click(DEFAULT_PREFS, dirty, 'trackExpanded', true)
-    local = click(local, dirty, 'trackExpanded', false) // back to the default
+    let local = click(DEFAULT_PREFS, dirty, 'quotasDetails', true)
+    local = click(local, dirty, 'quotasDetails', false) // back to the default
     // The server still holds an older `true` (the second PATCH hasn't landed).
     const merged = mergeLoadedPrefs(local, dirty.take(), parseServerPrefs(SERVER))
-    expect(merged.trackExpanded).toBe(false)
+    expect(merged.quotasDetails).toBe(false)
   })
 
   test('reload: nothing dirty, so every field comes from the server', () => {
@@ -80,7 +80,7 @@ describe('mergeLoadedPrefs', () => {
     )
     expect(merged).toMatchObject({
       filtersExpanded: true,
-      trackExpanded: true,
+      quotasDetails: true,
       defaultGrouping: 'slot',
       defaultSort: 'priority',
       defaultSortReversed: true,
@@ -154,8 +154,8 @@ describe('createPreferenceSaver', () => {
 
   test('a lone save is sent at once', () => {
     const { send, calls } = fakeSend()
-    createPreferenceSaver(send).save('track_expanded', { track_expanded: true })
-    expect(calls.map((c) => c.body)).toEqual([{ track_expanded: true }])
+    createPreferenceSaver(send).save('quotas_details', { quotas_details: true })
+    expect(calls.map((c) => c.body)).toEqual([{ quotas_details: true }])
   })
 
   test('a second save waits for the first to settle, then carries the final value', async () => {
@@ -193,9 +193,9 @@ describe('createPreferenceSaver', () => {
   test('toggling away and back while the first save is in flight sends nothing more', async () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)
-    saver.save('track_expanded', { track_expanded: true })
-    saver.save('track_expanded', { track_expanded: false })
-    saver.save('track_expanded', { track_expanded: true })
+    saver.save('quotas_details', { quotas_details: true })
+    saver.save('quotas_details', { quotas_details: false })
+    saver.save('quotas_details', { quotas_details: true })
 
     calls[0].resolve()
     await tick()
@@ -233,31 +233,31 @@ describe('createPreferenceSaver', () => {
       }
       return Promise.resolve()
     })
-    saver.save('track_expanded', { track_expanded: true }) // fails
-    saver.save('track_expanded', { track_expanded: false })
-    saver.save('track_expanded', { track_expanded: true }) // the last click
+    saver.save('quotas_details', { quotas_details: true }) // fails
+    saver.save('quotas_details', { quotas_details: false })
+    saver.save('quotas_details', { quotas_details: true }) // the last click
     rejectFirst()
     await tick()
-    expect(bodies).toEqual([{ track_expanded: true }, { track_expanded: true }])
+    expect(bodies).toEqual([{ quotas_details: true }, { quotas_details: true }])
   })
 
   test('different fields do not wait on each other', () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)
     saver.save('filters_expanded', { filters_expanded: true })
-    saver.save('track_expanded', { track_expanded: true })
+    saver.save('quotas_details', { quotas_details: true })
     expect(calls).toHaveLength(2)
   })
 
   test('pagehide: a waiting value is sent right away instead of dying with the page', () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)
-    saver.save('track_expanded', { track_expanded: true })
-    saver.save('track_expanded', { track_expanded: false })
+    saver.save('quotas_details', { quotas_details: true })
+    saver.save('quotas_details', { quotas_details: false })
     expect(calls).toHaveLength(1)
 
     saver.flushPending()
-    expect(calls.map((c) => c.body)).toEqual([{ track_expanded: true }, { track_expanded: false }])
+    expect(calls.map((c) => c.body)).toEqual([{ quotas_details: true }, { quotas_details: false }])
     saver.flushPending()
     expect(calls).toHaveLength(2) // nothing waiting any more
   })

@@ -118,13 +118,21 @@ const QUOTAS = [
   { title: 'Layout probe dishes', progress_target: 3, rrule: 'FREQ=DAILY', labels: ['zz-beta'] },
 ]
 
-/** Enough quotas, in the rows view, to make Track unambiguously the tall column. */
-const TALL_QUOTAS = Array.from({ length: 10 }, (_, i) => ({
-  title: `Layout probe tall ${i}`,
-  progress_target: 2,
-  rrule: 'FREQ=WEEKLY',
-  labels: [i % 2 === 0 ? 'zz-alpha' : 'zz-beta'],
-}))
+/**
+ * Enough quotas to make Track unambiguously the tall column. Chips are the
+ * panel's only layout (the taller rows view went on 2026-09-29), so the height
+ * comes from structure instead: four period sections, each with six label
+ * clusters, and every cluster title takes a line of its own.
+ */
+const TALL_PERIODS = ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] as const
+const TALL_QUOTAS = TALL_PERIODS.flatMap((period) =>
+  Array.from({ length: 6 }, (_, i) => ({
+    title: `Layout probe tall ${period.toLowerCase()} ${i}`,
+    progress_target: 2,
+    rrule: `FREQ=${period}`,
+    labels: [`zz-tall-${i}`],
+  })),
+)
 
 /**
  * Fold every group in the task list, leaving a column of headings.
@@ -160,51 +168,47 @@ test.describe('Tasks page layout — wide', () => {
     const ids: number[] = []
     try {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
-      await withPreferences(page, { track_expanded: false }, async () => {
-        await page.goto('/')
+      await page.goto('/')
 
-        const panel = page.locator('[data-track-panel]')
-        await expect(panel).toBeVisible()
+      const panel = page.locator('[data-track-panel]')
+      await expect(panel).toBeVisible()
 
-        const g = await gridGeometry(page)
-        expect(await page.locator('main').evaluate((el) => getComputedStyle(el).display)).toBe(
-          'grid',
-        )
+      const g = await gridGeometry(page)
+      expect(await page.locator('main').evaluate((el) => getComputedStyle(el).display)).toBe('grid')
 
-        // Two tracks, and they are the same width as each other. That is the
-        // whole desktop constraint now.
-        expect(g.columns.length).toBe(2)
-        expect(g.columns[0]).toBe(g.columns[1])
+      // Two tracks, and they are the same width as each other. That is the
+      // whole desktop constraint now.
+      expect(g.columns.length).toBe(2)
+      expect(g.columns[0]).toBe(g.columns[1])
 
-        // The pair is capped, and never wider than the space it is given.
-        expect(g.mainWidth).toBeLessThanOrEqual(MAIN_MAX_WIDTH)
+      // The pair is capped, and never wider than the space it is given.
+      expect(g.mainWidth).toBeLessThanOrEqual(MAIN_MAX_WIDTH)
 
-        // A REAL side margin, not `px-4`'s 16px: this is the fix for the logo
-        // sitting hard against the sidebar.
-        expect(g.paddingLeft).toBe(WIDE_PADDING)
+      // A REAL side margin, not `px-4`'s 16px: this is the fix for the logo
+      // sitting hard against the sidebar.
+      expect(g.paddingLeft).toBe(WIDE_PADDING)
 
-        // Both blocks in the task column are the column's width — measured, not
-        // inferred from the track, since a padded child would sit narrower.
-        expect(Math.round(g.filters.right - g.filters.left)).toBe(g.columns[0])
-        expect(Math.round(g.list.right - g.list.left)).toBe(g.columns[0])
+      // Both blocks in the task column are the column's width — measured, not
+      // inferred from the track, since a padded child would sit narrower.
+      expect(Math.round(g.filters.right - g.filters.left)).toBe(g.columns[0])
+      expect(Math.round(g.list.right - g.list.left)).toBe(g.columns[0])
 
-        // Track is beside the task column, not under it, and sticky.
-        expect(g.track.left).toBeGreaterThanOrEqual(g.filters.right)
-        const position = await page
-          .locator('[data-track-panel]')
-          .evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).position)
-        expect(position).toBe('sticky')
+      // Track is beside the task column, not under it, and sticky.
+      expect(g.track.left).toBeGreaterThanOrEqual(g.filters.right)
+      const position = await page
+        .locator('[data-track-panel]')
+        .evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).position)
+      expect(position).toBe('sticky')
 
-        // The header's contents line up with the column below them rather than
-        // floating off to one side. Its CONTENT edge, not its box edge: the bar
-        // carries its own padding, so comparing boxes would compare two
-        // different things.
-        const headerContentLeft = await page.locator('header > div').evaluate((el) => {
-          const r = el.getBoundingClientRect()
-          return r.left + parseFloat(getComputedStyle(el).paddingLeft)
-        })
-        expect(headerContentLeft).toBe(g.filters.left)
+      // The header's contents line up with the column below them rather than
+      // floating off to one side. Its CONTENT edge, not its box edge: the bar
+      // carries its own padding, so comparing boxes would compare two
+      // different things.
+      const headerContentLeft = await page.locator('header > div').evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return r.left + parseFloat(getComputedStyle(el).paddingLeft)
       })
+      expect(headerContentLeft).toBe(g.filters.left)
     } finally {
       await deleteTasks(page, ids)
     }
@@ -214,19 +218,17 @@ test.describe('Tasks page layout — wide', () => {
     const ids: number[] = []
     try {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
-      await withPreferences(page, { track_expanded: false }, async () => {
-        await page.setViewportSize({ width: 2400, height: 900 })
-        await page.goto('/')
-        await expect(page.locator('[data-track-panel]')).toBeVisible()
+      await page.setViewportSize({ width: 2400, height: 900 })
+      await page.goto('/')
+      await expect(page.locator('[data-track-panel]')).toBeVisible()
 
-        const g = await gridGeometry(page)
-        // Capped exactly, and centred in what is left — so the margin grows
-        // rather than the columns.
-        expect(Math.round(g.mainWidth)).toBe(MAIN_MAX_WIDTH)
-        expect(g.columns[0]).toBe(g.columns[1])
-        // Each column tops out at the width the single column has always been.
-        expect(g.columns[0]).toBe(NARROW_COLUMN_WIDTH)
-      })
+      const g = await gridGeometry(page)
+      // Capped exactly, and centred in what is left — so the margin grows
+      // rather than the columns.
+      expect(Math.round(g.mainWidth)).toBe(MAIN_MAX_WIDTH)
+      expect(g.columns[0]).toBe(g.columns[1])
+      // Each column tops out at the width the single column has always been.
+      expect(g.columns[0]).toBe(NARROW_COLUMN_WIDTH)
     } finally {
       await deleteTasks(page, ids)
     }
@@ -238,9 +240,10 @@ test.describe('Tasks page layout — wide', () => {
     const ids: number[] = []
     try {
       for (const q of TALL_QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
-      // Rows, not chips: rows are what make Track taller than the task column,
-      // which is the state that exposes the `row-span-2` half of the bug.
-      await withPreferences(page, { track_expanded: true, filters_expanded: false }, async () => {
+      // Enough period sections and label clusters that Track is taller than
+      // the task column, which is the state that exposes the `row-span-2` half
+      // of the bug.
+      await withPreferences(page, { filters_expanded: false }, async () => {
         await page.goto('/')
         await expect(page.locator('[data-track-panel]')).toBeVisible()
         // A short LEFT column is the point of this test.
@@ -268,22 +271,20 @@ test.describe('Tasks page layout — wide', () => {
     const ids: number[] = []
     try {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
-      await withPreferences(page, { track_expanded: false }, async () => {
-        await page.setViewportSize({ width: 1100, height: 900 })
-        await page.goto('/')
-        await expect(page.locator('[data-track-panel]')).toBeVisible()
+      await page.setViewportSize({ width: 1100, height: 900 })
+      await page.goto('/')
+      await expect(page.locator('[data-track-panel]')).toBeVisible()
 
-        const g = await gridGeometry(page)
-        // One track, and `<main>` is back to its `max-w-2xl` box (640 + px-4).
-        expect(g.columns.length).toBe(1)
-        expect(Math.round(g.mainWidth)).toBe(NARROW_COLUMN_WIDTH + 32)
+      const g = await gridGeometry(page)
+      // One track, and `<main>` is back to its `max-w-2xl` box (640 + px-4).
+      expect(g.columns.length).toBe(1)
+      expect(Math.round(g.mainWidth)).toBe(NARROW_COLUMN_WIDTH + 32)
 
-        // ...and Track is inline above the list again, sharing the column's left edge.
-        const trackLeft = await page
-          .locator('[data-track-panel]')
-          .evaluate((el) => el.getBoundingClientRect().left)
-        expect(trackLeft).toBe(g.filters.left)
-      })
+      // ...and Track is inline above the list again, sharing the column's left edge.
+      const trackLeft = await page
+        .locator('[data-track-panel]')
+        .evaluate((el) => el.getBoundingClientRect().left)
+      expect(trackLeft).toBe(g.filters.left)
     } finally {
       await deleteTasks(page, ids)
     }
@@ -301,7 +302,7 @@ test.describe('Tasks page layout — phone', () => {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
       // Pin the filters open as a desktop user would, to prove the phone
       // ignores the stored pin rather than merely inheriting a shut default.
-      await withPreferences(page, { track_expanded: false, filters_expanded: true }, async () => {
+      await withPreferences(page, { filters_expanded: true }, async () => {
         await page.goto('/')
 
         // FILTERS: still shut on a phone, and saying how many filters are
@@ -377,61 +378,42 @@ test.describe('Tasks page layout — phone', () => {
     const ids: number[] = []
     try {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
-      await withPreferences(page, { track_expanded: false }, async () => {
-        await page.goto('/')
-        await expect(page.locator('[data-track-panel]')).toBeVisible()
+      await page.goto('/')
+      await expect(page.locator('[data-track-panel]')).toBeVisible()
 
-        await page.getByRole('button', { name: 'Search', exact: true }).click()
-        await page.getByRole('textbox', { name: 'Search tasks' }).fill('zz-no-such-task-anywhere')
-        await expect(page.getByText(/^0 results for/)).toBeVisible()
+      await page.getByRole('button', { name: 'Search', exact: true }).click()
+      await page.getByRole('textbox', { name: 'Search tasks' }).fill('zz-no-such-task-anywhere')
+      await expect(page.getByText(/^0 results for/)).toBeVisible()
 
-        const g = await gridGeometry(page)
-        // Precondition: the page really is shorter than the viewport, so there
-        // is leftover height for `align-content` to have distributed.
-        expect(g.mainHeight).toBeGreaterThan(
-          g.filters.height + g.track.height + g.list.height + 2 * g.rowGap,
-        )
+      const g = await gridGeometry(page)
+      // Precondition: the page really is shorter than the viewport, so there
+      // is leftover height for `align-content` to have distributed.
+      expect(g.mainHeight).toBeGreaterThan(
+        g.filters.height + g.track.height + g.list.height + 2 * g.rowGap,
+      )
 
-        expect(g.track.top - g.filters.bottom).toBe(g.rowGap)
-        expect(g.list.top - g.track.bottom).toBe(g.rowGap)
-      })
+      expect(g.track.top - g.filters.bottom).toBe(g.rowGap)
+      expect(g.list.top - g.track.bottom).toBe(g.rowGap)
     } finally {
       await deleteTasks(page, ids)
     }
   })
 
   /**
-   * `track_expanded` is a SERVER preference, so a user who chose the rows view
-   * at a desk arrives on his phone in it. Before this control there was no
-   * `sm:hidden` handle for it anywhere and he was simply stuck in the taller
-   * view — the regression this test pins.
+   * The Quotas panel is chips only (2026-09-29): the phone's old "Show as
+   * chips / Show as rows" foot link, and the rows view behind it, are gone.
    */
-  test('offers a way back to the chips view on a phone', async ({ authenticatedPage: page }) => {
+  test('has no chips/rows switch on a phone', async ({ authenticatedPage: page }) => {
     const ids: number[] = []
     try {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
-      await withPreferences(page, { track_expanded: true }, async () => {
-        await page.goto('/')
-        // No opening click: Track is open by default at every width as of
-        // 2026-09-21 (see the fold spec above), so clicking here would SHUT it.
-        await expect(page.locator('#track-card')).toBeVisible()
-
-        // Rows, because the stored preference says so. Counted rather than
-        // checked for visibility, so this keeps asserting the VIEW (rows exist,
-        // chips do not) independently of whether a cluster happens to be open.
-        await expect(page.locator(`[data-track-row="${ids[0]}"]`)).toHaveCount(1)
-        await expect(page.locator('[data-track-chip]')).toHaveCount(0)
-
-        const viewToggle = page.locator('[data-track-view-toggle]')
-        await expect(viewToggle).toBeVisible()
-        await expect(viewToggle).toHaveText('Show as chips')
-        await viewToggle.click()
-
-        // Chips now — and the control offers the way back.
-        await expect(viewToggle).toHaveText('Show as rows')
-        await expect(page.locator(`[data-track-chip="${ids[0]}"]`)).toHaveCount(1)
-        await expect(page.locator('[data-track-row]')).toHaveCount(0)
-      })
+      await page.goto('/')
+      await expect(page.locator('#track-card')).toBeVisible()
+      await expect(page.locator(`[data-track-chip="${ids[0]}"]`)).toHaveCount(1)
+      await expect(page.getByRole('button', { name: /^Show as (rows|chips)$/ })).toHaveCount(0)
+      await expect(page.locator('[data-track-view-toggle], [data-track-view-switch]')).toHaveCount(
+        0,
+      )
     } finally {
       await deleteTasks(page, ids)
     }
@@ -452,24 +434,22 @@ test.describe('Tasks page layout — phone', () => {
       const logged = await page.request.post(`/api/tasks/${id}/progress`, { data: { delta: 1 } })
       expect(logged.ok()).toBeTruthy()
 
-      await withPreferences(page, { track_expanded: false }, async () => {
-        await page.goto('/')
-        // No opening click: Track is open by default at every width as of
-        // 2026-09-21 (see the fold spec above), so clicking here would SHUT it.
-        await expect(page.locator('#track-card')).toBeVisible()
+      await page.goto('/')
+      // No opening click: Track is open by default at every width as of
+      // 2026-09-21 (see the fold spec above), so clicking here would SHUT it.
+      await expect(page.locator('#track-card')).toBeVisible()
 
-        // Met before the page loaded, so the label is put away — nothing
-        // stands in for it inside its period section (Trent, 2026-09-23; see
-        // `finishedClusterInSection` in TrackPanel.tsx). Its header — what
-        // this test is about — comes back when the met quotas are shown.
-        const cluster = page.locator('[data-track-cluster="zz-met"]')
-        await expect(cluster).toHaveCount(0)
-        await page.locator('[data-track-met-toggle]').click()
+      // Met before the page loaded, so the label is put away — nothing
+      // stands in for it inside its period section (Trent, 2026-09-23; see
+      // `finishedClusterInSection` in TrackPanel.tsx). Its header — what
+      // this test is about — comes back when the met quotas are shown.
+      const cluster = page.locator('[data-track-cluster="zz-met"]')
+      await expect(cluster).toHaveCount(0)
+      await page.locator('[data-track-met-toggle]').click()
 
-        const summary = page.locator('[data-track-cluster="zz-met"] [data-track-cluster-summary]')
-        await expect(summary).toContainText('all met')
-        await expect(summary).not.toContainText('left')
-      })
+      const summary = page.locator('[data-track-cluster="zz-met"] [data-track-cluster-summary]')
+      await expect(summary).toContainText('all met')
+      await expect(summary).not.toContainText('left')
     } finally {
       await deleteTasks(page, ids)
     }

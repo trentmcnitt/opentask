@@ -19,10 +19,11 @@ interface SnoozeAllFabProps {
  * duration choices.
  *
  * Shown on every width (Trent, 2026-09-28 — it was phone-only, with the top
- * bar's clock as the desktop control). Phone: above the bottom tabs. `md` and
- * up: the viewport's bottom-right (`right-6 bottom-6`), 90% opaque like the
- * overdue jump button stacked above it, since at `xl` it can float over the
- * Quotas column's lower rows.
+ * bar's clock as the desktop control). It is the bottom of the right-hand FAB
+ * column (`DashboardFabStack`, which places it: phone above the bottom tabs,
+ * `md` and up the viewport's bottom-right). From `md` up it is 90% opaque like
+ * the overdue jump button stacked above it, since at `xl` it can float over
+ * the Quotas column's lower rows.
  */
 export function SnoozeAllFab({
   overdueCount,
@@ -59,7 +60,7 @@ export function SnoozeAllFab({
             ? `Snooze ${overdueCount} overdue tasks (hold for options)`
             : 'Snooze overdue tasks (hold for options)'
         }
-        className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-40 flex size-12 cursor-pointer items-center justify-center rounded-full bg-blue-500 text-white shadow-lg shadow-blue-500/25 transition-[background-color,opacity] hover:bg-blue-600 active:bg-blue-700 md:right-6 md:bottom-6 md:opacity-90 md:hover:opacity-100"
+        className="pointer-events-auto relative flex size-12 cursor-pointer items-center justify-center rounded-full bg-blue-500 text-white shadow-lg shadow-blue-500/25 transition-[background-color,opacity] hover:bg-blue-600 active:bg-blue-700 md:opacity-90 md:hover:opacity-100"
       >
         <Clock className="size-5" />
         {overdueCount > 0 && (

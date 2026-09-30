@@ -70,9 +70,6 @@ interface PreferencesContextValue {
   /** §7.3 — dashboard filter-chip section pinned open by the user. */
   filtersExpanded: boolean
   setFiltersExpanded: (expanded: boolean) => void
-  /** §5 — the Track panel pinned open by the user (it starts folded). */
-  trackExpanded: boolean
-  setTrackExpanded: (expanded: boolean) => void
   /** §5 — /quotas opens on the detailed list rather than the summary panel. */
   quotasDetails: boolean
   setQuotasDetails: (details: boolean) => void
@@ -148,8 +145,6 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSortPreference: () => {},
   filtersExpanded: false,
   setFiltersExpanded: () => {},
-  trackExpanded: false,
-  setTrackExpanded: () => {},
   quotasDetails: false,
   setQuotasDetails: () => {},
   notificationsEnabled: true,
@@ -414,11 +409,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setField('filtersExpanded', expanded)
           saver.save('filters_expanded', { filters_expanded: expanded })
         },
-        setTrackExpanded: (expanded: boolean) => {
-          if (expanded === prefs.trackExpanded) return
-          setField('trackExpanded', expanded)
-          saver.save('track_expanded', { track_expanded: expanded })
-        },
         setQuotasDetails: (details: boolean) => {
           if (details === prefs.quotasDetails) return
           setField('quotasDetails', details)
@@ -535,16 +525,10 @@ export function useFilterSectionPreference() {
   return { filtersExpanded, setFiltersExpanded }
 }
 
-/** §5 — whether the Track panel is pinned open. Starts folded; the user's choice sticks. */
-export function useTrackPanelPreference() {
-  const { trackExpanded, setTrackExpanded } = useContext(PreferencesContext)
-  return { trackExpanded, setTrackExpanded }
-}
-
 /**
  * §5 — which view /quotas opens on: the dashboard's Quotas panel (the default,
- * `quotasDetails` false) or the detailed list. Server-persisted like
- * `track_expanded`, so the choice follows the user across devices.
+ * `quotasDetails` false) or the detailed list. Server-persisted, so the
+ * choice follows the user across devices.
  * `loaded` is `preferencesLoaded`: until it is true `quotasDetails` is the
  * hardcoded default, and a page that picks its view from it would paint the
  * summary and then flip to the list for a user who chose the list.

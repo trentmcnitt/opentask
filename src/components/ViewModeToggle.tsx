@@ -10,6 +10,29 @@ interface ViewModeToggleProps {
 }
 
 /**
+ * The toggle's options, in order. Exported so `ViewModeFab` draws the same
+ * icon and label for the view it announces — one list, so the two can't drift.
+ *
+ * 'unified' is driven by the AI-sort toggle elsewhere; showing it here as an
+ * extra option would let the two controls disagree about what's active.
+ */
+export const VIEW_MODE_OPTIONS: readonly {
+  value: GroupingMode
+  label: string
+  icon: typeof List
+  hint: string
+}[] = [
+  { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
+  { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
+  {
+    value: 'new',
+    label: 'Newest',
+    icon: ArrowDownWideNarrow,
+    hint: 'Everything, newest added first',
+  },
+]
+
+/**
  * Switches how the task list is grouped (REDESIGN-V03 §7.3).
  *
  * "Today" is the front door: today's work grouped by time slot, so opening the
@@ -34,26 +57,13 @@ interface ViewModeToggleProps {
  * tasks aren't AI-made (Trent picked the sort arrow from a mockup, 09-29).
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
-  // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as an
-  // extra option would let the two controls disagree about what's active.
-  const options: { value: GroupingMode; label: string; icon: typeof List; hint: string }[] = [
-    { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
-    { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
-    {
-      value: 'new',
-      label: 'Newest',
-      icon: ArrowDownWideNarrow,
-      hint: 'Everything, newest added first',
-    },
-  ]
-
   return (
     <div
       role="group"
       aria-label="View mode"
       className="bg-muted/50 inline-flex items-center gap-0.5 rounded-lg p-0.5"
     >
-      {options.map((option) => {
+      {VIEW_MODE_OPTIONS.map((option) => {
         const Icon = option.icon
         const active = grouping === option.value
         return (

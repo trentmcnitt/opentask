@@ -12,9 +12,8 @@ interface OverdueJumpFabProps {
    *  group. On: take the Overdue filter off, without scrolling. */
   onJump: () => void
   /**
-   * `phone`: fixed above `SnoozeAllFab`, below `md`. `desktop`: fixed above
-   * `SnoozeAllFab` at the viewport's bottom-right, from `md` up. Rendered once of each — see the
-   * placement notes below.
+   * `phone`: shown below `md`. `desktop`: shown from `md` up. Rendered once of
+   * each, side by side in `DashboardFabStack` — see the placement notes below.
    */
   placement: 'phone' | 'desktop'
 }
@@ -43,32 +42,29 @@ interface OverdueJumpFabProps {
  *   clears itself, `ce069c6`) and in selection mode, where `SnoozeAllFab`
  *   hides too and the selection bar owns the bottom.
  *
+ * **Where it sits.** In the right-hand FAB column (`DashboardFabStack`, which
+ * owns the position and the 12px gaps), directly above `SnoozeAllFab` — the
+ * snooze FAB's red badge pokes 4px above its top (`-top-1`), which leaves 8px
+ * of air above the badge. `ViewModeFab` and `JumpToTasksFab` may stack above.
+ *
  * **Phone (`placement="phone"`, below `md`).** The Reminders and Quotas panels
  * sit above the task list, so getting to the overdue tasks meant scrolling
- * past both. Fixed, stacked directly above `SnoozeAllFab`: the pill grows to
- * the LEFT from the FAB column's right edge (`right-4`, the snooze FAB's), so
- * the two share a right edge, and its bottom clears the snooze FAB (`4.5rem` +
- * its `3rem`) plus a `0.75rem` gap — the snooze FAB's red badge pokes 4px
- * above its top (`-top-1`), so this leaves 8px of air above the badge.
- * 80% opaque while the filter is off (Trent, 2026-09-29: "a little more
- * transparency" — it floats over rows), full on press/hover; while the filter
- * is ON it is fully opaque, so the pressed toggle state stays unmistakable.
- * `JumpToTasksFab` may stack above it.
+ * past both. 80% opaque while the filter is off (Trent, 2026-09-29: "a little
+ * more transparency" — it floats over rows), full on press/hover; while the
+ * filter is ON it is fully opaque, so the pressed toggle state stays
+ * unmistakable.
  *
  * **Desktop (`placement="desktop"`, `md` and up) — added the same day at
  * Trent's request.** It was first phone-only, on the reasoning that the top
  * bar's pills do the same jump there. But the pills are small and scroll-bound
  * in attention, and on a long list nothing on screen offers the jump once
  * you are down among the rows; this does, because it stays in view.
- * - Fixed at the viewport's bottom-right, stacked above `SnoozeAllFab` exactly
- *   as on the phone: same right edge (`right-6`), bottom clearing the snooze
- *   FAB (`1.5rem` + its `3rem`) plus the same `0.75rem` gap (Trent,
- *   2026-09-28). It first sat at the task
- *   list column's right edge to stay off the Reminders/Quotas column at `xl`,
- *   but the page is centred, so that edge is mid-screen and the button read
- *   as misplaced. At `xl` it can now float over the Quotas column's lower
- *   rows, so it is 90% opaque (full on hover): whatever it covers still shows
- *   through.
+ * - At the viewport's bottom-right with the rest of the column (Trent,
+ *   2026-09-28). It first sat at the task list column's right edge to stay
+ *   off the Reminders/Quotas column at `xl`, but the page is centred, so that
+ *   edge is mid-screen and the button read as misplaced. At `xl` it can now
+ *   float over the Quotas column's lower rows, so it is 90% opaque (full on
+ *   hover): whatever it covers still shows through.
  * - The selection bar only exists while both are hidden, and the toaster is
  *   bottom-center and 356px wide, so even at `md` (768px) it ends well left
  *   of this corner.
@@ -104,7 +100,7 @@ export function OverdueJumpFab({
         aria-pressed={overdueFilterOn}
         title={`${overdueCount} overdue`}
         data-overdue-jump-fab="phone"
-        className={`${pill} fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+8.25rem)] z-40 flex cursor-pointer transition-[background-color,opacity] md:hidden ${
+        className={`${pill} pointer-events-auto flex cursor-pointer transition-[background-color,opacity] md:hidden ${
           overdueFilterOn ? '' : 'opacity-80 hover:opacity-100 active:opacity-100'
         }`}
       >
@@ -121,7 +117,7 @@ export function OverdueJumpFab({
       aria-pressed={overdueFilterOn}
       title={`${overdueCount} overdue`}
       data-overdue-jump-fab="desktop"
-      className={`${pill} fixed right-6 bottom-[5.25rem] z-40 hidden cursor-pointer opacity-90 transition-[background-color,opacity] hover:opacity-100 md:flex`}
+      className={`${pill} pointer-events-auto hidden cursor-pointer opacity-90 transition-[background-color,opacity] hover:opacity-100 md:flex`}
     >
       {content}
     </button>
