@@ -254,55 +254,53 @@ async function scrollToTasks(page: Page): Promise<void> {
   await settle(page)
 }
 
+/**
+ * The hero: the dashboard at a width where it splits into two columns — the
+ * task list on the left, reminders and quotas on the right (`twoColumn` in
+ * DashboardClient.tsx, from the `xl` breakpoint, 90.625rem/1450px in
+ * globals.css). Narrower, the reminders and quotas stack above the list and
+ * fill the first screen, so the hero showed no tasks. 1600 x 1205 CSS px at
+ * 2x (4:3, 3200 x 2410), downscaled to the published sizes: docs 2880 x 2168
+ * (-1040, -520) and portfolio 2080 x 1566 / 520 x 391 (light and dark).
+ */
 async function desktopDashboards(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promise<void> {
-  // Docs: 1440 x 1084 CSS px at 2x, like the March set (2880 x 2168, -1040, -520).
-  {
-    const page = await openPage(browser, { theme, width: 1440, height: 1084, scale: 2 })
-    await clearJustAdded(page)
-    await settle(page)
-    const file = outPath(`web-dashboard-full-${theme}.png`)
-    await page.screenshot({ path: file })
-    record(file, 'Desktop dashboard (All view, AI insights on), 1440x1084 @2x', theme, [
-      `docs:public/images/dashboard/web-dashboard-full-${theme}.png`,
+  const page = await openPage(browser, { theme, width: 1600, height: 1205, scale: 2 })
+  await clearJustAdded(page)
+  await settle(page)
+  const raw = outPath(`web-dashboard-hero-${theme}-3200.png`)
+  await page.screenshot({ path: raw })
+
+  const docs = outPath(`web-dashboard-full-${theme}.png`)
+  resizePng(raw, docs, 2880, 2168)
+  record(docs, 'Desktop dashboard, two columns (tasks left; reminders and quotas right)', theme, [
+    `docs:public/images/dashboard/web-dashboard-full-${theme}.png`,
+  ])
+  for (const d of downscales(docs, [1040, 520])) {
+    record(d.file, `Desktop dashboard, two columns, ${d.width}px wide`, theme, [
+      `docs:public/images/dashboard/web-dashboard-full-${theme}-${d.width}.png`,
     ])
-    for (const d of downscales(file, [1040, 520])) {
-      record(d.file, `Desktop dashboard, ${d.width}px wide`, theme, [
-        `docs:public/images/dashboard/web-dashboard-full-${theme}-${d.width}.png`,
-      ])
-    }
-    await scrollToTasks(page)
-    const tasksFile = outPath(`web-dashboard-tasks-${theme}.png`)
-    await page.screenshot({ path: tasksFile })
-    record(
-      tasksFile,
-      'Desktop dashboard scrolled to the task list (AI scores and commentary)',
-      theme,
-      [`docs:public/images/dashboard/web-dashboard-tasks-${theme}.png`],
-    )
-    for (const d of downscales(tasksFile, [1040, 520])) {
-      record(d.file, `Desktop task list, ${d.width}px wide`, theme, [
-        `docs:public/images/dashboard/web-dashboard-tasks-${theme}-${d.width}.png`,
-      ])
-    }
-    await page.context().close()
   }
-  // Portfolio: 1040 x 783 CSS px at 2x, plus a 520 x 391 downscale.
-  {
-    const page = await openPage(browser, { theme, width: 1040, height: 783, scale: 2 })
-    await clearJustAdded(page)
-    await settle(page)
-    const file = outPath(`web-dashboard-${theme}-full.png`)
-    await page.screenshot({ path: file })
-    record(file, 'Desktop dashboard, 1040x783 @2x (portfolio)', theme, [
-      `portfolio:web-dashboard-${theme}-full.png`,
-    ])
-    const small = outPath(`web-dashboard-${theme}.png`)
-    resizePng(file, small, 520, 391)
-    record(small, 'Desktop dashboard, 520x391 (portfolio thumbnail)', theme, [
-      `portfolio:web-dashboard-${theme}.png`,
-    ])
-    await page.context().close()
-  }
+
+  const full = outPath(`web-dashboard-${theme}-full.png`)
+  resizePng(raw, full, 2080, 1566)
+  record(full, 'Desktop dashboard, two columns, 2080x1566 (portfolio)', theme, [
+    `portfolio:web-dashboard-${theme}-full.png`,
+  ])
+  const small = outPath(`web-dashboard-${theme}.png`)
+  resizePng(raw, small, 520, 391)
+  record(small, 'Desktop dashboard, two columns, 520x391 (portfolio thumbnail)', theme, [
+    `portfolio:web-dashboard-${theme}.png`,
+  ])
+  fs.rmSync(raw)
+
+  // The same page scrolled to the task list.
+  await scrollToTasks(page)
+  const tasksFile = outPath(`web-dashboard-tasks-${theme}.png`)
+  await page.screenshot({ path: tasksFile })
+  record(tasksFile, 'Desktop dashboard scrolled to the task list, 1600x1205 @2x', theme, [
+    `docs:public/images/dashboard/web-dashboard-tasks-${theme}.png`,
+  ])
+  await page.context().close()
 }
 
 /** Desktop pages at 1280 x 860 @2x: Reminders, Quotas, the views, the detail panel. */
@@ -530,6 +528,26 @@ async function phoneShots(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promi
       record(d.file, `iPhone app dashboard, ${d.width}px wide`, theme, [
         `docs:public/images/dashboard/ios-dashboard-${theme}-${d.width}.png`,
         ...(d.width === 400 ? [`portfolio:ios-dashboard-${theme}.png`] : []),
+      ])
+    }
+
+    // A variant that shows tasks too: scrolled so the reminders card sits
+    // just under the top bar, which brings the (folded) quotas and the first
+    // project groups onto the screen.
+    const card = await page.getByRole('region', { name: 'Reminders' }).boundingBox()
+    const bar = await page.locator('header.safe-top').boundingBox()
+    if (!card || !bar) throw new Error('reminders card or top bar not found')
+    const dy = card.y - (bar.y + bar.height) - 8
+    await page.evaluate((by) => window.scrollBy(0, by), dy)
+    await settle(page)
+    const scrolled = outPath(`ios-dashboard-scrolled-${theme}.png`)
+    await page.screenshot({ path: scrolled })
+    record(scrolled, 'iPhone app dashboard scrolled to show the task groups, 1206x2622', theme, [
+      `docs:public/images/dashboard/ios-dashboard-scrolled-${theme}.png`,
+    ])
+    for (const d of downscales(scrolled, [[400, 869]])) {
+      record(d.file, 'iPhone app dashboard scrolled, 400px wide', theme, [
+        `docs:public/images/dashboard/ios-dashboard-scrolled-${theme}-400.png`,
       ])
     }
     await page.context().close()

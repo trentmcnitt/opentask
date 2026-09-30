@@ -35,7 +35,9 @@ Every run shows the same moment: **Tuesday 2026-09-15, 9:41 AM, America/Chicago*
 
 Deterministic by construction: fixed clock, `reducedMotion: 'reduce'`, carets and scrollbars hidden, the pointer parked off the page, and each shot waits for a named element, fonts, no request in flight (the SSE stream excepted) and two painted frames — never a sleep. Locators are roles, labels and the app's data attributes (`task-row-*`, `data-fab-stack`, the "View mode" group, "Just added"), never positions, so layout changes elsewhere don't break a rerun.
 
-The iPhone app shot (`ios-dashboard-*`) is the dashboard at 402 × 874 @3x (iPhone 16 Pro, 1206 × 2622) with the app's own safe-area padding applied to its `.safe-top` / `.safe-bottom` classes (what WKWebView's insets do in the app) and a 9:41 / full-battery status bar drawn on top. The app is a WKWebView around the same page, so this is what the app shows; it is not a simulator capture (the app's setup needs a server URL and token in the Keychain, which a script can't enter).
+The desktop hero (`web-dashboard-full-*` for the docs, `web-dashboard-{theme}-full` / `web-dashboard-{theme}` for the portfolio) is captured at 1600 × 1205 CSS px @2x, wide enough for the dashboard's two columns (tasks left; reminders and quotas right — the `xl` breakpoint is 1450px), then downscaled to the published sizes. Narrower, reminders and quotas fill the first screen and no task shows.
+
+The iPhone app shot (`ios-dashboard-*`) is the dashboard at 402 × 874 @3x (iPhone 16 Pro, 1206 × 2622) with the app's own safe-area padding applied to its `.safe-top` / `.safe-bottom` classes (what WKWebView's insets do in the app) and a 9:41 / full-battery status bar drawn on top. The app is a WKWebView around the same page, so this is what the app shows; it is not a simulator capture (the app's setup needs a server URL and token in the Keychain, which a script can't enter). `ios-dashboard-scrolled-*` is the same screen scrolled so the reminders card sits under the top bar, bringing the quotas and the first task groups into view.
 
 ### Widgets and the Mac menu bar
 
@@ -72,7 +74,7 @@ To refresh it: on a paired Apple Watch, get an OpenTask task notification (long 
 `manifest.json` / `README.md` in the output directory give each file's destination:
 
 - `docs:<path>` — a path in the **opentask-docs** repo, under `public/images/<type>/` (lowercase kebab-case, light/dark pairs; see that repo's `AGENTS.md` § Images). The downscales it references (`-1040` / `-520` for the desktop dashboard, `-400` / `-200` for the iPhone) are produced alongside. Copy them over there, in that repo, and update the pages that should show them.
-- `portfolio:<name>` — the portfolio site's names: `web-dashboard-light-full.png` (1040 × 783 @2x) and `web-dashboard-light.png` (520 × 391), `ios-dashboard-light-full.png` (1206 × 2622) and `ios-dashboard-light.png` (400 × 869), and the dark pairs.
+- `portfolio:<name>` — the portfolio site's names. The run's `portfolio/` folder holds exactly those files, already named and sized, so staging is a copy: `web-dashboard-light-full.png` (2080 × 1566), `web-dashboard-light.png` (520 × 391), `ios-dashboard-light-full.png` (1206 × 2622), `ios-dashboard-light.png` (400 × 869), and an optional `ios-widget-tasks-light.png` (the Tasks widget, large, when the native step ran). `finalize.ts` checks each size and fails on a mismatch. Dark versions stay in `web/`.
 
 Some files are new (Reminders, Quotas, views, widgets, menu bar) and have no page yet; their destinations are suggestions.
 
