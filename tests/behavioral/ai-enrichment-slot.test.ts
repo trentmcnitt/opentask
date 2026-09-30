@@ -100,6 +100,19 @@ describe('enrichment slot initialization', () => {
     expect(stats.activatedAt).not.toBeNull()
   })
 
+  // The shared warm-slot engine builds the SDK options from each slot's config;
+  // enrichment is the one that pins a JSON schema.
+  test('subprocess is started with the enrichment schema and turn limit', async () => {
+    await initWithWarmup()
+
+    const { options } = mockQuery.mock.calls[0][0] as {
+      options: { maxTurns: number; outputFormat?: { type: string; schema: unknown } }
+    }
+    expect(options.maxTurns).toBe(50)
+    expect(options.outputFormat?.type).toBe('json_schema')
+    expect(options.outputFormat?.schema).toBeTypeOf('object')
+  })
+
   // The slot pins a JSON schema, so the CLI forces the model to answer with an
   // object instead of the word READY. Requiring the word is what left the slot
   // dead 27 times in one day on dev, taking all enrichment down with it.
