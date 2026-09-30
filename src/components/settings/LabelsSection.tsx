@@ -14,8 +14,11 @@ import { ColorDot } from './ColorDot'
 import { SettingsSection } from './SettingsSection'
 
 /**
- * Settings → Labels: the label registry with colors. Every add, recolor or
- * removal saves the whole list.
+ * Settings → Labels: the user's labels with colors. Every add, recolor or
+ * removal saves the whole list (`label_config`), and the server keeps the
+ * label registry in step: an added label can go on a task at once, and a
+ * removed one is deregistered for good (`syncLabelRegistry` in
+ * src/core/users/preferences.ts). Tasks already carrying a removed label keep it.
  */
 export function LabelsSection() {
   const { labelConfig, setLabelConfig } = useLabelConfig()

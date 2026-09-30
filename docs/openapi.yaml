@@ -950,6 +950,14 @@ paths:
         `skipped_urgent` keeps its name for client compatibility and counts BOTH
         P3 and P4 skips. `skipped_high` is the P3 subset of it, so a client can
         name the two tiers accurately; Urgent alone is the difference.
+
+        Each eligible task is changed exactly as `PATCH /api/tasks/{id}` with
+        `{ due_at }` would change it: a dated task is snoozed (`snooze_count`
+        +1, origin kept); a task with no date (absolute mode only) gets its
+        first date, which is not counted as a snooze; a task already due at
+        the target is left alone. `tasks_affected` counts only the tasks whose
+        date actually moved, so it plus `tasks_skipped` can be less than the
+        number of `ids`.
       requestBody:
         required: true
         content:

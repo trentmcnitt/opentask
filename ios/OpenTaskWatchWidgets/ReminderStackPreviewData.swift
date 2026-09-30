@@ -287,7 +287,7 @@ enum ReminderStackPreviewData {
     ReminderStackPreviewData.lastInSlot
 }
 
-#Preview("All caught up", as: .accessoryRectangular) {
+#Preview("All done", as: .accessoryRectangular) {
     ReminderStackWidget()
 } timeline: {
     ReminderStackPreviewData.caughtUp

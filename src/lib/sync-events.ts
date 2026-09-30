@@ -6,7 +6,7 @@
  * so all route handlers and SSE connections share the same module-level state.
  *
  * The globalThis pattern survives Turbopack module duplication in dev mode
- * (same approach as src/core/ai/enrichment-slot.ts).
+ * (same approach as src/core/ai/warm-slot.ts).
  */
 
 import { EventEmitter } from 'events'

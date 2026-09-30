@@ -5,8 +5,9 @@ import WatchKit
 /// same payload the phone widgets render — read-only aside from checking
 /// items off, no create/edit on the watch). Title + "N left", a slim
 /// per-slot progress strip, ‹ › to page between slots, tap a row to consider
-/// (check off) it, and a toolbar Undo. "All caught up" when every slot that
-/// has started is finished.
+/// (check off) it, and a toolbar Undo. A finished period reads "All done ·
+/// N reminders", and the clock's period "Day complete" once every period of
+/// the day is clear (`ReminderDayProgress`, shared with the phone widget).
 struct RemindersPageView: View {
     @ObservedObject var model: WatchViewModel
     /// The prompt whose touch-and-hold period list is open (2026-09-25).
@@ -121,6 +122,30 @@ struct RemindersPageView: View {
         }
     }
 
+    /// The on-screen period has nothing waiting — the phone widget's words
+    /// (2026-09-29, `ReminderDayProgress.emptyBody`): "Congratulations · Day complete" on the
+    /// clock's period once every period of the day (upcoming ones too) is
+    /// clear, "All done · N reminders" for a finished period, and the plain
+    /// empty state for a period that never had anything. It used to read
+    /// "All caught up" for all three.
+    @ViewBuilder
+    private var periodFinishedView: some View {
+        let groups = model.reminderGroups
+        switch ReminderDayProgress.emptyBody(
+            groups: groups, displayedIndex: model.displayedSlotIndex,
+            naturalIndex: WatchSlotLogic.naturalSlotIndex(in: groups)
+        ) {
+        case .dayComplete:
+            AllCaughtUpView(symbol: "checkmark.seal.fill", title: "Congratulations", detail: "Day complete")
+        case .periodDone(let count):
+            AllCaughtUpView(
+                symbol: "checkmark.seal.fill", title: "All done", detail: ReminderDayProgress.itemsText(count)
+            )
+        case .noReminders, .nothingHere:
+            AllCaughtUpView(title: "Nothing left here")
+        }
+    }
+
     @ViewBuilder
     private var header: some View {
         if let group {
@@ -143,7 +168,7 @@ struct RemindersPageView: View {
         // Gate the empty/loaded states on `hasLoadedOnce` — before the first
         // fetch completes, `group` is nil (no data yet) exactly like the
         // genuinely-empty case below, and without this a launch would flash
-        // "All caught up" for the ~1-3s a real network round trip takes
+        // an empty state for the ~1-3s a real network round trip takes
         // before honestly landing on real content. See `WatchViewModel.
         // hasLoadedOnce`'s doc.
         if !model.hasLoadedOnce {
@@ -154,7 +179,7 @@ struct RemindersPageView: View {
             LoadErrorView(message: error)
         } else if let group {
             if group.hasNothingWaiting {
-                AllCaughtUpView()
+                periodFinishedView
             } else {
                 // No `lineLimit` here — Trent's rule (memory:
                 // "never truncate a reminder"): a reminder is a short
@@ -345,18 +370,30 @@ struct PromptRowView: View {
     static let didTarget = CGSize(width: 40, height: 28)
 }
 
-/// Shared empty state — used by the Reminders page (a slot with nothing
-/// left) via the specific "Done" header above, and here for the truly empty
-/// "nothing anywhere today" case.
+/// Shared empty state — the Tasks page's "All caught up" (nothing up next),
+/// and the Reminders page's finished-period states (`periodFinishedView`:
+/// "All done" / "Day complete", 2026-09-29), which pass their own words.
 struct AllCaughtUpView: View {
+    var symbol = "checkmark.circle.fill"
+    var title = "All caught up"
+    var detail: String?
+
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: symbol)
                 .font(.title2)
                 .foregroundStyle(WatchTheme.done)
-            Text("All caught up")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(detail == nil ? .secondary : .primary)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)

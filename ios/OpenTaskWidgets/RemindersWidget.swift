@@ -813,4 +813,160 @@ private enum ReminderPreviewData {
     ReminderPreviewData.entry()
 }
 
+// MARK: - Day complete (2026-09-29, synthetic sample data)
+//
+// The finished states approved from mockups r3: "4 of 7" mid-period, a
+// finished period's "All done / N reminders", and "Congratulations / Day
+// complete" under the green wash. Six invented periods, 35 reminders plus
+// one quota prompt (handled in Morning), so the done list pages.
+
+private enum DayCompletePreviewData {
+    static let slots: [(id: Int, label: String, start: String, titles: [String])] = [
+        (21, "Early morning", "06:30", [
+            "Drink a glass of water", "Stretch for five minutes", "Open the blinds", "Make the bed",
+            "Take morning vitamins", "Water the plants", "Quick look at today's calendar",
+        ]),
+        (22, "Morning", "08:30", [
+            "Check the team inbox", "Plan the top three things for today", "Refill water bottle",
+            "Stand up and walk for a few minutes", "Clear the desk before starting deep work",
+            "Reply to anything waiting since yesterday", "Posture check: shoulders down, feet flat",
+            "Take a short break away from the screen", "Review notes from yesterday's meeting",
+        ]),
+        (23, "Lunchtime", "11:30", [
+            "Eat lunch away from the desk", "Short walk outside", "Refill water bottle",
+        ]),
+        (24, "After work", "16:00", [
+            "Unpack the bags", "Snack and a glass of water", "Check the calendar for tomorrow",
+            "Start the laundry", "Ten minutes of tidying", "Sort the mail",
+        ]),
+        (25, "Pre-bedtime", "20:15", [
+            "Brush teeth and floss", "Set out clothes for tomorrow",
+        ]),
+        (26, "Evening", "21:00", [
+            "Pack lunches", "Tidy the kitchen counters", "Run the dishwasher",
+            "Phone on the charger, out of the bedroom", "Lock the doors and check the stove",
+            "Write down one good thing from today", "Read a few pages before sleep",
+        ]),
+    ]
+
+    static func at(_ hour: Int, _ minute: Int) -> Date {
+        Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+
+    /// Morning's one quota prompt — handled whenever Morning is.
+    private static func morningPrompt(handled: Bool) -> QuotaPromptDTO {
+        let waiting = QuotaPromptDTO(
+            promptKey: "q:901:0:2026-09-29", taskId: 901, number: nil, title: "Read 20 pages", current: 2,
+            target: 5, period: "WEEKLY", stripeColor: "blue", considered: false, done: false, hasNotes: false
+        )
+        return handled ? waiting.handled(did: true) : waiting
+    }
+
+    /// Periods at index <= `doneThrough` fully handled; `partial` more
+    /// reminders handled in the period after that; the rest waiting.
+    static func groups(doneThrough: Int, partial: Int = 0) -> [ReminderGroupDTO] {
+        slots.enumerated().map { index, slot in
+            let tasks = slot.titles.enumerated().map { i, title in
+                TaskDTO(id: slot.id * 100 + i, title: title, priority: 0, isReminder: true)
+            }
+            let handled = index <= doneThrough ? tasks.count : (index == doneThrough + 1 ? partial : 0)
+            let done = Array(tasks.prefix(handled))
+            return ReminderGroupDTO(
+                slot: TimeSlotDTO(id: slot.id, label: slot.label, startTime: slot.start),
+                reminders: Array(tasks.dropFirst(handled)), considered: done.count,
+                consideredItems: Array(done.reversed()),
+                prompts: slot.id == 22 ? [morningPrompt(handled: index <= doneThrough)] : []
+            )
+        }
+    }
+
+    static func entry(at date: Date, groups: [ReminderGroupDTO], slotIndex: Int) -> RemindersEntry {
+        RemindersEntry(
+            date: date, groups: groups, slotIndex: slotIndex, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
+    /// 7:05 am: Early morning 4 of 7, nothing else touched.
+    static var midPeriod: RemindersEntry {
+        entry(at: at(7, 5), groups: groups(doneThrough: -1, partial: 4), slotIndex: 0)
+    }
+
+    /// 12:10 pm: Lunchtime finished, the afternoon and evening still to come.
+    static var periodDone: RemindersEntry {
+        entry(at: at(12, 10), groups: groups(doneThrough: 2), slotIndex: 2)
+    }
+
+    /// 9:08 pm, everything handled, on the clock's period (Evening).
+    static var dayComplete: RemindersEntry {
+        entry(at: at(21, 8), groups: groups(doneThrough: 5), slotIndex: 5)
+    }
+
+    /// The same day, paged back to Morning (its reminders + the prompt).
+    static var dayCompleteOtherPeriod: RemindersEntry {
+        entry(at: at(21, 8), groups: groups(doneThrough: 5), slotIndex: 1)
+    }
+
+    static func prepare(showCompleted: Bool) {
+        WidgetStore.setShowCompleted(showCompleted, for: RemindersWidget.kind)
+        for slot in slots { WidgetStore.setRemindersPage(0, for: slot.id) }
+    }
+}
+
+#Preview("Reminders Large — mid-period, 4 of 7", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.midPeriod
+}
+
+#Preview("Reminders Large — period done", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.periodDone
+}
+
+#Preview("Reminders Large — day complete", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Reminders Large — day complete, other period", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.dayCompleteOtherPeriod
+}
+
+#Preview("Reminders Large — day complete, done list", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: true)
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Reminders Medium — day complete", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.dayComplete
+}
+
+#Preview("Reminders Medium — period done", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.periodDone
+}
+
+#Preview("Reminders Small — day complete", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = DayCompletePreviewData.prepare(showCompleted: false)
+    DayCompletePreviewData.dayComplete
+}
+
 #endif

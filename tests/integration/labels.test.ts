@@ -121,4 +121,63 @@ describe('Label registry', () => {
     const labels = (await second.json()).data.labels
     expect(labels.filter((l: string) => l === 'ai-added')).toHaveLength(1)
   })
+
+  // Settings → Labels saves `label_config`; the registry follows it
+  // (`syncLabelRegistry` in src/core/users/preferences.ts).
+  describe('Settings label list (label_config) drives the registry', () => {
+    async function registeredNames(): Promise<string[]> {
+      const res = await apiFetch('/api/labels')
+      return (await res.json()).data.labels.map((l: { name: string }) => l.name)
+    }
+
+    async function saveLabelConfig(config: { name: string; color: string }[]) {
+      const res = await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { label_config: config },
+      })
+      expect(res.status).toBe(200)
+    }
+
+    test('a label added in Settings can be put on a task at once', async () => {
+      const prefs = await apiFetch('/api/user/preferences')
+      const current = (await prefs.json()).data.label_config as { name: string; color: string }[]
+      await saveLabelConfig([...current, { name: 'woodshop', color: 'green' }])
+
+      const create = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Sharpen chisels' },
+      })
+      const task = (await create.json()).data
+      const patch = await apiFetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: { labels: ['woodshop'] },
+      })
+      expect(patch.status).toBe(200)
+      expect((await patch.json()).data.labels).toContain('woodshop')
+    })
+
+    test('a label removed in Settings leaves the registry (D6)', async () => {
+      const prefs = await apiFetch('/api/user/preferences')
+      const current = (await prefs.json()).data.label_config as { name: string; color: string }[]
+      await saveLabelConfig([...current, { name: 'pottery', color: 'orange' }])
+      expect(await registeredNames()).toContain('pottery')
+
+      await saveLabelConfig(current)
+      expect(await registeredNames()).not.toContain('pottery')
+
+      const create = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Throw a bowl', labels: ['pottery'] },
+      })
+      expect(create.status).toBe(400)
+    })
+
+    test('removing a system label from the colour list keeps it registered', async () => {
+      const prefs = await apiFetch('/api/user/preferences')
+      const current = (await prefs.json()).data.label_config as { name: string; color: string }[]
+      await saveLabelConfig([...current, { name: 'ai-added', color: 'purple' }])
+      await saveLabelConfig(current)
+      expect(await registeredNames()).toContain('ai-added')
+    })
+  })
 })

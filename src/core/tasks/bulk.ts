@@ -411,9 +411,15 @@ export interface BulkSnoozeResult {
  * - Absolute (until): Sets all tasks to the same target time
  * - Relative (deltaMinutes): Adds minutes to each task's current due_at
  *
- * Follows same original_due_at rules as single snooze. Which tasks it will
- * actually touch is `filterForBulkSnooze`'s decision — P0-P2 always, P3 once
- * nothing lower is left in the batch, P4 never.
+ * Which tasks it will actually touch is `filterForBulkSnooze`'s decision —
+ * P0-P2 always, P3 once nothing lower is left in the batch, P4 never (unless
+ * named in `includeTaskIds`); reminders and quotas are always skipped.
+ *
+ * What it writes to each of those is the single snooze's and bulk/edit's own
+ * rule, through the same `collectFieldChanges` + `applyFieldChanges` pair: a
+ * dated task is snoozed (origin kept, snooze_count + 1, snooze stat); a
+ * dateless task (absolute mode only) gets its first date, which is not a
+ * snooze; a task already due at the target is left alone and not counted.
  */
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds, dueBeforeIds } =
@@ -488,98 +494,87 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     }
   }
 
+  const nowDate = new Date()
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
+  const allFieldsChanged = new Set<string>()
+  // The tasks that actually got a snapshot, in order. A no-op target (the task
+  // is already due at `until`) drops out of every count below.
+  const moved: Task[] = []
+  let snoozeScenarioCount = 0
 
   const result = withTransaction((tx) => {
     for (const task of snoozeable) {
-      // Compute the new due_at based on mode
-      let newDueAt: string
-      if (until !== undefined) {
-        // Absolute mode: all tasks get the same target time
-        newDueAt = until
-      } else {
-        // Relative mode: add delta to each task's current due_at
-        const baseDueAt = new Date(task.due_at!)
-        newDueAt = new Date(baseDueAt.getTime() + deltaMinutes! * 60 * 1000).toISOString()
-      }
+      // Absolute mode: every task gets the same target. Relative mode: the
+      // delta is added to each task's own due_at (dateless tasks were filtered
+      // out above).
+      const newDueAt =
+        until !== undefined
+          ? until
+          : new Date(new Date(task.due_at!).getTime() + deltaMinutes! * 60_000).toISOString()
 
-      // Set original_due_at if not already set (preserve existing).
-      // When the task had no due_at (both null), use the new due_at as the origin timestamp.
-      const newOriginalDueAt = task.original_due_at ?? task.due_at ?? newDueAt
-
-      // ALWAYS increment snooze_count (changed behavior - every snooze increments)
-      const newSnoozeCount = task.snooze_count + 1
-
-      tx.prepare(
-        `
-        UPDATE tasks
-        SET due_at = ?, original_due_at = ?, snooze_count = ?, updated_at = ?
-        WHERE id = ?
-      `,
-      ).run(newDueAt, newOriginalDueAt, newSnoozeCount, nowStr, task.id)
-
-      // Build snapshot - always include snooze_count since it always changes
-      const fieldsChanged = ['due_at', 'original_due_at', 'snooze_count']
-      const beforeState: Partial<Task> & { id: number } = {
-        id: task.id,
-        due_at: task.due_at,
-        original_due_at: task.original_due_at,
-        snooze_count: task.snooze_count,
-      }
-      const afterState: Partial<Task> & { id: number } = {
-        id: task.id,
-        due_at: newDueAt,
-        original_due_at: newOriginalDueAt,
-        snooze_count: newSnoozeCount,
-      }
-
-      snapshots.push(createTaskSnapshot(beforeState, afterState, fieldsChanged))
-
-      activityEntries.push({
+      // THE SAME CHANGE COLLECTION AS bulk/edit AND THE SINGLE PATCH (D1,
+      // 2026-09-29). This loop used to write due_at / original_due_at /
+      // snooze_count by hand, and it drifted from `collectDueAtChanges`: it
+      // bumped snooze_count and the snooze stat for a task that had NO date
+      // (giving a task its first date is not a snooze) and for a task already
+      // due at the target (nothing moved). Now each task is exactly a bulk edit
+      // of `{ due_at }`. The reminder and quota filters above still run first,
+      // so a sweep skips those rows instead of failing; the refusals inside
+      // `collectFieldChanges` are only a safety net here.
+      const data = collectFieldChanges({
+        task,
+        input: { due_at: newDueAt },
         userId,
-        taskId: task.id,
-        action: 'snooze',
-        source: 'bulk',
-        batchId,
-        fields: fieldsChanged,
-        before: beforeState,
-        after: afterState,
-        metadata: {},
+        userTimezone,
+        now: nowDate,
+        skipProjectValidation: true,
       })
+      if (data.fieldsChanged.length === 0) continue
+
+      const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
+      snapshots.push(snapshot)
+      activityEntries.push({ userId, ...activity, source: 'bulk', batchId })
+      data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
+      moved.push(task)
+      if (data.isSnoozeScenario) snoozeScenarioCount++
     }
 
-    // snooze_count always changes now
-    const allFieldsChanged = ['due_at', 'original_due_at', 'snooze_count']
-
-    // Build enriched bulk snooze description
-    let bulkSnoozeDesc: string
-    if (until !== undefined) {
-      const target = formatSnoozeTarget(until, userTimezone)
-      bulkSnoozeDesc = `Snoozed ${snoozeable.length} tasks to ${target}`
-    } else {
-      const delta = formatDurationDelta(0, deltaMinutes! * 60 * 1000)
-      bulkSnoozeDesc = `Snoozed ${snoozeable.length} tasks (${delta})`
+    if (snapshots.length > 0) {
+      let bulkSnoozeDesc: string
+      if (until !== undefined) {
+        const target = formatSnoozeTarget(until, userTimezone)
+        bulkSnoozeDesc = `Snoozed ${snapshots.length} tasks to ${target}`
+      } else {
+        const delta = formatDurationDelta(0, deltaMinutes! * 60 * 1000)
+        bulkSnoozeDesc = `Snoozed ${snapshots.length} tasks (${delta})`
+      }
+      logAction(userId, 'bulk_snooze', bulkSnoozeDesc, Array.from(allFieldsChanged), snapshots)
     }
-
-    logAction(userId, 'bulk_snooze', bulkSnoozeDesc, allFieldsChanged, snapshots)
     logActivityBatch(activityEntries)
 
-    // Increment daily stats for ALL snoozes (every snooze counts now)
-    incrementDailyStat(userId, 'snoozes', userTimezone, snoozeable.length)
+    // Only a real deferral counts as a snooze: not a first date, not a no-op.
+    if (snoozeScenarioCount > 0) {
+      incrementDailyStat(userId, 'snoozes', userTimezone, snoozeScenarioCount)
+    }
 
     return {
-      tasksAffected: snoozeable.length,
+      // A no-op target is neither affected nor skipped, as in bulk/edit.
+      tasksAffected: moved.length,
       tasksSkipped: skippedCount,
       urgentSkipped,
       highSkipped,
-      highSnoozed: snoozeable.filter((t) => t.priority === HIGH_PRIORITY_THRESHOLD).length,
+      highSnoozed: moved.filter((t) => t.priority === HIGH_PRIORITY_THRESHOLD).length,
       reminderSkipped,
       noDueDateSkipped,
-      snoozedIds: snoozeable.map((t) => t.id),
+      snoozedIds: moved.map((t) => t.id),
     }
   })
+
+  if (moved.length === 0) return result
+
+  cancelPendingEnrichment(moved)
 
   emitSyncEvent(userId)
   dismissNotificationsForTasks(
@@ -588,7 +583,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     stillDueAfterSnooze(dueBeforeIds, result.snoozedIds, until),
   )
 
-  for (const task of snoozeable) {
+  for (const task of moved) {
     const fresh = getTaskById(task.id)
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.snoozed', {
@@ -599,6 +594,26 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   }
 
   return result
+}
+
+/**
+ * Cancel pending AI enrichment on tasks the user just snoozed: their manual
+ * change takes precedence, exactly as the single snooze does through
+ * `updateTask`. After the commit and outside the undo snapshot for the same
+ * reason as there — it is machine state, not a user-visible edit — so an undo
+ * of the snooze leaves enrichment cancelled.
+ *
+ * `tasks` are the pre-snooze rows; the snooze wrote no `labels`, and
+ * `bulkSnooze` is synchronous from its read to here (nothing interleaves), so
+ * their label lists are still current.
+ */
+function cancelPendingEnrichment(tasks: Task[]): void {
+  const pending = tasks.filter((t) => t.labels.includes('ai-to-process'))
+  if (pending.length === 0) return
+  const stmt = getDb().prepare('UPDATE tasks SET labels = ? WHERE id = ?')
+  for (const task of pending) {
+    stmt.run(JSON.stringify(task.labels.filter((l) => l !== 'ai-to-process')), task.id)
+  }
 }
 
 /**

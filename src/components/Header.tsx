@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
 import Image from 'next/image'
@@ -39,7 +39,8 @@ import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { CountBadge } from '@/components/CountBadge'
 import { SearchBar } from './SearchBar'
 import { SnoozeOverdueTrigger } from '@/components/SnoozeOverdueTrigger'
-import { useAiAvailable, useAiFeatureInfo } from '@/components/PreferencesProvider'
+import { useAiAvailable } from '@/components/PreferencesProvider'
+import { useAiSlotState } from '@/hooks/useAiSlotState'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
 import { GuardedLink } from '@/components/GuardedLink'
@@ -142,61 +143,10 @@ export function Header({
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
-  const [aiSlotState, setAiSlotState] = useState<string | null>(null)
+  const [menuOpened, setMenuOpened] = useState(false)
   const aiAvailable = useAiAvailable()
-  const { aiFeatureInfo } = useAiFeatureInfo()
-
-  // Only show the status dot when at least one feature uses SDK mode
-  const hasSdkFeature = aiFeatureInfo
-    ? Object.values(aiFeatureInfo).some((f) => f.mode === 'sdk')
-    : false
-
-  /** Fetch AI slot state lazily when the hamburger menu opens (SDK features only) */
-  const handleMenuOpenChange = useCallback(
-    (open: boolean) => {
-      if (!aiAvailable || !hasSdkFeature) return
-      if (open && aiSlotState === null) {
-        fetch('/api/ai/status')
-          .then((res) => {
-            if (res.status === 503) {
-              setAiSlotState('disabled')
-              return null
-            }
-            if (!res.ok) {
-              setAiSlotState('unknown')
-              return null
-            }
-            return res.json()
-          })
-          .then((json) => {
-            if (!json?.data) return
-            // Use worst slot state across SDK-mode features.
-            // Skip 'uninitialized' — it means the warm slot is intentionally disabled
-            // and the feature works via cold path (not an error condition).
-            const states: string[] = []
-            if (aiFeatureInfo?.enrichment?.mode === 'sdk' && json.data.enrichment_slot?.state) {
-              if (json.data.enrichment_slot.state !== 'uninitialized')
-                states.push(json.data.enrichment_slot.state)
-            }
-            if (aiFeatureInfo?.quick_take?.mode === 'sdk' && json.data.quick_take_slot?.state) {
-              if (json.data.quick_take_slot.state !== 'uninitialized')
-                states.push(json.data.quick_take_slot.state)
-            }
-            // Priority: dead > uninitialized > initializing > busy > available
-            const worst =
-              states.find((s) => s === 'dead') ??
-              states.find((s) => s === 'uninitialized') ??
-              states.find((s) => s === 'initializing') ??
-              states.find((s) => s === 'busy') ??
-              states[0] ??
-              'unknown'
-            setAiSlotState(worst)
-          })
-          .catch(() => setAiSlotState('unknown'))
-      }
-    },
-    [aiSlotState, aiAvailable, hasSdkFeature, aiFeatureInfo],
-  )
+  // The AI Status item's dot: fetched the first time the menu opens, then kept.
+  const aiSlotState = useAiSlotState({ enabled: menuOpened })
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -332,7 +282,7 @@ export function Header({
             </Tooltip>
 
             {/* Hamburger menu */}
-            <DropdownMenu onOpenChange={handleMenuOpenChange}>
+            <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Menu">
                   <Menu className="size-5" />
@@ -369,7 +319,7 @@ export function Header({
                   <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                     <Bot className="size-4" />
                     AI Status
-                    {hasSdkFeature && aiSlotState && aiSlotState !== 'disabled' && (
+                    {aiSlotState && aiSlotState !== 'disabled' && (
                       <AIStatusDot state={aiSlotState} className="ml-auto" />
                     )}
                   </DropdownMenuItem>

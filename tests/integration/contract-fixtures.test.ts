@@ -51,6 +51,10 @@
  *  8. POST /api/tasks (a one-off due three days ago), then
  *     GET  /api/tasks/counts                    → task-counts.json
  *        (what the iOS/Mac apps set the icon badge from when they come forward)
+ *  9. POST /api/tasks (a dateless task, an overdue Urgent one), then
+ *     POST /api/tasks/bulk/snooze               → bulk-snooze.json
+ *        ids: [overdue, dateless, urgent, evening reminder], an absolute `until`
+ *        (the widgets' per-row and selected-task snooze)
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -423,6 +427,23 @@ describe('contract fixtures (native clients)', () => {
       due_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
     })
     captured['task-counts'] = await call('/api/tasks/counts')
+
+    // 9. a per-row/selection snooze as the widgets send it — after the counts,
+    //    so it changes nothing captured above. The selection holds one of each
+    //    case the response reports: the overdue task (snoozed), a dateless one
+    //    (given its first date: affected, but not a snooze — D1), an Urgent one
+    //    (skipped on priority) and the evening reminder (skipped, §6).
+    await make('dateless', { title: 'Sort the bookshelf' })
+    await make('urgent', {
+      title: 'File the form',
+      priority: 4,
+      due_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+    })
+    captured['bulk-snooze'] = await call('/api/tasks/bulk/snooze', {
+      ids: [created.overdue, created.dateless, created.urgent, created.evening],
+      until: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(),
+      include_task_ids: [created.dateless],
+    })
   })
 
   const names = [
@@ -439,6 +460,7 @@ describe('contract fixtures (native clients)', () => {
     'undo-status',
     'quota-prompts-restore',
     'task-counts',
+    'bulk-snooze',
   ]
 
   for (const name of names) {

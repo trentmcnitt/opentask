@@ -71,6 +71,10 @@ struct WatchWidgetEntry: TimelineEntry {
         let nextSlotStart: Date?
         let nextSlotCount: Int
         let urgentOverdue: Int
+        /// Every period of today — upcoming ones too — is clear, and
+        /// something was handled (`ReminderDayProgress.isDayComplete`,
+        /// 2026-09-29): the card reads "Day complete" instead of "All done".
+        var isDayComplete = false
     }
 
     struct OverdueCard: Equatable {
@@ -128,7 +132,8 @@ enum ReminderStackTimeline {
     /// 2. Else, if any overdue task is bulk-SNOOZABLE (priority < 4), the card
     ///    is in overdue mode: one tap clears it, and until then it outranks a
     ///    reminder (tasks have debt, reminders never do — §6).
-    /// 3. Else reminders: the active slot's next reminder, or "All caught up".
+    /// 3. Else reminders: the active slot's next reminder, or "All done"
+    ///    ("Day complete" once every period of the day is clear).
     ///    Overdue Urgent-only (P4) does NOT take over: the sweep never moves
     ///    P4, so an overdue card for it would be a button that does nothing,
     ///    forever. It shows as a red "N urgent overdue" line instead, and a
@@ -187,7 +192,8 @@ enum ReminderStackTimeline {
         let next = nextWaitingSlot(in: groups, now: date)
         let card = WatchWidgetEntry.CaughtUpCard(
             nextSlotLabel: next?.label, nextSlotStart: next.flatMap { startDate(of: $0, on: date) },
-            nextSlotCount: next?.waitingCount ?? 0, urgentOverdue: urgent
+            nextSlotCount: next?.waitingCount ?? 0, urgentOverdue: urgent,
+            isDayComplete: ReminderDayProgress.isDayComplete(groups)
         )
         return WatchWidgetEntry(
             date: date, content: .caughtUp(card), ring: ring,
@@ -203,7 +209,8 @@ enum ReminderStackTimeline {
     /// "Anytime" counted as started. Never a slot that hasn't started — the
     /// same rule the phone widget's auto-advance follows — except the
     /// pre-dawn case `naturalSlotIndex` already defines (before the first
-    /// slot, the first slot IS the current one). `nil` = all caught up.
+    /// slot, the first slot IS the current one). `nil` = every started slot
+    /// is done.
     static func activeGroupIndex(in groups: [ReminderGroupDTO], now: Date) -> Int? {
         guard !groups.isEmpty else { return nil }
         let natural = WatchSlotLogic.naturalSlotIndex(in: groups, now: now)
@@ -320,7 +327,7 @@ enum ReminderStackTimeline {
             return .init(count: overdue, fraction: 0, isOverdue: true, label: "Overdue")
         }
         guard let active else {
-            return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "Caught up")
+            return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "All done")
         }
         // Quota prompts count like reminders (2026-09-24).
         let total = active.waitingCount + active.consideredCount

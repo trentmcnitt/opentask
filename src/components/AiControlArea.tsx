@@ -21,6 +21,7 @@ import { formatRelativeTime } from '@/lib/quick-select-dates'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
 import type { AiMode } from '@/hooks/useAiMode'
+import { useAiSlotState } from '@/hooks/useAiSlotState'
 
 interface AiControlAreaProps {
   mode: AiMode
@@ -103,29 +104,10 @@ export function AiControlArea({
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
 
-  // Fetch AI slot state on mount for the status dot in the popover
-  const [aiSlotState, setAiSlotState] = useState<string | null>(null)
+  // The status dot beside "AI": the same state and rules as the top bar's
+  // AI Status item (useAiSlotState), fetched when the dashboard mounts.
+  const aiSlotState = useAiSlotState({ enabled: true })
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
-  useEffect(() => {
-    fetch('/api/ai/status')
-      .then((res) => {
-        if (res.status === 503) {
-          setAiSlotState('disabled')
-          return null
-        }
-        if (!res.ok) {
-          setAiSlotState('unknown')
-          return null
-        }
-        return res.json()
-      })
-      .then((json) => {
-        if (json?.data?.enrichment_slot?.state) {
-          setAiSlotState(json.data.enrichment_slot.state)
-        }
-      })
-      .catch(() => setAiSlotState('unknown'))
-  }, [])
 
   const insightsFreshnessText = insightsGeneratedAt
     ? formatRelativeTime(insightsGeneratedAt, undefined, timezone)

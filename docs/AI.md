@@ -108,11 +108,11 @@ Each provider handles structured output, timeout, error logging, and activity lo
 
 The SDK provider uses warm subprocess slots for latency-sensitive features. A warm slot keeps a Claude Code subprocess alive across multiple requests via the MessageChannel pattern, eliminating cold-start latency.
 
-There are two warm slots:
+There are two warm slots, both built by the shared engine in `warm-slot.ts` (`createWarmSlot`), which owns init and warmup, reuse, recycling, the circuit breaker (5 recycles in 5 seconds marks the slot as dead), re-init backoff, `slot-failure` alerts and shutdown. They differ only in their concurrency policy:
 
-**1. Enrichment slot** (`enrichment-slot.ts`): FIFO queue — requests wait in order for the single subprocess. After `MAX_REUSES` (default 8) results, the slot recycles (closes old subprocess, starts a new one). Circuit breaker: 5 recycles in 5 seconds marks the slot as dead.
+**1. Enrichment slot** (`enrichment-slot.ts`): FIFO queue — requests wait in order for the single subprocess. After `MAX_REUSES` (default 8) results, the slot recycles (closes old subprocess, starts a new one). Policy: `fifoQueuePolicy`.
 
-**2. Quick Take slot** (`quick-take-slot.ts`): Latest-wins cancellation — only the most recent quick take matters, so new requests supersede in-flight ones. Lower max reuses (default 4) since quick takes are less frequent.
+**2. Quick Take slot** (`quick-take-slot.ts`): Latest-wins cancellation — only the most recent quick take matters, so new requests supersede in-flight ones. Lower max reuses (default 4) since quick takes are less frequent. Policy: `latestWinsPolicy`.
 
 API providers (Anthropic, OpenAI) make stateless HTTP calls and do not use warm slots.
 
@@ -182,7 +182,8 @@ src/core/ai/
 ├── parse-helpers.ts    — Shared JSON extraction from text responses
 ├── message-channel.ts  — Async iterable for subprocess communication
 ├── slot-shared.ts      — Shared utilities for warm slot infrastructure
-├── enrichment-slot.ts  — Warm SDK slot for enrichment (MessageChannel + consumer + lifecycle)
+├── warm-slot.ts        — Warm slot engine (createWarmSlot: lifecycle + FIFO / latest-wins policies)
+├── enrichment-slot.ts  — Warm SDK slot for enrichment (FIFO queue, JSON schema)
 ├── enrichment-api.ts   — API-mode enrichment query (Anthropic/OpenAI, no warm slot)
 ├── enrichment.ts       — Task enrichment pipeline (on-demand + safety-net cron)
 ├── quick-take.ts       — Quick Take prompt building and generation
@@ -294,7 +295,11 @@ Generic async iterable that buffers messages and yields them when the SDK calls 
 
 ### `slot-shared.ts`
 
-Shared utilities for warm slot infrastructure: `SlotState` type, `BaseSlotStats` interface, warmup validation, env var parsing, circuit breaker check. Used by both enrichment-slot and quick-take-slot.
+Shared utilities for warm slot infrastructure: `SlotState` type, `BaseSlotStats` interface, warmup validation, env var parsing, circuit breaker check. Used by `warm-slot.ts` and both slots.
+
+### `warm-slot.ts`
+
+`createWarmSlot(config, policy)` — the warm slot engine both slots are built on: subprocess init and warmup, the background stream consumer, reuse and recycling, circuit breaker, re-init backoff, `slot-failure` alerts, stats, shutdown and a test reset. State lives on globalThis under the slot's own key (`__enrichmentSlotState`, `__quickTakeSlotState`). The two concurrency policies are `fifoQueuePolicy` (enrichment) and `latestWinsPolicy` (quick take).
 
 ### `queue.ts`
 

@@ -60,6 +60,15 @@ test.describe('Reminder periods', () => {
       await expect(page.getByText('Renamed to "Night"')).toBeVisible()
       await expect(section(page).getByLabel('Name of Night')).toHaveValue('Night')
 
+      // The Default period picker reads the same list, so it has the new name
+      // at once (it used to keep its own copy until the page was reloaded).
+      await page.locator('[data-default-reminder-slot]').click()
+      const periods = page.getByRole('listbox')
+      await expect(periods.getByRole('option', { name: /^Night/ })).toBeVisible()
+      await expect(periods.getByRole('option', { name: /^Evening/ })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(periods).toHaveCount(0)
+
       // Move the start: the reminder on the boundary moves with it.
       const start = section(page).getByLabel('Start time of Night')
       await start.fill('21:00')

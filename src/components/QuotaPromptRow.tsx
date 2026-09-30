@@ -27,7 +27,7 @@ import type { Task } from '@/types'
  *
  * An unmet quota also shows up in a reminder period each day, so it gets the
  * attention a reminder gets. It is drawn AS a reminder row — the sibling is
- * `ReminderRow` in RemindersView.tsx (and `PanelRow` in the dashboard panel),
+ * `ReminderRow` in reminders/ReminderRow.tsx (and `PanelRow` in the dashboard panel),
  * and everything not listed here is copied from it: the whole-row tap, the
  * struck-through collapse, the 16px (panel: 13.5px) wrapping title, never
  * truncated.
@@ -270,7 +270,7 @@ export function QuotaPromptRow({
 
 /**
  * A HANDLED prompt in a slot's considered list (2026-09-25) — the prompt twin
- * of the considered reminder row (`ConsideredRow` in RemindersView,
+ * of the considered reminder row (`ConsideredRow` in reminders/ReminderSlotGroup.tsx,
  * `ConsideredList` in the dashboard panel), in both sizes. Dim, and it does
  * one thing: the filled dashed circle — the prompt's own "considered" glyph,
  * the one it collapsed with — puts it back (`useReminders().putBackPrompt`).
@@ -394,7 +394,7 @@ function PromptDidButton({
 
 /**
  * What a pointer and a key mean on a prompt row — `useReminderRowGestures`'
- * rules (RemindersView), except the hold, which opens the quota's bubble
+ * rules (reminders/ReminderRow.tsx), except the hold, which opens the quota's bubble
  * (see the component's docblock). Its own hook for the same reason as the
  * reminder row's: the row is near ESLint's function-length limit.
  */

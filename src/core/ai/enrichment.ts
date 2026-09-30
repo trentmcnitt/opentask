@@ -66,7 +66,7 @@ import { notifyEnrichmentFinished } from '@/core/notifications/enrichment-notify
 
 // --- Pipeline state ---
 //
-// All mutable state lives on globalThis, for the reason enrichment-slot.ts
+// All mutable state lives on globalThis, for the reason warm-slot.ts
 // gives: Next.js bundles instrumentation.ts (which runs the per-minute queue)
 // and the API routes (which fire `enrichSingleTask` on create) separately, and
 // this module is instantiated once in each — two module ids for the same file

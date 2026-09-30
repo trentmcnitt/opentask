@@ -97,6 +97,14 @@ enum WidgetTheme {
     /// accidental second accent hue and reverted before merge.
     static let trackMetTint = Color.green
 
+    /// The Reminders widget's "day complete" wash (2026-09-29, mockup r3-c):
+    /// a faint layer of the "met"/"done" green over the card's own
+    /// background, on every period while the whole day is done
+    /// (`ReminderDayProgress.isDayComplete`). 9% reads as a tint in dark and
+    /// light alike without costing any text its contrast — the same green,
+    /// not a new hue.
+    static let dayCompleteWash = trackMetTint.opacity(0.09)
+
     /// Quotas' Takeback mode (2026-09-24) — the button's ON tint and every
     /// chip's "−1" while the mode is armed. The ONE red on the Quotas card,
     /// and not an exception to §5's "nothing is red" above: that rule is
