@@ -6,9 +6,10 @@
 #
 # Builds the app, seeds a throwaway sample account on a frozen clock, starts
 # the server on it, captures the web shots (Playwright/WebKit), dumps the
-# account's API responses and renders the native widget / menu bar / watch
-# shots from them, then writes manifest.json + README.md. The server it
-# starts is stopped on every exit path.
+# account's API responses and renders the native widget / menu bar shots
+# from them, captures the Apple Watch app in a watchOS simulator, then writes
+# manifest.json + README.md. The server it starts is stopped on every exit
+# path.
 #
 # Environment (all optional):
 #   OPENTASK_SCREENSHOT_NOW   the frozen "now" (default 2026-09-15T09:41:00-05:00,
@@ -17,6 +18,7 @@
 #   SCREENSHOTS_PORT          server port (default 3353)
 #   SCREENSHOTS_SKIP_BUILD=1  reuse the existing .next build
 #   SCREENSHOTS_SKIP_NATIVE=1 web only (no Xcode needed)
+#   SCREENSHOTS_SKIP_WATCH=1  no Apple Watch shots (skips the watchOS simulator)
 #   SCREENSHOTS_KEEP_DERIVED_DATA=1  keep /tmp/dd-shots-* for a faster rerun
 set -euo pipefail
 
@@ -31,7 +33,7 @@ OUT="${1:-.tmp/screenshots/$(date +%Y-%m-%d)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 # Clear only this pipeline's own outputs — the directory may be one the user
-# pointed at, with other things in it (a watch-screen.png, for one).
+# pointed at, with other things in it.
 rm -rf "$OUT"/web "$OUT"/native "$OUT"/widget-data "$OUT"/manifest.parts \
   "$OUT"/portfolio "$OUT"/screenshots.db* "$OUT"/build.log "$OUT"/server.log "$OUT"/manifest.json "$OUT"/README.md
 PRELOAD="--require $ROOT/scripts/screenshots/freeze-clock.cjs"
@@ -76,6 +78,7 @@ OPENTASK_DB_PATH="$OUT/screenshots.db" \
   OPENAI_API_KEY=sk-screenshots-offline \
   OPENAI_BASE_URL=http://127.0.0.1:9/v1 \
   OPENTASK_AI_CLI_PATH=/nonexistent/claude-code \
+  LOG_LEVEL=info \
   npx next start -p "$PORT" >"$OUT/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 60); do
@@ -96,6 +99,12 @@ SINCE="${DAY_START% *}"
 UNTIL="${DAY_START#* }"
 curl -sf -H "Authorization: Bearer $TOKEN" \
   "$BASE_URL/api/completions?since=$SINCE&until=$UNTIL" >"$OUT/widget-data/completions.json"
+
+# The watch app reads the server live (unlike the widget renders, which use
+# the dump above), so it runs before the server stops.
+if [ "${SCREENSHOTS_SKIP_NATIVE:-0}" != "1" ] && [ "${SCREENSHOTS_SKIP_WATCH:-0}" != "1" ]; then
+  scripts/screenshots/capture-watch-app.sh "$OUT" "$BASE_URL" "$TOKEN"
+fi
 
 cleanup
 SERVER_PID=""

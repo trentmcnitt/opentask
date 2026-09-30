@@ -5,8 +5,9 @@
 #
 # Expects <run dir>/widget-data/ (dumped by run.sh from the seeded server).
 # Renders the widget views to <run dir>/native/ through the
-# OpenTaskScreenshotRenders test bundle (macos/project.yml), then composites
-# the Apple Watch shot. Needs Xcode and xcodegen; no simulator, no signing.
+# OpenTaskScreenshotRenders test bundle (macos/project.yml). Needs Xcode and
+# xcodegen; no simulator, no signing. (The Apple Watch shots need the live
+# server, so run.sh takes them earlier: capture-watch-app.sh.)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -38,9 +39,6 @@ if ! TEST_RUNNER_SCREENSHOTS_WIDGET_DATA="$RUN_DIR/widget-data" \
   echo "native: xcodebuild failed — full log in $LOG" >&2
   exit 1
 fi
-
-echo "native: Apple Watch notification"
-(cd "$ROOT" && npx tsx scripts/screenshots/capture-watch.ts "$RUN_DIR")
 
 if [ "${SCREENSHOTS_KEEP_DERIVED_DATA:-0}" != "1" ]; then
   rm -rf "$DERIVED"

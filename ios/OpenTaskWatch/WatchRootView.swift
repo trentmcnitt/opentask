@@ -19,7 +19,26 @@ struct WatchRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Which page the paged `TabView` shows. Driven by the user's swipes, and
     /// by `.onOpenURL` below when the Smart Stack widget opens the app.
-    @State private var page: WatchPage = .reminders
+    @State private var page: WatchPage = Self.launchPage
+
+    /// The page shown at launch: Reminders. In DEBUG builds only, the
+    /// screenshot pipeline (scripts/screenshots/capture-watch-app.sh) opens
+    /// another page by launching with `OPENTASK_SIM_OPEN_URL` set to one of
+    /// the Smart Stack links (`opentask://tasks`, `opentask://quotas`) —
+    /// the simulator can't deliver those links itself (`simctl openurl`
+    /// fails: the watch app registers no URL scheme; WidgetKit hands the
+    /// widget's links over directly) and has no scriptable swipe. Same
+    /// environment-only pattern as `WatchAppDelegate`'s simulator
+    /// credential seeding; compiled out of Release.
+    private static var launchPage: WatchPage {
+        #if DEBUG
+        if let link = ProcessInfo.processInfo.environment["OPENTASK_SIM_OPEN_URL"],
+           let url = URL(string: link), let page = WatchPage(url: url) {
+            return page
+        }
+        #endif
+        return .reminders
+    }
 
     var body: some View {
         Group {
