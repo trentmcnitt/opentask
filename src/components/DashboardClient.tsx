@@ -1641,8 +1641,11 @@ function HomeContent({
 function useFocusQuickAddOnArrival(status: string, loading: boolean, error: string | null) {
   const searchParams = useSearchParams()
   const ready = status === 'authenticated' && !loading && !error
+  // Once per mount, so a later reload of the data (Retry) can't focus it again.
+  const handled = useRef(false)
   useEffect(() => {
-    if (!ready || searchParams.get('action') !== QUICK_ADD_ACTION) return
+    if (handled.current || !ready || searchParams.get('action') !== QUICK_ADD_ACTION) return
+    handled.current = true
     window.history.replaceState(window.history.state, '', window.location.pathname)
     window.dispatchEvent(new CustomEvent(FOCUS_QUICK_ADD_EVENT))
   }, [ready, searchParams])
