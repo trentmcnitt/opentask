@@ -84,7 +84,7 @@ export function NotificationsSection() {
           aria-label="Toggle notifications"
         />
       </div>
-      {/* The quiet "AI finished" push (src/core/notifications/enrichment-notify.ts).
+      {/* The "AI finished" push, a banner with no sound (src/core/notifications/enrichment-notify.ts).
           Only where AI runs, like the AI section; greyed out while
           notifications as a whole are off, since the server sends none then. */}
       {aiAvailable && (
@@ -92,7 +92,7 @@ export function NotificationsSection() {
           <div>
             <div className="text-sm">Notify when AI finishes a new task</div>
             <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              A quiet notification with what AI filled in — project, due date, priority
+              A notification without sound saying what AI filled in — project, due date, priority
             </div>
           </div>
           <Switch

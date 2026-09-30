@@ -217,11 +217,11 @@ Added 2026-09-29: "a notification whenever a task or a reminder is enriched. Kin
 
 Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:00 AM · Weekly on Monday at 9:00 AM`, `Added to Evening · Daily at 8:30 PM` (a reminder), and `Added to Inbox` when the AI filled in nothing.
 
-**Delivery.** Passive everywhere:
+**Delivery.** A banner without sound (passive — Notification Center only — until 2026-09-30):
 
-- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: passive`, no `sound`, APNs priority 5, `category: TASK_ADDED`, no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. A tap takes the apps' individual-task path and loads `/?task=<id>` (see [Tapping a task notification](#tapping-a-task-notification)); the `dismiss` silent push for that task (done, snooze, delete) clears it too.
+- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: active`, no `sound`, APNs priority 10, `category: TASK_ADDED`, no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. A tap takes the apps' individual-task path and loads `/?task=<id>` (see [Tapping a task notification](#tapping-a-task-notification)); the `dismiss` silent push for that task (done, snooze, delete) clears it too.
 - **Buttons (`TASK_ADDED`, added 2026-09-29):** **Done** and **Delete** (Delete is `.destructive`, drawn red, and not `.authenticationRequired` — it is the app's undoable soft delete, the same weight as Done). Registered by every app in `registerNotificationCategories()` (`ios/Shared/NotificationConstants.swift` — iPhone, Watch and Mac) and run by the shared `NotificationActionRunner`: Done posts `action: "done"` and Delete `action: "delete"` to `POST /api/notifications/actions` (token in the body), which calls `markDone` / `deleteTask` — undo-logged, notifications dismissed on every device, tabs and widgets synced. No snooze buttons: a task added a minute ago isn't overdue. `TASK_ADDED` is not in the content extension's `UNNotificationExtensionCategory` list, so iOS shows its own expanded view. A build older than this change hasn't registered the category and shows the notification with no buttons, as before.
-- Web Push: `urgency: low`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. No buttons — `public/sw.js` shows no `actions` for any notification, overdue included. Like every Web Push, it is not shown while an app window is visible.
+- Web Push: `urgency: normal`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. No buttons — `public/sw.js` shows no `actions` for any notification, overdue included. Like every Web Push, it is not shown while an app window is visible.
 - Devices: every `apns_devices` row, the watch app included (the same set overdue alerts go to; only the badge push skips the watch), and every Web Push subscription. Never widget push tokens.
 
 ```json
@@ -230,7 +230,7 @@ Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:
     "alert": { "title": "Call the dentist", "body": "Added to Work · Tomorrow 9:00 AM · High" },
     "category": "TASK_ADDED",
     "thread-id": "enriched-42",
-    "interruption-level": "passive"
+    "interruption-level": "active"
   },
   "taskId": 42
 }

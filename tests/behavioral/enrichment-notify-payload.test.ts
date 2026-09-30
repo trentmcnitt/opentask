@@ -1,6 +1,6 @@
 /**
  * The "AI finished" notification's APNs payload (enrichment-notify.ts,
- * `buildEnrichedNotification` in apns.ts): passive, silent, low priority, the
+ * `buildEnrichedNotification` in apns.ts): a banner without sound, immediate, the
  * `TASK_ADDED` category (Done and Delete, not the overdue notification's
  * snooze buttons), collapse and thread id per task, and the `taskId` the apps
  * open on tap.
@@ -69,20 +69,20 @@ describe('the enriched-task APNs payload', () => {
     taskId: 42,
   }
 
-  test('is passive, silent, low priority, TASK_ADDED, with no badge', () => {
+  test('is a banner without sound, immediate, TASK_ADDED, with no badge', () => {
     const n = buildEnrichedNotification('tok', 'io.mcnitt.opentask', payload)
 
     expect(n.pushType).toBe(PushType.alert)
-    expect(n.priority).toBe(Priority.throttled)
-    // No `sound`, no `badge`: lands quietly in Notification Center and leaves
-    // the icon badge alone. `TASK_ADDED` carries Done and Delete (the apps
+    expect(n.priority).toBe(Priority.immediate)
+    // `active` with no `sound` and no `badge`: a banner that never chimes and
+    // leaves the icon badge alone. `TASK_ADDED` carries Done and Delete (the apps
     // register it — NotificationConstants.swift), not the overdue buttons.
     expect(n.buildApnsOptions()).toEqual({
       aps: {
         alert: { title: 'Call the dentist', body: 'Added to Work · Tomorrow 9:00 AM · High' },
         category: 'TASK_ADDED',
         'thread-id': 'enriched-42',
-        'interruption-level': 'passive',
+        'interruption-level': 'active',
       },
       taskId: 42,
     })
@@ -99,7 +99,7 @@ describe('the enriched-task APNs payload', () => {
 
     expect(sent.map((n) => n.deviceToken).sort()).toEqual(['mac', 'phone', 'watch'])
     for (const n of sent) {
-      expect(n.buildApnsOptions().aps['interruption-level']).toBe('passive')
+      expect(n.buildApnsOptions().aps['interruption-level']).toBe('active')
     }
   })
 })

@@ -168,7 +168,7 @@ describe('on a successful enrichment of a new task', () => {
       tag: `enriched-${id}`,
       silent: true,
     })
-    expect(options).toEqual({ urgency: 'low' })
+    expect(options).toEqual({ urgency: 'normal' })
   })
 
   test('says the recurrence when the AI set one', async () => {
