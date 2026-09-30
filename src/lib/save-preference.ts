@@ -54,3 +54,19 @@ export async function savePreference<T = Record<string, unknown>>(
   showToast({ message: successMessage, type: 'success' })
   return json?.data
 }
+
+/**
+ * The common case of `savePreference()`: one field, one setter, the generic
+ * toasts. `prev` is the value to put back if the save fails.
+ */
+export function savePreferenceField<T>(
+  field: string,
+  value: T,
+  prev: T,
+  setter: (v: T) => void,
+): Promise<Record<string, unknown> | undefined> {
+  return savePreference(
+    { [field]: value },
+    { apply: () => setter(value), revert: () => setter(prev) },
+  )
+}
