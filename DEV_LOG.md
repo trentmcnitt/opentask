@@ -16,6 +16,14 @@ What went with the due-date grouping: the "now (h:mm)" divider between Overdue a
 
 **New setting — Settings → Projects → "Tasks shown per project"** (`project_preview_count`, 1–50, default 6): how many tasks each project group shows before "Show all". It replaces the fixed 10 of 09-23. Today's time slots keep their fixed 5.
 
+### The phone `+` focuses the add field at the top, not a sheet
+
+**Trent's decision:** the phone tab bar's `+` no longer opens its own quick-add sheet (added the day before, #173). It scrolls the dashboard to the top and focuses the "Add a task..." field there, the same field desktop uses, with its mic and AI chip, so there is one place to add a task and the keyboard comes up on it. `QuickAddSheet` and its "Add manually" link are gone; the field's own `+` icon still opens the full form.
+
+**Why it is a window event with a synchronous focus.** iOS (Safari and the app's WKWebView) raises the keyboard for a programmatic `focus()` only when it runs synchronously inside the user's tap. The tab bar lives in `AppLayout` and the field deep in the dashboard, so the tap dispatches `focus-quick-add` and the field's `QuickAdd` listener calls `focus({ preventScroll: true })` then `window.scrollTo(0, 0)`; `dispatchEvent` runs listeners synchronously, so nothing leaves the gesture. Going through React state (as the sheet did, via `autoFocus`) or waiting for a smooth scroll would. The header is sticky and in the flow, so at scroll 0 the field sits just below it.
+
+**From another page** the `+` still navigates to `/?action=quick-add`, as before; the dashboard focuses the field once its data has loaded. That focus comes after a navigation, outside the tap, so on iOS the field is focused but the keyboard may wait for a tap on it. Reminders and Quotas keep their own in-place add. Desktop's Add button is unchanged.
+
 ---
 
 ## 09-29-26

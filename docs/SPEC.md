@@ -853,7 +853,7 @@ Trent's daily pattern: 150+ tasks across groups, 100+ of which are reminders (ac
 |-----|------|------|
 | Dashboard | Home | Today's tasks (triage view) |
 | Projects | Folder | Project list → project view |
-| Add | + (FAB) | Quick add modal |
+| Add | + (FAB) | Focuses the dashboard's add field |
 | History | Clock | Undo timeline + completion history |
 | Settings | Gear | User settings, trash, archive |
 
