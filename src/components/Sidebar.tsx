@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { DOCS_URL } from '@/lib/docs-url'
 import { useRemindersBadge } from '@/hooks/useReminders'
 import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
+import { useDashboardTabClick } from '@/hooks/useDashboardTabClick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
@@ -38,6 +39,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   // Tasks carries the top bar's overdue (red) and due-today (blue) numbers, so
   // the other surface is visible from here.
   const taskCounts = useTaskNavCounts()
+  const onDashboardClick = useDashboardTabClick()
 
   const navItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -67,14 +69,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
               <GuardedLink
                 key={item.href}
                 href={item.href}
-                onClick={
-                  item.href === '/' && isActive
-                    ? (e: React.MouseEvent<HTMLAnchorElement>) => {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent('dashboard-reset'))
-                      }
-                    : undefined
-                }
+                onClick={item.href === '/' ? onDashboardClick : undefined}
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                   isActive
