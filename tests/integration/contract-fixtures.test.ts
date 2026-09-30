@@ -64,7 +64,17 @@
  * The scenario is chosen to be clock-independent instead — prompt placement
  * doesn't depend on the time of day, a daily reminder is "today" all day, and
  * every due date the payloads carry is a next occurrence (always future) —
- * and every volatile value is normalised before comparing:
+ * and every volatile value is normalised before comparing.
+ *
+ * task-counts.json is the one fixture whose VALUES depend on the local day
+ * boundary (`today` is "due inside User B's local day"), so every dated task
+ * it counts is chosen to sit clear of that boundary at any hour: User B's seed
+ * task is tomorrow 09:00 in User B's own zone (scripts/seed-test.ts — it used
+ * to be User A's Chicago tomorrow, which is New York's today from 23:00 to
+ * midnight Chicago, and failed for that hour), and step 8's task is three days
+ * late. So the counts are always { total: 2, overdue: 1, today: 0 }.
+ *
+ * Normalisation:
  *
  * - ids → fixed placeholders, still INTEGERS (the Swift DTOs decode Int):
  *   tasks 101.. in creation order (User B's seed task is 100), slots 11.. in

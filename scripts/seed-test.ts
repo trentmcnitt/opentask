@@ -153,13 +153,25 @@ export async function seedTestData(): Promise<void> {
   `,
   ).run(2, 1, 2, 'Morning routine', tomorrowMorning, 'FREQ=DAILY', 'from_due', 1)
 
+  // User B's own "tomorrow 9am", in User B's timezone. Not `tomorrow` above:
+  // that is User A's (Chicago) day, and from 23:00 to midnight Chicago it lands
+  // on New York's TODAY — so User B's due-today count (GET /api/tasks/counts,
+  // the task-counts contract fixture) flipped 0 → 1 for that hour. Tomorrow in
+  // the owner's own zone is never today and never overdue, at any hour.
+  const tomorrowB = DateTime.now()
+    .setZone(TEST_USER_B.timezone)
+    .plus({ days: 1 })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()!
+
   // Task for User B (isolation test)
   db.prepare(
     `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(3, 2, 4, 'User B task', tomorrow, 0)
+  ).run(3, 2, 4, 'User B task', tomorrowB, 0)
 
   // Additional tasks for User A for bulk/search tests
   db.prepare(
