@@ -49,6 +49,24 @@ final class MenuBarModel: ObservableObject {
 
     private init() {}
 
+    #if DEBUG
+    /// Render-only seam (docs/SCREENSHOTS.md, `ios/Tests/Renders/`): a model
+    /// holding a fixed snapshot, never started, so the screenshot renderer can
+    /// draw `MenuBarPanel` with the sample account's tasks at the frozen clock.
+    /// DEBUG-only and unused by the app, which only ever has `shared`.
+    static func snapshot(
+        tasks: [TaskDTO], projects: [ProjectDTO], slots: [TimeSlotDTO], now: Date
+    ) -> MenuBarModel {
+        let model = MenuBarModel()
+        model.tasks = tasks
+        model.projects = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        model.slots = slots
+        model.now = now
+        model.hasLoaded = true
+        return model
+    }
+    #endif
+
     // MARK: - Derived lists
 
     var overdue: [TaskDTO] { TaskLists.overdue(tasks, now: now) }

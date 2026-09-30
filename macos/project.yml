@@ -280,6 +280,43 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         SWIFT_VERSION: '5.9'
 
+  # Screenshot renders (docs/SCREENSHOTS.md) — NOT a test of anything, and
+  # not shipped: a hostless test bundle is simply the cheapest scriptable host
+  # that compiles the widget views unchanged and can draw them to PNG
+  # (ImageRenderer). Its one test SKIPS unless scripts/screenshots/run.sh sets
+  # SCREENSHOTS_WIDGET_DATA, so building or running it by hand writes nothing.
+  #
+  # Compiles the whole widget extension (minus its @main bundle) and Shared,
+  # exactly as OpenTaskMacWidgets does, the Mac app minus its @main (for the
+  # menu bar panel), plus ios/Tests/Renders.
+  OpenTaskScreenshotRenders:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ../ios/OpenTaskWidgets
+        excludes:
+          - OpenTaskWidgetBundle.swift
+          - Info.plist
+          - '*.entitlements'
+      - path: ../ios/Shared
+      - path: ../ios/Tests/Renders
+      # The Mac app (for the menu bar panel) minus its @main entry point.
+      - path: OpenTaskMac
+        excludes:
+          - OpenTaskMacApp.swift
+          - Info.plist
+          - '*.entitlements'
+          - Assets.xcassets
+      - path: ../ios/OpenTask/SessionBootstrapper.swift
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.screenshotrenders
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: '5.9'
+
 # Shared schemes, generated rather than left to Xcode's autocreation.
 #
 # Without these, XcodeGen emits no scheme at all and Xcode silently
@@ -321,3 +358,13 @@ schemes:
       targets:
         - name: OpenTaskLogicTests
           parallelizable: false
+  # Screenshot renders — see the target's comment. Run by
+  # scripts/screenshots/capture-native.sh, never by CI.
+  OpenTaskScreenshotRenders:
+    build:
+      targets:
+        OpenTaskScreenshotRenders: [test]
+    test:
+      config: Debug
+      targets:
+        - name: OpenTaskScreenshotRenders

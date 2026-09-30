@@ -270,7 +270,10 @@ struct TasksProvider: TimelineProvider {
     /// user's chevron choice while it holds, else Overdue while anything is
     /// overdue, else Today), so the same snapshot can be drawn as of any
     /// moment.
-    private func makeEntry(_ snapshot: TaskFeed.Snapshot, now: Date) -> TasksEntry {
+    ///
+    /// Internal, not private, so the screenshot renderer (`ios/Tests/Renders/`)
+    /// builds its entries exactly as the widget does.
+    func makeEntry(_ snapshot: TaskFeed.Snapshot, now: Date) -> TasksEntry {
         let tasks = snapshot.tasks
         let ringProjects = TasksTimeline.scopedProjects(
             tasks: tasks, projects: snapshot.projects, now: now
