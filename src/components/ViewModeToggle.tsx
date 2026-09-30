@@ -22,7 +22,7 @@ export const VIEW_MODE_OPTIONS: readonly {
   icon: typeof List
   hint: string
 }[] = [
-  { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
+  { value: 'project', label: 'All', icon: List, hint: 'Everything, grouped by project' },
   { value: 'slot', label: 'Today', icon: Sun, hint: "Today's tasks by time of day" },
   {
     value: 'new',
@@ -49,10 +49,14 @@ export const VIEW_MODE_OPTIONS: readonly {
  * (§6) used to ride along as a fourth chip — it is now a real route (`/reminders`)
  * with its own tab, so this control is back to doing exactly one job.
  *
- * All · Today · Newest (Trent, 2026-09-29 — in that order; "Newest", not "New"). New replaced Projects: he never used
- * the per-project grouping, and wanted one tap to everything newest-added first
- * (a flat list, each row naming its project — `'new'` in `src/lib/grouping.ts`).
- * The project filter chips still narrow any view to one project. Its icon is
+ * All · Today · Newest (2026-09-29 — in that order; "Newest", not "New").
+ * Newest is one tap to everything newest-added first (a flat list, each row
+ * naming its project — `'new'` in `src/lib/grouping.ts`).
+ *
+ * All is everything grouped by project (`'project'`). On 2026-09-29 the
+ * Projects view was retired by mistake and All showed due-date groups; "All"
+ * had been meant as the by-project view, so it was restored as All on
+ * 2026-09-30 and the due-date grouping went away. Newest's icon is
  * a sort arrow, not Sparkles: Sparkles means AI across the app, and most new
  * tasks aren't AI-made (Trent picked the sort arrow from a mockup, 09-29).
  * Today's icon is a sun, not a calendar-clock: the Overdue FAB already uses

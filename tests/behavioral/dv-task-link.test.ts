@@ -12,9 +12,10 @@ import { describe, test, expect } from 'vitest'
 import { resolveTaskLink, missingTaskMessage, type TaskLinkInput } from '@/lib/task-link'
 import { buildTaskGroups } from '@/lib/task-grouping'
 import type { GroupingMode } from '@/lib/grouping'
-import type { Task } from '@/types'
+import type { Project, Task } from '@/types'
 
 const TZ = 'America/Chicago'
+const PROJECTS = [{ id: 1, name: 'Inbox', sort_order: 0, color: null } as unknown as Project]
 // Thu 2026-01-15, 10:00 AM Chicago.
 const NOW = new Date('2026-01-15T16:00:00Z')
 
@@ -77,7 +78,7 @@ function input(
     taskId,
     tasks: all,
     listed,
-    groups: buildTaskGroups(listed, grouping, TZ, [], NOW),
+    groups: buildTaskGroups(listed, PROJECTS, grouping, TZ, [], NOW),
     grouping,
     tried,
   }
@@ -91,26 +92,26 @@ describe('resolveTaskLink', () => {
   })
 
   test('a task not open at all is missing', () => {
-    expect(resolveTaskLink(input(99, 'time')).kind).toBe('missing')
+    expect(resolveTaskLink(input(99, 'project')).kind).toBe('missing')
   })
 
   test('a reminder and a quota go to their own surfaces', () => {
-    expect(resolveTaskLink(input(3, 'time')).kind).toBe('reminder')
-    expect(resolveTaskLink(input(4, 'time')).kind).toBe('quota')
+    expect(resolveTaskLink(input(3, 'project')).kind).toBe('reminder')
+    expect(resolveTaskLink(input(4, 'project')).kind).toBe('quota')
   })
 
   test('a search or filter hiding it is cleared first — once', () => {
     const narrowed = [dueToday]
-    expect(resolveTaskLink(input(2, 'time', narrowed)).kind).toBe('clear-narrowing')
-    expect(resolveTaskLink(input(2, 'time', narrowed, { narrowing: true, view: false })).kind).toBe(
-      'unreachable',
-    )
+    expect(resolveTaskLink(input(2, 'project', narrowed)).kind).toBe('clear-narrowing')
+    expect(
+      resolveTaskLink(input(2, 'project', narrowed, { narrowing: true, view: false })).kind,
+    ).toBe('unreachable')
   })
 
   test('Today drops a task due next week, so the view switches — once', () => {
     expect(resolveTaskLink(input(2, 'slot')).kind).toBe('switch-view')
     // After the switch the same task is a row in All.
-    expect(resolveTaskLink(input(2, 'time')).kind).toBe('show')
+    expect(resolveTaskLink(input(2, 'project')).kind).toBe('show')
     // A switch that somehow didn't help doesn't loop.
     expect(resolveTaskLink(input(2, 'slot', listable, { narrowing: false, view: true })).kind).toBe(
       'unreachable',

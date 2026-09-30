@@ -654,7 +654,7 @@ function HomeContent({
    *
    * "A quota is not a task. It appears on the Quotas page and in the Track
    * panel and nowhere else" (Trent, 2026-09-08). It used to be a plain row in
-   * the All and (since-retired) Projects views wearing a "0 / 4" chip, which put a thing with
+   * the All and Projects views wearing a "0 / 4" chip, which put a thing with
    * no due date, no snooze and no Done in among things that have all three.
    *
    * Filtered in the client rather than server-side so `/api/tasks` keeps
@@ -983,8 +983,8 @@ function HomeContent({
 
   // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
-    () => buildTaskGroups(tasks_, grouping, timezone, timeSlots, now),
-    [tasks_, grouping, timezone, timeSlots, now],
+    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots, now),
+    [tasks_, projects, grouping, timezone, timeSlots, now],
   )
   /**
    * The top bar's "N total tasks" pill counts what the list is SHOWING, which
@@ -1101,7 +1101,7 @@ function HomeContent({
         return
       case 'switch-view':
         taskLinkTried.current.view = true
-        setViewOverride('time')
+        setViewOverride('project')
         return
       case 'show':
         revealRow(step.task.id, step.groupLabel)
@@ -1572,7 +1572,7 @@ function HomeContent({
             // Manual unified off: restore previous grouping. With nothing to
             // restore (Unified was the saved view on load), land on All — the
             // grouped view nearest a flat list of everything.
-            setDefaultGrouping(prevNonUnifiedGrouping.current || 'time')
+            setDefaultGrouping(prevNonUnifiedGrouping.current || 'project')
             prevNonUnifiedGrouping.current = null
           }
         }}
@@ -2432,7 +2432,7 @@ function DashboardView({
         <ViewModeFab
           grouping={grouping}
           isSelectionMode={selection.isSelectionMode}
-          onShowAll={() => onGroupingChange('time')}
+          onShowAll={() => onGroupingChange('project')}
         />
         {/* Counts the date facet (`headerCounts`), like the red pill and the
             pinned chip it acts like — not `sweepOverdueCount` below. "On" is

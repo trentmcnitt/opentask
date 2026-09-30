@@ -707,6 +707,7 @@ test.describe('Track', () => {
       rrule: 'FREQ=WEEKLY;BYDAY=WE',
     })
     let before: View | null = null
+    let siblingProjectId: number | null = null
     try {
       const logged = await page.request.post(`/api/tasks/${id}/progress`, { data: { delta: 1 } })
       expect(logged.ok()).toBeTruthy()
@@ -716,8 +717,18 @@ test.describe('Track', () => {
       if (before !== 'All') await switchView(page, 'All')
 
       // A plain task is here, so an empty assertion below cannot pass by the
-      // list simply not having rendered.
-      const plainId = await createTask(page, { title: 'Plain sibling task' })
+      // list simply not having rendered. In a project of its own: All caps
+      // each project group (`project_preview_count`), and the shared user's
+      // Inbox holds more than that.
+      const project = await page.request.post('/api/projects', {
+        data: { name: `Track sibling ${Date.now()}` },
+      })
+      expect(project.ok()).toBeTruthy()
+      siblingProjectId = (await project.json()).data.id as number
+      const plainId = await createTask(page, {
+        title: 'Plain sibling task',
+        project_id: siblingProjectId,
+      })
       await page.reload()
       if ((await pressedView(page)) !== 'All') await switchView(page, 'All')
       await expect(page.locator(`#task-row-${plainId}`)).toBeVisible()
@@ -729,6 +740,7 @@ test.describe('Track', () => {
       await expect(chip.locator('[data-track-count]')).toHaveText('1/3')
     } finally {
       if (before && before !== 'All') await switchView(page, before)
+      if (siblingProjectId !== null) await page.request.delete(`/api/projects/${siblingProjectId}`)
     }
   })
 })

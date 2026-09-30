@@ -30,9 +30,9 @@
  * 4. The rows sat in Inbox, which the Projects view capped at 10 behind "Show
  *    all", so earlier specs' leftovers could push the undated row out of
  *    sight. Each test now works in a project of its own, with the view pinned
- *    (a server preference every spec shares) and put back after — to New
- *    since the Projects view was retired (2026-09-29): one uncapped list,
- *    newest first, so a test's fresh rows are the first rows on the page.
+ *    (a server preference every spec shares) and put back after — to New:
+ *    one uncapped list, newest first, so a test's fresh rows are the first
+ *    rows on the page.
  */
 
 import { test, expect, holdUntil, uniqueTitle } from './fixtures'

@@ -12,10 +12,9 @@
  * The grouping modes themselves are defined in `src/lib/grouping.ts`; the Today
  * view's slot grouping lives in `src/lib/slot-view.ts`.
  */
-import type { Task } from '@/types'
+import type { LabelColor, Project, Task } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { groupByTimeSlot } from '@/lib/slot-view'
-import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
 /**
@@ -144,64 +143,61 @@ export function sortTasks(
 export interface TaskGroup {
   label: string
   tasks: Task[]
+  /** The project's color, on project groups — drawn as the heading's tag. */
+  color?: LabelColor | null
 }
 
-function groupByTime(tasks: Task[], timezone: string, now: Date): TaskGroup[] {
-  const {
-    tomorrowStart: tomorrow,
-    dayAfterTomorrowStart: dayAfterTomorrow,
-    nextWeekStart: nextWeek,
-  } = getTimezoneDayBoundaries(timezone, now)
-
-  const buckets: Record<string, Task[]> = {
-    Overdue: [],
-    Today: [],
-    Tomorrow: [],
-    'This Week': [],
-    Later: [],
-    'No Due Date': [],
-  }
-
+/**
+ * All (`'project'`): one group per project that has open tasks, in the order
+ * Settings lists projects — `sort_order`, then name, the same rule as the
+ * server's project list (`ORDER BY sort_order, name` in core/projects). It
+ * used to break ties by insertion order, which followed the tasks' soonest-
+ * first sort: projects sharing a `sort_order` swapped places whenever a
+ * project's soonest task was completed (2026-09-23: completing an Inbox task
+ * made the Inbox section jump away).
+ *
+ * Rows inside a group are not ordered here: `sortTaskGroups` sorts every
+ * group by the user's sort, like every other view.
+ */
+function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
+  const projectMap = new Map(projects.map((p) => [p.id, p]))
+  const byProject = new Map<number, Task[]>()
   for (const task of tasks) {
-    if (!task.due_at) {
-      buckets['No Due Date'].push(task)
-      continue
-    }
-
-    const due = new Date(task.due_at)
-
-    if (due < now) {
-      buckets['Overdue'].push(task)
-    } else if (due < tomorrow) {
-      buckets['Today'].push(task)
-    } else if (due < dayAfterTomorrow) {
-      buckets['Tomorrow'].push(task)
-    } else if (due < nextWeek) {
-      buckets['This Week'].push(task)
-    } else {
-      buckets['Later'].push(task)
-    }
+    const list = byProject.get(task.project_id) ?? []
+    list.push(task)
+    byProject.set(task.project_id, list)
   }
 
-  // Insert "now" separator within Today group if there are both overdue and upcoming
-  const groups: TaskGroup[] = []
-  const order = ['Overdue', 'Today', 'Tomorrow', 'This Week', 'Later', 'No Due Date']
+  const sortedProjectIds = [...byProject.keys()].sort((a, b) => {
+    const pa = projectMap.get(a)
+    const pb = projectMap.get(b)
+    return (
+      (pa?.sort_order ?? 999) - (pb?.sort_order ?? 999) ||
+      (pa?.name ?? '').localeCompare(pb?.name ?? '')
+    )
+  })
 
-  for (const label of order) {
-    if (buckets[label].length > 0) {
-      groups.push({ label, tasks: buckets[label] })
+  return sortedProjectIds.map((projectId) => {
+    const project = projectMap.get(projectId)
+    return {
+      label: project?.name || `Project ${projectId}`,
+      tasks: byProject.get(projectId) ?? [],
+      color: project?.color ?? null,
     }
-  }
-
-  return groups
+  })
 }
 
 /**
  * Build task groups from tasks array. Used by the list itself and by keyboard
  * navigation to compute orderedIds and find first task in group after completion.
  *
- * The `slot` branch (`groupByTimeSlot` in `src/lib/slot-view.ts`) groups today's
- * tasks into time slots (§7.3), and must not do two things:
+ * - New and Unified (`isFlatGrouping`): one flat group.
+ * - All (`'project'`): one group per project (`groupByProject`).
+ * - Today (`'slot'`): today's tasks by time slot (`groupByTimeSlot` in
+ *   `src/lib/slot-view.ts`).
+ *
+ * The `slot` branch groups today's tasks into time slots (§7.3), and must not
+ * do two things:
  *
  * 1. Drop the un-slotted items. Anything with no time of day — which is most
  *    Track items — goes into an explicit "Undated" group rendered AFTER
@@ -212,9 +208,16 @@ function groupByTime(tasks: Task[], timezone: string, now: Date): TaskGroup[] {
  *    renders as a container. But rendering five empty containers when there is
  *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
  *    so a fully-empty day collapses to no groups and the caught-up state shows.
+ *
+ * There is no due-date grouping any more. All used to be one (Overdue / Today
+ * / Tomorrow / This Week / Later / No Due Date, stored as `'time'`) beside a
+ * separate Projects view; since 2026-09-30 All IS the by-project grouping and
+ * the due-date one is gone. The date filter chips still narrow any view by
+ * due date.
  */
 export function buildTaskGroups(
   tasks: Task[],
+  projects: Project[],
   grouping: GroupingMode,
   timezone: string,
   timeSlots: TimeSlot[] = [],
@@ -222,7 +225,7 @@ export function buildTaskGroups(
 ): TaskGroup[] {
   if (isFlatGrouping(grouping)) return [{ label: '_unified', tasks }]
   if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
-  return groupByTime(tasks, timezone, now)
+  return groupByProject(tasks, projects)
 }
 
 /** A group with its rows in the order the list draws them. */

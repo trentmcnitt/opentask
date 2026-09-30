@@ -71,7 +71,7 @@ test.describe('Quick panel dialogs fit long content', () => {
   }) => {
     const id = await createLongTask(page)
     try {
-      await withPreferences(page, { default_grouping: 'time' }, async () => {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
         await page.goto('/')
         const row = page.locator(`#task-row-${id}`)
         await cmdClickRow(row)
@@ -95,7 +95,7 @@ test.describe('Quick panel dialogs fit long content', () => {
   }) => {
     const id = await createLongTask(page)
     try {
-      await withPreferences(page, { default_grouping: 'time' }, async () => {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
         await page.goto('/')
         const row = page.locator(`#task-row-${id}`)
         await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))

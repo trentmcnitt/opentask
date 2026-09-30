@@ -306,7 +306,7 @@ test.describe('FAB column — phone: the stack and the view button', () => {
     await expect(await viewButton(page, 'All')).toHaveAttribute('aria-pressed', 'true')
     await expect(viewFab(page)).toHaveCount(0)
     const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
-    expect(prefs.default_grouping).toBe('time')
+    expect(prefs.default_grouping).toBe('project')
 
     // Survives a reload: still All, still no button.
     await page.reload()
@@ -378,7 +378,7 @@ test.describe('FAB column — desktop', () => {
     }
 
     const res = await page.request.patch('/api/user/preferences', {
-      data: { default_grouping: 'time' },
+      data: { default_grouping: 'project' },
     })
     expect(res.ok()).toBeTruthy()
     await page.goto('/')

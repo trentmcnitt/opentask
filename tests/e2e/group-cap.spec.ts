@@ -1,15 +1,15 @@
 /**
- * Grouped views cap each group, with everything one tap away (Trent,
- * 2026-09-23: "cap the number of to-dos that are shown at 10… otherwise it's
- * too hard to scroll through the projects when it's not in unified mode").
- * Today's time slots keep their own cap of 5. The flat views (New, Unified)
- * are not capped.
+ * All groups by project and caps each project group, with everything one tap
+ * away (2026-09-23: "cap the number of to-dos that are shown at 10… otherwise
+ * it's too hard to scroll through the projects when it's not in unified
+ * mode"). Since 2026-09-30 the cap is a setting — Settings → Projects → "Tasks
+ * shown per project" (`project_preview_count`, default 6). Today's time slots
+ * keep their own cap of 5. The flat views (New, Unified) are not capped.
  *
- * This was pinned on the Projects view until it was retired (2026-09-29); All's
- * due-date groups share the same cap. The test's tasks are the only ones on
- * screen (`?project=` filter), so the group holding them holds nothing else.
+ * The test's tasks are the only ones on screen (`?project=` filter), so the
+ * group holding them holds nothing else.
  */
-import { test, expect, backdateCreated, waitForPreferenceSave } from './fixtures'
+import { test, expect, backdateCreated, waitForPreferenceSave, withPreferences } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -27,15 +27,16 @@ async function switchView(page: Page, v: string) {
   await saved
 }
 
-test('All shows 10 per group with the rest behind "Show all"; New shows every row', async ({
-  authenticatedPage: page,
-}) => {
+/** A project of its own holding twelve tasks; removed afterwards, view put back. */
+async function withTwelveTasks(page: Page, run: (projectId: number, tag: string) => Promise<void>) {
   const tag = `Cap probe ${Date.now()}`
   const project = await page.request.post('/api/projects', { data: { name: tag } })
   expect(project.ok()).toBeTruthy()
   const projectId = (await project.json()).data.id as number
   const ids: number[] = []
-  const before = await pressedView(page)
+  // The view is a server preference every spec shares: put it back by API.
+  const before = (await (await page.request.get('/api/user/preferences')).json()).data
+    .default_grouping as string
   try {
     for (let i = 0; i < 12; i++) {
       const res = await page.request.post('/api/tasks', {
@@ -51,10 +52,24 @@ test('All shows 10 per group with the rest behind "Show all"; New shows every ro
     // Not "just added": twelve fresh tasks would also each be listed in the
     // Just added card above the list (`src/lib/just-added.ts`), doubling the titles.
     backdateCreated(ids)
+    await run(projectId, tag)
+  } finally {
+    await page.request.patch('/api/user/preferences', { data: { default_grouping: before } })
+    for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+    await page.request.delete(`/api/projects/${projectId}`)
+  }
+}
+
+test('All shows 6 per project by default with the rest behind "Show all"; New shows every row', async ({
+  authenticatedPage: page,
+}) => {
+  await withTwelveTasks(page, async (projectId, tag) => {
     await page.goto(`/?project=${projectId}`)
     await switchView(page, 'All')
+    // The group is the project itself, headed by its name.
+    await expect(page.getByRole('button', { name: `Collapse ${tag}`, exact: true })).toBeVisible()
     const rows = page.getByText(new RegExp(`^${tag} task`))
-    await expect(rows).toHaveCount(10)
+    await expect(rows).toHaveCount(6)
     const more = page.getByRole('button', { name: /Show all 12/ })
     await expect(more).toBeVisible()
     await more.click()
@@ -65,9 +80,24 @@ test('All shows 10 per group with the rest behind "Show all"; New shows every ro
     await switchView(page, 'Newest')
     await expect(rows).toHaveCount(12)
     await expect(page.getByRole('button', { name: /Show all/ })).toHaveCount(0)
-  } finally {
-    if (before && before !== 'Newest') await switchView(page, before)
-    for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
-    await page.request.delete(`/api/projects/${projectId}`)
-  }
+  })
+})
+
+test('the per-project cap follows the Settings choice', async ({ authenticatedPage: page }) => {
+  await withTwelveTasks(page, async (projectId, tag) => {
+    await withPreferences(page, { project_preview_count: 6 }, async () => {
+      await page.goto('/settings')
+      const select = page.getByRole('combobox', { name: 'Tasks shown per project' })
+      await expect(select).toHaveValue('6')
+      const saved = waitForPreferenceSave(page, 'project_preview_count')
+      await select.selectOption('8')
+      await saved
+
+      await page.goto(`/?project=${projectId}`)
+      await switchView(page, 'All')
+      const rows = page.getByText(new RegExp(`^${tag} task`))
+      await expect(rows).toHaveCount(8)
+      await expect(page.getByRole('button', { name: /Show all 12/ })).toBeVisible()
+    })
+  })
 })

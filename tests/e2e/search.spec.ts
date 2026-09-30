@@ -49,8 +49,11 @@ test.describe('Search', () => {
     await expect(quickAdd).toBeVisible({ timeout: 5000 })
     await quickAdd.fill(title)
     await quickAdd.press('Enter')
-    // The row's title link: the just-added preview shows the title as plain text.
-    await expect(page.getByRole('link', { name: title })).toBeVisible({ timeout: 5000 })
+    // It landed (the Just added card names it). Its real row may sit past its
+    // project group's "Show all" cap in All; the search below brings it up.
+    await expect(page.locator('[data-just-added-card]').getByText(title)).toBeVisible({
+      timeout: 5000,
+    })
 
     const searchInput = page.getByRole('textbox', { name: 'Search tasks' })
     await searchInput.fill('Zarquon')

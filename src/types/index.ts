@@ -292,9 +292,9 @@ export interface AuthUser {
   name: string
   timezone: string
   /**
-   * The dashboard view — `'slot'` (Today), `'time'` (All), `'new'` (New) or
+   * The dashboard view — `'slot'` (Today), `'project'` (All), `'new'` (New) or
    * `'unified'` (the AI-sort / "Unified" flat list). See `src/lib/grouping.ts`;
-   * the retired `'project'` is coerced to `'time'` by `toAuthUser`.
+   * the retired `'time'` is coerced to `'project'` by `toAuthUser`.
    *
    * Nothing reads this to make a decision: it is only ever echoed back out
    * (`/api/auth/me`, the NextAuth session, the iOS token-provision response).

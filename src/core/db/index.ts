@@ -300,31 +300,39 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'undo_log', 'slot_state')) {
     database.exec('ALTER TABLE undo_log ADD COLUMN slot_state TEXT DEFAULT NULL')
   }
+  // How many tasks each project group in the All view shows before "Show all"
+  // (2026-09-30). Existing users get the default 6 too.
+  if (!hasColumn(database, 'users', 'project_preview_count')) {
+    database.exec('ALTER TABLE users ADD COLUMN project_preview_count INTEGER NOT NULL DEFAULT 6')
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
   clearQuotaDueDates(database)
-  retireProjectGrouping(database)
+  restoreProjectGrouping(database)
 }
 
 /**
- * The Projects view left the dashboard's view switch (Today · All · New, Trent,
- * 2026-09-29) — rewrite a stored `default_grouping = 'project'` to `'time'` (All).
+ * The dashboard's "All" chip is the by-project grouping again (2026-09-30) —
+ * rewrite a stored `default_grouping = 'time'` (the retired due-date grouping)
+ * to `'project'` (All). This reverses `retireProjectGrouping`, the 2026-09-29
+ * step that rewrote every 'project' to 'time' when the Projects view was
+ * retired by mistake.
  *
- * Every reader already coerces 'project' to 'time' (`coerceGrouping`,
+ * Every reader already coerces 'time' to 'project' (`coerceGrouping`,
  * `src/lib/grouping.ts`), so this is not what makes those users land on All; it
  * makes the column say what they see, so nothing downstream has to keep
- * remembering the old value. It also covers users created after this shipped on
- * a database whose `users` table predates it: SQLite keeps the column's old
- * `DEFAULT 'project'` (only a fresh `schema.sql` has `DEFAULT 'time'`), so such a
- * user holds 'project' until the next start runs this again.
+ * remembering the old value. It also covers users created on a database whose
+ * `users` table was made while the column's default was 'time': SQLite keeps
+ * that old `DEFAULT 'time'` (only a fresh `schema.sql` has `DEFAULT
+ * 'project'`), so such a user holds 'time' until the next start runs this again.
  *
  * Data-only and idempotent by construction — the WHERE clause matches nothing
  * once it has run — so, like `clearQuotaDueDates`, it runs on every start.
  * Exported so a behavioral test can call it directly.
  */
-export function retireProjectGrouping(database: Database.Database): void {
-  database.exec(`UPDATE users SET default_grouping = 'time' WHERE default_grouping = 'project'`)
+export function restoreProjectGrouping(database: Database.Database): void {
+  database.exec(`UPDATE users SET default_grouping = 'project' WHERE default_grouping = 'time'`)
 }
 
 /**

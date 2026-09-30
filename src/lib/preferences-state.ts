@@ -22,7 +22,7 @@
  */
 
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
-import { coerceGrouping, type GroupingMode } from '@/lib/grouping'
+import { coerceGrouping, PROJECT_PREVIEW_DEFAULT, type GroupingMode } from '@/lib/grouping'
 import type { SortOption } from '@/lib/task-grouping'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
@@ -67,6 +67,8 @@ export interface Prefs {
   defaultSort: SortOption
   defaultSortReversed: boolean
   filtersExpanded: boolean
+  /** All's per-project cap before "Show all" (`project_preview_count`). */
+  projectPreviewCount: number
   quotasDetails: boolean
   notificationsEnabled: boolean
   /** The quiet "AI finished" push for a just-added task. */
@@ -105,10 +107,11 @@ export const DEFAULT_PREFS: Prefs = {
   morningTime: '09:00',
   wakeTime: '07:00',
   sleepTime: '22:00',
-  defaultGrouping: 'time',
+  defaultGrouping: 'project',
   defaultSort: 'due_date',
   defaultSortReversed: false,
   filtersExpanded: false,
+  projectPreviewCount: PROJECT_PREVIEW_DEFAULT,
   quotasDetails: false,
   notificationsEnabled: true,
   enrichmentNotificationsEnabled: true,
@@ -183,6 +186,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'defaultSort', data.default_sort, truthy)
   take(out, 'defaultSortReversed', data.default_sort_reversed)
   take(out, 'filtersExpanded', data.filters_expanded)
+  take(out, 'projectPreviewCount', data.project_preview_count, (v) => Number.isInteger(v))
   take(out, 'quotasDetails', data.quotas_details)
   take(out, 'notificationsEnabled', data.notifications_enabled)
   take(out, 'enrichmentNotificationsEnabled', data.enrichment_notifications_enabled)

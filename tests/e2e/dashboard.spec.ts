@@ -318,12 +318,14 @@ test.describe('?task=<id> deep link', () => {
 
   // ESTABLISH THE PRECONDITION RATHER THAN INHERIT IT — see the filter
   // section tests above: `default_grouping` is a server preference on the one
-  // test user every spec in the run shares, so "a Today/Overdue/Undated group
-  // exists to find the row in" is only true here if nothing earlier in the
-  // run left it on New/Unified. Restored in `finally`.
+  // test user every spec in the run shares, so "a project group exists to find
+  // the row in" is only true here if nothing earlier in the run left it on
+  // New/Unified. Restored in `finally`. All (`'project'`) is also capped per
+  // project (`project_preview_count`), and the shared user's Inbox holds more
+  // than the cap — so these also cover a link to a row past "Show all".
   async function withGrouping(
     page: Page,
-    grouping: 'time' | 'slot',
+    grouping: 'project' | 'slot',
     run: () => Promise<void>,
   ): Promise<void> {
     const before = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -338,14 +340,15 @@ test.describe('?task=<id> deep link', () => {
       await page.request.patch('/api/user/preferences', { data: { default_grouping: before } })
     }
   }
-  const withTimeGrouping = (page: Page, run: () => Promise<void>) => withGrouping(page, 'time', run)
+  const withAllGrouping = (page: Page, run: () => Promise<void>) =>
+    withGrouping(page, 'project', run)
 
   test('&highlight=1 brings the row into view without selecting it', async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     const ids: number[] = []
-    await withTimeGrouping(page, async () => {
+    await withAllGrouping(page, async () => {
       try {
         const id = await createTask(page, {
           title: 'A task the widget links to',
@@ -375,7 +378,7 @@ test.describe('?task=<id> deep link', () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     const ids: number[] = []
-    await withTimeGrouping(page, async () => {
+    await withAllGrouping(page, async () => {
       try {
         const id = await createTask(page, { title: 'An undated task the widget links to' })
         ids.push(id)
@@ -392,16 +395,16 @@ test.describe('?task=<id> deep link', () => {
   })
 
   /**
-   * `grouping === 'slot'` — Trent's own default view (Today's tasks by time
-   * of day) — has a SECOND cap `&highlight=1` has to clear that `time`
-   * grouping doesn't: each slot only shows its first `GROUP_PREVIEW_COUNT`
-   * (5) tasks, expanded via a "Show all" button that lives entirely in
+   * `grouping === 'slot'` — the owner's own default view (Today's tasks by
+   * time of day) — has a SECOND cap `&highlight=1` has to clear besides a
+   * folded group: each slot only shows its first `SLOT_PREVIEW_COUNT` (5)
+   * tasks, expanded via a "Show all" button that lives entirely in
    * `TaskList`'s own local state. A row past that cap is un-collapsed (the
    * slot itself is open) but still not rendered, so a highlight that only
    * cleared `isCollapsed` would resolve to nothing on screen. Caught live by
    * browser-verifying against Trent's real dev account, which defaults to
-   * this grouping — the earlier `time`-grouping tests above cannot exercise
-   * this cap because `time` groups are never preview-capped.
+   * this grouping. (All's project groups have the same kind of cap, at the
+   * user's `project_preview_count`.)
    */
   test('&highlight=1 opens the "Show all" preview cap on a slot-grouped view', async ({
     authenticatedPage: page,
@@ -410,7 +413,7 @@ test.describe('?task=<id> deep link', () => {
     const ids: number[] = []
     await withGrouping(page, 'slot', async () => {
       try {
-        // Six in the same slot: GROUP_PREVIEW_COUNT (5) shows only the first
+        // Six in the same slot: SLOT_PREVIEW_COUNT (5) shows only the first
         // five, so the sixth — staggered latest, sorts last by due date — is
         // the one past the cap.
         const base = DateTime.now().setZone(TEST_TZ).set({ hour: 13, minute: 0, second: 0 })
@@ -453,7 +456,7 @@ test.describe('?task=<id> deep link', () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     const ids: number[] = []
-    await withTimeGrouping(page, async () => {
+    await withAllGrouping(page, async () => {
       try {
         const id = await createTask(page, {
           title: 'A task a notification links to',
@@ -475,7 +478,7 @@ test.describe('?task=<id> deep link', () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     const ids: number[] = []
-    await withTimeGrouping(page, async () => {
+    await withAllGrouping(page, async () => {
       try {
         const id = await createTask(page, { title: 'An undated task a notification links to' })
         ids.push(id)
@@ -834,7 +837,7 @@ test.describe('Top bar total', () => {
 
   /**
    * Reload into a view and wait until the page is IN it. Until the
-   * preferences fetch settles the dashboard groups by the `'time'`
+   * preferences fetch settles the dashboard groups by the `'project'`
    * fallback (see `useDefaultGrouping`), and a count read in that window is
    * All's, not the one asked for.
    */
@@ -875,7 +878,7 @@ test.describe('Top bar total', () => {
       expect(await readTotal(page)).toBe(baseline + 1)
 
       // The All view shows the whole corpus, so the week-out task counts there.
-      await setGrouping(page, 'time')
+      await setGrouping(page, 'project')
       // (Its row may sit in a folded group, so only the number is asserted.)
       await reloadInto(page, 'All')
       expect(await readTotal(page)).toBeGreaterThanOrEqual(baseline + 2)

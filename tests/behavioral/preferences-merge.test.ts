@@ -128,9 +128,16 @@ describe('parseServerPrefs', () => {
     expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('slot')
   })
 
-  test('the retired Projects view lands on All; New is kept', () => {
-    expect(parseServerPrefs({ default_grouping: 'project' }).defaultGrouping).toBe('time')
+  test('the retired due-date grouping lands on All (by project); New is kept', () => {
+    expect(parseServerPrefs({ default_grouping: 'time' }).defaultGrouping).toBe('project')
+    expect(parseServerPrefs({ default_grouping: 'project' }).defaultGrouping).toBe('project')
     expect(parseServerPrefs({ default_grouping: 'new' }).defaultGrouping).toBe('new')
+  })
+
+  test('project_preview_count is taken when it is an integer', () => {
+    expect(DEFAULT_PREFS.projectPreviewCount).toBe(6)
+    expect(parseServerPrefs({ project_preview_count: 12 }).projectPreviewCount).toBe(12)
+    expect('projectPreviewCount' in parseServerPrefs({ project_preview_count: 'x' })).toBe(false)
   })
 
   test('null / missing data parses to nothing', () => {

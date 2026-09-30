@@ -11,8 +11,14 @@ test.describe('Quick add', () => {
     await input.fill(taskTitle)
     await input.press('Enter')
 
-    // Wait for the task to appear in the list (its row's title link — the
-    // just-added preview above the list shows the same title as plain text)
+    // It landed: the Just added card above the list names it. (Its real row
+    // is in its project's group in All, which may be past that group's
+    // "Show all" cap — the card is how a new task is seen without scrolling.)
+    await expect(page.locator('[data-just-added-card]').getByText(taskTitle)).toBeVisible({
+      timeout: 5000,
+    })
+    // And it is a real task in the list: the search finds its row.
+    await page.getByRole('textbox', { name: 'Search tasks' }).fill(taskTitle)
     await expect(page.getByRole('link', { name: taskTitle })).toBeVisible({ timeout: 5000 })
   })
 })

@@ -19,12 +19,13 @@
  *   POST worked. It now keeps it and says why.
  *
  * Every task is created here with a unique title and trashed in `finally`.
- * The dashboard runs in the All view (`'time'`) so a new row is on the page.
+ * The dashboard runs in the Unified flat list (`'unified'`) so a new row is on
+ * the page: no preview cap can put it behind "Show all".
  */
 import { test, expect, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
-/** Due in two hours: on the All view's list at any time of day. */
+/** Due in two hours: on the flat list at any time of day. */
 async function createTask(page: Page, title: string): Promise<{ id: number; due: string }> {
   const due = new Date(Date.now() + 2 * 3600_000).toISOString()
   const res = await page.request.post('/api/tasks', { data: { title, due_at: due } })
@@ -57,7 +58,7 @@ test.describe('Unsaved edits survive', () => {
   }) => {
     const { id, due } = await createTask(page, uniqueTitle('Escape-guard probe'))
     try {
-      await withPreferences(page, { default_grouping: 'time' }, async () => {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
         const dialog = await openQuickPanel(page, id)
         await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
         await page.keyboard.press('Escape')
@@ -79,7 +80,7 @@ test.describe('Unsaved edits survive', () => {
   }) => {
     const { id, due } = await createTask(page, uniqueTitle('Refused-save probe'))
     try {
-      await withPreferences(page, { default_grouping: 'time' }, async () => {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
         const dialog = await openQuickPanel(page, id)
         await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
 
