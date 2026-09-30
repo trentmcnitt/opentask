@@ -28,9 +28,12 @@ export TZ="America/Chicago"
 PORT="${SCREENSHOTS_PORT:-3353}"
 BASE_URL="http://localhost:$PORT"
 OUT="${1:-.tmp/screenshots/$(date +%Y-%m-%d)}"
-rm -rf "$OUT"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
+# Clear only this pipeline's own outputs — the directory may be one the user
+# pointed at, with other things in it (a watch-screen.png, for one).
+rm -rf "$OUT"/web "$OUT"/native "$OUT"/widget-data "$OUT"/manifest.parts \
+  "$OUT"/screenshots.db* "$OUT"/build.log "$OUT"/server.log "$OUT"/manifest.json "$OUT"/README.md
 PRELOAD="--require $ROOT/scripts/screenshots/freeze-clock.cjs"
 # The sample account's API token (scripts/screenshots/account.ts).
 TOKEN="screenshots-sample-token-00000000000000000000000000000000000000"

@@ -52,7 +52,8 @@ final class MenuBarRenderTests: XCTestCase {
                 Image(systemName: "wifi")
                 Image(systemName: "battery.100")
                 Image(nsImage: icon)
-                Text("Tue Sep 15  9:41 AM").font(.system(size: 13))
+                Text(now.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))
+                    .font(.system(size: 13))
             }
             .padding(.horizontal, 14)
             .frame(height: 24)

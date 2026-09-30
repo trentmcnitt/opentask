@@ -86,6 +86,7 @@ The README's three images (`docs/images/*-readme.png`) are cut from the iPhone a
 
 ## Prerequisites
 
+- macOS (downscaling uses `sips`; the native step needs Xcode).
 - Node deps installed (`npm ci`) and Playwright's WebKit (`npx playwright install webkit`).
 - For the native step: Xcode (26+) and `xcodegen`. No simulator, device or signing.
 - Port 3353 free (or `SCREENSHOTS_PORT`).

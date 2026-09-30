@@ -47,6 +47,11 @@ const CAPTURE_CSS = `
        was photographed mid-fade. */
     transition: none !important;
   }
+  /* The sticky top bar is 80% background plus a backdrop blur. Headless
+     WebKit draws the translucency but not the blur, so a scrolled page showed
+     sharp ghosts of the content under the bar; on a device the blur hides
+     them. Drawn opaque instead, which is what the blurred bar reads as. */
+  header.safe-top { background-color: var(--background) !important; }
   ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
   html, body { scrollbar-width: none !important; }
 `
