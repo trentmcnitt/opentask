@@ -56,6 +56,7 @@ export function AutoSnoozeRow({
             }}
             className="h-8 w-20 text-sm"
             placeholder="min"
+            aria-label={label}
             autoFocus
           />
           <Button size="sm" variant="outline" className="h-8" onClick={applyCustom}>
@@ -67,6 +68,7 @@ export function AutoSnoozeRow({
         </div>
       ) : (
         <select
+          aria-label={label}
           value={value}
           onChange={(e) => {
             const val = e.target.value

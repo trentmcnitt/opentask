@@ -508,6 +508,10 @@ function formatPreferencesResponse(row: PreferencesRow) {
     auto_snooze_minutes: row.auto_snooze_minutes,
     auto_snooze_urgent_minutes: row.auto_snooze_urgent_minutes,
     auto_snooze_high_minutes: row.auto_snooze_high_minutes,
+    // §4.1 cadence ladder: P1 and P2. Settings hydrates from these, so leaving
+    // them out made Low/Medium read back as their client defaults on reload.
+    auto_snooze_low_minutes: row.auto_snooze_low_minutes,
+    auto_snooze_medium_minutes: row.auto_snooze_medium_minutes,
     default_snooze_option: row.default_snooze_option,
     bulk_snooze_default: row.bulk_snooze_default,
     week_start: coerceWeekStart(row.week_start),

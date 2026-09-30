@@ -3684,6 +3684,38 @@ components:
             `project` (the Projects view, retired 2026-09-29) is still
             accepted on PATCH so older clients don't get a 400, but it is
             stored and returned as `time`. Any other value is a 400.
+        auto_snooze_minutes:
+          type: integer
+          minimum: 1
+          maximum: 360
+          default: 30
+          description: |
+            Minutes between repeat notifications for an overdue unset-priority
+            (P0) task. A task's own `auto_snooze_minutes` overrides every tier.
+        auto_snooze_low_minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          default: 240
+          description: Minutes between repeat notifications for an overdue Low (P1) task.
+        auto_snooze_medium_minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          default: 60
+          description: Minutes between repeat notifications for an overdue Medium (P2) task.
+        auto_snooze_high_minutes:
+          type: integer
+          minimum: 1
+          maximum: 360
+          default: 15
+          description: Minutes between repeat notifications for an overdue High (P3) task.
+        auto_snooze_urgent_minutes:
+          type: integer
+          minimum: 1
+          maximum: 360
+          default: 5
+          description: Minutes between repeat notifications for an overdue Urgent (P4) task.
         default_reminder_slot_id:
           type: [integer, 'null']
           description: |

@@ -18,6 +18,8 @@
     "auto_snooze_minutes": 30,
     "auto_snooze_urgent_minutes": 5,
     "auto_snooze_high_minutes": 15,
+    "auto_snooze_low_minutes": 240,
+    "auto_snooze_medium_minutes": 60,
     "default_snooze_option": "60",
     "bulk_snooze_default": "next_period",
     "week_start": "sunday",
