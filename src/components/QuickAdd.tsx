@@ -14,22 +14,21 @@ interface QuickAddProps {
   /** Another surface's prompt (the Reminders page: "Add a thought…"); fixed, never rotated. */
   placeholder?: string
   ariaLabel?: string
-  /** Focus the field on mount (the phone's quick-add sheet, `QuickAddSheet`). */
-  autoFocus?: boolean
   /**
-   * How the "open the full form" affordance is drawn. `icon` (default): the
-   * `+` inside the field's left edge. `link`: an "Add manually" text link
-   * under the field — the quick-add sheet, opened by the tab bar's `+` right
-   * below it, where a second `+` would read as the same button.
+   * Answer the phone `+` tab: focus this field when `FOCUS_QUICK_ADD_EVENT`
+   * fires. Only the dashboard's field at the top of the page sets it.
    */
-  manualAdd?: 'icon' | 'link'
-  /**
-   * Called after a successful submit INSTEAD of re-focusing the field for the
-   * next entry. The quick-add sheet closes here; re-focusing an input inside a
-   * closing sheet would hold the iOS keyboard up through the exit animation.
-   */
-  onSubmitted?: () => void
+  focusOnEvent?: boolean
 }
+
+/**
+ * The phone tab bar's `+` on the dashboard (`AppLayout`): focus the add field
+ * at the top of the page. A window event rather than a ref, because the tab
+ * bar lives in `AppLayout` and the field deep inside the dashboard.
+ */
+export const FOCUS_QUICK_ADD_EVENT = 'focus-quick-add'
+/** `/?action=quick-add`: the `+` tab from another page navigates here. */
+export const QUICK_ADD_ACTION = 'quick-add'
 
 // Rotating placeholder text for the quick-add input — for the DEMO account only. The
 // first-time experience gives no hint that this field understands natural language ("every
@@ -53,9 +52,7 @@ export function QuickAdd({
   onOpenAddForm,
   placeholder,
   ariaLabel,
-  autoFocus,
-  manualAdd = 'icon',
-  onSubmitted,
+  focusOnEvent,
 }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -106,6 +103,26 @@ export function QuickAdd({
     prevListeningRef.current = isListening
   }, [isListening])
 
+  // The phone `+` tab (Trent, 2026-09-30): the keyboard comes up on THIS
+  // field, the one with the mic and the AI chip, rather than on a separate
+  // quick-add sheet. iOS (Safari and the app's WKWebView) only raises the
+  // keyboard for a programmatic focus() that runs synchronously inside the
+  // user's tap. `dispatchEvent` calls its listeners synchronously, so the
+  // chain tap → AppLayout → this listener → focus() never leaves the gesture.
+  // Keep it that way: no state round-trip, no await, no timer, no waiting for
+  // a smooth scroll. Focus first without letting the browser choose a scroll
+  // position, then jump the page to the top: the header is sticky and in the
+  // flow, so at scroll 0 the field sits just below it.
+  useEffect(() => {
+    if (!focusOnEvent) return
+    const handler = () => {
+      inputRef.current?.focus({ preventScroll: true })
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener(FOCUS_QUICK_ADD_EVENT, handler)
+    return () => window.removeEventListener(FOCUS_QUICK_ADD_EVENT, handler)
+  }, [focusOnEvent])
+
   const handleSubmit = async () => {
     const trimmed = title.trim()
     if (!trimmed || submitting) return
@@ -114,8 +131,7 @@ export function QuickAdd({
     try {
       await onAdd(trimmed)
       setTitle('')
-      if (onSubmitted) onSubmitted()
-      else inputRef.current?.focus()
+      inputRef.current?.focus()
     } finally {
       setSubmitting(false)
     }
@@ -137,19 +153,16 @@ export function QuickAdd({
           'transition-all',
         )}
       >
-        {manualAdd === 'icon' && (
-          <button
-            type="button"
-            onClick={openAddForm}
-            className="hover:text-primary hover:bg-accent text-muted-foreground flex-shrink-0 rounded p-0.5 transition-colors"
-            aria-label="Open full add form"
-          >
-            <Plus className="size-5" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={openAddForm}
+          className="hover:text-primary hover:bg-accent text-muted-foreground flex-shrink-0 rounded p-0.5 transition-colors"
+          aria-label="Open full add form"
+        >
+          <Plus className="size-5" />
+        </button>
         <Input
           ref={inputRef}
-          autoFocus={autoFocus}
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -187,15 +200,6 @@ export function QuickAdd({
           </button>
         )}
       </div>
-      {manualAdd === 'link' && (
-        <button
-          type="button"
-          onClick={openAddForm}
-          className="text-muted-foreground hover:text-foreground mt-2 cursor-pointer px-1 py-1 text-sm underline-offset-2 hover:underline"
-        >
-          Add manually
-        </button>
-      )}
     </div>
   )
 }

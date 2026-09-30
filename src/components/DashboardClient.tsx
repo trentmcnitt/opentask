@@ -28,7 +28,7 @@ import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header, type HeaderPillFilter } from '@/components/Header'
-import { QuickAdd } from '@/components/QuickAdd'
+import { FOCUS_QUICK_ADD_EVENT, QUICK_ADD_ACTION, QuickAdd } from '@/components/QuickAdd'
 import { JustAddedCard } from '@/components/JustAddedCard'
 import { selectJustAddedTasks } from '@/lib/just-added'
 import { DemoTour } from '@/components/DemoTour'
@@ -42,7 +42,6 @@ import { OverdueJumpFab } from '@/components/OverdueJumpFab'
 import { JumpToTasksFab } from '@/components/JumpToTasksFab'
 import { ViewModeFab } from '@/components/ViewModeFab'
 import { DashboardFabStack } from '@/components/DashboardFabStack'
-import { QuickAddSheet, useQuickAddSheet } from '@/components/QuickAddSheet'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
 import {
   showToast,
@@ -574,9 +573,6 @@ function HomeContent({
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
   const [createPanelOpen, setCreatePanelOpen] = useState(false)
-  // The phone `+` tab's quick-add sheet (`QuickAddSheet`) — here, not in
-  // AppLayout, because its submit is this page's `onQuickAdd`.
-  const quickAddSheet = useQuickAddSheet()
   const bulkSheetOpenRef = useRef<(() => void) | null>(null)
   const searchFocusRef = useRef<(() => void) | null>(null)
 
@@ -742,6 +738,8 @@ function HomeContent({
       window.history.replaceState(window.history.state, '', window.location.pathname)
     }
   }, [searchParams])
+
+  useFocusQuickAddOnArrival(status, loading, error)
 
   const {
     selectedLabels,
@@ -1204,8 +1202,7 @@ function HomeContent({
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
-  const keyboardNavEnabled =
-    !quickActionOpen && !showShortcutsDialog && !createPanelOpen && !quickAddSheet.open
+  const keyboardNavEnabled = !quickActionOpen && !showShortcutsDialog && !createPanelOpen
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -1409,22 +1406,12 @@ function HomeContent({
     )
   }
 
-  // One submit for both quick-add fields: the one at the top of the page and
-  // the phone `+` tab's sheet.
   const quickAdd =
     aiAvailable && aiQuickTakeMode !== 'off' ? handleQuickAddWithQuickTake : actions.handleQuickAdd
 
   return (
     <>
       <DemoTour />
-      <QuickAddSheet
-        open={quickAddSheet.open}
-        onOpenChange={quickAddSheet.setOpen}
-        onAdd={quickAdd}
-        onOpenAddForm={(title) => {
-          window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
-        }}
-      />
       <DashboardView
         tasks={tasks_}
         sortedGroups={sortedGroups}
@@ -1644,6 +1631,23 @@ function HomeContent({
  * The grid is a grid at EVERY width, single-column below `xl`. That is what
  * lets Track be one element in one place in the DOM — see `TrackColumn`.
  */
+/**
+ * `?action=quick-add`: the phone `+` tab pressed on another page (see
+ * `AppLayout`'s `handleAddTabClick`). Waits for the data to load, because the
+ * add field isn't mounted until then; the field's listener is registered by
+ * the time this runs (a child's effects run before its parent's). The param
+ * is stripped with a raw history rewrite, like `?filter=`.
+ */
+function useFocusQuickAddOnArrival(status: string, loading: boolean, error: string | null) {
+  const searchParams = useSearchParams()
+  const ready = status === 'authenticated' && !loading && !error
+  useEffect(() => {
+    if (!ready || searchParams.get('action') !== QUICK_ADD_ACTION) return
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+    window.dispatchEvent(new CustomEvent(FOCUS_QUICK_ADD_EVENT))
+  }, [ready, searchParams])
+}
+
 function mainClass(twoColumn: boolean): string {
   return cn(
     'mx-auto grid w-full max-w-2xl flex-1 grid-cols-1 content-start items-start px-4 py-6',
@@ -2168,7 +2172,10 @@ function DashboardView({
           {/* Quick add + AI chip row */}
           <div className="mb-4 flex items-center gap-3">
             <div className="min-w-0 flex-1">
+              {/* Rendered in every view (All / Today / Newest) and at every
+                  scroll position, so the phone `+` always has it to focus. */}
               <QuickAdd
+                focusOnEvent
                 onAdd={async (title) => {
                   await onQuickAdd(title)
                 }}
