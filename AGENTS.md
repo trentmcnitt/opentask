@@ -47,11 +47,11 @@ The public docs site lives in a separate repo (`opentask-docs`, typically at `~/
 
 ### UI vocabulary
 
-| Term        | Component                                 | Description                                                                                                                                                   |
-| ----------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Top bar     | `src/components/Header.tsx`               | Fixed header: count pills (total/overdue/today — overdue and today filter), navigation, and the snooze-overdue button on desktop (phone: `SnoozeAllFab.tsx`)  |
-| Quick panel | `src/components/QuickActionPanel.tsx`     | The task editing panel (snooze, priority, title, recurrence…) — task detail, the dashboard modal, create panel, reminder detail, and the action bar's Details |
-| Action bar  | `src/components/SelectionActionSheet.tsx` | Floating black bar shown during selection: Done, Details (single selection), More, Trash, Clear. Other surfaces build theirs on `SelectionBarShell.tsx`       |
+| Term        | Component                                 | Description                                                                                                                                                                |
+| ----------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top bar     | `src/components/Header.tsx`               | Fixed header: count pills (total/overdue/today — overdue and today filter), navigation, and the snooze-overdue clock on desktop (`SnoozeOverdueTrigger.tsx`, also the FAB) |
+| Quick panel | `src/components/QuickActionPanel.tsx`     | The task editing panel (snooze, priority, title, recurrence…) — task detail, the dashboard modal, create panel, reminder detail, and the action bar's Details              |
+| Action bar  | `src/components/SelectionActionSheet.tsx` | Floating black bar shown during selection: Done, Details (single selection), More, Trash, Clear. Built on `SelectionBarShell.tsx`, like every surface's bar                |
 
 **The UI and the code use different words for the same things** — search for the code word:
 

@@ -1,4 +1,11 @@
-import { test, expect, holdUntil } from './fixtures'
+import {
+  test,
+  expect,
+  holdUntil,
+  uniqueTitle,
+  waitForPrefsLoaded,
+  withPreferences,
+} from './fixtures'
 
 test.describe('Snooze', () => {
   test('quick tap on overdue task triggers immediate snooze', async ({
@@ -74,5 +81,58 @@ test.describe('Snooze', () => {
       await expect(menu).not.toBeVisible({ timeout: 500 })
     }).toPass({ timeout: 5000 })
     await expect(menu).not.toBeVisible({ timeout: 5000 })
+  })
+})
+
+/**
+ * A right-click on a row's snooze button is not a tap. The button used its own
+ * copy of the long-press timer, which read any pointerdown/pointerup pair as a
+ * press — so a right-click snoozed the task. It now shares
+ * `useSimpleLongPress`, which counts the primary button only.
+ *
+ * Proved by what follows: a plain click on the same button sends exactly one
+ * snooze, so the right-click before it sent none.
+ */
+test.describe('Row snooze button', () => {
+  test.use({ viewport: { width: 1280, height: 900 } })
+
+  test('a right-click does not snooze the task', async ({ authenticatedPage: page }) => {
+    const title = uniqueTitle('Row right-click probe')
+    const res = await page.request.post('/api/tasks', {
+      data: {
+        title,
+        priority: 1,
+        due_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      },
+    })
+    expect(res.ok()).toBeTruthy()
+    const id = (await res.json()).data.id as number
+    const snoozes: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/snooze`))
+        snoozes.push(r.url())
+    })
+
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        const row = page.locator(`#task-row-${id}`)
+        await waitForPrefsLoaded(page, () => page.goto('/'), row)
+        await row.hover()
+        const snoozeBtn = row.getByRole('button', { name: `Snooze "${title}"` })
+        await expect(snoozeBtn).toBeVisible()
+
+        await snoozeBtn.click({ button: 'right' })
+        await expect(page.getByRole('menu', { name: 'Snooze options' })).toHaveCount(0)
+
+        const sent = page.waitForResponse(
+          (r) => r.request().method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/snooze`),
+        )
+        await snoozeBtn.click()
+        expect((await sent).ok()).toBeTruthy()
+        expect(snoozes).toHaveLength(1)
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
   })
 })

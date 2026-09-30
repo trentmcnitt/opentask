@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
  *   1. `JumpToTasksFab` — the frosted chevron (phone only)
  *   2. `ViewModeFab` — the "you're in Today / Newest" button
  *   3. `OverdueJumpFab` — the coral overdue toggle (a phone and a desktop copy)
- *   4. `SnoozeAllFab` — the blue snooze-all button
+ *   4. `SnoozeOverdueTrigger` (`variant="fab"`) — the blue snooze-all button
  *
  * WHY ONE CONTAINER. Each button used to be `fixed` on its own, with its
  * `bottom` worked out from which of the buttons below it happened to be

@@ -39,11 +39,11 @@ interface OverdueJumpFabProps {
  *   rule). It used to vanish once the filter was on, leaving no way back from
  *   the corner.
  * - **Hidden** only when nothing is overdue (an Overdue filter left empty
- *   clears itself, `ce069c6`) and in selection mode, where `SnoozeAllFab`
- *   hides too and the selection bar owns the bottom.
+ *   clears itself, `ce069c6`) and in selection mode, where the snooze
+ *   FAB (`SnoozeOverdueTrigger`) hides too and the selection bar owns the bottom.
  *
  * **Where it sits.** In the right-hand FAB column (`DashboardFabStack`, which
- * owns the position and the 12px gaps), directly above `SnoozeAllFab` — the
+ * owns the position and the 12px gaps), directly above the snooze FAB — the
  * snooze FAB's red badge pokes 4px above its top (`-top-1`), which leaves 8px
  * of air above the badge. `ViewModeFab` and `JumpToTasksFab` may stack above.
  *

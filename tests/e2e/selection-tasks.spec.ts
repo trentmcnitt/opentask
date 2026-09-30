@@ -226,6 +226,36 @@ test.describe('Dashboard multi-select — the bar, checked against the server', 
       await trash(page, ids)
     }
   })
+
+  /**
+   * The bar is `SelectionBarShell`, so it has the shell's double-click guard:
+   * the second click of a double-click that lands on the bar (a row near the
+   * bottom selects on the first click, and the bar appears over it) opens the
+   * one selected task's details instead of pressing the verb underneath. The
+   * click is dispatched with `detail: 2`, exactly what the browser sends for
+   * that second click — a real double-click here would press Done with its
+   * first click.
+   */
+  test('a double-click landing on the bar opens the details, not the verb under it', async ({
+    authenticatedPage: page,
+  }) => {
+    const { ids } = await createPair(page, 'Sel dblclick')
+    try {
+      await withPreferences(page, unified, async () => {
+        await openDashboard(page, ids[0])
+        await cmdClickRow(row(page, ids[0]))
+        await expect(row(page, ids[0])).toHaveAttribute('aria-selected', 'true')
+        const done = bar(page).getByRole('button', { name: 'Done', exact: true })
+        await expect(done).toBeVisible()
+
+        await done.dispatchEvent('click', { detail: 2 })
+        await page.waitForURL(`**/tasks/${ids[0]}`)
+        expect((await stateOf(page, ids[0])).done).toBe(false)
+      })
+    } finally {
+      await trash(page, ids)
+    }
+  })
 })
 
 test.describe('Dashboard multi-select — only tasks', () => {

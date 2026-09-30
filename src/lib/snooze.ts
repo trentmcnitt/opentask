@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
 import { taskWord } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
+import type { BulkSnoozeDefault } from '@/lib/preferences-state'
 
 const HOUR_ROUND_THRESHOLD = 35
 
@@ -64,6 +65,23 @@ export function formatCompactSnoozeLabel(option: string): string {
   const m = minutes % 60
   if (m === 0) return `+${h}h`
   return `+${h}h${m}m`
+}
+
+/**
+ * The compact badge on the snooze-all clock: where a plain press sends the
+ * overdue tasks. That is the next period when `bulkSnoozeDefault` says so and
+ * the user has periods to go to (`useSnoozeOverdue` falls back to the default
+ * option when there are none), otherwise the default option's own label.
+ * Before this read both settings, the badge showed "+1h" while a press went to
+ * the next period.
+ */
+export function bulkSnoozeCompactLabel(
+  bulkSnoozeDefault: BulkSnoozeDefault,
+  defaultSnoozeOption: string,
+  hasPeriods: boolean,
+): string {
+  if (bulkSnoozeDefault === 'next_period' && hasPeriods) return 'Next'
+  return formatCompactSnoozeLabel(defaultSnoozeOption)
 }
 
 /**

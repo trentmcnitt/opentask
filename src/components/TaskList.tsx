@@ -237,7 +237,7 @@ export function TaskList({
 
   // Every snooze originating from this list is a single-task interactive
   // snooze, so all of them route through the §4.3 guard. Bulk sweeps do not
-  // come through here — they go via the Header / SnoozeAllFab bulk endpoints,
+  // come through here — they go via `SnoozeOverdueTrigger`'s bulk endpoint,
   // which must never modal-block.
   const { requestSnooze, dialogProps } = useSnoozeGuard(timezone, onSnooze)
 

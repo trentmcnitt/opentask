@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Check, X, FileText, Trash2 } from 'lucide-react'
+import { Check, FileText, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -37,6 +37,7 @@ import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { formatTimeInTimezone } from '@/lib/format-date'
 import { taskWord } from '@/lib/utils'
 import { DirtyCard } from '@/components/DirtyCard'
+import { SelectionBarShell } from '@/components/SelectionBarShell'
 import type { Task, Project } from '@/types'
 
 interface SnoozeCategories {
@@ -361,6 +362,10 @@ export function SelectionActionSheet({
 
   if (selectedCount === 0) return null
 
+  // Details (the bar's button, the panel's link, a double-click on the bar)
+  // exists only for a single selection.
+  const openDetails = selectedCount === 1 && onNavigateToDetail ? handleNavigateToDetail : undefined
+
   // Modal title: show task title for single task, count for multiple
   const modalTitle =
     selectedCount === 1 && selectedTasks[0]
@@ -384,9 +389,7 @@ export function SelectionActionSheet({
         saveRef={panelSaveRef}
         recurrenceSummary={recurrenceSummary}
         onDelete={handleDelete}
-        onNavigateToDetail={
-          selectedCount === 1 && onNavigateToDetail ? handleNavigateToDetail : undefined
-        }
+        onNavigateToDetail={openDetails}
         projects={projects}
         onDirtyChange={onDirtyChange}
       />
@@ -395,62 +398,44 @@ export function SelectionActionSheet({
 
   return (
     <>
-      {/* Floating trigger button */}
-      <div
-        data-selection-sheet
-        className="animate-slide-up fixed bottom-20 left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 md:bottom-6"
-      >
-        <div
-          className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl"
-          aria-live="polite"
+      {/* The floating action bar. The shell owns the pill, the count, Clear and
+          the double-click guard, the same object as Reminders' and Quotas' bars
+          (it was a hand copy of it). A double-click that lands on the bar — the
+          second click of a double-click on a row near the bottom, whose first
+          click summoned the bar over it — opens Details when one task is
+          selected, instead of pressing whichever verb it hit. */}
+      <SelectionBarShell count={selectedCount} onClear={onClear} onDoubleClickIntent={openDetails}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onDone}
+          className="bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
         >
-          {/* Show count only when multiple tasks selected */}
-          {selectedCount > 1 && (
-            <span className="mr-2 text-sm font-medium">{selectedCount} selected</span>
-          )}
+          <Check className="mr-1 size-4" />
+          Done
+        </Button>
 
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onDone}
-            className="bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
-          >
-            <Check className="mr-1 size-4" />
-            Done
+        {/* Details button - only show for single task selection */}
+        {openDetails && (
+          <Button size="sm" variant="secondary" onClick={handleNavigateToDetail}>
+            <FileText className="mr-1 size-4" />
+            Details
           </Button>
+        )}
 
-          {/* Details button - only show for single task selection */}
-          {selectedCount === 1 && onNavigateToDetail && (
-            <Button size="sm" variant="secondary" onClick={handleNavigateToDetail}>
-              <FileText className="mr-1 size-4" />
-              Details
-            </Button>
-          )}
+        <Button size="sm" variant="secondary" onClick={openSheet}>
+          More
+        </Button>
 
-          <Button size="sm" variant="secondary" onClick={openSheet}>
-            More
-          </Button>
-
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={handleDelete}
-            aria-label={`Delete ${selectedCount} ${taskWord(selectedCount)}`}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClear}
-            aria-label="Clear selection"
-            className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 active:bg-primary-foreground/10 ml-2"
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={handleDelete}
+          aria-label={`Delete ${selectedCount} ${taskWord(selectedCount)}`}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </SelectionBarShell>
 
       {/* Mobile: bottom sheet */}
       {isMobile ? (

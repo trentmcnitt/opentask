@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useCallback, useEffect, useState } from 'react'
-import { useLongPress } from '@/hooks/useLongPress'
+import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
 import {
   AlertTriangle,
@@ -214,80 +214,26 @@ export function TaskRow({
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
 
-  // Long-press state for snooze button
-  const snoozeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const snoozeFiredRef = useRef(false)
-
-  // Snooze button uses pointer events for single-click / long-press detection.
-  // Primary trigger is onPointerUp (not onClick) because stopPropagation() on
-  // onPointerDown can prevent click events from being synthesized in some browsers.
-  // onClick is kept as a fallback for keyboard activation (Enter/Space).
-  const handleSnoozeClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      // If long-press fired or pointer already handled the snooze, suppress
-      if (snoozeFiredRef.current) {
-        snoozeFiredRef.current = false
-        return
-      }
-      // Non-overdue tasks: open snooze menu instead of instant snooze
-      // (instant snooze would rewind a future due date to now + offset)
-      if (!isOverdue) {
-        snoozeFiredRef.current = true
-        setSnoozeMenuOpen(true)
-        return
-      }
-      // Fallback for keyboard activation (Enter/Space) — pointer path won't set snoozeFiredRef
-      const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
-      onSnooze(task.id, until)
-    },
-    [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze, isOverdue],
-  )
-
-  const handleSnoozePointerDown = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation()
-    snoozeFiredRef.current = false
-    snoozeTimerRef.current = setTimeout(() => {
-      snoozeFiredRef.current = true
+  // The row's snooze button: a tap snoozes an overdue task by the default
+  // option; a tap on a task not yet due opens the menu instead (an instant
+  // snooze would pull a future due date back to now + offset); a hold (400ms)
+  // opens the menu. `useSimpleLongPress` — the snooze-all trigger's hook —
+  // counts only the primary button, so a right-click no longer snoozes (it
+  // did, from its own hand-rolled copy of this timer). Its `onClick` is the
+  // keyboard path (Enter/Space) and swallows the click a pointer press
+  // already handled.
+  //
+  // Every handler stops propagation: the press must not reach the row, whose
+  // own pointer handlers select, open and long-press the task.
+  const openSnoozeMenu = useCallback(() => setSnoozeMenuOpen(true), [])
+  const snoozeNow = useCallback(() => {
+    if (!isOverdue) {
       setSnoozeMenuOpen(true)
-    }, 400)
-  }, [])
-
-  const handleSnoozePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      e.stopPropagation()
-      if (snoozeTimerRef.current) {
-        clearTimeout(snoozeTimerRef.current)
-        snoozeTimerRef.current = null
-      }
-      // Quick tap: timer was running but long-press didn't fire
-      if (!snoozeFiredRef.current) {
-        snoozeFiredRef.current = true // suppress any subsequent click
-        // Non-overdue tasks: open snooze menu instead of instant snooze
-        if (!isOverdue) {
-          setSnoozeMenuOpen(true)
-          return
-        }
-        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
-        onSnooze(task.id, until)
-      }
-    },
-    [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze, isOverdue],
-  )
-
-  const handleSnoozePointerLeave = useCallback(() => {
-    if (snoozeTimerRef.current) {
-      clearTimeout(snoozeTimerRef.current)
-      snoozeTimerRef.current = null
+      return
     }
-  }, [])
-
-  // Clean up snooze timer on unmount
-  useEffect(() => {
-    return () => {
-      if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
-    }
-  }, [])
+    onSnooze(task.id, computeSnoozeTime(defaultSnoozeOption, timezone, morningTime))
+  }, [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze, isOverdue])
+  const snoozePress = useSimpleLongPress({ onLongPress: openSnoozeMenu, onShortPress: snoozeNow })
 
   /**
    * `highlighted` (the widget's `?task=<id>&highlight=1` link): keep the row
@@ -704,8 +650,8 @@ export function TaskRow({
       )}
 
       {/* Snooze button (hidden in selection mode and on mobile — swipe-to-snooze is the mobile interaction).
-          Single click: immediate snooze with default duration.
-          Long-press (400ms): opens SnoozeMenu with duration choices. */}
+          Tap: immediate snooze with the default duration (menu if not yet due).
+          Long-press (400ms): opens SnoozeMenu. See `snoozePress`. */}
       {!isSelectionMode && (
         <SnoozeMenu
           open={snoozeMenuOpen}
@@ -715,10 +661,19 @@ export function TaskRow({
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleSnoozeClick}
-            onPointerDown={handleSnoozePointerDown}
-            onPointerUp={handleSnoozePointerUp}
-            onPointerLeave={handleSnoozePointerLeave}
+            onClick={(e) => {
+              e.stopPropagation()
+              snoozePress.onClick()
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              snoozePress.onPointerDown(e)
+            }}
+            onPointerUp={(e) => {
+              e.stopPropagation()
+              snoozePress.onPointerUp(e)
+            }}
+            onPointerLeave={snoozePress.onPointerLeave}
             aria-label={`Snooze "${task.title}"`}
             className="hidden flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 md:flex"
             title="Snooze (hold for options)"
