@@ -40,6 +40,8 @@ import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { OverdueJumpFab } from '@/components/OverdueJumpFab'
 import { JumpToTasksFab } from '@/components/JumpToTasksFab'
+import { ViewModeFab } from '@/components/ViewModeFab'
+import { DashboardFabStack } from '@/components/DashboardFabStack'
 import { QuickAddSheet, useQuickAddSheet } from '@/components/QuickAddSheet'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
 import {
@@ -2119,6 +2121,9 @@ function DashboardView({
   // it. Tapping the lit pill just clears the filter and leaves the page where
   // it is.
   const { listRef: taskListRef, requestJump } = useJumpToTaskList()
+  // The zero-height marker at the top of the list wrapper that
+  // `JumpToTasksFab` watches to know whether the page is above its landing.
+  const taskListLandingRef = useRef<HTMLDivElement>(null)
   const onPillFilter = (filter: HeaderPillFilter) => {
     if (activePillFilter !== filter) requestJump()
     onExclusiveDateFilter(filter)
@@ -2355,6 +2360,7 @@ function DashboardView({
           ref={taskListRef}
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
+          <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
           <TaskList
             tasks={tasks}
             sortedGroups={sortedGroups}
@@ -2436,38 +2442,43 @@ function DashboardView({
         projects={projects}
       />
 
-      <SnoozeAllFab
-        overdueCount={overdueCount}
-        isSelectionMode={selection.isSelectionMode}
-        onSnoozeOverdue={onSnoozeOverdue}
-      />
-
-      {/* Counts the date facet (`headerCounts`), like the red pill and the
-          pinned chip it acts like — not `overdueCount` above. "On" is
-          `includes`, the pinned chip's own solid state, not "sole filter". */}
-      <OverdueJumpFab
-        placement="phone"
-        overdueCount={headerCounts.overdueCount}
-        overdueFilterOn={overdueFilterOn}
-        isSelectionMode={selection.isSelectionMode}
-        onJump={onOverdueJump}
-      />
-      <OverdueJumpFab
-        placement="desktop"
-        overdueCount={headerCounts.overdueCount}
-        overdueFilterOn={overdueFilterOn}
-        isSelectionMode={selection.isSelectionMode}
-        onJump={onOverdueJump}
-      />
-      {/* Phone only; tops the FAB column — directly above the overdue button,
-          or in its slot when that one is absent (same condition it uses). */}
-      <JumpToTasksFab
-        listRef={taskListRef}
-        aboveOverdueFab={headerCounts.overdueCount > 0}
-        isSelectionMode={selection.isSelectionMode}
-        searching={!!searchQuery}
-        onJump={requestJump}
-      />
+      {/* Top to bottom, as they stack on screen — see `DashboardFabStack`. */}
+      <DashboardFabStack>
+        <JumpToTasksFab
+          listRef={taskListRef}
+          landingRef={taskListLandingRef}
+          isSelectionMode={selection.isSelectionMode}
+          searching={!!searchQuery}
+          onJump={() => requestJump('list')}
+        />
+        <ViewModeFab
+          grouping={grouping}
+          isSelectionMode={selection.isSelectionMode}
+          onShowAll={() => onGroupingChange('time')}
+        />
+        {/* Counts the date facet (`headerCounts`), like the red pill and the
+            pinned chip it acts like — not `overdueCount` below. "On" is
+            `includes`, the pinned chip's own solid state, not "sole filter". */}
+        <OverdueJumpFab
+          placement="phone"
+          overdueCount={headerCounts.overdueCount}
+          overdueFilterOn={overdueFilterOn}
+          isSelectionMode={selection.isSelectionMode}
+          onJump={onOverdueJump}
+        />
+        <OverdueJumpFab
+          placement="desktop"
+          overdueCount={headerCounts.overdueCount}
+          overdueFilterOn={overdueFilterOn}
+          isSelectionMode={selection.isSelectionMode}
+          onJump={onOverdueJump}
+        />
+        <SnoozeAllFab
+          overdueCount={overdueCount}
+          isSelectionMode={selection.isSelectionMode}
+          onSnoozeOverdue={onSnoozeOverdue}
+        />
+      </DashboardFabStack>
 
       <QuickActionPopover
         focusedTask={focusedTask}

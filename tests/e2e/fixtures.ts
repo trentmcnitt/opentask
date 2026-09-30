@@ -58,8 +58,8 @@ export { expect }
  * of the quota editor and the Track panel's prompt setup). A GET still in
  * flight when the click lands satisfied a URL-only wait, the test then
  * reloaded, and the reload aborted the real PATCH — so the reloaded page read
- * the old value back. That made `track.spec.ts`'s "Show as chips after a
- * reload" fail about one run in five (2026-09-25).
+ * the old value back. That made a `track.spec.ts` test (the since-removed
+ * "Show as chips after a reload") fail about one run in five (2026-09-25).
  */
 export function waitForPreferenceSave(page: Page, field: string) {
   return page.waitForResponse((r) => {
