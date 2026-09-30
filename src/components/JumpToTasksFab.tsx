@@ -81,11 +81,12 @@ const BELOW_EVERYTHING_PX = 1_000_000
  * (`DashboardFabStack`), 48px like the rest. While faded it keeps its slot —
  * the top one, so the column shows no hole for it.
  *
- * **Style "A1"** (Trent's pick): a frosted, quiet disc — translucent white with
- * a blurred backdrop, a hairline border and a soft shadow, dark-grey chevron —
- * so it reads as navigation, not as another action like the coloured buttons
- * below it. Dark mode: the same frosting on the dark surface with a light
- * chevron.
+ * **Style "A1"** (Trent's pick): a quiet, see-through disc — white at 50% with
+ * a hairline border and a soft shadow, dark-grey chevron — so it reads as
+ * navigation, not as another action like the coloured buttons below it. Dark
+ * mode: the same on the dark surface with a light chevron. No backdrop blur and
+ * no heavier fill (Trent, 09-29): it sits over the quota chips, and at 70% with
+ * a blur the text underneath was unreadable.
  *
  * The fade uses `visibility` as well as opacity: an `invisible` button can't be
  * tapped or focused, and visibility flips only at the END of a fade-out (and
@@ -150,7 +151,7 @@ export function JumpToTasksFab({
       aria-hidden={!show}
       tabIndex={show ? undefined : -1}
       data-jump-to-tasks-fab
-      className={`flex size-12 cursor-pointer items-center justify-center rounded-full border border-black/12 bg-white/70 text-zinc-700 shadow-md backdrop-blur-md transition-[opacity,visibility] duration-200 hover:bg-white/85 md:hidden dark:border-white/15 dark:bg-zinc-800/70 dark:text-zinc-100 dark:hover:bg-zinc-800/85 ${
+      className={`flex size-12 cursor-pointer items-center justify-center rounded-full border border-black/12 bg-white/50 text-zinc-700 shadow-md transition-[opacity,visibility] duration-200 hover:bg-white/80 md:hidden dark:border-white/15 dark:bg-zinc-800/50 dark:text-zinc-100 dark:hover:bg-zinc-800/80 ${
         show ? 'pointer-events-auto visible opacity-100' : 'pointer-events-none invisible opacity-0'
       }`}
     >
