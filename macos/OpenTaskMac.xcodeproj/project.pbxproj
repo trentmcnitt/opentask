@@ -17,6 +17,7 @@
 		07BEBE0E92BE17D9A210C4EE /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3E2F1F151ECE60CDFE1524 /* WidgetPushRegistration.swift */; };
 		09C50C125EE5772431D0238A /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		0A47FFB83018F02515472B97 /* SweepDismissalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7B22313C4BC57FABC04BA8 /* SweepDismissalTests.swift */; };
+		0B238C882F4EB87F26D4491E /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */; };
 		0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
 		0F675979F0E897179550119D /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
 		1065DE5F13ABB56144BC9136 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
@@ -36,6 +37,7 @@
 		1F72F1ABDCE460D6BB84FED1 /* user-preferences.json in Resources */ = {isa = PBXBuildFile; fileRef = B494CCB1EBBEBD1900184F2D /* user-preferences.json */; };
 		21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		22056523029F9E6121394470 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		227ED182C18F9A0E85D09028 /* OpenTaskCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */; };
 		2426A761DC8152786638EF55 /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BE26DEC5BFD175EB325C40 /* ReminderDayProgress.swift */; };
 		24AABF3C42A5A81F8F73C81F /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B46ABD580807D58325D969 /* TaskDayProgress.swift */; };
 		25A22F2B7A429A5B77F9867A /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0431240DA3532D2272FDFAC /* TasksTimeline.swift */; };
@@ -48,6 +50,7 @@
 		2CF9AE9A7711630A1DA64EB2 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
 		2D9298EBA4C0D8516E61CF17 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */; };
+		2FB881761E34E2F2FD8C95FE /* MacAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */; };
 		317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		3315C7B7A79DBF3C82C6C7D9 /* WidgetStoreCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */; };
 		3384ABB58FC0D799FE4A2038 /* TasksWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */; };
@@ -60,6 +63,9 @@
 		3EE6F7B84B2317550D8CC09A /* SegmentWidthsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */; };
 		3F5F24E827B5E77749258D0F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79B196EB051C2A6103B3CB4E /* WidgetKit.framework */; };
 		40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */; };
+		4185E2BB6C6CEE9C0B8B9FE0 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
+		42CA7D8B8D0E3A5C709A5321 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */; };
+		4498B2BD97078965C15B0FBD /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */; };
 		44C5A3993A906B44D2AD2CE7 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */; };
 		46CD72C3DB9ACAA0FA4228A1 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		4891CD07E8BE4EF084D7BCE0 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8191D69C950AB5453FA795F7 /* WidgetTheme.swift */; };
@@ -69,14 +75,17 @@
 		4B1A0BA96C5C08ED15949CF1 /* TaskSnoozePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */; };
 		4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
 		4BAF9904F8F7345246E0A710 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
+		4CDF98945F8B7D2BA045B29C /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */; };
 		4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124940586D73E6C268F9E443 /* AppConfig.swift */; };
 		51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */ = {isa = PBXBuildFile; fileRef = 37C29187973C3150F91CA3B7 /* reminders-initial.json */; };
 		52209900BB7B38B4D5C46CBE /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
 		555E58F6C1F1328E6D692AED /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8191D69C950AB5453FA795F7 /* WidgetTheme.swift */; };
 		58A1CB55EF9E06BD0CD0FEB4 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
+		59D21E71E0189D9AE5946B94 /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
 		5ACFC5419BA8178CCBDD0D35 /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */; };
 		5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D351611FEE1FDCC48702D /* SampleData.swift */; };
 		5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */ = {isa = PBXBuildFile; fileRef = F781F8F4FFD0805CBC5D5068 /* completions.json */; };
+		5C5D2DC3DFC8320A56B7E201 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */; };
 		5CD4762477A148AB18B23334 /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0431240DA3532D2272FDFAC /* TasksTimeline.swift */; };
 		5F6F249B5F70259FA9A01A58 /* ApsEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */; };
 		5FFA5D233EE837D4183A0168 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */; };
@@ -88,11 +97,13 @@
 		65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		69E395ADE46A3F056A24AE8C /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
 		6A9B5E10389B15AE08DA8BD4 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
+		6AD94724DCE034AF95FB1208 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52EC8E5A66C3C3ECE4A13D0 /* StatusItemController.swift */; };
 		6BD4EE3F52E877BF86F54E82 /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03744B394D091E76B95FDE0C /* SweepSummary.swift */; };
 		6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */ = {isa = PBXBuildFile; fileRef = 225E098B934AE9962181E731 /* task-progress.json */; };
 		6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		6DBFC26B7C0B8B73AF22071C /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF69531FE48B319A9AD5A85 /* ServerURL.swift */; };
 		7131F2552F88AC5619E5A431 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
+		71D0A83961B98489F7734D3C /* MenuBarRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 828B6B306B2D686ED20A8EA2 /* MenuBarRenderTests.swift */; };
 		72AEDE8CAE861EF53AC19CF5 /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3E2F1F151ECE60CDFE1524 /* WidgetPushRegistration.swift */; };
 		76D29E684F7D200FE06336B4 /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */; };
 		770EF3B5D76EE47517B10CFF /* QuotaRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EBB1F0D8B23725D4EB9DC21 /* QuotaRulesTests.swift */; };
@@ -140,10 +151,12 @@
 		B7A6C49AEC224FA14079678E /* TasksWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */; };
 		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
 		B82A490F8F2FE0CD2647854C /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */; };
+		B9189B04DCF70469AF3D7FE1 /* MenuBarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B784D2707D9E3127B216E744 /* MenuBarModel.swift */; };
 		B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		BA1AE60805F4D1809E194172 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		BB66D6FB4E0D7612EBE1A8CA /* DeepLinkRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4F7502C01897A3B3843EC3 /* DeepLinkRouterTests.swift */; };
 		BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */ = {isa = PBXBuildFile; fileRef = 880F73DD5EB836E40BCA134A /* reminders.json */; };
+		BD4DBE20DC068A1E10334D0F /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124940586D73E6C268F9E443 /* AppConfig.swift */; };
 		BD681103236562BE55F338E1 /* WidgetKindShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203EF948683C146898ECCD57 /* WidgetKindShims.swift */; };
 		BE415267934330FE86282F6C /* OpenTaskCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */; };
 		BE6B34283DE7C9CF8405B3E7 /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA7A0B6F7260FB3D4427285 /* WebBridge.swift */; };
@@ -154,6 +167,7 @@
 		C57F3A12BA319779B8B54921 /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */; };
 		C6BC02FF6A77F21C878ECF45 /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */; };
 		C70DF156998E42097BC9E1FC /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
+		C9F2AADED434D02D18B53ACF /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BBA7157D64D84DE2038504 /* SetupView.swift */; };
 		CC872E7AB664DA45E1E086FE /* NotificationActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE74638B34B5131EFCBDEF6A /* NotificationActionRunner.swift */; };
 		CC88FF8A161D084268B43BEE /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */; };
@@ -177,6 +191,7 @@
 		E1E1FA07EB499EAC75A70604 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BEA167B70531B2904292843 /* SweepDismissal.swift */; };
 		E2178CDCEEC7B5AABAD0C9F5 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */; };
 		E3DEAC0DDF5D70B663069797 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */; };
+		E6E64AEA329C11806176E44D /* MenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38BA76FEFE40A03A2F3E709E /* MenuActions.swift */; };
 		E85DD075F709E632090886FC /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BE26DEC5BFD175EB325C40 /* ReminderDayProgress.swift */; };
 		E96A95A44A30F64C80592FB7 /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		EA277B98984D91CFC54CB091 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
@@ -281,6 +296,7 @@
 		7F814F05408288A5A627F9CC /* OpenTaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskModels.swift; sourceTree = "<group>"; };
 		81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPromptDTOTests.swift; sourceTree = "<group>"; };
 		8191D69C950AB5453FA795F7 /* WidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
+		828B6B306B2D686ED20A8EA2 /* MenuBarRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarRenderTests.swift; sourceTree = "<group>"; };
 		8356E1C2B16B9BF80616B20E /* OpenTaskScreenshotRenders.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenTaskScreenshotRenders.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-snooze.json"; sourceTree = "<group>"; };
 		86C87419D6853F3A661B2252 /* TaskFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFeed.swift; sourceTree = "<group>"; };
@@ -519,6 +535,7 @@
 		B1D9025272E64046015BBCC3 /* Renders */ = {
 			isa = PBXGroup;
 			children = (
+				828B6B306B2D686ED20A8EA2 /* MenuBarRenderTests.swift */,
 				903ACB0C682D367B55AA9A1E /* WidgetRenderTests.swift */,
 			);
 			name = Renders;
@@ -747,15 +764,25 @@
 			buildActionMask = 2147483647;
 			files = (
 				CC88FF8A161D084268B43BEE /* APIClient.swift in Sources */,
+				BD4DBE20DC068A1E10334D0F /* AppConfig.swift in Sources */,
 				28474208C6B76704F2916092 /* ApsEnvironment.swift in Sources */,
+				5C5D2DC3DFC8320A56B7E201 /* ContentView.swift in Sources */,
 				46CD72C3DB9ACAA0FA4228A1 /* DateHelpers.swift in Sources */,
 				2CF9AE9A7711630A1DA64EB2 /* DeepLinkRouter.swift in Sources */,
 				2D9298EBA4C0D8516E61CF17 /* DueLabel.swift in Sources */,
 				22056523029F9E6121394470 /* KeychainHelper.swift in Sources */,
+				2FB881761E34E2F2FD8C95FE /* MacAppDelegate.swift in Sources */,
+				42CA7D8B8D0E3A5C709A5321 /* MacSettingsView.swift in Sources */,
+				E6E64AEA329C11806176E44D /* MenuActions.swift in Sources */,
+				4498B2BD97078965C15B0FBD /* MenuBarIcon.swift in Sources */,
+				B9189B04DCF70469AF3D7FE1 /* MenuBarModel.swift in Sources */,
+				0B238C882F4EB87F26D4491E /* MenuBarPanel.swift in Sources */,
+				71D0A83961B98489F7734D3C /* MenuBarRenderTests.swift in Sources */,
 				9BD84A3E2A114B52B41BA9F2 /* NotesGlyphPreviews.swift in Sources */,
 				CC872E7AB664DA45E1E086FE /* NotificationActionRunner.swift in Sources */,
 				89AD80C13AA009D51F316140 /* NotificationConstants.swift in Sources */,
 				76D29E684F7D200FE06336B4 /* NotificationIdentifiers.swift in Sources */,
+				227ED182C18F9A0E85D09028 /* OpenTaskCommands.swift in Sources */,
 				818379AA1A07C71D74720E37 /* OpenTaskModels.swift in Sources */,
 				161ED908F8B6F869443891BD /* PreviewLocalData.swift in Sources */,
 				2C173F16D5A8C3A6D024E50A /* PromptDeepLink.swift in Sources */,
@@ -766,6 +793,9 @@
 				89277737F8985E83203CF74D /* SampleData.swift in Sources */,
 				5FFA5D233EE837D4183A0168 /* SegmentWidths.swift in Sources */,
 				7F1C5CD3DCB9525D70CCCBA4 /* ServerURL.swift in Sources */,
+				4CDF98945F8B7D2BA045B29C /* SessionBootstrapper.swift in Sources */,
+				C9F2AADED434D02D18B53ACF /* SetupView.swift in Sources */,
+				6AD94724DCE034AF95FB1208 /* StatusItemController.swift in Sources */,
 				7F708353B1540BED9E328245 /* SweepDismissal.swift in Sources */,
 				AE2C764962CCA89B2DBDB59F /* SweepSummary.swift in Sources */,
 				10C0CFD2650A63BF90C8D597 /* TaskDayProgress.swift in Sources */,
@@ -779,6 +809,8 @@
 				C6BC02FF6A77F21C878ECF45 /* TrackWidget.swift in Sources */,
 				97495EAC93D1B200CD823058 /* TrackWidgetViews.swift in Sources */,
 				05FC951B11F619E046DCEADA /* WebBridge.swift in Sources */,
+				4185E2BB6C6CEE9C0B8B9FE0 /* WebViewHost.swift in Sources */,
+				59D21E71E0189D9AE5946B94 /* WebViewManager.swift in Sources */,
 				055AADE8BD722C7CF669CBB7 /* WidgetIntents.swift in Sources */,
 				859499321A21C46AB2727916 /* WidgetPushHandler.swift in Sources */,
 				07BEBE0E92BE17D9A210C4EE /* WidgetPushRegistration.swift in Sources */,

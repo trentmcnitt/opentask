@@ -27,6 +27,7 @@
     "db:seed-demo": "tsx scripts/seed-demo.ts",
     "db:reset-demo": "tsx scripts/reset-demo-user.ts",
     "dump-prompts": "tsx scripts/dump-prompts.ts",
+    "screenshots": "scripts/screenshots/run.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"

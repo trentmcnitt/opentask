@@ -299,6 +299,14 @@ targets:
           - '*.entitlements'
       - path: ../ios/Shared
       - path: ../ios/Tests/Renders
+      # The Mac app (for the menu bar panel) minus its @main entry point.
+      - path: OpenTaskMac
+        excludes:
+          - OpenTaskMacApp.swift
+          - Info.plist
+          - '*.entitlements'
+          - Assets.xcassets
+      - path: ../ios/OpenTask/SessionBootstrapper.swift
     dependencies:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
