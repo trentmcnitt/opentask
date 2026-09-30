@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { useEditorHost } from '@/hooks/useEditorHost'
 import { showErrorToast, showSuccessToast, showSuccessToastWithAction } from '@/lib/toast'
 import { DirtyCard } from '@/components/DirtyCard'
 import type { Project } from '@/types'
@@ -120,6 +121,52 @@ function buildEnrichmentToast(
   return `AI enriched: ${changes.join(', ')}`
 }
 
+/** The POST body for a new task: only the fields the user actually set. */
+function buildCreateBody(fields: QuickActionPanelChanges & { title: string }) {
+  const body: Record<string, unknown> = { title: fields.title }
+  if (fields.due_at) body.due_at = fields.due_at
+  if (fields.priority && fields.priority > 0) body.priority = fields.priority
+  if (fields.labels && fields.labels.length > 0) body.labels = fields.labels
+  if (fields.rrule) {
+    body.rrule = fields.rrule
+    if (fields.recurrence_mode) body.recurrence_mode = fields.recurrence_mode
+  }
+  if (fields.project_id) body.project_id = fields.project_id
+  if (fields.auto_snooze_minutes !== undefined && fields.auto_snooze_minutes !== null) {
+    body.auto_snooze_minutes = fields.auto_snooze_minutes
+  }
+  if (fields.notes !== undefined && fields.notes !== null) {
+    body.notes = fields.notes
+  }
+  return body
+}
+
+/**
+ * Create the task. A failure toasts the server's reason (e.g. a label that
+ * isn't in the registry) and rejects, so the panel keeps the title and the
+ * staged fields for a retry instead of wiping them as if the create had worked.
+ */
+async function postTask(
+  body: Record<string, unknown>,
+): Promise<{ id?: number; title: string; labels?: string[] } | undefined> {
+  try {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const json = (await res.json().catch(() => null)) as {
+      data?: { id?: number; title: string; labels?: string[] }
+      error?: string
+    } | null
+    if (!res.ok) throw new Error(json?.error || 'Failed to create task')
+    return json?.data
+  } catch (err) {
+    showErrorToast(err instanceof Error && err.message ? err.message : 'Failed to create task')
+    throw err
+  }
+}
+
 function DiscardConfirmDialog({
   open,
   onOpenChange,
@@ -167,56 +214,32 @@ export function CreateTaskPanel({
   const router = useRouter()
   const timezone = useTimezone()
   const isMobile = useIsMobile()
-  const [isPanelDirty, setIsPanelDirty] = useState(false)
+  // `isDirty` paints the stripe and locks the sheet's drag; the dismiss guard
+  // reads `dirtyRef`, current the moment the panel reports (see useEditorHost).
+  const { isDirty: isPanelDirty, dirtyRef, onDirtyChange } = useEditorHost()
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
 
   const handleCreate = useCallback(
     async (fields: QuickActionPanelChanges & { title: string }) => {
-      const body: Record<string, unknown> = { title: fields.title }
-      if (fields.due_at) body.due_at = fields.due_at
-      if (fields.priority && fields.priority > 0) body.priority = fields.priority
-      if (fields.labels && fields.labels.length > 0) body.labels = fields.labels
-      if (fields.rrule) {
-        body.rrule = fields.rrule
-        if (fields.recurrence_mode) body.recurrence_mode = fields.recurrence_mode
-      }
-      if (fields.project_id) body.project_id = fields.project_id
-      if (fields.auto_snooze_minutes !== undefined && fields.auto_snooze_minutes !== null) {
-        body.auto_snooze_minutes = fields.auto_snooze_minutes
-      }
-      if (fields.notes !== undefined && fields.notes !== null) {
-        body.notes = fields.notes
+      const createdTask = await postTask(buildCreateBody(fields))
+
+      onCreated()
+
+      // Show success toast with navigation action
+      if (createdTask?.id) {
+        const id = createdTask.id
+        showSuccessToastWithAction(
+          'Task added',
+          { label: 'View', onClick: () => router.push(`/tasks/${id}`) },
+          { id: `task-created-${id}` },
+        )
       }
 
-      try {
-        const res = await fetch('/api/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        if (!res.ok) throw new Error('Failed to create task')
-        const json = await res.json()
-        const createdTask = json.data
-
-        onCreated()
-
-        // Show success toast with navigation action
-        if (createdTask?.id) {
-          showSuccessToastWithAction(
-            'Task added',
-            { label: 'View', onClick: () => router.push(`/tasks/${createdTask.id}`) },
-            { id: `task-created-${createdTask.id}` },
-          )
-        }
-
-        // If the task has ai-to-process, start polling for enrichment result
-        if (createdTask?.labels?.includes('ai-to-process')) {
-          pollForEnrichment(createdTask.id, createdTask.title, onCreated)
-        }
-      } catch {
-        showErrorToast('Failed to create task')
+      // If the task has ai-to-process, start polling for enrichment result
+      if (createdTask?.id && createdTask.labels?.includes('ai-to-process')) {
+        pollForEnrichment(createdTask.id, createdTask.title, onCreated)
       }
     },
     [onCreated, router],
@@ -229,14 +252,14 @@ export function CreateTaskPanel({
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (!newOpen) {
-        if (isPanelDirty) {
+        if (dirtyRef.current) {
           setShowDiscardConfirm(true)
         } else {
           onClose()
         }
       }
     },
-    [onClose, isPanelDirty],
+    [onClose, dirtyRef],
   )
 
   const panel = (
@@ -250,7 +273,7 @@ export function CreateTaskPanel({
         onCreate={handleCreate}
         projects={projects as Project[]}
         onCancel={handleCancel}
-        onDirtyChange={setIsPanelDirty}
+        onDirtyChange={onDirtyChange}
       />
     </DirtyCard>
   )
@@ -264,7 +287,12 @@ export function CreateTaskPanel({
     return (
       <>
         <Sheet open={open} onOpenChange={handleOpenChange}>
-          <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
+          <SheetContent
+            side="bottom"
+            className="rounded-t-2xl"
+            showCloseButton={false}
+            draggable={!isPanelDirty}
+          >
             <VisuallyHidden>
               <SheetTitle>New Task</SheetTitle>
               <SheetDescription>Create a new task</SheetDescription>

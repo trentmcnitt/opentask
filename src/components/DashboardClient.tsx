@@ -13,6 +13,7 @@ import {
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
 import type { GroupingMode } from '@/lib/grouping'
+import { resolveTaskLink, missingTaskMessage } from '@/lib/task-link'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useJustAddedClock } from '@/hooks/useJustAddedClock'
 import { useStickyColumn } from '@/hooks/useStickyColumn'
@@ -39,9 +40,16 @@ import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { OverdueJumpFab } from '@/components/OverdueJumpFab'
 import { JumpToTasksFab } from '@/components/JumpToTasksFab'
+import { ViewModeFab } from '@/components/ViewModeFab'
+import { DashboardFabStack } from '@/components/DashboardFabStack'
 import { QuickAddSheet, useQuickAddSheet } from '@/components/QuickAddSheet'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
-import { showToast, showSuccessToastWithAction, showAiSuccessToastWithAction } from '@/lib/toast'
+import {
+  showToast,
+  showSaveError,
+  showSuccessToastWithAction,
+  showAiSuccessToastWithAction,
+} from '@/lib/toast'
 import dynamic from 'next/dynamic'
 
 const QuickActionPopover = dynamic(() =>
@@ -237,6 +245,10 @@ function useBulkActions(
    * selection — used when the snooze confirmation dialog opts some tasks out
    * of the date change. Non-date fields still apply to the full selection, in
    * the same request, so the whole save is one Undo (Trent, 2026-09-27).
+   *
+   * A failure toasts the server's reason and rejects, so the sheet stays open
+   * with the staged edits and the selection intact (SelectionActionSheet
+   * closes and clears only after this resolves).
    */
   const bulkSaveAll = async (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => {
     const allIds = [...selection.selectedIds]
@@ -251,8 +263,9 @@ function useBulkActions(
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
-    } catch {
-      showToast({ message: 'Save failed', type: 'error' })
+    } catch (err) {
+      showSaveError(err)
+      throw err
     }
   }
 
@@ -296,6 +309,22 @@ function useBulkActions(
   }
 
   return { bulkDone, bulkSaveAll, bulkDelete, handleSearch }
+}
+
+/**
+ * The toast for a notification tap whose task has no row to show: done, in
+ * the trash, or gone. One `GET` for the wording; any failure (a 404, someone
+ * else's task, offline) reads as "no longer exists".
+ */
+async function toastForUnshownTask(taskId: number): Promise<void> {
+  let task: Task | null = null
+  try {
+    const res = await fetch(`/api/tasks/${taskId}`)
+    if (res.ok) task = (await res.json()).data as Task
+  } catch {
+    // Network failure: the generic wording below.
+  }
+  showToast({ message: missingTaskMessage(task) })
 }
 
 function HomeContent({
@@ -573,7 +602,12 @@ function HomeContent({
   // AI sort auto-switches to unified as a local override (not persisted to DB).
   // This preserves the user's real grouping preference for when AI sort is disabled.
   const [aiSortUnified, setAiSortUnified] = useState(false)
-  const grouping: GroupingMode = aiSortUnified ? 'unified' : defaultGrouping
+  // A notification tap on a task the current view can't show (Today drops
+  // anything due after today) switches this page to All for the visit — NOT
+  // persisted, so the saved view is back on the next load. Cleared the moment
+  // the user picks a view or taps the dashboard tab. See the `?task=` effect.
+  const [viewOverride, setViewOverride] = useState<GroupingMode | null>(null)
+  const grouping: GroupingMode = aiSortUnified ? 'unified' : (viewOverride ?? defaultGrouping)
   // The order the list is DRAWN in: New pins newest-added first over the saved
   // sort (`effectiveSort`). Keyboard order and the group math below use this;
   // the sort dropdown and the saved preference keep `sortOption`/`reversed`.
@@ -915,16 +949,24 @@ function HomeContent({
     clearAllFilters()
   }, [selection, clearAllFilters])
 
-  // Full view reset: clears everything including search (triggered by tapping Dashboard tab)
-  const handleDashboardReset = useCallback(() => {
+  // Everything that narrows the list — search, filter chips, AI filter and
+  // signal chips — and the selection. The dashboard tab's reset below, and a
+  // notification tap on a task they hide (the `?task=` effect).
+  const clearListNarrowing = useCallback(() => {
     selection.clear()
     setAiFilterActive(false)
     setSelectedSignals([])
     clearAllFilters()
     setSearchQuery(null)
     setSearchResults([])
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [selection, clearAllFilters])
+
+  // Full view reset: clears everything including search (triggered by tapping Dashboard tab)
+  const handleDashboardReset = useCallback(() => {
+    clearListNarrowing()
+    setViewOverride(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [clearListNarrowing])
 
   // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
@@ -949,98 +991,137 @@ function HomeContent({
   )
 
   /**
-   * Support `?task=<id>` — two shapes, sharing one URL so every existing
-   * producer keeps working:
+   * Support `?task=<id>` — two shapes, sharing one URL:
    *
-   * - `?task=<id>` alone: a notification tap (`AppDelegate`/`MacAppDelegate`
-   *   call `WebViewManager.navigateToTask` directly) or a Web Push click
-   *   (`overdue-checker.ts`, `notifications/test/route.ts`) — opens
-   *   QuickActionPanel, same as always.
+   * - `?task=<id>` alone: a NOTIFICATION tap — the iPhone and Mac apps
+   *   (`WebViewManager.navigateToTask`, i.e. `DeepLinkRouter.notificationTaskPath`)
+   *   and every Web Push click (`overdue-checker.ts`, `enrichment-notify.ts`,
+   *   `notifications/test/route.ts`). Brings the row into view, flashes it and
+   *   SELECTS it, so the action bar is up for the task the notification was
+   *   about. Opens nothing (Trent, 2026-09-29; it used to open the quick
+   *   panel). If a search, filter or the Today view hides the task, that is
+   *   undone first — see `resolveTaskLink` (`src/lib/task-link.ts`) for the
+   *   steps. A reminder goes to `/reminders?reminder=<id>&select=1`, a quota to
+   *   `/quotas?quota=<id>`; a task that is done, deleted or gone gets a toast.
    * - `?task=<id>&highlight=1`: the widget's deep link
    *   (`WidgetLink.task`/`OpenTaskApp.handleWidgetLink`). Brings the row into
-   *   view and flashes it once; opens nothing — mirrors RemindersView's
-   *   `?reminder=<id>` (see its `highlightId` effect for the identical
-   *   rationale: a tap from a list-like surface means "show me that one",
-   *   not "act on it").
+   *   view and flashes it once; selects nothing, and quietly does nothing if
+   *   the current view hides it — mirrors RemindersView's `?reminder=<id>`.
    *
-   * The flag is additive rather than a new param name so the URL SHAPE stays
-   * `?task=<id>` for every existing caller, per the login-redirect and
-   * dashboardPath() query-string passthrough (`src/lib/login-redirect.ts`,
-   * `src/app/page.tsx`) — neither needed to change.
+   * WHY THE BARE PARAM CHANGED MEANING rather than a new one being added: every
+   * producer of the bare shape is a notification (nothing in the app links to
+   * `/?task=` to open an editor), and the installed iPhone and Mac builds load
+   * exactly this URL — so the new behavior reached them with a server deploy,
+   * no app update. The URL shape is also what the login redirect and
+   * dashboardPath() already pass through (`src/lib/login-redirect.ts`,
+   * `src/app/page.tsx`).
    *
    * The param is consumed (and stripped from the URL) only once resolution is
-   * DEFINITIVE: the task was found, or the list is non-empty and provably
-   * doesn't contain it. `loading === false` alone is not proof the list is
-   * ready — on WebKit (iOS webview, Safari) the initial fetch can fail
+   * DEFINITIVE: the task was found and shown, or the list is non-empty and
+   * provably doesn't contain it. `loading === false` alone is not proof the
+   * list is ready — on WebKit (iOS webview, Safari) the initial fetch can fail
    * transiently during hydration, flipping `loading` false with zero tasks;
    * consuming the param then means a notification tap opens the app but never
    * the task. With an empty list we leave the param in place and let the
-   * effect re-run when a retry/sync populates tasks.
+   * effect re-run when a retry/sync populates tasks. The notification path
+   * also stays unconsumed across its corrective steps (clear the filters,
+   * switch the view): each takes a render to land, and this effect re-runs on
+   * the new `tasks_`/`taskGroups`.
    */
   const taskParamProcessed = useRef(false)
+  const taskLinkTried = useRef({ narrowing: false, view: false })
+  // Unfold the row's group and flash it. `TaskList` lifts the group's "Show
+  // all" cap for the highlighted row, and `TaskRow` scrolls it into view — the
+  // reveal the Just added card's tap uses, minus its quick-panel fallback.
+  const revealRow = useCallback(
+    (taskId: number, groupLabel: string) => {
+      if (isCollapsed(groupLabel)) expand(groupLabel)
+      setHighlightTaskId(taskId)
+    },
+    [isCollapsed, expand],
+  )
   useEffect(() => {
     if (taskParamProcessed.current || loading) return
     const taskIdParam = searchParams.get('task')
     if (!taskIdParam) return
     const taskId = parseInt(taskIdParam, 10)
-    if (isNaN(taskId)) {
-      taskParamProcessed.current = true
-      window.history.replaceState(window.history.state, '', window.location.pathname)
-      return
-    }
-    const task = tasks.find((t) => t.id === taskId)
-    if (!task && tasks.length === 0) return
-    const isHighlightLink = searchParams.get('highlight') === '1'
-    // The highlight branch groups by `defaultGrouping` to find the row's
-    // group — but `defaultGrouping` starts at a hardcoded fallback
-    // ('time') until `PreferencesProvider`'s own fetch resolves (see
-    // `useDefaultGrouping`'s doc comment), same shape as the `tasks.length
-    // === 0` wait above: consuming the param against the fallback can expand
-    // the wrong group and never revisit it. Found by browser-verifying
-    // against Trent's dev account, whose real default (`slot`) differed from
-    // the fallback of the day (`project`) — a `?task=&highlight=1` tap
-    // resolved against the fallback before this guard landed on the wrong
-    // group every time.
-    if (task && isHighlightLink && !isTracked(task) && !groupingLoaded) return
-    taskParamProcessed.current = true
-    if (task) {
-      // §5: a quota does not open in the dashboard's QuickActionPanel — that
-      // panel is a due date and a snooze grid, neither of which a quota has.
-      // Its own editor is on the detail route, which already renders
-      // QuotaDetail for a tracked row. This is the last path by which a quota
-      // could still reach the panel now that it is out of every list.
-      if (isTracked(task)) {
-        router.push(`/tasks/${task.id}`)
-      } else if (isHighlightLink) {
-        // `taskGroups` is built from the FILTERED list (`tasks_`), so an
-        // active filter/search hiding this task leaves no row to expand or
-        // flash — the same silent no-op RemindersView falls back to when a
-        // linked reminder isn't in the currently loaded view.
-        const group = taskGroups.find((g) => g.tasks.some((t) => t.id === task.id))
-        if (group) {
-          if (isCollapsed(group.label)) expand(group.label)
-          setHighlightTaskId(task.id)
-        }
-      } else {
-        handleViewTask(task)
-      }
-    }
     // Strip the param with a raw history rewrite, NOT router.replace: a router
     // navigation issues an RSC fetch, and if that fetch fails (WebKit does
     // this under flaky transport) Next falls back to a full page navigation
-    // that remounts this component and closes the just-opened panel. Same
+    // that remounts this component and loses what was just done. Same
     // pattern as AppLayout's ?action=create handling.
-    window.history.replaceState(window.history.state, '', window.location.pathname)
+    const consume = () => {
+      taskParamProcessed.current = true
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
+    if (isNaN(taskId)) return consume()
+    if (tasks.length === 0) return
+    const step = resolveTaskLink({
+      taskId,
+      tasks,
+      listed: tasks_,
+      groups: taskGroups,
+      grouping,
+      tried: taskLinkTried.current,
+    })
+    // The row's group depends on the view, and `defaultGrouping` starts at a
+    // hardcoded fallback until `PreferencesProvider`'s own fetch resolves (see
+    // `useDefaultGrouping`'s doc comment) — resolving against the fallback
+    // expanded the wrong group, or switched views for nothing. Found by
+    // browser-verifying against Trent's dev account, whose real default
+    // (`slot`) differed from the fallback of the day.
+    if (!groupingLoaded && step.kind !== 'missing' && step.kind !== 'quota') return
+
+    if (searchParams.get('highlight') === '1') {
+      // The widget's link: flash the row if the view shows it, else nothing.
+      // §5: a quota's editor is its detail route (the widget links quotas via
+      // `/quotas?quota=` anyway; this is the last path to the old one).
+      if (step.kind === 'quota') router.push(`/tasks/${step.task.id}`)
+      if (step.kind === 'show') revealRow(step.task.id, step.groupLabel)
+      return consume()
+    }
+
+    switch (step.kind) {
+      case 'clear-narrowing':
+        taskLinkTried.current.narrowing = true
+        clearListNarrowing()
+        return
+      case 'switch-view':
+        taskLinkTried.current.view = true
+        setViewOverride('time')
+        return
+      case 'show':
+        revealRow(step.task.id, step.groupLabel)
+        // `selectAll([id])`, not `selectOnly`: that one TOGGLES, so a second
+        // tap on the same notification would deselect the row.
+        selection.selectAll([step.task.id])
+        break
+      case 'reminder':
+        router.push(`/reminders?reminder=${step.task.id}&select=1`)
+        break
+      case 'quota':
+        router.push(`/quotas?quota=${step.task.id}`)
+        break
+      case 'missing':
+        void toastForUnshownTask(taskId)
+        break
+      case 'unreachable':
+        showToast({ message: `Couldn’t show “${step.task.title}”` })
+        break
+    }
+    consume()
   }, [
     searchParams,
     loading,
     tasks,
-    handleViewTask,
-    router,
+    tasks_,
     taskGroups,
-    isCollapsed,
-    expand,
+    grouping,
+    router,
+    revealRow,
     groupingLoaded,
+    selection,
+    clearListNarrowing,
   ])
 
   // Just added (`src/lib/just-added.ts`): each task created in the last 10
@@ -1358,6 +1439,7 @@ function HomeContent({
           // Selecting a view explicitly turns off AI-sort's unified override —
           // otherwise the toggle would show a selection that isn't in effect.
           setAiSortUnified(false)
+          setViewOverride(null)
           setDefaultGrouping(next)
         }}
         timeSlots={timeSlots}
@@ -1475,6 +1557,7 @@ function HomeContent({
         }
         onTrackRefresh={refreshAll}
         onUnifiedChange={(unified) => {
+          setViewOverride(null)
           if (sortOption === 'ai_insights') {
             // During AI sort: only toggle local override, don't persist to DB
             setAiSortUnified(unified)
@@ -1868,14 +1951,14 @@ function DashboardView({
   onSearch: (q: string) => void
   onSearchClear: () => void
   onBulkDone: () => Promise<void>
-  onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
+  onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
   onBulkDelete: () => Promise<void>
   onSnoozeOverdue: (until?: string) => void
   focusedTask: Task | null
   quickActionOpen: boolean
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
-  onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
+  onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   onQuickActionDone: (taskId: number) => void
   onQuickActionDelete: (taskId: number) => void
   onQuickActionNavigate: (taskId: number) => void
@@ -2038,6 +2121,9 @@ function DashboardView({
   // it. Tapping the lit pill just clears the filter and leaves the page where
   // it is.
   const { listRef: taskListRef, requestJump } = useJumpToTaskList()
+  // The zero-height marker at the top of the list wrapper that
+  // `JumpToTasksFab` watches to know whether the page is above its landing.
+  const taskListLandingRef = useRef<HTMLDivElement>(null)
   const onPillFilter = (filter: HeaderPillFilter) => {
     if (activePillFilter !== filter) requestJump()
     onExclusiveDateFilter(filter)
@@ -2274,6 +2360,7 @@ function DashboardView({
           ref={taskListRef}
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
+          <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
           <TaskList
             tasks={tasks}
             sortedGroups={sortedGroups}
@@ -2355,38 +2442,43 @@ function DashboardView({
         projects={projects}
       />
 
-      <SnoozeAllFab
-        overdueCount={overdueCount}
-        isSelectionMode={selection.isSelectionMode}
-        onSnoozeOverdue={onSnoozeOverdue}
-      />
-
-      {/* Counts the date facet (`headerCounts`), like the red pill and the
-          pinned chip it acts like — not `overdueCount` above. "On" is
-          `includes`, the pinned chip's own solid state, not "sole filter". */}
-      <OverdueJumpFab
-        placement="phone"
-        overdueCount={headerCounts.overdueCount}
-        overdueFilterOn={overdueFilterOn}
-        isSelectionMode={selection.isSelectionMode}
-        onJump={onOverdueJump}
-      />
-      <OverdueJumpFab
-        placement="desktop"
-        overdueCount={headerCounts.overdueCount}
-        overdueFilterOn={overdueFilterOn}
-        isSelectionMode={selection.isSelectionMode}
-        onJump={onOverdueJump}
-      />
-      {/* Phone only; tops the FAB column — directly above the overdue button,
-          or in its slot when that one is absent (same condition it uses). */}
-      <JumpToTasksFab
-        listRef={taskListRef}
-        aboveOverdueFab={headerCounts.overdueCount > 0}
-        isSelectionMode={selection.isSelectionMode}
-        searching={!!searchQuery}
-        onJump={requestJump}
-      />
+      {/* Top to bottom, as they stack on screen — see `DashboardFabStack`. */}
+      <DashboardFabStack>
+        <JumpToTasksFab
+          listRef={taskListRef}
+          landingRef={taskListLandingRef}
+          isSelectionMode={selection.isSelectionMode}
+          searching={!!searchQuery}
+          onJump={() => requestJump('list')}
+        />
+        <ViewModeFab
+          grouping={grouping}
+          isSelectionMode={selection.isSelectionMode}
+          onShowAll={() => onGroupingChange('time')}
+        />
+        {/* Counts the date facet (`headerCounts`), like the red pill and the
+            pinned chip it acts like — not `overdueCount` below. "On" is
+            `includes`, the pinned chip's own solid state, not "sole filter". */}
+        <OverdueJumpFab
+          placement="phone"
+          overdueCount={headerCounts.overdueCount}
+          overdueFilterOn={overdueFilterOn}
+          isSelectionMode={selection.isSelectionMode}
+          onJump={onOverdueJump}
+        />
+        <OverdueJumpFab
+          placement="desktop"
+          overdueCount={headerCounts.overdueCount}
+          overdueFilterOn={overdueFilterOn}
+          isSelectionMode={selection.isSelectionMode}
+          onJump={onOverdueJump}
+        />
+        <SnoozeAllFab
+          overdueCount={overdueCount}
+          isSelectionMode={selection.isSelectionMode}
+          onSnoozeOverdue={onSnoozeOverdue}
+        />
+      </DashboardFabStack>
 
       <QuickActionPopover
         focusedTask={focusedTask}

@@ -119,32 +119,6 @@ async function switchView(page: Page, v: View) {
   await saved
 }
 
-/**
- * The panel starts as chips; switch it to rows with the header's "Show as rows"
- * control (the choice persists, so tests switch it back). The "Quotas" heading
- * itself is plain text as of 2026-09-24 — see `TrackViewSwitch`.
- */
-async function openTrack(page: Page) {
-  const panel = page.getByRole('region', { name: 'Quotas' })
-  await expect(panel).toBeVisible()
-  const fold = panel.getByRole('button', { name: 'Show as rows' })
-  if (await fold.isVisible()) {
-    // The choice is saved fire-and-forget; wait for it so a reload can't race it.
-    const saved = waitForPreferenceSave(page, 'track_expanded')
-    await fold.click()
-    await saved
-  }
-  await expect(panel.getByRole('button', { name: 'Show as chips' })).toBeVisible()
-}
-async function closeTrack(page: Page) {
-  const fold = page.getByRole('button', { name: 'Show as chips' })
-  if (await fold.isVisible()) {
-    const saved = waitForPreferenceSave(page, 'track_expanded')
-    await fold.click()
-    await saved
-  }
-}
-
 test.describe('Track', () => {
   test('the Track panel shows a quota, logs +1 and −1, and reads "met" at target', async ({
     authenticatedPage: page,
@@ -164,12 +138,14 @@ test.describe('Track', () => {
       is_tracked: true,
     })
 
+    let viewBefore: View | null = null
     try {
       await page.goto('/')
       const panel = page.getByRole('region', { name: 'Quotas' })
       await expect(panel).toBeVisible()
-      // Folded by default: the header's total, and the quota as a chip.
-      await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
+      // The quota as a chip — the panel's only layout (the rows view and its
+      // "Show as rows" switch are gone, 2026-09-29).
+      await expect(panel.getByRole('button', { name: /^Show as (rows|chips)$/ })).toHaveCount(0)
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
       // No period suffix on the chip's own count — the section it sits in
@@ -208,7 +184,6 @@ test.describe('Track', () => {
       await expect(stream).toContainText('Date night')
       await expect(stream).toContainText('Eggs for the kids')
       await expect(panel.locator('[data-track-heading]')).not.toContainText('this')
-      await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
       await expect(chipCount).toHaveText('0/2')
@@ -295,54 +270,24 @@ test.describe('Track', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog')).toHaveCount(0)
 
-      await openTrack(page)
-      // The choice sticks across a reload.
-      await page.reload()
-      await expect(panel.getByRole('button', { name: 'Show as chips' })).toBeVisible()
-      const row = panel.locator(`[data-track-row="${id}"]`)
-      await expect(row).toBeVisible()
       // On the Today view it is not also a row in the day's groups: the panel
-      // is its only home there (other views list it as a plain row).
+      // is its only home there.
+      viewBefore = await pressedView(page)
       const todayToggle = page.getByRole('button', { name: 'Today', exact: true })
       await todayToggle.click()
       await expect(todayToggle).toHaveAttribute('aria-pressed', 'true')
       await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
-      await expect(row).toBeVisible()
-      const count = row.locator('[data-track-count]')
-      const plus = row.getByRole('button', { name: 'Log one more for "Eggs for the kids"' })
-      const minus = row.getByRole('button', { name: 'Remove one from "Eggs for the kids"' })
+      await expect(chip).toBeVisible()
+      await expect(chipCount).toHaveText('0/2')
 
-      // One aligned line: title, bar, count, −, +1.
-      await expect(count).toContainText('0 / 2')
-      await expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
-      await expect(minus).toBeDisabled()
-
-      // +1 moves the count at once (optimistic) and the server agrees.
-      await plus.click()
-      await expect(count).toContainText('1 / 2')
-      await expect
-        .poll(async () => {
-          const res = await page.request.get(`/api/tasks/${id}`)
-          return (await res.json()).data.progress_current
-        })
-        .toBe(1)
-
-      // −1 is a correction, never below zero.
-      await minus.click()
-      await expect(count).toContainText('0 / 2')
-      await expect(minus).toBeDisabled()
-
-      // Reaching the target is "met": a state, not an exit — the line stays
-      // until the next load puts it away.
-      await plus.click()
-      await plus.click()
-      await expect(count).toContainText('2 / 2')
-      await expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2')
-      await expect(row).toBeVisible()
-
-      // Overflow stays observable (Trent, Jul 26): the third egg shows as 3/2.
-      await plus.click()
-      await expect(count).toContainText('3 / 2')
+      // Reaching the target is "met": a state, not an exit — and overflow
+      // stays observable (Trent, Jul 26): the third egg shows as 3/2. Back to
+      // back, well inside the met chip's 5-second countdown.
+      await chip.click()
+      await chip.click()
+      await expect(chipCount).toHaveText('2/2')
+      await chip.click()
+      await expect(chipCount).toHaveText('3/2')
 
       // The task itself is still open — progress is not completion. Polled, not
       // read once: the count on screen is optimistic and the +1 behind it is
@@ -356,7 +301,8 @@ test.describe('Track', () => {
         })
         .toEqual({ done: false, progress_current: 3 })
     } finally {
-      await closeTrack(page)
+      // The view toggle persists server-side; put it back for later tests.
+      if (viewBefore && viewBefore !== 'Today') await switchView(page, viewBefore)
     }
   })
 
@@ -367,12 +313,11 @@ test.describe('Track', () => {
    * the Quotas page and the full-page editor use.
    */
   /**
-   * Trent kept flipping chips/rows by tapping the "Quotas" heading without
-   * meaning to (2026-09-24). The heading is plain text now; only the labelled
-   * switch at the header's right changes the view, and the choice still
-   * persists as the server-side `track_expanded` preference.
+   * The "Quotas" heading is plain text (2026-09-24: Trent kept flipping the
+   * view by tapping it), and since 2026-09-29 there is no rows layout at all —
+   * no "Show as rows / Show as chips" switch anywhere on the panel.
    */
-  test('the heading does not switch the view; the "Show as rows" control does', async ({
+  test('the heading is not a control, and there is no rows layout to switch to', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, {
@@ -380,41 +325,19 @@ test.describe('Track', () => {
       progress_target: 2,
       rrule: 'FREQ=WEEKLY',
     })
-    try {
-      await closeTrack(page)
-      await page.goto('/')
-      const panel = page.getByRole('region', { name: 'Quotas' })
-      const chip = panel.locator(`[data-track-chip="${id}"]`)
-      const row = panel.locator(`[data-track-row="${id}"]`)
-      await expect(chip).toBeVisible()
+    await page.goto('/')
+    const panel = page.getByRole('region', { name: 'Quotas' })
+    const chip = panel.locator(`[data-track-chip="${id}"]`)
+    await expect(chip).toBeVisible()
 
-      // The heading is not a control: no button carries its name, and
-      // clicking it leaves the chips where they were.
-      const heading = panel.locator('[data-track-heading]')
-      await expect(heading).toHaveText('Quotas')
-      await expect(panel.getByRole('button', { name: 'Quotas', exact: true })).toHaveCount(0)
-      await heading.click()
-      await expect(chip).toBeVisible()
-      await expect(row).toHaveCount(0)
+    const heading = panel.locator('[data-track-heading]')
+    await expect(heading).toHaveText('Quotas')
+    await expect(panel.getByRole('button', { name: 'Quotas', exact: true })).toHaveCount(0)
+    await heading.click()
+    await expect(chip).toBeVisible()
 
-      // The switch does, and says the way back.
-      const switchControl = panel.locator('[data-track-view-switch]')
-      await expect(switchControl).toHaveText('Show as rows')
-      const saved = waitForPreferenceSave(page, 'track_expanded')
-      await switchControl.click()
-      await saved
-      await expect(row).toBeVisible()
-      await expect(chip).toHaveCount(0)
-      await expect(switchControl).toHaveText('Show as chips')
-
-      // Persisted: a reload comes back in rows.
-      await page.reload()
-      await expect(panel.locator(`[data-track-row="${id}"]`)).toBeVisible()
-      await expect(panel.locator('[data-track-view-switch]')).toHaveText('Show as chips')
-    } finally {
-      // The task itself is cleaned up by `afterEach`; the preference is ours.
-      await closeTrack(page)
-    }
+    await expect(page.getByRole('button', { name: /^Show as (rows|chips)$/ })).toHaveCount(0)
+    await expect(page.locator('[data-track-view-switch], [data-track-view-toggle]')).toHaveCount(0)
   })
 
   test("deletes a quota from the chip's modal, with an Undo", async ({
@@ -427,7 +350,7 @@ test.describe('Track', () => {
     })
     await page.goto('/')
     const panel = page.getByRole('region', { name: 'Quotas' })
-    await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
+    await expect(panel).toBeVisible()
     const chip = panel.locator(`[data-track-chip="${id}"]`)
     await expect(chip).toBeVisible()
 
@@ -545,7 +468,7 @@ test.describe('Track', () => {
 
     await page.goto('/')
     const panel = page.getByRole('region', { name: 'Quotas' })
-    await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
+    await expect(panel).toBeVisible()
 
     // Exactly one WEEKLY section for the whole panel, however many weekly
     // quotas exist — `groupByPeriod` merges them into one group — so this
@@ -651,13 +574,6 @@ test.describe('Track', () => {
     await expect(stream.locator(`[data-track-chip="${bareId}"] [data-track-count]`)).toHaveText(
       '0/1',
     )
-
-    // Expanded, the same clusters become headings over the full rows — the
-    // grouping does not vanish when the panel opens.
-    await openTrack(page)
-    await expect(panel.locator(`[data-track-row="${devId}"]`)).toBeVisible()
-    await expect(weekSection.locator('[data-track-cluster="dev"]')).toBeVisible()
-    await closeTrack(page)
   })
 
   /**
@@ -699,7 +615,6 @@ test.describe('Track', () => {
     // with `fastForward`, never waited out.
     await page.clock.install()
     await page.goto('/')
-    await closeTrack(page)
     const panel = page.getByRole('region', { name: 'Quotas' })
     const monthSection = panel.locator('[data-quota-period="MONTHLY"]')
     const cluster = monthSection.locator(`[data-track-cluster="${label}"]`)
@@ -770,7 +685,7 @@ test.describe('Track', () => {
       await expect(page.getByRole('button', { name: 'Collapse Undated' })).toBeVisible()
       const row = page.locator(`#task-row-${id}`)
       await expect(row).toBeVisible()
-      await expect(page.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
+      await expect(page.locator(`[data-track-chip="${id}"]`)).toHaveCount(0)
     } finally {
       if (before && before !== 'Today') await switchView(page, before)
     }
@@ -809,11 +724,9 @@ test.describe('Track', () => {
       await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
 
       // ...and the panel above the list still has it, with its count.
-      await openTrack(page)
-      const row = page.locator(`[data-track-row="${id}"]`)
-      await expect(row).toBeVisible()
-      await expect(row).toContainText('1')
-      await closeTrack(page)
+      const chip = page.locator(`[data-track-chip="${id}"]`)
+      await expect(chip).toBeVisible()
+      await expect(chip.locator('[data-track-count]')).toHaveText('1/3')
     } finally {
       if (before && before !== 'All') await switchView(page, before)
     }
@@ -828,7 +741,7 @@ const isPatchOf = (id: number) => (r: Response) =>
 async function chipOf(page: Page, id: number) {
   await page.goto('/')
   const panel = page.getByRole('region', { name: 'Quotas' })
-  await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
+  await expect(panel).toBeVisible()
   // On a phone the chip's period starts folded to its bar — open it first.
   // The toggle is `sm:hidden`, so this is a no-op at desktop widths.
   const toggle = panel.locator(
@@ -1486,8 +1399,7 @@ async function readQuotasDetails(page: Page): Promise<unknown> {
 }
 
 /**
- * Run `body` with /quotas' view preference set — and the Quotas panel in
- * chips, which the summary shares with the dashboard — then put back what was
+ * Run `body` with /quotas' view preference set, then put back what was
  * there. Server preferences on the one user every spec shares, read rather
  * than assumed. No `expect` in the restore: it runs from `finally`, and a
  * failing cleanup would hide the real failure.
@@ -1495,7 +1407,7 @@ async function readQuotasDetails(page: Page): Promise<unknown> {
 async function withQuotasView(page: Page, details: boolean, body: () => Promise<void>) {
   const before = (await (await page.request.get('/api/user/preferences')).json()).data
   const res = await page.request.patch('/api/user/preferences', {
-    data: { quotas_details: details, track_expanded: false },
+    data: { quotas_details: details },
   })
   expect(res.ok()).toBeTruthy()
   try {
@@ -1503,7 +1415,7 @@ async function withQuotasView(page: Page, details: boolean, body: () => Promise<
   } finally {
     await page.request
       .patch('/api/user/preferences', {
-        data: { quotas_details: before.quotas_details, track_expanded: before.track_expanded },
+        data: { quotas_details: before.quotas_details },
       })
       .catch(() => {})
   }
@@ -1532,12 +1444,12 @@ test.describe('Quotas page — summary and details', () => {
       await expect(quotasViewButton(page, 'Summary')).toHaveAttribute('aria-pressed', 'true')
       await expect(summary.getByRole('button', { name: 'New quota' })).toBeVisible()
 
-      // The dashboard's panel itself, not a copy — one "Quotas" region, its
-      // chips/rows switch, and none of what only the dashboard needs (the
-      // phone's section fold, the redundant heading).
+      // The dashboard's panel itself, not a copy — one "Quotas" region, and
+      // none of what only the dashboard needs (the phone's section fold, the
+      // redundant heading). No chips/rows switch: chips are the only layout.
       const panel = page.getByRole('region', { name: 'Quotas' })
       await expect(panel).toHaveCount(1)
-      await expect(panel.locator('[data-track-view-switch]')).toBeVisible()
+      await expect(panel.getByRole('button', { name: /^Show as (rows|chips)$/ })).toHaveCount(0)
       await expect(panel.locator('[data-track-section-toggle]')).toHaveCount(0)
       await expect(panel.locator('[data-track-heading]')).toHaveCount(0)
 
@@ -1554,12 +1466,6 @@ test.describe('Quotas page — summary and details', () => {
       await page.keyboard.press('Escape')
       await expect(pop).toHaveCount(0)
       await expect(count).toHaveText('0/3')
-
-      // Chips/rows is the panel's own switch, shared with the dashboard.
-      const saved = waitForPreferenceSave(page, 'track_expanded')
-      await panel.getByRole('button', { name: 'Show as rows' }).click()
-      await saved
-      await expect(panel.locator(`[data-track-row="${id}"]`)).toBeVisible()
     })
   })
 

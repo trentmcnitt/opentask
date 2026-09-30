@@ -397,19 +397,29 @@ export interface ApnsEnrichedPayload {
   taskId: number
 }
 
+/** Must match `NotificationCategory.taskAdded` in `ios/Shared/NotificationIdentifiers.swift`. */
+export const TASK_ADDED_CATEGORY = 'TASK_ADDED'
+
 /**
  * The "AI finished" notification for a just-added task (enrichment-notify.ts).
  *
  * Built to land quietly: `interruption-level: passive` (Notification Center
  * only, no banner, doesn't light the screen), no `sound` key, APNs priority 5.
- * No `category`, so none of the overdue notification's buttons (Done, +1hr,
- * All +1hr) or its content extension. No `badge`: this says nothing about the
- * overdue count, so it leaves the icon alone.
+ * Category `TASK_ADDED` (`TASK_ADDED_CATEGORY`): two buttons, Done and
+ * Delete (destructive), registered by every app (`registerNotificationCategories`
+ * in `ios/Shared/NotificationConstants.swift` — iPhone, Watch and Mac). Both
+ * POST `/api/notifications/actions` (`done` / `delete`) through the shared
+ * `NotificationActionRunner`. No snooze: the task was just added, so it isn't
+ * overdue and "+1hr" means nothing yet. Not in the content extension's
+ * `UNNotificationExtensionCategory` list, so the system's own expanded view
+ * shows it. No `badge`: this says nothing about the overdue count, so it
+ * leaves the icon alone.
  *
- * `data.taskId` is the key the apps read: with no category, a tap lands in the
- * apps' individual-task branch (`UNNotificationDefaultActionIdentifier` →
- * `navigateToTask`, i.e. `/?task=<id>`), and the `dismiss` silent push that a
- * done/snooze/delete sends for the task clears this notification too.
+ * `data.taskId` is the key the apps read: a body tap lands in the runner's
+ * task branch (`.openTask` → `navigateToTask`, i.e. `/?task=<id>`, which
+ * reveals and selects the row — see `DashboardClient.tsx`'s `?task=` effect),
+ * and the `dismiss` silent push that a done/snooze/delete sends for the task
+ * clears this notification too.
  *
  * `threadId` and `collapseId` are `enriched-<id>`: each task is its own stack,
  * and a second push for the same task would replace, not stack.
@@ -427,6 +437,7 @@ export function buildEnrichedNotification(
   return new Notification(deviceToken, {
     alert: { title: payload.title, body: payload.body },
     topic,
+    category: TASK_ADDED_CATEGORY,
     threadId: id,
     collapseId: id,
     priority: Priority.throttled,

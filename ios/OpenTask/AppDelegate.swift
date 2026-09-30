@@ -323,8 +323,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     // push does not.)
                     WebViewManager.shared.navigate(path: "/")
                 case .openTask(let taskId):
-                    // Navigate the WebView to /?task=<id> so DashboardClient
-                    // opens the QuickActionPanel.
+                    // /?task=<id>: DashboardClient brings the row into view
+                    // and selects it (no editor).
                     WebViewManager.shared.navigateToTask(taskId)
                 default:
                     break

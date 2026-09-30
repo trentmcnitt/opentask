@@ -170,6 +170,10 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       } catch (err) {
         cfg.onRefresh()
         showSaveError(err)
+        // Reported above; rethrown so the dashboard's quick-action popover
+        // keeps its staged edits and stays open instead of closing as if the
+        // save had worked (the refresh above undoes the optimistic update).
+        throw err
       }
     },
     [bumpUndoCount, handleUndoRef],

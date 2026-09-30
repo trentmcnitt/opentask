@@ -67,7 +67,6 @@ export interface Prefs {
   defaultSort: SortOption
   defaultSortReversed: boolean
   filtersExpanded: boolean
-  trackExpanded: boolean
   quotasDetails: boolean
   notificationsEnabled: boolean
   /** The quiet "AI finished" push for a just-added task. */
@@ -110,7 +109,6 @@ export const DEFAULT_PREFS: Prefs = {
   defaultSort: 'due_date',
   defaultSortReversed: false,
   filtersExpanded: false,
-  trackExpanded: false,
   quotasDetails: false,
   notificationsEnabled: true,
   enrichmentNotificationsEnabled: true,
@@ -185,7 +183,6 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'defaultSort', data.default_sort, truthy)
   take(out, 'defaultSortReversed', data.default_sort_reversed)
   take(out, 'filtersExpanded', data.filters_expanded)
-  take(out, 'trackExpanded', data.track_expanded)
   take(out, 'quotasDetails', data.quotas_details)
   take(out, 'notificationsEnabled', data.notifications_enabled)
   take(out, 'enrichmentNotificationsEnabled', data.enrichment_notifications_enabled)

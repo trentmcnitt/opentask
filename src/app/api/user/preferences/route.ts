@@ -193,7 +193,10 @@ function validateGeneralFields(
     changes.filters_expanded = body.filters_expanded ? 1 : 0
   }
 
-  // §5: whether the Track panel is pinned open.
+  // §5: whether the Track panel showed rows instead of chips. UNUSED since
+  // 2026-09-29 — the web app dropped the rows layout and no longer reads or
+  // writes this. Still accepted and returned so an older client (or anything
+  // scripted against the API) keeps working; the column stays.
   if (body.track_expanded !== undefined) {
     if (typeof body.track_expanded !== 'boolean') return 'track_expanded must be a boolean'
     changes.track_expanded = body.track_expanded ? 1 : 0

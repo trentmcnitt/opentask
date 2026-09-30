@@ -3221,14 +3221,17 @@ paths:
       tags: [Notifications]
       security: []
       description: |
-        Done or snooze for a single task, as sent by notification action
-        buttons. The API token goes in the body, not the `Authorization`
+        Done, snooze or delete for a single task, as sent by notification
+        action buttons. The API token goes in the body, not the `Authorization`
         header, because the iOS notification extension cannot set headers.
 
         - `done` — mark the task done
         - `snooze30` — snooze 30 minutes from now
         - `snooze` — snooze 1 hour from now, rounded to the hour
         - `snooze2h` — snooze 2 hours from now, rounded to the hour
+        - `delete` — move the task to the trash (a soft delete, undoable like
+          any other delete; the "AI finished" notification's Delete button).
+          A task already in the trash is a 400.
       requestBody:
         required: true
         content:
@@ -3239,7 +3242,7 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [done, snooze, snooze30, snooze2h]
+                  enum: [done, snooze, snooze30, snooze2h, delete]
                 task_id:
                   type: integer
                   minimum: 1
@@ -3262,7 +3265,7 @@ paths:
                     properties:
                       action:
                         type: string
-                        enum: [done, snooze, snooze30, snooze2h]
+                        enum: [done, snooze, snooze30, snooze2h, delete]
                       task_id:
                         type: integer
                       until:

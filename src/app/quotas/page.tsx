@@ -34,8 +34,8 @@ import { PageLoading } from '@/components/PageLoading'
  * - DETAILS — `QuotasView`, the list with "met 2×", selection and the
  *   multi-quota editor, unchanged.
  *
- * The choice is the server preference `quotas_details`, like the panel's own
- * `track_expanded`: it follows the user between the phone and the desk, and it
+ * The choice is the server preference `quotas_details`: it follows the user
+ * between the phone and the desk, and it
  * goes through the provider's dirty-field merge and ordered saver, so a press
  * that lands before the preferences load is not snapped back by it.
  *

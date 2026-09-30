@@ -1,8 +1,9 @@
 /**
  * The "AI finished" notification's APNs payload (enrichment-notify.ts,
- * `buildEnrichedNotification` in apns.ts): passive, silent, low priority, no
- * category (so none of the overdue notification's buttons), collapse and
- * thread id per task, and the `taskId` the apps open on tap.
+ * `buildEnrichedNotification` in apns.ts): passive, silent, low priority, the
+ * `TASK_ADDED` category (Done and Delete, not the overdue notification's
+ * snooze buttons), collapse and thread id per task, and the `taskId` the apps
+ * open on tap.
  *
  * apns2's client is faked, the real `Notification` class kept, so what is
  * asserted is what apns2 would put on the wire (same approach as
@@ -68,16 +69,18 @@ describe('the enriched-task APNs payload', () => {
     taskId: 42,
   }
 
-  test('is passive, silent, low priority, with no category and no badge', () => {
+  test('is passive, silent, low priority, TASK_ADDED, with no badge', () => {
     const n = buildEnrichedNotification('tok', 'io.mcnitt.opentask', payload)
 
     expect(n.pushType).toBe(PushType.alert)
     expect(n.priority).toBe(Priority.throttled)
-    // No `sound`, no `category`, no `badge`: lands quietly in Notification
-    // Center, without the overdue buttons, and leaves the icon badge alone.
+    // No `sound`, no `badge`: lands quietly in Notification Center and leaves
+    // the icon badge alone. `TASK_ADDED` carries Done and Delete (the apps
+    // register it — NotificationConstants.swift), not the overdue buttons.
     expect(n.buildApnsOptions()).toEqual({
       aps: {
         alert: { title: 'Call the dentist', body: 'Added to Work · Tomorrow 9:00 AM · High' },
+        category: 'TASK_ADDED',
         'thread-id': 'enriched-42',
         'interruption-level': 'passive',
       },

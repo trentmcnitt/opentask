@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { useEditorHost } from '@/hooks/useEditorHost'
 import { DirtyCard } from '@/components/DirtyCard'
 import type { Task, Project } from '@/types'
 
@@ -18,8 +19,12 @@ interface QuickActionPopoverProps {
   open: boolean
   /** Close handler */
   onClose: () => void
-  /** Batched save callback - all changes are sent in a single call */
-  onSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
+  /**
+   * Batched save callback - all changes are sent in a single call. Rejects
+   * (after reporting the failure) when the save fails, so the panel keeps the
+   * staged edits and the popover stays open.
+   */
+  onSaveAll: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   /** Called to delete task */
   onDelete?: (taskId: number) => void
   /** Called to mark task as done */
@@ -69,33 +74,36 @@ export function QuickActionPopover({
     }
   }, [focusedTask, onMarkDone, onClose])
 
-  // Batched save handler - wraps onSaveAll with taskId and closes the popover
+  // Batched save handler - wraps onSaveAll with taskId. It does not close the
+  // popover itself: the panel calls onSave (= onClose) once the save resolves,
+  // and on a rejection (already reported by the host) it keeps the staged
+  // edits and the popover stays open, so a refused save loses nothing.
   const handleSaveAll = useCallback(
-    (changes: QuickActionPanelChanges) => {
+    async (changes: QuickActionPanelChanges) => {
       if (!focusedTask) return
-      onSaveAll(focusedTask.id, changes)
-      onClose()
+      await onSaveAll(focusedTask.id, changes)
     },
-    [focusedTask, onSaveAll, onClose],
+    [focusedTask, onSaveAll],
   )
 
-  // Track dirty state from QuickActionPanel for visual indicator
-  const [isPanelDirty, setIsPanelDirty] = useState(false)
+  // Dirty state from QuickActionPanel: `isDirty` paints the stripe and locks
+  // the sheet's drag; the dismiss guard reads `dirtyRef`, which is current the
+  // moment the panel reports (see useEditorHost for why state is not enough).
+  const { isDirty: isPanelDirty, dirtyRef, onDirtyChange, saveRef, commit } = useEditorHost()
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
-  const saveRef = useRef<(() => Promise<void> | void) | null>(null)
 
   // Handle dialog/sheet close — intercept when dirty to show confirmation
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (!newOpen) {
-        if (isPanelDirty) {
+        if (dirtyRef.current) {
           setShowCloseConfirm(true)
         } else {
           onClose()
         }
       }
     },
-    [onClose, isPanelDirty],
+    [onClose, dirtyRef],
   )
 
   const handleDiscardAndClose = useCallback(() => {
@@ -104,15 +112,12 @@ export function QuickActionPopover({
   }, [onClose])
 
   const handleSaveAndClose = useCallback(async () => {
-    try {
-      await saveRef.current?.()
-      // saveRef triggers QuickActionPanel's handleSave, which calls onSave (= onClose)
-    } catch {
-      setShowCloseConfirm(false)
-      return
-    }
+    // commit() runs QuickActionPanel's save, which calls onSave (= onClose) on
+    // success and keeps the popover open with its edits on failure. It does
+    // not reject; either way the confirmation closes.
+    await commit()
     setShowCloseConfirm(false)
-  }, [])
+  }, [commit])
 
   if (!focusedTask) return null
 
@@ -130,7 +135,7 @@ export function QuickActionPopover({
         onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
         onSave={onClose}
         onCancel={onClose}
-        onDirtyChange={setIsPanelDirty}
+        onDirtyChange={onDirtyChange}
         saveRef={saveRef}
         projects={projects}
         annotation={annotation}

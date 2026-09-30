@@ -187,7 +187,14 @@ export interface ReminderCreateInput {
  * goes through a full page load, which resets module state, so one user's
  * cache cannot leak into another's session.
  */
-let remindersCache: { groups: ReminderGroup[]; hasAny: boolean; notToday: Task[] } | null = null
+interface RemindersCache {
+  groups: ReminderGroup[]
+  hasAny: boolean
+  notToday: Task[]
+}
+let remindersCache: RemindersCache | null = null
+/** The rest of a payload, beside the groups — see `writeGroups`. */
+type CacheExtra = Partial<Omit<RemindersCache, 'groups'>>
 
 // Anyone showing a number derived from the cache (the nav badge) subscribes
 // here and re-renders whenever the surface refreshes or completes something.
@@ -356,9 +363,34 @@ export function useReminders({
   const [requestGuard] = useState(createLatestRequestGuard)
   /** IDs with a row actually rendered right now (see `registerRow`). */
   const mountedIdsRef = useRef<Set<number | string>>(new Set())
-  // The rendered groups, for the snapshot a failed completion restores.
+  /**
+   * The current groups — what every optimistic change computes from and every
+   * failure snapshot is taken from. `writeGroups` updates it at once, so two
+   * writes in one handler (`completeIds` commits reminders, then prompts)
+   * compose instead of the second overwriting the first.
+   */
   const groupsRef = useRef<ReminderGroup[]>(groups)
   groupsRef.current = groups
+  /**
+   * The one way `groups` changes: the ref, the state and the module cache
+   * together. Always called with a computed value, never from inside a
+   * `setGroups` updater — the cache write notifies other components (the nav
+   * badge), and an updater runs during this component's render, where React
+   * refuses a setState of another component ("Cannot update a component while
+   * rendering…"). `extra` carries the rest of a payload (`refresh`, `create`);
+   * without a full one an empty cache stays empty, so the badge never reads a
+   * `hasAny`/`notToday` nobody fetched.
+   */
+  const writeGroups = useCallback((next: ReminderGroup[], extra?: CacheExtra) => {
+    groupsRef.current = next
+    setGroups(next)
+    if (extra?.hasAny !== undefined) setHasAny(extra.hasAny)
+    if (extra?.notToday !== undefined) setNotToday(extra.notToday)
+    if (remindersCache) setRemindersCache({ ...remindersCache, ...extra, groups: next })
+    else if (extra?.hasAny !== undefined && extra.notToday !== undefined) {
+      setRemindersCache({ groups: next, hasAny: extra.hasAny, notToday: extra.notToday })
+    }
+  }, [])
   const stripPending = (incoming: ReminderGroup[]) =>
     reconcileInFlight(
       incoming,
@@ -384,13 +416,10 @@ export function useReminders({
       // shared cache the nav badge reads.
       if (!requestGuard.isLatest(seq)) return
       const parsed = parseRemindersPayload(json)
-      const nextGroups = stripPending(parsed.groups)
-      const nextHasAny = parsed.hasAny
-      const nextNotToday = parsed.notToday
-      setRemindersCache({ groups: nextGroups, hasAny: nextHasAny, notToday: nextNotToday })
-      setGroups(nextGroups)
-      setHasAny(nextHasAny)
-      setNotToday(nextNotToday)
+      writeGroups(stripPending(parsed.groups), {
+        hasAny: parsed.hasAny,
+        notToday: parsed.notToday,
+      })
       setError(null)
       setHydrated(true)
     } catch (err) {
@@ -403,44 +432,18 @@ export function useReminders({
     } finally {
       setLoading(false)
     }
-  }, [requestGuard])
+  }, [requestGuard, writeGroups])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  /**
-   * Complete ("consider") a reminder.
-   *
-   * Routed through the ordinary POST /api/tasks/:id/done so completion, undo,
-   * webhooks and recurrence advance behave exactly as they do for a task —
-   * §6 changes what a reminder LOOKS like, not how completion works.
-   *
-   * OPTIMISTIC: the row leaves local state (and the toast fires) BEFORE the
-   * server round trip — over a real network the round trip is what made
-   * check-off feel frozen. A FAILED call restores the snapshot taken before
-   * removal, so the item honestly reappears; same failure semantics as the
-   * widget's tombstones (§8).
-   */
-  /**
-   * Consider one or more reminders. One call, one undo entry — POST /done for
-   * a single item, POST /bulk/done for several — so the toast's Undo restores
-   * everything it removed.
-   *
-   * OPTIMISTIC, in both directions: the rows leave and the toast appears at
-   * once. The toast's Undo is safe to press before the server has answered:
-   * it waits for this request to settle first, so it can never undo whatever
-   * action came before. (Offering Undo only after the round trip was the old
-   * rule; over a real network that read as a frozen half-second between the
-   * tap and any acknowledgement.) A failed call restores the snapshot and
-   * turns the toast's promise into a no-op.
-   */
   /** Move ids out of `reminders` and in behind the slot's counter. */
-  const commitConsidered = useCallback((ids: number[]) => {
-    if (ids.length === 0) return
-    const idSet = new Set(ids)
-    setGroups((prev) => {
-      const next = prev.map((g) => {
+  const commitConsidered = useCallback(
+    (ids: number[]) => {
+      if (ids.length === 0) return
+      const idSet = new Set(ids)
+      const next = groupsRef.current.map((g) => {
         const considered = g.reminders.filter((r) => idSet.has(r.id))
         if (considered.length === 0) return g
         const reminders = g.reminders.filter((r) => !idSet.has(r.id))
@@ -452,10 +455,10 @@ export function useReminders({
           considered: considered.length + g.consideredItems.length,
         }
       })
-      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
-      return next
-    })
-  }, [])
+      writeGroups(next)
+    },
+    [writeGroups],
+  )
 
   /**
    * Run the refresh that was held while rows were collapsing, if the last of
@@ -474,15 +477,14 @@ export function useReminders({
    * handled prompt stays in its group (it counts as considered there) but no
    * longer renders, since only waiting prompts are rows.
    */
-  const commitPrompts = useCallback((keys: string[], intent: PromptIntent) => {
-    if (keys.length === 0) return
-    const intents = new Map(keys.map((k) => [k, intent] as const))
-    setGroups((prev) => {
-      const next = applyPromptIntents(prev, intents)
-      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
-      return next
-    })
-  }, [])
+  const commitPrompts = useCallback(
+    (keys: string[], intent: PromptIntent) => {
+      if (keys.length === 0) return
+      const intents = new Map(keys.map((k) => [k, intent] as const))
+      writeGroups(applyPromptIntents(groupsRef.current, intents))
+    },
+    [writeGroups],
+  )
   /** The action each collapsing prompt row commits when it has gone. */
   const leavingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
 
@@ -499,7 +501,23 @@ export function useReminders({
    * the circle and every sweep send 'consider', only the square checkbox sends
    * 'did'. The request goes to the narrowest endpoint that covers it: a
    * reminder's /done, bulk/done, a prompt endpoint, or bulk/complete for a
-   * mix (which is what makes a slot's "Considered all" one Undo).
+   * mix (which is what makes a slot's "Considered all" one Undo), so the
+   * toast's Undo restores everything it removed.
+   *
+   * A reminder goes through the ordinary completion endpoints, so completion,
+   * undo, webhooks and recurrence advance behave exactly as they do for a
+   * task — §6 changes what a reminder LOOKS like, not how completion works.
+   *
+   * OPTIMISTIC, in both directions: the rows leave and the toast appears at
+   * once, BEFORE the server round trip — over a real network the round trip
+   * is what made check-off feel frozen. The toast's Undo is safe to press
+   * before the server has answered: it waits for this request to settle
+   * first, so it can never undo whatever action came before. (Offering Undo
+   * only after the round trip was the old rule; that read as a frozen
+   * half-second between the tap and any acknowledgement.) A FAILED call
+   * restores the snapshot taken before anything moved, so the item honestly
+   * reappears, and turns the toast's promise into a no-op — the same failure
+   * semantics as the widget's tombstones (§8).
    */
   const completeIds = useCallback(
     async (
@@ -580,8 +598,7 @@ export function useReminders({
           for (const id of all) next.delete(id)
           return next
         })
-        if (remindersCache) setRemindersCache({ ...remindersCache, groups: snapshot })
-        setGroups(snapshot)
+        writeGroups(snapshot)
         if (!hadConsidered) setConsideredAny(false)
         showToast({ message: 'Could not complete reminders', type: 'error' })
         // Clearing those marks may have emptied the leaving set, and a refresh
@@ -600,7 +617,7 @@ export function useReminders({
         if (settledOk || keys.length > 0) void refresh()
       }
     },
-    [refresh, commitConsidered, commitPrompts, releaseHeldRefresh],
+    [refresh, commitConsidered, commitPrompts, releaseHeldRefresh, writeGroups],
   )
 
   /**
@@ -683,14 +700,7 @@ export function useReminders({
       if (prompt.slot_id === toSlotId) return
       const moves = new Map([[prompt.prompt_key, toSlotId]])
       pendingMovesRef.current.set(prompt.prompt_key, toSlotId)
-      // Computed here, not in a `setGroups` updater: the cache write notifies
-      // other components (the nav badge), and an updater runs during this
-      // component's render — React refuses a setState of another component
-      // from there ("Cannot update a component while rendering…").
-      const next = applyPromptMoves(groupsRef.current, moves)
-      groupsRef.current = next
-      setGroups(next)
-      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+      writeGroups(applyPromptMoves(groupsRef.current, moves))
       // Only this move's own entry is cleared: a second move of the same row
       // made while this one was out owns the key now.
       const settle = () => {
@@ -707,18 +717,13 @@ export function useReminders({
         await refresh()
       }
     },
-    [refresh],
+    [refresh, writeGroups],
   )
 
-  const putBack = usePutBack({ setGroups, refresh, restoringIdsRef, callbacksRef })
-  const putBackPrompt = usePutBackPrompt({
-    setGroups,
-    groupsRef,
-    refresh,
-    restoringPromptsRef,
-    callbacksRef,
-  })
-  const remove = useRemove({ setGroups, refresh, pendingIdsRef, callbacksRef })
+  const optimisticDeps = { writeGroups, groupsRef, refresh, callbacksRef }
+  const putBack = usePutBack({ ...optimisticDeps, restoringIdsRef })
+  const putBackPrompt = usePutBackPrompt({ ...optimisticDeps, restoringPromptsRef })
+  const remove = useRemove({ ...optimisticDeps, pendingIdsRef })
 
   const complete = useCallback(
     (task: Task) => completeIds([task], () => `Considered \u201c${task.title}\u201d`),
@@ -753,11 +758,7 @@ export function useReminders({
       const daily =
         /^FREQ=DAILY(?:;|$)/.test(task.rrule ?? '') && !/INTERVAL=/.test(task.rrule ?? '')
       if (daily && slots && tz) {
-        setGroups((prev) => {
-          const next = insertIntoGroups(prev, task, slots, tz)
-          if (remindersCache) setRemindersCache({ ...remindersCache, groups: next, hasAny: true })
-          return next
-        })
+        writeGroups(insertIntoGroups(groupsRef.current, task, slots, tz), { hasAny: true })
         void refresh()
       } else {
         await refresh()
@@ -765,7 +766,7 @@ export function useReminders({
       callbacksRef.current.onCompleted?.()
       return task
     },
-    [refresh],
+    [refresh, writeGroups],
   )
 
   // A slot's "Considered all" sweeps its waiting prompts too — as considered,
@@ -803,35 +804,92 @@ export function useReminders({
   }
 }
 
+/** What `useReminders` hands the three small optimistic hooks below. */
+interface OptimisticDeps {
+  writeGroups: (next: ReminderGroup[]) => void
+  groupsRef: React.MutableRefObject<ReminderGroup[]>
+  refresh: () => Promise<void>
+  callbacksRef: React.MutableRefObject<UseRemindersOptions>
+}
+
+/**
+ * The request half of `useRemove`, `usePutBack` and `usePutBackPrompt`, once
+ * each has moved its rows: send the request, show the success toast at once
+ * with an Undo that waits for the request to settle (so it can never undo
+ * whatever came before), and on failure write `snapshot` back with an error
+ * toast. `settle` clears the hook's in-flight mark. The refresh after it runs
+ * on success, and after a failure only when `refreshOnFailure` says so — each
+ * hook's own policy, passed explicitly rather than defaulted.
+ */
+async function runOptimisticRequest({
+  send,
+  message,
+  errorMessage,
+  snapshot,
+  settle,
+  refreshOnFailure,
+  deps: { writeGroups, refresh, callbacksRef },
+}: {
+  send: () => Promise<Response>
+  message: string
+  errorMessage: string
+  snapshot: ReminderGroup[]
+  settle: () => void
+  refreshOnFailure: boolean
+  deps: OptimisticDeps
+}): Promise<void> {
+  const request = (async () => {
+    const res = await send()
+    if (!res.ok) throw new Error(errorMessage)
+    callbacksRef.current.onCompleted?.()
+  })()
+
+  let settledOk = false
+  showToast({
+    message,
+    type: 'success',
+    action: {
+      label: 'Undo',
+      onClick: () => {
+        void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
+      },
+    },
+  })
+
+  try {
+    await request
+    settledOk = true
+  } catch {
+    writeGroups(snapshot)
+    showToast({ message: errorMessage, type: 'error' })
+  } finally {
+    settle()
+    if (settledOk || refreshOnFailure) void refresh()
+  }
+}
+
 /**
  * Trash one or more reminders (POST /api/tasks/bulk/delete — a soft delete,
  * one undo entry). Trent (2026-09-05): the surface had no way to get rid of a
  * reminder. Same optimistic shape as considering: the rows leave at once,
  * the toast's Undo waits for the request, a failure restores the snapshot.
  * The ids ride in `pendingIdsRef` so a refresh landing mid-request does not
- * re-insert them.
+ * re-insert them. No refresh after a failure: the snapshot is the truth.
  */
 function useRemove({
-  setGroups,
-  refresh,
   pendingIdsRef,
-  callbacksRef,
-}: {
-  setGroups: React.Dispatch<React.SetStateAction<ReminderGroup[]>>
-  refresh: () => Promise<void>
-  pendingIdsRef: React.MutableRefObject<Set<number>>
-  callbacksRef: React.MutableRefObject<UseRemindersOptions>
-}) {
+  ...deps
+}: OptimisticDeps & { pendingIdsRef: React.MutableRefObject<Set<number>> }) {
+  const { writeGroups, groupsRef, refresh, callbacksRef } = deps
   return useCallback(
     async (tasks: Task[]) => {
       const ids = tasks.map((t) => t.id)
       if (ids.length === 0) return
       const idSet = new Set(ids)
       for (const id of ids) pendingIdsRef.current.add(id)
-      let snapshot: ReminderGroup[] | null = null
-      setGroups((prev) => {
-        snapshot = prev
-        const next = prev.map((g) => {
+      const snapshot = groupsRef.current
+      writeGroups(
+        snapshot.map((g) => {
           const reminders = g.reminders.filter((r) => !idSet.has(r.id))
           const consideredItems = g.consideredItems.filter((r) => !idSet.has(r.id))
           if (
@@ -846,52 +904,30 @@ function useRemove({
             consideredItems,
             considered: consideredItems.length,
           }
-        })
-        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
-        return next
-      })
+        }),
+      )
 
-      const request = (async () => {
-        const res = await fetch('/api/tasks/bulk/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids }),
-        })
-        if (!res.ok) throw new Error('Failed to delete reminders')
-        callbacksRef.current.onCompleted?.()
-      })()
-
-      let settledOk = false
-      showToast({
+      await runOptimisticRequest({
+        send: () =>
+          fetch('/api/tasks/bulk/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+          }),
         message:
           tasks.length === 1
-            ? `Moved \u201c${tasks[0].title}\u201d to Trash`
+            ? `Moved “${tasks[0].title}” to Trash`
             : `Moved ${tasks.length} reminders to Trash`,
-        type: 'success',
-        action: {
-          label: 'Undo',
-          onClick: () => {
-            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
-          },
+        errorMessage: 'Could not delete reminders',
+        snapshot,
+        settle: () => {
+          for (const id of ids) pendingIdsRef.current.delete(id)
         },
+        refreshOnFailure: false,
+        deps: { writeGroups, groupsRef, refresh, callbacksRef },
       })
-
-      try {
-        await request
-        settledOk = true
-      } catch {
-        if (snapshot) {
-          const restored = snapshot
-          if (remindersCache) setRemindersCache({ ...remindersCache, groups: restored })
-          setGroups(restored)
-        }
-        showToast({ message: 'Could not delete reminders', type: 'error' })
-      } finally {
-        for (const id of ids) pendingIdsRef.current.delete(id)
-        if (settledOk) void refresh()
-      }
     },
-    [refresh, setGroups, pendingIdsRef, callbacksRef],
+    [writeGroups, groupsRef, refresh, callbacksRef, pendingIdsRef],
   )
 }
 
@@ -899,27 +935,20 @@ function useRemove({
  * Put a considered thought back (POST /api/tasks/:id/undone — for a
  * recurring reminder that reverses the latest completion). Optimistic the
  * same way as considering: the row returns at once, the toast's Undo waits
- * for the request, a failure restores the snapshot.
+ * for the request, a failure restores the snapshot (and does not refresh).
  */
 function usePutBack({
-  setGroups,
-  refresh,
   restoringIdsRef,
-  callbacksRef,
-}: {
-  setGroups: React.Dispatch<React.SetStateAction<ReminderGroup[]>>
-  refresh: () => Promise<void>
-  restoringIdsRef: React.MutableRefObject<Set<number>>
-  callbacksRef: React.MutableRefObject<UseRemindersOptions>
-}) {
+  ...deps
+}: OptimisticDeps & { restoringIdsRef: React.MutableRefObject<Set<number>> }) {
+  const { writeGroups, groupsRef, refresh, callbacksRef } = deps
   return useCallback(
     async (task: Task) => {
       const id = task.id
       restoringIdsRef.current.add(id)
-      let snapshot: ReminderGroup[] | null = null
-      setGroups((prev) => {
-        snapshot = prev
-        const next = prev.map((g) => {
+      const snapshot = groupsRef.current
+      writeGroups(
+        snapshot.map((g) => {
           if (!g.consideredItems.some((r) => r.id === id)) return g
           const consideredItems = g.consideredItems.filter((r) => r.id !== id)
           const reminders = [...g.reminders, task]
@@ -930,45 +959,22 @@ function usePutBack({
             consideredItems,
             considered: consideredItems.length,
           }
-        })
-        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
-        return next
-      })
+        }),
+      )
 
-      const request = (async () => {
-        const res = await fetch(`/api/tasks/${id}/undone`, { method: 'POST' })
-        if (!res.ok) throw new Error('Failed to put back')
-        callbacksRef.current.onCompleted?.()
-      })()
-
-      let settledOk = false
-      showToast({
-        message: `Put back \u201c${task.title}\u201d`,
-        type: 'success',
-        action: {
-          label: 'Undo',
-          onClick: () => {
-            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
-          },
+      await runOptimisticRequest({
+        send: () => fetch(`/api/tasks/${id}/undone`, { method: 'POST' }),
+        message: `Put back “${task.title}”`,
+        errorMessage: 'Could not put it back',
+        snapshot,
+        settle: () => {
+          restoringIdsRef.current.delete(id)
         },
+        refreshOnFailure: false,
+        deps: { writeGroups, groupsRef, refresh, callbacksRef },
       })
-
-      try {
-        await request
-        settledOk = true
-      } catch {
-        if (snapshot) {
-          const restored = snapshot
-          if (remindersCache) setRemindersCache({ ...remindersCache, groups: restored })
-          setGroups(restored)
-        }
-        showToast({ message: 'Could not put it back', type: 'error' })
-      } finally {
-        restoringIdsRef.current.delete(id)
-        if (settledOk) void refresh()
-      }
     },
-    [refresh, setGroups, restoringIdsRef, callbacksRef],
+    [writeGroups, groupsRef, refresh, callbacksRef, restoringIdsRef],
   )
 }
 
@@ -978,68 +984,41 @@ function usePutBack({
  * toast's Undo waits for the request, a failure restores the snapshot. The
  * count is the server's to change (a did-it's progress comes off, exactly
  * what it added), so the refresh after the request brings the new count.
+ * It refreshes after a failure too: the likeliest cause is a page left open
+ * over midnight, whose keys are yesterday's and are refused, and only the
+ * server has today's.
  */
 function usePutBackPrompt({
-  setGroups,
-  groupsRef,
-  refresh,
   restoringPromptsRef,
-  callbacksRef,
-}: {
-  setGroups: React.Dispatch<React.SetStateAction<ReminderGroup[]>>
-  groupsRef: React.MutableRefObject<ReminderGroup[]>
-  refresh: () => Promise<void>
-  restoringPromptsRef: React.MutableRefObject<Set<string>>
-  callbacksRef: React.MutableRefObject<UseRemindersOptions>
-}) {
+  ...deps
+}: OptimisticDeps & { restoringPromptsRef: React.MutableRefObject<Set<string>> }) {
+  const { writeGroups, groupsRef, refresh, callbacksRef } = deps
   return useCallback(
     async (prompt: QuotaPrompt) => {
       const key = prompt.prompt_key
       if (restoringPromptsRef.current.has(key)) return
       restoringPromptsRef.current.add(key)
-      // Computed here, not in a `setGroups` updater — see `movePrompt`.
       const snapshot = groupsRef.current
-      const next = applyPromptRestores(snapshot, new Set([key]))
-      groupsRef.current = next
-      setGroups(next)
-      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+      writeGroups(applyPromptRestores(snapshot, new Set([key])))
 
-      const request = (async () => {
-        const res = await fetch('/api/quota-prompts/restore', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: [key] }),
-        })
-        if (!res.ok) throw new Error('Failed to put back')
-        callbacksRef.current.onCompleted?.()
-      })()
-
-      showToast({
-        message: `Put back \u201c${prompt.title}\u201d`,
-        type: 'success',
-        action: {
-          label: 'Undo',
-          onClick: () => {
-            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
-          },
+      await runOptimisticRequest({
+        send: () =>
+          fetch('/api/quota-prompts/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys: [key] }),
+          }),
+        message: `Put back “${prompt.title}”`,
+        errorMessage: 'Could not put it back',
+        snapshot,
+        settle: () => {
+          restoringPromptsRef.current.delete(key)
         },
+        refreshOnFailure: true,
+        deps: { writeGroups, groupsRef, refresh, callbacksRef },
       })
-
-      try {
-        await request
-      } catch {
-        // Likeliest cause: a page left open over midnight, whose keys are
-        // yesterday's and are refused. Back to what the screen showed.
-        groupsRef.current = snapshot
-        setGroups(snapshot)
-        if (remindersCache) setRemindersCache({ ...remindersCache, groups: snapshot })
-        showToast({ message: 'Could not put it back', type: 'error' })
-      } finally {
-        restoringPromptsRef.current.delete(key)
-        void refresh()
-      }
     },
-    [refresh, setGroups, groupsRef, restoringPromptsRef, callbacksRef],
+    [writeGroups, groupsRef, refresh, callbacksRef, restoringPromptsRef],
   )
 }
 

@@ -219,20 +219,34 @@ Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:
 
 **Delivery.** Passive everywhere:
 
-- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: passive`, no `sound`, APNs priority 5, no `category` (so no Done / +1hr buttons and no content extension), no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. With no category and a `taskId`, a tap takes the apps' individual-task path and opens `/?task=<id>`; the `dismiss` silent push for that task (done, snooze, delete) clears it too.
-- Web Push: `urgency: low`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. Like every Web Push, it is not shown while an app window is visible.
+- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: passive`, no `sound`, APNs priority 5, `category: TASK_ADDED`, no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. A tap takes the apps' individual-task path and loads `/?task=<id>` (see [Tapping a task notification](#tapping-a-task-notification)); the `dismiss` silent push for that task (done, snooze, delete) clears it too.
+- **Buttons (`TASK_ADDED`, added 2026-09-29):** **Done** and **Delete** (Delete is `.destructive`, drawn red, and not `.authenticationRequired` — it is the app's undoable soft delete, the same weight as Done). Registered by every app in `registerNotificationCategories()` (`ios/Shared/NotificationConstants.swift` — iPhone, Watch and Mac) and run by the shared `NotificationActionRunner`: Done posts `action: "done"` and Delete `action: "delete"` to `POST /api/notifications/actions` (token in the body), which calls `markDone` / `deleteTask` — undo-logged, notifications dismissed on every device, tabs and widgets synced. No snooze buttons: a task added a minute ago isn't overdue. `TASK_ADDED` is not in the content extension's `UNNotificationExtensionCategory` list, so iOS shows its own expanded view. A build older than this change hasn't registered the category and shows the notification with no buttons, as before.
+- Web Push: `urgency: low`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. No buttons — `public/sw.js` shows no `actions` for any notification, overdue included. Like every Web Push, it is not shown while an app window is visible.
 - Devices: every `apns_devices` row, the watch app included (the same set overdue alerts go to; only the badge push skips the watch), and every Web Push subscription. Never widget push tokens.
 
 ```json
 {
   "aps": {
     "alert": { "title": "Call the dentist", "body": "Added to Work · Tomorrow 9:00 AM · High" },
+    "category": "TASK_ADDED",
     "thread-id": "enriched-42",
     "interruption-level": "passive"
   },
   "taskId": 42
 }
 ```
+
+### Tapping a task notification
+
+Tapping any task notification — overdue, "AI finished", or the test notification — opens the dashboard at the bare `/?task=<id>`: the iPhone and Mac apps load it through `WebViewManager.navigateToTask` (`DeepLinkRouter.notificationTaskPath`), and Web Push carries it as `data.url`. Since 2026-09-29 the dashboard answers it by bringing the task's row on screen, flashing it and **selecting** it, so the floating action bar is up for it. Nothing opens: no quick panel, no sheet. Before, the same URL opened the quick panel. The steps are in `src/lib/task-link.ts`; in short:
+
+- A folded group is unfolded and a "Show all" cap lifted.
+- A search, filter chip or AI chip that hides the task is cleared, and only then.
+- If the view leaves it out (Today keeps only what is due by the end of today), the page shows All for that visit, without saving it as the view preference.
+- A reminder goes to `/reminders?reminder=<id>&select=1` (selected there too), a quota to `/quotas?quota=<id>`.
+- A task that is done, in the trash, or gone gets a toast saying which.
+
+The URL stayed the bare `/?task=<id>` on purpose: every producer of it is a notification, and the installed app builds already load exactly that, so the change needed only a server deploy. The widget's task link is `/?task=<id>&highlight=1`: it flashes the row and selects nothing.
 
 **When.** Both enrichment entry points in `src/core/ai/enrichment.ts` — the fire-and-forget `enrichSingleTask` on create and the per-minute `processEnrichmentQueue` safety net — call it after a successful model run, outside their error handling (a push failure is never an enrichment failure). It sends only when:
 
@@ -276,7 +290,7 @@ Requires the `remote-notification` background mode in the app's entitlements.
 
 ### Notification actions
 
-Native apps can register up to 4 action buttons per notification category. OpenTask registers: Done, +1hr, All +1hr. The content extension (Phase 4) can dynamically replace these with a snooze grid.
+Native apps can register up to 4 action buttons per notification category. OpenTask registers `TASK_REMINDER` (Done, +1hr, All +1hr, then the All → period actions), `TASK_SUMMARY` (All +1hr and the period actions), `SLOT_REMINDER` (Complete all) and `TASK_ADDED` (Done, Delete — the "AI finished" notification). The content extension (Phase 4) can dynamically replace the first three with a snooze grid. Every button posts to `POST /api/notifications/actions` (`done`, `snooze`, `snooze30`, `snooze2h`, `delete`) or a bulk endpoint, through `NotificationActionRunner`.
 
 ## WidgetKit push (widget sync)
 
