@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { LayoutGrid, Plus, Clock, Lightbulb, Gauge } from 'lucide-react'
 import { useRemindersBadge } from '@/hooks/useReminders'
 import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
+import { useDashboardTabClick } from '@/hooks/useDashboardTabClick'
 import { useTimezone } from '@/hooks/useTimezone'
 
 interface BottomTabsProps {
@@ -47,6 +48,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
   const remindersWaiting = useRemindersBadge(useTimezone())
   // One badge fits a tab: overdue (red) when there is any, else due today (blue).
   const taskCounts = useTaskNavCounts()
+  const onDashboardClick = useDashboardTabClick()
   const tasksBadge =
     taskCounts && taskCounts.overdue > 0
       ? { n: taskCounts.overdue, label: `${taskCounts.overdue} overdue`, tone: 'overdue' }
@@ -98,14 +100,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
               key={tab.label}
               href={tab.href}
               aria-label={tab.label}
-              onClick={
-                tab.href === '/' && isActive
-                  ? (e: React.MouseEvent<HTMLAnchorElement>) => {
-                      e.preventDefault()
-                      window.dispatchEvent(new CustomEvent('dashboard-reset'))
-                    }
-                  : undefined
-              }
+              onClick={tab.href === '/' ? onDashboardClick : undefined}
               className={`flex min-w-[48px] flex-col items-center justify-center rounded-lg p-2 ${
                 isActive ? 'text-blue-500' : 'text-muted-foreground'
               }`}

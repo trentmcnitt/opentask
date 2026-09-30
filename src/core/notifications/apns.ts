@@ -403,8 +403,11 @@ export const TASK_ADDED_CATEGORY = 'TASK_ADDED'
 /**
  * The "AI finished" notification for a just-added task (enrichment-notify.ts).
  *
- * Built to land quietly: `interruption-level: passive` (Notification Center
- * only, no banner, doesn't light the screen), no `sound` key, APNs priority 5.
+ * A banner without sound: `interruption-level: active` (shows as a banner
+ * and lights the screen, but respects Focus), no `sound` key, APNs priority
+ * 10 so it arrives at once. It was `passive` (Notification Center only, no
+ * banner) until 2026-09-30, when Trent said it should pop up while he's using
+ * the phone, just not make a sound.
  * Category `TASK_ADDED` (`TASK_ADDED_CATEGORY`): two buttons, Done and
  * Delete (destructive), registered by every app (`registerNotificationCategories`
  * in `ios/Shared/NotificationConstants.swift` — iPhone, Watch and Mac). Both
@@ -440,9 +443,9 @@ export function buildEnrichedNotification(
     category: TASK_ADDED_CATEGORY,
     threadId: id,
     collapseId: id,
-    priority: Priority.throttled,
+    priority: Priority.immediate,
     data: { taskId: payload.taskId },
-    aps: { 'interruption-level': 'passive' },
+    aps: { 'interruption-level': 'active' },
   })
 }
 

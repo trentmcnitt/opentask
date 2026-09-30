@@ -1,82 +1,116 @@
 /**
- * Apple Watch notification shot (docs/SCREENSHOTS.md): composite a watch
- * SCREEN capture into the watch bezel, cropped to the 495 x 558 the docs use
- * (`opentask-docs/public/images/watch/apple-watch-notification.png`).
+ * Apple Watch shots (docs/SCREENSHOTS.md): composite each watch app screen
+ * that capture-watch-app.sh saved (`<run dir>/native/watch-<page>.png`) into
+ * the watch bezel, as the whole frame (540 x 860, with the band stubs) and
+ * cropped to the case (495 x 558, the size the docs and portfolio use).
  *
  *   npx tsx scripts/screenshots/capture-watch.ts <run dir>
  *
- * Inputs:
- *   SCREENSHOTS_WATCH_SCREEN  the watch screen capture (PNG, any 4:5-ish size);
- *                             default <run dir>/watch-screen.png
- *   SCREENSHOTS_WATCH_FRAME   the bezel (540 x 860, transparent screen);
- *                             default ~/working_dir/opentask-docs/source-assets/apple-watch-frame.png
- *
- * THE SCREEN CAPTURE IS NOT AUTOMATED — see docs/SCREENSHOTS.md § Apple Watch.
- * In the watchOS simulator a pushed notification (`simctl push`) never shows
- * its long look with action buttons (the app's notification permission can't
- * be granted from the command line: `simctl privacy … notifications` is
- * "Operation not permitted"), and `simctl status_bar` doesn't support
- * watchOS, so the clock can't be pinned. Without a screen capture this step
- * prints a note and adds nothing to the manifest; the compositing itself is
- * automatic.
+ * SCREENSHOTS_WATCH_FRAME overrides the bezel (540 x 860, transparent
+ * screen); default scripts/screenshots/assets/apple-watch-frame.png.
  */
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
-import { webkit } from '@playwright/test'
-import { writeManifestPart } from './manifest'
+import { webkit, type Page } from '@playwright/test'
+import { writeManifestPart, type ShotEntry } from './manifest'
 
 /** Where the frame's transparent screen sits (flood-filled from its centre). */
 const HOLE = { x: 72, y: 188, width: 396, height: 484, radius: 58 }
-/** The crop of the 540 x 860 frame the docs image uses: the case, no band. */
+/** The frame's full size, and the crop the docs image uses: the case, no band. */
+const FRAME = { width: 540, height: 860 }
 const CROP = { x: 33, y: 150, width: 495, height: 558 }
+
+const PAGES = [
+  { page: 'reminders', shows: "Reminders page: the current period's reminders and quota prompts" },
+  { page: 'tasks', shows: 'Tasks page: the overdue banner and Up next' },
+  { page: 'quotas', shows: 'Quotas page: open quotas grouped by period' },
+] as const
+
+/** The page the portfolio and the docs overview use (Quotas: the cleanest page; Reminders' paging arrows overlap its list). */
+const HERO = 'quotas'
+
+const dataUrl = (file: string) =>
+  `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`
+
+/**
+ * Draw `screen` into the bezel's hole (scaled to cover it, corners rounded
+ * like the display) with the frame on top, then shoot the `area` of the
+ * frame. `object-fit: cover` crops a few pixels off the sides: the 46mm
+ * screen (416 x 496) is a touch wider than the hole.
+ */
+async function composite(
+  page: Page,
+  screen: string,
+  frame: string,
+  area: { x: number; y: number; width: number; height: number },
+  out: string,
+): Promise<void> {
+  await page.setViewportSize({ width: area.width, height: area.height })
+  await page.setContent(`<!doctype html><html><body style="margin:0;background:transparent">
+    <div style="position:relative;width:${area.width}px;height:${area.height}px;overflow:hidden">
+      <img src="${dataUrl(screen)}" style="position:absolute;left:${HOLE.x - area.x}px;top:${HOLE.y - area.y}px;width:${HOLE.width}px;height:${HOLE.height}px;object-fit:cover;border-radius:${HOLE.radius}px">
+      <img src="${dataUrl(frame)}" style="position:absolute;left:${-area.x}px;top:${-area.y}px">
+    </div></body></html>`)
+  await page.evaluate(() =>
+    Promise.all(Array.from(document.images, (img) => img.decode())).then(() => undefined),
+  )
+  await page.screenshot({ path: out, omitBackground: true })
+}
 
 async function main(): Promise<void> {
   const runDir = path.resolve(process.argv[2] ?? '')
-  const screen = process.env.SCREENSHOTS_WATCH_SCREEN ?? path.join(runDir, 'watch-screen.png')
+  const native = path.join(runDir, 'native')
   const frame =
-    process.env.SCREENSHOTS_WATCH_FRAME ??
-    path.join(os.homedir(), 'working_dir/opentask-docs/source-assets/apple-watch-frame.png')
+    process.env.SCREENSHOTS_WATCH_FRAME ?? path.join(__dirname, 'assets', 'apple-watch-frame.png')
+  if (!fs.existsSync(frame)) throw new Error(`watch: bezel not found at ${frame}`)
 
-  if (!fs.existsSync(screen)) {
-    console.log(
-      `watch: no screen capture at ${screen} — skipped (not automatable; see docs/SCREENSHOTS.md § Apple Watch)`,
-    )
+  const captured = PAGES.filter(({ page }) => fs.existsSync(path.join(native, `watch-${page}.png`)))
+  if (captured.length === 0) {
+    console.log('watch: no screens captured — nothing to composite')
     writeManifestPart(runDir, 'watch', [])
     return
   }
-  if (!fs.existsSync(frame)) throw new Error(`watch: bezel not found at ${frame}`)
 
-  const dataUrl = (file: string) =>
-    `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`
-  const html = `<!doctype html><html><body style="margin:0;background:transparent">
-    <div style="position:relative;width:${CROP.width}px;height:${CROP.height}px;overflow:hidden">
-      <img src="${dataUrl(screen)}" style="position:absolute;left:${HOLE.x - CROP.x}px;top:${HOLE.y - CROP.y}px;width:${HOLE.width}px;height:${HOLE.height}px;object-fit:cover;border-radius:${HOLE.radius}px">
-      <img src="${dataUrl(frame)}" style="position:absolute;left:${-CROP.x}px;top:${-CROP.y}px">
-    </div></body></html>`
-
+  const entries: ShotEntry[] = []
   const browser = await webkit.launch()
   try {
-    const page = await browser.newPage({ viewport: { width: CROP.width, height: CROP.height } })
-    await page.setContent(html)
-    await page.evaluate(() =>
-      Promise.all(Array.from(document.images, (img) => img.decode())).then(() => undefined),
-    )
-    const out = path.join(runDir, 'native', 'apple-watch-notification.png')
-    fs.mkdirSync(path.dirname(out), { recursive: true })
-    await page.screenshot({ path: out, omitBackground: true })
-    writeManifestPart(runDir, 'watch', [
-      {
-        file: path.relative(runDir, out),
-        shows: 'Apple Watch notification in the bezel (screen capture supplied by hand)',
-        theme: 'n/a',
-        destinations: ['docs:public/images/watch/apple-watch-notification.png'],
-      },
-    ])
-    console.log(`watch: composited → ${out}`)
+    const page = await browser.newPage()
+    for (const { page: name, shows } of captured) {
+      const screen = path.join(native, `watch-${name}.png`)
+      const framedFull = path.join(native, `apple-watch-${name}-full.png`)
+      const framed = path.join(native, `apple-watch-${name}.png`)
+      await composite(page, screen, frame, { x: 0, y: 0, ...FRAME }, framedFull)
+      await composite(page, screen, frame, CROP, framed)
+      const hero = name === HERO
+      entries.push(
+        {
+          file: path.relative(runDir, screen),
+          shows: `Apple Watch ${shows} — the raw simulator screen`,
+          theme: 'dark',
+          destinations: [],
+        },
+        {
+          file: path.relative(runDir, framedFull),
+          shows: `Apple Watch ${shows}, in the bezel (whole frame, band stubs included)`,
+          theme: 'dark',
+          destinations: [],
+        },
+        {
+          file: path.relative(runDir, framed),
+          shows: `Apple Watch ${shows}, in the bezel (cropped to the case)`,
+          theme: 'dark',
+          destinations: [
+            `docs:public/images/watch/apple-watch-${name}.png`,
+            ...(hero ? ['portfolio:apple-watch-app.png'] : []),
+          ],
+        },
+      )
+    }
   } finally {
     await browser.close()
   }
+  writeManifestPart(runDir, 'watch', entries)
+  console.log(`watch: composited ${captured.map((c) => c.page).join(', ')} → ${native}`)
 }
 
 main().catch((err) => {

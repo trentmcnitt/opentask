@@ -1,6 +1,6 @@
 /**
  * Settings → Notifications → "Notify when AI finishes a new task" (2026-09-29):
- * the switch for the quiet push sent when AI enrichment finishes for a
+ * the switch for the push sent when AI enrichment finishes for a
  * just-added task (src/core/notifications/enrichment-notify.ts).
  *
  * E2E runs without AI, and the switch only shows where AI runs, so the saving

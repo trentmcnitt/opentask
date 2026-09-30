@@ -16,9 +16,11 @@
  *          "Added to Evening · Daily at 8:30 PM"
  *          Nothing filled in → just "Added to Inbox".
  *
- * It is PASSIVE on purpose: no sound, APNs `interruption-level: passive`,
- * priority 5, Web Push `urgency: low` + `silent`. It lands in Notification
- * Center without lighting the screen. APNs category `TASK_ADDED`: Done and
+ * It is a BANNER WITHOUT SOUND: APNs `interruption-level: active`, priority
+ * 10, no `sound`; Web Push `urgency: normal` + `silent` (no sound or
+ * vibration). It pops up like any notification but never chimes. (It was
+ * passive — Notification Center only — until 2026-09-30: Trent, "it should
+ * show up as a banner … I don't think it needs sound".) APNs category `TASK_ADDED`: Done and
  * Delete buttons (no snooze — a task added a minute ago isn't overdue), posted
  * to `/api/notifications/actions` like the overdue notification's. Web Push
  * has no buttons (the service worker shows none for any notification). Tapping
@@ -214,7 +216,7 @@ export async function notifyEnrichmentFinished(taskId: number, userId: number): 
           tag: enrichedCollapseId(taskId),
           silent: true,
         },
-        { urgency: 'low' },
+        { urgency: 'normal' },
       ),
     )
   }

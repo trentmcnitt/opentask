@@ -96,7 +96,7 @@ describe('Tracked items and the Today front door', () => {
     })
 
     const groups = groupByTimeSlot([undated, midday, eggs], SLOTS, TZ, NOW)
-    expect(groups.map((g) => g.label)).toEqual(['Early morning', 'Midday', UNDATED_LABEL])
+    expect(groups.map((g) => g.label)).toEqual(['Midday', UNDATED_LABEL])
     expect(groups.find((g) => g.label === 'Midday')?.tasks.map((t) => t.title)).toEqual([
       'Lunch walk',
     ])
@@ -112,14 +112,9 @@ describe('Tracked items and the Today front door', () => {
 
     const groups = groupByTimeSlot([undated, noon, dawn], SLOTS, TZ, NOW)
     expect(earlySlotLabel(SLOTS)).toBe('Before 7:00 AM')
-    // Every slot is emitted (empty ones included); the two synthetic groups
-    // bracket them: earliest first, undated last.
-    expect(groups.map((g) => g.label)).toEqual([
-      'Before 7:00 AM',
-      'Early morning',
-      'Midday',
-      UNDATED_LABEL,
-    ])
+    // Only periods with something due get a group (an empty period is left
+    // out); the two synthetic groups bracket them: earliest first, undated last.
+    expect(groups.map((g) => g.label)).toEqual(['Before 7:00 AM', 'Midday', UNDATED_LABEL])
     expect(groups[0].tasks.map((t) => t.title)).toEqual(['Dawn walk'])
     expect(groups.at(-1)?.tasks.map((t) => t.title)).toEqual(['Someday'])
   })
