@@ -278,7 +278,7 @@ test.describe('FAB column — phone: the stack and the view button', () => {
     await saved
     await expect(fab).toHaveAttribute('data-view-mode-fab', 'slot')
     await expect(fab).toHaveAttribute('aria-label', 'Viewing Today — tap to show All')
-    await expect(fab.locator('svg')).toHaveClass(/lucide-calendar-clock/)
+    await expect(fab.locator('svg')).toHaveClass(/lucide-sun/)
 
     // Independent of the Overdue filter: both lit together.
     await overdueFab(page).click()

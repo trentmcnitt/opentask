@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDownWideNarrow, CalendarClock, List } from 'lucide-react'
+import { ArrowDownWideNarrow, List, Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { GroupingMode } from '@/lib/grouping'
 
@@ -23,7 +23,7 @@ export const VIEW_MODE_OPTIONS: readonly {
   hint: string
 }[] = [
   { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
-  { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
+  { value: 'slot', label: 'Today', icon: Sun, hint: "Today's tasks by time of day" },
   {
     value: 'new',
     label: 'Newest',
@@ -55,6 +55,10 @@ export const VIEW_MODE_OPTIONS: readonly {
  * The project filter chips still narrow any view to one project. Its icon is
  * a sort arrow, not Sparkles: Sparkles means AI across the app, and most new
  * tasks aren't AI-made (Trent picked the sort arrow from a mockup, 09-29).
+ * Today's icon is a sun, not a calendar-clock: the Overdue FAB already uses
+ * CalendarClock, and the view-mode FAB (which takes its icon from these
+ * options) would otherwise sit right above it wearing the same icon (Trent,
+ * 09-29).
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
   return (

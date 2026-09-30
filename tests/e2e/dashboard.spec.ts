@@ -296,11 +296,12 @@ test.describe('?filter=overdue deep link', () => {
 })
 
 /**
- * `?task=<id>` has two shapes sharing one URL (Trent, 2026-09-22): the
- * widget's deep link adds `&highlight=1` and brings the row into view without
- * opening it (mirrors `/reminders?reminder=<id>`); the bare param — a
- * notification tap or Web Push — still opens QuickActionPanel, unchanged.
- * See `DashboardClient.tsx`'s `?task=` effect.
+ * `?task=<id>` has two shapes sharing one URL: the widget's deep link adds
+ * `&highlight=1` and brings the row into view without opening it (mirrors
+ * `/reminders?reminder=<id>`); the bare param — a notification tap, native or
+ * Web Push — brings it into view AND selects it, still opening nothing
+ * (Trent, 2026-09-29; it used to open the quick panel). See
+ * `DashboardClient.tsx`'s `?task=` effect and `src/lib/task-link.ts`.
  */
 test.describe('?task=<id> deep link', () => {
   async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {
@@ -337,7 +338,7 @@ test.describe('?task=<id> deep link', () => {
   }
   const withTimeGrouping = (page: Page, run: () => Promise<void>) => withGrouping(page, 'time', run)
 
-  test('&highlight=1 brings the row into view; the bare param still opens the editor', async ({
+  test('&highlight=1 brings the row into view without selecting it', async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -356,12 +357,10 @@ test.describe('?task=<id> deep link', () => {
         await expect(row).toHaveAttribute('data-task-highlight', '')
         await expect(row).toBeInViewport()
         await expect(page.getByRole('dialog')).toHaveCount(0)
+        // The widget's tap is "show me", not "act on it": nothing selected.
+        await expect(row).toHaveAttribute('aria-selected', 'false')
+        await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
         // The param is spent, so a reload does not flash the same row again.
-        await expect(page).toHaveURL('/')
-
-        // The bare shape (notification tap / Web Push): editor still opens.
-        await page.goto(`/?task=${id}`)
-        await expect(page.getByRole('dialog')).toBeVisible()
         await expect(page).toHaveURL('/')
       } finally {
         await deleteTasks(page, ids)
@@ -432,6 +431,134 @@ test.describe('?task=<id> deep link', () => {
         await deleteTasks(page, ids)
       }
     })
+  })
+
+  // THE NOTIFICATION TAP — the bare `/?task=<id>` that the iPhone and Mac apps
+  // (`DeepLinkRouter.notificationTaskPath`) and every Web Push load.
+  async function expectSelectedAndShown(page: Page, id: number): Promise<void> {
+    const row = page.locator(`#task-row-${id}`)
+    await expect(row).toHaveAttribute('aria-selected', 'true')
+    await expect(row).toBeInViewport()
+    // The action bar is up for it...
+    await expect(page.getByRole('button', { name: 'Clear selection' })).toBeVisible()
+    // ...and nothing opened over the list.
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page).toHaveURL('/')
+  }
+
+  test('a notification tap selects the row and opens nothing', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    await withTimeGrouping(page, async () => {
+      try {
+        const id = await createTask(page, {
+          title: 'A task a notification links to',
+          due_at: new Date(Date.now() - 3600_000).toISOString(),
+        })
+        ids.push(id)
+
+        await page.goto(`/?task=${id}`)
+        await expectSelectedAndShown(page, id)
+        await expect(page.locator(`#task-row-${id}`)).toHaveAttribute('data-task-highlight', '')
+      } finally {
+        await deleteTasks(page, ids)
+      }
+    })
+  })
+
+  test('a notification tap unfolds a collapsed group to select the row (Undated)', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    await withTimeGrouping(page, async () => {
+      try {
+        const id = await createTask(page, { title: 'An undated task a notification links to' })
+        ids.push(id)
+
+        await page.goto(`/?task=${id}`)
+        await expectSelectedAndShown(page, id)
+      } finally {
+        await deleteTasks(page, ids)
+      }
+    })
+  })
+
+  test('a notification tap on a task Today leaves out shows All for the visit', async ({
+    authenticatedPage: page,
+  }) => {
+    // The "AI finished" case: a task just added for next week has no row in
+    // Today. The tap switches this visit to All — without saving it, so the
+    // next load is Today again.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    await withGrouping(page, 'slot', async () => {
+      try {
+        const nextWeek = DateTime.now().setZone(TEST_TZ).plus({ days: 7 }).set({ hour: 9 })
+        const id = await createTask(page, {
+          title: 'Call the dentist next week',
+          due_at: nextWeek.toUTC().toISO(),
+        })
+        ids.push(id)
+
+        await page.goto(`/?task=${id}`)
+        await expectSelectedAndShown(page, id)
+
+        const saved = (await (await page.request.get('/api/user/preferences')).json()).data
+        expect(saved.default_grouping).toBe('slot')
+        await page.reload()
+        await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
+      } finally {
+        await deleteTasks(page, ids)
+      }
+    })
+  })
+
+  test('a notification tap on a task that is gone says so in a toast', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createTask(page, { title: 'A task deleted before the tap' })
+    await page.request.delete(`/api/tasks/${id}`)
+
+    await page.goto(`/?task=${id}`)
+    await expect(page.getByText('“A task deleted before the tap” is in the trash')).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+    await expect(page).toHaveURL('/')
+
+    await page.goto('/?task=987654321')
+    await expect(page.getByText('That task no longer exists')).toBeVisible()
+  })
+
+  test('a notification tap on a reminder selects it on the Reminders surface', async ({
+    authenticatedPage: page,
+  }) => {
+    // The "AI finished" push fires for a new reminder too, and it links to
+    // the same `/?task=<id>`; a reminder is never a dashboard row (§6).
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const res = await page.request.post('/api/tasks', {
+      data: {
+        is_reminder: true,
+        title: 'A reminder a notification links to',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: DateTime.now().setZone(TEST_TZ).set({ hour: 7, minute: 0 }).toUTC().toISO(),
+      },
+    })
+    expect(res.ok()).toBeTruthy()
+    const id = (await res.json()).data.id as number
+    try {
+      await page.goto(`/?task=${id}`)
+      await expect(page).toHaveURL('/reminders')
+      const row = page.locator(`li[data-reminder-id="${id}"]`)
+      await expect(row).toHaveAttribute('aria-selected', 'true')
+      await expect(row).toBeInViewport()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, [id])
+    }
   })
 })
 

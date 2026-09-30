@@ -23,7 +23,9 @@ import Foundation
 /// - anything else is a task notification and needs `taskId`: Done, +1hr,
 ///   the custom time, and the bulk snoozes — which pass the task as
 ///   `include_task_ids`, so the task whose banner was tapped moves even when
-///   it is High (P3) and would otherwise be skipped.
+///   it is High (P3) and would otherwise be skipped. `TASK_ADDED` (the "AI
+///   finished" notification) is one of these: it offers Done and Delete,
+///   and Delete (`NotificationAction.delete`) is a task action too.
 ///
 /// After a successful sweep the runner calls `dismissAfterSweep` with the
 /// server's result — `dismissNotificationsAfterSweep` in production, which
@@ -54,7 +56,7 @@ enum NotificationActionRunner {
         /// A task notification with no `taskId` in its payload. Nothing sent,
         /// no banner touched, and the phone and Mac skip their badge refresh.
         case missingTaskId
-        /// Done, +1hr or a custom time on the notification's own task.
+        /// Done, Delete, +1hr or a custom time on the notification's own task.
         case taskUpdated(taskId: Int)
         /// A bulk snooze ran; `dismissAfterSweep` has already been called.
         case swept(APIClient.BulkSnoozeResult)
@@ -66,7 +68,9 @@ enum NotificationActionRunner {
         /// older than the web /reminders route, and the dashboard is never a
         /// 404.)
         case openDashboard
-        /// Body tap on a task notification: open that task.
+        /// Body tap on a task notification: show that task — the phone and Mac
+        /// load `DeepLinkRouter.notificationTaskPath`, which brings its row into
+        /// view and selects it (no editor).
         case openTask(taskId: Int)
     }
 
@@ -157,6 +161,9 @@ enum NotificationActionRunner {
         case .button(NotificationAction.done):
             try await api.markDone(taskId: taskId)
             return .taskUpdated(taskId: taskId)
+        case .button(NotificationAction.delete):
+            try await api.deleteTask(taskId: taskId)
+            return .taskUpdated(taskId: taskId)
         case .button(NotificationAction.snooze1hr):
             try await api.snoozeNextHour(taskId: taskId)
             return .taskUpdated(taskId: taskId)
@@ -183,6 +190,7 @@ enum NotificationActionRunner {
 /// them with a stub instead of hitting the network.
 protocol NotificationActionAPI {
     func markDone(taskId: Int) async throws
+    func deleteTask(taskId: Int) async throws
     func snoozeNextHour(taskId: Int) async throws
     func snoozeTo(taskId: Int, dueAt: String) async throws
     func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int?) async throws -> APIClient.BulkSnoozeResult

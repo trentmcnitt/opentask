@@ -32,6 +32,7 @@ import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
 import { QuickActionPanel, type QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { useEditorHost } from '@/hooks/useEditorHost'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { formatTimeInTimezone } from '@/lib/format-date'
 import { taskWord } from '@/lib/utils'
@@ -106,8 +107,11 @@ interface SelectionActionSheetProps {
    * `dateTaskIds`, when provided, scopes the date portion of the change to a
    * subset of the selection (used when the confirmation dialog opts some tasks
    * out of the snooze). Non-date fields always apply to every selected task.
+   *
+   * Rejects (after reporting the failure) when the save fails: the sheet then
+   * stays open with the staged edits and the selection is kept.
    */
-  onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
+  onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
   onClear: () => void
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
@@ -143,8 +147,18 @@ export function SelectionActionSheet({
     return formatBulkRecurrence(selectedTasks)
   }, [selectedTasks])
 
-  // Track dirty state from QuickActionPanel for visual indicator and dismiss protection
-  const [isPanelDirty, setIsPanelDirty] = useState(false)
+  // Dirty state from QuickActionPanel: `isDirty` paints the stripe and locks
+  // the sheet's drag; the dismiss guard reads `dirtyRef`, which is current the
+  // moment the panel reports (see useEditorHost for why state is not enough).
+  // `saveRef`/`commit` let the unsaved-changes dialog's Save run the panel's
+  // own save without duplicating its change-collection logic.
+  const {
+    isDirty: isPanelDirty,
+    dirtyRef,
+    onDirtyChange,
+    saveRef: panelSaveRef,
+    commit,
+  } = useEditorHost()
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
 
   // Snooze confirmation dialog state.
@@ -177,8 +191,13 @@ export function SelectionActionSheet({
     }
   }, [sheetOpenRef, openSheet])
 
-  // Execute save: forward the staged changes to the parent, close the sheet,
-  // exit selection mode.
+  // Execute save: forward the staged changes to the parent, then close the
+  // sheet and exit selection mode.
+  //
+  // The close and clear wait for the save: a save the parent refuses rejects
+  // (the parent has already toasted the reason), which leaves the sheet open,
+  // the selection intact and — on the panel's own Save — the staged edits in
+  // place for a retry. Closing first used to drop all three on a failure.
   //
   // `dateTaskIds` scopes the date portion of the change to a subset of the
   // selection — used when the confirmation dialog opts some tasks out of the
@@ -187,22 +206,23 @@ export function SelectionActionSheet({
     async (dateTaskIds?: number[]) => {
       const changes = pendingChangesRef.current
       pendingChangesRef.current = null
+      if (changes) {
+        // If the user opted all tasks out of a date-only change, strip the date
+        // fields and save the rest (if anything remains).
+        const hasDateField = 'due_at' in changes || 'delta_minutes' in changes
+        if (hasDateField && dateTaskIds && dateTaskIds.length === 0) {
+          const { due_at: _d, delta_minutes: _dm, ...rest } = changes
+          void _d
+          void _dm
+          if (Object.keys(rest).length > 0) {
+            await onSaveAll(rest)
+          }
+        } else {
+          await onSaveAll(changes, dateTaskIds)
+        }
+      }
       setSheetOpen(false)
       onClear() // Exit selection mode
-      if (!changes) return
-      // If the user opted all tasks out of a date-only change, strip the date
-      // fields and save the rest (if anything remains).
-      const hasDateField = 'due_at' in changes || 'delta_minutes' in changes
-      if (hasDateField && dateTaskIds && dateTaskIds.length === 0) {
-        const { due_at: _d, delta_minutes: _dm, ...rest } = changes
-        void _d
-        void _dm
-        if (Object.keys(rest).length > 0) {
-          await onSaveAll(rest)
-        }
-        return
-      }
-      await onSaveAll(changes, dateTaskIds)
     },
     [onSaveAll, onClear],
   )
@@ -266,14 +286,14 @@ export function SelectionActionSheet({
   // On dismiss without explicit save/cancel: intercept when dirty to show confirmation
   const handleOpenChange = useCallback(
     (open: boolean) => {
-      if (!open && isPanelDirty) {
+      if (!open && dirtyRef.current) {
         setShowCloseConfirm(true)
       } else {
         if (!open) clearPendingState()
         setSheetOpen(open)
       }
     },
-    [clearPendingState, isPanelDirty],
+    [clearPendingState, dirtyRef],
   )
 
   const handleDiscardAndClose = useCallback(() => {
@@ -283,18 +303,13 @@ export function SelectionActionSheet({
     // Keep selection mode active (matches Cancel behavior)
   }, [clearPendingState])
 
-  // Ref to the panel's internal handleSave, populated via QuickActionPanel.saveRef.
-  // Used by the unsaved-changes "Save" button on the dismiss-confirmation dialog so
-  // we can trigger the panel's save without duplicating its change-collection logic.
-  const panelSaveRef = useRef<(() => Promise<void> | void) | null>(null)
-
+  // The unsaved-changes dialog's Save runs the panel's save (published through
+  // `panelSaveRef`). It does not reject: a failed save keeps the sheet open
+  // with its edits, and either way the confirmation closes.
   const handleSaveAndClose = useCallback(async () => {
-    try {
-      await panelSaveRef.current?.()
-    } finally {
-      setShowCloseConfirm(false)
-    }
-  }, [])
+    await commit()
+    setShowCloseConfirm(false)
+  }, [commit])
 
   // Snooze confirmation: compute filtered IDs from checkbox state and proceed with save.
   // Absolute: overdue + dueBeforeTarget are auto-included; dueAfterTarget and noDueDate are opt-in.
@@ -319,7 +334,10 @@ export function SelectionActionSheet({
     }
 
     setSnoozeCategories(null)
-    executeSave(snoozeIds)
+    // The panel already handed its changes over (and reset) before this dialog
+    // opened; a failure here is toasted by the parent, and the sheet and
+    // selection stay so the user can try again.
+    executeSave(snoozeIds).catch(() => {})
   }, [
     snoozeCategories,
     isAbsoluteSnooze,
@@ -370,7 +388,7 @@ export function SelectionActionSheet({
           selectedCount === 1 && onNavigateToDetail ? handleNavigateToDetail : undefined
         }
         projects={projects}
-        onDirtyChange={setIsPanelDirty}
+        onDirtyChange={onDirtyChange}
       />
     </DirtyCard>
   )

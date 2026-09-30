@@ -37,6 +37,17 @@ final class DeepLinkRouterTests: XCTestCase {
         }
     }
 
+    /// A notification's body tap loads the bare `/?task=<id>` — the URL the
+    /// installed builds and Web Push already use, which the dashboard answers
+    /// by selecting the row. Distinct from the widget's `&highlight=1`.
+    func testNotificationTaskPathIsTheBareTaskParam() {
+        XCTAssertEqual(DeepLinkRouter.notificationTaskPath(taskId: 42), "/?task=42")
+        XCTAssertNotEqual(
+            DeepLinkRouter.notificationTaskPath(taskId: 42),
+            DeepLinkRouter.webPath(for: URL(string: "opentask://task/42")!)
+        )
+    }
+
     /// A prompt link built by the widget round-trips through the router.
     func testPromptLinkFromTheWidgetRoutesToItsRow() throws {
         let url = try XCTUnwrap(PromptDeepLink.url(promptKey: "q:7:1:2026-01-15"))

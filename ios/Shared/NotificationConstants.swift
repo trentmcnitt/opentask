@@ -47,9 +47,15 @@ func slotSnoozeActions() -> [UNNotificationAction] {
 /// Register notification categories for the app.
 /// Called by both AppDelegate (iOS) and WatchAppDelegate (watchOS).
 ///
-/// Three categories:
+/// Four categories:
 /// - TASK_REMINDER: individual task (Done, +1hr, All +1hr, then one
 ///   All → <slot> action per cached time slot — see `slotSnoozeActions()`)
+/// - TASK_ADDED: the "AI finished" notification for a just-added task
+///   (Done, Delete). No snooze: a task added a minute ago isn't overdue.
+///   Delete is `.destructive` (drawn red) and deliberately NOT
+///   `.authenticationRequired` — it is a soft delete the app can undo, the
+///   same weight as Done, and neither iOS nor watchOS requires unlocking for
+///   a destructive action unless that option is set.
 /// - TASK_SUMMARY: overflow summary (All +1hr, then the same slot actions —
 ///   no single-task actions)
 /// - SLOT_REMINDER: §6 time slot (Complete all; long-press expands to the
@@ -102,10 +108,24 @@ func registerNotificationCategories() {
         options: []
     )
 
+    let deleteAction = UNNotificationAction(
+        identifier: NotificationAction.delete,
+        title: "Delete",
+        options: [.destructive]
+    )
+
+    let taskAddedCategory = UNNotificationCategory(
+        identifier: NotificationCategory.taskAdded,
+        actions: [doneAction, deleteAction],
+        intentIdentifiers: [],
+        options: []
+    )
+
     UNUserNotificationCenter.current().setNotificationCategories([
         taskReminderCategory,
         taskSummaryCategory,
         slotReminderCategory,
+        taskAddedCategory,
     ])
 }
 

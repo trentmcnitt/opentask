@@ -206,8 +206,8 @@ struct RemindersProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<RemindersEntry>) -> Void) {
         Task {
             // A widget push token the server never confirmed — see
-            // `WidgetPushRegistration` in WidgetPushHandler.swift.
-            await WidgetPushRegistration.retryIfNeeded()
+            // `WidgetPushRegistration` in ios/Shared.
+            await WidgetPushRegistration.widgets.retryIfNeeded()
             let entry = await currentEntry()
 
             var entries = [entry]

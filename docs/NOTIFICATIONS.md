@@ -219,20 +219,34 @@ Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:
 
 **Delivery.** Passive everywhere:
 
-- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: passive`, no `sound`, APNs priority 5, no `category` (so no Done / +1hr buttons and no content extension), no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. With no category and a `taskId`, a tap takes the apps' individual-task path and opens `/?task=<id>`; the `dismiss` silent push for that task (done, snooze, delete) clears it too.
-- Web Push: `urgency: low`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. Like every Web Push, it is not shown while an app window is visible.
+- APNs (`buildEnrichedNotification` in `apns.ts`): `interruption-level: passive`, no `sound`, APNs priority 5, `category: TASK_ADDED`, no `badge`, `thread-id` and `apns-collapse-id` `enriched-<id>`, `taskId` in the payload. A tap takes the apps' individual-task path and loads `/?task=<id>` (see [Tapping a task notification](#tapping-a-task-notification)); the `dismiss` silent push for that task (done, snooze, delete) clears it too.
+- **Buttons (`TASK_ADDED`, added 2026-09-29):** **Done** and **Delete** (Delete is `.destructive`, drawn red, and not `.authenticationRequired` — it is the app's undoable soft delete, the same weight as Done). Registered by every app in `registerNotificationCategories()` (`ios/Shared/NotificationConstants.swift` — iPhone, Watch and Mac) and run by the shared `NotificationActionRunner`: Done posts `action: "done"` and Delete `action: "delete"` to `POST /api/notifications/actions` (token in the body), which calls `markDone` / `deleteTask` — undo-logged, notifications dismissed on every device, tabs and widgets synced. No snooze buttons: a task added a minute ago isn't overdue. `TASK_ADDED` is not in the content extension's `UNNotificationExtensionCategory` list, so iOS shows its own expanded view. A build older than this change hasn't registered the category and shows the notification with no buttons, as before.
+- Web Push: `urgency: low`, `tag: enriched-<id>`, `silent: true` (passed through by `public/sw.js`), tap URL `/?task=<id>`. No buttons — `public/sw.js` shows no `actions` for any notification, overdue included. Like every Web Push, it is not shown while an app window is visible.
 - Devices: every `apns_devices` row, the watch app included (the same set overdue alerts go to; only the badge push skips the watch), and every Web Push subscription. Never widget push tokens.
 
 ```json
 {
   "aps": {
     "alert": { "title": "Call the dentist", "body": "Added to Work · Tomorrow 9:00 AM · High" },
+    "category": "TASK_ADDED",
     "thread-id": "enriched-42",
     "interruption-level": "passive"
   },
   "taskId": 42
 }
 ```
+
+### Tapping a task notification
+
+Tapping any task notification — overdue, "AI finished", or the test notification — opens the dashboard at the bare `/?task=<id>`: the iPhone and Mac apps load it through `WebViewManager.navigateToTask` (`DeepLinkRouter.notificationTaskPath`), and Web Push carries it as `data.url`. Since 2026-09-29 the dashboard answers it by bringing the task's row on screen, flashing it and **selecting** it, so the floating action bar is up for it. Nothing opens: no quick panel, no sheet. Before, the same URL opened the quick panel. The steps are in `src/lib/task-link.ts`; in short:
+
+- A folded group is unfolded and a "Show all" cap lifted.
+- A search, filter chip or AI chip that hides the task is cleared, and only then.
+- If the view leaves it out (Today keeps only what is due by the end of today), the page shows All for that visit, without saving it as the view preference.
+- A reminder goes to `/reminders?reminder=<id>&select=1` (selected there too), a quota to `/quotas?quota=<id>`.
+- A task that is done, in the trash, or gone gets a toast saying which.
+
+The URL stayed the bare `/?task=<id>` on purpose: every producer of it is a notification, and the installed app builds already load exactly that, so the change needed only a server deploy. The widget's task link is `/?task=<id>&highlight=1`: it flashes the row and selects nothing.
 
 **When.** Both enrichment entry points in `src/core/ai/enrichment.ts` — the fire-and-forget `enrichSingleTask` on create and the per-minute `processEnrichmentQueue` safety net — call it after a successful model run, outside their error handling (a push failure is never an enrichment failure). It sends only when:
 
@@ -276,7 +290,7 @@ Requires the `remote-notification` background mode in the app's entitlements.
 
 ### Notification actions
 
-Native apps can register up to 4 action buttons per notification category. OpenTask registers: Done, +1hr, All +1hr. The content extension (Phase 4) can dynamically replace these with a snooze grid.
+Native apps can register up to 4 action buttons per notification category. OpenTask registers `TASK_REMINDER` (Done, +1hr, All +1hr, then the All → period actions), `TASK_SUMMARY` (All +1hr and the period actions), `SLOT_REMINDER` (Complete all) and `TASK_ADDED` (Done, Delete — the "AI finished" notification). The content extension (Phase 4) can dynamically replace the first three with a snooze grid. Every button posts to `POST /api/notifications/actions` (`done`, `snooze`, `snooze30`, `snooze2h`, `delete`) or a bulk endpoint, through `NotificationActionRunner`.
 
 ## WidgetKit push (widget sync)
 
@@ -292,7 +306,7 @@ Without this, a widget only refreshes on its own ~30 min timeline, when the app 
 
 1. Each widget kind's `WidgetConfiguration` attaches a `WidgetPushHandler` conformance via the `.pushHandler(_:)` modifier (`ios/OpenTaskWidgets/TasksWidget.swift`, `RemindersWidget.swift`, `TrackWidget.swift` — one shared handler type, `OpenTaskWidgetPushHandler` in `WidgetPushHandler.swift`, reused across all three per Apple's docs: "If you have multiple widget configurations, you can choose to use the same push handler type").
 2. The system calls `pushTokenDidChange(_ pushInfo: WidgetPushInfo, widgets: [WidgetInfo])` — once for the first token, and again whenever it changes or the user adds/removes a widget. `pushInfo.token: Data` is the widget extension's own push token, hex-encoded (same `%02.2hhx` idiom as the main app's APNs token) before it goes over the wire.
-3. The handler POSTs to `POST /api/push/apns/widget-token` (`WidgetPushRegistrar` in `WidgetPushHandler.swift`) — same Keychain-shared Bearer token as the rest of the app, read directly rather than through `APIClient`'s private request helpers (that file was under parallel edit; see the doc comment in `WidgetPushHandler.swift`). If `widgets` comes back **empty**, the handler only logs it and keeps the registration: the Mac's `chronod` sends an empty list every time it starts, with the widgets still placed, and unregistering then left the device without widget pushes for hours (2026-09-25). A token with no widget behind it costs one ignored push, and APNs retires a truly dead one (step 7). The watch handler (`WatchWidgetPushHandler`) follows the same rule since 2026-09-29. Neither handler sends the route's `DELETE` any more.
+3. The handler POSTs to `POST /api/push/apns/widget-token` through `APIClient.registerWidgetToken`, with the same Keychain-shared Bearer token as the rest of the app. The token's state (saved before the request, retried from every timeline reload until the server confirms it) is `WidgetPushRegistration` in `ios/Shared/WidgetPushRegistration.swift`, shared by the phone/Mac handler and the watch's `WatchWidgetPushHandler`; each passes its own key prefix (`widgetPush` / `watch.widgetPush`), app bundle id and platform. If `widgets` comes back **empty**, the handler only logs it and keeps the registration: the Mac's `chronod` sends an empty list every time it starts, with the widgets still placed, and unregistering then left the device without widget pushes for hours (2026-09-25). A token with no widget behind it costs one ignored push, and APNs retires a truly dead one (step 7). The watch handler (`WatchWidgetPushHandler`) follows the same rule since 2026-09-29. Neither handler sends the route's `DELETE` any more.
 4. The server stores the token in `widget_push_tokens` (`user_id`, `push_token` unique, `bundle_id`, `platform`, `widget_kind`, `environment`, timestamps — `src/core/db/schema.sql`).
 5. Whenever this user's data changes, the same `emitSyncEvent(userId)` that already drives the SSE stream for open browser tabs (`src/lib/sync-events.ts`) also schedules a widget push for each of the user's registered tokens (`src/core/notifications/widget-push.ts`), paced **per token** by the coalescing policy below — not one push per change.
 6. When a token's push is due, `sendApnsWidgetReload(tokenId)` (`src/core/notifications/apns.ts`) re-reads that row and sends one push: `apns-push-type: widgets`, topic `<app bundle id>.push-type.widgets` (computed from the stored `bundle_id`, NOT the widget extension's own bundle id — Apple's docs use the containing app's id), body `{"aps": {"content-changed": true}}`. WidgetKit reloads that extension's timelines on receipt, equivalent to a `reloadAllTimelines()` call triggered from the server. Each send logs `Sending widget reload push to token <id> (<platform>) for user <id>` — one line per token, where before 2026-09-25 one line covered all of a user's tokens. So a bare `grep -c 'widget reload push'` is not comparable across that change (and the Mac, which is not throttled, adds lines of its own); count the iPhone's budget with `grep 'widget reload push' | grep -c '(ios)'`.

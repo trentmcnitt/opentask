@@ -63,9 +63,10 @@ class WebViewManager {
         }
     }
 
-    /// Navigate to the dashboard with the task modal open.
+    /// A task notification's body tap: the dashboard with that task's row
+    /// brought into view and selected (`DeepLinkRouter.notificationTaskPath`).
     func navigateToTask(_ taskId: Int) {
-        navigate(path: "/?task=\(taskId)")
+        navigate(path: DeepLinkRouter.notificationTaskPath(taskId: taskId))
     }
 
     // MARK: - Quick-action snooze result

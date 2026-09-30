@@ -1,5 +1,6 @@
 import type { Task } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import type { QuotaChanges } from '@/components/QuotaDetail'
 
 export interface SaveTaskResult {
   task: Task
@@ -32,12 +33,13 @@ export function withAiFailedCleared(
  * - `saveReminderDetail` — the reminder detail editor in `RemindersView` and
  *   `DashboardRemindersPanel`
  * - `saveQuickPanelChanges` — a single-task save from the selection action bar
+ * - `useQuotaMutations` — a single quota saved from the quota editor
  *
  * Returns the updated task and the server-generated description for use in toasts.
  */
 export async function saveTaskChanges(
   taskId: number | string,
-  changes: QuickActionPanelChanges,
+  changes: QuickActionPanelChanges | QuotaChanges,
 ): Promise<SaveTaskResult> {
   const res = await fetch(`/api/tasks/${taskId}`, {
     method: 'PATCH',

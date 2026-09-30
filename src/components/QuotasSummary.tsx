@@ -1,14 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { TrackPanel } from '@/components/TrackPanel'
-import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import type { QuotaCreateDraft } from '@/components/QuotaDetail'
 import { EmptyState, QuotasHeaderRow, QuotasSearchCount } from '@/components/QuotasView'
-import { useNavigationGuard } from '@/components/NavigationGuardProvider'
-import { useQuotaMutations } from '@/hooks/useQuotaMutations'
+import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { useQuotasData } from '@/hooks/useQuotasData'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 
@@ -46,24 +42,18 @@ export function QuotasSummary({
    *  view adds the count line and the no-match state, as `QuotasView` does. */
   searchQuery?: string
 }) {
-  const router = useRouter()
-  const { requestNavigation } = useNavigationGuard()
   const { tasks, error, refresh } = useQuotasData(refreshRef)
-  const [creating, setCreating] = useState<QuotaCreateDraft | null>(null)
-  const { saveQuotas, createQuota, deleteQuotas } = useQuotaMutations({
-    refresh,
-    clear: noop,
-    onUndo,
-    onCompleted,
-  })
+  // Only ever a create from here — editing an existing quota is the panel's
+  // own editor (see above). Nothing on this view is selected, so no `clear`.
+  const { openCreate, modal } = useQuotaEditor({ refresh, onUndo, onCompleted })
 
-  // Idempotent, as in `QuotasView`: a double-tap on the phone's plus
-  // dispatches twice, and a second draft would throw away what was typed.
+  // `openCreate` is idempotent, as in `QuotasView`: a double-tap on the
+  // phone's plus dispatches twice, and a second draft would throw away what
+  // was typed.
   useEffect(() => {
-    const open = () => setCreating((current) => current ?? { title: '' })
-    window.addEventListener('open-add-quota', open)
-    return () => window.removeEventListener('open-add-quota', open)
-  }, [])
+    window.addEventListener('open-add-quota', openCreate)
+    return () => window.removeEventListener('open-add-quota', openCreate)
+  }, [openCreate])
 
   const query = normalizeTaskSearch(searchQuery)
   const searching = query.length > 0
@@ -75,11 +65,7 @@ export function QuotasSummary({
     // Not a labelled region: the panel inside is `region "Quotas"` already,
     // and two regions of one name would make "the Quotas panel" ambiguous.
     <div data-quotas-summary className="space-y-3 pb-24">
-      <QuotasHeaderRow
-        count={tasks.length}
-        onNew={() => setCreating({ title: '' })}
-        viewSwitch={viewSwitch}
-      />
+      <QuotasHeaderRow count={tasks.length} onNew={openCreate} viewSwitch={viewSwitch} />
 
       {searching && tasks.length > 0 && (
         <QuotasSearchCount
@@ -101,24 +87,10 @@ export function QuotasSummary({
         />
       )}
 
-      <QuotaDetailModal
-        tasks={[]}
-        create={creating}
-        open={creating !== null}
-        onClose={() => setCreating(null)}
-        onSave={saveQuotas}
-        onCreate={createQuota}
-        onDelete={(targets) => void deleteQuotas(targets)}
-        onOpenPage={(id) => {
-          if (requestNavigation(`/tasks/${id}`)) router.push(`/tasks/${id}`)
-        }}
-      />
+      {modal}
     </div>
   )
 }
-
-/** `useQuotaMutations`' `clear` — nothing on this view is selected. */
-function noop() {}
 
 export type QuotasPageView = 'summary' | 'details'
 

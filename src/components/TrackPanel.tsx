@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
@@ -22,7 +21,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useFoldState } from '@/components/FoldStateProvider'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
-import { useQuotaMutations } from '@/hooks/useQuotaMutations'
+import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import {
   foldClass,
   useResponsiveFold,
@@ -36,8 +35,6 @@ import {
 } from '@/hooks/useResponsiveFold'
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
 import { usePromptSetup } from '@/components/QuotaPromptField'
-import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -236,20 +233,16 @@ const CLUSTER_MET_DIM: FoldClasses = {
   auto: '',
 }
 
-/** `useQuotaMutations`'s `clear` — there is no selection on this panel to clear. */
-const noop = () => {}
-
 /**
  * All chip-level "detail" state for Track: which quota's popover bubble is
  * open, and which (if any) is open in the full `QuotaDetailModal` editor —
- * plumbed with the exact same mutations `QuotasView` uses
- * (`useQuotaMutations`) and the exact same deep-link escape hatch
- * (`requestNavigation` + `router.push`), so pressing a chip's "Open" button
- * edits the same way `/quotas` does, just without leaving (Trent, 2026-09-21:
+ * the same editor `QuotasView` mounts (`useQuotaEditor`: same mutations, same
+ * guarded "Open full page"), so pressing a chip's "Open" button edits the
+ * same way `/quotas` does, just without leaving (Trent, 2026-09-21:
  * "whenever I do things with tasks it opens a modal... that's how I like to
  * work"). One hook rather than state split across `TrackPanel` and its
  * chips' callers, so the panel's own render stays short — the same reason
- * `useQuotaMutations` is its own file rather than inline in `QuotasView`.
+ * `useQuotaEditor` is its own file rather than inline in `QuotasView`.
  */
 function useTrackChipDetail({
   onUndo,
@@ -260,15 +253,11 @@ function useTrackChipDetail({
   onCompleted: () => void
   onRefresh: () => Promise<void>
 }) {
-  const router = useRouter()
-  const { requestNavigation } = useNavigationGuard()
   // The quota whose popover bubble is showing. By id, not object, so a sync
   // refresh can replace the rendered task underneath an open bubble.
   const [openId, setOpenId] = useState<number | null>(null)
-  const [editing, setEditing] = useState<Task[]>([])
-  const { saveQuotas, createQuota, deleteQuotas } = useQuotaMutations({
+  const { saveQuotas, deleteQuotas, openEdit, modal } = useQuotaEditor({
     refresh: onRefresh,
-    clear: noop,
     onUndo,
     onCompleted,
   })
@@ -277,10 +266,13 @@ function useTrackChipDetail({
   const closePopover = useCallback(() => setOpenId(null), [])
   // The popover's own "Open" button: the bubble it was pressed from closes,
   // the editor replaces it — never both open at once.
-  const openEditor = useCallback((task: Task) => {
-    setOpenId(null)
-    setEditing([task])
-  }, [])
+  const openEditor = useCallback(
+    (task: Task) => {
+      setOpenId(null)
+      openEdit([task])
+    },
+    [openEdit],
+  )
   // The bubble's trash can: the bubble it was pressed from goes with it.
   const deleteFromPopover = useCallback(
     (task: Task) => {
@@ -334,21 +326,6 @@ function useTrackChipDetail({
       })),
     }
   }
-
-  const modal = (
-    <QuotaDetailModal
-      tasks={editing}
-      open={editing.length > 0}
-      onClose={() => setEditing([])}
-      onSave={saveQuotas}
-      onCreate={createQuota}
-      onDelete={(targets) => void deleteQuotas(targets)}
-      onOpenPage={(id) => {
-        // Through the guard, like every other route change in the app.
-        if (requestNavigation(`/tasks/${id}`)) router.push(`/tasks/${id}`)
-      }}
-    />
-  )
 
   return { openId, openPopover, closePopover, openEditor, deleteFromPopover, periodsFor, modal }
 }

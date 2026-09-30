@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useCallback, useMemo, useState, type MutableRefObject } from 'react'
 import { Check, Lightbulb, Pencil, Repeat, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,6 +15,7 @@ import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { ReminderCreateInput } from '@/hooks/useReminders'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useStagedEditor } from '@/hooks/useStagedEditor'
 import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
@@ -242,7 +243,6 @@ export function ReminderDetail({
   const [pendingNotes, setPendingNotes] = useState<string | null | undefined>(undefined)
   const [editingNotes, setEditingNotes] = useState(false)
   const [notesDraft, setNotesDraft] = useState('')
-  const [saving, setSaving] = useState(false)
 
   // Re-baseline only when the reminders themselves move on: the host hands
   // back a saved row (updated_at changes), the selection changes, or the
@@ -305,32 +305,6 @@ export function ReminderDetail({
     (draft.cadence === 'weekly' ? draft.days.length > 0 : true) &&
     (bulk || draft.cadence === 'once' || effectiveTime !== null) &&
     (!creating || titleDraft.trim().length > 0)
-
-  useEffect(() => {
-    onDirtyChange?.(isDirty)
-  }, [isDirty, onDirtyChange])
-
-  // Leaving reports clean: "Make this a task" swaps this editor out for the
-  // task editor mid-flight, and a host still holding "dirty" for an editor
-  // that no longer exists would guard navigation for nothing. A ref keeps the
-  // cleanup to unmount only — firing it on every dirty change would also
-  // release a deferred refresh while the user is still editing.
-  const onDirtyChangeRef = useRef(onDirtyChange)
-  onDirtyChangeRef.current = onDirtyChange
-  useEffect(() => {
-    return () => onDirtyChangeRef.current?.(false)
-  }, [])
-
-  // Browser-level guard for a reload or tab close with staged edits.
-  useEffect(() => {
-    if (!isDirty) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [isDirty])
 
   /**
    * Several at once: each reminder's own schedule with only the staged parts
@@ -395,7 +369,6 @@ export function ReminderDetail({
 
   const save = useCallback(
     async (extra: QuickActionPanelChanges = {}) => {
-      setSaving(true)
       try {
         if (creating) {
           if (titleDraft.trim()) await onCreate?.(createInput())
@@ -414,8 +387,6 @@ export function ReminderDetail({
         }
       } catch {
         // The host has already reported the failure; the staged edits stay.
-      } finally {
-        setSaving(false)
       }
     },
     [
@@ -434,15 +405,16 @@ export function ReminderDetail({
     ],
   )
 
-  const handleSave = useCallback(() => save(), [save])
-
-  useEffect(() => {
-    if (!saveRef) return
-    saveRef.current = handleSave
-    return () => {
-      saveRef.current = null
-    }
-  }, [saveRef, handleSave])
+  // The dirty report (and the clean report on unmount: "Make this a task"
+  // swaps this editor out for the task editor mid-flight), beforeunload, the
+  // saveRef registration and the in-flight guard — see useStagedEditor.
+  const { saving, runSave } = useStagedEditor<QuickActionPanelChanges>({
+    dirty: isDirty,
+    onDirtyChange,
+    saveRef,
+    save,
+  })
+  const handleSave = useCallback(() => runSave(), [runSave])
 
   const reset = useCallback(() => {
     setDraft(base)
@@ -461,7 +433,7 @@ export function ReminderDetail({
    * only — changing what KIND of thing several items are in one tap is the
    * sort of bulk mistake §6 exists to avoid.
    */
-  const makeTask = useCallback(() => save({ is_reminder: false }), [save])
+  const makeTask = useCallback(() => runSave({ is_reminder: false }), [runSave])
 
   // --- Title -----------------------------------------------------------------
 
