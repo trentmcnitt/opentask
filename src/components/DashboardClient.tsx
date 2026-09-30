@@ -524,7 +524,7 @@ function HomeContent({
         // No trim of the search hit set — see `bulkDelete` and `visibleSearchResults`.
         refreshAll()
         // The delete is an undo entry like any other, so the top bar's undo
-        // badge counts it (it used to stay put until the next refresh).
+        // badge counts it (this was the one dashboard action that didn't).
         actions.bumpUndoCount()
         showToast({
           message: 'Task moved to trash',

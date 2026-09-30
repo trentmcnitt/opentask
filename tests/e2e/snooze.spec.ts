@@ -90,8 +90,11 @@ test.describe('Snooze', () => {
  * press — so a right-click snoozed the task. It now shares
  * `useSimpleLongPress`, which counts the primary button only.
  *
- * Proved by what follows: a plain click on the same button sends exactly one
- * snooze, so the right-click before it sent none.
+ * The snooze calls are counted INSIDE the page, by wrapping `fetch`: the
+ * handler calls it synchronously from `pointerup`, so the count is settled the
+ * moment `click()` returns. (Watching for the network response instead races:
+ * the right-click's own response can arrive late and be taken for the plain
+ * click's.) The plain click afterwards is the control: it must count 1.
  */
 test.describe('Row snooze button', () => {
   test.use({ viewport: { width: 1280, height: 900 } })
@@ -107,11 +110,18 @@ test.describe('Row snooze button', () => {
     })
     expect(res.ok()).toBeTruthy()
     const id = (await res.json()).data.id as number
-    const snoozes: string[] = []
-    page.on('request', (r) => {
-      if (r.method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/snooze`))
-        snoozes.push(r.url())
-    })
+    await page.addInitScript((path) => {
+      const w = window as unknown as { __snoozeCalls: number }
+      w.__snoozeCalls = 0
+      const original = window.fetch.bind(window)
+      window.fetch = (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        if (url.endsWith(path)) w.__snoozeCalls++
+        return original(input, init)
+      }
+    }, `/api/tasks/${id}/snooze`)
+    const snoozeCalls = () =>
+      page.evaluate(() => (window as unknown as { __snoozeCalls: number }).__snoozeCalls)
 
     try {
       await withPreferences(page, { default_grouping: 'unified' }, async () => {
@@ -122,14 +132,14 @@ test.describe('Row snooze button', () => {
         await expect(snoozeBtn).toBeVisible()
 
         await snoozeBtn.click({ button: 'right' })
-        await expect(page.getByRole('menu', { name: 'Snooze options' })).toHaveCount(0)
+        expect(await snoozeCalls()).toBe(0)
 
         const sent = page.waitForResponse(
           (r) => r.request().method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/snooze`),
         )
         await snoozeBtn.click()
+        expect(await snoozeCalls()).toBe(1)
         expect((await sent).ok()).toBeTruthy()
-        expect(snoozes).toHaveLength(1)
       })
     } finally {
       await page.request.delete(`/api/tasks/${id}`)
