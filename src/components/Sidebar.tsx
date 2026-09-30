@@ -125,12 +125,12 @@ export function Sidebar({ onAddClick }: SidebarProps) {
           </span>
           <br />
           <a
-            href="https://mcnitt.io"
+            href="https://www.trentmcnitt.com"
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted-foreground/40 hover:text-muted-foreground/70 text-[10px] transition-colors"
           >
-            mcnitt.io
+            trentmcnitt.com
           </a>
         </div>
       </nav>
