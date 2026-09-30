@@ -5,7 +5,7 @@
  *
  * Edit the user's time slots: rename one, change when it starts, add one,
  * remove one. Copies the Labels section's shape (`LabelEditor` in
- * settings/page.tsx): one row per item with an X at the end, and an add row of
+ * settings/LabelsSection.tsx): one row per item with an X at the end, and an add row of
  * the same shape underneath. The start time is the same native
  * `<input type="time">` the Snooze section uses for wake/sleep time.
  *
@@ -29,7 +29,6 @@
  */
 
 import { useCallback, useRef, useState } from 'react'
-import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -74,10 +73,18 @@ function errorMessage(err: unknown): string {
   return err instanceof Error && err.message ? err.message : 'Save failed'
 }
 
-export function TimeSlotSettings() {
-  // The same hook every other slot consumer reads through; each change
-  // re-reads it, so the list is always what the server stored.
-  const { timeSlots, loading, refresh } = useTimeSlots()
+export function TimeSlotSettings({
+  timeSlots,
+  loading,
+  refresh,
+}: {
+  timeSlots: TimeSlot[]
+  loading: boolean
+  refresh: () => Promise<void>
+}) {
+  // The section's one `useTimeSlots()` list (settings/ScheduleSection.tsx),
+  // shared with the Default period picker. Each change re-reads it, so both
+  // show what the server stored.
   const slots = sortSlotsByStart(timeSlots)
   const load = refresh
 

@@ -5,6 +5,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useRequireSession } from '@/hooks/useRequireSession'
 import { PageLoading } from '@/components/PageLoading'
 import { showToast } from '@/lib/toast'
+import { apiFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import type { Project } from '@/types'
 
@@ -97,10 +98,10 @@ export default function TrashPage() {
   async function handleRestore(taskId: number) {
     setRestoringId(taskId)
     try {
-      const res = await fetch(`/api/tasks/${taskId}/restore`, { method: 'POST' })
-      if (res.ok) {
-        setTasks((prev) => prev.filter((t) => t.id !== taskId))
-      }
+      // apiFetch throws on a non-2xx too, so a refused restore says so
+      // instead of leaving the row sitting there with no word.
+      await apiFetch(`/api/tasks/${taskId}/restore`, { method: 'POST' })
+      setTasks((prev) => prev.filter((t) => t.id !== taskId))
     } catch {
       showToast({ message: 'Failed to restore task', type: 'error' })
     } finally {
@@ -111,10 +112,8 @@ export default function TrashPage() {
   async function handleEmptyTrash() {
     setEmptyingTrash(true)
     try {
-      const res = await fetch('/api/trash', { method: 'DELETE' })
-      if (res.ok) {
-        setTasks([])
-      }
+      await apiFetch('/api/trash', { method: 'DELETE' })
+      setTasks([])
     } catch {
       showToast({ message: 'Failed to empty trash', type: 'error' })
     } finally {

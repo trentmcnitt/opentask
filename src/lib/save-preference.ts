@@ -14,7 +14,9 @@ import { showToast } from '@/lib/toast'
  *
  * The toast strings default to the generic "Preference saved" pair most
  * controls use; the labels, AI context and notifications switches pass their
- * own. A body that isn't JSON still counts as saved (the PATCH succeeded) and
+ * own. `successMessage: null` saves quietly (the dashboard's AI popover
+ * toggles, `useAiMode`, where the switch itself is the feedback) — a failure
+ * still reverts and toasts. A body that isn't JSON still counts as saved (the PATCH succeeded) and
  * returns `undefined`.
  *
  * Not for PreferencesProvider's coalescing saver (grouping, sort, collapsed
@@ -30,7 +32,7 @@ export async function savePreference<T = Record<string, unknown>>(
   }: {
     apply: () => void
     revert: () => void
-    successMessage?: string
+    successMessage?: string | null
     errorMessage?: string
   },
 ): Promise<T | undefined> {
@@ -51,7 +53,7 @@ export async function savePreference<T = Record<string, unknown>>(
     return undefined
   }
   const json = (await res.json().catch(() => null)) as { data?: T } | null
-  showToast({ message: successMessage, type: 'success' })
+  if (successMessage !== null) showToast({ message: successMessage, type: 'success' })
   return json?.data
 }
 

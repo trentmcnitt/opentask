@@ -2,12 +2,15 @@
  * User preferences: the `users` columns behind `GET`/`PATCH /api/user/preferences`.
  *
  * The route validates the request body and shapes the response (it adds the
- * AI-availability fields, which aren't stored); this module owns the SQL.
+ * AI-availability fields, which aren't stored); this module owns the SQL and
+ * the side effects of a write (label registry, quota rollover, sync event).
  * Preferences are not undoable, so nothing here writes the undo log.
  */
 
-import { getDb } from '@/core/db'
+import { getDb, withTransaction } from '@/core/db'
+import { createLabel, deleteLabel, SYSTEM_LABELS, isReservedLabel } from '@/core/labels'
 import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
+import { emitSyncEvent } from '@/lib/sync-events'
 import type { PriorityDisplayConfig } from '@/types'
 
 export const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
@@ -128,13 +131,54 @@ export function getPreferences(userId: number): PreferencesRow {
   return readPreferencesRow(userId) ?? DEFAULT_PREFERENCES_ROW
 }
 
+/** The names in a stored `label_config` JSON string (empty if it doesn't parse). */
+function labelConfigNames(json: string | null | undefined): string[] {
+  try {
+    const parsed = json ? JSON.parse(json) : []
+    return Array.isArray(parsed)
+      ? parsed.map((l: { name?: unknown }) => l?.name).filter((n) => typeof n === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Keep the label registry (`src/core/labels/`) in step with Settings → Labels.
+ *
+ * `label_config` is the list Settings edits, but a task's labels are checked
+ * against the registry, so a label added in Settings used to be rejected the
+ * first time it was put on a task. Now every name in the new list is
+ * registered (`createLabel` is idempotent), and a name the new list drops is
+ * deregistered (decision D6, 2026-09-29: deleting a label in Settings removes
+ * it for good). Deregistering doesn't strip it from tasks that carry it — see
+ * `DELETE /api/labels/:name`. System and reserved (`ai-*`) names are neither
+ * registered nor deregistered here: they aren't the user's to add or remove
+ * (colouring one in Settings is fine; it stays whatever the registry says).
+ */
+function syncLabelRegistry(userId: number, oldJson: string | undefined, newJson: string): void {
+  const isUsers = (name: string) => !SYSTEM_LABELS.has(name) && !isReservedLabel(name)
+  const next = labelConfigNames(newJson)
+  const kept = new Set(next)
+  for (const name of next) if (isUsers(name)) createLabel(userId, name)
+  for (const name of labelConfigNames(oldJson)) {
+    if (!kept.has(name) && isUsers(name)) deleteLabel(userId, name)
+  }
+}
+
 /**
  * Write a validated set of preference changes and return the row as stored.
+ *
+ * A new `label_config` also updates the label registry (`syncLabelRegistry`).
  *
  * A new first day of the week moves every weekly quota's boundary. Close
  * what that ends now (it may be in the past — flipping to Monday on a
  * Wednesday ends a Sunday-anchored week at Monday), so the Quotas panel
  * shows the new week at once instead of after the next cron tick.
+ *
+ * Afterwards it emits a sync event so other open tabs pick the change up.
+ * Only a label change can show on a widget (the Quotas widget and the watch
+ * colour labels from `label_config`), so only that one spends a widget push.
  */
 export function updatePreferences(userId: number, changes: PreferenceChanges): PreferencesRow {
   const columns = Object.keys(changes) as PreferenceColumn[]
@@ -142,14 +186,26 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
     // Defensive: the keys become SQL identifiers.
     if (!PREFERENCE_COLUMNS.includes(column)) throw new Error(`Unknown preference: ${column}`)
   }
+  const labelConfigChanged = typeof changes.label_config === 'string'
   if (columns.length > 0) {
     const assignments = columns.map((column) => `${column} = ?`).join(', ')
-    getDb()
-      .prepare(`UPDATE users SET ${assignments} WHERE id = ?`)
-      .run(...columns.map((column) => changes[column]), userId)
+    withTransaction((db) => {
+      const oldLabelConfig = labelConfigChanged
+        ? readPreferencesRow(userId)?.label_config
+        : undefined
+      db.prepare(`UPDATE users SET ${assignments} WHERE id = ?`).run(
+        ...columns.map((column) => changes[column]),
+        userId,
+      )
+      if (labelConfigChanged) {
+        syncLabelRegistry(userId, oldLabelConfig, changes.label_config as string)
+      }
+    })
   }
 
   if (changes.week_start !== undefined) rolloverTrackedPeriods(new Date(), userId)
+
+  if (columns.length > 0) emitSyncEvent(userId, { widgets: labelConfigChanged })
 
   return readPreferencesRow(userId) as PreferencesRow
 }

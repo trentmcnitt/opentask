@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback } from 'react'
-import { useAiPreferences } from '@/components/PreferencesProvider'
-import type { FeatureMode } from '@/components/PreferencesProvider'
+import { useSession } from 'next-auth/react'
+import { useAiFeatureInfo, useAiPreferences } from '@/components/PreferencesProvider'
+import type { FeatureInfoMap, FeatureMode } from '@/components/PreferencesProvider'
+import { savePreference } from '@/lib/save-preference'
 
 export type AiMode = 'off' | 'on'
 
@@ -22,13 +24,15 @@ export interface UseAiModeReturn {
   setInsightsScoreChips: (show: boolean) => void
 }
 
-/** Fire-and-forget PATCH to persist a preference change server-side. */
-function patchPreference(fields: Record<string, unknown>) {
-  fetch('/api/user/preferences', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(fields),
-  }).catch(() => {})
+/**
+ * Save one AI preference: show it at once, and put `prev` back (with an error
+ * toast) if the save fails. Quiet on success — the switch is the feedback.
+ */
+function saveQuietly<T>(field: string, value: T, prev: T, setter: (v: T) => void) {
+  return savePreference(
+    { [field]: value },
+    { apply: () => setter(value), revert: () => setter(prev), successMessage: null },
+  )
 }
 
 /**
@@ -37,7 +41,16 @@ function patchPreference(fields: Record<string, unknown>) {
  * - WN commentary when not filtering, WN background highlight
  * - Signal/score chip visibility
  *
- * Backed by PreferencesProvider (server-persisted per user).
+ * Backed by PreferencesProvider (server-persisted per user). Each setter saves
+ * through `savePreference` quietly: optimistic, rolled back with an error toast
+ * if the save fails. Turning Insights on or off also refreshes
+ * `aiFeatureInfo` from the response, as Settings → AI does, so the AI status
+ * views see the new mode without a reload.
+ *
+ * The demo account may not change `ai_mode` or `ai_insights_mode` (the
+ * preferences route answers 403), so for it those two switches stay local to
+ * the page, as they always have: saving them would only fail, snap back and
+ * toast an error at a visitor trying the switch.
  */
 export function useAiMode(): UseAiModeReturn {
   const {
@@ -54,13 +67,15 @@ export function useAiMode(): UseAiModeReturn {
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
   } = useAiPreferences()
+  const { setAiFeatureInfo } = useAiFeatureInfo()
+  const isDemo = useSession().data?.user?.is_demo ?? false
 
   const setMode = useCallback(
     (mode: AiMode) => {
-      setAiMode(mode)
-      patchPreference({ ai_mode: mode })
+      if (isDemo) setAiMode(mode)
+      else void saveQuietly('ai_mode', mode, aiMode, setAiMode)
     },
-    [setAiMode],
+    [isDemo, aiMode, setAiMode],
   )
 
   // Insights visibility: derived from ai_insights_mode.
@@ -70,42 +85,66 @@ export function useAiMode(): UseAiModeReturn {
   const setShowInsights = useCallback(
     (show: boolean) => {
       const newMode: FeatureMode = show ? 'api' : 'off'
-      setAiInsightsMode(newMode)
-      patchPreference({ ai_insights_mode: newMode })
+      if (isDemo) {
+        setAiInsightsMode(newMode)
+        return
+      }
+      const prev = aiInsightsMode
+      void savePreference<{ ai_feature_info?: FeatureInfoMap }>(
+        { ai_insights_mode: newMode },
+        {
+          apply: () => setAiInsightsMode(newMode),
+          revert: () => setAiInsightsMode(prev),
+          successMessage: null,
+        },
+      ).then((data) => {
+        if (data?.ai_feature_info) setAiFeatureInfo(data.ai_feature_info)
+      })
     },
-    [setAiInsightsMode],
+    [isDemo, aiInsightsMode, setAiInsightsMode, setAiFeatureInfo],
   )
 
   const setWnCommentaryUnfiltered = useCallback(
     (show: boolean) => {
-      setAiWnCommentaryUnfiltered(show)
-      patchPreference({ ai_wn_commentary_unfiltered: show })
+      void saveQuietly(
+        'ai_wn_commentary_unfiltered',
+        show,
+        aiWnCommentaryUnfiltered,
+        setAiWnCommentaryUnfiltered,
+      )
     },
-    [setAiWnCommentaryUnfiltered],
+    [aiWnCommentaryUnfiltered, setAiWnCommentaryUnfiltered],
   )
 
   const setWnHighlight = useCallback(
     (show: boolean) => {
-      setAiWnHighlight(show)
-      patchPreference({ ai_wn_highlight: show })
+      void saveQuietly('ai_wn_highlight', show, aiWnHighlight, setAiWnHighlight)
     },
-    [setAiWnHighlight],
+    [aiWnHighlight, setAiWnHighlight],
   )
 
   const setInsightsSignalChips = useCallback(
     (show: boolean) => {
-      setAiInsightsSignalChips(show)
-      patchPreference({ ai_insights_signal_chips: show })
+      void saveQuietly(
+        'ai_insights_signal_chips',
+        show,
+        aiInsightsSignalChips,
+        setAiInsightsSignalChips,
+      )
     },
-    [setAiInsightsSignalChips],
+    [aiInsightsSignalChips, setAiInsightsSignalChips],
   )
 
   const setInsightsScoreChips = useCallback(
     (show: boolean) => {
-      setAiInsightsScoreChips(show)
-      patchPreference({ ai_insights_score_chips: show })
+      void saveQuietly(
+        'ai_insights_score_chips',
+        show,
+        aiInsightsScoreChips,
+        setAiInsightsScoreChips,
+      )
     },
-    [setAiInsightsScoreChips],
+    [aiInsightsScoreChips, setAiInsightsScoreChips],
   )
 
   return {
