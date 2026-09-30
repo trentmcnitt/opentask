@@ -80,7 +80,10 @@ export function groupByTimeSlot(
       undated = group.items.filter((t) => !t.due_at)
       continue
     }
-    out.push({ label: group.slot.label, tasks: group.items })
+    // A period with nothing due today gets no group (Trent, 2026-09-30: "we
+    // don't need to show periods that have zero items"). The Reminders
+    // surface still shows every period — this is only the Today task view.
+    if (group.items.length > 0) out.push({ label: group.slot.label, tasks: group.items })
   }
 
   if (early.length > 0) out.unshift({ label: earlySlotLabel(slots), tasks: early })
