@@ -44,6 +44,32 @@ final class APIClient {
         ])
     }
 
+    /// Register a widget extension's WidgetKit push token — the WIDGET
+    /// EXTENSION's token, not the app's own APNs token above, stored in
+    /// `widget_push_tokens`. `bundleId` is the containing app's id (the
+    /// server appends `.push-type.widgets` for the APNs topic); `platform` is
+    /// `ios`, `macos` or `watchos`. Called only through
+    /// `WidgetPushRegistration`, which owns the retry-until-confirmed state.
+    func registerWidgetToken(token: String, bundleId: String, platform: String, widgetKind: String) async throws {
+        try await post(path: "/api/push/apns/widget-token", body: [
+            "push_token": token,
+            "bundle_id": bundleId,
+            "platform": platform,
+            "environment": ApsEnvironment.current,
+            "widget_kind": widgetKind,
+        ])
+    }
+
+    /// Delete a widget push token's row. No extension calls this today: an
+    /// empty widget list is deliberately NOT taken as "the last widget was
+    /// removed" (see `WidgetPushRegistration`, rule 1), and APNs retires a
+    /// dead token server-side. Kept so the route's `DELETE` has its client.
+    func unregisterWidgetToken(token: String) async throws {
+        try await request(method: "DELETE", path: "/api/push/apns/widget-token", body: [
+            "push_token": token,
+        ])
+    }
+
     // MARK: - Task Actions
 
     /// Mark a task as done via the notification actions endpoint.
