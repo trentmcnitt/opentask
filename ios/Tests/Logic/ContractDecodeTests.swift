@@ -219,6 +219,20 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(data["prompts_did"] as? Int, 0)
     }
 
+    // MARK: POST /api/tasks/bulk/snooze
+
+    /// `APIClient.parseBulkSnoozeResult` reads these four keys through
+    /// JSONSerialization and defaults each to 0, like bulk/complete's. The
+    /// scenario snoozes an overdue task and gives a dateless one its first
+    /// date (both affected), and skips an Urgent task and a reminder.
+    func testBulkSnoozeKeys() throws {
+        let data = try Fixtures.object("bulk-snooze")
+        XCTAssertEqual(data["tasks_affected"] as? Int, 2)
+        XCTAssertEqual(data["skipped_urgent"] as? Int, 1)
+        XCTAssertEqual(data["skipped_high"] as? Int, 0)
+        XCTAssertEqual(data["snoozed_high"] as? Int, 0)
+    }
+
     // MARK: GET /api/tasks, /api/time-slots, /api/completions, /api/undo/status
 
     func testOpenTasks() throws {
