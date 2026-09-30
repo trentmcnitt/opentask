@@ -383,7 +383,7 @@ struct ReminderGroupDTO: Codable, Hashable {
     // MARK: Counts WITH prompts (quota reminders, 2026-09-24)
     //
     // Prompts behave exactly like reminders in every count a surface shows —
-    // "N left", the slot strip, "All caught up", the Smart Stack's position —
+    // "N left", the slot strip, "4 of 7", day complete, the Smart Stack's position —
     // so every such count reads these, never `reminders.count`/`considered`
     // alone. The web's `groupWaiting`/`groupConsidered`
     // (`src/lib/quota-prompts.ts`). Computed here from the prompts themselves

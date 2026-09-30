@@ -18,7 +18,16 @@ struct RemindersWidgetView: View {
             .containerBackground(for: .widget) {
                 switch family {
                 case .systemSmall, .systemMedium, .systemLarge:
-                    Rectangle().fill(.fill.tertiary)
+                    // Day complete (2026-09-29): the green wash on EVERY
+                    // period's view, not just the clock's — see
+                    // `ReminderDayProgress`. Lock Screen families keep the
+                    // system's own background.
+                    ZStack {
+                        Rectangle().fill(.fill.tertiary)
+                        if ReminderDayProgress.isDayComplete(entry.groups) {
+                            Rectangle().fill(WidgetTheme.dayCompleteWash)
+                        }
+                    }
                 default:
                     Color.clear
                 }
@@ -114,16 +123,35 @@ private struct RemindersSmallView: View {
                     Spacer(minLength: 0)
                 } else {
                     Spacer(minLength: 0)
-                    WidgetEmptyView(
-                        symbol: "checkmark.circle",
-                        message: entry.groups.isEmpty ? "No reminders today" : "Nothing left here",
-                        compact: true
-                    )
+                    emptyState
                     Spacer(minLength: 0)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .widgetURL(WidgetLink.reminders)
+        }
+    }
+
+    /// Nothing waiting in the on-screen period — the 2×2 keeps its one
+    /// compact line, in the same words as the larger cards (2026-09-29):
+    /// "Day complete" on the clock's period once the whole day is done (the
+    /// card also takes the green wash), "All done" for a finished period.
+    /// There is no room here for the big seal or the "N reminders" line.
+    @ViewBuilder
+    private var emptyState: some View {
+        let state = ReminderDayProgress.emptyBody(
+            groups: entry.groups, displayedIndex: entry.slotIndex,
+            naturalIndex: RemindersTimeline.naturalSlotIndex(in: entry.groups, now: entry.date)
+        )
+        switch state {
+        case .noReminders:
+            WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today", compact: true)
+        case .dayComplete:
+            WidgetEmptyView(symbol: "checkmark.seal.fill", message: "Day complete", compact: true)
+        case .periodDone:
+            WidgetEmptyView(symbol: "checkmark.seal.fill", message: "All done", compact: true)
+        case .nothingHere:
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here", compact: true)
         }
     }
 }
@@ -344,7 +372,7 @@ private struct RemindersListView: View {
 
             if isLarge {
                 ListBottomBar(height: barHeight) {
-                    EmptyView()
+                    periodCountLabel(width: size.width, pages: pages.count, page: page, metrics: metrics)
                 } pager: {
                     if pages.count > 1 {
                         ListPager(
@@ -459,50 +487,89 @@ private struct RemindersListView: View {
         }
     }
 
-    /// The on-screen slot has nothing waiting — three readings, not one
-    /// (Trent, 2026-09-23: "I still need an indication and some satisfaction
-    /// when I am finished with things", and the complaint that prompted the
-    /// slot strip above it — "I didn't even realize I actually did not
-    /// finish the things for early morning").
+    /// The on-screen period's list is empty (2026-09-29, the "day complete"
+    /// design approved from mockups r3). It replaced "All caught up", which
+    /// fired once every STARTED period was finished — a false finish line
+    /// with later periods still to come — and "<Period> done". The rule is
+    /// `ReminderDayProgress.emptyBody` (tested in `ReminderDayProgressTests`):
     ///
-    /// 1. **Never had anything.** `considered == 0` for this slot — the
-    ///    original, unchanged message.
-    /// 2. **This slot finished, but something earlier or later is still
-    ///    behind.** Named after the slot itself ("Morning done") so the
-    ///    label is specific, with the strip above showing where the rest of
-    ///    the day stands.
-    /// 3. **Every started slot is finished.** The whole-day version — a
-    ///    distinct, more emphatic message from #2, gated on `allCaughtUp`
-    ///    rather than merely on this one slot, so paging to an
-    ///    already-finished slot on a day that ISN'T fully caught up still
-    ///    reads as #2, not a false "All caught up".
+    /// 1. **Day complete** — every period, started or not, has nothing
+    ///    waiting and something was handled — AND this is the clock's
+    ///    period: a big seal, "Congratulations", "Day complete". Any other
+    ///    period that day reads as #2, under the same green wash
+    ///    (`RemindersWidgetView`'s background).
+    /// 2. **This period is finished**: the seal, "All done", "7 reminders"
+    ///    (prompts counted as reminders — `ReminderDayProgress.itemsText`).
+    ///    The header already names the period, so the body doesn't.
+    /// 3. **Never had anything** — the original "Nothing left here".
+    ///
+    /// No finish time and no "Next …" line: the strip above already shows
+    /// what's left of the day (Trent's review of the mockups).
     @ViewBuilder
     private var emptySlotView: some View {
-        if allCaughtUp {
-            WidgetEmptyView(symbol: "checkmark.seal.fill", message: "All caught up")
-        } else if let group = entry.group, group.consideredCount > 0 {
-            WidgetEmptyView(symbol: "checkmark.circle.fill", message: "\(group.label) done")
-        } else {
+        let state = ReminderDayProgress.emptyBody(
+            groups: entry.groups, displayedIndex: entry.slotIndex,
+            naturalIndex: RemindersTimeline.naturalSlotIndex(in: entry.groups, now: entry.date)
+        )
+        switch state {
+        case .noReminders:
+            WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today")
+        case .dayComplete:
+            DayCompleteView(isLarge: isLarge)
+        case .periodDone(let count):
+            PeriodDoneView(count: count, isLarge: isLarge)
+        case .nothingHere:
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here")
         }
     }
 
-    /// How many items have been handled anywhere today — considered
-    /// reminders plus handled quota prompts (2026-09-24) — gates
-    /// `allCaughtUp` below so a day with nothing ever configured reads as the
-    /// ORIGINAL "Nothing left here", not a celebratory "All caught up" for
-    /// work that was never there to do.
-    private var consideredTotal: Int { entry.groups.reduce(0) { $0 + $1.consideredCount } }
-
-    /// Every STARTED slot is finished — no slot whose time has come still has
-    /// something waiting (a reminder or a quota prompt). An upcoming slot
-    /// (time not yet arrived) never counts against this: its items aren't
-    /// behind, they're just later.
-    private var allCaughtUp: Bool {
-        consideredTotal > 0
-            && !entry.groups.contains { group in
-                RemindersTimeline.hasStarted(group, now: entry.date) && !group.hasNothingWaiting
+    /// The bottom row's leading "4 of 7" (2026-09-29): the on-screen
+    /// period's handled items over its day total, prompts included
+    /// (`ReminderDayProgress.PeriodCount`). systemLarge only — it lives in
+    /// the bottom row, which systemMedium doesn't have. Quiet, like the
+    /// "○ done" toggle opposite it. Hidden when the period holds nothing
+    /// ("0 of 0" says nothing).
+    ///
+    /// SHARING THE ROW WITH THE PAGER: the `‹ 1/2 ›` pager is centred on the
+    /// card in its own layer (`ListBottomBar`), so the count only has the
+    /// left half of the card minus half the pager. At the default text size
+    /// that is plenty (mockup r3-x); at the largest text sizes, on a
+    /// multi-page list, it may not be — and a label running under the
+    /// pager's "previous page" chevron would be both unreadable and a
+    /// mis-tap. So the widths are MEASURED, in the drawn caption2 font the
+    /// pager's page number uses (`WidgetTextMetrics.caption2Font`): the
+    /// count shows whenever it fits left of the pager with an 8pt gap, and
+    /// is left out while the pager shows when it doesn't. Never truncated or
+    /// shrunk — the header's "N left" still carries the period's count, and
+    /// the count comes back on a one-page list.
+    @ViewBuilder
+    private func periodCountLabel(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
+        if let group = entry.group {
+            let count = ReminderDayProgress.PeriodCount(group)
+            let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
+            if count.total > 0 && Self.periodCountFits(count.text, cardWidth: width, pagerText: pagerText, metrics: metrics) {
+                Text(count.text)
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityLabel(Text("\(count.handled) of \(count.total) done in this period"))
             }
+        }
+    }
+
+    /// Whether `text` fits left of the centred pager (see `periodCountLabel`).
+    /// `pagerText` nil = no pager on this list: it always fits.
+    private static func periodCountFits(
+        _ text: String, cardWidth: CGFloat, pagerText: String?, metrics: WidgetTextMetrics
+    ) -> Bool {
+        guard let pagerText else { return true }
+        // `ListPager`'s own layout: two 26pt glyph buttons, 6pt gaps, the
+        // page number between them.
+        let pagerWidth = 2 * 26 + 2 * 6 + WidgetTheme.measuredWidth(for: pagerText, font: metrics.caption2Font)
+        let room = cardWidth / 2 - pagerWidth / 2 - 8
+        return WidgetTheme.measuredWidth(for: text, font: metrics.caption2Font) <= room
     }
 
     /// The header IS the card's tap target now that the whole-card link is
@@ -667,6 +734,64 @@ private struct RemindersListView: View {
         let doneCount = (entry.group?.consideredItems.count ?? 0) + (entry.group?.handledPrompts.count ?? 0)
         guard waiting > 0 || doneCount > 0 else { return "all clear" }
         return "\(waiting) left · \(doneCount) done"
+    }
+}
+
+/// "Congratulations / Day complete" (2026-09-29, mockups r3-c/e/f): the
+/// clock's period once EVERY period of the day has nothing waiting
+/// (`ReminderDayProgress.isDayComplete`). The seal is about twice
+/// `PeriodDoneView`'s on systemLarge; systemMedium sizes everything down so
+/// the three lines fit its ~80pt body. No tint here — the green wash is the
+/// whole card's background (`RemindersWidgetView`).
+private struct DayCompleteView: View {
+    let isLarge: Bool
+
+    var body: some View {
+        VStack(spacing: isLarge ? 6 : 2) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: isLarge ? 44 : 30))
+                .foregroundStyle(.green.opacity(0.85))
+                .padding(.bottom, isLarge ? 6 : 2)
+            Text("Congratulations")
+                .font(isLarge ? .title2.weight(.semibold) : .headline)
+                .foregroundStyle(.primary)
+            Text("Day complete")
+                .font(isLarge ? .footnote : .caption)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A finished period (2026-09-29, mockup r3-b1): the seal at
+/// `WidgetEmptyView`'s size, "All done" (semibold, primary) and
+/// "7 reminders" (`ReminderDayProgress.itemsText`, prompts included) under
+/// it. It replaced "<Period> done" and "All caught up".
+private struct PeriodDoneView: View {
+    let count: Int
+    let isLarge: Bool
+
+    var body: some View {
+        VStack(spacing: isLarge ? 8 : 4) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(isLarge ? .title2 : .title3)
+                .foregroundStyle(.green.opacity(0.85))
+            VStack(spacing: 2) {
+                Text("All done")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(ReminderDayProgress.itemsText(count))
+                    .font(isLarge ? .footnote : .caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 
