@@ -547,7 +547,10 @@ private struct RemindersListView: View {
         if let group = entry.group {
             let count = ReminderDayProgress.PeriodCount(group)
             let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
-            if count.total > 0 && Self.periodCountFits(count.text, cardWidth: width, pagerText: pagerText, metrics: metrics) {
+            if count.total > 0 && WidgetTheme.fitsLeftOfPager(
+                width: WidgetTheme.measuredWidth(for: count.text, font: metrics.caption2Font),
+                cardWidth: width, pagerText: pagerText, metrics: metrics
+            ) {
                 Text(count.text)
                     .font(.caption2)
                     .monospacedDigit()
@@ -557,19 +560,6 @@ private struct RemindersListView: View {
                     .accessibilityLabel(Text("\(count.handled) of \(count.total) done in this period"))
             }
         }
-    }
-
-    /// Whether `text` fits left of the centred pager (see `periodCountLabel`).
-    /// `pagerText` nil = no pager on this list: it always fits.
-    private static func periodCountFits(
-        _ text: String, cardWidth: CGFloat, pagerText: String?, metrics: WidgetTextMetrics
-    ) -> Bool {
-        guard let pagerText else { return true }
-        // `ListPager`'s own layout: two 26pt glyph buttons, 6pt gaps, the
-        // page number between them.
-        let pagerWidth = 2 * 26 + 2 * 6 + WidgetTheme.measuredWidth(for: pagerText, font: metrics.caption2Font)
-        let room = cardWidth / 2 - pagerWidth / 2 - 8
-        return WidgetTheme.measuredWidth(for: text, font: metrics.caption2Font) <= room
     }
 
     /// The header IS the card's tap target now that the whole-card link is

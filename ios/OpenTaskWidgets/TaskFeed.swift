@@ -135,7 +135,11 @@ enum TaskFeed {
                 now: now
             ),
             projects: projects,
-            completions: WidgetStore.filterPendingRestoresFromCompletions(completions, now: now),
+            // In-flight check-offs count as done already — see
+            // `completionsIncludingPending` (the Today page's day complete).
+            completions: WidgetStore.filterPendingRestoresFromCompletions(
+                WidgetStore.completionsIncludingPending(completions, tasks: tasks, now: now), now: now
+            ),
             staleSince: staleSince,
             isSignedOut: false
         )

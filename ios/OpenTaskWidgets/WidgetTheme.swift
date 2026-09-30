@@ -97,10 +97,11 @@ enum WidgetTheme {
     /// accidental second accent hue and reverted before merge.
     static let trackMetTint = Color.green
 
-    /// The Reminders widget's "day complete" wash (2026-09-29, mockup r3-c):
-    /// a faint layer of the "met"/"done" green over the card's own
-    /// background, on every period while the whole day is done
-    /// (`ReminderDayProgress.isDayComplete`). 9% reads as a tint in dark and
+    /// The "day complete" wash (2026-09-29, mockup r3-c): a faint layer of
+    /// the "met"/"done" green over the card's own background — the Reminders
+    /// widget on every period while the whole day is done
+    /// (`ReminderDayProgress.isDayComplete`), the Tasks widget on its Today
+    /// page (`TaskDayProgress.isDayComplete`). 9% reads as a tint in dark and
     /// light alike without costing any text its contrast — the same green,
     /// not a new hue.
     static let dayCompleteWash = trackMetTint.opacity(0.09)
@@ -427,6 +428,25 @@ enum WidgetTheme {
     static func measuredWidth(for text: String, font: PlatformFont) -> CGFloat {
         guard !text.isEmpty else { return 0 }
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    /// Whether a bottom-row leading label `width` points wide fits left of
+    /// the centred `‹ n/N ›` pager with an 8pt gap — the Reminders "4 of 7"
+    /// and the Tasks "2 of 6" (2026-09-29). `pagerText` nil = no pager on
+    /// this list: it always fits. The pager is centred on the card in its
+    /// own layer (`ListBottomBar`), so a leading label only has the left
+    /// half of the card minus half the pager; at the largest text sizes on a
+    /// multi-page list it may not fit, and a label running under the pager's
+    /// "previous page" chevron would be unreadable and a mis-tap — so the
+    /// caller leaves it out instead of truncating it.
+    static func fitsLeftOfPager(
+        width: CGFloat, cardWidth: CGFloat, pagerText: String?, metrics: WidgetTextMetrics
+    ) -> Bool {
+        guard let pagerText else { return true }
+        // `ListPager`'s own layout: two 26pt glyph buttons, 6pt gaps, the
+        // page number between them.
+        let pagerWidth = 2 * 26 + 2 * 6 + measuredWidth(for: pagerText, font: metrics.caption2Font)
+        return width <= cardWidth / 2 - pagerWidth / 2 - 8
     }
 
     #if os(iOS)
@@ -773,6 +793,17 @@ struct WidgetTextMetrics {
     /// has to match what's drawn (P3/P4 titles render `.semibold`, which is
     /// measurably wider) or a title near the wrap boundary undercounts its
     /// lines.
+    /// The caption2 font at a given weight, at the drawn size — for
+    /// measuring the bottom row's "Select" (`.medium`) beside the Tasks
+    /// widget's "N of M".
+    func caption2Font(weight: Font.Weight) -> WidgetTheme.PlatformFont {
+        #if os(iOS)
+        UIFont.systemFont(ofSize: caption2Font.pointSize, weight: WidgetTheme.uiWeight(weight))
+        #else
+        NSFont.systemFont(ofSize: caption2Font.pointSize, weight: WidgetTheme.nsWeight(weight))
+        #endif
+    }
+
     func titleFont(weight: Font.Weight) -> WidgetTheme.PlatformFont {
         #if os(iOS)
         UIFont.systemFont(ofSize: titlePointSize, weight: WidgetTheme.uiWeight(weight))
@@ -1420,6 +1451,38 @@ struct WidgetEmptyView: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// "Congratulations / Day complete" under the green wash — the Tasks
+/// widget's Today page once nothing is open on it and something was done
+/// today (`TaskDayProgress.isDayComplete`, 2026-09-29, mockups t3/t5b).
+///
+/// The Reminders widget draws the same three lines with its own private
+/// `DayCompleteView` (`RemindersWidgetViews.swift`). These are the sizes
+/// PR #199 sets there (35pt seal, "Congratulations" `.title3` semibold,
+/// "Day complete" `.caption`; 26pt / `.callout` semibold / `.caption2` on
+/// systemMedium), so both widgets finish a day alike; keep the two in step,
+/// or point Reminders at this view once #199 has landed.
+struct DayCompleteBadge: View {
+    let isLarge: Bool
+
+    var body: some View {
+        VStack(spacing: isLarge ? 6 : 2) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: isLarge ? 35 : 26))
+                .foregroundStyle(.green.opacity(0.85))
+                .padding(.bottom, isLarge ? 4 : 2)
+            Text("Congratulations")
+                .font(isLarge ? .title3.weight(.semibold) : .callout.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("Day complete")
+                .font(isLarge ? .caption : .caption2)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .minimumScaleFactor(0.8)
+        .accessibilityElement(children: .combine)
     }
 }
 

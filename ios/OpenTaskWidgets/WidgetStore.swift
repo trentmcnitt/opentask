@@ -556,27 +556,53 @@ enum WidgetStore {
             // Reminders completion (which also flows through THIS function)
             // can never pollute the Tasks widget's DONE list.
             if let completedTask, !completedTask.isReminder, !completedTask.isTracked {
-                // Synthetic negative id, purely for Identifiable/ForEach —
-                // silently replaced by the real, server-confirmed row
-                // (positive id) on the next full TaskFeed fetch, which
-                // always re-fetches completions now (see TaskFeed.snapshot).
-                let synthetic = CompletionDTO(
-                    id: -completedTask.id,
-                    taskId: completedTask.id,
-                    completedAt: DateHelpers.formatISO(Date()),
-                    taskTitle: completedTask.title,
-                    projectId: completedTask.projectId,
-                    isReminder: false,
-                    isTracked: false,
-                    progressTarget: completedTask.progressTarget
-                )
-                completions = [synthetic] + completions
+                completions = [syntheticCompletion(for: completedTask, at: Date())] + completions
             }
             save(
                 TasksCache(tasks: tasks, projects: cached.value.projects, completions: completions),
                 forKey: tasksKey, at: cached.fetchedAt)
         }
         clearPendingRestoreLocked(id)
+    }
+
+    /// A local stand-in for `task`'s completion row. Synthetic negative id,
+    /// purely for Identifiable/ForEach — silently replaced by the real,
+    /// server-confirmed row (positive id) on the next full TaskFeed fetch,
+    /// which always re-fetches completions (see TaskFeed.snapshot).
+    static func syntheticCompletion(for task: TaskDTO, at date: Date) -> CompletionDTO {
+        CompletionDTO(
+            id: -task.id,
+            taskId: task.id,
+            completedAt: DateHelpers.formatISO(date),
+            taskTitle: task.title,
+            projectId: task.projectId,
+            isReminder: false,
+            isTracked: false,
+            progressTarget: task.progressTarget
+        )
+    }
+
+    /// `completions` plus a synthetic row for every task still in flight —
+    /// tombstoned by `stagePendingCompletion` but not yet confirmed by the
+    /// server (`confirmCompletion` adds the row itself once it is). The
+    /// Tasks widget's first repaint after a check-off comes from before the
+    /// server call; without this, checking off Today's LAST task drew
+    /// "Nothing due today" for that repaint (the task gone, its completion
+    /// not yet anywhere) and only then "Day complete" (2026-09-29). A task
+    /// already in `completions` (confirmed, or fetched) is not added twice;
+    /// reminders and tracked items never are — they are not the Tasks
+    /// widget's. `tasks` must be the UNFILTERED payload: the task's title
+    /// and project come from it.
+    static func completionsIncludingPending(
+        _ completions: [CompletionDTO], tasks: [TaskDTO], now: Date = Date()
+    ) -> [CompletionDTO] {
+        let pending = pendingCompletions(now: now)
+        guard !pending.isEmpty else { return completions }
+        let recorded = Set(completions.map(\.taskId))
+        let inFlight = tasks.filter {
+            pending.contains($0.id) && !recorded.contains($0.id) && !$0.isReminder && !$0.isTracked
+        }
+        return inFlight.map { syntheticCompletion(for: $0, at: now) } + completions
     }
 
     /// Remove tombstoned (in-flight) completions from a fetched or cached

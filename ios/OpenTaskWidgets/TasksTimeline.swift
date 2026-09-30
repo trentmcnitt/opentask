@@ -114,6 +114,37 @@ enum TasksTimeline {
         tasks.compactMap(\.dueDate).filter { $0 > now }.sorted()
     }
 
+    // MARK: Day complete (2026-09-29)
+
+    /// The Today page's finished states — `TaskDayProgress` (ios/Shared) has
+    /// the rules; these gate them to the Today page. Day complete, the green
+    /// wash and "N of M" belong to Today alone: an empty Up next or project
+    /// page says nothing about the day. (The Overdue page is never empty —
+    /// it leaves the ring when nothing is overdue.)
+    static func isDayComplete(scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date) -> Bool {
+        scope == WidgetStore.allProjects
+            && TaskDayProgress.isDayComplete(
+                openToday: openTasks.count, doneToday: TaskDayProgress.doneToday(done, now: now).count
+            )
+    }
+
+    /// The Today page's "N of M", nil on every other page.
+    static func todayCount(scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date) -> TaskDayProgress.TodayCount? {
+        guard scope == WidgetStore.allProjects else { return nil }
+        return TaskDayProgress.TodayCount(
+            doneToday: TaskDayProgress.doneToday(done, now: now).count, openToday: openTasks.count
+        )
+    }
+
+    /// What the timeline entry carries for "Up next" under "Nothing due
+    /// today": the next few tasks due after today, and ONLY when that state
+    /// can show (the Today page, nothing open on it) — every other entry
+    /// carries none, since WidgetKit archives each one.
+    static func upcomingForEmptyToday(scope: Int, openOnPage: [TaskDTO], allTasks: [TaskDTO], now: Date) -> [TaskDTO] {
+        guard scope == WidgetStore.allProjects, openOnPage.isEmpty else { return [] }
+        return TaskDayProgress.upcoming(allTasks, now: now)
+    }
+
     // MARK: Overdue (2026-09-25)
 
     /// The "Overdue" page — Trent: "if things are overdue, I'd like that to be

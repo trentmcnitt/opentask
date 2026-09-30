@@ -18,7 +18,15 @@ struct TasksWidgetView: View {
             .containerBackground(for: .widget) {
                 switch family {
                 case .systemSmall, .systemMedium, .systemLarge:
-                    Rectangle().fill(.fill.tertiary)
+                    // Day complete (2026-09-29): the Reminders widget's green
+                    // wash, on the Today page — see `TaskDayProgress`. Lock
+                    // Screen families keep the system's own background.
+                    ZStack {
+                        Rectangle().fill(.fill.tertiary)
+                        if entry.isDayComplete {
+                            Rectangle().fill(WidgetTheme.dayCompleteWash)
+                        }
+                    }
                 default:
                     Color.clear
                 }
@@ -118,14 +126,33 @@ private struct TasksSmallView: View {
                     Spacer(minLength: 0)
                 } else {
                     Spacer(minLength: 0)
-                    WidgetEmptyView(
-                        symbol: "checkmark.circle", message: "Nothing due today", compact: true
-                    )
+                    emptyState
                     Spacer(minLength: 0)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .widgetURL(entry.headerLink)
+        }
+    }
+}
+
+extension TasksSmallView {
+    /// Nothing open on this page. The Today page (2026-09-29) keeps the
+    /// larger cards' words in its one compact line: "Day complete" once
+    /// something was done today (the card also takes the green wash), else
+    /// "Nothing due today", both under the filled seal. No room for
+    /// "Congratulations" or the Up next list here. Every other page keeps
+    /// its original empty state.
+    @ViewBuilder
+    fileprivate var emptyState: some View {
+        if entry.todayCount != nil {
+            WidgetEmptyView(
+                symbol: "checkmark.seal.fill",
+                message: entry.isDayComplete ? "Day complete" : "Nothing due today",
+                compact: true
+            )
+        } else {
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today", compact: true)
         }
     }
 }
@@ -344,7 +371,7 @@ private struct TasksListView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             if items.isEmpty {
-                WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
+                emptyBody
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
                     ForEach(pages[page], id: \.self) { index in
@@ -359,7 +386,10 @@ private struct TasksListView: View {
             Spacer(minLength: 0)
 
             if paged.bottom > 0 {
-                bottomArea(page: page, totalPages: pages.count, hasSelection: !picks.isEmpty, metrics: metrics)
+                bottomArea(
+                    page: page, totalPages: pages.count, hasSelection: !picks.isEmpty,
+                    cardWidth: size.width, metrics: metrics
+                )
                     .frame(height: paged.bottom)
                     .padding(.top, rowSpacing)
             }
@@ -526,7 +556,9 @@ private struct TasksListView: View {
     /// mid-selection. Heights come from `bottomHeight(withPager:)`; the
     /// caller frames this to exactly that.
     @ViewBuilder
-    private func bottomArea(page: Int, totalPages: Int, hasSelection: Bool, metrics: WidgetTextMetrics) -> some View {
+    private func bottomArea(
+        page: Int, totalPages: Int, hasSelection: Bool, cardWidth: CGFloat, metrics: WidgetTextMetrics
+    ) -> some View {
         let bar = metrics.bottomBarHeight
         if snoozeMode || selectMode {
             VStack(spacing: 6) {
@@ -552,7 +584,7 @@ private struct TasksListView: View {
         } else {
             VStack(spacing: 6) {
                 ListBottomBar(height: bar) {
-                    SelectEntryButton(height: bar)
+                    restingLeading(page: page, totalPages: totalPages, cardWidth: cardWidth, metrics: metrics)
                 } pager: {
                     if totalPages > 1 {
                         pager(page: page, totalPages: totalPages)
@@ -568,6 +600,82 @@ private struct TasksListView: View {
                         .frame(height: metrics.actionPillHeight)
                 }
             }
+        }
+    }
+
+    /// The resting bottom row's leading edge (2026-09-29): "Select" while
+    /// there are rows to select, then — on the Today page — "2 of 6", done
+    /// today over done today plus still open on Today
+    /// (`TaskDayProgress.TodayCount`), quiet like the Reminders widget's
+    /// "4 of 7". On an empty page "Select" goes (nothing to select; it used
+    /// to sit there inert), so a finished Today reads "5 of 5" alone in the
+    /// corner. "0 of 0" (nothing due, nothing done) is left out. "Select"
+    /// stays first, where it always was, so the button doesn't move as the
+    /// count's width changes.
+    ///
+    /// Select plus the count share the left half of the row with the
+    /// centred pager: measured (in the drawn caption2 fonts) and the count
+    /// is left out while it wouldn't clear the pager — never truncated, and
+    /// never at the cost of "Select". See `WidgetTheme.fitsLeftOfPager`.
+    @ViewBuilder
+    private func restingLeading(page: Int, totalPages: Int, cardWidth: CGFloat, metrics: WidgetTextMetrics) -> some View {
+        let bar = metrics.bottomBarHeight
+        let showsSelect = !entry.tasks.isEmpty
+        HStack(spacing: 0) {
+            if showsSelect {
+                SelectEntryButton(height: bar)
+            }
+            if let count = entry.todayCount, !count.isEmpty {
+                // `SelectEntryButton`: "Select" in caption2 medium, then its
+                // own 8pt trailing padding — the gap before the count.
+                let selectWidth = showsSelect
+                    ? WidgetTheme.measuredWidth(for: "Select", font: metrics.caption2Font(weight: .medium)) + 8
+                    : 0
+                let countWidth = WidgetTheme.measuredWidth(for: count.text, font: metrics.caption2Font)
+                if WidgetTheme.fitsLeftOfPager(
+                    width: selectWidth + countWidth, cardWidth: cardWidth,
+                    pagerText: totalPages > 1 ? "\(page + 1)/\(totalPages)" : nil, metrics: metrics
+                ) {
+                    Text(count.text)
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityLabel(Text("\(count.done) of \(count.total) done today"))
+                }
+            }
+        }
+    }
+
+    /// The body when the page has no rows to draw (with "show completed" on,
+    /// that means nothing done either). The Today page has its finished
+    /// states (2026-09-29, `TaskDayProgress.emptyBody`):
+    ///
+    /// 1. **Day complete** — something was done today: `DayCompleteBadge`
+    ///    ("Congratulations / Day complete", Reminders' sizes) under the
+    ///    green wash. Only reachable with "show completed" off: with it on,
+    ///    the done rows ARE the body (tinted, no seal).
+    /// 2. **Nothing due today** — nothing done either: the filled seal and
+    ///    "Nothing due today", no tint, and on systemLarge the next few
+    ///    tasks due after today under an "UP NEXT" rule
+    ///    (`TodayNothingDueView`). systemMedium leaves the list out: its
+    ///    ~80pt body holds the seal and one line, and a single squeezed row
+    ///    would read as a mistake more than a preview.
+    ///
+    /// Every other page keeps the original "Nothing due today".
+    @ViewBuilder
+    private var emptyBody: some View {
+        if entry.todayCount != nil {
+            switch TaskDayProgress.emptyBody(doneToday: entry.doneTodayCount) {
+            case .dayComplete:
+                DayCompleteBadge(isLarge: isLarge)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .nothingDue:
+                TodayNothingDueView(entry: entry, isLarge: isLarge)
+            }
+        } else {
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
         }
     }
 
@@ -614,11 +722,15 @@ private struct TasksListView: View {
                     // (mockup: "Snooze mode" / "N selected") — see
                     // `subtitleText`'s doc. Shrinks rather than truncating
                     // the three-part "N due · N overdue · N done".
-                    Text(subtitleText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                    // Omitted when there is nothing to count (2026-09-29 —
+                    // it read "all clear").
+                    if !subtitleText.isEmpty {
+                        Text(subtitleText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -674,7 +786,13 @@ private struct TasksListView: View {
     ///
     /// On the Overdue page (2026-09-25) it's "N tasks": the title already
     /// says "Overdue", and "Overdue / 12 overdue" says it twice.
+    ///
+    /// A finished Today (2026-09-29) says "N done today", whether or not
+    /// "show completed" is on. With nothing to count at all it is empty and
+    /// the header drops the line — it used to read "all clear", which Trent
+    /// didn't like; "Nothing due today" in the body already says it.
     private var countLabel: String {
+        if entry.isDayComplete { return "\(entry.doneTodayCount) done today" }
         let overdue = entry.overdueCount(now: entry.date)
         var parts: [String] = []
         if !entry.tasks.isEmpty {
@@ -688,7 +806,114 @@ private struct TasksListView: View {
             }
         }
         if showCompleted, !entry.doneTasks.isEmpty { parts.append("\(entry.doneTasks.count) done") }
-        return parts.isEmpty ? "all clear" : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// The Today page with nothing due and nothing done today (2026-09-29,
+/// mockups t1b + t2): the filled seal and "Nothing due today" (semibold,
+/// primary — the shape of the Reminders widget's finished-period
+/// "Complete"), no tint, and on systemLarge a quiet "Up next" list of the
+/// next few tasks due after today (`TasksEntry.upcoming`), pinned to the
+/// bottom of the body with the seal centred in the room above it.
+///
+/// The list shows as many of its (at most three) rows as fit — at the
+/// largest text sizes that can be fewer, or none, rather than pushing the
+/// bottom row off the card (`ViewThatFits`). No "UP NEXT" rule at all when
+/// nothing is due after today either ("no chrome for something that isn't
+/// there").
+private struct TodayNothingDueView: View {
+    let entry: TasksEntry
+    let isLarge: Bool
+
+    var body: some View {
+        if isLarge, !entry.upcoming.isEmpty {
+            ViewThatFits(in: .vertical) {
+                ForEach(Array((1...entry.upcoming.count).reversed()), id: \.self) { count in
+                    content(upcoming: Array(entry.upcoming.prefix(count)))
+                }
+                content(upcoming: [])
+            }
+        } else {
+            content(upcoming: [])
+        }
+    }
+
+    private func content(upcoming: [TaskDTO]) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            seal
+            Spacer(minLength: 0)
+            if !upcoming.isEmpty {
+                UpNextList(entry: entry, tasks: upcoming)
+                    .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var seal: some View {
+        VStack(spacing: isLarge ? 8 : 4) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(isLarge ? .title2 : .title3)
+                .foregroundStyle(.green.opacity(0.85))
+            Text("Nothing due today")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .multilineTextAlignment(.center)
+        .minimumScaleFactor(0.8)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// "UP NEXT" and the next few tasks under "Nothing due today" — quiet by
+/// design (mockup t2): a hairline rule like the DONE divider's, then one line
+/// per task — its project's dot, the title in footnote/secondary, the due
+/// label ("Tomorrow 9:00 am", `WidgetTheme.dueLabelText` on one line) in
+/// caption2. A preview, not a list to work: no check-off, and each line opens
+/// that task in the app (`WidgetLink.task`, as a row's title does). One line
+/// per title — a long one ends in "…"; the task opens in full on a tap.
+private struct UpNextList: View {
+    let entry: TasksEntry
+    let tasks: [TaskDTO]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("UP NEXT")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(height: 1)
+            }
+            ForEach(tasks, id: \.id) { task in
+                Link(destination: WidgetLink.task(task.id)) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Circle()
+                            .fill(entry.projectColor(for: task).opacity(0.7))
+                            .frame(width: 6, height: 6)
+                            .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 1 }
+                        Text(task.title)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        WidgetTheme.dueLabelText(for: task, now: entry.date, stacked: false)
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .contentShape(Rectangle())
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
