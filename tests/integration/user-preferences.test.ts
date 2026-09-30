@@ -15,6 +15,43 @@ beforeAll(async () => {
   await resetTestData()
 })
 
+/**
+ * §4.1 cadence ladder, P1 (Low) and P2 (Medium). GET once left both out, so
+ * Settings — which hydrates from the GET — fell back to its client defaults
+ * on every reload whatever was saved. This runs first, on the fresh user.
+ */
+describe('auto_snooze_low_minutes / auto_snooze_medium_minutes round trip', () => {
+  async function readLadder() {
+    const res = await apiFetch('/api/user/preferences')
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    return { low: data.auto_snooze_low_minutes, medium: data.auto_snooze_medium_minutes }
+  }
+
+  afterAll(async () => {
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { auto_snooze_low_minutes: 240, auto_snooze_medium_minutes: 60 },
+    })
+  })
+
+  test('a fresh user reads the defaults: Low 240, Medium 60', async () => {
+    expect(await readLadder()).toEqual({ low: 240, medium: 60 })
+  })
+
+  test('PATCH saves both, the response echoes them, and GET returns them', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { auto_snooze_low_minutes: 90, auto_snooze_medium_minutes: 45 },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    expect(data.auto_snooze_low_minutes).toBe(90)
+    expect(data.auto_snooze_medium_minutes).toBe(45)
+    expect(await readLadder()).toEqual({ low: 90, medium: 45 })
+  })
+})
+
 describe('wake_time preference', () => {
   test('GET returns default wake_time of 07:00', async () => {
     const res = await apiFetch('/api/user/preferences')
@@ -591,12 +628,13 @@ describe('validation messages are exact', () => {
       body: { auto_snooze_low_minutes: 1440, auto_snooze_high_minutes: 360 },
     })
     expect(res.status).toBe(200)
-    expect((await res.json()).data.auto_snooze_high_minutes).toBe(360)
-    // The response doesn't echo auto_snooze_low_minutes; 240 is its default.
+    const data = (await res.json()).data
+    expect(data.auto_snooze_low_minutes).toBe(1440)
+    expect(data.auto_snooze_high_minutes).toBe(360)
     await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: {
-        auto_snooze_low_minutes: 240,
+        auto_snooze_low_minutes: before.auto_snooze_low_minutes,
         auto_snooze_high_minutes: before.auto_snooze_high_minutes,
       },
     })
