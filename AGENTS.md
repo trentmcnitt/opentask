@@ -525,27 +525,27 @@ The demo account showcases OpenTask with curated portfolio-style tasks, plus quo
 
 Changes to these require manual testing on the native apps. Nearly every call goes through `ios/Shared/APIClient.swift`.
 
-| Endpoint                                                   | Used for                                                                                                                     |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/auth/session-from-token`                        | Keeping the web view logged in from the stored API token                                                                     |
-| `GET /api/user/preferences`                                | Connection check during setup; label config for the Quotas widget and watch                                                  |
-| `POST`, `DELETE /api/push/apns/register`                   | Device token registration                                                                                                    |
-| `POST /api/push/apns/widget-token`                         | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                          |
-| `POST /api/notifications/actions`                          | Done/snooze/delete from notification action buttons                                                                          |
-| `POST /api/notifications/dismiss-all`                      | Clearing delivered notifications                                                                                             |
-| `GET /api/tasks/counts`                                    | The app icon / Dock badge on foreground and after a notification action (`overdue`, the Tasks page's red-pill number)        |
-| `GET /api/tasks?done=false`, `GET /api/projects`           | The Tasks and Quotas widgets and watch pages                                                                                 |
-| `GET /api/reminders`                                       | Reminders widget, watch Reminders page and Smart Stack, slot checklist — including `groups[].prompts`                        |
-| `GET /api/time-slots`                                      | Cached in the App Group (`TimeSlotStore`) to build period-snooze actions offline                                             |
-| `GET /api/completions`                                     | Widgets' "show completed" list (`?since=&until=` for the local day)                                                          |
-| `GET`, `PATCH /api/tasks/{id}`                             | Snooze to a time (content extension); moving a quota prompt to another period (`quota_prompt_config`, merged over the `GET`) |
-| `POST /api/tasks/{id}/undone`                              | Restoring a completed task from a DONE row (refuses a quota: 400)                                                            |
-| `POST /api/tasks/{id}/progress`                            | Quota +1/−1                                                                                                                  |
-| `POST /api/tasks/bulk/complete`                            | Bulk Done and the slot checklist; its `prompts` field marks quota prompts considered or done                                 |
-| `POST /api/tasks/bulk/snooze`                              | Per-row and selected-task snooze; sets `include_task_ids` so explicit picks bypass the P3/P4 sweep filter                    |
-| `POST /api/tasks/bulk/snooze-overdue`                      | "Snooze all overdue" actions; `slot` body field (a slot's `start_time`, or `"next"`)                                         |
-| `POST /api/quota-prompts/consider`, `/did`, `/restore`     | Handling a quota prompt and putting it back. Keyed by `prompt_key`, never task id; another day's key is a 400                |
-| `POST /api/undo`, `POST /api/redo`, `GET /api/undo/status` | Widget and watch Undo                                                                                                        |
+| Endpoint                                                   | Used for                                                                                                                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/session-from-token`                        | Keeping the web view logged in from the stored API token                                                                                                                                    |
+| `GET /api/user/preferences`                                | Connection check during setup; label config for the Quotas widget and watch                                                                                                                 |
+| `POST`, `DELETE /api/push/apns/register`                   | Device token registration                                                                                                                                                                   |
+| `POST /api/push/apns/widget-token`                         | WidgetKit push token registration (`platform` `ios`/`macos`/`watchos`; see `docs/NOTIFICATIONS.md`)                                                                                         |
+| `POST /api/notifications/actions`                          | Done/snooze/delete from notification action buttons                                                                                                                                         |
+| `POST /api/notifications/dismiss-all`                      | Clearing delivered notifications                                                                                                                                                            |
+| `GET /api/tasks/counts`                                    | The app icon / Dock badge on foreground and after a notification action (`overdue`, the Tasks page's red-pill number)                                                                       |
+| `GET /api/tasks?done=false`, `GET /api/projects`           | The Tasks and Quotas widgets and watch pages                                                                                                                                                |
+| `GET /api/reminders`                                       | Reminders widget, watch Reminders page and Smart Stack, slot checklist — including `groups[].prompts`                                                                                       |
+| `GET /api/time-slots`                                      | Cached in the App Group (`TimeSlotStore`) to build period-snooze actions offline                                                                                                            |
+| `GET /api/completions`                                     | Widgets' "show completed" list (`?since=&until=` for the local day)                                                                                                                         |
+| `GET`, `PATCH /api/tasks/{id}`                             | Snooze to a time (content extension); moving a quota prompt to another period (`quota_prompt_config`, merged over the `GET`); the widget outbox reads it back before resending a completion |
+| `POST /api/tasks/{id}/undone`                              | Restoring a completed task from a DONE row (refuses a quota: 400)                                                                                                                           |
+| `POST /api/tasks/{id}/progress`                            | Quota +1/−1                                                                                                                                                                                 |
+| `POST /api/tasks/bulk/complete`                            | Bulk Done and the slot checklist; its `prompts` field marks quota prompts considered or done                                                                                                |
+| `POST /api/tasks/bulk/snooze`                              | Per-row and selected-task snooze; sets `include_task_ids` so explicit picks bypass the P3/P4 sweep filter                                                                                   |
+| `POST /api/tasks/bulk/snooze-overdue`                      | "Snooze all overdue" actions; `slot` body field (a slot's `start_time`, or `"next"`)                                                                                                        |
+| `POST /api/quota-prompts/consider`, `/did`, `/restore`     | Handling a quota prompt and putting it back. Keyed by `prompt_key`, never task id; another day's key is a 400                                                                               |
+| `POST /api/undo`, `POST /api/redo`, `GET /api/undo/status` | Widget and watch Undo                                                                                                                                                                       |
 
 ### Contract fixtures rule
 

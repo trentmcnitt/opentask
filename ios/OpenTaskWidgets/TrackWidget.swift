@@ -949,6 +949,11 @@ struct TrackProvider: TimelineProvider {
             }
             let next = Date().addingTimeInterval(Self.refreshInterval)
             completion(Timeline(entries: entries, policy: .after(next)))
+            // Only AFTER the timeline is handed over — never between a tap and
+            // its repaint. Every reload is a chance to send what a tap queued
+            // (a scheduled refresh or a push is the retry path; see
+            // `WidgetOutboxDrainer`).
+            kickWidgetOutbox()
         }
     }
 

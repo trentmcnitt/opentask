@@ -1,8 +1,9 @@
-// Test-target-only stand-ins for the two widget kind strings WidgetStore
-// reads (`clearInteraction(kind:)`, `confirmRestore(_:kind:)`).
+// Test-target-only stand-ins for the widget kind strings WidgetStore and
+// WidgetOutboxDrainer read (`clearInteraction(kind:)`, `confirmRestore(_:kind:)`,
+// the drain report's kinds).
 //
-// The real `RemindersWidget`/`TasksWidget` are SwiftUI/WidgetKit types in
-// ios/OpenTaskWidgets/{RemindersWidget,TasksWidget}.swift, which this
+// The real `RemindersWidget`/`TasksWidget`/`TrackWidget` are SwiftUI/WidgetKit types in
+// ios/OpenTaskWidgets/{RemindersWidget,TasksWidget,TrackWidget}.swift, which this
 // Foundation-only bundle does not compile. KEEP THE STRINGS IN STEP with
 // their `static let kind` — WidgetStore only compares them, so a mismatch
 // here would make a test exercise the wrong branch, never crash.
@@ -13,4 +14,8 @@ enum RemindersWidget {
 
 enum TasksWidget {
     static let kind = "OpenTaskTasks"
+}
+
+enum TrackWidget {
+    static let kind = "OpenTaskTrack"
 }
