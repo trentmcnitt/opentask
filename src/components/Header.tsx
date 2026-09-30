@@ -3,11 +3,9 @@
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
-import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import {
-  Clock,
   Undo2,
   Redo2,
   Menu,
@@ -40,10 +38,9 @@ import { cn } from '@/lib/utils'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { CountBadge } from '@/components/CountBadge'
 import { SearchBar } from './SearchBar'
-import { SnoozeMenu } from '@/components/SnoozeMenu'
-import { useSnoozePreferences, useAiAvailable } from '@/components/PreferencesProvider'
+import { SnoozeOverdueTrigger } from '@/components/SnoozeOverdueTrigger'
+import { useAiAvailable } from '@/components/PreferencesProvider'
 import { useAiSlotState } from '@/hooks/useAiSlotState'
-import { formatCompactSnoozeLabel } from '@/lib/snooze'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
 import { GuardedLink } from '@/components/GuardedLink'
@@ -83,6 +80,14 @@ interface HeaderProps {
   onSearch?: (query: string) => void
   onSearchClear?: () => void
   onSnoozeOverdue?: (until?: string) => void
+  /**
+   * The snooze-all clock's badge: overdue tasks a press would sweep. Not
+   * `overdueCount`, which is the red pill's date-facet number — see
+   * `SnoozeOverdueTrigger`.
+   */
+  snoozeOverdueCount?: number
+  /** Whether the user has periods, for the clock's "Next" badge. */
+  hasPeriods?: boolean
   onShowKeyboardShortcuts?: () => void
   timezone?: string
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
@@ -126,6 +131,8 @@ export function Header({
   onSearch,
   onSearchClear,
   onSnoozeOverdue,
+  snoozeOverdueCount = 0,
+  hasPeriods = false,
   onShowKeyboardShortcuts,
   timezone,
   searchFocusRef,
@@ -135,18 +142,11 @@ export function Header({
   const { data: session } = useSession()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
-  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
   const [menuOpened, setMenuOpened] = useState(false)
-  const { defaultSnoozeOption } = useSnoozePreferences()
   const aiAvailable = useAiAvailable()
   // The AI Status item's dot: fetched the first time the menu opens, then kept.
   const aiSlotState = useAiSlotState({ enabled: menuOpened })
-
-  const snoozePress = useSimpleLongPress({
-    onLongPress: () => setSnoozeMenuOpen(true),
-    onShortPress: () => onSnoozeOverdue?.(),
-  })
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -249,40 +249,16 @@ export function Header({
 
           {/* Action buttons: always fixed in place */}
           <div className="flex flex-shrink-0 items-center">
-            {/* Snooze all overdue button - desktop only (SnoozeAllFab, shown at every width, duplicates it there).
-               Single click: snooze using default duration.
-               Long-press (400ms): opens SnoozeMenu with duration choices. */}
+            {/* Snooze all overdue — desktop only (`md` and up). The FAB, shown at
+               every width, is the same control (`SnoozeOverdueTrigger`); the
+               top-bar copy stays too (Trent, 2026-09-29). */}
             {onSnoozeOverdue && !isSelectionMode && (
-              <SnoozeMenu
-                open={snoozeMenuOpen}
-                onOpenChange={setSnoozeMenuOpen}
-                onSnooze={(until) => onSnoozeOverdue(until)}
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={snoozePress.onClick}
-                  onPointerDown={snoozePress.onPointerDown}
-                  onPointerUp={snoozePress.onPointerUp}
-                  onPointerLeave={snoozePress.onPointerLeave}
-                  aria-label={
-                    overdueCount > 0
-                      ? `Snooze ${overdueCount} overdue tasks (hold for options)`
-                      : 'Snooze overdue tasks (hold for options)'
-                  }
-                  className="relative hidden md:inline-flex"
-                >
-                  <Clock className="size-5" />
-                  {overdueCount > 0 && (
-                    <span className="bg-badge-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
-                      {overdueCount > 999 ? '999+' : overdueCount}
-                    </span>
-                  )}
-                  <span className="bg-muted text-muted-foreground absolute right-0 bottom-0 rounded px-0.5 text-[8px] leading-tight font-medium">
-                    {formatCompactSnoozeLabel(defaultSnoozeOption)}
-                  </span>
-                </Button>
-              </SnoozeMenu>
+              <SnoozeOverdueTrigger
+                variant="header"
+                overdueCount={snoozeOverdueCount}
+                hasPeriods={hasPeriods}
+                onSnoozeOverdue={onSnoozeOverdue}
+              />
             )}
 
             <Tooltip>

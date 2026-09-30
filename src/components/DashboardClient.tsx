@@ -37,7 +37,7 @@ import { FilterBar } from '@/components/FilterBar'
 import { AiControlArea } from '@/components/AiControlArea'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
-import { SnoozeAllFab } from '@/components/SnoozeAllFab'
+import { SnoozeOverdueTrigger } from '@/components/SnoozeOverdueTrigger'
 import { OverdueJumpFab } from '@/components/OverdueJumpFab'
 import { JumpToTasksFab } from '@/components/JumpToTasksFab'
 import { ViewModeFab } from '@/components/ViewModeFab'
@@ -523,6 +523,9 @@ function HomeContent({
         if (!res.ok) throw new Error('Failed to delete')
         // No trim of the search hit set — see `bulkDelete` and `visibleSearchResults`.
         refreshAll()
+        // The delete is an undo entry like any other, so the top bar's undo
+        // badge counts it (this was the one dashboard action that didn't).
+        actions.bumpUndoCount()
         showToast({
           message: 'Task moved to trash',
           type: 'success',
@@ -532,7 +535,7 @@ function HomeContent({
         showToast({ message: 'Delete failed', type: 'error' })
       }
     },
-    [refreshAll, actions.handleUndo],
+    [refreshAll, actions],
   )
 
   const handleReprocess = useCallback(
@@ -1294,10 +1297,15 @@ function HomeContent({
     onBulkDelete: bulk.bulkDelete,
   })
 
-  // The tab title, the PWA dock badge and the snooze-all FAB count the list as
-  // it stands (every filter applied). The top bar's pills count something
-  // else on purpose — see `useDateFacetCounts` in `DashboardView`.
+  // The tab title and the PWA dock badge count the list as it stands (every
+  // filter applied). The top bar's pills count something else on purpose —
+  // see `useDateFacetCounts` in `DashboardView`.
   const { overdueCount } = useTaskCounts(tasks_, timezone, now)
+  // The snooze-all clock and FAB count what a press sweeps: `displayTasks`,
+  // the list `useSnoozeOverdue` acts on (no What's Next / signal filter), with
+  // the same `isOverdue`. Counting anything else made the badge and the
+  // "Snoozed N" toast disagree.
+  const { overdueCount: sweepOverdueCount } = useTaskCounts(displayTasks, timezone, now)
   // The nav's Tasks badges read a shared cache; this page is its source of
   // truth. Published from the unfiltered list (reminders excluded, nothing
   // else): a filter chip changes the view, not what is due.
@@ -1447,7 +1455,7 @@ function HomeContent({
         searchHits={searchResults}
         searchResultCount={visibleSearchResults.length}
         shownTaskCount={shownTaskCount}
-        overdueCount={overdueCount}
+        sweepOverdueCount={sweepOverdueCount}
         selection={selection}
         selectedTasks={selectedTasks}
         actions={actions}
@@ -1779,7 +1787,7 @@ function DashboardView({
   searchHits,
   searchResultCount,
   shownTaskCount,
-  overdueCount,
+  sweepOverdueCount,
   selection,
   selectedTasks,
   actions,
@@ -1913,7 +1921,8 @@ function DashboardView({
   searchResultCount: number
   /** What the list renders — see `shownTaskCount` in `HomeContent`. */
   shownTaskCount: number
-  overdueCount: number
+  /** Overdue tasks the snooze-all clock and FAB would sweep (`displayTasks`). */
+  sweepOverdueCount: number
   selection: ReturnType<typeof useSelection>
   selectedTasks: Task[]
   actions: ReturnType<typeof useDashboardActions>
@@ -2179,6 +2188,8 @@ function DashboardView({
         onSearch={onSearch}
         onSearchClear={onSearchClear}
         onSnoozeOverdue={onSnoozeOverdue}
+        snoozeOverdueCount={sweepOverdueCount}
+        hasPeriods={timeSlots.length > 0}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
         timezone={timezone}
         searchFocusRef={searchFocusRef}
@@ -2457,7 +2468,7 @@ function DashboardView({
           onShowAll={() => onGroupingChange('time')}
         />
         {/* Counts the date facet (`headerCounts`), like the red pill and the
-            pinned chip it acts like — not `overdueCount` below. "On" is
+            pinned chip it acts like — not `sweepOverdueCount` below. "On" is
             `includes`, the pinned chip's own solid state, not "sole filter". */}
         <OverdueJumpFab
           placement="phone"
@@ -2473,11 +2484,14 @@ function DashboardView({
           isSelectionMode={selection.isSelectionMode}
           onJump={onOverdueJump}
         />
-        <SnoozeAllFab
-          overdueCount={overdueCount}
-          isSelectionMode={selection.isSelectionMode}
-          onSnoozeOverdue={onSnoozeOverdue}
-        />
+        {!selection.isSelectionMode && (
+          <SnoozeOverdueTrigger
+            variant="fab"
+            overdueCount={sweepOverdueCount}
+            hasPeriods={timeSlots.length > 0}
+            onSnoozeOverdue={onSnoozeOverdue}
+          />
+        )}
       </DashboardFabStack>
 
       <QuickActionPopover

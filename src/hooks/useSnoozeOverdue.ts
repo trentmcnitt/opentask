@@ -11,7 +11,7 @@
  */
 
 import { useCallback } from 'react'
-import { isTracked } from '@/lib/track'
+import { isOverdue } from '@/lib/task-counts'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
@@ -36,7 +36,7 @@ interface UseSnoozeOverdueOptions {
  *
  * Sends all overdue task IDs to the server — the server handles priority
  * filtering (see the block comment above). The optional `until` parameter
- * allows SnoozeAllFab long-press menu to override the default duration.
+ * allows the snooze-all trigger's long-press menu to override the default duration.
  */
 export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
   const {
@@ -54,12 +54,10 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
   return useCallback(
     async (until?: string) => {
       const now = new Date()
-      // Same predicate the badge counts with (`countTasks`): a quota is never
-      // late, so it is never swept. Without this the header read "0 overdue"
-      // while the button beside it snoozed every quota.
-      const overdueTasks = displayTasks.filter(
-        (t) => t.due_at && new Date(t.due_at) < now && !isTracked(t),
-      )
+      // THE overdue predicate (`isOverdue`), the one the trigger's badge
+      // counts `displayTasks` with — so a press sweeps exactly the number on
+      // the button. A quota is never late, so it is never swept.
+      const overdueTasks = displayTasks.filter((t) => isOverdue(t, now))
 
       if (overdueTasks.length === 0) {
         showToast({ message: 'No overdue tasks' })

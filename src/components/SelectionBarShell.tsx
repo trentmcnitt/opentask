@@ -18,7 +18,10 @@ export const SELECTION_BAR_HINT_ID = 'selection-bar-hint'
  * Quotas had each rebuilt it, and had already drifted apart in small ways
  * nobody chose: one right-margined its count and the other made it tabular,
  * one nudged Clear by 4px more than the other. Only the verbs differ, and the
- * verbs are what `children` is for.
+ * verbs are what `children` is for. The dashboard's own bar
+ * (`SelectionActionSheet`) moved onto this shell too, so it gained the
+ * double-click guard and took the shell's spacing (a 4px count margin and
+ * Clear gap, where it had 8px).
  *
  * `data-selection-sheet` is load-bearing beyond styling: the toast system
  * watches for it and lifts toasts clear of the bar, so a surface that hand-rolls

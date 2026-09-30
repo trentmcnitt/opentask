@@ -2,8 +2,10 @@ import {
   test,
   expect,
   backdateCreated,
+  uniqueTitle,
   waitForPreferenceSave,
   waitForPrefsLoaded,
+  withPreferences,
 } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
@@ -880,6 +882,45 @@ test.describe('Top bar total', () => {
     } finally {
       for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
       await setGrouping(page, before)
+    }
+  })
+})
+
+/**
+ * Deleting from the quick panel is an undo entry like any other, so the top
+ * bar's undo badge counts it at once. The dashboard's single-task delete was
+ * the one action that didn't bump it. The count is this session's, so a fresh
+ * page starts at 0 (`useUndoRedo`).
+ */
+test.describe('Quick panel delete', () => {
+  test.use({ viewport: { width: 1280, height: 900 } })
+
+  test('bumps the undo count', async ({ authenticatedPage: page }) => {
+    const title = uniqueTitle('Undo-count delete probe')
+    const res = await page.request.post('/api/tasks', {
+      data: { title, due_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+    })
+    expect(res.ok()).toBeTruthy()
+    const id = (await res.json()).data.id as number
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        const row = page.locator(`#task-row-${id}`)
+        await waitForPrefsLoaded(page, () => page.goto('/'), row)
+        const undo = page.locator('header').getByRole('button', { name: /^Undo/ })
+        await expect(undo).toHaveAccessibleName('Undo')
+
+        await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+        const box = (await row.boundingBox())!
+        await row.dblclick({ position: { x: 56, y: box.height - 6 } })
+        const deleted = page.waitForResponse(
+          (r) => r.request().method() === 'DELETE' && r.url().endsWith(`/api/tasks/${id}`),
+        )
+        await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click()
+        expect((await deleted).ok()).toBeTruthy()
+        await expect(undo).toHaveAccessibleName('Undo (1 available)')
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
     }
   })
 })

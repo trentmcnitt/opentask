@@ -136,4 +136,42 @@ test.describe('Snooze-all clock', () => {
     await expect(menu).toBeHidden()
     expect(snoozes).toEqual([])
   })
+
+  // The top-bar clock and the FAB are one component (`SnoozeOverdueTrigger`):
+  // the clock opens its menu on a right-click too, and its corner badge says
+  // where a plain press goes — "Next" under the default next-period setting,
+  // the snooze option otherwise. Nothing here snoozes anything.
+  test('the top-bar clock opens its options on a right-click, and its badge follows the setting', async ({
+    authenticatedPage: page,
+  }) => {
+    const clock = page.locator('header').getByRole('button', { name: /hold for options/ })
+    const badge = clock.locator('[data-snooze-default-label]')
+    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    const snoozes: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().includes('/api/tasks/bulk/')) snoozes.push(r.url())
+    })
+
+    try {
+      await setBulkDefault(page, 'next_period')
+      await page.goto('/')
+      await expect(badge).toHaveText('Next')
+      // Both triggers count the same list, the one a press sweeps.
+      await expect(clock).toHaveAccessibleName(
+        (await page.locator('[data-snooze-all-fab]').getAttribute('aria-label'))!,
+      )
+
+      await clock.click({ button: 'right' })
+      await expect(menu).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(menu).toBeHidden()
+
+      await setBulkDefault(page, 'default_option')
+      await page.reload()
+      await expect(badge).toHaveText(/^(\+\d+[hm](\d+m)?|AM)$/)
+      expect(snoozes).toEqual([])
+    } finally {
+      await setBulkDefault(page, 'next_period')
+    }
+  })
 })

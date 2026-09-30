@@ -1,16 +1,15 @@
 /**
  * Shared long-press hook for pointer-based interactions.
  *
- * Provides a consistent 400ms long-press pattern used by TaskRow, Header,
- * and SnoozeAllFab. Handles touch jitter, double-click detection, and
+ * Provides a consistent 400ms long-press pattern used by TaskRow and
+ * SnoozeOverdueTrigger. Handles touch jitter, double-click detection, and
  * cleanup on unmount.
  *
  * Two variants:
  * - Full (default): Returns React pointer event handlers for components that
- *   need jitter tolerance and double-click detection (TaskRow).
- * - Simple: Returns plain () => void handlers for components that wire into
- *   existing event props without React.PointerEvent parameters (Header buttons,
- *   SnoozeAllFab).
+ *   need jitter tolerance and double-click detection (TaskRow's row body).
+ * - Simple: Returns plain handlers for buttons with a tap and a hold
+ *   (SnoozeOverdueTrigger, TaskRow's snooze button). Primary button only.
  */
 
 import { useRef, useEffect, useCallback } from 'react'
@@ -156,12 +155,14 @@ interface UseSimpleLongPressReturn {
  * Simple long-press hook returning plain () => void handlers.
  *
  * For components where the handler is wired into existing event props
- * without needing React.PointerEvent parameters (Header buttons, SnoozeAllFab).
+ * without needing React.PointerEvent parameters (SnoozeOverdueTrigger, TaskRow's
+ * snooze button).
  * Includes keyboard fallback via onClick.
  *
  * Only the primary button counts. A right-click fires pointerdown and
  * pointerup too, and without the check that pair read as a short press — a
- * right-click on the snooze-all clock or FAB snoozed every overdue task.
+ * right-click on the snooze-all clock or FAB snoozed every overdue task, and
+ * one on a row's snooze button snoozed that task.
  */
 export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpleLongPressReturn {
   const { onLongPress, onShortPress, delay = 400 } = options
