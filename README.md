@@ -26,9 +26,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/ios-dashboard-light-v2-400-readme.png" alt="OpenTask iOS app — light mode" width="160" align="middle">
+  <img src="docs/images/ios-dashboard-light-400.png" alt="OpenTask iOS app — light mode" width="160" align="middle">
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="docs/images/ios-dashboard-dark-400-readme.png" alt="OpenTask iOS app — dark mode" width="160" align="middle">
+  <img src="docs/images/ios-dashboard-dark-400.png" alt="OpenTask iOS app — dark mode" width="160" align="middle">
 </p>
 
 > [!NOTE]
@@ -64,7 +64,7 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 Every task gets AI-generated commentary and an attention score. AI sees your full task list and writes a one-liner — what it means, why it matters, what you might be forgetting.
 
 <p align="center">
-  <img src="docs/images/task-card-ai-insight-readme.png" alt="Task card with AI commentary and attention score" width="400">
+  <img src="docs/images/task-card-ai-insight.png" alt="Task card with AI commentary and attention score" width="400">
 </p>
 
 - **Commentary + scoring** — Each task gets a contextual one-liner and an attention score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
