@@ -1,19 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
 import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useLongPress } from '@/hooks/useLongPress'
-import { useQuotaMutations } from '@/hooks/useQuotaMutations'
-import { useNavigationGuard } from '@/components/NavigationGuardProvider'
+import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { NotesMarker } from '@/components/NotesMarker'
 import { Checkbox } from '@/components/ui/checkbox'
-import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
@@ -604,7 +601,7 @@ function periodsLabel(prompt: QuotaPrompt): string {
   return `The ${list} of ${prompt.target} ${names.length === 1 ? 'reminds' : 'remind'} me in`
 }
 
-/** `useQuotaMutations`' `clear` — there is no quota selection here to clear. */
+/** The default `onCompleted`, for a host with no Undo count to keep. */
 const noop = () => {}
 
 /**
@@ -685,11 +682,11 @@ export function usePromptRows({
  * A prompt's bubble and editor: which prompt's `TrackChipPopover` is open, the
  * quota it is about (fetched on the hold — a reminder surface does not hold
  * quota rows), and the `QuotaDetailModal` its Open reaches. The same wiring
- * `TrackPanel`'s chips use (`useTrackChipDetail`), with the same mutations
- * (`useQuotaMutations`), so a quota edits the same way from here as from its
+ * `TrackPanel`'s chips use (`useTrackChipDetail`), with the same editor
+ * (`useQuotaEditor`), so a quota edits the same way from here as from its
  * own surfaces.
  */
-export function useQuotaPromptDetail({
+function useQuotaPromptDetail({
   onUndo,
   onCompleted,
   onRefresh,
@@ -700,14 +697,10 @@ export function useQuotaPromptDetail({
   onRefresh: () => Promise<void>
   movePrompt: MovePrompt
 }) {
-  const router = useRouter()
-  const { requestNavigation } = useNavigationGuard()
   const [peekKey, setPeekKey] = useState<string | null>(null)
   const [task, setTask] = useState<Task | null>(null)
-  const [editing, setEditing] = useState<Task[]>([])
-  const { saveQuotas, createQuota, deleteQuotas } = useQuotaMutations({
+  const { saveQuotas, deleteQuotas, openEdit, modal } = useQuotaEditor({
     refresh: onRefresh,
-    clear: noop,
     onUndo,
     onCompleted,
   })
@@ -740,22 +733,25 @@ export function useQuotaPromptDetail({
    * Fetched fresh, like the hold's, so the editor never starts from a copy
    * older than the last edit.
    */
-  const openQuotas = useCallback(async (prompts: QuotaPrompt[]) => {
-    const ids = [...new Set(prompts.map((p) => p.task_id))]
-    try {
-      const tasks = await Promise.all(
-        ids.map(async (id) => {
-          const res = await fetch(`/api/tasks/${id}`)
-          if (!res.ok) throw new Error(`task ${res.status}`)
-          return (await res.json()).data as Task
-        }),
-      )
-      setEditing(tasks)
-    } catch (err) {
-      log.error('ui', 'Loading quotas for their prompts failed:', err)
-      showToast({ message: 'Could not open the quotas', type: 'error' })
-    }
-  }, [])
+  const openQuotas = useCallback(
+    async (prompts: QuotaPrompt[]) => {
+      const ids = [...new Set(prompts.map((p) => p.task_id))]
+      try {
+        const tasks = await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch(`/api/tasks/${id}`)
+            if (!res.ok) throw new Error(`task ${res.status}`)
+            return (await res.json()).data as Task
+          }),
+        )
+        openEdit(tasks)
+      } catch (err) {
+        log.error('ui', 'Loading quotas for their prompts failed:', err)
+        showToast({ message: 'Could not open the quotas', type: 'error' })
+      }
+    },
+    [openEdit],
+  )
   const { slots } = usePromptSetup()
 
   /**
@@ -792,7 +788,7 @@ export function useQuotaPromptDetail({
         onOpenChange={(open) => !open && closePeek()}
         onOpen={(t) => {
           setPeekKey(null)
-          setEditing([t])
+          openEdit([t])
         }}
         onDelete={(t) => {
           setPeekKey(null)
@@ -819,20 +815,6 @@ export function useQuotaPromptDetail({
       </TrackChipPopover>
     )
   }
-
-  const modal = (
-    <QuotaDetailModal
-      tasks={editing}
-      open={editing.length > 0}
-      onClose={() => setEditing([])}
-      onSave={saveQuotas}
-      onCreate={createQuota}
-      onDelete={(targets) => void deleteQuotas(targets)}
-      onOpenPage={(id) => {
-        if (requestNavigation(`/tasks/${id}`)) router.push(`/tasks/${id}`)
-      }}
-    />
-  )
 
   return { peek, wrap, openQuotas, modal }
 }
