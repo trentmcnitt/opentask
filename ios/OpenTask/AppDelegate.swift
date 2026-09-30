@@ -270,30 +270,30 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        center.getDeliveredNotifications { notifications in
-            let idsToRemove = notifications
-                .filter { notification in
-                    guard let notifTaskId = notification.request.content.userInfo["taskId"] as? Int else {
-                        return false
-                    }
-                    return taskIds.contains(notifTaskId)
-                }
-                .map { $0.request.identifier }
-
-            if !idsToRemove.isEmpty {
-                center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
-                print("[OpenTask] Dismissed \(idsToRemove.count) notifications for tasks \(taskIds)")
+        Task {
+            let removed = await removeDeliveredNotifications(forTaskIds: taskIds)
+            if removed > 0 {
+                print("[OpenTask] Dismissed \(removed) notifications for tasks \(taskIds)")
             }
-
-            completionHandler(idsToRemove.isEmpty ? .noData : .newData)
+            completionHandler(removed == 0 ? .noData : .newData)
         }
     }
 
     // MARK: - Handle Notification Actions
 
-    /// Called when user taps a notification action button (from lock screen or notification center).
-    /// Branches on category: TASK_SUMMARY actions don't have a taskId (bulk operations only),
-    /// while TASK_REMINDER actions target a specific task.
+    /// Called when user taps a notification action button (from lock screen or
+    /// notification center), or the notification's body.
+    ///
+    /// Which server call each action makes, and which delivered banners go,
+    /// is `NotificationActionRunner` (shared with the Mac, the Watch and the
+    /// content extension). This keeps the phone's own part: opening the
+    /// dashboard or the task in the web view on a body tap, and re-reading
+    /// the badge from the server after a summary or task action (even a
+    /// failed one) — not after a slot action, and not for a task push with no
+    /// `taskId`. `SNOOZE_CUSTOM`/`SNOOZE_ALL_CUSTOM` never reach here: the
+    /// content extension makes that call itself and dismisses without
+    /// forwarding. A slot's "Complete checked" doesn't either — it only
+    /// exists in the expanded checklist, which commits it itself.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -308,135 +308,33 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        // Summary notifications: bulk-only actions, no taskId
-        if categoryId == NotificationCategory.taskSummary {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(
-                withIdentifiers: [response.notification.request.identifier]
-            )
-
-            Task {
-                do {
-                    switch response.actionIdentifier {
-                    case NotificationAction.snoozeAll1hr:
-                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                        await dismissNotificationsAfterSweep(result)
-
-                    case NotificationAction.snoozeAllCustom:
-                        // Handled by the content extension directly via .dismiss completion.
-                        break
-
-                    case UNNotificationDefaultActionIdentifier:
-                        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-                        WebViewManager.shared.navigate(path: "/")
-
-                    default:
-                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                            let result = try await APIClient.shared.snoozeOverdue(slot: slot)
-                            await dismissNotificationsAfterSweep(result)
-                        }
-                    }
-                } catch {
-                    print("[OpenTask] Summary action handler error: \(error)")
-                }
-                await refreshBadgeFromServer()
-
-                completionHandler()
-            }
-            return
-        }
-
-        // §6 slot reminders: the slot is the unit, so there is no taskId. From
-        // the lock screen only "Complete all" is offered — "Complete checked"
-        // is meaningless without the expanded checklist, and the content
-        // extension handles that one itself (it never forwards here).
-        if categoryId == NotificationCategory.slotReminder {
-            let slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
-
-            Task {
-                do {
-                    switch response.actionIdentifier {
-                    case NotificationAction.completeAll:
-                        let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
-                        if affected > 0 {
-                            UNUserNotificationCenter.current().removeDeliveredNotifications(
-                                withIdentifiers: [response.notification.request.identifier]
-                            )
-                        }
-
-                    case UNNotificationDefaultActionIdentifier:
-                        UNUserNotificationCenter.current().removeDeliveredNotifications(
-                            withIdentifiers: [response.notification.request.identifier]
-                        )
-                        // Still the dashboard, not /reminders: a slot push can
-                        // arrive on a build older than the web /reminders route,
-                        // and the dashboard is never a 404. (`opentask://reminders`
-                        // from a widget does go to /reminders — the widget and
-                        // the app ship together, a push does not.)
-                        WebViewManager.shared.navigate(path: "/")
-
-                    default:
-                        break
-                    }
-                } catch {
-                    print("[OpenTask] Slot reminder action error: \(error)")
-                }
-
-                completionHandler()
-            }
-            return
-        }
-
-        // Individual task notifications: require taskId
-        let taskId = userInfo["taskId"] as? Int
-
-        // Belt-and-suspenders: clear this specific notification on any action
-        if taskId != nil {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(
-                withIdentifiers: [response.notification.request.identifier]
-            )
-        }
-
-        guard let taskId = taskId else {
-            completionHandler()
-            return
-        }
-
         Task {
+            var outcome: NotificationActionRunner.Outcome?
             do {
-                switch response.actionIdentifier {
-                case NotificationAction.done:
-                    try await APIClient.shared.markDone(taskId: taskId)
-
-                case NotificationAction.snooze1hr:
-                    try await APIClient.shared.snoozeNextHour(taskId: taskId)
-
-                case NotificationAction.snoozeAll1hr:
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
-                    await dismissNotificationsAfterSweep(result)
-
-                case NotificationAction.snoozeCustom, NotificationAction.snoozeAllCustom:
-                    // These actions are handled entirely by the content extension
-                    // (NotificationViewController) which makes the API call directly.
-                    // With .dismiss completion, this handler is not reached for these actions.
-                    break
-
-                case UNNotificationDefaultActionIdentifier:
-                    // User tapped the notification body — open the app and show the task modal.
-                    // Navigate the WebView to /?task=<id> so DashboardClient opens QuickActionPanel.
-                    UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+                let result = try await NotificationActionRunner.handle(response)
+                outcome = result
+                switch result {
+                case .openDashboard:
+                    // Still the dashboard for a slot push, not /reminders: a
+                    // slot push can arrive on a build older than the web
+                    // /reminders route, and the dashboard is never a 404.
+                    // (`opentask://reminders` from a widget does go to
+                    // /reminders — the widget and the app ship together, a
+                    // push does not.)
+                    WebViewManager.shared.navigate(path: "/")
+                case .openTask(let taskId):
+                    // Navigate the WebView to /?task=<id> so DashboardClient
+                    // opens the QuickActionPanel.
                     WebViewManager.shared.navigateToTask(taskId)
-
                 default:
-                    if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
-                        let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
-                        await dismissNotificationsAfterSweep(result)
-                    }
+                    break
                 }
             } catch {
-                print("[OpenTask] Action handler error: \(error)")
+                print("[OpenTask] Notification action error (\(categoryId)): \(error)")
             }
-            await refreshBadgeFromServer()
-
+            if categoryId != NotificationCategory.slotReminder, outcome != .missingTaskId {
+                await refreshBadgeFromServer()
+            }
             completionHandler()
         }
     }

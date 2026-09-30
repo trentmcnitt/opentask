@@ -192,7 +192,7 @@ final class APIClient {
     /// `POST /api/tasks/bulk/snooze-overdue`'s response — see
     /// `src/core/tasks/bulk.ts`'s `filterForBulkSnooze` doc for where these
     /// numbers come from server-side.
-    struct BulkSnoozeResult {
+    struct BulkSnoozeResult: Equatable {
         let tasksAffected: Int
         /// The server's `skipped_urgent` field, kept under its wire name for
         /// clarity about what it actually is: despite the name, this is the
