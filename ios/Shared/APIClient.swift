@@ -501,6 +501,35 @@ final class APIClient {
         return task?["quota_prompt_config"] as? [String: Any]
     }
 
+    /// The three fields that say whether a completion already landed — raw
+    /// `GET /api/tasks/{id}` (`TaskDTO` carries no `done`). `nil` when the
+    /// task is gone for this user (404). The widget outbox reads it before
+    /// RESENDING a completion (`WidgetOutboxDrainer`): a recurring task's
+    /// `done` stays false and its `due_at` moves on, so "still the occurrence
+    /// that was tapped" is what makes a retry safe to send.
+    struct TaskState: Equatable {
+        let done: Bool
+        let dueAt: String?
+        let deleted: Bool
+    }
+
+    func fetchTaskState(taskId: Int) async throws -> TaskState? {
+        let data: Data
+        do {
+            data = try await request(method: "GET", path: "/api/tasks/\(taskId)", body: nil)
+        } catch APIError.serverError(statusCode: 404) {
+            return nil
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let task = json["data"] as? [String: Any]
+        else { throw APIError.invalidResponse }
+        return TaskState(
+            done: task["done"] as? Bool ?? false,
+            dueAt: task["due_at"] as? String,
+            deleted: task["deleted_at"] is String
+        )
+    }
+
     /// Write a quota's `quota_prompt_config` — `PATCH /api/tasks/{id}`, the
     /// web quota editor's own write (one undo entry; the server refuses a
     /// slot id that isn't one of the owner's periods). The watch's

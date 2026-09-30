@@ -134,6 +134,7 @@
 		9D0DEF642CAD730607E4E9C3 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8814A68EB77D7A79413494F9 /* SweepDismissal.swift */; };
 		9E64972476197349C6B8531B /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8814A68EB77D7A79413494F9 /* SweepDismissal.swift */; };
 		A1C2750A5F7969A7312D08AE /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED94027914BC15E39E2469B /* SweepSummary.swift */; };
+		A1CAEE62ADF02B412938170F /* WidgetOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E25F7569216C1C32AADD88F /* WidgetOutbox.swift */; };
 		A2BC330F688A32AC3E854BC7 /* OpenTaskNotification.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3952E05AC781CACC6A68A620 /* OpenTaskNotification.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A738532683F4EFFC29EA487C /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC010CEA92F7D3F7E58D8DA9 /* NotificationIdentifiers.swift */; };
 		A852C9E09C4B2B91B98C41C5 /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91C682ED4122397787BE5C5 /* PromptDeepLink.swift */; };
@@ -285,6 +286,7 @@
 		4ED94027914BC15E39E2469B /* SweepSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepSummary.swift; sourceTree = "<group>"; };
 		5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWidgetBundle.swift; sourceTree = "<group>"; };
 		56DAD630482D315A1F294B8F /* WebViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewManager.swift; sourceTree = "<group>"; };
+		5E25F7569216C1C32AADD88F /* WidgetOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetOutbox.swift; sourceTree = "<group>"; };
 		6014FAABE0C945E0B82A726F /* OpenTaskWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OpenTaskWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		613B60F9999A8718BB9EA210 /* QuickActionSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionSceneDelegate.swift; sourceTree = "<group>"; };
 		61BDD6279D23873E3415B90A /* WatchQuotaLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogic.swift; sourceTree = "<group>"; };
@@ -473,6 +475,7 @@
 				683C420F16089F7B2D99FED2 /* TrackWidget.swift */,
 				67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */,
 				C2691657DEC3A30B3BCD14CA /* WidgetIntents.swift */,
+				5E25F7569216C1C32AADD88F /* WidgetOutbox.swift */,
 				906FC514032DCB93B73BE724 /* WidgetPushHandler.swift */,
 				F99D9B9B9BF27B9E628E6BDF /* WidgetStore.swift */,
 				6670206D951705CAC891F28F /* WidgetTheme.swift */,
@@ -847,6 +850,7 @@
 				05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */,
 				4878E3787524B240B8E6F1A5 /* WebBridge.swift in Sources */,
 				4A4BDDB42FF8A951E3F4BE4B /* WidgetIntents.swift in Sources */,
+				A1CAEE62ADF02B412938170F /* WidgetOutbox.swift in Sources */,
 				6AD63E5A68DDF99138643374 /* WidgetPushHandler.swift in Sources */,
 				2AC5963DD54A1D95A436110D /* WidgetPushRegistration.swift in Sources */,
 				64E6410CDCE13D1F7BB429EC /* WidgetStore.swift in Sources */,

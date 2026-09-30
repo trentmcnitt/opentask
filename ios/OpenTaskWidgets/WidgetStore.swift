@@ -297,9 +297,19 @@ enum WidgetStore {
         defaults?.set(map, forKey: pendingCompletionsKey)
     }
 
-    /// Live (un-expired) tombstones, pruning expired ones as a side effect.
+    /// Live (un-expired) tombstones, pruning expired ones as a side effect,
+    /// plus every completion still waiting in the outbox (2026-09-30): a tap
+    /// that hasn't reached the server yet stays hidden for as long as it is
+    /// queued, not just for the tombstone's 90s — an offline check-off must
+    /// not reappear while it is still going to be sent.
     static func pendingCompletions(now: Date = Date()) -> Set<Int> {
-        liveIds(pendingCompletionsKey, now: now)
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var ids = liveIdsLocked(pendingCompletionsKey, now: now)
+        for entry in outboxEntriesLocked() {
+            if case .complete(let taskId, _) = entry.mutation { ids.insert(taskId) }
+        }
+        return ids
     }
 
     /// Takes `pendingLock`: the expiry prune below is a write, and an unlocked
@@ -815,6 +825,14 @@ enum WidgetStore {
         redoableCount = 0
     }
 
+    /// The reverse, for a queued outbox tap taken back before it was ever
+    /// sent (2026-09-30): it was counted at enqueue and will now never log
+    /// its undo entry. The redo count isn't put back — a local take-back is
+    /// not redoable — and the next fetch is exact either way.
+    static func forgetLocalMutationForUndoCount() {
+        if undoableCount > 0 { undoableCount -= 1 }
+    }
+
     // MARK: - Undo/redo in-flight claim
     //
     // The buttons are now ALWAYS tappable (no window to naturally throttle
@@ -1110,6 +1128,10 @@ enum WidgetStore {
             }
         }
         defaults?.set(map, forKey: pendingPromptActionsKey)
+        // Still queued in the outbox (2026-09-30) — see `pendingCompletions`.
+        for entry in outboxEntriesLocked() {
+            if case .prompt(let key, let did) = entry.mutation, live[key] == nil { live[key] = did }
+        }
         return live
     }
 
@@ -1827,5 +1849,193 @@ enum WidgetStore {
 
     static func loadQuotaLabelConfig() -> Cached<[LabelConfigDTO]>? {
         load([LabelConfigDTO].self, forKey: quotaLabelConfigKey)
+    }
+
+    // MARK: - Outbox (2026-09-30, instant check-off)
+    //
+    // A check-off-style tap (a reminder/task completion, a quota prompt's
+    // considered/did-it, a Quotas `+1`/`−1`) no longer waits for the server
+    // inside `perform()`. On iOS the ONLY repaint of a tap is WidgetKit's free
+    // interaction reload AFTER `perform()` returns, and WidgetKit runs one
+    // extension's intents one at a time — so a `perform()` that awaited the
+    // network made every tap's first visible change cost a round trip, and a
+    // fourth rapid tap waited out the first three's. The intent now stages its
+    // optimistic marker, appends the mutation HERE, and returns; the entries
+    // are sent afterwards by `WidgetOutboxDrainer` (WidgetOutbox.swift).
+    //
+    // Persisted in the App Group, not held in memory, because the extension
+    // can be suspended or killed the moment `perform()` and the timeline
+    // reload finish: an entry stays until the server's answer is known, and
+    // the next drain — the next tap, the next timeline build of ANY kind —
+    // picks it up. `sendingSince` is written BEFORE a request goes out, so an
+    // entry found with it set was cut off mid-send by a process that is gone:
+    // the drainer treats that as "may have landed" (see its idempotency
+    // rules). One drainer per process and one extension process per platform,
+    // so a stale `sendingSince` never belongs to a live sender.
+
+    struct OutboxEntry: Codable, Equatable {
+        enum Mutation: Codable, Equatable {
+            /// `POST /api/notifications/actions` `done`. `dueAt` is the
+            /// occurrence the user was looking at (the cache's `due_at` when
+            /// tapped) — the drainer's proof that a retried completion won't
+            /// complete a recurring task's NEXT occurrence.
+            case complete(taskId: Int, dueAt: String?)
+            /// `POST /api/quota-prompts/consider` (`did: false`) or `/did`.
+            case prompt(key: String, did: Bool)
+            /// `POST /api/tasks/:id/progress`.
+            case progress(taskId: Int, delta: Int)
+        }
+
+        let id: UUID
+        let mutation: Mutation
+        /// The widget kind whose button was tapped ("" for an archived
+        /// button with no kind) — which kind a failure has to repaint.
+        let widgetKind: String
+        /// The tap's instant, `timeIntervalSince1970` — the same value the
+        /// auto-advance snapshot was tagged with (`snapshotSlotOverride…`),
+        /// so a failure or a later Undo can restore it (`ifMatches`).
+        let createdAt: Double
+        /// For Undo's "Undid: …" when it cancels a tap that never left the
+        /// device (`cancelNewestQueuedOutboxEntry`).
+        let title: String?
+        /// Failed or cut-off sends so far. For a completion, > 0 means "may
+        /// already have landed — verify before resending".
+        var attempts: Int = 0
+        var sendingSince: Double?
+
+        init(
+            mutation: Mutation, widgetKind: String, createdAt: Date, title: String?,
+            id: UUID = UUID()
+        ) {
+            self.id = id
+            self.mutation = mutation
+            self.widgetKind = widgetKind
+            self.createdAt = createdAt.timeIntervalSince1970
+            self.title = title
+        }
+
+        var createdDate: Date { Date(timeIntervalSince1970: createdAt) }
+    }
+
+    private static let outboxKey = "widget.outbox"
+
+    /// For callers already holding `pendingLock`.
+    private static func outboxEntriesLocked() -> [OutboxEntry] {
+        guard let data = defaults?.data(forKey: outboxKey),
+              let entries = try? JSONDecoder().decode([OutboxEntry].self, from: data)
+        else { return [] }
+        return entries
+    }
+
+    private static func saveOutboxLocked(_ entries: [OutboxEntry]) {
+        if entries.isEmpty {
+            defaults?.removeObject(forKey: outboxKey)
+        } else if let data = try? JSONEncoder().encode(entries) {
+            defaults?.set(data, forKey: outboxKey)
+        }
+    }
+
+    /// Every queued entry, oldest first.
+    static func outboxEntries() -> [OutboxEntry] {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        return outboxEntriesLocked()
+    }
+
+    static func enqueueOutbox(_ entry: OutboxEntry) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        saveOutboxLocked(outboxEntriesLocked() + [entry])
+    }
+
+    /// Mark `id` as being sent, returning the entry as it stood BEFORE the
+    /// mark (so the caller can see an earlier cut-off `sendingSince`), or nil
+    /// if it is gone (cancelled by Undo in the meantime).
+    static func beginSendingOutboxEntry(_ id: UUID, now: Date = Date()) -> OutboxEntry? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var entries = outboxEntriesLocked()
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
+        let before = entries[index]
+        entries[index].sendingSince = now.timeIntervalSince1970
+        saveOutboxLocked(entries)
+        return before
+    }
+
+    /// Back to queued after a failed or indeterminate send, one attempt on.
+    static func requeueOutboxEntry(_ id: UUID) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var entries = outboxEntriesLocked()
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].attempts += 1
+        entries[index].sendingSince = nil
+        saveOutboxLocked(entries)
+    }
+
+    @discardableResult
+    static func removeOutboxEntry(_ id: UUID) -> OutboxEntry? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var entries = outboxEntriesLocked()
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
+        let removed = entries.remove(at: index)
+        saveOutboxLocked(entries)
+        return removed
+    }
+
+    /// Undo while taps are still queued (the drain couldn't send them —
+    /// offline): the newest tap that never left the device is taken back
+    /// locally, which IS "undo my last tap", with no server call. An entry
+    /// mid-send is never taken — it may already have landed. Returns the
+    /// entry so the caller can put its optimistic markers back.
+    static func cancelNewestQueuedOutboxEntry() -> OutboxEntry? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var entries = outboxEntriesLocked()
+        guard let index = entries.lastIndex(where: { $0.sendingSince == nil }) else { return nil }
+        let removed = entries.remove(at: index)
+        saveOutboxLocked(entries)
+        return removed
+    }
+
+    /// Take back a queued (not mid-send) entry matching `predicate` — a
+    /// DONE-row restore or a prompt put-back tapped before the action it
+    /// reverses was sent. Nil when there is none (sent, or mid-send).
+    static func cancelQueuedOutboxEntry(where predicate: (OutboxEntry.Mutation) -> Bool) -> OutboxEntry? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var entries = outboxEntriesLocked()
+        guard let index = entries.lastIndex(where: { $0.sendingSince == nil && predicate($0.mutation) })
+        else { return nil }
+        let removed = entries.remove(at: index)
+        saveOutboxLocked(entries)
+        return removed
+    }
+
+    /// Put back a cancelled or failed entry's optimistic markers: its
+    /// tombstone or staged delta, and the auto-advance it caused.
+    static func revertOptimisticState(of entry: OutboxEntry) {
+        switch entry.mutation {
+        case .complete(let taskId, _):
+            clearPendingCompletion(taskId)
+        case .prompt(let key, _):
+            clearPendingPromptAction(key)
+        case .progress(let taskId, let delta):
+            clearPendingProgress(taskId, delta: delta)
+        }
+        restoreSlotOverrideBeforeAutoAdvance(ifMatches: entry.createdDate)
+    }
+
+    /// The cached `due_at` and title of `id`, from whichever payload holds
+    /// it — what `CompleteTaskIntent` records in its outbox entry.
+    static func cachedTaskInfo(_ id: Int) -> (dueAt: String?, title: String?) {
+        if let groups = loadReminders()?.value.groups {
+            for group in groups {
+                if let task = group.reminders.first(where: { $0.id == id }) { return (task.dueAt, task.title) }
+            }
+        }
+        if let task = loadTasks()?.value.tasks.first(where: { $0.id == id }) { return (task.dueAt, task.title) }
+        return (nil, nil)
     }
 }

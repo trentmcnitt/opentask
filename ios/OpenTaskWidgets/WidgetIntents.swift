@@ -100,6 +100,14 @@ func reloadOpenTaskWidget(kind: String) {
 /// interaction reload at all (the Mac's reloads on 2026-09-23/24 were
 /// `externalRequest … free`, `push … free`, `initial`), so there the explicit
 /// reload IS the repaint, and both rounds stay.
+///
+/// The same fact is why check-offs no longer wait for the server inside
+/// `perform()` (2026-09-30, instant check-off): the free reload can't run
+/// until `perform()` returns, so every millisecond `perform()` spends on the
+/// network is a millisecond the tap looks dead — and WidgetKit runs one
+/// extension's intents serially, so the next tap waits too. They queue the
+/// mutation in the outbox and return (`WidgetOutboxDrainer`); on macOS the
+/// drain's report supplies round 2 (`applyOutboxReloads`).
 @MainActor
 func reloadTappedWidget(kind: String) {
     #if os(macOS)
@@ -146,6 +154,81 @@ func reloadOpenTaskWidgets() {
     WidgetCenter.shared.reloadTimelines(ofKind: TrackWidget.kind)
 }
 
+// MARK: - Outbox (2026-09-30, instant check-off)
+
+/// The extension's one outbox drainer — see `WidgetOutboxDrainer`'s doc
+/// (WidgetOutbox.swift) for the design, the idempotency rules and the retry
+/// story. Every check-off-style intent enqueues and returns; this sends.
+let widgetOutbox = WidgetOutboxDrainer(transport: APIClient.shared) { report in
+    await applyOutboxReloads(report)
+}
+
+/// Turn a drain pass's report into reloads, spending as little budget as
+/// the change allows (`reloadTappedWidget(kind:)`'s doc):
+/// - A FAILED tap's kind must repaint the honest revert. On iOS that is a
+///   budgeted reload — the tap's free interaction reload ran long before the
+///   failure was known — and it is the one reload this design adds, on the
+///   failure path only.
+/// - A DEPENDENT kind (a prompt's quota on Quotas; a `+1`'s prompts on
+///   Reminders) is asked for once per pass, however many taps the pass sent
+///   — before the outbox it was one request per tap.
+/// - A CONFIRMED tap's own kind already shows the confirmed state (its
+///   optimistic marker drew it), so only macOS, which has no interaction
+///   reload, repaints it: that is its old round 2.
+@MainActor
+func applyOutboxReloads(_ report: OutboxDrainReport) {
+    var kinds = report.failedKinds.union(report.dependentKinds)
+    #if os(macOS)
+    kinds.formUnion(report.confirmedKinds)
+    #endif
+    // An archived button with no kind: nothing to target, reload everything
+    // (see `reloadOpenTaskWidgets()`'s one remaining caller).
+    if kinds.contains("") {
+        reloadOpenTaskWidgets()
+        return
+    }
+    for kind in kinds.sorted() {
+        reloadOpenTaskWidget(kind: kind)
+    }
+}
+
+/// Start sending the outbox WITHOUT waiting for it — the last thing a
+/// mutating `perform()` does, and the first thing every provider does after
+/// handing WidgetKit its timeline.
+///
+/// `performExpiringActivity` is Apple's way for an app extension to ask for
+/// time to finish work (there is no `beginBackgroundTask` in an extension):
+/// the block runs on a background queue and holds the assertion until the
+/// drain finishes. If the system still suspends or ends the process, or the
+/// activity expires first, nothing is lost — the entries are persisted, and
+/// one cut off mid-send is verified or retired on the next drain.
+///
+/// macOS has no `performExpiringActivity`; there an activity assertion keeps
+/// the extension from being napped mid-send, and the same persistence
+/// covers the rest.
+func kickWidgetOutbox() {
+    guard !WidgetStore.outboxEntries().isEmpty else { return }
+    #if os(macOS)
+    Task.detached {
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated], reason: "Sending widget check-offs"
+        )
+        await widgetOutbox.drain()
+        ProcessInfo.processInfo.endActivity(activity)
+    }
+    #else
+    ProcessInfo.processInfo.performExpiringActivity(withReason: "Sending widget check-offs") { expired in
+        guard !expired else { return }
+        let finished = DispatchSemaphore(value: 0)
+        Task.detached {
+            await widgetOutbox.drain()
+            finished.signal()
+        }
+        finished.wait()
+    }
+    #endif
+}
+
 // MARK: - Completion
 
 /// Check off a single item (reminder or task).
@@ -177,8 +260,9 @@ struct CompleteTaskIntent: AppIntent {
         self.kind = kind
     }
 
-    /// `kind`-aware reload, shared by both rounds: the acting kind alone when
-    /// known, all three when not (an archived button — see `kind`'s doc).
+    /// `kind`-aware reload before `perform()` returns: the acting kind alone
+    /// when known (macOS only — `reloadTappedWidget`), all three when not (an
+    /// archived button — see `kind`'s doc).
     private func reloadAffectedKind() async {
         if kind.isEmpty {
             await reloadOpenTaskWidgets()
@@ -188,65 +272,65 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        // One instant for this whole action — shared by the auto-advance
-        // snapshot below and `recordMutation` on success, so the two are
-        // tagged with bit-identical timestamps (see WidgetStore's "Auto-
-        // advance's own undo" section for why that tagging matters).
+        // One instant for this whole action — the auto-advance snapshot and
+        // the outbox entry are tagged with it, so a failure or a later Undo
+        // can restore the snapshot by exact match (WidgetStore's "Auto-
+        // advance's own undo" section).
         let mutationInstant = Date()
 
-        // Optimistic (§8): tombstone the item and repaint from cache BEFORE the
-        // server call — the round trip takes seconds and a delayed disappearance
-        // reads as a dead button. The tombstone hides the item through the
-        // reconciling fetch; a FAILED call clears it so the item honestly
-        // reappears, never an alert the user can't act on from the Home Screen.
-        WidgetStore.stagePendingCompletion(taskId)
+        // A second tap on a row already checked off (a double tap landing
+        // before the repaint, or a button archived before it): the first is
+        // in flight or done, and completing a recurring task again would
+        // advance it a SECOND occurrence. Nothing to do.
+        guard !WidgetStore.pendingCompletions(now: mutationInstant).contains(taskId) else {
+            return .result()
+        }
+
+        // The occurrence being checked off (`due_at`) goes into the outbox
+        // entry: it is how a retried send knows the server hasn't already
+        // done it (`WidgetOutboxDrainer`'s idempotency rules).
+        let info = WidgetStore.cachedTaskInfo(taskId)
+
+        // Optimistic (§8): tombstone the item — it is drawn gone from the
+        // cache on the very next repaint. The tombstone (and the queued
+        // entry, `WidgetStore.pendingCompletions`) hides it until the server
+        // confirms; a FAILED send clears it so the item honestly reappears,
+        // never an alert the user can't act on from the Home Screen.
+        WidgetStore.stagePendingCompletion(taskId, now: mutationInstant)
         // Reminders only (§6/§7 — Tasks has no slot concept to advance
-        // through): Trent, 2026-09-23, "once I finish morning it should take
-        // me automatically back to early morning ... so I can keep checking
-        // things off and automatically switch." Runs BEFORE the first reload
-        // below, using the same cache `filterPending` will draw from, so the
-        // very next repaint shows the slot switch and the hidden item
-        // together rather than as two separately visible steps. Snapshotted
-        // first (unconditionally, even when `autoAdvanceSlot` turns out not
-        // to change anything — restoring an unchanged override is a no-op)
-        // so a failed completion below, or a later Undo, can put the display
-        // back — see WidgetStore's "Auto-advance's own undo" section.
+        // through): the owner, 2026-09-23, "once I finish morning it should
+        // take me automatically back to early morning ... so I can keep
+        // checking things off and automatically switch." Uses the same cache
+        // `filterPending` will draw from, so the next repaint shows the slot
+        // switch and the hidden item together. Snapshotted first
+        // (unconditionally — restoring an unchanged override is a no-op) so
+        // a failed completion, or a later Undo, can put the display back.
         let isReminders = kind == RemindersWidget.kind
         if isReminders, let cached = WidgetStore.loadReminders()?.value.groups {
             WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
             RemindersTimeline.autoAdvanceSlot(in: cached, now: mutationInstant)
         }
-        await reloadAffectedKind()
 
-        do {
-            try await APIClient.shared.markDone(taskId: taskId)
-            WidgetStore.confirmCompletion(taskId)
-            // Auto-advance correlation only now (2026-09-23) — see
-            // WidgetStore.recordMutation's doc.
-            WidgetStore.recordMutation(now: mutationInstant)
-            // Undo/Redo affordance (2026-09-23): reflect this new undoable
-            // action immediately rather than waiting on the next scheduled
-            // fetch — see WidgetStore.recordLocalMutationForUndoCount's doc.
-            WidgetStore.recordLocalMutationForUndoCount()
-        } catch {
-            print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
-            WidgetStore.clearPendingCompletion(taskId)
-            // The completion never happened — undo whatever `autoAdvanceSlot`
-            // did above so the display doesn't stay parked on a slot chosen
-            // for an action that failed.
-            if isReminders {
-                WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutationInstant)
-            }
-        }
-        // Round 2 is the reconciling pass, and on failure it's the ONLY pass
-        // that draws the truth: `clearPendingCompletion` just ran above, so
-        // `hasRecentInteraction()` has no live stamp for this item, and the
-        // provider takes the network path — the item honestly reappears
-        // rather than staying hidden behind a tombstone the server rejected.
-        // On success the tombstone is still live (90s TTL, untouched here),
-        // so this pass fast-paths from cache and simply re-draws the same
-        // hidden state round 1 already showed.
+        // THE CHANGE (2026-09-30, instant check-off): the server call no
+        // longer happens here. On iOS the tap's only free repaint is
+        // WidgetKit's reload of this kind AFTER `perform()` returns, and
+        // intents run one at a time — awaiting `markDone` here made every
+        // tap's first visible change a round trip, and a fourth rapid tap
+        // wait for the first three's. The completion is queued, and sent
+        // right after this returns (`kickWidgetOutbox`).
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .complete(taskId: taskId, dueAt: info.dueAt),
+            widgetKind: kind, createdAt: mutationInstant, title: info.title
+        ))
+        // Undo/Redo affordance: lit on this very repaint rather than after
+        // the send. Exact once the send lands (every mutation logs one undo
+        // entry and clears redo); the next fetch corrects it if it doesn't.
+        WidgetStore.recordLocalMutationForUndoCount()
+
+        // macOS has no interaction reload: this IS its repaint (round 1);
+        // round 2 is the drain's (`applyOutboxReloads`). A no-op on iOS.
         await reloadAffectedKind()
+        kickWidgetOutbox()
         return .result()
     }
 }
@@ -318,63 +402,34 @@ struct IncrementProgressIntent: AppIntent {
         // then let the server catch up. The staged value is a NET count, so
         // three taps in a row draw +3 instead of the single +1 a stamp-only
         // map could express.
-        WidgetStore.stagePendingProgress(taskId, delta: delta)
-        // ONLY Track, both rounds (2026-09-22 — see `reloadOpenTaskWidget(kind:)`
-        // for the partition argument: a progress delta cannot change what
-        // Reminders or Tasks show, in either round, so this was never a
-        // latency-vs-correctness tradeoff). On macOS, round 1 is the reload
-        // that has to win a chronod queue slot before `perform()` returns for
-        // the optimistic repaint to exist at all. On iOS both rounds are
-        // no-ops: WidgetKit's free interaction reload of Track after
-        // `perform()` draws the confirmed count (`reloadTappedWidget(kind:)`).
-        await reloadTappedWidget(kind: TrackWidget.kind)
+        let now = Date()
+        WidgetStore.stagePendingProgress(taskId, delta: delta, now: now)
 
-        // Every outcome retires THIS call's staged delta and nothing else — a
-        // sibling tap still in flight keeps its own (see
-        // `WidgetStore.clearPendingProgress`).
-        do {
-            if let confirmed = try await APIClient.shared.logProgress(taskId: taskId, delta: delta) {
-                // The server's count goes INTO the cache, in the same lock
-                // hold that retires the delta — THE fix for "the widget never
-                // shows the new count" (2026-09-24; see
-                // `WidgetStore.confirmProgress`'s doc for the whole bug).
-                // Subtracting alone used to leave the cache at the pre-tap
-                // count, and any pass that fast-pathed from it — round 2
-                // below whenever another tap was < 10s old, the server's
-                // push right after — drew the old number back.
-                WidgetStore.confirmProgress(confirmed, delta: delta)
-            } else {
-                // Logged, but the body didn't decode: nothing trustworthy to
-                // write, so retire the delta and make the next pass fetch.
-                WidgetStore.clearPendingProgress(taskId, delta: delta)
-                WidgetStore.clearInteraction(kind: TrackWidget.kind)
-            }
-            // Undo/Redo affordance (2026-09-23) — see
-            // WidgetStore.recordLocalMutationForUndoCount's doc. A `−1`
-            // correction is just as undoable as a `+1`, so both record.
-            WidgetStore.recordLocalMutationForUndoCount()
-        } catch {
-            print("[OpenTaskWidgets] Progress \(taskId) \(delta > 0 ? "+" : "")\(delta) failed: \(error)")
-            // The cache still holds the pre-tap count, so retiring the delta
-            // IS the honest revert — no fetch needed to show it.
-            WidgetStore.clearPendingProgress(taskId, delta: delta)
-        }
-        // Round 2: the reconciling pass. Inside the interaction window it
-        // repaints from cache — which now holds the server's count on
-        // success, or the untouched pre-tap count on failure — so it draws
-        // the same number round 1 did (success) or the honest revert
-        // (failure), never a stale one in between.
+        // Queued, not awaited (2026-09-30, instant check-off — see
+        // `CompleteTaskIntent.perform`). The drain writes the server's count
+        // into the cache in the same lock hold that retires this delta
+        // (`WidgetStore.confirmProgress`, the 2026-09-24 stale-count fix), so
+        // every later pass draws the same number the staged one did. A `+1`
+        // is sent AT MOST ONCE — the count can't be verified the way a
+        // completion can — so an attempt that may or may not have landed
+        // retires the delta and fetches (`WidgetOutboxDrainer`). The
+        // Reminders widget's copy of this quota's count ("Piano Scales ·
+        // 1/2") is refreshed by the drain too, once per pass, after the
+        // server has answered (`OutboxDrainReport.dependentKinds`).
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .progress(taskId: taskId, delta: delta),
+            widgetKind: TrackWidget.kind, createdAt: now, title: nil
+        ))
+        // Undo/Redo affordance — a `−1` correction is just as undoable as a
+        // `+1`. See WidgetStore.recordLocalMutationForUndoCount's doc.
+        WidgetStore.recordLocalMutationForUndoCount()
+
+        // ONLY Track (2026-09-22 — see `reloadOpenTaskWidget(kind:)` for the
+        // partition argument). On macOS this is the repaint; on iOS it is a
+        // no-op and WidgetKit's free interaction reload of Track after
+        // `perform()` draws the staged count (`reloadTappedWidget(kind:)`).
         await reloadTappedWidget(kind: TrackWidget.kind)
-        // Quota reminders (2026-09-24): this quota's prompts on the Reminders
-        // widget carry its count ("Piano Scales · 1/2") and whether it is
-        // still waiting today — both server-computed, so Reminders fetches
-        // rather than guessing. `requireRemindersFetch`, NOT
-        // `clearInteraction`: the latter would also forget the interaction
-        // stamp that keeps Takeback mode armed through this tap's round 2
-        // (see its doc). Always, success or not: a timed-out call may still
-        // have landed server-side.
-        WidgetStore.requireRemindersFetch()
-        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        kickWidgetOutbox()
         return .result()
     }
 }
@@ -391,28 +446,25 @@ struct IncrementProgressIntent: AppIntent {
 /// Addressed by `promptKey`, never by task id — a daily quota's prompts in
 /// different slots share one task id (`QuotaPromptDTO`'s doc).
 ///
-/// THE SEQUENCE (the `UncompleteTaskIntent`/`IncrementProgressIntent`
-/// discipline, `ios/AGENTS.md` § Optimistic):
-/// 1. Stage a tombstone by key and repaint Reminders from cache — the row
-///    leaves the list at once (`WidgetStore.filterPending` draws it handled).
-/// 2. Call the server.
-/// 3. Success: write the server's answer into BOTH caches — the returned
-///    quotas into Tasks/Quotas (`confirmTasks`), and into Reminders the
-///    prompt marked handled plus every prompt of the same quota re-counted
-///    from the returned count (`confirmPromptAction`: a did-it on Daily
-///    Walks #1 can finish #2 in another slot). The next tap's round 1 then
-///    repaints from cache at once, as a reminder check-off does, and the
-///    row can't reappear when the 90s tombstone expires. A body that didn't
-///    decode marks both payloads fetch-required instead.
-/// 4. Failure: clear the tombstone, restore the auto-advance, and mark
-///    Reminders stale — the likeliest failure is a key from before midnight
-///    (400: the server refuses another day's key), where the cache itself is
-///    what's wrong.
-/// 5. Round 2 asks for Track (see `reloadOpenTaskWidget`'s amendment) —
-///    the one reload this intent spends budget on. Reminders, the tapped
-///    kind, is repainted by WidgetKit's free interaction reload on iOS
-///    (`reloadTappedWidget(kind:)`), so round 1 and Reminders' round 2 only
-///    run on macOS.
+/// THE SEQUENCE (`ios/AGENTS.md` § Optimistic; queued since 2026-09-30,
+/// instant check-off — see `CompleteTaskIntent.perform`):
+/// 1. Stage a tombstone by key, auto-advance, queue the action in the
+///    outbox, and return — WidgetKit's free interaction reload repaints
+///    Reminders from cache at once (`WidgetStore.filterPending` draws the
+///    prompt handled).
+/// 2. The outbox drain calls the server (`WidgetOutboxDrainer`). Success:
+///    the server's answer goes into BOTH caches — the returned quotas into
+///    Tasks/Quotas (`confirmTasks`), and into Reminders the prompt marked
+///    handled plus every prompt of the same quota re-counted from the
+///    returned count (`confirmPromptAction`: a did-it on Daily Walks #1 can
+///    finish #2 in another slot — which now shows on the next repaint, not
+///    this tap's own). A body that didn't decode marks both payloads
+///    fetch-required instead. Then ONE Track reload per drain pass (see
+///    `reloadOpenTaskWidget`'s amendment), after the count is in the cache.
+/// 3. Definite failure (4xx — likeliest a key from before midnight, which
+///    the server refuses): the tombstone and the auto-advance are put back,
+///    Reminders is marked stale and repainted. Anything else is resent
+///    (consider/did-it are idempotent per key).
 struct ActOnPromptIntent: AppIntent {
     static var title: LocalizedStringResource = "Quota Reminder"
     static var isDiscoverable: Bool { false }
@@ -432,51 +484,33 @@ struct ActOnPromptIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        // One instant for the auto-advance snapshot and `recordMutation`, as
+        // One instant for the auto-advance snapshot and the outbox entry, as
         // in `CompleteTaskIntent` (WidgetStore's "Auto-advance's own undo").
         let mutationInstant = Date()
+        // Already handled or queued: a double tap before the repaint.
+        guard WidgetStore.pendingPromptActions(now: mutationInstant)[promptKey] == nil else {
+            return .result()
+        }
+        let cachedGroups = WidgetStore.loadReminders()?.value.groups
+        let title = cachedGroups?.flatMap(\.prompts).first { $0.promptKey == promptKey }?.title
         WidgetStore.stagePendingPromptAction(promptKey, did: did, now: mutationInstant)
         // Auto-advance, exactly as a reminder check-off does: acting on the
         // slot's last waiting item moves the widget to the earliest started
         // slot that still has something. `autoAdvanceSlot` filters through
         // the tombstone just staged, so it sees this prompt as handled.
         // Snapshotted first so a failure, or a later Undo, puts it back.
-        if let cached = WidgetStore.loadReminders()?.value.groups {
+        if let cachedGroups {
             WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
-            RemindersTimeline.autoAdvanceSlot(in: cached, now: mutationInstant)
+            RemindersTimeline.autoAdvanceSlot(in: cachedGroups, now: mutationInstant)
         }
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .prompt(key: promptKey, did: did),
+            widgetKind: RemindersWidget.kind, createdAt: mutationInstant, title: title
+        ))
+        WidgetStore.recordLocalMutationForUndoCount()
+        // macOS's repaint; iOS repaints on the free interaction reload.
         await reloadTappedWidget(kind: RemindersWidget.kind)
-
-        do {
-            let result = did
-                ? try await APIClient.shared.didPrompts(keys: [promptKey])
-                : try await APIClient.shared.considerPrompts(keys: [promptKey])
-            // The server's truth into BOTH caches, so the next tap's round 1
-            // repaints from cache at once (a reminder check-off's speed): the
-            // quotas into Tasks/Quotas, and the prompt handled plus every
-            // sibling prompt's count into Reminders (`confirmPromptAction`).
-            WidgetStore.confirmTasks(result.tasks)
-            WidgetStore.confirmPromptAction(promptKey, did: did, tasks: result.tasks)
-            if !result.decoded {
-                // Acted, but no tasks to write: both payloads must fetch.
-                WidgetStore.requireRemindersFetch()
-                WidgetStore.requireTasksFetch()
-            }
-            WidgetStore.recordMutation(now: mutationInstant)
-            WidgetStore.recordLocalMutationForUndoCount()
-        } catch {
-            print("[OpenTaskWidgets] Prompt \(promptKey) \(did ? "did" : "consider") failed: \(error)")
-            WidgetStore.clearPendingPromptAction(promptKey)
-            WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutationInstant)
-            // Likeliest: a key from before midnight — the cache itself is
-            // what's wrong, so round 2 fetches today's prompts.
-            WidgetStore.requireRemindersFetch()
-        }
-        // Both repaint from the confirmed caches on success; on a failure
-        // Reminders fetches. Track is the other kind, so it must be asked
-        // for; Reminders is the tapped one (free on iOS, explicit on macOS).
-        await reloadOpenTaskWidget(kind: TrackWidget.kind)
-        await reloadTappedWidget(kind: RemindersWidget.kind)
+        kickWidgetOutbox()
         return .result()
     }
 }
@@ -518,6 +552,23 @@ struct RestorePromptIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // Put back before the action it reverses was ever sent (the outbox,
+        // 2026-09-30): take the queued action back locally — nothing to tell
+        // the server, and nothing for Undo to find later.
+        if let cancelled = WidgetStore.cancelQueuedOutboxEntry(where: {
+            if case .prompt(let key, _) = $0 { return key == promptKey }
+            return false
+        }) {
+            WidgetStore.revertOptimisticState(of: cancelled)
+            WidgetStore.forgetLocalMutationForUndoCount()
+            WidgetStore.markInteraction()
+            await reloadTappedWidget(kind: RemindersWidget.kind)
+            return .result()
+        }
+        // One mid-send (or queued behind a failure) has to reach the server
+        // first, or the restore would find nothing to put back.
+        await widgetOutbox.drain()
+
         WidgetStore.stagePendingPromptRestore(promptKey)
         await reloadTappedWidget(kind: RemindersWidget.kind)
 
@@ -922,6 +973,22 @@ struct UndoLastActionIntent: AppIntent {
         guard WidgetStore.tryClaimUndoRedo() else { return .result() }
         defer { WidgetStore.releaseUndoRedoClaim() }
 
+        // The outbox first (2026-09-30, instant check-off): `/api/undo`
+        // reverses the server's LAST action, so a tap still queued would make
+        // it reverse the one before — the wrong tap. Send what's queued, then
+        // undo. If something is still queued after that (offline), the
+        // newest tap that never left the device is the "last action", and
+        // taking it back is local: no server call at all.
+        await widgetOutbox.drain()
+        if let cancelled = WidgetStore.cancelNewestQueuedOutboxEntry() {
+            WidgetStore.revertOptimisticState(of: cancelled)
+            WidgetStore.forgetLocalMutationForUndoCount()
+            WidgetStore.recordLastAction(description: "Undid: \(cancelled.title ?? "last tap")")
+            WidgetStore.markInteraction()
+            await reloadAfterLocalCancel(of: cancelled, tappedKind: kind)
+            return .result()
+        }
+
         // No reload before the server call (2026-09-25): nothing a widget
         // draws has changed yet — the undo hasn't happened and "Undid: …"
         // isn't recorded — so a pass here could only repaint the old state,
@@ -1014,6 +1081,11 @@ struct RedoLastActionIntent: AppIntent {
         guard WidgetStore.tryClaimUndoRedo() else { return .result() }
         defer { WidgetStore.releaseUndoRedoClaim() }
 
+        // Queued taps first — a new action clears the redo stack server-side,
+        // and redoing ahead of one the user already made would replay the
+        // wrong thing (see UndoLastActionIntent).
+        await widgetOutbox.drain()
+
         // No reload before the server call — see UndoLastActionIntent.
         do {
             let result = try await APIClient.shared.redoLastAction()
@@ -1103,6 +1175,22 @@ private func refetchTasks() async {
 /// the tapped kind is no longer requested here on iOS (it is reloaded for
 /// free, and a request would only spend its budget), and the other kinds are
 /// requested once each.
+/// Undo that took back a tap still in the outbox (never sent): only the
+/// kind that tap changed has anything new to draw, and the tapped kind shows
+/// "Undid: …". The tapped kind is free on iOS; the tap's own kind, when it
+/// is a different one, is the one budgeted request.
+@MainActor
+private func reloadAfterLocalCancel(of entry: WidgetStore.OutboxEntry, tappedKind: String) async {
+    if entry.widgetKind.isEmpty {
+        reloadOpenTaskWidgets()
+        return
+    }
+    if entry.widgetKind != tappedKind {
+        reloadOpenTaskWidget(kind: entry.widgetKind)
+    }
+    reloadTappedWidget(kind: tappedKind)
+}
+
 @MainActor
 private func reloadAfterUndoRedo(tappedKind: String) async {
     let all = [RemindersWidget.kind, TasksWidget.kind, TrackWidget.kind]
@@ -1179,6 +1267,24 @@ struct UncompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // Restored before its completion was ever sent (the outbox,
+        // 2026-09-30 — a Tasks check-off is drawn in DONE while still
+        // queued): take the queued completion back locally. The server never
+        // heard of it, so there is nothing to restore there.
+        if let cancelled = WidgetStore.cancelQueuedOutboxEntry(where: {
+            if case .complete(let id, _) = $0 { return id == taskId }
+            return false
+        }) {
+            WidgetStore.revertOptimisticState(of: cancelled)
+            WidgetStore.forgetLocalMutationForUndoCount()
+            WidgetStore.markInteraction()
+            await reloadTappedWidget(kind: kind)
+            return .result()
+        }
+        // A completion mid-send (or queued behind a failure) must reach the
+        // server before its restore, or `/undone` finds nothing to undo.
+        await widgetOutbox.drain()
+
         // Optimistic (§8): tombstone it out of the DONE list and repaint
         // from cache before the server call — same discipline as
         // CompleteTaskIntent's own tombstone. `markInteraction()` matters
