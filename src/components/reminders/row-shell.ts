@@ -1,6 +1,6 @@
 /**
  * The pieces of a reminder-surface row's shell that `ReminderRow`
- * (`RemindersView.tsx`) and `QuotaPromptRow` share: where focus goes when a
+ * (`ReminderRow.tsx`) and `QuotaPromptRow` share: where focus goes when a
  * row leaves, the height its leaving animation collapses from, and what an
  * animation ending on the row means. The rows themselves differ on purpose
  * (sizes, gestures, what they stand for); these three rules must not.

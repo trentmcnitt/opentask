@@ -5,7 +5,7 @@
  *
  * Used two ways:
  * - As a callback ref directly — `ref={highlighted ? scrollRowIntoView :
- *   undefined}` (`RemindersView.tsx`, `QuotaPromptRow.tsx`, `QuotasView.tsx`'s
+ *   undefined}` (`reminders/ReminderRow.tsx`, `reminders/NotTodayFold.tsx`, `QuotaPromptRow.tsx`, `QuotasView.tsx`'s
  *   `QuotaRow`). The row
  *   may mount already highlighted (inside a fold the link had to open) or
  *   become highlighted while it is already mounted, and React hands the node
