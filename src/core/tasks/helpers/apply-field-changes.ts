@@ -4,9 +4,9 @@
  * The write half of `collectFieldChanges`: given the changes it collected for
  * one task, stamp `updated_at`, run the UPDATE, and build the undo snapshot
  * and the activity entry for that task. Shared by every path that edits task
- * fields through `collectFieldChanges` — `updateTask`, `bulkEdit`, and the
- * reminder/quota moves in `@/core/time-slots/edit` — so the three stay one
- * write, not three copies that drift.
+ * fields through `collectFieldChanges` — `updateTask`, `bulkEdit`,
+ * `bulkSnooze`, and the reminder/quota moves in `@/core/time-slots/edit` — so
+ * the four stay one write, not four copies that drift.
  *
  * What it deliberately does NOT do (the caller owns these, per the house rule
  * that the mutation and its undo entry commit together):

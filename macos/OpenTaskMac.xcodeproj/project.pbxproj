@@ -34,6 +34,7 @@
 		2A1060F16DCD1A1E9F3F0405 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF69531FE48B319A9AD5A85 /* ServerURL.swift */; };
 		2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		2ACFFF7B3CB81D12BFC9AC0D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		2CB01EC9E23BF96101F784AC /* bulk-snooze.json in Resources */ = {isa = PBXBuildFile; fileRef = 84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */; };
 		2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */; };
 		317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		3315C7B7A79DBF3C82C6C7D9 /* WidgetStoreCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347BDCCD1389BB7FE62C11F1 /* WidgetStoreCacheTests.swift */; };
@@ -234,6 +235,7 @@
 		7F814F05408288A5A627F9CC /* OpenTaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskModels.swift; sourceTree = "<group>"; };
 		81444AA435E750279396E307 /* QuotaPromptDTOTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPromptDTOTests.swift; sourceTree = "<group>"; };
 		8191D69C950AB5453FA795F7 /* WidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
+		84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-snooze.json"; sourceTree = "<group>"; };
 		86C87419D6853F3A661B2252 /* TaskFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFeed.swift; sourceTree = "<group>"; };
 		880F73DD5EB836E40BCA134A /* reminders.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = reminders.json; sourceTree = "<group>"; };
 		8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskMacApp.swift; sourceTree = "<group>"; };
@@ -296,6 +298,7 @@
 			isa = PBXGroup;
 			children = (
 				EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */,
+				84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */,
 				F781F8F4FFD0805CBC5D5068 /* completions.json */,
 				7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */,
 				CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */,
@@ -610,6 +613,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EF9B9D541E938BB134EA1D78 /* bulk-complete.json in Resources */,
+				2CB01EC9E23BF96101F784AC /* bulk-snooze.json in Resources */,
 				5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */,
 				CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */,
 				D5CFE82513923A9DD0563FB9 /* quota-prompts-restore.json in Resources */,
