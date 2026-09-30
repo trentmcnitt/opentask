@@ -7,6 +7,7 @@ import type { Project } from '@/types'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { showToast } from '@/lib/toast'
 import { taskWord, isMacPlatform } from '@/lib/utils'
+import { nextFocusAfterRemoval } from '@/lib/keyboard-nav'
 
 interface UseDashboardKeyboardOptions {
   keyboard: {
@@ -131,26 +132,9 @@ export function useDashboardKeyboard({
         if (selection.isSelectionMode && selection.selectedIds.size > 0) {
           onBulkDelete()
         } else if (keyboard.isKeyboardActive && keyboardFocusedId !== null) {
-          // Compute next focus before deletion removes the task from the list.
-          // Same algorithm as Cmd+D in useKeyboardNavigation: forward first, then backward.
-          const currentIndex = orderedIds.indexOf(keyboardFocusedId)
-          let nextFocusId: number | null = null
-          if (currentIndex !== -1) {
-            for (let i = currentIndex + 1; i < orderedIds.length; i++) {
-              if (orderedIds[i] !== keyboardFocusedId) {
-                nextFocusId = orderedIds[i]
-                break
-              }
-            }
-            if (nextFocusId === null) {
-              for (let i = currentIndex - 1; i >= 0; i--) {
-                if (orderedIds[i] !== keyboardFocusedId) {
-                  nextFocusId = orderedIds[i]
-                  break
-                }
-              }
-            }
-          }
+          // Compute next focus before deletion removes the task from the list
+          // (the same rule Cmd+D uses — see `nextFocusAfterRemoval`).
+          const nextFocusId = nextFocusAfterRemoval(orderedIds, keyboardFocusedId)
 
           onDeleteTask(keyboardFocusedId)
           setKeyboardFocusedId(nextFocusId)
