@@ -55,6 +55,12 @@ import { useSelection, type SelectionContextType } from './SelectionProvider'
 interface TaskListProps {
   tasks: Task[]
   /**
+   * Show every row of every group — no "Show all" / "Show less" cap. Set
+   * while the Overdue filter is on (Trent, 2026-10-01): clearing overdue
+   * tasks one by one, a capped group hid the rest and read as "done".
+   */
+  uncapped?: boolean
+  /**
    * `tasks` grouped and sorted — the one visual order, computed by the
    * dashboard (`sortTaskGroups` in `src/lib/task-grouping.ts`) so the keyboard,
    * shift-click ranges and the clipboard follow exactly what is drawn here.
@@ -172,6 +178,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
 
 export function TaskList({
   tasks,
+  uncapped = false,
   sortedGroups,
   orderedIds,
   projects = [],
@@ -220,8 +227,13 @@ export function TaskList({
   const timezone = useTimezone()
   const isMobile = useIsMobile()
   const { projectPreviewCount } = useProjectPreviewCount()
-  // Today's slots preview 5 (§7.3); All's project groups the user's setting.
-  const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : projectPreviewCount
+  // Today's slots preview 5 (§7.3); All's project groups the user's setting;
+  // no cap at all while `uncapped` (the Overdue filter).
+  const previewCount = uncapped
+    ? Infinity
+    : grouping === 'slot'
+      ? SLOT_PREVIEW_COUNT
+      : projectPreviewCount
   const listRef = useRef<HTMLDivElement>(null)
 
   // Focus the listbox when entering selection mode (e.g., when clicking a task)

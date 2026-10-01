@@ -28,7 +28,11 @@ async function switchView(page: Page, v: string) {
 }
 
 /** A project of its own holding twelve tasks; removed afterwards, view put back. */
-async function withTwelveTasks(page: Page, run: (projectId: number, tag: string) => Promise<void>) {
+async function withTwelveTasks(
+  page: Page,
+  run: (projectId: number, tag: string) => Promise<void>,
+  dueInDays = 3,
+) {
   const tag = `Cap probe ${Date.now()}`
   const project = await page.request.post('/api/projects', { data: { name: tag } })
   expect(project.ok()).toBeTruthy()
@@ -43,7 +47,7 @@ async function withTwelveTasks(page: Page, run: (projectId: number, tag: string)
         data: {
           title: `${tag} task ${String(i).padStart(2, '0')}`,
           project_id: projectId,
-          due_at: DateTime.now().plus({ days: 3, minutes: i }).toUTC().toISO(),
+          due_at: DateTime.now().plus({ days: dueInDays, minutes: i }).toUTC().toISO(),
         },
       })
       expect(res.ok()).toBeTruthy()
@@ -100,4 +104,27 @@ test('the per-project cap follows the Settings choice', async ({ authenticatedPa
       await expect(page.getByRole('button', { name: /Show all 12/ })).toBeVisible()
     })
   })
+})
+
+test('with the Overdue filter on, every overdue task shows: no "Show all" cap', async ({
+  authenticatedPage: page,
+}) => {
+  await withTwelveTasks(
+    page,
+    async (projectId, tag) => {
+      await page.goto(`/?project=${projectId}`)
+      await switchView(page, 'All')
+      const rows = page.getByText(new RegExp(`^${tag} task`))
+      await expect(rows).toHaveCount(6)
+
+      await page
+        .getByRole('button', { name: /^Overdue/ })
+        .first()
+        .click()
+      await expect(rows).toHaveCount(12)
+      await expect(page.getByRole('button', { name: /Show all/ })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Show less' })).toHaveCount(0)
+    },
+    -1,
+  )
 })
