@@ -118,6 +118,13 @@ enum WidgetTheme {
     // MARK: - Metrics
 
     static let rowSpacing: CGFloat = 10
+
+    /// The Reminders widget's period strip (systemLarge, `ReminderSlotStrip`):
+    /// its 8pt segments plus 2pt under them. The Tasks widget's large
+    /// day-complete badge drops by this plus one `rowSpacing` (the strip's
+    /// gap in the card's stack) so it sits exactly where the Reminders one
+    /// does (Trent, 2026-09-30).
+    static let reminderSlotStripHeight: CGFloat = 10
     static let headerSpacing: CGFloat = 12
     static let cornerRadius: CGFloat = 8
 

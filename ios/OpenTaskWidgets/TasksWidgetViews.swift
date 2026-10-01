@@ -290,16 +290,6 @@ private struct TasksListView: View {
         #endif
     }
 
-    /// systemLarge, the Today page's day-complete state (`DayCompleteBadge`):
-    /// drawn centred on the CARD rather than in the body under the header, so
-    /// it lines up with the Reminders widget's (Trent, 2026-09-30) — see
-    /// `RemindersListView.isDayComplete`, which also says why systemMedium
-    /// keeps it in the body. The body leaves the space empty.
-    private var isDayComplete: Bool {
-        isLarge && entry.todayCount != nil && combinedItems.isEmpty
-            && TaskDayProgress.emptyBody(doneToday: entry.doneTodayCount) == .dayComplete
-    }
-
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
@@ -324,13 +314,6 @@ private struct TasksListView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .overlay {
-                if isDayComplete {
-                    DayCompleteBadge(isLarge: isLarge)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .allowsHitTesting(false)
-                }
-            }
         }
     }
 
@@ -694,13 +677,14 @@ private struct TasksListView: View {
         if entry.todayCount != nil {
             switch TaskDayProgress.emptyBody(doneToday: entry.doneTodayCount) {
             case .dayComplete:
-                if isLarge {
-                    // Drawn over the whole card instead — see `isDayComplete`.
-                    Color.clear
-                } else {
-                    DayCompleteBadge(isLarge: false)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                // systemLarge: pushed down by the Reminders widget's strip
+                // and its gap, so the two badges sit at the same height side
+                // by side (Trent, 2026-09-30 — "the tasks widget had just
+                // moved down to meet it"). systemMedium has no strip on
+                // either widget, so they already match there.
+                DayCompleteBadge(isLarge: isLarge)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, isLarge ? WidgetTheme.reminderSlotStripHeight + rowSpacing : 0)
             case .nothingDue:
                 TodayNothingDueView(entry: entry, isLarge: isLarge)
             }
