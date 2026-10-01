@@ -294,6 +294,17 @@ private struct RemindersListView: View {
         #endif
     }
 
+    /// systemLarge, the whole day done: `DayCompleteView` is drawn centred
+    /// on the CARD, not in the body under the header and strip — centred in
+    /// the body it sat lower than the Tasks widget's, whose header has no
+    /// strip (Trent, 2026-09-30: line the two up). The body leaves the space
+    /// empty then. systemMedium has no strip, so the two already match there,
+    /// and card-centring would press the seal against the header.
+    private var isDayComplete: Bool {
+        isLarge && !entry.groups.isEmpty && combinedItems.isEmpty
+            && ReminderDayProgress.emptyBody(groups: entry.groups, displayedIndex: entry.slotIndex) == .dayComplete
+    }
+
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
@@ -327,6 +338,11 @@ private struct RemindersListView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay {
+                if isDayComplete {
+                    DayCompleteView(isLarge: isLarge).allowsHitTesting(false)
+                }
+            }
         }
     }
 
@@ -517,7 +533,12 @@ private struct RemindersListView: View {
         case .noReminders:
             WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today")
         case .dayComplete:
-            DayCompleteView(isLarge: isLarge)
+            if isLarge {
+                // Drawn over the whole card instead — see `isDayComplete`.
+                Color.clear
+            } else {
+                DayCompleteView(isLarge: false)
+            }
         case .periodDone:
             PeriodDoneView(isLarge: isLarge)
         case .nothingHere:

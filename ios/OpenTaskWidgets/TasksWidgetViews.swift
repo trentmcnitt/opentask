@@ -290,6 +290,16 @@ private struct TasksListView: View {
         #endif
     }
 
+    /// systemLarge, the Today page's day-complete state (`DayCompleteBadge`):
+    /// drawn centred on the CARD rather than in the body under the header, so
+    /// it lines up with the Reminders widget's (Trent, 2026-09-30) — see
+    /// `RemindersListView.isDayComplete`, which also says why systemMedium
+    /// keeps it in the body. The body leaves the space empty.
+    private var isDayComplete: Bool {
+        isLarge && entry.todayCount != nil && combinedItems.isEmpty
+            && TaskDayProgress.emptyBody(doneToday: entry.doneTodayCount) == .dayComplete
+    }
+
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
@@ -314,6 +324,13 @@ private struct TasksListView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay {
+                if isDayComplete {
+                    DayCompleteBadge(isLarge: isLarge)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                }
+            }
         }
     }
 
@@ -677,8 +694,13 @@ private struct TasksListView: View {
         if entry.todayCount != nil {
             switch TaskDayProgress.emptyBody(doneToday: entry.doneTodayCount) {
             case .dayComplete:
-                DayCompleteBadge(isLarge: isLarge)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if isLarge {
+                    // Drawn over the whole card instead — see `isDayComplete`.
+                    Color.clear
+                } else {
+                    DayCompleteBadge(isLarge: false)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             case .nothingDue:
                 TodayNothingDueView(entry: entry, isLarge: isLarge)
             }
