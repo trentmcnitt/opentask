@@ -32,6 +32,12 @@ interface UseBulkQuickSelectDateResult {
   isDirty: boolean
   /** Whether tasks have different due dates */
   hasMixedDates: boolean
+  /**
+   * The selection's earliest due date (UTC ISO) — the shared one when every task
+   * has the same date — or null when none has a date. The quick panel opens its
+   * date picker on this.
+   */
+  earliestDueAt: string | null
   /** Current operation type */
   operationType: OperationType
   /** Accumulated delta minutes (for delta mode) */
@@ -57,7 +63,7 @@ interface UseBulkQuickSelectDateResult {
  * Note: relativeText and isPast are computed fresh in the hook body (outside useMemo)
  * so they can be recalculated when tick changes for auto-refresh.
  */
-function computeInitialDisplay(
+export function computeInitialDisplay(
   tasks: Task[],
   timezone: string,
 ): {
@@ -330,6 +336,7 @@ export function useBulkQuickSelectDate({
     isPast,
     isDirty,
     hasMixedDates: initialDisplay.hasMixedDates,
+    earliestDueAt: initialDisplay.earliestDueAt,
     operationType,
     deltaMinutes,
     presetTime,

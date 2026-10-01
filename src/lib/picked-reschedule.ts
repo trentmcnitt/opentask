@@ -7,8 +7,10 @@
  * occurrence origin instead of counting a snooze (see `collectBasicFields`).
  * "+1h" and the other presets are snoozes and never set `datePicked`.
  *
- * Single-task only — the picker is not shown in bulk mode — and never in
- * create mode, which has no origin to reset. A cleared date (`null`) is not a
+ * Single-task only — in multi-task mode a picked date is staged as an
+ * absolute target and saves like the grid's presets (QuickActionPanel's
+ * handleBulkPickerChange says why) — and never in create mode, which has no
+ * origin to reset. A cleared date (`null`) is not a
  * reschedule either. Lives outside QuickActionPanel so a node test can reach
  * it without loading the component.
  */

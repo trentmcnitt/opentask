@@ -33,6 +33,7 @@ import {
   withPreferences,
 } from './fixtures'
 import type { Page } from '@playwright/test'
+import { DateTime } from 'luxon'
 
 interface TaskState {
   id: number
@@ -326,6 +327,148 @@ test.describe('Dashboard multi-select — only tasks', () => {
       })
     } finally {
       await trash(page, everything)
+    }
+  })
+})
+
+/** The seeded user's zone (tests/e2e/globalSetup.ts). */
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
+
+/** More → the quick panel for the selection. */
+async function openPanel(page: Page, count: number) {
+  await bar(page).getByRole('button', { name: 'More', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: `${count} tasks selected` })
+  await expect(dialog).toBeVisible()
+  return dialog
+}
+
+test.describe('Dashboard multi-select — the panel date line and "…" menu', () => {
+  // The picker reads the calendar day in the BROWSER's zone and the time in the
+  // user's; in real use the two are the same zone, so run the browser in the
+  // seeded user's zone too. Without it a CI runner on UTC could pick a
+  // different calendar day than the one this test computes.
+  test.use({ timezoneId: TEST_TZ })
+
+  /**
+   * The date line opens the same date/time picker single-task mode has, and
+   * the picked moment becomes every selected task's due date on Save — an
+   * absolute move, sent like the 9:00 AM / Now presets (bulk/snooze with
+   * `until` and the selection as explicit picks). The target is two days out,
+   * after both tasks' due dates, so no "Confirm date change" dialog applies.
+   */
+  test('picking a date in the picker sets it on every selected task', async ({
+    authenticatedPage: page,
+  }) => {
+    const { ids } = await createPair(page, 'Sel picker')
+    const target = DateTime.now()
+      .setZone(TEST_TZ)
+      .plus({ days: 2 })
+      .set({ hour: 10, minute: 30, second: 0, millisecond: 0 })
+    try {
+      await withPreferences(page, unified, async () => {
+        await openDashboard(page, ids[0])
+        await select(page, ids)
+        const dialog = await openPanel(page, ids.length)
+
+        const dateLine = dialog.locator('[data-quick-panel-date]')
+        await dateLine.click()
+        const setDate = page.getByRole('button', { name: 'Set Date', exact: true })
+        await expect(setDate).toBeVisible()
+
+        // The calendar opens on the selection's month; step forward if the
+        // target day is not on it. Day cells are keyed by the browser's own
+        // toLocaleDateString, so the key is built in the page.
+        const dayKey = await page.evaluate(
+          ([y, m, d]) => new Date(y, m - 1, d).toLocaleDateString(),
+          [target.year, target.month, target.day],
+        )
+        const day = page.locator(`button[data-day="${dayKey}"]`).first()
+        if ((await day.count()) === 0) {
+          await page.getByRole('button', { name: /next month/i }).click()
+        }
+        await day.click()
+        await page.getByRole('spinbutton', { name: 'Hour' }).fill('10')
+        await page.getByRole('spinbutton', { name: 'Minute' }).fill('30')
+        const period = page.getByRole('button', { name: /^Toggle AM\/PM/ })
+        if ((await period.textContent())?.trim() !== 'AM') await period.click()
+        await expect(period).toHaveText('AM')
+        await setDate.click()
+        await expect(setDate).toHaveCount(0)
+
+        // Staged, not saved: the header shows the picked date, dirty (blue).
+        await expect(dateLine.locator('span.text-blue-500').first()).toContainText(
+          target.toFormat('LLL d, h:mm a'),
+        )
+
+        const sent = page.waitForResponse(isPost('/api/tasks/bulk/snooze'))
+        await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+        const res = await sent
+        expect(res.ok()).toBeTruthy()
+        const body = res.request().postDataJSON()
+        expect(sorted(body.ids)).toEqual(sorted(ids))
+        expect(sorted(body.include_task_ids)).toEqual(sorted(ids))
+        expect(Date.parse(body.until)).toBe(target.toMillis())
+        await expect(dialog).toHaveCount(0)
+
+        for (const id of ids) {
+          expect(Date.parse((await stateOf(page, id)).due_at!)).toBe(target.toMillis())
+        }
+      })
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
+  /**
+   * The "…" menu used to open empty in multi-task mode (every item was
+   * single-task only). It now carries "Clear due dates", which clears every
+   * selected task's date on Save, in one bulk/edit.
+   */
+  test('the "…" menu clears the due date of every selected task', async ({
+    authenticatedPage: page,
+  }) => {
+    const { ids } = await createPair(page, 'Sel clear')
+    try {
+      await withPreferences(page, unified, async () => {
+        await openDashboard(page, ids[0])
+        await select(page, ids)
+        const dialog = await openPanel(page, ids.length)
+
+        await dialog.getByRole('button', { name: 'More options' }).click()
+        await page.getByRole('menuitem', { name: 'Clear due dates' }).click()
+        await expect(dialog.locator('[data-quick-panel-date]')).toHaveText('No due date')
+
+        const sent = page.waitForResponse(isPost('/api/tasks/bulk/edit'))
+        await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+        const res = await sent
+        expect(res.ok()).toBeTruthy()
+        expect(sorted(res.request().postDataJSON().ids)).toEqual(sorted(ids))
+        await expect(dialog).toHaveCount(0)
+        for (const id of ids) expect((await stateOf(page, id)).due_at).toBeNull()
+      })
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
+  /** Nothing to clear (no dates, no recurrence) would leave the menu empty: no "…" at all. */
+  test('the "…" button is absent when its menu would have no items', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids = [
+      await createTask(page, { title: uniqueTitle('Sel nodate A'), priority: 1 }),
+      await createTask(page, { title: uniqueTitle('Sel nodate B'), priority: 1 }),
+    ]
+    try {
+      await withPreferences(page, unified, async () => {
+        await openDashboard(page, ids[0])
+        await select(page, ids)
+        const dialog = await openPanel(page, ids.length)
+        await expect(dialog.locator('[data-quick-panel-date]')).toHaveText('No due date')
+        await expect(dialog.getByRole('button', { name: 'More options' })).toHaveCount(0)
+      })
+    } finally {
+      await trash(page, ids)
     }
   })
 })

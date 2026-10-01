@@ -67,6 +67,7 @@ import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnooze
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
 import { isPickedReschedule } from '@/lib/picked-reschedule'
+import { isTracked } from '@/lib/track'
 import { GridButton } from '@/components/quick-panel/GridButton'
 import { SinceAge } from '@/components/quick-panel/SinceAge'
 import { NotesInlineSection } from '@/components/quick-panel/NotesInlineSection'
@@ -606,6 +607,72 @@ export function QuickActionPanel({
     [handleSmartButton, isCreateMode],
   )
 
+  // Single-task date picker: a picked date is a reschedule (pendingDatePicked →
+  // reset_original_due_at on save); Clear drops the date and any recurrence.
+  const handleSinglePickerChange = useCallback(
+    (isoUtc: string | null) => {
+      if (isoUtc === null) {
+        setPendingDueAtCleared(true)
+        setPendingDueAt(null)
+        setPendingDatePicked(false)
+        if (effectiveTask?.rrule || pendingRrule) {
+          setPendingRrule(null)
+        }
+      } else {
+        setPendingDueAtCleared(false)
+        // In create mode, the hook's initial date is a synthetic snap-to-now value,
+        // so a calendar pick matching it would leave isDirty false. Use pendingDueAt
+        // as an explicit override (same pattern as smart buttons).
+        setPendingDueAt(isCreateMode ? isoUtc : null)
+        setPendingDatePicked(true)
+        singleHook.setWorkingDate(isoUtc)
+      }
+    },
+    [effectiveTask?.rrule, pendingRrule, isCreateMode, singleHook],
+  )
+
+  // Multi-task "clear due date" (the date picker's Clear and the "…" menu item).
+  // collectPendingChanges sends `{ due_at: null, rrule: null }` — a cleared date
+  // takes the recurrence with it, as in single mode — which bulk/edit applies to
+  // every selected task in one undo entry. Not offered when:
+  // - a quota is selected: a quota must keep its period, so `rrule: null` would
+  //   make the server refuse the WHOLE batch (QUOTA_PERIOD_MESSAGE);
+  // - no selected task has a date or a recurrence: there is nothing to clear.
+  const bulkTasks = selectedTasks ?? []
+  const canBulkClearDueDate =
+    isBulkMode &&
+    !bulkTasks.some((t) => isTracked(t)) &&
+    bulkTasks.some((t) => t.due_at !== null || t.rrule !== null)
+  const bulkHasRecurrence = isBulkMode && bulkTasks.some((t) => t.rrule !== null)
+
+  // The "…" menu's items: Clear due date (single or multi), Reminder and Task
+  // Details (single only). The menu renders only when at least one applies.
+  const showBulkClearItem = canBulkClearDueDate && !pendingDueAtCleared
+  const hasMoreMenuItems = isSingleTask || showBulkClearItem
+
+  const handleBulkClearDueDate = useCallback(() => {
+    bulkHook.reset()
+    setPendingDueAtCleared(true)
+  }, [bulkHook])
+
+  // Multi-task date picker: the picked moment becomes every selected task's due
+  // date — an absolute target staged in the bulk hook, saved exactly like the
+  // grid's absolute presets (9:00 AM, Now…). Deliberately NOT a reschedule
+  // (no reset_original_due_at, unlike single mode): bulk/edit would apply that
+  // flag to every selected task, including ones the "Confirm date change"
+  // dialog opted out of the date, resetting their origin to a date they kept.
+  const handleBulkPickerChange = useCallback(
+    (isoUtc: string | null) => {
+      if (isoUtc === null) {
+        handleBulkClearDueDate()
+        return
+      }
+      setPendingDueAtCleared(false)
+      bulkHook.setAbsoluteTarget(isoUtc)
+    },
+    [bulkHook, handleBulkClearDueDate],
+  )
+
   // Collect all pending changes into a single QuickActionPanelChanges object.
   // Used by both save and handleSaveAndDone to avoid duplicating the collection logic.
   //
@@ -672,8 +739,9 @@ export function QuickActionPanel({
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
     if (pendingResetOrigin) changes.reset_original_due_at = true
     // A picked date is a reschedule: the server makes it the new origin (see
-    // collectBasicFields). Single-task only — the picker is not shown in bulk
-    // mode, and create mode has no origin to reset.
+    // collectBasicFields). Single-task only — a bulk pick is staged in the bulk
+    // hook as an absolute target and saves like a preset (see
+    // handleBulkPickerChange) — and create mode has no origin to reset.
     if (isPickedReschedule(pendingDatePicked, isBulkMode, isCreateMode, changes.due_at)) {
       changes.reset_original_due_at = true
     }
@@ -1039,79 +1107,30 @@ export function QuickActionPanel({
               Completed
             </Badge>
           )}
-          {/* Date display — wrapped in DateTimePicker for single-task mode */}
-          {!isBulkMode ? (
-            <DateTimePicker
-              value={pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null}
-              timezone={timezone}
-              onChange={(isoUtc) => {
-                if (isoUtc === null) {
-                  setPendingDueAtCleared(true)
-                  setPendingDueAt(null)
-                  setPendingDatePicked(false)
-                  if (effectiveTask?.rrule || pendingRrule) {
-                    setPendingRrule(null)
-                  }
-                } else {
-                  setPendingDueAtCleared(false)
-                  // In create mode, the hook's initial date is a synthetic snap-to-now value,
-                  // so a calendar pick matching it would leave isDirty false. Use pendingDueAt
-                  // as an explicit override (same pattern as smart buttons).
-                  setPendingDueAt(isCreateMode ? isoUtc : null)
-                  setPendingDatePicked(true)
-                  singleHook.setWorkingDate(isoUtc)
-                }
-              }}
+          {/*
+            Date display — tapping it opens the calendar/time picker, in single
+            and multi-task mode alike. In bulk mode a picked date stages an
+            ABSOLUTE target for every selected task (bulkHook.setAbsoluteTarget),
+            exactly like the 9:00 AM / Now presets, so it saves through the same
+            path: bulk/snooze (or bulk/edit alongside other fields) with
+            include_task_ids, behind the same "Confirm date change" dialog.
+          */}
+          <DateTimePicker
+            value={
+              isBulkMode
+                ? (bulkHook.presetTime ?? bulkHook.earliestDueAt)
+                : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
+            }
+            timezone={timezone}
+            allowClear={!isBulkMode || canBulkClearDueDate}
+            emptyDefault={isBulkMode ? 'now' : 'tomorrow'}
+            onChange={isBulkMode ? handleBulkPickerChange : handleSinglePickerChange}
+          >
+            <p
+              data-quick-panel-date
+              className="inline-flex cursor-pointer items-center gap-1 text-xs select-text"
             >
-              <p className="inline-flex cursor-pointer items-center gap-1 text-xs select-text">
-                <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
-                {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
-                  <span
-                    className={cn(
-                      'font-medium',
-                      pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
-                    )}
-                  >
-                    No due date
-                  </span>
-                ) : (
-                  <>
-                    <span
-                      className={cn(
-                        isDateDirty ? 'font-bold text-blue-500' : 'text-muted-foreground',
-                      )}
-                    >
-                      {headerText}
-                    </span>
-                    <span
-                      className={cn(
-                        isDateDirty ? 'mx-1 text-blue-500' : 'text-muted-foreground mx-1',
-                      )}
-                    >
-                      &middot;
-                    </span>
-                    <span
-                      className={cn(
-                        isDateDirty
-                          ? 'font-bold text-blue-500'
-                          : isPast
-                            ? 'text-destructive font-medium'
-                            : 'text-muted-foreground',
-                      )}
-                    >
-                      {relativeText}
-                    </span>
-                    {effectiveDeltaDisplay && (
-                      <span className="ml-1 font-medium text-blue-500">
-                        ({effectiveDeltaDisplay})
-                      </span>
-                    )}
-                  </>
-                )}
-              </p>
-            </DateTimePicker>
-          ) : (
-            <p className="text-xs select-text">
+              <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
               {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
                 <span
                   className={cn(
@@ -1156,7 +1175,7 @@ export function QuickActionPanel({
                 </>
               )}
             </p>
-          )}
+          </DateTimePicker>
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
           {previewDueAt && (
             <p className="mt-0.5 text-xs font-medium text-blue-500">
@@ -1543,8 +1562,14 @@ export function QuickActionPanel({
                   />
                 )}
 
-                {/* More menu - consolidates disabled features and task details (hidden in create mode) */}
-                {!isCreateMode && (
+                {/*
+                  More menu - consolidates disabled features and task details.
+                  Rendered only when it has at least one item: hidden in create
+                  mode, and in multi-task mode unless "Clear due date" applies
+                  (Reminder and Task Details are single-task only) — an empty
+                  menu used to open as a blank sliver.
+                */}
+                {!isCreateMode && hasMoreMenuItems && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -1579,6 +1604,13 @@ export function QuickActionPanel({
                             Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
                           </DropdownMenuItem>
                         )}
+                      {/* Clear due date - multi-task: applies to every selected task on Save */}
+                      {showBulkClearItem && (
+                        <DropdownMenuItem inset onClick={handleBulkClearDueDate}>
+                          <XCircle className="mr-2 size-4" />
+                          Clear due dates{bulkHasRecurrence ? ' & recurrence' : ''}
+                        </DropdownMenuItem>
+                      )}
                       {/*
                         §6: flag this item onto the Reminders surface.
                         A checkbox item rather than a button because the flag is

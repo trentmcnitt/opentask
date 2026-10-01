@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DateTime } from 'luxon'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
+import { snapToNearestFiveMinutes } from '@/lib/quick-select-dates'
 
 interface DateTimePickerProps {
   /** Current value as UTC ISO string, or null if no date */
@@ -18,6 +19,19 @@ interface DateTimePickerProps {
   onChange: (isoUtc: string | null) => void
   /** Trigger element */
   children: React.ReactNode
+  /**
+   * Show the Clear button (default true). The multi-task quick panel turns it
+   * off when the selection's due dates can't be cleared in one save (e.g. a
+   * quota is selected — clearing takes the recurrence with it, and a quota
+   * must keep its period).
+   */
+  allowClear?: boolean
+  /**
+   * What the picker opens on when `value` is null: tomorrow at 9:00 AM (the
+   * default), or the current time snapped to five minutes. Computed when the
+   * popover opens, not during render, so "now" is the moment of the tap.
+   */
+  emptyDefault?: 'tomorrow' | 'now'
 }
 
 /**
@@ -27,7 +41,14 @@ interface DateTimePickerProps {
  * Calendar for date selection and 12-hour time inputs with AM/PM toggle.
  * Converts the selected local date+time to UTC using Luxon before calling onChange.
  */
-export function DateTimePicker({ value, timezone, onChange, children }: DateTimePickerProps) {
+export function DateTimePicker({
+  value,
+  timezone,
+  onChange,
+  children,
+  allowClear = true,
+  emptyDefault = 'tomorrow',
+}: DateTimePickerProps) {
   const [open, setOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [hour12, setHour12] = useState(9)
@@ -38,8 +59,9 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (newOpen) {
-        if (value) {
-          const dt = DateTime.fromISO(value, { zone: 'utc' }).setZone(timezone)
+        const initial = value ?? (emptyDefault === 'now' ? snapToNearestFiveMinutes() : null)
+        if (initial) {
+          const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
           setSelectedDate(dt.toJSDate())
           setHour12(to12Hour(dt.hour))
           setMinute(dt.minute)
@@ -57,7 +79,7 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
       }
       setOpen(newOpen)
     },
-    [value, timezone],
+    [value, timezone, emptyDefault],
   )
 
   const handleSetDate = () => {
@@ -132,9 +154,11 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
               <CalendarDays className="mr-1 size-3.5" />
               Set Date
             </Button>
-            <Button size="sm" variant="outline" onClick={handleClear} className="flex-1">
-              Clear
-            </Button>
+            {allowClear && (
+              <Button size="sm" variant="outline" onClick={handleClear} className="flex-1">
+                Clear
+              </Button>
+            )}
           </div>
         </div>
       </PopoverContent>
