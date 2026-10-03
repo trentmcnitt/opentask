@@ -138,7 +138,9 @@ export function QuickTakeBanner({
       <div className="min-w-0 flex-1">
         {/* Row 1: Title + metadata chips */}
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-          <span className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+          {/* `min-w-0 break-words`: a title holding an unbroken URL wraps
+              inside the card instead of running off its edge. */}
+          <span className="min-w-0 text-sm font-semibold break-words text-indigo-900 dark:text-indigo-200">
             {displayTitle}
           </span>
           {chips.map((chip) => (
@@ -168,7 +170,9 @@ export function QuickTakeBanner({
             <span className="typing-dot" style={{ animationDelay: '0.4s' }} />
           </div>
         ) : quickTakeText ? (
-          <p className="mt-1 text-sm text-indigo-600 dark:text-indigo-300">{quickTakeText}</p>
+          <p className="mt-1 text-sm break-words text-indigo-600 dark:text-indigo-300">
+            {quickTakeText}
+          </p>
         ) : null}
 
         {/* "View" link — appears once enrichment has updated the task */}

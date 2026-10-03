@@ -118,7 +118,9 @@ function JustAddedEntry({
         )}
       />
       <span className="min-w-0 flex-1">
-        <span className="block text-[15px] leading-snug font-medium">{task.title}</span>
+        {/* `break-words`: an unbroken URL in a title wraps instead of
+            running past the card's edge. */}
+        <span className="block text-[15px] leading-snug font-medium break-words">{task.title}</span>
         {enriching ? (
           <span className="animate-ai-shimmer flex items-center gap-1 text-xs font-medium">
             <Sparkles className="size-3" aria-hidden />
