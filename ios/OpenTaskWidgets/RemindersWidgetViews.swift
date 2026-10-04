@@ -22,7 +22,15 @@ struct RemindersWidgetView: View {
     private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
     var body: some View {
+        // No change animation (Trent, 2026-10-03): WidgetKit animates from
+        // one timeline entry to the next, and a checked-off row made every
+        // row below it warp into its neighbour's text — disorienting at 3–4
+        // taps a second. Rows are also keyed by item, not position (the
+        // `ForEach` in `listBody`), so if motion ever comes back it slides
+        // rows instead of morphing them.
         content
+            .contentTransition(.identity)
+            .transaction { $0.animation = nil }
             .containerBackground(for: .widget) {
                 switch family {
                 case .systemSmall, .systemMedium, .systemLarge:
@@ -173,6 +181,14 @@ private struct RemindersSmallView: View {
 /// reminders the same way), `.donePrompt` for one handled today (after the
 /// considered reminders in DONE). Keyed by `prompt_key`, NEVER the task id: a
 /// daily quota's prompts share one task id.
+/// A row's position on the page plus its item's stable id: the `ForEach`
+/// identity, so a checked-off row's neighbours keep their own identity
+/// instead of inheriting its slot (see the widget view's `body`).
+private struct ListRowRef: Identifiable {
+    let index: Int
+    let id: String
+}
+
 private enum ReminderListItem: Identifiable {
     case open(TaskDTO)
     case prompt(QuotaPromptDTO)
@@ -364,9 +380,11 @@ private struct RemindersListView: View {
                 emptySlotView
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(range, id: \.self) { index in
-                        row(items[index], layout: layouts[index], metrics: metrics)
-                            .frame(height: layouts[index].height, alignment: .top)
+                    // Keyed by the item, not its position — see `body`.
+                    ForEach(range.map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
+                        row(items[ref.index], layout: layouts[ref.index], metrics: metrics)
+                            .frame(height: layouts[ref.index].height, alignment: .top)
+                            .transition(.identity)
                     }
                 }
             }
