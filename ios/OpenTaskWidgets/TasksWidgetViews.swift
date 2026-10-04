@@ -22,15 +22,21 @@ struct TasksWidgetView: View {
     private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
     var body: some View {
-        // Rows slide, nothing morphs (Trent, 2026-10-03). WidgetKit animates
-        // from one timeline entry to the next; with rows keyed by POSITION a
-        // checked-off row made every row below warp into its neighbour's
-        // text. Rows are now keyed by item (`ListRowRef` in `listBody`), so
-        // the checked row leaves at once and the rest slide up — quickly
-        // (`rowMotion`), done before the next tap at 3–4 taps a second.
-        // `.contentTransition(.identity)` keeps text from cross-morphing.
+        // No change animation (Trent, 2026-10-03): WidgetKit animates from
+        // one timeline entry to the next, and a checked-off row made every
+        // row below it warp into its neighbour's text — disorienting at 3–4
+        // taps a second. Rows are also keyed by item, not position (the
+        // `ForEach` in `listBody`).
+        //
+        // Motion was tried and dropped the same day, on the phone: keyed rows
+        // with a 0.2s slide still showed the leaving row's text doubled under
+        // the rows moving up; an instant removal made WidgetKit skip the
+        // slide entirely; a 0.05s removal fade still read as doubled text.
+        // WidgetKit's entry-to-entry animation doesn't give the control a
+        // clean slide needs, so the list snaps.
         content
             .contentTransition(.identity)
+            .transaction { $0.animation = nil }
             .containerBackground(for: .widget) {
                 switch family {
                 case .systemSmall, .systemMedium, .systemLarge:
@@ -402,18 +408,9 @@ private struct TasksListView: View {
                     ForEach(pages[page].map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
                         row(items[ref.index], layout: layouts[ref.index], mode: mode, picks: picks, metrics: metrics)
                             .frame(height: layouts[ref.index].height, alignment: .top)
-                            // A leaving row fades in 0.05s, the rest slide over
-                            // 0.2s (`rowMotion`): faded at the slide's pace it sat
-                            // under the rows moving into its place and the texts
-                            // overlapped; with no removal animation at all
-                            // WidgetKit skipped the slide too (Trent, 2026-10-03).
-                            .transition(.asymmetric(
-                                insertion: .opacity,
-                                removal: .opacity.animation(WidgetTheme.rowExit)
-                            ))
+                            .transition(.identity)
                     }
                 }
-                .animation(WidgetTheme.rowMotion, value: pages[page].map { items[$0].id })
             }
 
             // Pins the bottom area to the card's bottom edge (Trent,
