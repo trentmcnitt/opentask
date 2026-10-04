@@ -26,7 +26,7 @@ struct RemindersWidgetView: View {
         // from one timeline entry to the next; with rows keyed by POSITION a
         // checked-off row made every row below warp into its neighbour's
         // text. Rows are now keyed by item (`ListRowRef` in `listBody`), so
-        // the checked row fades out and the rest slide up — quickly
+        // the checked row leaves at once and the rest slide up — quickly
         // (`rowMotion`), done before the next tap at 3–4 taps a second.
         // `.contentTransition(.identity)` keeps text from cross-morphing.
         content
@@ -384,7 +384,11 @@ private struct RemindersListView: View {
                     ForEach(range.map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
                         row(items[ref.index], layout: layouts[ref.index], metrics: metrics)
                             .frame(height: layouts[ref.index].height, alignment: .top)
-                            .transition(.opacity)
+                            // A leaving row goes at once: fading, it sat under
+                            // the rows sliding up into its place and the two
+                            // texts showed on top of each other (Trent,
+                            // 2026-10-03). Arriving rows (next page) fade in.
+                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
                     }
                 }
                 .animation(WidgetTheme.rowMotion, value: range.map { items[$0].id })
