@@ -22,15 +22,15 @@ struct TasksWidgetView: View {
     private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
     var body: some View {
-        // No change animation (Trent, 2026-10-03): WidgetKit animates from
-        // one timeline entry to the next, and a checked-off row made every
-        // row below it warp into its neighbour's text — disorienting at 3–4
-        // taps a second. Rows are also keyed by item, not position (the
-        // `ForEach` in `listBody`), so if motion ever comes back it slides
-        // rows instead of morphing them.
+        // Rows slide, nothing morphs (Trent, 2026-10-03). WidgetKit animates
+        // from one timeline entry to the next; with rows keyed by POSITION a
+        // checked-off row made every row below warp into its neighbour's
+        // text. Rows are now keyed by item (`ListRowRef` in `listBody`), so
+        // the checked row fades out and the rest slide up — quickly
+        // (`rowMotion`), done before the next tap at 3–4 taps a second.
+        // `.contentTransition(.identity)` keeps text from cross-morphing.
         content
             .contentTransition(.identity)
-            .transaction { $0.animation = nil }
             .containerBackground(for: .widget) {
                 switch family {
                 case .systemSmall, .systemMedium, .systemLarge:
@@ -402,9 +402,10 @@ private struct TasksListView: View {
                     ForEach(pages[page].map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
                         row(items[ref.index], layout: layouts[ref.index], mode: mode, picks: picks, metrics: metrics)
                             .frame(height: layouts[ref.index].height, alignment: .top)
-                            .transition(.identity)
+                            .transition(.opacity)
                     }
                 }
+                .animation(WidgetTheme.rowMotion, value: pages[page].map { items[$0].id })
             }
 
             // Pins the bottom area to the card's bottom edge (Trent,
