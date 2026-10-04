@@ -384,11 +384,15 @@ private struct RemindersListView: View {
                     ForEach(range.map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
                         row(items[ref.index], layout: layouts[ref.index], metrics: metrics)
                             .frame(height: layouts[ref.index].height, alignment: .top)
-                            // A leaving row goes at once: fading, it sat under
-                            // the rows sliding up into its place and the two
-                            // texts showed on top of each other (Trent,
-                            // 2026-10-03). Arriving rows (next page) fade in.
-                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                            // A leaving row fades in 0.05s, the rest slide over
+                            // 0.2s (`rowMotion`): faded at the slide's pace it sat
+                            // under the rows moving into its place and the texts
+                            // overlapped; with no removal animation at all
+                            // WidgetKit skipped the slide too (Trent, 2026-10-03).
+                            .transition(.asymmetric(
+                                insertion: .opacity,
+                                removal: .opacity.animation(WidgetTheme.rowExit)
+                            ))
                     }
                 }
                 .animation(WidgetTheme.rowMotion, value: range.map { items[$0].id })

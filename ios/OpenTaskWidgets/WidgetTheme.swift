@@ -127,9 +127,13 @@ enum WidgetTheme {
     static let reminderSlotStripHeight: CGFloat = 10
 
     /// How the Reminders and Tasks lists move when a row leaves: the checked
-    /// row goes at once and the rows below slide up. 0.2s so the slide is over
+    /// row fades almost at once (`rowExit`) and the rows below slide up. 0.2s so the slide is over
     /// before the next tap (Trent checks items off 3–4 times a second).
     static let rowMotion: Animation = .easeOut(duration: 0.2)
+
+    /// The checked row's own exit: a fade far quicker than `rowMotion`, so
+    /// it's gone before the rows sliding up reach it.
+    static let rowExit: Animation = .linear(duration: 0.05)
     static let headerSpacing: CGFloat = 12
     static let cornerRadius: CGFloat = 8
 
