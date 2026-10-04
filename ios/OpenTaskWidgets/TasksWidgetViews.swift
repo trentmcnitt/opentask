@@ -22,7 +22,21 @@ struct TasksWidgetView: View {
     private var family: WidgetFamily { familyOverride ?? environmentFamily }
 
     var body: some View {
+        // No change animation (Trent, 2026-10-03): WidgetKit animates from
+        // one timeline entry to the next, and a checked-off row made every
+        // row below it warp into its neighbour's text — disorienting at 3–4
+        // taps a second. Rows are also keyed by item, not position (the
+        // `ForEach` in `listBody`).
+        //
+        // Motion was tried and dropped the same day, on the phone: keyed rows
+        // with a 0.2s slide still showed the leaving row's text doubled under
+        // the rows moving up; an instant removal made WidgetKit skip the
+        // slide entirely; a 0.05s removal fade still read as doubled text.
+        // WidgetKit's entry-to-entry animation doesn't give the control a
+        // clean slide needs, so the list snaps.
         content
+            .contentTransition(.identity)
+            .transaction { $0.animation = nil }
             .containerBackground(for: .widget) {
                 switch family {
                 case .systemSmall, .systemMedium, .systemLarge:
@@ -176,6 +190,14 @@ private func taskNoun(_ count: Int) -> String {
 /// One row of the combined open+divider+done list (2026-09-23, "show
 /// completed") — the Tasks twin of `ReminderListItem`, not shared with it:
 /// the two lists' item enums are private to their own files.
+/// A row's position on the page plus its item's stable id: the `ForEach`
+/// identity, so a checked-off row's neighbours keep their own identity
+/// instead of inheriting its slot (see the widget view's `body`).
+private struct ListRowRef: Identifiable {
+    let index: Int
+    let id: String
+}
+
 private enum TaskListItem: Identifiable {
     case open(TaskDTO)
     case divider(count: Int)
@@ -382,9 +404,11 @@ private struct TasksListView: View {
                 emptyBody
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(pages[page], id: \.self) { index in
-                        row(items[index], layout: layouts[index], mode: mode, picks: picks, metrics: metrics)
-                            .frame(height: layouts[index].height, alignment: .top)
+                    // Keyed by the item, not its position — see `body`.
+                    ForEach(pages[page].map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
+                        row(items[ref.index], layout: layouts[ref.index], mode: mode, picks: picks, metrics: metrics)
+                            .frame(height: layouts[ref.index].height, alignment: .top)
+                            .transition(.identity)
                     }
                 }
             }
