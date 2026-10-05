@@ -19,18 +19,18 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://opentask.mcnitt.io'),
-  title: 'OpenTask — Self-Hosted AI Task Management',
+  title: 'OpenTask — Self-Hosted AI Task & Habit Manager',
   description:
-    'Self-hosted task management with AI woven into every layer. Priority scoring, smart snooze, recurrence, and intelligent filtering — all running on your own server.',
+    'A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac. Reminders, quotas, snooze-first workflow, and a full REST API — all running on your own server.',
   manifest: '/manifest.json',
   icons: {
     icon: '/opentask-sun-logo.png',
     apple: '/icon-192.png',
   },
   openGraph: {
-    title: 'OpenTask — Self-Hosted AI Task Management',
+    title: 'OpenTask — Self-Hosted AI Task & Habit Manager',
     description:
-      'Self-hosted task management with AI woven into every layer. Priority scoring, smart snooze, recurrence, and intelligent filtering — all running on your own server.',
+      'A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac. Reminders, quotas, snooze-first workflow, and a full REST API — all running on your own server.',
     url: 'https://opentask.mcnitt.io',
     siteName: 'OpenTask',
     images: [
