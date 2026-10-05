@@ -114,6 +114,8 @@ There are two warm slots, both built by the shared engine in `warm-slot.ts` (`cr
 
 **2. Quick Take slot** (`quick-take-slot.ts`): Latest-wins cancellation — only the most recent quick take matters, so new requests supersede in-flight ones. Lower max reuses (default 4) since quick takes are less frequent. Policy: `latestWinsPolicy`.
 
+No caller may wait on a slot forever (the state-transition table is at the top of `warm-slot.ts`). A query that times out means the subprocess has hung, so the slot kills it and recycles rather than staying busy; a warmup that fails, including the one a recycle starts, marks the slot dead and rejects every queued caller. Each rejected enrichment counts as a normal failed attempt, so the queue keeps moving and the task ends `ai-failed` after two.
+
 API providers (Anthropic, OpenAI) make stateless HTTP calls and do not use warm slots.
 
 ### On-demand enrichment
@@ -355,21 +357,21 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ## Failure Modes
 
-| Failure                        | What happens                                        | User sees                         |
-| ------------------------------ | --------------------------------------------------- | --------------------------------- |
-| No provider available          | `isAIEnabled()` set to false, AI disabled           | Nothing — app works normally      |
-| API key invalid                | Provider returns 401, logged as error               | Warning icon, raw text preserved  |
-| Provider request fails         | `ai-to-process` label stays, retried next cycle     | Spinner continues                 |
-| Provider hangs                 | Timeout kills after 60s, retry tracking incremented | Warning icon after 2nd failure    |
-| Model returns invalid output   | `ai-failed` label applied after 2 attempts          | Warning icon, raw text preserved  |
-| Model extracts wrong fields    | Changes applied and logged in undo                  | User can Cmd+Z to revert          |
-| Server restarts mid-enrichment | In-memory processing set resets, tasks retried      | Re-processed automatically        |
-| Task has `ai-locked` label     | Enrichment skipped, `ai-to-process` removed         | No AI processing                  |
-| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes          | Pending tasks wait                |
-| Warm slot dies                 | Marked dead, API mode falls back to cold path       | Slightly slower enrichment        |
-| Semaphore full                 | Request queued FIFO, times out after 30 seconds     | Loading indicator, eventual error |
-| What's Next cache hit          | Cached result returned immediately                  | Instant response                  |
-| Insights session crash         | Stale session auto-failed after 20 minutes          | User can re-trigger               |
+| Failure                        | What happens                                                                                                        | User sees                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| No provider available          | `isAIEnabled()` set to false, AI disabled                                                                           | Nothing — app works normally      |
+| API key invalid                | Provider returns 401, logged as error                                                                               | Warning icon, raw text preserved  |
+| Provider request fails         | `ai-to-process` label stays, retried next cycle                                                                     | Spinner continues                 |
+| Provider hangs                 | Timeout fails the attempt (retry tracking incremented); a warm slot kills and replaces the hung subprocess          | Warning icon after 2nd failure    |
+| Model returns invalid output   | `ai-failed` label applied after 2 attempts                                                                          | Warning icon, raw text preserved  |
+| Model extracts wrong fields    | Changes applied and logged in undo                                                                                  | User can Cmd+Z to revert          |
+| Server restarts mid-enrichment | In-memory processing set resets, tasks retried                                                                      | Re-processed automatically        |
+| Task has `ai-locked` label     | Enrichment skipped, `ai-to-process` removed                                                                         | No AI processing                  |
+| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes                                                                          | Pending tasks wait                |
+| Warm slot dies                 | Marked dead; queued enrichments fail as attempts (retried, then `ai-failed`); Quick Take falls back to a cold query | Enrichment retried next cycle     |
+| Semaphore full                 | Request queued FIFO, times out after 30 seconds                                                                     | Loading indicator, eventual error |
+| What's Next cache hit          | Cached result returned immediately                                                                                  | Instant response                  |
+| Insights session crash         | Stale session auto-failed after 20 minutes                                                                          | User can re-trigger               |
 
 **No auto-retry on failure.** Failed tasks stay failed (after 2 attempts) to prevent cost runaway.
 

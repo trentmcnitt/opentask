@@ -32,6 +32,42 @@
  * retries; the quick-take slot RETURNS NULL so its caller falls back to a
  * cold subprocess.
  *
+ * State transitions, and who settles every waiting caller
+ * ------------------------------------------------------
+ * The rule: no caller may ever wait on a promise that nothing will settle.
+ * The only wait without a timer of its own is a FIFO caller queued behind a
+ * busy or initializing slot, so every transition below either wakes the
+ * queue, rejects it ("drains" it), or hands it to an init whose outcome is
+ * guaranteed to do one or the other. Abandoning a subprocess (recycle, init
+ * failure, circuit breaker, shutdown) always bumps `generation`, resolves the
+ * in-flight caller with null, and closes the SDK query, which kills the CLI
+ * process — closing stdin alone does not stop one that has hung.
+ *
+ *   uninitialized/dead → initializing   init() starts a subprocess (from dead
+ *                                       only once the re-init backoff expires)
+ *   initializing → available            warmup passed; onWarm wakes the queue
+ *   initializing → dead                 warmup failed, timed out, the stream
+ *                                       ended or errored before warmup, or
+ *                                       init threw: markInitFailure abandons
+ *                                       the subprocess and DRAINS the queue
+ *   available → busy                    a caller claims the slot
+ *   busy → available / busy             a result was delivered; release wakes
+ *                                       the next waiter or frees the slot
+ *   busy → initializing (recycle)       max reuses reached, the stream ended
+ *                                       or errored, or the in-flight query
+ *                                       TIMED OUT (the subprocess is treated
+ *                                       as hung). Waiters stay queued: the
+ *                                       recycle's init either warms (wakes
+ *                                       them) or fails (drains them)
+ *   any → dead (circuit breaker)        5 recycles in 5s; DRAINS the queue
+ *   any → dead (shutdown)               DRAINS the queue; no re-init after
+ *
+ * The consumer of a subprocess that fails before its warmup does not recycle:
+ * init is still waiting on that warmup and owns the failure (one failure, one
+ * backoff step, one drain). A FIFO caller woken by release whose channel has
+ * gone (the slot was abandoned between the wake and its push) throws
+ * SlotChannelMissingError; it never waits.
+ *
  * All mutable state lives on globalThis under the slot's own key, to survive
  * module duplication. Next.js Turbopack may bundle these modules into separate
  * chunks for instrumentation.ts and the API routes, creating independent
@@ -63,9 +99,16 @@ export interface SlotResult {
   text: string | null
 }
 
+/**
+ * The handle `query()` returns. Its `close()` terminates the CLI subprocess
+ * (SIGTERM, then SIGKILL); optional so a test double without it still works.
+ */
+type SlotQuery = AsyncIterable<unknown> & { close?: () => void }
+
 interface SlotInternals {
   state: SlotState
   channel: MessageChannel | null
+  query: SlotQuery | null
   generation: number
   resultCount: number
   resultPromise: Promise<SlotResult | null> | null
@@ -133,10 +176,12 @@ export interface SlotPolicy<S> {
   onFreshSubprocess(ctx: SlotContext<S>): void
   /** The subprocess passed warmup and the slot is available. */
   onWarm(ctx: SlotContext<S>): void
-  /** Init threw (not a failed warmup, which leaves waiters for the next init). */
-  onInitError(ctx: SlotContext<S>): void
-  /** The slot died for good (circuit breaker or shutdown). */
-  onKilled(ctx: SlotContext<S>, reason: string): void
+  /**
+   * The slot became `dead`: init or warmup failed (including the init a
+   * recycle started), the circuit breaker tripped, or shutdown. Every caller
+   * still waiting must be settled here — nothing else will.
+   */
+  onDead(ctx: SlotContext<S>, reason: string): void
 }
 
 /** Thrown by `send()` when the slot has no channel to push the prompt into. */
@@ -211,17 +256,21 @@ export const fifoQueuePolicy: SlotPolicy<FifoQueueState> = {
     }
   },
   shouldSkipResult: () => false,
-  // Left as it was: the caller throws and the slot stays busy until recycled.
-  onChannelMissing: () => {},
+  /**
+   * The caller throws. If it still holds the slot, hand the slot on rather
+   * than leave it busy with no owner and the queue stuck behind it. When the
+   * channel went because the slot was abandoned (recycling or dead), the
+   * recycle's init or the drain owns the queue, so the state is left alone.
+   */
+  onChannelMissing(ctx) {
+    if (ctx.g.slot.state === 'busy') fifoQueuePolicy.release(ctx)
+  },
   onFreshSubprocess: () => {},
   onWarm(ctx) {
     // Wake any waiters queued during a previous recycle cycle
     if (ctx.g.policy.waitQueue.length > 0) fifoQueuePolicy.release(ctx)
   },
-  onInitError({ g, name }) {
-    rejectWaiters(g.policy, `${name} slot init failed`)
-  },
-  onKilled({ g }, reason) {
+  onDead({ g }, reason) {
     rejectWaiters(g.policy, reason)
   },
 }
@@ -273,8 +322,7 @@ export const latestWinsPolicy: SlotPolicy<LatestWinsState> = {
     g.policy.skipCount = 0
   },
   onWarm: () => {},
-  onInitError: () => {},
-  onKilled: () => {},
+  onDead: () => {},
 }
 
 // --- Factory ---
@@ -311,6 +359,7 @@ function freshSlotInternals(): SlotInternals {
   return {
     state: 'uninitialized',
     channel: null,
+    query: null,
     generation: 0,
     resultCount: 0,
     resultPromise: null,
@@ -388,12 +437,28 @@ function resetResultPromise(g: { slot: SlotInternals }): void {
   })
 }
 
-function closeChannel<TOp, S>({ g, config }: Runtime<TOp, S>): void {
+/**
+ * Let go of the current subprocess for good: bump the generation (its
+ * consumer stops without touching the slot), settle whoever was waiting on it
+ * (the in-flight caller gets null, a pending warmup fails), then kill the CLI
+ * process and close its input. The caller sets the next state.
+ */
+function abandonSubprocess<TOp, S>({ g, config }: Runtime<TOp, S>): void {
+  g.slot.generation++
+  g.slot.deliverResult?.(null)
+  g.warmupResolver?.(false)
+  g.warmupResolver = null
+  try {
+    g.slot.query?.close?.()
+  } catch (err) {
+    log.debug('ai', `${config.name} query close failed (subprocess may already be dead):`, err)
+  }
   try {
     g.slot.channel?.close()
   } catch (err) {
     log.debug('ai', `${config.name} channel close failed (subprocess may already be dead):`, err)
   }
+  g.slot.query = null
   g.slot.channel = null
   g.slot.resultPromise = null
   g.slot.deliverResult = null
@@ -438,6 +503,11 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
   if (g.slot.state === 'dead' && Date.now() < g.slot.nextReinitAllowedAt) return
 
   g.initInProgress = true
+  // Anything that abandons this subprocess while init awaits (shutdown) bumps
+  // the generation. Init then stops without touching the slot: whoever
+  // abandoned it has already set the state and settled the callers.
+  const myGeneration = g.slot.generation
+  const abandoned = () => g.slot.generation !== myGeneration
   try {
     g.slot.state = 'initializing'
     g.slot.resultCount = 0
@@ -450,12 +520,14 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
     log.debug('ai', `${label}: warmup sent`)
 
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
+    if (abandoned()) return
     const queryOptions = buildQueryOptions(config)
 
     resetResultPromise(g)
 
     // Start the background consumer
     const stream = query({ prompt: channel.iterable, options: queryOptions })
+    g.slot.query = stream
     consumeStream(rt, stream)
 
     // Wait for warmup validation
@@ -473,13 +545,13 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
     ])
     clearTimeout(warmupTimer)
 
+    // Something abandoned the subprocess during warmup (e.g. SIGTERM)
+    if (abandoned()) return
+
     if (!warmupOk) {
       markInitFailure(rt, 'warmup validation failed', null)
       return
     }
-
-    // Check if something killed the slot during warmup (e.g. SIGTERM during await)
-    if ((g.slot.state as SlotState) === 'dead') return
 
     g.slot.state = 'available'
     g.slot.consecutiveInitFailures = 0
@@ -492,8 +564,7 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
 
     policy.onWarm(ctx)
   } catch (err) {
-    markInitFailure(rt, 'init failed', err)
-    policy.onInitError(ctx)
+    if (!abandoned()) markInitFailure(rt, 'init failed', err)
   } finally {
     g.initInProgress = false
   }
@@ -501,7 +572,15 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
 
 /**
  * Record a failed init/warmup: increment failure count, schedule the next
- * allowed re-init attempt, mark the slot dead, and notify.
+ * allowed re-init attempt, abandon the subprocess (one whose warmup timed out
+ * may still be running), mark the slot dead, reject every queued caller, and
+ * notify.
+ *
+ * Rejecting the queue is what keeps a failed init from stranding callers.
+ * Nothing else would wake them: the next init only runs when a new request
+ * arrives, and the backoff holds even that back. A recycle's init counts too:
+ * callers queued behind it fail here, each as an ordinary failed attempt for
+ * its caller (enrichment retries, then marks the task ai-failed).
  *
  * Both slots alert. Quick take falls back to a cold query when its slot is
  * dead, so the user still gets a result — but every quick take then pays
@@ -509,15 +588,14 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
  * broken CLI) usually hits enrichment next. Both use the `slot-failure`
  * category, so they share one rate limit in error-notify.
  */
-function markInitFailure<TOp, S>(
-  { g, label }: Runtime<TOp, S>,
-  reason: string,
-  err: unknown,
-): void {
+function markInitFailure<TOp, S>(rt: Runtime<TOp, S>, reason: string, err: unknown): void {
+  const { g, label, policy, ctx } = rt
   g.slot.consecutiveInitFailures++
   const backoffMs = computeReinitBackoff(g.slot.consecutiveInitFailures)
   g.slot.nextReinitAllowedAt = Date.now() + backoffMs
+  abandonSubprocess(rt)
   g.slot.state = 'dead'
+  policy.onDead(ctx, `${label} ${reason}`)
   log.error(
     'ai',
     `${label} ${reason} (attempt ${g.slot.consecutiveInitFailures}, next attempt in ${Math.round(backoffMs / 1000)}s):`,
@@ -549,6 +627,7 @@ async function send<TOp, S>(
 
   g.currentOp = op
   g.currentStartedAt = new Date()
+  const myGeneration = g.slot.generation
 
   let queryTimer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -559,14 +638,29 @@ async function send<TOp, S>(
     }
     g.slot.channel.push(prompt)
 
-    // Wait for the result with a timeout
+    // Wait for the result with a timeout.
+    //
+    // A query that times out means the subprocess has stopped answering, so
+    // it is recycled (killed and replaced), not left busy. Left busy, it
+    // would hold the slot forever: FIFO callers queued behind it have no
+    // timer of their own, and a new quick take would supersede into the same
+    // hung process and time out in turn. The recycle's init either serves the
+    // queue from a fresh process or rejects it (see the header).
+    //
+    // Only the caller holding the slot ever has this timer running — FIFO
+    // waiters start theirs once woken, and a superseded quick take settles at
+    // once — and the generation check skips the recycle if the subprocess was
+    // already replaced.
     const result = await Promise.race([
       g.slot.resultPromise,
       new Promise<null>((_, reject) => {
-        queryTimer = setTimeout(
-          () => reject(new Error(`${config.name} query timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        )
+        queryTimer = setTimeout(() => {
+          reject(new Error(`${config.name} query timed out after ${timeoutMs}ms`))
+          if (g.slot.generation === myGeneration) {
+            log.error('ai', `${label} query timed out after ${timeoutMs}ms — recycling subprocess`)
+            recycleSlot(rt)
+          }
+        }, timeoutMs)
       }),
     ])
 
@@ -594,6 +688,18 @@ function parseResultMessage(message: { subtype?: string }): SlotResult {
   return result
 }
 
+/** Check the first (warmup) result and hand the verdict to the waiting init. */
+function settleWarmup<TOp, S>({ g, label, config }: Runtime<TOp, S>, result: SlotResult): boolean {
+  const warmupOk = config.validateWarmup(result)
+  log.debug(
+    'ai',
+    `${label}: warmup ${warmupOk ? 'OK' : 'FAILED'} (text: ${result.text?.slice(0, 50)}, structured: ${result.structuredOutput ? Object.keys(result.structuredOutput).join(',') : 'none'})`,
+  )
+  g.warmupResolver?.(warmupOk)
+  g.warmupResolver = null
+  return warmupOk
+}
+
 /**
  * Background consumer loop.
  *
@@ -602,6 +708,11 @@ function parseResultMessage(message: { subtype?: string }): SlotResult {
  * count toward reuses. After getMaxReuses() delivered results: recycle.
  * A consumer from an older generation (the slot recycled or shut down under
  * it) stops without touching the current subprocess's state.
+ *
+ * If the stream fails or ends before a warmup result was accepted, the
+ * consumer only fails the warmup (at once, rather than leaving init to wait
+ * out WARMUP_TIMEOUT_MS) and does not recycle: init is waiting on that warmup
+ * and records the failure itself — one backoff step, one drain of the queue.
  */
 async function consumeStream<TOp, S>(
   rt: Runtime<TOp, S>,
@@ -610,30 +721,24 @@ async function consumeStream<TOp, S>(
   const { g, policy, ctx, label, config } = rt
   const myGeneration = g.slot.generation
   const iterator = stream[Symbol.asyncIterator]()
+  let warmedUp = false
   try {
     let resultCount = 0
     let iterResult: IteratorResult<unknown>
     while (!(iterResult = await iterator.next()).done) {
+      // Stale consumer guard
+      if (g.slot.generation !== myGeneration) return
+
       const message = iterResult.value as { type: string; subtype?: string }
       if (message.type !== 'result') continue
       resultCount++
       const result = parseResultMessage(message)
 
       if (resultCount === 1) {
-        // Warmup result
-        const warmupOk = config.validateWarmup(result)
-        log.debug(
-          'ai',
-          `${label}: warmup ${warmupOk ? 'OK' : 'FAILED'} (text: ${result.text?.slice(0, 50)}, structured: ${result.structuredOutput ? Object.keys(result.structuredOutput).join(',') : 'none'})`,
-        )
-        g.warmupResolver?.(warmupOk)
-        g.warmupResolver = null
-        if (!warmupOk) break
+        warmedUp = settleWarmup(rt, result)
+        if (!warmedUp) break
         continue
       }
-
-      // Stale consumer guard
-      if (g.slot.generation !== myGeneration) return
 
       if (policy.shouldSkipResult(ctx)) continue
 
@@ -656,11 +761,13 @@ async function consumeStream<TOp, S>(
     if (g.slot.generation !== myGeneration) return
     log.error('ai', `${label} stream error:`, err)
     g.slot.deliverResult?.(null)
-    g.warmupResolver?.(false)
-    g.warmupResolver = null
   } finally {
     if (g.slot.generation !== myGeneration) {
       await iterator.return?.()
+    } else if (!warmedUp) {
+      // Init owns a failure before warmup (see above)
+      g.warmupResolver?.(false)
+      g.warmupResolver = null
     } else {
       recycleSlot(rt)
     }
@@ -703,23 +810,24 @@ function recycleSlot<TOp, S>(rt: Runtime<TOp, S>): void {
       `${label} died (circuit breaker)`,
       `Recycled ${cb.newCount} times rapidly`,
     )
-    g.slot.generation++
-    g.slot.deliverResult?.(null)
+    abandonSubprocess(rt)
     g.slot.state = 'dead'
-    closeChannel(rt)
-    policy.onKilled(ctx, `${label} died (circuit breaker)`)
+    policy.onDead(ctx, `${label} died (circuit breaker)`)
     return
   }
 
-  // Normal recycle: close old, reinit
-  g.slot.generation++
-  g.slot.deliverResult?.(null)
-  closeChannel(rt)
+  // Normal recycle: kill the old subprocess, reinit
+  abandonSubprocess(rt)
   g.slot.resultCount = 0
   policy.onFreshSubprocess(ctx)
   g.slot.state = 'initializing'
 
-  // A FIFO policy's waiters stay queued — they're woken after reinit completes
+  // A FIFO policy's waiters stay queued: they're woken after reinit
+  // completes, or rejected if it fails (markInitFailure). The scheduled init
+  // always runs: the state is `initializing` (not available, busy or dead),
+  // and no init is in flight — consumers only recycle after warmup, so the
+  // init that started this subprocess has finished. Only a shutdown in
+  // between stops it, and shutdown drains the queue itself.
   log.info('ai', `${label} recycling...`)
   setTimeout(() => {
     init(rt).catch((err) => {
@@ -748,22 +856,17 @@ function shutdown<TOp, S>(rt: Runtime<TOp, S>): void {
   const { g, policy, ctx, label } = rt
   log.info('ai', `${label}: shutting down`)
   g.shutdownInitiated = true
-  g.slot.generation++
-  g.slot.deliverResult?.(null)
-  g.warmupResolver?.(false)
-  g.warmupResolver = null
+  abandonSubprocess(rt)
   g.slot.state = 'dead'
-  closeChannel(rt)
-  policy.onKilled(ctx, `${label} shutting down`)
+  policy.onDead(ctx, `${label} shutting down`)
 }
 
-function resetForTests<TOp, S>({ g, policy }: Runtime<TOp, S>): void {
-  try {
-    g.slot.channel?.close()
-  } catch {
-    // Ignore
-  }
-  g.slot = freshSlotInternals()
+function resetForTests<TOp, S>(rt: Runtime<TOp, S>): void {
+  const { g, policy } = rt
+  abandonSubprocess(rt)
+  // Keep the generation counting up, so a consumer or init left over from an
+  // earlier test can never mistake the fresh slot for its own.
+  g.slot = { ...freshSlotInternals(), generation: g.slot.generation }
   g.activatedAt = null
   g.totalRequests = 0
   g.totalRecycles = 0

@@ -17,6 +17,8 @@ export interface FakeStreamControl {
   error(err: Error): void
   /** Whether return() was called on the iterator (cleanup verification) */
   returnCalled: boolean
+  /** Whether the slot called close() on the query (it kills the real subprocess) */
+  closeCalled: boolean
 }
 
 export function createFakeStream(): FakeStreamControl {
@@ -25,6 +27,18 @@ export function createFakeStream(): FakeStreamControl {
   let done = false
   const pending: Array<{ type: 'value'; value: unknown } | { type: 'error'; error: Error }> = []
   let _returnCalled = false
+  let _closeCalled = false
+
+  /** End the stream: a pending next() resolves done, later ones too. */
+  function finish(): void {
+    done = true
+    if (resolve) {
+      const r = resolve
+      resolve = null
+      reject = null
+      r({ value: undefined as unknown, done: true })
+    }
+  }
 
   const stream = {
     [Symbol.asyncIterator]() {
@@ -50,13 +64,7 @@ export function createFakeStream(): FakeStreamControl {
 
     return(): Promise<IteratorResult<unknown>> {
       _returnCalled = true
-      done = true
-      if (resolve) {
-        const r = resolve
-        resolve = null
-        reject = null
-        r({ value: undefined as unknown, done: true })
-      }
+      finish()
       return Promise.resolve({ value: undefined as unknown, done: true })
     },
 
@@ -72,10 +80,23 @@ export function createFakeStream(): FakeStreamControl {
     },
   } as AsyncGenerator<unknown, void>
 
+  // Like the SDK's Query.close(): terminates the subprocess, so no further
+  // messages arrive and the iterator ends.
+  Object.assign(stream, {
+    close(): void {
+      _closeCalled = true
+      pending.length = 0
+      finish()
+    },
+  })
+
   return {
     stream,
     get returnCalled() {
       return _returnCalled
+    },
+    get closeCalled() {
+      return _closeCalled
     },
 
     emit(message: unknown) {
@@ -91,13 +112,7 @@ export function createFakeStream(): FakeStreamControl {
     },
 
     end() {
-      done = true
-      if (resolve) {
-        const r = resolve
-        resolve = null
-        reject = null
-        r({ value: undefined as unknown, done: true })
-      }
+      finish()
     },
 
     error(err: Error) {
