@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>A self-hosted task manager with deep AI integration, a native iOS app, and a full REST API.</strong><br>
+  <strong>A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac.</strong><br>
   Single container. SQLite. Your data, your server.
 </p>
 
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  🌐 Web (PWA) · 📱 iOS (native) · ⌚ Apple Watch · 🔌 REST API · OpenAPI 3.1
+  🌐 Web (PWA) · 📱 iOS (native, with widgets) · ⌚ Apple Watch · 💻 Mac · 🔌 REST API · OpenAPI 3.1
 </p>
 
 <p align="center">
@@ -34,17 +34,18 @@
 > [!NOTE]
 > **Early release** — Please bear with the rough edges. 👷 Expect occasional bugs and other issues as things get ironed out. Please [open an issue](https://github.com/trentmcnitt/opentask/issues) if you run into any problems.
 
-OpenTask is a self-hosted task manager I built for personal use. I've been using it daily, and it's reached a point where I'm excited to open it up.
+OpenTask is a self-hosted, AI-powered task and habit manager I built for personal use. I've been using it daily, and it's reached a point where I'm excited to open it up.
 
 It runs as a single Docker container with SQLite — no Postgres, no Redis, no external services to manage. Your data lives in one file on your server.
 
 ## ✨ Features
 
-### 📱 The app (web + iOS)
+### 📱 The apps (web, iPhone, Apple Watch, Mac)
 
 - **Mobile-first PWA** — Installable on iOS and Android. Designed for phones first, looks great on desktop too.
 - **Snooze everything** — Bulk snooze all overdue tasks in one tap. Individual snooze with presets, fine-grained adjustments, or custom times.
-- **Native iOS app** — Real push notifications with interactive snooze actions, including Apple Watch support. (Source included — not on the App Store.)
+- **Native Apple apps** — An iPhone app with home-screen widgets and rich notifications (snooze grids and period checklists right from the lock screen), a full Apple Watch app with its own pages and Smart Stack widgets, and a Mac app with widgets. (Source included — not on the App Store.)
+- **Reminders and quotas** — Recurring reminders grouped into periods of the day (morning, afternoon, evening — yours to edit), checked off as a list. Quotas track a count toward a target per day, week, month, or year ("read 5 times a week").
 - **Full undo/redo** — Every action is logged and reversible.
 - **Trash & archive** — Deleted tasks go to trash, completed tasks go to archive. Nothing is permanently lost until you say so.
 
@@ -67,9 +68,11 @@ Every task gets AI-generated commentary and an attention score. AI sees your ful
   <img src="docs/images/task-card-ai-insight.png" alt="Task card with AI commentary and attention score" width="400">
 </p>
 
-- **Commentary + scoring** — Each task gets a contextual one-liner and an attention score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
-- **Natural language input** — Type tasks in plain English. AI extracts the title, due date, recurrence, priority, project, and notes.
+- **Natural language input** — Type or dictate tasks in plain English. AI extracts the title, due date, recurrence, priority, project, and notes.
+- **Quick Take** — A one-liner as you add a task, aware of the rest of your list.
 - **What's Next** — Recommendations that surface overlooked or forgotten tasks.
+- **Insights** — Each task gets a contextual one-liner and a 0–100 attention score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
+- **Tested, not hoped** — A 150+ scenario eval suite checks every feature: schema and field checks first, then an LLM judge scoring each answer against a rubric.
 - **Entirely optional** — Disabled by default. Turn it off and every trace of AI disappears from the UI. Works with Claude, GPT-4.1-mini, Grok, DeepSeek, Ollama, and others.
 
 ## 🚀 Quick Start (Docker)
