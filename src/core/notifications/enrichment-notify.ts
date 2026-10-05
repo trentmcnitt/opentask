@@ -45,8 +45,12 @@
  *   reason the enrichment pipeline's state is on globalThis) cannot double-send.
  *   The set is in memory; a restart empties it, which only matters if the same
  *   task is enriched again inside its 10 minutes after the restart.
- * - NOT on failure: the `ai-failed` path never calls this. Trent did not ask
- *   for failure alerts; the task still shows in the app with its raw title.
+ * - NOT on failure: the `ai-failed` path never calls this. A failure has its
+ *   own push since 2026-10-05 — "AI couldn't process a task", with the text
+ *   the user typed — in `enrichment-failed-notify.ts`. It is not governed by
+ *   the switch below (only by `notifications_enabled`), is not limited to the
+ *   Just added window, and has its own collapse id (`ai-failed-<id>`), so the
+ *   two never replace each other.
  * - NOT when the user's enrichment mode is off (no model ran — the caller
  *   passes nothing), for quotas (not "added" in the card's sense and the body
  *   would say nothing), or for done/deleted tasks.

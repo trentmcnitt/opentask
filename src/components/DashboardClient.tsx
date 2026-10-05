@@ -1012,7 +1012,7 @@ function HomeContent({
    * - `?task=<id>` alone: a NOTIFICATION tap — the iPhone and Mac apps
    *   (`WebViewManager.navigateToTask`, i.e. `DeepLinkRouter.notificationTaskPath`)
    *   and every Web Push click (`overdue-checker.ts`, `enrichment-notify.ts`,
-   *   `notifications/test/route.ts`). Brings the row into view, flashes it and
+   *   `enrichment-failed-notify.ts`, `notifications/test/route.ts`). Brings the row into view, flashes it and
    *   SELECTS it, so the action bar is up for the task the notification was
    *   about. Opens nothing (Trent, 2026-09-29; it used to open the quick
    *   panel). If a search, filter or the Today view hides the task, that is

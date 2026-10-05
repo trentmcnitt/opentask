@@ -466,6 +466,56 @@ export async function sendApnsEnrichedNotification(
   )
 }
 
+/**
+ * The "AI couldn't process" notification for a task whose enrichment failed
+ * for good (`enrichment-failed-notify.ts`). The same delivery as the "AI
+ * finished" one above, on purpose — a banner without sound
+ * (`interruption-level: active`, no `sound`, APNs priority 10, no `badge`),
+ * category `TASK_ADDED` (Done and Delete, through the shared
+ * `NotificationActionRunner`, which keys on `taskId` alone, so the apps need
+ * no change), and `data.taskId` for the tap and the `dismiss` silent push.
+ *
+ * Only the ids differ: `threadId` and `collapseId` are `ai-failed-<id>`, never
+ * `enriched-<id>`, so a failure alert never replaces or is replaced by an "AI
+ * finished" push for the same task (a re-enrichment can produce both, at
+ * different times), and two failure alerts for one task replace each other
+ * rather than stack.
+ */
+export function buildEnrichmentFailedNotification(
+  deviceToken: string,
+  topic: string,
+  payload: ApnsEnrichedPayload,
+): Notification {
+  const id = `ai-failed-${payload.taskId}`
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    category: TASK_ADDED_CATEGORY,
+    threadId: id,
+    collapseId: id,
+    priority: Priority.immediate,
+    data: { taskId: payload.taskId },
+    aps: { 'interruption-level': 'active' },
+  })
+}
+
+export async function sendApnsEnrichmentFailedNotification(
+  userId: number,
+  payload: ApnsEnrichedPayload,
+): Promise<void> {
+  await sendToAllDevices(
+    userId,
+    (device) => buildEnrichmentFailedNotification(device.device_token, device.bundle_id, payload),
+    'enrichment-failed notifications',
+    (devices) => {
+      log.info(
+        'apns',
+        `Sending enrichment-failed notification for task ${payload.taskId} to ${devices.length} device(s)`,
+      )
+    },
+  )
+}
+
 export interface ApnsSweepResultPayload {
   title: string
   body: string

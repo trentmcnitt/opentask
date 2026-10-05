@@ -48,6 +48,7 @@ vi.mock('@/core/notifications/apns', async (orig) => ({
   ...(await orig<typeof import('@/core/notifications/apns')>()),
   isApnsConfigured: vi.fn().mockReturnValue(true),
   sendApnsEnrichedNotification: vi.fn().mockResolvedValue(undefined),
+  sendApnsEnrichmentFailedNotification: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { getDb } from '@/core/db'
@@ -264,6 +265,8 @@ describe('exactly once', () => {
 })
 
 describe('sends nothing', () => {
+  // A failure has its own push ("AI couldn't process a task",
+  // ai-enrichment-failed-notify.test.ts) — but never this one.
   test('when enrichment fails for good (ai-failed)', async () => {
     const id = newTask('something vague')
     enrichmentQueryMock.mockRejectedValue(new Error('model down'))
@@ -273,7 +276,7 @@ describe('sends nothing', () => {
 
     expect(getTaskById(id)!.labels).toContain('ai-failed')
     expect(apns).not.toHaveBeenCalled()
-    expect(webPush).not.toHaveBeenCalled()
+    expect(webPush.mock.calls.map(([, payload]) => payload.tag)).not.toContain(`enriched-${id}`)
   })
 
   test('for a task added more than 10 minutes ago (the safety net sweeping an old task)', async () => {
