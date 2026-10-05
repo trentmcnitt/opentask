@@ -36,8 +36,12 @@ process.env.APNS_BUNDLE_ID = 'io.mcnitt.opentask'
 
 const { getDb, resetDb } = await import('@/core/db')
 const { PushType, Priority } = await import('apns2')
-const { buildEnrichedNotification, sendApnsEnrichedNotification } =
-  await import('@/core/notifications/apns')
+const {
+  buildEnrichedNotification,
+  sendApnsEnrichedNotification,
+  buildEnrichmentFailedNotification,
+  sendApnsEnrichmentFailedNotification,
+} = await import('@/core/notifications/apns')
 
 const USER = 1
 
@@ -100,6 +104,48 @@ describe('the enriched-task APNs payload', () => {
     expect(sent.map((n) => n.deviceToken).sort()).toEqual(['mac', 'phone', 'watch'])
     for (const n of sent) {
       expect(n.buildApnsOptions().aps['interruption-level']).toBe('active')
+    }
+  })
+})
+
+// The "AI couldn't process" push (enrichment-failed-notify.ts): the same
+// delivery, its own ids — so it never replaces, or is replaced by, the "AI
+// finished" push for the same task.
+describe('the enrichment-failed APNs payload', () => {
+  const payload = {
+    title: "AI couldn't process a task",
+    body: 'call the dentist tomorrow 9am',
+    taskId: 42,
+  }
+
+  test('is a banner without sound, immediate, TASK_ADDED, with ai-failed-<id> ids', () => {
+    const n = buildEnrichmentFailedNotification('tok', 'io.mcnitt.opentask', payload)
+
+    expect(n.pushType).toBe(PushType.alert)
+    expect(n.priority).toBe(Priority.immediate)
+    expect(n.buildApnsOptions()).toEqual({
+      aps: {
+        alert: { title: "AI couldn't process a task", body: 'call the dentist tomorrow 9am' },
+        category: 'TASK_ADDED',
+        'thread-id': 'ai-failed-42',
+        'interruption-level': 'active',
+      },
+      taskId: 42,
+    })
+    expect(n.options.collapseId).toBe('ai-failed-42')
+    expect(n.options.topic).toBe('io.mcnitt.opentask')
+  })
+
+  test('goes to every registered device, the watch included', async () => {
+    addDevice('phone', 'io.mcnitt.opentask')
+    addDevice('mac', 'io.mcnitt.opentask.mac')
+    addDevice('watch', 'io.mcnitt.opentask.watchapp')
+
+    await sendApnsEnrichmentFailedNotification(USER, payload)
+
+    expect(sent.map((n) => n.deviceToken).sort()).toEqual(['mac', 'phone', 'watch'])
+    for (const n of sent) {
+      expect(n.options.collapseId).toBe('ai-failed-42')
     }
   })
 })

@@ -63,23 +63,24 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 
 ### Files
 
-| File                                          | Purpose                                                                                       |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/core/notifications/overdue-checker.ts`   | Unified overdue checker with consolidation (all priorities)                                   |
-| `src/core/notifications/web-push.ts`          | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
-| `src/core/notifications/apns.ts`              | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
-| `src/core/notifications/dismiss.ts`           | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                   |
-| `src/core/notifications/badge-state.ts`       | Last badge sent per user — the overdue checker's change gate                                  |
-| `src/core/notifications/slot-reminders.ts`    | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
-| `src/core/notifications/slot-nags.ts`         | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
-| `src/core/notifications/enrichment-notify.ts` | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                   |
-| `src/core/notifications/sweep-feedback.ts`    | Quiet bulk snooze feedback push (`planSweepFeedback`, `sendSweepFeedback`)                    |
-| `src/hooks/usePushSubscription.ts`            | Client-side push subscription management hook                                                 |
-| `src/app/api/push/subscribe/route.ts`         | Push subscription storage endpoint                                                            |
-| `src/app/api/push/test/route.ts`              | Quick push test (sends to current user)                                                       |
-| `src/app/api/notifications/actions/route.ts`  | Action callback handler (done, snooze30, snooze, snooze2h)                                    |
-| `src/app/api/notifications/test/route.ts`     | Test notification endpoint (individual, high, bulk, critical)                                 |
-| `src/instrumentation.ts`                      | Cron scheduling                                                                               |
+| File                                                 | Purpose                                                                                       |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/core/notifications/overdue-checker.ts`          | Unified overdue checker with consolidation (all priorities)                                   |
+| `src/core/notifications/web-push.ts`                 | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
+| `src/core/notifications/apns.ts`                     | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
+| `src/core/notifications/dismiss.ts`                  | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                   |
+| `src/core/notifications/badge-state.ts`              | Last badge sent per user — the overdue checker's change gate                                  |
+| `src/core/notifications/slot-reminders.ts`           | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
+| `src/core/notifications/slot-nags.ts`                | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
+| `src/core/notifications/enrichment-notify.ts`        | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                   |
+| `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)    |
+| `src/core/notifications/sweep-feedback.ts`           | Quiet bulk snooze feedback push (`planSweepFeedback`, `sendSweepFeedback`)                    |
+| `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                 |
+| `src/app/api/push/subscribe/route.ts`                | Push subscription storage endpoint                                                            |
+| `src/app/api/push/test/route.ts`                     | Quick push test (sends to current user)                                                       |
+| `src/app/api/notifications/actions/route.ts`         | Action callback handler (done, snooze30, snooze, snooze2h)                                    |
+| `src/app/api/notifications/test/route.ts`            | Test notification endpoint (individual, high, bulk, critical)                                 |
+| `src/instrumentation.ts`                             | Cron scheduling                                                                               |
 
 ## Web Push
 
@@ -239,7 +240,7 @@ Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:
 
 ### Tapping a task notification
 
-Tapping any task notification — overdue, "AI finished", or the test notification — opens the dashboard at the bare `/?task=<id>`: the iPhone and Mac apps load it through `WebViewManager.navigateToTask` (`DeepLinkRouter.notificationTaskPath`), and Web Push carries it as `data.url`. Since 2026-09-29 the dashboard answers it by bringing the task's row on screen, flashing it and **selecting** it, so the floating action bar is up for it. Nothing opens: no quick panel, no sheet. Before, the same URL opened the quick panel. The steps are in `src/lib/task-link.ts`; in short:
+Tapping any task notification — overdue, "AI finished", "AI couldn't process", or the test notification — opens the dashboard at the bare `/?task=<id>`: the iPhone and Mac apps load it through `WebViewManager.navigateToTask` (`DeepLinkRouter.notificationTaskPath`), and Web Push carries it as `data.url`. Since 2026-09-29 the dashboard answers it by bringing the task's row on screen, flashing it and **selecting** it, so the floating action bar is up for it. Nothing opens: no quick panel, no sheet. Before, the same URL opened the quick panel. The steps are in `src/lib/task-link.ts`; in short:
 
 - A folded group is unfolded and a "Show all" cap lifted.
 - A search, filter chip or AI chip that hides the task is cleared, and only then.
@@ -256,9 +257,28 @@ The URL stayed the bare `/?task=<id>` on purpose: every producer of it is a noti
 - the task is not done, deleted, or a quota.
 - the user has `notifications_enabled` and `enrichment_notifications_enabled`, and is not the demo user.
 
-Nothing is sent when enrichment fails (the `ai-failed` path), or when the user's enrichment mode is off (no model ran).
+Nothing is sent when the user's enrichment mode is off (no model ran). An enrichment that fails for good (the `ai-failed` path) gets its own push instead — see the next section.
 
 **Setting.** Settings → Notifications → "Notify when AI finishes a new task" (`users.enrichment_notifications_enabled`, default on; `enrichment_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Shown only when AI is available, greyed out while notifications are off.
+
+## "AI couldn't process" notification (enrichment failures)
+
+Added 2026-10-05. Until then a failed enrichment was silent: the task kept the raw text as its title and a red `ai-failed` label, and the user found out only by opening the app. Now the failure sends one quiet push. Code and rationale: `src/core/notifications/enrichment-failed-notify.ts`.
+
+| Field | Value                                                                                                                                                               |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Title | `AI couldn't process a task` (`… a reminder`, `… a quota`)                                                                                                          |
+| Body  | The text the user typed, as the AI was given it (`original_title`, else `title`), cut at 200 characters with `…` (titles allow 10,000; APNs caps a payload at 4 KB) |
+
+**When.** `handleFailure` in `src/core/ai/enrichment.ts` is the only code that writes `ai-failed`: on the second failed attempt (`MAX_ATTEMPTS`) it swaps `ai-to-process` → `ai-failed`. Both entry points (the fire-and-forget `enrichSingleTask` on create or retry, and the per-minute `processEnrichmentQueue`) announce that attempt after their own cleanup, outside their error handling. A first failure is retried and sends nothing. Unlike "AI finished", there is no Just added window: a retry of an old task that fails again is announced too. It sends only when:
+
+- this failure has not been announced yet. An in-memory set on `globalThis`, checked and filled synchronously before any await. A task's entry is released when the task is claimed for enrichment again (`claimTask` → `releaseEnrichmentFailedNotice`), so a retried task that fails again gets a new alert. Tasks already `ai-failed` before this shipped are never announced: only the transition calls it.
+- the task is still there and still `ai-failed`, not done, not deleted.
+- the user has `notifications_enabled` and is not the demo user. **Not** governed by `enrichment_notifications_enabled` ("Notify when AI finishes a new task"); there is no switch of its own.
+
+**Delivery** is the "AI finished" push's, with its own ids: APNs (`buildEnrichmentFailedNotification`) `interruption-level: active`, no `sound`, priority 10, no `badge`, `category: TASK_ADDED` (Done and Delete; the apps route it by `taskId` like any task notification, so they needed no change), `thread-id` and `apns-collapse-id` `ai-failed-<id>`, `taskId` in the payload. Web Push `urgency: normal`, `tag: ai-failed-<id>`, `silent: true`. Tap → `/?task=<id>` ([Tapping a task notification](#tapping-a-task-notification); a reminder is forwarded to `/reminders`, a quota to `/quotas`). The distinct id means it never replaces, and is never replaced by, an "AI finished" push for the same task. Same devices as "AI finished".
+
+**Outages.** When the model is unreachable (the warm slot `dead` and in its re-init backoff, or the API failing), every pending task reaches `ai-failed` within two attempts, so each one gets its own alert — one per task, never more. The enrichment circuit breaker (5 failures in a minute pauses the queue 5 minutes) spaces them out.
 
 ## Bulk snooze feedback ("what was left overdue")
 
@@ -414,7 +434,7 @@ Both were verified by building each widget extension target directly (`xcodebuil
 Configured in Settings > Notifications:
 
 - Browser Push toggle (subscribe/unsubscribe per device)
-- Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available)
+- Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available). The "AI couldn't process" push for a failed enrichment has no switch of its own: it follows only the master switch
 - Bulk snooze results (the quiet push after a sweep from outside the app left High or Urgent overdue)
 - Auto-snooze intervals (tiered by priority)
 - Test notification buttons (individual, high, bulk, critical)

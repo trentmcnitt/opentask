@@ -4,6 +4,20 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 10-05-26
+
+### A notification when AI can't process a task
+
+**Trent's request:** a failed enrichment was silent. On the second failed attempt the task swaps `ai-to-process` for the red `ai-failed` label and keeps the raw text as its title, and the user only found out by opening the app. Now that moment sends one quiet banner (no sound): "AI couldn't process a task" (or "a reminder", "a quota"), with the text he typed as the body, cut at 200 characters. Tapping it selects the task on the dashboard, and it has the "AI finished" push's Done and Delete buttons (`TASK_ADDED`).
+
+**Which switch.** Trent's call: not the "Notify when AI finishes a new task" switch. That one is about the success push, and a failure nobody hears about is the problem being fixed. It follows only the master notification switch, never goes to the demo user, and has no setting of its own. Nor is it limited to the 10-minute Just added window, as "AI finished" is: a retry of an old task that fails again is worth knowing about too.
+
+**Exactly once per failure.** `handleFailure` is the only code that writes `ai-failed`, and both enrichment paths announce the attempt that wrote it. The once-per-task guard is released when the task is claimed for enrichment again, not after a time window, so a retried task that fails again gets a fresh alert, and a task that was already `ai-failed` before this shipped never gets one. Its collapse id is `ai-failed-<id>`, not `enriched-<id>`, so the two pushes never replace each other.
+
+**Not fixed: a task can still wait in `ai-to-process` forever with no alert.** The warm enrichment slot can stop answering without ever failing. The per-query timeout rejects the caller, but the slot stays `busy`. A failed warmup during a recycle leaves queued callers waiting too. Callers queued behind either never time out, so the per-minute queue cycle stays "running" and every pending task waits until the server restarts. A fix is proposed (recycle the slot on a query timeout, and reject queued callers when a recycle's warmup fails) but not built, because that engine is shared with Quick Take. Also expected: during an outage every pending task reaches `ai-failed` within two attempts, so each one sends its own alert.
+
+---
+
 ## 10-04-26
 
 ### A notification says what a bulk snooze left overdue

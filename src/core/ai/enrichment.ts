@@ -12,7 +12,9 @@
  *       added in the last 10 minutes — one quiet "AI finished" push
  *       (`announceEnrichmentFinished`, src/core/notifications/enrichment-notify.ts)
  *     → Failure attempt 1: keep `ai-to-process` (retry on next cycle)
- *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`
+ *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`, and one
+ *       quiet "AI couldn't process" push — however old the task is
+ *       (`announceEnrichmentFailed`, src/core/notifications/enrichment-failed-notify.ts)
  *   [Task has both `ai-locked` + `ai-to-process`] → skip (ai-locked wins),
  *     remove `ai-to-process`
  *
@@ -63,6 +65,10 @@ import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
 import { validateLabelsExist, filterAutoCreatableLabels } from '@/core/labels'
 import { notifyEnrichmentFinished } from '@/core/notifications/enrichment-notify'
+import {
+  notifyEnrichmentFailed,
+  releaseEnrichmentFailedNotice,
+} from '@/core/notifications/enrichment-failed-notify'
 
 // --- Pipeline state ---
 //
@@ -212,9 +218,14 @@ function removeLabel(taskId: number, label: string): void {
  * Handle enrichment failure for a task.
  *
  * Tracks attempts in-memory. On first failure, keeps `ai-to-process` for retry.
- * On second failure, swaps `ai-to-process` → `ai-failed`.
+ * On second failure, swaps `ai-to-process` → `ai-failed` — the only place that
+ * label is ever written.
+ *
+ * Returns true when this attempt marked the task `ai-failed`, so the caller
+ * announces it (`announceEnrichmentFailed`) once its own cleanup is done —
+ * outside its error handling, as with the success push.
  */
-function handleFailure(taskId: number): void {
+function handleFailure(taskId: number): boolean {
   const attempts = (retryCount.get(taskId) ?? 0) + 1
   retryCount.set(taskId, attempts)
 
@@ -225,12 +236,13 @@ function handleFailure(taskId: number): void {
       'ai',
       `Task ${taskId} enrichment failed after ${MAX_ATTEMPTS} attempts — marked ai-failed`,
     )
-  } else {
-    log.info(
-      'ai',
-      `Task ${taskId} enrichment failed (attempt ${attempts}/${MAX_ATTEMPTS}) — will retry`,
-    )
+    return true
   }
+  log.info(
+    'ai',
+    `Task ${taskId} enrichment failed (attempt ${attempts}/${MAX_ATTEMPTS}) — will retry`,
+  )
+  return false
 }
 
 /**
@@ -243,6 +255,10 @@ function handleFailure(taskId: number): void {
  * `ai-to-process` (someone finished it), is deleted, or is `ai-locked` (in
  * which case the trigger label is removed, as before). The caller owns the
  * claim and must `processingTasks.delete(id)` in a `finally`.
+ *
+ * A claimed task is being enriched again, so an earlier "AI couldn't process"
+ * alert for it is spent (`releaseEnrichmentFailedNotice`): if this run fails
+ * for good as well, that is a new failure and the user hears about it again.
  */
 function claimTask(taskId: number, userId: number): PendingTaskRow | null {
   if (processingTasks.has(taskId)) return null
@@ -266,6 +282,7 @@ function claimTask(taskId: number, userId: number): PendingTaskRow | null {
   }
 
   processingTasks.add(taskId)
+  releaseEnrichmentFailedNotice(taskId)
   return row
 }
 
@@ -340,6 +357,7 @@ export async function processEnrichmentQueue(): Promise<void> {
 
       let succeeded = false
       let modelRan = false
+      let markedFailed = false
       try {
         const outcome = await enrichTask(row)
         const enrichedFields = outcome ?? []
@@ -356,12 +374,9 @@ export async function processEnrichmentQueue(): Promise<void> {
         if (row.is_reminder === 1) emitEnrichmentComplete(row.id, row.user_id, enrichedFields)
       } catch (err) {
         log.error('ai', `Enrichment failed for task ${row.id}:`, err)
-        handleFailure(row.id)
+        markedFailed = handleFailure(row.id)
         failed++
         recordFailure()
-
-        // Stop processing this cycle if circuit breaker tripped
-        if (isCircuitBreakerOpen()) break
       } finally {
         processingTasks.delete(row.id)
       }
@@ -373,6 +388,14 @@ export async function processEnrichmentQueue(): Promise<void> {
       // The "AI finished" push, outside the try so a push failure can never
       // count as an enrichment failure (and trip the circuit breaker).
       if (succeeded && modelRan) announceEnrichmentFinished(row.id, row.user_id)
+      // The "AI couldn't process" push, for the attempt that just marked the
+      // task ai-failed — same placement and reason as the one above.
+      if (markedFailed) announceEnrichmentFailed(row.id, row.user_id)
+
+      // Stop processing this cycle if the circuit breaker tripped. Checked
+      // only after the failed task's sync event and push, so the task that
+      // tripped it is announced like any other.
+      if (!succeeded && isCircuitBreakerOpen()) break
     }
 
     log.info(
@@ -441,6 +464,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
 
   let enrichmentSucceeded = false
   let modelRan = false
+  let markedFailed = false
   let enrichedFields: string[] = []
   try {
     const outcome = await enrichTask(row)
@@ -450,7 +474,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
     enrichmentSucceeded = true
   } catch (err) {
     log.error('ai', `On-demand enrichment failed for task ${row.id}:`, err)
-    handleFailure(taskId)
+    markedFailed = handleFailure(taskId)
   } finally {
     processingTasks.delete(taskId)
   }
@@ -463,13 +487,14 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   // just appearing.
   if (enrichmentSucceeded) emitEnrichmentComplete(taskId, userId, enrichedFields)
   if (enrichmentSucceeded && modelRan) announceEnrichmentFinished(taskId, userId)
+  if (markedFailed) announceEnrichmentFailed(taskId, userId)
 }
 
 /**
  * Fire the "AI finished" push (`notifyEnrichmentFinished`) without awaiting it.
  *
  * Called from BOTH entry points after a successful model run — never from the
- * failure path (`handleFailure` → `ai-failed` sends nothing) and never when the
+ * failure path (that is `announceEnrichmentFailed`, below) and never when the
  * user's enrichment mode is off (`enrichTask` returns null: no model ran).
  * Whether it actually sends — a task added in the last 10 minutes, first time
  * only, the user's settings, not the demo user — is decided there; see the
@@ -478,6 +503,22 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
 function announceEnrichmentFinished(taskId: number, userId: number): void {
   notifyEnrichmentFinished(taskId, userId).catch((err) => {
     log.error('ai', `Enrichment notification failed for task ${taskId}:`, err)
+  })
+}
+
+/**
+ * Fire the "AI couldn't process" push (`notifyEnrichmentFailed`) without
+ * awaiting it.
+ *
+ * Called from BOTH entry points, only for the attempt whose `handleFailure`
+ * marked the task `ai-failed` (the second failure; the first is retried and
+ * says nothing). Whether it actually sends — the user's master notification
+ * switch, not the demo user, once per failure — is decided there; see the
+ * header of `src/core/notifications/enrichment-failed-notify.ts`.
+ */
+function announceEnrichmentFailed(taskId: number, userId: number): void {
+  notifyEnrichmentFailed(taskId, userId).catch((err) => {
+    log.error('ai', `Enrichment-failed notification failed for task ${taskId}:`, err)
   })
 }
 
