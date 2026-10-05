@@ -262,12 +262,12 @@ Nothing is sent when enrichment fails (the `ai-failed` path), or when the user's
 
 ## Bulk snooze feedback ("what was left overdue")
 
-`src/core/notifications/sweep-feedback.ts`, added 2026-10-04. "Snooze all overdue" (`POST /api/tasks/bulk/snooze-overdue`) leaves tasks behind on purpose: P0–P2 always move, P3 (High) only once nothing lower is left in the batch (so a second press takes them), P4 (Urgent) never. The web app's toast says what stayed. Sweeps run from outside the app (the "All +1hr" / "All → <period>" notification buttons on the phone, watch and Mac, the widgets, the watch and Mac menus, Apple Shortcuts) gave no word about it. This push is that word.
+`src/core/notifications/sweep-feedback.ts`, added 2026-10-04. "Snooze all overdue" (`POST /api/tasks/bulk/snooze-overdue`) leaves tasks behind on purpose: P0–P2 always move, P3 (High) only once nothing lower is left in the batch (so a second press takes them), P4 (Urgent) never. The web app's toast says what stayed. Sweeps run from outside the app (the "All +1hr" / "All → <period>" notification buttons on the phone, watch and Mac, the widgets, the watch, the Mac menus, Apple Shortcuts) gave no word about it. This push is that word.
 
 **When.** All of these must hold:
 
 - The request was authenticated with a **Bearer token**. A session cookie (or proxy-header auth) is the web UI, which shows the toast.
-- The request did not send `notify: false`. The iPhone's Home Screen quick actions send it: iOS opens the app for them and the page shows the toast (`QuickActionHandler.swift`, through `APIClient.snoozeOverdue*(notify:)`). The notification buttons never send it, since this push is how they report.
+- The request did not send `notify: false`. The rule: **a surface that shows the sweep's result itself sends `notify: false`**, so the user doesn't get the same news twice. Those are the iPhone's Home Screen quick actions (iOS opens the app and the page shows the toast; `QuickActionHandler.swift`), the watch's bulk snooze sheet (`WatchViewModel.bulkSnoozeOverdue`) and Smart Stack card (`WatchWidgetIntents.swift`), and the Mac menu-bar panel (`MenuBarModel.snoozeAll`), all through `APIClient.snoozeOverdue*(notify:)`. Surfaces that don't show the result keep the push: the notification buttons on every device (this push is how they report), the iPhone widget's "All overdue" bar, and the Mac's Snooze menu items (`MenuActions`, which alert only when nothing moved).
 - Something High or Urgent is **still overdue** after the sweep. If nothing was left, nothing is sent.
 - The user has `notifications_enabled` and `sweep_feedback_notifications_enabled`, and is not the demo user.
 

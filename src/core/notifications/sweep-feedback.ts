@@ -15,10 +15,15 @@
  * - The sweep was authenticated with a **Bearer token** — the native apps and
  *   Shortcuts. A session cookie (or proxy-header auth) is the web UI, which
  *   already shows the toast.
- * - The request did not say `notify: false`. The iPhone's Home Screen quick
- *   actions send it, because they open the app and the page shows the toast
- *   (`QuickActionHandler.swift`); a Shortcut that shows `data.message` itself
- *   can send it too.
+ * - The request did not say `notify: false`. The rule: a surface that shows
+ *   the sweep's result itself sends it, so the user doesn't get it twice —
+ *   the iPhone's Home Screen quick actions (they open the app and the page
+ *   shows the toast, `QuickActionHandler.swift`), the watch's bulk snooze
+ *   sheet and Smart Stack card, and the Mac menu-bar panel. A Shortcut that
+ *   shows `data.message` can send it too. Those that don't show the result
+ *   keep the push: the notification buttons, the iPhone widget's "All
+ *   overdue" bar, and the Mac's Snooze menu items (they alert only when
+ *   nothing moved).
  * - Something High or Urgent was LEFT BEHIND (still overdue after the sweep).
  *   Nothing left → nothing sent: a sweep that cleared everything needs no
  *   report, and a banner saying so would be noise.

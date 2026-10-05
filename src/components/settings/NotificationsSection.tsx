@@ -120,8 +120,8 @@ export function NotificationsSection() {
         <div>
           <div className="text-sm">Bulk snooze results</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            When a snooze from a notification, a widget or a Shortcut leaves High or Urgent tasks
-            overdue
+            When a snooze from a notification, the iPhone widget, the Mac menu or a Shortcut leaves
+            High or Urgent tasks overdue
           </div>
         </div>
         <Switch

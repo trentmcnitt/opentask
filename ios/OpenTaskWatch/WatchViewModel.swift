@@ -586,8 +586,10 @@ final class WatchViewModel: ObservableObject {
         WKInterfaceDevice.current().play(.click)
         do {
             let result = switch target {
-            case .nextPeriod: try await api.snoozeOverdue(slot: "next")
-            case .plusOneHour: try await api.snoozeOverdue(deltaMinutes: 60)
+            // `notify: false`: the sheet shows the result itself, so the server's
+            // feedback push would repeat it (src/core/notifications/sweep-feedback.ts).
+            case .nextPeriod: try await api.snoozeOverdue(slot: "next", notify: false)
+            case .plusOneHour: try await api.snoozeOverdue(deltaMinutes: 60, notify: false)
             }
             WKInterfaceDevice.current().play(result.tasksAffected > 0 ? .success : .failure)
             WidgetCenter.shared.reloadAllTimelines()

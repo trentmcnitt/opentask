@@ -178,7 +178,7 @@ struct SnoozeOverdueNextPeriodIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         await OverdueSweep.run(label: targetLabel.isEmpty ? nil : targetLabel) {
-            try await APIClient.shared.snoozeOverdue(slot: "next")
+            try await APIClient.shared.snoozeOverdue(slot: "next", notify: false)
         }
         return .result()
     }
@@ -197,7 +197,7 @@ struct SnoozeOverduePlusHourIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         await OverdueSweep.run(label: nil) {
-            try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+            try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, notify: false)
         }
         return .result()
     }
@@ -205,7 +205,9 @@ struct SnoozeOverduePlusHourIntent: AppIntent {
 
 /// What both overdue-sweep intents do around their one API call: claim the
 /// sweep so a double tap can't send two, record the server's real counts for
-/// the card's result view, and drop what moved from the cache.
+/// the card's result view, and drop what moved from the cache. Both intents
+/// send `notify: false`: the card shows that result itself, so the server's
+/// feedback push would repeat it (src/core/notifications/sweep-feedback.ts).
 private enum OverdueSweep {
     static func run(label: String?, _ call: () async throws -> APIClient.BulkSnoozeResult) async {
         let claim = "snooze-overdue"

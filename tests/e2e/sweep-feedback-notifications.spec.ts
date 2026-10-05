@@ -1,6 +1,6 @@
 /**
  * Settings → Notifications → "Bulk snooze results" (2026-10-04): the switch for
- * the quiet push sent when a snooze from a notification, a widget or a Shortcut
+ * the quiet push sent when a snooze from a notification, the iPhone widget, the Mac menu or a Shortcut
  * leaves High or Urgent tasks overdue (src/core/notifications/sweep-feedback.ts).
  *
  * Unlike the "AI finished" switch it does not depend on AI, so it shows on
