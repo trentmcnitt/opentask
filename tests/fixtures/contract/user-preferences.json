@@ -32,6 +32,7 @@
     "sleep_time": "22:00",
     "notifications_enabled": true,
     "enrichment_notifications_enabled": true,
+    "sweep_feedback_notifications_enabled": true,
     "critical_alert_volume": 1,
     "ai_context": null,
     "ai_mode": "on",

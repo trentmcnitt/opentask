@@ -136,37 +136,41 @@ final class APIClient {
         ] as [String: Any])
     }
 
+    // `notify` (every `snoozeOverdue*` below): `false` sends `notify: false`,
+    // which stops the server's "what was left overdue" feedback push for this
+    // call (`src/core/notifications/sweep-feedback.ts`). Only for a caller that
+    // shows the result itself — the Home Screen quick actions, which open the
+    // app and its toast (`QuickActionHandler`). `nil` (the default) omits the
+    // field, so the push goes out when something High or Urgent was left.
+
     /// Bulk snooze all overdue tasks by delta minutes.
     /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
-    func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+    func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int? = nil, notify: Bool? = nil) async throws -> BulkSnoozeResult {
         var body: [String: Any] = ["delta_minutes": deltaMinutes]
         if let id = includeTaskId {
             body["include_task_ids"] = [id]
         }
-        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
-        return parseBulkSnoozeResult(data)
+        return try await snoozeOverdue(body: body, notify: notify)
     }
 
     /// Bulk snooze all overdue tasks to an absolute time.
     /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
-    func snoozeOverdue(until: String, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+    func snoozeOverdue(until: String, includeTaskId: Int? = nil, notify: Bool? = nil) async throws -> BulkSnoozeResult {
         var body: [String: Any] = ["until": until]
         if let id = includeTaskId {
             body["include_task_ids"] = [id]
         }
-        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
-        return parseBulkSnoozeResult(data)
+        return try await snoozeOverdue(body: body, notify: notify)
     }
 
     /// Bulk snooze all overdue tasks to tomorrow at the user's morning time
     /// (`tomorrow: true`, resolved server-side — the Home Screen quick action
     /// and the Mac's "Snooze All to Tomorrow" menu item).
     @discardableResult
-    func snoozeOverdueTomorrow() async throws -> BulkSnoozeResult {
-        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: ["tomorrow": true])
-        return parseBulkSnoozeResult(data)
+    func snoozeOverdueTomorrow(notify: Bool? = nil) async throws -> BulkSnoozeResult {
+        try await snoozeOverdue(body: ["tomorrow": true], notify: notify)
     }
 
     /// Bulk snooze all overdue tasks to a time slot, from a notification's
@@ -180,11 +184,17 @@ final class APIClient {
     /// last one today) — the device never computes the time itself.
     /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
-    func snoozeOverdue(slot: String, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+    func snoozeOverdue(slot: String, includeTaskId: Int? = nil, notify: Bool? = nil) async throws -> BulkSnoozeResult {
         var body: [String: Any] = ["slot": slot]
         if let id = includeTaskId {
             body["include_task_ids"] = [id]
         }
+        return try await snoozeOverdue(body: body, notify: notify)
+    }
+
+    private func snoozeOverdue(body: [String: Any], notify: Bool?) async throws -> BulkSnoozeResult {
+        var body = body
+        if let notify { body["notify"] = notify }
         let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
         return parseBulkSnoozeResult(data)
     }

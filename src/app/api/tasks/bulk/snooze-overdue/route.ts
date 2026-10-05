@@ -13,10 +13,16 @@
  * - { until: "ISO8601" }   → explicit absolute target
  * - { tomorrow: true }     → tomorrow at the user's morning_time
  * - {} (empty body)        → user's default_snooze_option preference
+ *
+ * Feedback push: when a Bearer-token caller's sweep leaves High or Urgent tasks
+ * overdue, one quiet notification says so (`planSweepFeedback`, in
+ * `src/core/notifications/sweep-feedback.ts`, has the rules; `notify: false`
+ * suppresses it). `feedback_notification` in the response reports whether one
+ * was sent for this call.
  */
 
 import { NextRequest } from 'next/server'
-import { requireAuth, AuthError } from '@/core/auth'
+import { requireAuth, AuthError, extractBearerToken } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
@@ -30,6 +36,7 @@ import { getDb } from '@/core/db'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { planSweepFeedback, sendSweepFeedback } from '@/core/notifications/sweep-feedback'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -94,6 +101,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         skipped_reminders: 0,
         until,
         message: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
+        feedback_notification: false,
       })
     }
 
@@ -112,6 +120,26 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       includeTaskIds,
       dueBeforeIds: dueNow,
     })
+
+    // The feedback push (sweep-feedback.ts): decided here, after the sweep
+    // committed, and sent without awaiting so the response isn't held up.
+    // `requireAuth` succeeded, so a Bearer header here is a valid token. The
+    // overdue count left follows from arithmetic, as in `stillDueAfterSnooze`.
+    const snoozed = new Set(result.snoozedIds)
+    const feedback = planSweepFeedback(user.id, {
+      viaBearer: extractBearerToken(request.headers.get('Authorization')) !== null,
+      notify: input.notify,
+      counts: {
+        affected: result.tasksAffected,
+        highAffected: result.highSnoozed,
+        high: result.highSkipped,
+        urgent: result.urgentSkipped - result.highSkipped,
+      },
+      until,
+      timezone: user.timezone,
+      totalOverdueCount: dueNow.filter((id) => !snoozed.has(id)).length,
+    })
+    if (feedback) void sendSweepFeedback(user.id, feedback)
 
     notifyDemoEngagement(user.name, 'update')
     return success({
@@ -140,6 +168,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         high: result.highSkipped,
         urgent: result.urgentSkipped - result.highSkipped,
       }),
+      // Whether this call sent the feedback push — so a Shortcut can show
+      // `message` only when no notification is coming.
+      feedback_notification: feedback !== null,
     })
   } catch (err) {
     if (err instanceof AuthError) {

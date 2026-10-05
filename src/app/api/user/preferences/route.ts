@@ -293,6 +293,13 @@ function validateGeneralFields(
     changes.enrichment_notifications_enabled = body.enrichment_notifications_enabled ? 1 : 0
   }
 
+  // The bulk snooze feedback push (sweep-feedback.ts).
+  if (body.sweep_feedback_notifications_enabled !== undefined) {
+    if (typeof body.sweep_feedback_notifications_enabled !== 'boolean')
+      return 'sweep_feedback_notifications_enabled must be a boolean'
+    changes.sweep_feedback_notifications_enabled = body.sweep_feedback_notifications_enabled ? 1 : 0
+  }
+
   if (body.critical_alert_volume !== undefined) {
     const val = body.critical_alert_volume
     if (typeof val !== 'number' || val < 0 || val > 1)
@@ -552,6 +559,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     sleep_time: row.sleep_time,
     notifications_enabled: row.notifications_enabled !== 0,
     enrichment_notifications_enabled: row.enrichment_notifications_enabled !== 0,
+    sweep_feedback_notifications_enabled: row.sweep_feedback_notifications_enabled !== 0,
     critical_alert_volume: row.critical_alert_volume,
     ai_context: row.ai_context,
     ai_mode: row.ai_mode,

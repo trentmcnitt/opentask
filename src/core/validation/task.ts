@@ -479,6 +479,13 @@ export const bulkSnoozeOverdueSchema = z
      */
     tomorrow: z.literal(true).optional(),
     include_task_ids: z.array(z.number().int().positive()).max(10).optional(),
+    /**
+     * `false` suppresses the bulk snooze feedback push for this one call
+     * (`src/core/notifications/sweep-feedback.ts`) — for a caller that shows
+     * the result itself: the iPhone's Home Screen quick actions (the app opens
+     * and shows the toast), or a Shortcut that displays `data.message`.
+     */
+    notify: z.boolean().optional(),
   })
   .refine(
     (data) =>

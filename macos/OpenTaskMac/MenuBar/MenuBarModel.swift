@@ -170,8 +170,10 @@ final class MenuBarModel: ObservableObject {
         Task {
             do {
                 let result = switch target {
-                case .nextPeriod: try await APIClient.shared.snoozeOverdue(slot: "next")
-                case .plusOneHour: try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                // `notify: false`: the note shows the result, so the server's
+                // feedback push would repeat it (src/core/notifications/sweep-feedback.ts).
+                case .nextPeriod: try await APIClient.shared.snoozeOverdue(slot: "next", notify: false)
+                case .plusOneHour: try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, notify: false)
                 }
                 note = Self.sweepSummary(result)
             } catch {

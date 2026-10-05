@@ -13,7 +13,9 @@ import WidgetKit
 /// "Snoozed N tasks · Undo" toast its own snooze does (Trent, 2026-09-28: the
 /// toast "would have acted as a notification and also given me a chance to
 /// undo"). A local notification was tried first and dropped — pointless with
-/// the app already open.
+/// the app already open. For the same reason every call here sends
+/// `notify: false`: the server's bulk snooze feedback push would only repeat
+/// the toast (`src/core/notifications/sweep-feedback.ts`).
 enum QuickActionHandler {
 
     static let log = Logger(subsystem: "io.mcnitt.opentask", category: "quick-actions")
@@ -31,24 +33,24 @@ enum QuickActionHandler {
         switch shortcutItem.type {
         case snooze1hr:
             snooze(label: "+1 hour", completionHandler: completionHandler) {
-                try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, notify: false)
             }
 
         case snoozeNextPeriod:
             snooze(label: "next period", completionHandler: completionHandler) {
-                try await APIClient.shared.snoozeOverdue(slot: "next")
+                try await APIClient.shared.snoozeOverdue(slot: "next", notify: false)
             }
 
         case snooze2hr:
             snooze(label: "+2 hours", completionHandler: completionHandler) {
-                try await APIClient.shared.snoozeOverdue(deltaMinutes: 120)
+                try await APIClient.shared.snoozeOverdue(deltaMinutes: 120, notify: false)
             }
 
         case snoozeTomorrow:
             // It used to send an empty body, i.e. the user's default snooze
             // option — +1 hour for most users, not tomorrow (2026-09-28).
             snooze(label: "tomorrow", completionHandler: completionHandler) {
-                try await APIClient.shared.snoozeOverdueTomorrow()
+                try await APIClient.shared.snoozeOverdueTomorrow(notify: false)
             }
 
         default:

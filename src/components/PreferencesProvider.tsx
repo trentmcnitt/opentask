@@ -80,6 +80,8 @@ interface PreferencesContextValue {
   setNotificationsEnabled: (enabled: boolean) => void
   enrichmentNotificationsEnabled: boolean
   setEnrichmentNotificationsEnabled: (enabled: boolean) => void
+  sweepFeedbackNotificationsEnabled: boolean
+  setSweepFeedbackNotificationsEnabled: (enabled: boolean) => void
   criticalAlertVolume: number
   setCriticalAlertVolume: (volume: number) => void
   aiContext: string | null
@@ -156,6 +158,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setNotificationsEnabled: () => {},
   enrichmentNotificationsEnabled: true,
   setEnrichmentNotificationsEnabled: () => {},
+  sweepFeedbackNotificationsEnabled: true,
+  setSweepFeedbackNotificationsEnabled: () => {},
   criticalAlertVolume: 1.0,
   setCriticalAlertVolume: () => {},
   aiContext: null,
@@ -282,6 +286,7 @@ function makeFieldSetters(set: FieldSet) {
     setSleepTime: field('sleepTime'),
     setNotificationsEnabled: field('notificationsEnabled'),
     setEnrichmentNotificationsEnabled: field('enrichmentNotificationsEnabled'),
+    setSweepFeedbackNotificationsEnabled: field('sweepFeedbackNotificationsEnabled'),
     setCriticalAlertVolume: field('criticalAlertVolume'),
     setAiContext: field('aiContext'),
     setAiMode: field('aiMode'),
@@ -565,6 +570,8 @@ export function useNotificationConfig() {
     setNotificationsEnabled,
     enrichmentNotificationsEnabled,
     setEnrichmentNotificationsEnabled,
+    sweepFeedbackNotificationsEnabled,
+    setSweepFeedbackNotificationsEnabled,
     criticalAlertVolume,
     setCriticalAlertVolume,
   } = useContext(PreferencesContext)
@@ -573,6 +580,8 @@ export function useNotificationConfig() {
     setNotificationsEnabled,
     enrichmentNotificationsEnabled,
     setEnrichmentNotificationsEnabled,
+    sweepFeedbackNotificationsEnabled,
+    setSweepFeedbackNotificationsEnabled,
     criticalAlertVolume,
     setCriticalAlertVolume,
   }

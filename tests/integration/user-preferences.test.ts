@@ -533,6 +533,8 @@ describe('round trip: every remaining preference', () => {
     { field: 'quota_prompts_enabled', initial: true, next: false, invalid: 'off' },
     // The quiet "AI finished" push for a just-added task: on unless turned off.
     { field: 'enrichment_notifications_enabled', initial: true, next: false, invalid: 1 },
+    // The quiet push after a sweep from outside the app left High/Urgent overdue.
+    { field: 'sweep_feedback_notifications_enabled', initial: true, next: false, invalid: 'off' },
   ]
 
   async function readPref(field: string): Promise<unknown> {

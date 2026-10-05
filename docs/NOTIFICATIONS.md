@@ -73,6 +73,7 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 | `src/core/notifications/slot-reminders.ts`    | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
 | `src/core/notifications/slot-nags.ts`         | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
 | `src/core/notifications/enrichment-notify.ts` | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                   |
+| `src/core/notifications/sweep-feedback.ts`    | Quiet bulk snooze feedback push (`planSweepFeedback`, `sendSweepFeedback`)                    |
 | `src/hooks/usePushSubscription.ts`            | Client-side push subscription management hook                                                 |
 | `src/app/api/push/subscribe/route.ts`         | Push subscription storage endpoint                                                            |
 | `src/app/api/push/test/route.ts`              | Quick push test (sends to current user)                                                       |
@@ -259,6 +260,63 @@ Nothing is sent when enrichment fails (the `ai-failed` path), or when the user's
 
 **Setting.** Settings → Notifications → "Notify when AI finishes a new task" (`users.enrichment_notifications_enabled`, default on; `enrichment_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Shown only when AI is available, greyed out while notifications are off.
 
+## Bulk snooze feedback ("what was left overdue")
+
+`src/core/notifications/sweep-feedback.ts`, added 2026-10-04. "Snooze all overdue" (`POST /api/tasks/bulk/snooze-overdue`) leaves tasks behind on purpose: P0–P2 always move, P3 (High) only once nothing lower is left in the batch (so a second press takes them), P4 (Urgent) never. The web app's toast says what stayed. Sweeps run from outside the app (the "All +1hr" / "All → <period>" notification buttons on the phone, watch and Mac, the widgets, the watch, the Mac menus, Apple Shortcuts) gave no word about it. This push is that word.
+
+**When.** All of these must hold:
+
+- The request was authenticated with a **Bearer token**. A session cookie (or proxy-header auth) is the web UI, which shows the toast.
+- The request did not send `notify: false`. The rule: **a surface that shows the sweep's result itself sends `notify: false`**, so the user doesn't get the same news twice. Those are the iPhone's Home Screen quick actions (iOS opens the app and the page shows the toast; `QuickActionHandler.swift`), the watch's bulk snooze sheet (`WatchViewModel.bulkSnoozeOverdue`) and Smart Stack card (`WatchWidgetIntents.swift`), and the Mac menu-bar panel (`MenuBarModel.snoozeAll`), all through `APIClient.snoozeOverdue*(notify:)`. Surfaces that don't show the result keep the push: the notification buttons on every device (this push is how they report), the iPhone widget's "All overdue" bar, and the Mac's Snooze menu items (`MenuActions`, which alert only when nothing moved).
+- Something High or Urgent is **still overdue** after the sweep. If nothing was left, nothing is sent.
+- The user has `notifications_enabled` and `sweep_feedback_notifications_enabled`, and is not the demo user.
+
+The route decides after the sweep commits (`planSweepFeedback`) and sends without awaiting (`void sendSweepFeedback(...)`), so the response isn't held up. `feedback_notification` in the response says whether this call sent one, so a Shortcut can show `data.message` only when no notification is coming.
+
+**What it says.** Counts only, never titles (Trent asked for no Urgent titles on the lock screen). The title follows `bulkSnoozeMessage`, the web toast's wording; the body uses the watch and Mac wording for what stayed (`SweepLine`, `ios/Shared/SweepSummary.swift`); `until` is in the user's timezone (`formatSnoozeTarget`):
+
+| Left behind                      | Title                                                | Body                                                                  |
+| -------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- |
+| High (first press)               | Snoozed 8 tasks until 3:00 PM                        | 2 High still overdue. Snooze again to move the High ones              |
+| High and Urgent                  | Snoozed 8 tasks until 3:00 PM                        | 2 High and 1 Urgent still overdue. Snooze again to move the High ones |
+| Urgent (something moved)         | Snoozed 4 tasks until 3:00 PM                        | 1 Urgent still overdue. Urgent can't be bulk snoozed                  |
+| Urgent (second press moved High) | Snoozed 2 high-priority tasks until tomorrow 9:00 AM | 1 Urgent still overdue. Urgent can't be bulk snoozed                  |
+| Urgent only, nothing snoozable   | Nothing snoozed                                      | 3 Urgent can't be bulk snoozed                                        |
+| High and Urgent, nothing moved   | Nothing snoozed                                      | 2 High and 1 Urgent still overdue                                     |
+| Nothing High or Urgent           | (not sent)                                           |                                                                       |
+
+The last "Nothing snoozed" row has no "snooze again" hint because another press would do the same (it happens only in relative mode, when the lower tasks left have no due date).
+
+**How it is delivered.** A banner without sound, like the "AI finished" push: APNs `interruption-level: active`, no `sound`, priority 10, no `badge` (the sweep already re-synced the badge); Web Push `urgency: normal`, `silent: true`, tag `sweep-result`, tap opens the dashboard. APNs category `TASK_SUMMARY` on thread `ot-tasks`, so it carries the "All +1hr" and period buttons, and long-press opens the content extension's bulk snooze grid (header "N overdue tasks" from `totalOverdueCount`; `overflowCount` carries the same number). Collapse id `sweep-result`: a newer result **replaces** the older one instead of stacking. APNs payload:
+
+```json
+{
+  "aps": {
+    "alert": {
+      "title": "Snoozed 8 tasks until 3:00 PM",
+      "body": "2 High still overdue. Snooze again to move the High ones"
+    },
+    "category": "TASK_SUMMARY",
+    "thread-id": "ot-tasks",
+    "interruption-level": "active"
+  },
+  "kind": "sweep-result",
+  "totalOverdueCount": 2,
+  "overflowCount": 2,
+  "priority": 3
+}
+```
+
+**How it goes away (the lifecycle).** It has no `taskId`, so the per-task `dismiss` push (`dismissNotificationsForTasks`) never clears it. After every sweep the apps clear the banners of the tiers the sweep moved (`dismissNotificationsAfterSweep`, `ios/Shared/NotificationConstants.swift`), and a banner with no `priority` counts as 0 there. This push goes out while the response to that same sweep is on its way back, so with no priority it could arrive first and be cleared by the sweep it reports. So it carries `priority`: the highest tier it names, 4 if any Urgent was left, else 3. As a result:
+
+- The sweep that produced it (which clears P0–P2 banners) leaves it standing.
+- A later sweep that moves the High tier clears a "High still overdue" banner, which is exactly when that banner becomes stale.
+- One that names Urgent is never cleared by a sweep, because Urgent is never swept. It goes when a newer result replaces it, when the user taps or acts on it (the action runner removes a summary's own banner; a body tap clears all), or with the `dismiss-all` sent when the app is opened.
+
+When the user later clears every overdue task some other way (one at a time, in the app), a lingering result banner is not dismissed by the server. That is deliberate and consistent with the overdue summary push: opening the app sends `dismiss-all`, which clears it on every device.
+
+**Setting.** Settings → Notifications → "Bulk snooze results" (`users.sweep_feedback_notifications_enabled`, default on; `sweep_feedback_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Always shown (it doesn't depend on AI), greyed out while notifications are off. One call can opt out with `notify: false` (documented in `docs/openapi.yaml`).
+
 ## iOS platform constraints
 
 These apply regardless of which notification service is used.
@@ -357,5 +415,6 @@ Configured in Settings > Notifications:
 
 - Browser Push toggle (subscribe/unsubscribe per device)
 - Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available)
+- Bulk snooze results (the quiet push after a sweep from outside the app left High or Urgent overdue)
 - Auto-snooze intervals (tiered by priority)
 - Test notification buttons (individual, high, bulk, critical)
