@@ -47,6 +47,7 @@ export interface PreferencesRow {
   sleep_time: string
   notifications_enabled: number
   enrichment_notifications_enabled: number
+  sweep_feedback_notifications_enabled: number
   critical_alert_volume: number
   ai_context: string | null
   ai_mode: string
@@ -101,6 +102,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   sleep_time: '22:00',
   notifications_enabled: 1,
   enrichment_notifications_enabled: 1,
+  sweep_feedback_notifications_enabled: 1,
   critical_alert_volume: 1.0,
   ai_context: null,
   ai_mode: 'on',

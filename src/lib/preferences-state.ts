@@ -73,6 +73,8 @@ export interface Prefs {
   notificationsEnabled: boolean
   /** The quiet "AI finished" push for a just-added task. */
   enrichmentNotificationsEnabled: boolean
+  /** The quiet push after a bulk snooze from outside the app left High/Urgent overdue. */
+  sweepFeedbackNotificationsEnabled: boolean
   criticalAlertVolume: number
   aiContext: string | null
   aiMode: AiMode
@@ -115,6 +117,7 @@ export const DEFAULT_PREFS: Prefs = {
   quotasDetails: false,
   notificationsEnabled: true,
   enrichmentNotificationsEnabled: true,
+  sweepFeedbackNotificationsEnabled: true,
   criticalAlertVolume: 1.0,
   aiContext: null,
   aiMode: 'on',
@@ -190,6 +193,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'quotasDetails', data.quotas_details)
   take(out, 'notificationsEnabled', data.notifications_enabled)
   take(out, 'enrichmentNotificationsEnabled', data.enrichment_notifications_enabled)
+  take(out, 'sweepFeedbackNotificationsEnabled', data.sweep_feedback_notifications_enabled)
   take(out, 'criticalAlertVolume', data.critical_alert_volume)
   take(out, 'aiContext', data.ai_context)
   // Defensive mapping: accept valid modes, anything else present is 'on'.

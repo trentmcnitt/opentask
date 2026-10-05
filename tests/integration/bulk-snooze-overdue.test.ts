@@ -7,7 +7,14 @@
 
 import { describe, test, expect, beforeEach } from 'vitest'
 import { DateTime } from 'luxon'
-import { apiFetch, apiAnon, resetTestData } from './helpers'
+import {
+  apiFetch,
+  apiAnon,
+  resetTestData,
+  baseUrl,
+  sessionCookieFromToken,
+  TOKEN_A,
+} from './helpers'
 
 /** Make task 1 overdue, so the bulk snooze has something to move. */
 async function makeOverdue() {
@@ -196,5 +203,122 @@ describe('Bulk snooze-overdue integration', () => {
       body: { slot: '07:00', until: new Date(Date.now() + 3600_000).toISOString() },
     })
     expect(both.status).toBe(400)
+  })
+})
+
+/**
+ * The feedback push after a sweep that left High or Urgent overdue
+ * (src/core/notifications/sweep-feedback.ts). Delivery can't be observed here
+ * (no APNs or VAPID in the test server), so these read the response's
+ * `feedback_notification` — whether this call decided to send one.
+ */
+describe('Bulk snooze-overdue feedback notification', () => {
+  const PATH = '/api/tasks/bulk/snooze-overdue'
+  const hourAgo = () => new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+  /**
+   * Push every dated task a day out, then make the first two open,
+   * non-reminder tasks overdue at the given priorities — so what the sweep
+   * sees is exactly those two.
+   */
+  async function overdueAt(priorities: number[]): Promise<void> {
+    const tasks = (await (await apiFetch('/api/tasks')).json()).data.tasks as {
+      id: number
+      due_at: string | null
+      is_reminder: boolean
+      progress_target: number
+      is_tracked: boolean
+    }[]
+    for (const task of tasks) {
+      if (task.due_at) {
+        await apiFetch(`/api/tasks/${task.id}`, {
+          method: 'PATCH',
+          body: { due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() },
+        })
+      }
+    }
+    const plain = tasks.filter((t) => !t.is_reminder && !t.is_tracked && t.progress_target <= 1)
+    expect(plain.length).toBeGreaterThanOrEqual(priorities.length)
+    for (const [i, priority] of priorities.entries()) {
+      await apiFetch(`/api/tasks/${plain[i].id}`, {
+        method: 'PATCH',
+        body: { due_at: hourAgo(), priority },
+      })
+    }
+  }
+
+  async function sweep(body: Record<string, unknown> = { delta_minutes: 60 }) {
+    const res = await apiFetch(PATH, { method: 'POST', body })
+    expect(res.status).toBe(200)
+    return (await res.json()).data
+  }
+
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  test('Bearer token, Urgent left behind: sent', async () => {
+    await overdueAt([0, 4])
+    const data = await sweep()
+    expect(data.tasks_affected).toBe(1)
+    expect(data.skipped_urgent - data.skipped_high).toBe(1)
+    expect(data.feedback_notification).toBe(true)
+  })
+
+  test('Bearer token, High left after the first press: sent', async () => {
+    await overdueAt([0, 3])
+    const data = await sweep()
+    expect(data.skipped_high).toBe(1)
+    expect(data.feedback_notification).toBe(true)
+  })
+
+  test('nothing left behind: not sent', async () => {
+    await overdueAt([0, 2])
+    const data = await sweep()
+    expect(data.tasks_affected).toBe(2)
+    expect(data.feedback_notification).toBe(false)
+  })
+
+  test('notify: false: not sent', async () => {
+    await overdueAt([0, 4])
+    const data = await sweep({ delta_minutes: 60, notify: false })
+    expect(data.tasks_affected).toBe(1)
+    expect(data.feedback_notification).toBe(false)
+  })
+
+  test('notify must be a boolean', async () => {
+    const res = await apiFetch(PATH, { method: 'POST', body: { notify: 'no' } })
+    expect(res.status).toBe(400)
+  })
+
+  test('the setting off: not sent', async () => {
+    await overdueAt([4])
+    const off = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { sweep_feedback_notifications_enabled: false },
+    })
+    expect(off.status).toBe(200)
+    try {
+      expect((await sweep()).feedback_notification).toBe(false)
+    } finally {
+      await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { sweep_feedback_notifications_enabled: true },
+      })
+    }
+  })
+
+  test('session cookie (the web UI, which shows a toast): not sent', async () => {
+    await overdueAt([0, 4])
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await fetch(`${baseUrl()}${PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ delta_minutes: 60 }),
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    expect(data.tasks_affected).toBe(1)
+    expect(data.feedback_notification).toBe(false)
   })
 })

@@ -31,8 +31,8 @@ const TEST_BUTTONS: { type: TestType; label: string }[] = [
 ]
 
 /**
- * Settings → Notifications: the master switch, the "AI finished" switch, the
- * per-priority auto-snooze intervals, critical alert volume, this browser's
+ * Settings → Notifications: the master switch, the "AI finished" and "Bulk
+ * snooze results" switches, the per-priority auto-snooze intervals, critical alert volume, this browser's
  * web push subscription, and the test-notification buttons.
  */
 export function NotificationsSection() {
@@ -41,6 +41,8 @@ export function NotificationsSection() {
     setNotificationsEnabled,
     enrichmentNotificationsEnabled,
     setEnrichmentNotificationsEnabled,
+    sweepFeedbackNotificationsEnabled,
+    setSweepFeedbackNotificationsEnabled,
     criticalAlertVolume,
     setCriticalAlertVolume,
   } = useNotificationConfig()
@@ -67,6 +69,14 @@ export function NotificationsSection() {
       checked,
       enrichmentNotificationsEnabled,
       setEnrichmentNotificationsEnabled,
+    )
+
+  const handleSweepFeedbackChange = (checked: boolean) =>
+    savePreferenceField(
+      'sweep_feedback_notifications_enabled',
+      checked,
+      sweepFeedbackNotificationsEnabled,
+      setSweepFeedbackNotificationsEnabled,
     )
 
   return (
@@ -103,6 +113,24 @@ export function NotificationsSection() {
           />
         </div>
       )}
+      {/* The bulk snooze feedback push, a banner with no sound
+          (src/core/notifications/sweep-feedback.ts). Not AI-dependent, so
+          always shown; greyed out while notifications as a whole are off. */}
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <div className="text-sm">Bulk snooze results</div>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            When a snooze from a notification, a widget or a Shortcut leaves High or Urgent tasks
+            overdue
+          </div>
+        </div>
+        <Switch
+          checked={sweepFeedbackNotificationsEnabled}
+          disabled={!notificationsEnabled}
+          onCheckedChange={(checked) => void handleSweepFeedbackChange(checked)}
+          aria-label="Bulk snooze results"
+        />
+      </div>
       <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
         How often to repeat notifications for overdue tasks, by priority tier.
       </p>

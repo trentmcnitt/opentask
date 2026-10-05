@@ -58,14 +58,22 @@ function migrateQuotaPrompts(database: Database.Database): void {
 }
 
 /**
- * The user's switch for the quiet "AI finished" push for a just-added task
- * (2026-09-29, src/core/notifications/enrichment-notify.ts). On by default. A
+ * The user's switches for the quiet notifications: the "AI finished" push for
+ * a just-added task (2026-09-29, src/core/notifications/enrichment-notify.ts)
+ * and the bulk snooze feedback push (sweep-feedback.ts). Both on by default. A
  * function only to keep `runMigrations` from growing further.
  */
 function migrateEnrichmentNotifications(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'enrichment_notifications_enabled')) {
     database.exec(
       'ALTER TABLE users ADD COLUMN enrichment_notifications_enabled INTEGER NOT NULL DEFAULT 1',
+    )
+  }
+  // The bulk snooze feedback push (2026-10-04,
+  // src/core/notifications/sweep-feedback.ts). On by default too.
+  if (!hasColumn(database, 'users', 'sweep_feedback_notifications_enabled')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN sweep_feedback_notifications_enabled INTEGER NOT NULL DEFAULT 1',
     )
   }
 }

@@ -466,6 +466,89 @@ export async function sendApnsEnrichedNotification(
   )
 }
 
+export interface ApnsSweepResultPayload {
+  title: string
+  body: string
+  /** Overdue tasks left after the sweep — the content extension's grid header. */
+  totalOverdueCount: number
+  /** The highest tier left behind: 4 when any Urgent is, else 3 (High). */
+  priority: 3 | 4
+}
+
+/** One sweep result at a time: a newer one replaces the older (`collapseId`). */
+export const SWEEP_RESULT_COLLAPSE_ID = 'sweep-result'
+
+/**
+ * The bulk-snooze feedback notification (sweep-feedback.ts): what a sweep run
+ * from a notification button, a widget or a Shortcut left overdue.
+ *
+ * A banner without sound, exactly like the "AI finished" push above:
+ * `interruption-level: active`, no `sound`, APNs priority 10. No `badge`
+ * either — the sweep itself already re-synced the badge
+ * (`dismissNotificationsForTasks` in bulkSnooze).
+ *
+ * Category `TASK_SUMMARY`, thread `ot-tasks`: the same buttons ("All +1hr",
+ * the period actions) and, on long-press, the same bulk snooze grid as the
+ * overdue summary (`sendApnsSummaryNotification`). The content extension reads
+ * `totalOverdueCount` for the grid's "N overdue tasks" header; `overflowCount`
+ * is its fallback and is sent with the same number.
+ *
+ * `collapseId` `sweep-result`: a second press that still leaves something
+ * behind REPLACES this banner instead of stacking a second one.
+ *
+ * `priority` IS LOAD-BEARING, and not a task's priority. After every sweep
+ * the apps clear the delivered banners of the tiers the sweep moved
+ * (`dismissNotificationsAfterSweep` → `dismissNotifications(atOrBelowPriority:)`
+ * in `ios/Shared/NotificationConstants.swift`), and a banner with no
+ * `priority` counts as 0 there. This push is sent while the response to that
+ * very sweep is still on its way back, so without a priority it could land
+ * first and be cleared by the sweep it reports. With the highest tier it
+ * names, the lifecycle follows the tasks:
+ * - the sweep that produced it (ceiling 2) leaves it standing;
+ * - a later sweep that takes the High tier (ceiling 3) clears a "High still
+ *   overdue" banner, at the moment it goes stale;
+ * - one naming Urgent (4) is never cleared by a sweep, since Urgent is never
+ *   swept: it goes when replaced, when acted on or tapped (the runner removes
+ *   a summary's own banner, a body tap clears all), or with `dismiss-all`
+ *   when the app is opened.
+ * No `taskId`, so the per-task `dismiss` push never matches it.
+ */
+export function buildSweepResultNotification(
+  deviceToken: string,
+  topic: string,
+  payload: ApnsSweepResultPayload,
+): Notification {
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    category: 'TASK_SUMMARY',
+    threadId: NOTIFICATION_THREADS.tasks,
+    collapseId: SWEEP_RESULT_COLLAPSE_ID,
+    priority: Priority.immediate,
+    data: {
+      kind: SWEEP_RESULT_COLLAPSE_ID,
+      totalOverdueCount: payload.totalOverdueCount,
+      overflowCount: payload.totalOverdueCount,
+      priority: payload.priority,
+    },
+    aps: { 'interruption-level': 'active' },
+  })
+}
+
+export async function sendApnsSweepResultNotification(
+  userId: number,
+  payload: ApnsSweepResultPayload,
+): Promise<void> {
+  await sendToAllDevices(
+    userId,
+    (device) => buildSweepResultNotification(device.device_token, device.bundle_id, payload),
+    'sweep result notifications',
+    (devices) => {
+      log.info('apns', `Sending sweep result notification to ${devices.length} device(s)`)
+    },
+  )
+}
+
 /**
  * Whether a registered device shows an app-icon badge. The watch app registers
  * its own APNs token (bundle id `<app>.watchapp`, Apple's naming for a watch

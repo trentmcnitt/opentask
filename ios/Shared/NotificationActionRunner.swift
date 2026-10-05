@@ -199,4 +199,20 @@ protocol NotificationActionAPI {
     func completeSlotReminders(slotId: Int, didKeys: Set<String>) async throws -> Int
 }
 
-extension APIClient: NotificationActionAPI {}
+/// The three sweep requirements are spelled out because `APIClient`'s own
+/// methods take a trailing `notify:` (a defaulted parameter does not satisfy a
+/// protocol requirement). A notification action never passes it: the server's
+/// feedback push is how a sweep run from a notification reports what it left.
+extension APIClient: NotificationActionAPI {
+    func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int?) async throws -> BulkSnoozeResult {
+        try await snoozeOverdue(deltaMinutes: deltaMinutes, includeTaskId: includeTaskId, notify: nil)
+    }
+
+    func snoozeOverdue(until: String, includeTaskId: Int?) async throws -> BulkSnoozeResult {
+        try await snoozeOverdue(until: until, includeTaskId: includeTaskId, notify: nil)
+    }
+
+    func snoozeOverdue(slot: String, includeTaskId: Int?) async throws -> BulkSnoozeResult {
+        try await snoozeOverdue(slot: slot, includeTaskId: includeTaskId, notify: nil)
+    }
+}

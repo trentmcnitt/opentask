@@ -1007,6 +1007,15 @@ paths:
 
         The target is at most one of `until`, `delta_minutes`, `slot` or
         `tomorrow`; with none, the user's default snooze option applies.
+
+        **Feedback notification.** When the call is authenticated with an API
+        token (not a browser session) and the sweep leaves High or Urgent tasks
+        overdue, the server sends one quiet push notification to the user's
+        devices saying how many of each stayed overdue (counts only, never
+        titles). It is not sent when nothing High or Urgent is left, when the
+        user has turned off `sweep_feedback_notifications_enabled` or
+        notifications as a whole, or when the request says `notify: false`.
+        A newer result replaces the older notification.
       requestBody:
         required: true
         content:
@@ -1042,6 +1051,13 @@ paths:
                   items:
                     type: integer
                   description: Tasks to include even if not currently due (e.g. the P4 being acted on).
+                notify:
+                  type: boolean
+                  default: true
+                  description: >-
+                    `false` suppresses the feedback notification for this call,
+                    for a caller that shows the result itself (e.g. a Shortcut
+                    that displays `message`).
       responses:
         '200':
           description: Bulk operation result
@@ -1080,6 +1096,12 @@ paths:
                           "Snoozed 3 tasks (2 high, 1 urgent skipped)" or "No snoozable
                           tasks". For clients that show the result without branching on
                           the counts (Apple Shortcuts).
+                      feedback_notification:
+                        type: boolean
+                        description: >-
+                          Whether this call sent the feedback notification (see
+                          above). A Shortcut can show `message` only when this is
+                          false.
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -3762,6 +3784,18 @@ components:
             due date, priority, recurrence and labels it now has (a reminder's
             period instead of a project). Sent once per task, never for a
             failed enrichment, and only while notifications are enabled.
+        sweep_feedback_notifications_enabled:
+          type: boolean
+          default: true
+          description: |
+            Whether a quiet push notification (a banner without sound) is sent
+            when `POST /api/tasks/bulk/snooze-overdue`, called with an API
+            token (a notification button, a widget, a Shortcut), leaves High
+            or Urgent tasks overdue. It gives counts only, never task titles:
+            e.g. "Snoozed 8 tasks until 3:00 PM" / "2 High and 1 Urgent still
+            overdue. Snooze again to move the High ones". Only while
+            notifications are enabled. A single call can suppress it with
+            `notify: false`.
         week_start:
           type: string
           enum: [sunday, monday]

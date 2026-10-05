@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- The quiet "AI finished" push for a just-added task
   -- (src/core/notifications/enrichment-notify.ts). On by default.
   enrichment_notifications_enabled INTEGER NOT NULL DEFAULT 1,
+  -- The quiet push after a bulk snooze from outside the app that left High or
+  -- Urgent tasks overdue (src/core/notifications/sweep-feedback.ts). On by default.
+  sweep_feedback_notifications_enabled INTEGER NOT NULL DEFAULT 1,
   is_demo       INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
