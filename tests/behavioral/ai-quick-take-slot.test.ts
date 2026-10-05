@@ -564,6 +564,40 @@ describe('error handling', () => {
 
     vi.unstubAllEnvs()
   })
+
+  // Left busy, a hung subprocess would take every later quick take down with
+  // it: each one supersedes into the same dead channel and times out in turn.
+  test('a timeout recycles the hung subprocess; the next quick take gets a fresh one', async () => {
+    await initWithWarmup()
+    const hung = currentStream
+
+    const timedOut = quickTakeSlotQuery('first', { timeoutMs: 500 })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(500)
+    expect((await timedOut)!.text).toBeNull()
+
+    expect(hung.closeCalled).toBe(true)
+    expect(getQuickTakeSlotStats().totalRecycles).toBe(1)
+    // While the replacement warms up, callers take the cold path (null)
+    expect(getQuickTakeSlotStats().state).toBe('initializing')
+    expect(await quickTakeSlotQuery('during restart')).toBeNull()
+
+    // The recycle's init timer was set during a fake-clock tick, so it sits 1ms ahead
+    for (let i = 0; i < 20 && currentStream === hung; i++) {
+      await vi.advanceTimersByTimeAsync(1)
+    }
+    const fresh = currentStream
+    expect(fresh).not.toBe(hung)
+    fresh.emit(makeSuccessResult('READY'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getQuickTakeSlotStats().state).toBe('available')
+
+    const next = quickTakeSlotQuery('second')
+    await vi.advanceTimersByTimeAsync(0)
+    fresh.emit(makeSuccessResult('a fresh take'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect((await next)!.text).toBe('a fresh take')
+  })
 })
 
 describe('stats', () => {
