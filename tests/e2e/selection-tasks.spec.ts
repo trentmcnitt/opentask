@@ -259,6 +259,43 @@ test.describe('Dashboard multi-select — the bar, checked against the server', 
   })
 })
 
+/**
+ * Cmd+S with one task selected opens THAT task's panel, not the row under the
+ * mouse. Rows mark themselves the shortcut's target on hover, and moving down
+ * to the bar crosses the rows it sits over — Trent's +1h landed on one of
+ * those twice (2026-10-07). The selection now wins (`useQuickActionShortcut`).
+ */
+test('Cmd+S with one task selected snoozes the selection, not the hovered row', async ({
+  authenticatedPage: page,
+}) => {
+  const { ids, titles } = await createPair(page, 'Sel cmds')
+  try {
+    await withPreferences(page, unified, async () => {
+      const before = await Promise.all(ids.map((id) => stateOf(page, id)))
+      await openDashboard(page, ids[0])
+      await cmdClickRow(row(page, ids[0]))
+      await expect(row(page, ids[0])).toHaveAttribute('aria-selected', 'true')
+      await row(page, ids[1]).hover()
+      await page.keyboard.press('ControlOrMeta+s')
+
+      const dialog = page.getByRole('dialog', { name: titles[0] })
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+
+      // An overdue task's "+1 day" counts from now, so only the direction is
+      // fixed: the selected task moved into the future, the hovered one stayed.
+      await expect
+        .poll(async () => Date.parse((await stateOf(page, ids[0])).due_at!))
+        .toBeGreaterThan(Date.now())
+      expect((await stateOf(page, ids[1])).due_at).toBe(before[1].due_at)
+    })
+  } finally {
+    await trash(page, ids)
+  }
+})
+
 test.describe('Dashboard multi-select — only tasks', () => {
   /**
    * The dashboard list hides reminders and quotas (`visibleTasks`), and the
