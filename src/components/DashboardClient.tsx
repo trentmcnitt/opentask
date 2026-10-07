@@ -604,11 +604,6 @@ function HomeContent({
     },
     [sortOption, reversed, setSortPreference],
   )
-  useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
-    isSelectionMode: selection.isSelectionMode,
-    selectedCount: selection.selectedIds.size,
-    openBulkSheet: () => bulkSheetOpenRef.current?.(),
-  })
   const { defaultGrouping, setDefaultGrouping, groupingLoaded } = useDefaultGrouping()
 
   // AI sort auto-switches to unified as a local override (not persisted to DB).
@@ -1342,6 +1337,19 @@ function HomeContent({
   const selectedTasks = useMemo(() => {
     return visibleTasks.filter((t) => selection.selectedIds.has(t.id))
   }, [visibleTasks, selection.selectedIds])
+
+  // Cmd+S: the selection, then the keyboard-focused row, then the hovered row
+  // (see the hook for why the order matters).
+  useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
+    isSelectionMode: selection.isSelectionMode,
+    selectedCount: selection.selectedIds.size,
+    openBulkSheet: () => bulkSheetOpenRef.current?.(),
+    getKeyboardFocusedTask: () => {
+      if (!keyboard.isKeyboardActive || keyboardFocusedId === null) return null
+      return visibleTasks.find((t) => t.id === keyboardFocusedId) ?? null
+    },
+    setFocusedTask,
+  })
 
   // Fetch tasks on initial mount (skipped when server provides initialTasks)
   const hasInitialData = initialTasks !== undefined
