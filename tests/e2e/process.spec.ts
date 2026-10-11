@@ -63,66 +63,74 @@ test.describe('Process', () => {
       target_at: staleTarget,
     })
 
-    await openProcess(page)
-    const modal = page.locator('[data-process-modal]')
+    try {
+      await openProcess(page)
+      const modal = page.locator('[data-process-modal]')
 
-    // 1. Inbox: skip other specs' tasks until ours is shown, then move it.
-    const title = modal.locator('[data-process-inbox-title]')
-    await expect(title).toBeVisible()
-    for (let i = 0; i < 50 && (await title.textContent()) !== inboxTitle; i++) {
-      const before = await title.textContent()
-      await modal.getByRole('button', { name: 'Skip' }).click()
-      await expect(title).not.toHaveText(before ?? '')
-    }
-    await expect(title).toHaveText(inboxTitle)
-    // Fixed order, Settings order, Inbox not offered; no AI → no highlight.
-    // (Other specs add projects of their own after these two.)
-    const buttons = modal.locator('[data-process-project]')
-    await expect(buttons.first()).toHaveText('Routine')
-    await expect(buttons.nth(1)).toHaveText('Work')
-    await expect(modal.locator('[data-process-project="Inbox"]')).toHaveCount(0)
-    await expect(modal.locator('[data-suggested]')).toHaveCount(0)
-    await modal.locator('[data-process-project="Work"]').click()
-    await expect(page.getByText('Moved to Work')).toBeVisible()
-    await expect.poll(async () => (await getTask(page, inboxId)).project_id).toBe(3)
-
-    // 3. Horizons: our task, checked by default; grow it.
-    await modal.getByRole('tab', { name: /Horizons/ }).click()
-    const growRow = modal.locator(`[data-process-growth-row="${growId}"]`)
-    await expect(growRow).toContainText('Weeks (unset)')
-    await expect(growRow).toContainText('Months')
-    await expect(growRow.getByRole('checkbox')).toBeChecked()
-    for (const row of await modal.locator('[data-process-growth-row]').all()) {
-      if ((await row.getAttribute('data-process-growth-row')) !== String(growId)) {
-        await row.getByRole('checkbox').click()
+      // 1. Inbox: skip other specs' tasks until ours is shown, then move it.
+      const title = modal.locator('[data-process-inbox-title]')
+      await expect(title).toBeVisible()
+      for (let i = 0; i < 50 && (await title.textContent()) !== inboxTitle; i++) {
+        const before = await title.textContent()
+        await modal.getByRole('button', { name: 'Skip' }).click()
+        await expect(title).not.toHaveText(before ?? '')
       }
-    }
-    await modal.locator('[data-process-growth-apply]').click()
-    await expect(growRow).toHaveCount(0)
-    await expect.poll(async () => (await getTask(page, growId)).horizon).toBe('months')
+      await expect(title).toHaveText(inboxTitle)
+      // Fixed order, Settings order, Inbox not offered; no AI → no highlight.
+      // (Other specs add projects of their own after these two.)
+      const buttons = modal.locator('[data-process-project]')
+      await expect(buttons.first()).toHaveText('Routine')
+      await expect(buttons.nth(1)).toHaveText('Work')
+      await expect(modal.locator('[data-process-project="Inbox"]')).toHaveCount(0)
+      await expect(modal.locator('[data-suggested]')).toHaveCount(0)
+      await modal.locator('[data-process-project="Work"]').click()
+      await expect(page.getByText('Moved to Work')).toBeVisible()
+      await expect.poll(async () => (await getTask(page, inboxId)).project_id).toBe(3)
 
-    // 4. Old targets: only ours checked; remove, then Undo from the toast.
-    await modal.getByRole('tab', { name: /Old targets/ }).click()
-    const targetRow = modal.locator(`[data-process-target-row="${targetId}"]`)
-    await expect(targetRow).toContainText('10d')
-    for (const row of await modal.locator('[data-process-target-row]').all()) {
-      const checkbox = row.getByRole('checkbox')
-      const mine = (await row.getAttribute('data-process-target-row')) === String(targetId)
-      if (mine !== (await checkbox.isChecked())) await checkbox.click()
-    }
-    await expect(modal.locator('[data-process-remove-targets]')).toHaveText('Remove 1 target')
-    await modal.locator('[data-process-remove-targets]').click()
-    await expect(page.getByText('Removed 1 target')).toBeVisible()
-    await expect.poll(async () => (await getTask(page, targetId)).target_at).toBeNull()
+      // 3. Horizons: our task, checked by default; grow it.
+      await modal.getByRole('tab', { name: /Horizons/ }).click()
+      const growRow = modal.locator(`[data-process-growth-row="${growId}"]`)
+      await expect(growRow).toContainText('Weeks (unset)')
+      await expect(growRow).toContainText('Months')
+      await expect(growRow.getByRole('checkbox')).toBeChecked()
+      for (const row of await modal.locator('[data-process-growth-row]').all()) {
+        if ((await row.getAttribute('data-process-growth-row')) !== String(growId)) {
+          await row.getByRole('checkbox').click()
+        }
+      }
+      await modal.locator('[data-process-growth-apply]').click()
+      await expect(growRow).toHaveCount(0)
+      await expect.poll(async () => (await getTask(page, growId)).horizon).toBe('months')
 
-    // The toast's Undo works with the modal still open (it used to sit under
-    // the modal's overlay), and tapping it does not close Process.
-    await page
-      .locator('[data-sonner-toast]', { hasText: 'Removed 1 target' })
-      .getByRole('button', { name: 'Undo' })
-      .click()
-    await expect.poll(async () => (await getTask(page, targetId)).target_at).toBe(staleTarget)
-    await expect(targetRow).toBeVisible()
-    await expect(modal).toBeVisible()
+      // 4. Old targets: only ours checked; remove, then Undo from the toast.
+      await modal.getByRole('tab', { name: /Old targets/ }).click()
+      const targetRow = modal.locator(`[data-process-target-row="${targetId}"]`)
+      await expect(targetRow).toContainText('10d')
+      for (const row of await modal.locator('[data-process-target-row]').all()) {
+        const checkbox = row.getByRole('checkbox')
+        const mine = (await row.getAttribute('data-process-target-row')) === String(targetId)
+        if (mine !== (await checkbox.isChecked())) await checkbox.click()
+      }
+      await expect(modal.locator('[data-process-remove-targets]')).toHaveText('Remove 1 target')
+      await modal.locator('[data-process-remove-targets]').click()
+      await expect(page.getByText('Removed 1 target')).toBeVisible()
+      await expect.poll(async () => (await getTask(page, targetId)).target_at).toBeNull()
+
+      // The toast's Undo works with the modal still open (it used to sit under
+      // the modal's overlay), and tapping it does not close Process.
+      await page
+        .locator('[data-sonner-toast]', { hasText: 'Removed 1 target' })
+        .getByRole('button', { name: 'Undo' })
+        .click()
+      await expect.poll(async () => (await getTask(page, targetId)).target_at).toBe(staleTarget)
+      await expect(targetRow).toBeVisible()
+      await expect(modal).toBeVisible()
+    } finally {
+      // Trashed, so no later spec finds them — the backdated one would sit in
+      // a task segment on every reminders surface.
+      await page.request.post('/api/tasks/bulk/delete', {
+        data: { ids: [inboxId, growId, targetId] },
+      })
+    }
   })
 })
