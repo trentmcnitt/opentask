@@ -314,6 +314,26 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE users ADD COLUMN project_preview_count INTEGER NOT NULL DEFAULT 6')
   }
 
+  // Task model (2026-10-10): deadline, horizon and the task-segment stamps.
+  // See docs/TASK-MODEL.md § Deadline, target, horizon.
+  for (const col of [
+    'deadline_at',
+    'horizon',
+    'horizon_set_at',
+    'last_considered_at',
+    'segment_deferred_at',
+  ]) {
+    if (!hasColumn(database, 'tasks', col)) {
+      database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
+    }
+  }
+  if (!hasColumn(database, 'projects', 'description')) {
+    database.exec('ALTER TABLE projects ADD COLUMN description TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'users', 'ai_context_updated_at')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_context_updated_at TEXT DEFAULT NULL')
+  }
+
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
   clearQuotaDueDates(database)

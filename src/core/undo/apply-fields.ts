@@ -33,6 +33,13 @@ const VALID_TASK_COLUMNS = new Set([
   'anchor_dow',
   'anchor_dom',
   'original_due_at',
+  // Task model (2026-10-10). Must be here: this allowlist throws on an unknown
+  // field, and a throw inside undoEntry wedges the stack (see is_tracked below).
+  'deadline_at',
+  'horizon',
+  'horizon_set_at',
+  'last_considered_at',
+  'segment_deferred_at',
   'deleted_at',
   'archived_at',
   'labels',

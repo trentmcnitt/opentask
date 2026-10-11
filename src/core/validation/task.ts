@@ -222,6 +222,17 @@ const quotaPromptConfig = z
   .nullable()
 
 /**
+ * Task model (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
+ *
+ * `horizon` is how soon the task should get done — its pace. It decides which
+ * task segment on the reminders screen the task appears in. `null` = unset,
+ * treated as weeks but never reported as set.
+ */
+export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
+export type Horizon = (typeof HORIZONS)[number]
+const horizon = z.enum(HORIZONS).nullable()
+
+/**
  * Bulk operation ID array — bounded to prevent DoS via excessive DB queries.
  */
 const bulkIds = z
@@ -237,6 +248,8 @@ export const taskCreateSchema = z
     title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long'),
     short_title: shortTitle,
     due_at: dateTimeString.nullable().optional(),
+    deadline_at: dateTimeString.nullable().optional(),
+    horizon: horizon.optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.default('from_due').optional(),
     project_id: z.number().int().positive().optional(),
@@ -272,6 +285,8 @@ export const taskUpdateSchema = z
     title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long').optional(),
     short_title: shortTitle,
     due_at: dateTimeString.nullable().optional(),
+    deadline_at: dateTimeString.nullable().optional(),
+    horizon: horizon.optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
     project_id: z.number().int().positive().optional(),

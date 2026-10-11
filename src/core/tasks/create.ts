@@ -110,8 +110,15 @@ export function createTask(options: CreateTaskOptions): Task {
   // Title-only is judged on what the CALLER sent, before the default reminder
   // schedule below fills in an rrule — otherwise a title-only reminder would
   // stop qualifying for enrichment the moment it got its default slot.
+  // A deadline or horizon the caller set is structured input too: enrichment
+  // must not overwrite a desk's explicit deadline with its own reading.
   const isTitleOnly =
-    !input.due_at && (input.priority ?? 0) === 0 && !input.labels?.length && !input.rrule
+    !input.due_at &&
+    (input.priority ?? 0) === 0 &&
+    !input.labels?.length &&
+    !input.rrule &&
+    !input.deadline_at &&
+    !input.horizon
 
   const rrule = scheduleFor(userId, input, tracked)
 
@@ -184,8 +191,8 @@ export function createTask(options: CreateTaskOptions): Task {
         user_id, project_id, title, original_title, short_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
-        quota_prompt_config, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        quota_prompt_config, deadline_at, horizon, horizon_set_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -213,6 +220,9 @@ export function createTask(options: CreateTaskOptions): Task {
         // representable, so a YEARLY quota is off and a weekly one on without
         // anything being baked in at creation.
         input.quota_prompt_config ? JSON.stringify(input.quota_prompt_config) : null,
+        input.deadline_at ?? null,
+        input.horizon ?? null,
+        input.horizon ? now : null,
         now,
         now,
       )
@@ -230,7 +240,18 @@ export function createTask(options: CreateTaskOptions): Task {
     const snapshot = createTaskSnapshot(
       { id: taskId }, // before_state is essentially empty
       task,
-      ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels', 'notes'],
+      [
+        'id',
+        'title',
+        'project_id',
+        'due_at',
+        'deadline_at',
+        'horizon',
+        'rrule',
+        'priority',
+        'labels',
+        'notes',
+      ],
     )
 
     logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])

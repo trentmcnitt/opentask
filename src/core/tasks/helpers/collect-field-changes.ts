@@ -132,6 +132,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 
   // Track basic field changes
   collectBasicFields(data, task, input, userId, skipProjectValidation)
+  collectTaskModelFields(data, task, input, now)
   collectQuotaPromptFields(data, task, input)
 
   // Track rrule changes with anchor derivation
@@ -257,6 +258,34 @@ function collectOriginReset(data: FieldChangeData, task: Task, input: FieldChang
   }
   if (task.snooze_count !== 0) {
     trackField(data, 'snooze_count', task.snooze_count, 0)
+  }
+}
+
+/**
+ * Task model fields (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
+ *
+ * `deadline_at` is an ordinary field — no snooze path ever sends it, which is
+ * what keeps a snooze from moving a deadline. Changing `horizon` restarts its
+ * clock (`horizon_set_at`), which Process reads to ask whether it should grow;
+ * re-sending the same horizon is not a change and leaves the clock alone.
+ */
+function collectTaskModelFields(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  now: Date,
+): void {
+  if (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at) {
+    trackField(data, 'deadline_at', task.deadline_at, input.deadline_at)
+  }
+  if (input.horizon !== undefined && input.horizon !== task.horizon) {
+    trackField(data, 'horizon', task.horizon, input.horizon)
+    trackField(
+      data,
+      'horizon_set_at',
+      task.horizon_set_at,
+      input.horizon ? now.toISOString() : null,
+    )
   }
 }
 

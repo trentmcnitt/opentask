@@ -33,6 +33,11 @@ const TASK_COLUMNS = [
   'anchor_dow',
   'anchor_dom',
   'original_due_at',
+  'deadline_at',
+  'horizon',
+  'horizon_set_at',
+  'last_considered_at',
+  'segment_deferred_at',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -243,6 +248,11 @@ export interface TaskRow {
   anchor_dow: number | null
   anchor_dom: number | null
   original_due_at: string | null
+  deadline_at: string | null
+  horizon: string | null
+  horizon_set_at: string | null
+  last_considered_at: string | null
+  segment_deferred_at: string | null
   last_notified_at: string | null
   last_critical_alert_at: string | null
   auto_snooze_minutes: number | null
@@ -299,6 +309,11 @@ export function rowToTask(row: TaskRow): Task {
     anchor_dow: row.anchor_dow,
     anchor_dom: row.anchor_dom,
     original_due_at: row.original_due_at,
+    deadline_at: row.deadline_at ?? null,
+    horizon: (row.horizon ?? null) as Task['horizon'],
+    horizon_set_at: row.horizon_set_at ?? null,
+    last_considered_at: row.last_considered_at ?? null,
+    segment_deferred_at: row.segment_deferred_at ?? null,
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,
     auto_snooze_minutes: row.auto_snooze_minutes,
