@@ -257,7 +257,7 @@ export const STALE_TARGET_DAYS = 7
  * badge is blank then (Trent, 10-10: "no word on the badge for the target day").
  */
 export function targetAgeDays(
-  task: TargetFields & { original_due_at: string | null },
+  task: TargetFields & { original_due_at: string | null; created_at?: string },
   timezone: string,
   now: Date,
   ctx: TargetContext | null = clientContext,
@@ -265,7 +265,12 @@ export function targetAgeDays(
   const target = effectiveTargetAt(task, ctx)
   if (!target || Date.parse(target) > now.getTime()) return null
   // Its own target counts from its first one; an implied target from itself.
-  const first = target === task.due_at ? (task.original_due_at ?? task.due_at) : target
+  // Never from before the task existed (2026-10-11): a task created with a
+  // deadline 3 days out has an implied target a day BEFORE it was created, and
+  // its age is how long it has been on the list, not "1d" on its first day.
+  const from = target === task.due_at ? (task.original_due_at ?? task.due_at) : target
+  const first =
+    task.created_at && Date.parse(task.created_at) > Date.parse(from) ? task.created_at : from
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const days = Math.round(today.diff(localDay(first, timezone), 'days').days)
   return days > 0 ? days : null

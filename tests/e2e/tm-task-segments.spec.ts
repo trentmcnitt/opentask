@@ -11,6 +11,8 @@
  * `finally`. Checks read the server back over the API rather than trusting a
  * row leaving the screen.
  */
+import path from 'path'
+import Database from 'better-sqlite3'
 import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
 import type { Page } from '@playwright/test'
 
@@ -107,6 +109,17 @@ test.describe('Dashboard over-target marks', () => {
       target_at: threeDaysAgo,
       deadline_at: new Date(Date.now() - DAY).toISOString(),
     })
+    // On the list for a week: the age never counts from before the task
+    // existed (2026-10-11), and the API can't create one in the past.
+    const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+    try {
+      db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(
+        new Date(Date.now() - 7 * DAY).toISOString(),
+        id,
+      )
+    } finally {
+      db.close()
+    }
     try {
       await page.goto('/')
       const row = page.locator(`#task-row-${id}`)

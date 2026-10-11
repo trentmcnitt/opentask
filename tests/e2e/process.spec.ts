@@ -62,6 +62,9 @@ test.describe('Process', () => {
       project_id: 3,
       target_at: staleTarget,
     })
+    // Written down a month ago: a target's age never counts from before the
+    // task existed (2026-10-11). Under 60 days, so no growth ask for it.
+    backdate(targetId, 30)
 
     try {
       await openProcess(page)

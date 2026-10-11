@@ -74,6 +74,9 @@ describe('GET /api/process', () => {
     })
     oldUnset = await create({ title: 'Process old unset', priority: 2, project_id: 2 })
     backdate([oldUnset], 61)
+    // Written down a month ago: a target's age never counts from before the
+    // task existed (2026-10-11). Under 60 days, so no growth ask either.
+    backdate([stale, staleUrgent, staleDeadline], 30)
   })
 
   test('401 without auth', async () => {
