@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import {
@@ -21,6 +22,7 @@ import { useDashboardTabClick } from '@/hooks/useDashboardTabClick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
+import { AiContextStaleSidebarLink } from '@/components/AiContextStaleLink'
 
 interface SidebarProps {
   onAddClick?: () => void
@@ -86,7 +88,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
                       {taskCounts.overdue > 0 && (
                         <span
                           className="bg-destructive/15 text-destructive rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                          aria-label={`${taskCounts.overdue} overdue`}
+                          aria-label={`${taskCounts.overdue} ${OVER_TARGET_LOWER}`}
                         >
                           {taskCounts.overdue}
                         </span>
@@ -168,6 +170,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             </GuardedLink>
           )
         })}
+        <AiContextStaleSidebarLink />
         <a
           href={DOCS_URL}
           target="_blank"

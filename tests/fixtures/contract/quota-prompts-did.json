@@ -20,6 +20,12 @@
         "anchor_dow": null,
         "anchor_dom": null,
         "original_due_at": null,
+        "deadline_at": null,
+        "horizon": null,
+        "horizon_set_at": null,
+        "last_considered_at": null,
+        "segment_deferred_at": null,
+        "deadline_nag_off": false,
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -47,6 +53,7 @@
         "notes": "A glass with breakfast, one with dinner.",
         "created_at": "2026-01-15T16:00:00.000Z",
         "updated_at": "2026-01-15T16:00:00.000Z",
+        "target_at": null,
         "is_recurring": true,
         "is_snoozed": false
       }

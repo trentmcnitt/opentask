@@ -7,6 +7,7 @@
 import type { Task } from '@/types'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { isTracked } from '@/lib/track'
+import { effectiveTargetAt, type TargetContext } from '@/lib/task-segments'
 
 export interface TaskCounts {
   total: number
@@ -16,7 +17,26 @@ export interface TaskCounts {
   today: number
 }
 
-type CountableTask = Pick<Task, 'due_at' | 'progress_target' | 'is_tracked'>
+type CountableTask = Pick<Task, 'due_at' | 'progress_target' | 'is_tracked'> &
+  Partial<Pick<Task, 'deadline_at' | 'deadline_nag_off' | 'rrule'>>
+
+/**
+ * The target a count reads (2026-10-10): `due_at`, else a deadline's implied
+ * one (`effectiveTargetAt`) — a deadline-only task is over target from
+ * DEADLINE_LEAD_DAYS out, like the notifier and the badge say. Null for a quota.
+ */
+function countableTarget(task: CountableTask, ctx?: TargetContext): string | null {
+  if (isTracked(task)) return null
+  return effectiveTargetAt(
+    {
+      due_at: task.due_at,
+      deadline_at: task.deadline_at ?? null,
+      deadline_nag_off: task.deadline_nag_off,
+      rrule: task.rrule,
+    },
+    ctx,
+  )
+}
 
 /**
  * Whether a task carries a due date that can make it late or "due today".
@@ -44,22 +64,25 @@ export function hasDebtDueDate(task: CountableTask): task is CountableTask & { d
  * remembers where it was), so a snoozed task is overdue only once its NEW
  * time passes — `original_due_at` is deliberately not consulted.
  */
-export function isOverdue(task: CountableTask, now: Date): boolean {
-  return hasDebtDueDate(task) && new Date(task.due_at) < now
+export function isOverdue(task: CountableTask, now: Date, ctx?: TargetContext): boolean {
+  const target = countableTarget(task, ctx)
+  return target !== null && new Date(target) < now
 }
 
 export function countTasks(
   tasks: CountableTask[],
   timezone: string,
   now: Date = new Date(),
+  ctx?: TargetContext,
 ): TaskCounts {
   const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(timezone, now)
   let overdue = 0
   let today = 0
   for (const t of tasks) {
-    if (!hasDebtDueDate(t)) continue
-    if (isOverdue(t, now)) overdue++
-    const due = new Date(t.due_at)
+    const target = countableTarget(t, ctx)
+    if (target === null) continue
+    const due = new Date(target)
+    if (due < now) overdue++
     if (due >= todayStart && due < tomorrowStart) today++
   }
   return { total: tasks.length, overdue, today }

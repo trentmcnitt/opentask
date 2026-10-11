@@ -761,7 +761,7 @@ test.describe('Dashboard filter facets', () => {
         .toBe(baselineWorkOverdue + 1)
       // Spelled out for screen readers, not just carried by color.
       await expect(workChip).toHaveAttribute('aria-label', /due today/)
-      await expect(workChip).toHaveAttribute('aria-label', /overdue/)
+      await expect(workChip).toHaveAttribute('aria-label', /over target/)
 
       // The Today chip's own total already means "due today" — it gets the
       // overdue pill (this task is both) but never a due-today pill.

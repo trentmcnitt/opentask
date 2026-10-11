@@ -13,6 +13,7 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { getRemindersBySlot, getRemindersNotToday, hasAnyReminders } from '@/core/tasks/reminders'
 import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts'
+import { getTaskSegments } from '@/core/tasks/task-segments'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -61,6 +62,24 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       considered_total: groups.reduce((sum, g) => sum + g.considered, 0),
       prompts_total: promptsTotal,
       prompts_considered_total: promptsConsideredTotal,
+      // Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments): one-off
+      // tasks whose target hasn't arrived, one segment per horizon, shown
+      // FIRST on the screen. A TOP-LEVEL array, deliberately not inside
+      // `groups` — a native build that predates it ignores the key, and its
+      // "Complete all" can never reach a real task. None of these counts
+      // include task rows: segments never feed the headline count, the nav
+      // badge or the slot notifications.
+      task_segments: getTaskSegments(user.id, user.timezone, now).map((seg) => ({
+        horizon: seg.horizon,
+        tasks: seg.tasks.map(({ task, state }) => ({
+          ...formatTaskResponse(task),
+          segment_state: state,
+        })),
+        waiting: seg.waiting,
+        considered: seg.considered,
+        deferred: seg.deferred,
+        nudge: seg.nudge,
+      })),
       // Whether the user has any reminders at all. Nothing renders it directly —
       // it only picks which empty state the surface shows when today is clear.
       // Reminder-only, as native builds read it; a day with prompts is never

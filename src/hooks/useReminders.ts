@@ -1,5 +1,6 @@
 'use client'
 
+import type { HorizonValue, SegmentState } from '@/lib/task-segments'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -152,6 +153,11 @@ export interface UseRemindersReturn {
   /** Reminders with no occurrence today — reachable, never counted. */
   notToday: Task[]
   /**
+   * Today's task segments (2026-10-10). Never part of `groups` or any count —
+   * acted on through `useTaskSegments`.
+   */
+  taskSegments: TaskSegmentPayload[]
+  /**
    * Create a reminder. A daily one is placed in its slot the moment the server
    * answers; any other cadence waits for the refresh, since only the server
    * knows whether it is today's.
@@ -191,6 +197,18 @@ interface RemindersCache {
   groups: ReminderGroup[]
   hasAny: boolean
   notToday: Task[]
+  /** Task segments (2026-10-10) — `GET /api/reminders` `task_segments`. */
+  taskSegments: TaskSegmentPayload[]
+}
+
+/** One task segment as the API sends it (`src/app/api/reminders/route.ts`). */
+export interface TaskSegmentPayload {
+  horizon: HorizonValue
+  tasks: (Task & { segment_state: SegmentState })[]
+  waiting: number
+  considered: number
+  deferred: number
+  nudge: boolean
 }
 let remindersCache: RemindersCache | null = null
 /** The rest of a payload, beside the groups — see `writeGroups`. */
@@ -226,11 +244,16 @@ function parseGroups(json: unknown): ReminderGroup[] {
  * `loadRemindersCache`), so they cannot disagree about a field.
  */
 function parseRemindersPayload(json: unknown): NonNullable<typeof remindersCache> {
-  const data = (json as { data?: { has_any?: unknown; not_today?: Task[] } } | null)?.data
+  const data = (
+    json as {
+      data?: { has_any?: unknown; not_today?: Task[]; task_segments?: TaskSegmentPayload[] }
+    } | null
+  )?.data
   return {
     groups: parseGroups(json),
     hasAny: data?.has_any === true,
     notToday: data?.not_today ?? [],
+    taskSegments: data?.task_segments ?? [],
   }
 }
 
@@ -318,6 +341,9 @@ export function useReminders({
   const [groups, setGroups] = useState<ReminderGroup[]>(remindersCache?.groups ?? [])
   const [hasAny, setHasAny] = useState(remindersCache?.hasAny ?? false)
   const [notToday, setNotToday] = useState<Task[]>(remindersCache?.notToday ?? [])
+  const [taskSegments, setTaskSegments] = useState<TaskSegmentPayload[]>(
+    remindersCache?.taskSegments ?? [],
+  )
   const [loading, setLoading] = useState(remindersCache === null)
   const [error, setError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<number | string>>(new Set())
@@ -386,9 +412,15 @@ export function useReminders({
     setGroups(next)
     if (extra?.hasAny !== undefined) setHasAny(extra.hasAny)
     if (extra?.notToday !== undefined) setNotToday(extra.notToday)
+    if (extra?.taskSegments !== undefined) setTaskSegments(extra.taskSegments)
     if (remindersCache) setRemindersCache({ ...remindersCache, ...extra, groups: next })
     else if (extra?.hasAny !== undefined && extra.notToday !== undefined) {
-      setRemindersCache({ groups: next, hasAny: extra.hasAny, notToday: extra.notToday })
+      setRemindersCache({
+        groups: next,
+        hasAny: extra.hasAny,
+        notToday: extra.notToday,
+        taskSegments: extra.taskSegments ?? [],
+      })
     }
   }, [])
   const stripPending = (incoming: ReminderGroup[]) =>
@@ -419,6 +451,7 @@ export function useReminders({
       writeGroups(stripPending(parsed.groups), {
         hasAny: parsed.hasAny,
         notToday: parsed.notToday,
+        taskSegments: parsed.taskSegments,
       })
       setError(null)
       setHydrated(true)
@@ -800,6 +833,7 @@ export function useReminders({
     remove,
     refresh,
     notToday,
+    taskSegments,
     create,
   }
 }

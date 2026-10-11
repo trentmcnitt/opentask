@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { taskWord } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import type { BulkSnoozeDefault } from '@/lib/preferences-state'
+import { nextPeriodStart } from '@/lib/time-slot-assign'
 
 const HOUR_ROUND_THRESHOLD = 35
 
@@ -19,12 +20,20 @@ export function snapToHour(date: Date): Date {
 /**
  * Compute the UTC ISO string for a snooze target time.
  *
- * @param option - Snooze option: 'tomorrow' or a string-integer of minutes (e.g., '60', '120')
+ * @param option - Snooze option: 'tomorrow', 'next_period', or a string-integer
+ *   of minutes (e.g., '60', '120')
  * @param timezone - User's IANA timezone (e.g., 'America/Chicago')
  * @param morningTime - User's configured morning time in HH:MM format (e.g., '09:00')
+ * @param slots - The user's periods, for 'next_period' (2026-10-10: the single-tap
+ *   default can be the next period too). With none, 'next_period' reads as an hour.
  * @returns UTC ISO string for the snooze target
  */
-export function computeSnoozeTime(option: string, timezone: string, morningTime: string): string {
+export function computeSnoozeTime(
+  option: string,
+  timezone: string,
+  morningTime: string,
+  slots: { start_time: string }[] = [],
+): string {
   if (option === 'tomorrow') {
     const [hour, minute] = morningTime.split(':').map(Number)
     return DateTime.now()
@@ -33,6 +42,15 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
       .set({ hour, minute, second: 0, millisecond: 0 })
       .toUTC()
       .toISO()!
+  }
+  if (option === NEXT_PERIOD_OPTION) {
+    // The next period still TODAY; with none left today, the top of the next
+    // hour (spec amendment 17), not tomorrow's first period. The sweep's own
+    // `slot: "next"` (Shortcuts) is resolved elsewhere and is unchanged.
+    const next = nextPeriodStart(slots, timezone)
+    const now = DateTime.now().setZone(timezone)
+    if (next && DateTime.fromISO(next).setZone(timezone).hasSame(now, 'day')) return next
+    return now.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!
   }
 
   const minutes = parseInt(option, 10)
@@ -43,6 +61,9 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
   // Sub-hour: exact minutes from now
   return new Date(Date.now() + minutes * 60 * 1000).toISOString()
 }
+
+/** The `default_snooze_option` value meaning "the next period" (2026-10-10). */
+export const NEXT_PERIOD_OPTION = 'next_period'
 
 /**
  * Format a morning time string for display.
@@ -59,6 +80,7 @@ export function formatMorningTime(morningTime: string): string {
  */
 export function formatCompactSnoozeLabel(option: string): string {
   if (option === 'tomorrow') return 'AM'
+  if (option === NEXT_PERIOD_OPTION) return 'Next'
   const minutes = parseInt(option, 10)
   if (minutes < 60) return `+${minutes}m`
   const h = Math.floor(minutes / 60)
@@ -81,6 +103,9 @@ export function bulkSnoozeCompactLabel(
   hasPeriods: boolean,
 ): string {
   if (bulkSnoozeDefault === 'next_period' && hasPeriods) return 'Next'
+  // The default option can be "next_period" as well; without periods
+  // `computeSnoozeTime` reads it as an hour, so the badge does too.
+  if (defaultSnoozeOption === NEXT_PERIOD_OPTION && !hasPeriods) return '+1h'
   return formatCompactSnoozeLabel(defaultSnoozeOption)
 }
 
@@ -92,6 +117,7 @@ export function formatSnoozeOptionLabel(option: string, morningTime: string): st
   if (option === 'tomorrow') {
     return `Tomorrow at ${formatMorningTime(morningTime)}`
   }
+  if (option === NEXT_PERIOD_OPTION) return 'Next period'
   const minutes = parseInt(option, 10)
   if (minutes < 60) return `${minutes} min`
   if (minutes === 60) return '1 hour'
@@ -111,6 +137,8 @@ export interface BulkSnoozeSkips {
   high: number
   /** P4 skipped — never bulk-snoozable at all. */
   urgent: number
+  /** Left where they were: the sweep would have crossed their deadline (2026-10-10). */
+  deadline?: number
 }
 
 /** "2 high", "1 urgent", "2 high, 1 urgent". Empty when nothing was skipped. */
@@ -144,9 +172,19 @@ export function bulkSnoozeMessage({
   highAffected = 0,
   high,
   urgent,
+  deadline = 0,
 }: BulkSnoozeSkips): string {
   const list = skipList(high, urgent)
+  // A deadline-capped task is never silently clamped: the toast says it stayed.
+  const kept =
+    deadline > 0 ? ` · ${deadline} kept before ${deadline === 1 ? 'its' : 'their'} deadline` : ''
+  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + kept
+}
 
+function bulkSnoozeCore(
+  { affected, highAffected = 0, high, urgent }: BulkSnoozeSkips,
+  list: string,
+): string {
   if (affected > 0) {
     // "HIGH-PRIORITY" WHEN THAT IS ALL IT MOVED (Trent, 2026-09-22). High is
     // swept only once nothing lower is left, so a double snooze is two presses:

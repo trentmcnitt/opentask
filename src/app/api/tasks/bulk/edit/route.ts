@@ -36,6 +36,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       includeTaskIds: input.include_task_ids,
       deltaMinutes: input.delta_minutes,
       dateTaskIds: input.date_task_ids,
+      allowPastDeadlineIds: input.allow_past_deadline_ids,
     })
 
     notifyDemoEngagement(user.name, 'update')
@@ -43,6 +44,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_no_due_date: result.noDueDateSkipped,
+      skipped_deadline: result.deadlineSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

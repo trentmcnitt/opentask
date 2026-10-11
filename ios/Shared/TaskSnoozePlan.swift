@@ -140,6 +140,10 @@ enum TaskSnoozePlan {
     /// `include_task_ids` mirrors each request's ids: an explicit,
     /// deliberate tap on a task always bypasses the P3/P4 sweep-safety
     /// filter — the web's own convention (`src/lib/save-quick-panel-changes.ts`).
+    /// `allow_past_deadline_ids` mirrors them too (2026-10-10): every caller
+    /// is an explicit per-row or selected-task tap, so a deadline still ahead
+    /// doesn't make the server skip it. The "all overdue" sweeps never come
+    /// through here and never send it — skipping there is intended.
     ///
     /// `afterEach` runs once per request that succeeded (the phone widget
     /// bumps its local undo count there — one server undo entry each).
@@ -153,11 +157,13 @@ enum TaskSnoozePlan {
                 switch request.kind {
                 case .until(let until):
                     try await APIClient.shared.bulkSnoozeTasks(
-                        ids: request.ids, until: DateHelpers.formatISO(until), includeTaskIds: request.ids
+                        ids: request.ids, until: DateHelpers.formatISO(until), includeTaskIds: request.ids,
+                        allowPastDeadlineIds: request.ids
                     )
                 case .deltaMinutes(let minutes):
                     try await APIClient.shared.bulkSnoozeTasks(
-                        ids: request.ids, deltaMinutes: minutes, includeTaskIds: request.ids
+                        ids: request.ids, deltaMinutes: minutes, includeTaskIds: request.ids,
+                        allowPastDeadlineIds: request.ids
                     )
                 }
                 moved.formUnion(request.ids)

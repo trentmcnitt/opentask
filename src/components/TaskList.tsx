@@ -1,6 +1,7 @@
 'use client'
 
 // Selection integration via context
+import { HORIZON_WORD } from '@/lib/task-model-words'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown, ChevronDown, Layers } from 'lucide-react'
 import { TaskRow } from './TaskRow'
@@ -23,6 +24,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProjectPreviewCount, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { isJustAdded } from '@/lib/just-added'
 
 /**
@@ -55,6 +57,12 @@ import { useSelection, type SelectionContextType } from './SelectionProvider'
 interface TaskListProps {
   tasks: Task[]
   /**
+   * The user's periods, for a default snooze option of "Next period"
+   * (2026-10-10): the swipe and each row's snooze tap resolve it against these.
+   * Passed down rather than fetched per row (see `SnoozeMenu`'s slot cache).
+   */
+  timeSlots?: TimeSlot[]
+  /**
    * Show every row of every group — no "Show all" / "Show less" cap. Set
    * while the Overdue filter is on (Trent, 2026-10-01): clearing overdue
    * tasks one by one, a capped group hid the rest and read as "done".
@@ -79,6 +87,7 @@ interface TaskListProps {
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
+  onRemoveTarget?: (task: Task) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -162,6 +171,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
   age: { default: 'Newest', reversed: 'Oldest' },
   modified: { default: 'Modified ↓', reversed: 'Modified ↑' },
   original_due: { default: 'Original Due ↓', reversed: 'Original Due ↑' },
+  horizon: { default: 'Horizon ↓', reversed: 'Horizon ↑' },
   ai_insights: { default: 'AI Score ↓', reversed: 'AI Score ↑' },
 }
 
@@ -173,11 +183,16 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   age: 'Date added',
   modified: 'Date modified',
   original_due: 'Original due date',
+  horizon: `${HORIZON_WORD}, then deadline`,
   ai_insights: 'AI score',
 }
 
+/** One stable empty list, so a caller without periods doesn't change the callbacks' deps. */
+const NO_SLOTS: TimeSlot[] = []
+
 export function TaskList({
   tasks,
+  timeSlots = NO_SLOTS,
   uncapped = false,
   sortedGroups,
   orderedIds,
@@ -186,6 +201,7 @@ export function TaskList({
   now,
   onDone,
   onSnooze,
+  onRemoveTarget,
   onLabelClick,
   onTaskFocus,
   keyboardFocusedId,
@@ -316,13 +332,13 @@ export function TaskList({
   const handleSwipeLeft = useCallback(
     (task: Task) => {
       if (isOverdue(task, now)) {
-        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots)
         requestSnooze(task, until)
       } else {
         onDoubleClick?.(task)
       }
     },
-    [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick, now],
+    [defaultSnoozeOption, timezone, morningTime, timeSlots, requestSnooze, onDoubleClick, now],
   )
 
   /**
@@ -393,8 +409,10 @@ export function TaskList({
       >
         <TaskRow
           task={task}
+          timeSlots={timeSlots}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
+          onRemoveTarget={onRemoveTarget}
           // `isOverdue` is the Tasks page's one definition (the
           // top bar's pills use it too). §5: it never counts a
           // quota — its period is what is "due", and the bar
@@ -665,8 +683,8 @@ export function SortDropdown({
     : SORT_BUTTON_LABELS[sortOption].default
 
   const options: SortOption[] = showAiInsights
-    ? ['ai_insights', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
-    : ['due_date', 'priority', 'title', 'age', 'modified', 'original_due']
+    ? ['ai_insights', 'horizon', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
+    : ['horizon', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>

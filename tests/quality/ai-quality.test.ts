@@ -38,6 +38,8 @@ import type {
   WhatsNextInput,
   InsightsInput,
   QuickTakeInput,
+  ProcessProjectsInput,
+  ProcessDuplicatesInput,
   ScenarioRequirements,
   ScenarioOutput,
   RunSummary,
@@ -241,6 +243,26 @@ describe('AI Quality — Layer 1', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Process scenarios (2026-10-10)
+  // -------------------------------------------------------------------------
+
+  describe('Process', () => {
+    const processTests = allScenarios.filter(
+      (s) => s.feature === 'process_projects' || s.feature === 'process_duplicates',
+    )
+
+    for (const scenario of processTests) {
+      test.skipIf(!AI_ENABLED)(
+        scenario.id,
+        async () => {
+          await runScenario(scenario)
+        },
+        300_000,
+      )
+    }
+  })
+
+  // -------------------------------------------------------------------------
   // Insights scenarios
   // -------------------------------------------------------------------------
 
@@ -317,6 +339,14 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
       }
       case 'quick_take':
         ;({ output, durationMs } = await runQuickTake(scenario.input as QuickTakeInput))
+        break
+      case 'process_projects':
+        ;({ output, durationMs } = await runProcessProjects(scenario.input as ProcessProjectsInput))
+        break
+      case 'process_duplicates':
+        ;({ output, durationMs } = await runProcessDuplicates(
+          scenario.input as ProcessDuplicatesInput,
+        ))
         break
     }
 
@@ -426,7 +456,8 @@ async function runEnrichment(
   // so the scenario is judged on what the database would receive. When the
   // guard changes the model's answer, the raw value is logged so a prompt
   // regression the guard is hiding still shows up in the run output.
-  const { filterProjectMatch } = await import('@/core/ai/enrichment')
+  const { filterProjectMatch, sanitizeTaskModelFields, alignTaskModelDates } =
+    await import('@/core/ai/enrichment')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -434,8 +465,21 @@ async function runEnrichment(
     )
   }
 
+  // Same for the task model's deadline/horizon guard (2026-10-10): judged on
+  // what production stores, with the raw answer logged when the guard changed it.
+  const taskModel = alignTaskModelDates(sanitizeTaskModelFields(parsed, input.text), input.timezone)
+  if (
+    taskModel.deadline_at !== parsed.deadline_at ||
+    taskModel.horizon !== parsed.horizon ||
+    taskModel.due_at !== parsed.due_at
+  ) {
+    console.log(
+      `[quality] task-model guard changed due_at "${parsed.due_at}" / deadline_at "${parsed.deadline_at}" / horizon "${parsed.horizon}" for: ${input.text}`,
+    )
+  }
+
   return {
-    output: { ...parsed, project_name: guarded } as unknown as Record<string, unknown>,
+    output: { ...taskModel, project_name: guarded } as unknown as Record<string, unknown>,
     durationMs: result.durationMs,
   }
 }
@@ -595,6 +639,7 @@ async function runQuickTake(
     title: t.title,
     project_name: t.project_name ?? null,
     due_at: t.due_at,
+    deadline_at: t.deadline_at ?? null,
     priority: t.priority,
     labels: t.labels,
     rrule: t.rrule ?? null,
@@ -729,6 +774,83 @@ Score every task above. Return one entry per task in "tasks".`
 }
 
 /**
+ * Process (2026-10-10) — the production prompt builders, schemas and
+ * sanitizers from src/core/ai/process.ts; only the DB lookups are replaced by
+ * the scenario's own projects and tasks. Model: the Insights feature's, as in
+ * production.
+ */
+async function runProcessQuery<T>(
+  prompt: string,
+  schema: import('zod').ZodType<T>,
+  action: string,
+  inputText: string,
+): Promise<{ parsed: T; durationMs: number }> {
+  const { aiQuery } = await import('@/core/ai/sdk')
+  const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
+  const { z } = await import('zod')
+
+  const provider = getTestProvider()
+  const result = await aiQuery({
+    prompt,
+    outputSchema: z.toJSONSchema(schema) as Record<string, unknown>,
+    model: getModelForFeature('insights'),
+    maxTurns: provider === 'sdk' ? 3 : 1,
+    userId: QUALITY_TEST_USER_ID,
+    action,
+    inputText,
+    timeoutMs: 280_000,
+    provider,
+  })
+  const parsed = parseAIResponse(result, schema, action, (text) => {
+    const json = extractJsonFromText(text)
+    if (!json) return null
+    const attempt = schema.safeParse(json)
+    return attempt.success ? attempt.data : null
+  })
+  if (!parsed) throw new Error(`${action} failed: ${result.error || 'Could not parse output'}`)
+  return { parsed, durationMs: result.durationMs }
+}
+
+async function runProcessProjects(
+  input: ProcessProjectsInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { buildRecommendProjectsPrompt, ProjectRecommendationsSchema, sanitizeRecommendations } =
+    await import('@/core/ai/process')
+  const { parsed, durationMs } = await runProcessQuery(
+    buildRecommendProjectsPrompt(input),
+    ProjectRecommendationsSchema,
+    'quality_test_process_projects',
+    `${input.tasks.length} tasks`,
+  )
+  const recommendations = sanitizeRecommendations(
+    parsed.recommendations,
+    input.tasks.map((t) => t.id),
+    new Set(input.projects.map((p) => p.id)),
+  )
+  if (recommendations.length !== parsed.recommendations.length) {
+    console.log(
+      `[quality] process sanitizer dropped ${parsed.recommendations.length - recommendations.length} recommendation(s)`,
+    )
+  }
+  return { output: { recommendations }, durationMs }
+}
+
+async function runProcessDuplicates(
+  input: ProcessDuplicatesInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { buildDuplicatesPrompt, DuplicateGroupsSchema, sanitizeDuplicateGroups } =
+    await import('@/core/ai/process')
+  const { parsed, durationMs } = await runProcessQuery(
+    buildDuplicatesPrompt(input),
+    DuplicateGroupsSchema,
+    'quality_test_process_duplicates',
+    `${input.tasks.length} tasks`,
+  )
+  const groups = sanitizeDuplicateGroups(parsed.groups, new Set(input.tasks.map((t) => t.id)))
+  return { output: { groups }, durationMs }
+}
+
+/**
  * Run insights via the production processInsightsChunks code path.
  *
  * Calls startInsightsGeneration + polls getInsightsSessionStatus to completion,
@@ -821,6 +943,8 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
             `[${scenario.id}] Expected ${key} = ${expectedValue}, got ${JSON.stringify(actualValue)}`,
           )
         }
+      } else if (typeof expectedValue === 'string' && expectedValue.startsWith('~')) {
+        checkSpecialExpectation(scenario.id, key, expectedValue, actualValue)
       } else if (typeof expectedValue === 'string') {
         if (
           typeof actualValue !== 'string' ||
@@ -877,7 +1001,11 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     }
   }
 
-  // Feature-specific schema validation
+  validateFeatureSchema(scenario, output)
+}
+
+/** Feature-specific schema validation. */
+function validateFeatureSchema(scenario: AITestScenario, output: Record<string, unknown>): void {
   switch (scenario.feature) {
     case 'enrichment':
       validateEnrichmentSchema(scenario.id, output)
@@ -897,6 +1025,85 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     case 'quick_take':
       validateQuickTakeSchema(scenario.id, output)
       break
+    case 'process_projects':
+    case 'process_duplicates':
+      validateProcessExpectations(scenario.id, output, scenario.requirements)
+      break
+  }
+}
+
+function actSoonAllowedHere(task: { priority: number; deadline_at?: string | null }): boolean {
+  if (task.deadline_at) {
+    return (Date.parse(task.deadline_at) - Date.now()) / 86_400_000 <= 7
+  }
+  return task.priority >= 3
+}
+
+/** Process (2026-10-10): shape plus the scenario's deterministic expectations. */
+function validateProcessExpectations(
+  id: string,
+  output: Record<string, unknown>,
+  requirements: ScenarioRequirements,
+): void {
+  const expect = requirements.process_expectations ?? {}
+  if (output.recommendations !== undefined) {
+    const recs = output.recommendations as Array<{ task_id: number; project_id: number | null }>
+    if (!Array.isArray(recs)) throw new Error(`[${id}] recommendations must be an array`)
+    for (const [taskId, projectId] of Object.entries(expect.projects ?? {})) {
+      const rec = recs.find((r) => r.task_id === Number(taskId))
+      const got = rec ? rec.project_id : null
+      if (got !== projectId) {
+        throw new Error(`[${id}] task ${taskId}: expected project ${projectId}, got ${got}`)
+      }
+    }
+    return
+  }
+  const groups = output.groups as Array<{ task_ids: number[] }>
+  if (!Array.isArray(groups)) throw new Error(`[${id}] groups must be an array`)
+  for (const wanted of expect.duplicate_groups ?? []) {
+    if (!groups.some((g) => wanted.every((tid) => g.task_ids.includes(tid)))) {
+      throw new Error(`[${id}] expected ${JSON.stringify(wanted)} grouped together`)
+    }
+  }
+  for (const [a, b] of expect.not_duplicates ?? []) {
+    if (groups.some((g) => g.task_ids.includes(a) && g.task_ids.includes(b))) {
+      throw new Error(`[${id}] ${a} and ${b} must not be grouped as duplicates`)
+    }
+  }
+}
+
+/**
+ * `must_include` matchers for values a scenario cannot spell exactly:
+ * - `~date:YYYY-MM-DD` — a local datetime on that day, any time (scenarios
+ *   compute the day relative to the run; the time is left to Layer 2 notes)
+ * - `~notnull` — set to anything
+ */
+function checkSpecialExpectation(id: string, key: string, expected: string, actual: unknown): void {
+  if (expected.startsWith('~date:')) {
+    const day = expected.slice('~date:'.length)
+    if (typeof actual !== 'string' || actual.slice(0, 10) !== day) {
+      throw new Error(`[${id}] Expected ${key} on ${day}, got ${JSON.stringify(actual)}`)
+    }
+    return
+  }
+  if (expected === '~notnull') {
+    if (actual == null) throw new Error(`[${id}] Expected ${key} to be set, got ${actual}`)
+    return
+  }
+  throw new Error(`[${id}] Unknown matcher ${expected} for ${key}`)
+}
+
+/** Task model fields (2026-10-10): deadline_at a datetime or null, horizon an enum or null. */
+function validateTaskModelFields(id: string, output: Record<string, unknown>): void {
+  const deadline = output.deadline_at
+  if (deadline !== null && (typeof deadline !== 'string' || isNaN(Date.parse(deadline)))) {
+    throw new Error(`[${id}] deadline_at must be an ISO 8601 datetime or null, got ${deadline}`)
+  }
+  if (
+    output.horizon !== null &&
+    !['days', 'weeks', 'months', 'eventually'].includes(output.horizon as string)
+  ) {
+    throw new Error(`[${id}] horizon must be days|weeks|months|eventually or null`)
   }
 }
 
@@ -916,6 +1123,7 @@ function validateEnrichmentSchema(id: string, output: Record<string, unknown>): 
   if (output.due_at !== null && isNaN(Date.parse(output.due_at as string))) {
     throw new Error(`[${id}] due_at is not a valid ISO 8601 date: ${output.due_at}`)
   }
+  validateTaskModelFields(id, output)
   if (output.rrule !== null && typeof output.rrule !== 'string') {
     throw new Error(`[${id}] rrule must be a string or null`)
   }
@@ -1110,11 +1318,13 @@ function validateInsightsExpectations(
       }
     }
 
-    // act_soon priority gate: act_soon requires P3+
-    if (signals.includes('act_soon') && task.priority < 3) {
+    // act_soon gate — mirrors actSoonAllowed() in src/core/ai/insights.ts
+    // (2026-10-10): a stored deadline within 7 days allows it at any priority,
+    // a further one forbids it; with no deadline it needs P3+.
+    if (signals.includes('act_soon') && !actSoonAllowedHere(task)) {
       throw new Error(
         `[${id}] task ${item.task_id} ("${task.title}") has "act_soon" signal but is P${task.priority} ` +
-          `(act_soon requires P3+)`,
+          `with deadline ${String(task.deadline_at)} (act_soon needs a deadline within 7 days, or P3+ without one)`,
       )
     }
   }

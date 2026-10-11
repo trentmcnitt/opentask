@@ -1,5 +1,5 @@
 /**
- * PJ-002 through PJ-007: project CRUD in src/core/projects.
+ * PJ-002 through PJ-009: project CRUD in src/core/projects.
  *
  * - The single-project read counts exactly what the list counts (it used to
  *   count reminders and quotas too).
@@ -7,6 +7,7 @@
  *   recurring task with no due_at whose occurrence today has passed counts.
  * - The Inbox can't be renamed.
  * - Deleting a shared project sends each member's tasks to their own Inbox.
+ * - A description (2026-10-10) is trimmed, capped, and cleared by null or "".
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
@@ -20,6 +21,12 @@ import {
   updateProject,
 } from '@/core/projects'
 import { ValidationError } from '@/core/errors'
+import {
+  PROJECT_DESCRIPTION_MAX,
+  validateProjectCreate,
+  validateProjectUpdate,
+} from '@/core/validation'
+import { ZodError } from 'zod'
 import { offSyncEvent, onSyncEvent } from '@/lib/sync-events'
 import {
   seedTestProject,
@@ -132,5 +139,43 @@ describe('Project CRUD (core)', () => {
     expect(() => deleteProject(TEST_USER_ID, shared.id)).toThrow(ValidationError)
     expect(projectOf(mine.id)).toBe(shared.id)
     expect(getProjectById(shared.id, TEST_USER_ID)).not.toBeNull()
+  })
+
+  test('PJ-008: a description is created, read, edited, trimmed and cleared', () => {
+    const project = createProject(
+      TEST_USER_ID,
+      validateProjectCreate({ name: 'Acme', description: '  Client work: calls, invoices  ' }),
+    )
+    expect(project.description).toBe('Client work: calls, invoices')
+    expect(getProjects(TEST_USER_ID).find((p) => p.id === project.id)?.description).toBe(
+      'Client work: calls, invoices',
+    )
+
+    // Another field's edit leaves it alone.
+    expect(updateProject(TEST_USER_ID, project.id, { color: 'red' }).description).toBe(
+      'Client work: calls, invoices',
+    )
+    expect(
+      updateProject(TEST_USER_ID, project.id, validateProjectUpdate({ description: 'Acme only' }))
+        .description,
+    ).toBe('Acme only')
+    // null and an empty (or blank) string both clear it.
+    expect(
+      updateProject(TEST_USER_ID, project.id, validateProjectUpdate({ description: '   ' }))
+        .description,
+    ).toBeNull()
+    updateProject(TEST_USER_ID, project.id, { description: 'Back' })
+    expect(updateProject(TEST_USER_ID, project.id, { description: null }).description).toBeNull()
+
+    // A project made without one reads null.
+    expect(createProject(TEST_USER_ID, { name: 'Plain', shared: false }).description).toBeNull()
+  })
+
+  test('PJ-009: the description is capped at PROJECT_DESCRIPTION_MAX after trimming', () => {
+    const atCap = 'x'.repeat(PROJECT_DESCRIPTION_MAX)
+    expect(validateProjectUpdate({ description: `  ${atCap}  ` }).description).toBe(atCap)
+    expect(() => validateProjectUpdate({ description: `${atCap}y` })).toThrow(ZodError)
+    expect(() => validateProjectCreate({ name: 'N', description: `${atCap}y` })).toThrow(ZodError)
+    expect(() => validateProjectUpdate({ description: 42 })).toThrow(ZodError)
   })
 })

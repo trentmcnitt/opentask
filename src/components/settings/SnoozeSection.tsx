@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,7 @@ import {
 import type { BulkSnoozeDefault } from '@/components/PreferencesProvider'
 import type { WeekStart } from '@/lib/week-start'
 import { savePreferenceField } from '@/lib/save-preference'
-import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
+import { formatSnoozeOptionLabel, formatMorningTime, NEXT_PERIOD_OPTION } from '@/lib/snooze'
 import { SettingsSection } from './SettingsSection'
 
 const SELECT_CLASS =
@@ -73,7 +74,7 @@ export function SnoozeSection() {
             period, with this to flip back while he decides. */}
         <SettingRow
           label="Snooze-all button"
-          description="Where a tap of the clock sends every overdue task"
+          description={`Where a tap of the clock sends every ${OVER_TARGET_LOWER} task`}
         >
           <select
             aria-label="Snooze-all button"
@@ -151,7 +152,7 @@ export function SnoozeSection() {
   )
 }
 
-const DEFAULT_SNOOZE_PRESETS = ['30', '60', '120', 'tomorrow']
+const DEFAULT_SNOOZE_PRESETS = ['30', '60', '120', NEXT_PERIOD_OPTION, 'tomorrow']
 
 /**
  * The single-tap snooze duration: a preset select whose "Custom..." swaps in
@@ -177,7 +178,10 @@ function DefaultSnoozeRow() {
   const isPreset = DEFAULT_SNOOZE_PRESETS.includes(defaultSnoozeOption)
 
   return (
-    <SettingRow label="Default snooze" description="Duration used for single-tap snooze">
+    <SettingRow
+      label="Default snooze"
+      description="Where a single tap or swipe snoozes an overdue task"
+    >
       {showCustom ? (
         <div className="flex items-center gap-2">
           <Input
@@ -203,11 +207,13 @@ function DefaultSnoozeRow() {
         </div>
       ) : (
         <select
+          aria-label="Default snooze"
           value={isPreset ? defaultSnoozeOption : 'custom'}
           onChange={(e) => {
             const val = e.target.value
             if (val === 'custom') {
-              setCustomMinutes(defaultSnoozeOption !== 'tomorrow' ? defaultSnoozeOption : '')
+              // Seed the minutes field only from a minute count.
+              setCustomMinutes(/^\d+$/.test(defaultSnoozeOption) ? defaultSnoozeOption : '')
               setShowCustom(true)
             } else {
               save(val)
@@ -218,6 +224,10 @@ function DefaultSnoozeRow() {
           <option value="30">30 min</option>
           <option value="60">1 hour</option>
           <option value="120">2 hours</option>
+          {/* The start of the next reminder period (2026-10-10) — later today,
+              or tomorrow's first once the day's last has begun; +1 hour with
+              no periods. Same target as the snooze menu's "Next period". */}
+          <option value={NEXT_PERIOD_OPTION}>Next period</option>
           <option value="tomorrow">Tomorrow at {formatMorningTime(morningTime)}</option>
           {!isPreset && (
             <option value={defaultSnoozeOption}>

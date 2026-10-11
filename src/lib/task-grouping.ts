@@ -12,6 +12,8 @@
  * The grouping modes themselves are defined in `src/lib/grouping.ts`; the Today
  * view's slot grouping lives in `src/lib/slot-view.ts`.
  */
+import { effectiveHorizon, HORIZON_ORDER } from '@/lib/task-segments'
+import { isOverdue } from '@/lib/task-counts'
 import type { LabelColor, Project, Task } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { groupByTimeSlot } from '@/lib/slot-view'
@@ -36,6 +38,9 @@ export type SortOption =
   | 'modified'
   | 'original_due'
   | 'ai_insights'
+  // 2026-10-10: over target first, then effective horizon (days → eventually),
+  // deadline, priority, newest. See `horizonSortKey`.
+  | 'horizon'
 
 /**
  * New and Unified are one flat list: no group headers, no preview cap, no
@@ -117,6 +122,14 @@ export function sortTasks(
         return reversed ? -cmp : cmp
       })
       break
+    case 'horizon': {
+      const now = new Date()
+      sorted.sort((a, b) => {
+        const cmp = compareHorizonOrder(a, b, now)
+        return reversed ? -cmp : cmp
+      })
+      break
+    }
     case 'original_due':
       // Default: earliest original_due first (oldest origin at top). Null → end.
       sorted.sort((a, b) => {
@@ -260,4 +273,26 @@ export function orderedTaskIds(
   isCollapsed: (label: string) => boolean,
 ): number[] {
   return sortedGroups.flatMap((g) => (isCollapsed(g.label) ? [] : g.sortedTasks.map((t) => t.id)))
+}
+
+/**
+ * The task model's dashboard order (2026-10-10, spec amendment 18): effective
+ * horizon — with "now" (over target) ahead of days — then the nearest
+ * deadline (none last), then priority, then the newest. Horizon and deadline
+ * decide which tasks sit together; priority and recency only break ties.
+ */
+function horizonRank(task: Task, now: Date): number {
+  if (isOverdue(task, now)) return -1
+  return HORIZON_ORDER.indexOf(effectiveHorizon(task, now))
+}
+
+export function compareHorizonOrder(a: Task, b: Task, now: Date): number {
+  const rank = horizonRank(a, now) - horizonRank(b, now)
+  if (rank !== 0) return rank
+  const aDl = a.deadline_at ? Date.parse(a.deadline_at) : Infinity
+  const bDl = b.deadline_at ? Date.parse(b.deadline_at) : Infinity
+  if (aDl !== bDl) return aDl < bDl ? -1 : 1
+  const pri = (b.priority || 0) - (a.priority || 0)
+  if (pri !== 0) return pri
+  return Date.parse(b.created_at) - Date.parse(a.created_at)
 }

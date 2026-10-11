@@ -408,6 +408,14 @@ export async function processEnrichmentQueue(): Promise<void> {
   }
 }
 
+/** How a horizon reads in the enrichment toast ("Within weeks"). */
+const HORIZON_TOAST_LABELS: Record<NonNullable<Task['horizon']>, string> = {
+  days: 'Within days',
+  weeks: 'Within weeks',
+  months: 'Within months',
+  eventually: 'Eventually',
+}
+
 /**
  * Build a concise toast description from enrichment results.
  * Shows actual values (not field names): "Tomorrow 9:00 AM · Medium · Shopping"
@@ -425,6 +433,14 @@ function buildEnrichmentDescription(
   // not carry. Its schedule alone is the news.
   if (!task.is_reminder && fieldsChanged.includes('due_at') && task.due_at) {
     parts.push(formatDueTimeParts(task.due_at, userTimezone).relative)
+  }
+
+  if (fieldsChanged.includes('deadline_at') && task.deadline_at) {
+    parts.push(`Deadline ${formatDueTimeParts(task.deadline_at, userTimezone).relative}`)
+  }
+
+  if (fieldsChanged.includes('horizon') && task.horizon) {
+    parts.push(HORIZON_TOAST_LABELS[task.horizon])
   }
 
   if (fieldsChanged.includes('rrule') && task.rrule) {
@@ -729,34 +745,209 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   }
 
   if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, defaultSlotLabel)
+  else {
+    parsed = alignTaskModelDates(
+      sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+      user.timezone,
+    )
+  }
+
+  parsed = toUtcTimes(parsed, user.timezone, row.id)
+
+  return applyEnrichment(row, parsed, user, textToEnrich)
+}
+
+/**
+ * Convert the model's local datetimes (due_at, deadline_at) to UTC ISO.
+ *
+ * The AI returns local time (no Z, no offset); Luxon resolves it in the user's
+ * zone, DST included. An unparseable value becomes null rather than failing the
+ * whole enrichment.
+ */
+function toUtcTimes(input: EnrichmentResult, timezone: string, taskId: number): EnrichmentResult {
+  let parsed = input
+  // The deadline arrives as local time like due_at, and converts the same way
+  // — minus the BYDAY snap, which is about where a recurring target lands.
+  if (parsed.deadline_at) {
+    const local = parseLocalDateTime(parsed.deadline_at, timezone)
+    if (!local) {
+      log.warn(
+        'ai',
+        `Enrichment[${taskId}]: invalid deadline_at "${parsed.deadline_at}", setting to null`,
+      )
+    }
+    parsed = { ...parsed, deadline_at: local ? local.toUTC().toISO()! : null }
+  }
 
   // Convert due_at from local time to UTC using Luxon.
   // The AI returns local time (no Z, no offset). Luxon handles DST transitions
   // correctly for the target date, unlike naive Date() parsing.
   if (parsed.due_at) {
-    let dueAt = parsed.due_at
-    // Defensive: strip Z suffix or offset if AI includes one despite instructions
-    dueAt = dueAt.replace(/Z$/i, '').replace(/[+-]\d{2}:?\d{2}$/, '')
-    let local = DateTime.fromISO(dueAt, { zone: user.timezone })
-    if (local.isValid) {
+    let local = parseLocalDateTime(parsed.due_at, timezone)
+    if (local) {
       if (parsed.rrule) {
         const snapped = snapDueAtToByday(local, parsed.rrule)
         if (snapped !== local) {
           log.warn(
             'ai',
-            `Enrichment[${row.id}]: AI due_at "${parsed.due_at}" conflicts with RRULE "${parsed.rrule}" — snapped ${local.toISO()} → ${snapped.toISO()}`,
+            `Enrichment[${taskId}]: AI due_at "${parsed.due_at}" conflicts with RRULE "${parsed.rrule}" — snapped ${local.toISO()} → ${snapped.toISO()}`,
           )
           local = snapped
         }
       }
       parsed = { ...parsed, due_at: local.toUTC().toISO()! }
     } else {
-      log.warn('ai', `Enrichment[${row.id}]: invalid due_at "${parsed.due_at}", setting to null`)
+      log.warn('ai', `Enrichment[${taskId}]: invalid due_at "${parsed.due_at}", setting to null`)
       parsed = { ...parsed, due_at: null }
     }
   }
 
-  return applyEnrichment(row, parsed, user, textToEnrich)
+  return parsed
+}
+
+/**
+ * Read a model-supplied local datetime ("2026-10-17T23:59:00") in the user's
+ * zone. Defensive: a Z suffix or offset the model added despite instructions is
+ * stripped, so the wall-clock time it wrote is what lands. Null when invalid.
+ */
+function parseLocalDateTime(value: string, timezone: string): DateTime | null {
+  const bare = value.replace(/Z$/i, '').replace(/[+-]\d{2}:?\d{2}$/, '')
+  // Luxon is configured to THROW on an invalid DateTime (throwOnInvalid), so
+  // `isValid` alone never sees a bad value: "2026/10/16 23:59" passes the
+  // schema's Date.parse check but is not ISO, and used to fail the whole
+  // enrichment instead of just dropping the one field.
+  try {
+    const local = DateTime.fromISO(bare, { zone: timezone })
+    return local.isValid ? local : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Words that state a cutoff. `deadline_at` survives only when the input has one
+ * — see `sanitizeTaskModelFields`.
+ */
+const DEADLINE_CUE =
+  /\b(by|before|due|deadline|deadlines|expire|expires|expired|expiring|expiry|expiration|until|till|no later than|close|closes|closing|cut-?off|last day|ends?|runs? out)\b/i
+
+/**
+ * Words that state a pace. `horizon` survives only when the input has one. Bare
+ * "today"/"tomorrow" are NOT here — they name a day (a target), not a pace;
+ * "today or tomorrow" is the pace form.
+ */
+const PACE_CUE =
+  /\b(days?|weeks?|weekend|months?|years?|eventually|someday|some day|sometime|one of these days|at some point|timeline|today or tomorrow)\b/i
+
+/**
+ * Post-parse guard for the task model's two new fields (2026-10-10) — the same
+ * belt-and-suspenders stance as `filterExplicitLabels` and `filterProjectMatch`.
+ *
+ * The prompt says: a deadline only from a stated cutoff, a horizon only from
+ * stated pace wording, never from topic (Trent's 09-28 "no inference from
+ * topic" ruling, extended to these fields 10-10). Prompt wording never got
+ * topic inference to zero for projects, so this enforces the floor in code:
+ *
+ * - `deadline_at` is dropped unless the input contains a cutoff word ("by",
+ *   "before", "due", "expires", "deadline", "until", "closes"…). An AI-guessed
+ *   deadline is worse than an AI-guessed date: it caps snoozing.
+ * - `horizon` is dropped unless the input contains a pace word ("week",
+ *   "month", "days", "eventually", "someday"…). "Fix the squeaky door" →
+ *   "eventually" is exactly the inference this blocks.
+ * - A recurring result (rrule set) gets neither. Task segments exclude
+ *   recurring tasks, so a horizon would mean nothing, and the prompt routes a
+ *   recurring cutoff into due_at ("every Friday by 5pm" → due_at Friday 5pm),
+ *   as before this model existed.
+ *
+ * What the guard deliberately leaves to the model: whether a present cue word
+ * is used as one ("drop it off before work" has "before" but is a target).
+ * Exported for the quality harness, which must judge what production stores.
+ */
+export function sanitizeTaskModelFields(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  taskId?: number,
+): EnrichmentResult {
+  let { deadline_at: deadlineAt, horizon } = enrichment
+  if (enrichment.rrule) {
+    deadlineAt = null
+    horizon = null
+  }
+  if (deadlineAt && !DEADLINE_CUE.test(inputText)) {
+    log.info('ai', `Enrichment[${taskId ?? '-'}]: dropped deadline_at with no cutoff wording`)
+    deadlineAt = null
+  }
+  if (horizon && !PACE_CUE.test(inputText)) {
+    log.info(
+      'ai',
+      `Enrichment[${taskId ?? '-'}]: dropped horizon "${horizon}" with no pace wording`,
+    )
+    horizon = null
+  }
+  return { ...enrichment, deadline_at: deadlineAt, horizon }
+}
+
+/** A date further in the past than this is a wrong year, not a missed date. */
+const STALE_DATE_DAYS = 7
+
+/**
+ * A model-supplied local datetime more than STALE_DATE_DAYS in the past, moved
+ * forward a year at a time (twice at most). Returns the (possibly unchanged)
+ * DateTime, or null when the value does not parse.
+ */
+function rollStaleYear(value: string, timezone: string, now: Date): DateTime | null {
+  let local = parseLocalDateTime(value, timezone)
+  if (!local) return null
+  const staleBefore = DateTime.fromJSDate(now).minus({ days: STALE_DATE_DAYS })
+  for (let i = 0; i < 2 && local < staleBefore; i++) local = local.plus({ years: 1 })
+  return local
+}
+
+function toLocalIso(local: DateTime | null, fallback: string | null): string | null {
+  if (!local) return fallback
+  return local.toISO({ includeOffset: false, suppressMilliseconds: true }) ?? fallback
+}
+
+/**
+ * Date sanity for the model's (still local) target and deadline — mistakes the
+ * prompt forbids but the model still made in the quality runs:
+ *
+ * - A month and day with no year in the past ("the deadline is February 28th"
+ *   said in October; "every year on March 1st" given March 1st of THIS year)
+ *   came back already passed. A deadline, or a RECURRING task's first date,
+ *   more than STALE_DATE_DAYS in the past is moved forward a year (twice at
+ *   most) — on a fresh task that is a year slip, and a yearly or quarterly rule
+ *   still lands on an occurrence a whole year on. A one-off target is not
+ *   touched (unchanged behaviour). One that passed days ago ("it expired Monday") is left as
+ *   said.
+ * - A target after the deadline ("closes at 9pm tonight" with a made-up 10pm
+ *   target). The deadline is what the user stated, so the target goes; with no
+ *   target the deadline's own lead-time nag takes over.
+ *
+ * Pure apart from `now`; exported for the quality harness and tests.
+ */
+export function alignTaskModelDates(
+  enrichment: EnrichmentResult,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const deadline = enrichment.deadline_at
+    ? rollStaleYear(enrichment.deadline_at, timezone, now)
+    : null
+  // A one-off target is left as the model wrote it (only the deadline check
+  // below applies); a recurring task's FIRST date is rolled, since a past one
+  // makes the whole series overdue on creation.
+  const target = !enrichment.due_at
+    ? null
+    : enrichment.rrule
+      ? rollStaleYear(enrichment.due_at, timezone, now)
+      : parseLocalDateTime(enrichment.due_at, timezone)
+  const targetAfterDeadline = target !== null && deadline !== null && target > deadline
+  return {
+    ...enrichment,
+    deadline_at: toLocalIso(deadline, enrichment.deadline_at),
+    due_at: targetAfterDeadline ? null : toLocalIso(target, enrichment.due_at),
+  }
 }
 
 /**
@@ -783,6 +974,8 @@ export function sanitizeReminderEnrichment(
   const base: EnrichmentResult = {
     ...enrichment,
     due_at: null,
+    deadline_at: null,
+    horizon: null,
     labels: [],
     project_name: null,
     auto_snooze_minutes: null,
@@ -978,6 +1171,8 @@ function collectEnrichmentChanges(
     }
   }
 
+  collectTaskModelEnrichment(task, enrichment, tracked, { setClauses, values, fieldsChanged })
+
   // Priority — always overwrite
   if (enrichment.priority > 0) {
     if (enrichment.priority !== task.priority) {
@@ -1090,6 +1285,37 @@ function collectEnrichmentChanges(
 }
 
 /**
+ * Deadline and horizon (2026-10-10, docs/TASK-MODEL.md § Deadline, target,
+ * horizon). Set-only, like due_at: a null from the model never clears what the
+ * task already has. Neither applies to a quota (§5), a reminder (§6), or a
+ * recurring task — the sanitizers already null them for a recurring or
+ * reminder RESULT; this covers a task that was already one of those at write
+ * time. A horizon restarts its clock (`horizon_set_at`), as
+ * `collectTaskModelFields` does for an API edit — these clauses are raw SQL and
+ * do not pass through it.
+ */
+function collectTaskModelEnrichment(
+  task: Task,
+  enrichment: EnrichmentResult,
+  tracked: boolean,
+  changes: FieldChanges,
+): void {
+  if (tracked || task.is_reminder || task.rrule || enrichment.rrule) return
+
+  if (enrichment.deadline_at && enrichment.deadline_at !== task.deadline_at) {
+    changes.setClauses.push('deadline_at = ?')
+    changes.values.push(enrichment.deadline_at)
+    changes.fieldsChanged.push('deadline_at')
+  }
+
+  if (enrichment.horizon && enrichment.horizon !== task.horizon) {
+    changes.setClauses.push('horizon = ?', 'horizon_set_at = ?')
+    changes.values.push(enrichment.horizon, nowUtc())
+    changes.fieldsChanged.push('horizon', 'horizon_set_at')
+  }
+}
+
+/**
  * The project enrichment should move the task into, or null to leave it.
  *
  * Resolves the model's project name (owned or shared) after two guards: the
@@ -1128,6 +1354,9 @@ function resolveProjectChange(
   }
   return project.id
 }
+
+/** Bookkeeping columns that ride along with a change but are not news to the user. */
+const INTERNAL_FIELDS = ['anchor_time', 'anchor_dow', 'anchor_dom', 'horizon_set_at']
 
 /**
  * Apply enrichment results to a task.
@@ -1185,7 +1414,7 @@ function applyEnrichment(
       if (!updatedTask) throw new Error('Failed to retrieve enriched task')
 
       const changeList = changes.fieldsChanged
-        .filter((f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
+        .filter((f) => !INTERNAL_FIELDS.includes(f))
         .join(', ')
       const description = `AI: Enriched ${task.is_reminder ? 'reminder' : 'task'} — set ${changeList}`
 
@@ -1197,9 +1426,7 @@ function applyEnrichment(
   log.info('ai', `Task ${row.id} enriched: ${changes.fieldsChanged.join(', ')}`)
 
   // Return user-facing fields (filter out anchor internals) for toast description
-  return changes.fieldsChanged.filter(
-    (f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f),
-  )
+  return changes.fieldsChanged.filter((f) => !INTERNAL_FIELDS.includes(f))
 }
 
 interface PendingTaskRow {

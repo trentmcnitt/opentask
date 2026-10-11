@@ -48,6 +48,7 @@ const VALID_SORT_OPTIONS = [
   'age',
   'modified',
   'original_due',
+  'horizon',
   'ai_insights',
 ] as const
 const VALID_AI_MODES = ['off', 'on'] as const
@@ -310,10 +311,12 @@ function validateGeneralFields(
   if (body.default_snooze_option !== undefined) {
     const val = body.default_snooze_option
     if (typeof val !== 'string') return 'default_snooze_option must be a string'
-    if (val !== 'tomorrow') {
+    // 'next_period' (2026-10-10): the single-tap snooze can go to the next
+    // period, as the snooze-all button can.
+    if (val !== 'tomorrow' && val !== 'next_period') {
       const num = parseInt(val, 10)
       if (isNaN(num) || num < 1 || num > 1440 || String(num) !== val)
-        return 'default_snooze_option must be "tomorrow" or a string integer 1-1440'
+        return 'default_snooze_option must be "tomorrow", "next_period" or a string integer 1-1440'
     }
     changes.default_snooze_option = val
   }
@@ -378,6 +381,15 @@ function validateAiFields(
       resolved = trimmed.length > 0 ? trimmed : null
     }
     changes.ai_context = resolved
+  }
+
+  // "I looked and it is still right" (Settings → AI Context → Mark reviewed):
+  // restamps `ai_context_updated_at` without changing the text, so the
+  // staleness nudge can be cleared by a review, not only by an edit. The
+  // stamp itself is never client-supplied — only `true` is accepted here.
+  if (body.ai_context_reviewed !== undefined) {
+    if (body.ai_context_reviewed !== true) return 'ai_context_reviewed must be true'
+    changes.ai_context_updated_at = new Date().toISOString()
   }
 
   if (body.ai_mode !== undefined) {
@@ -562,6 +574,9 @@ function formatPreferencesResponse(row: PreferencesRow) {
     sweep_feedback_notifications_enabled: row.sweep_feedback_notifications_enabled !== 0,
     critical_alert_volume: row.critical_alert_volume,
     ai_context: row.ai_context,
+    // When `ai_context` last changed (null: never, or not since 2026-10-10,
+    // when this began to be recorded). Read-only — the server stamps it.
+    ai_context_updated_at: row.ai_context_updated_at,
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
     ai_show_signals: row.ai_show_signals !== 0,
@@ -591,6 +606,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
 // AI fields that demo users cannot modify
 const DEMO_PROTECTED_FIELDS = [
   'ai_context',
+  'ai_context_reviewed',
   'ai_mode',
   'ai_enrichment_mode',
   'ai_quicktake_mode',

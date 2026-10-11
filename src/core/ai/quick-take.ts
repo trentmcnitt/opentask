@@ -87,6 +87,8 @@ export interface QuickTakeTask {
   title: string
   project_name?: string | null
   due_at?: string | null
+  /** The real cutoff (2026-10-10); shown as `deadline:` in the compact list. */
+  deadline_at?: string | null
   priority: number
   labels?: string[]
   rrule?: string | null
@@ -128,6 +130,10 @@ export function formatCompactTaskList(
     if (t.due_at) {
       const due = DateTime.fromISO(t.due_at, { zone: 'utc' }).setZone(timezone)
       parts.push(`due:${formatCompactDate(due, now)}`)
+    }
+    if (t.deadline_at) {
+      const deadline = DateTime.fromISO(t.deadline_at, { zone: 'utc' }).setZone(timezone)
+      parts.push(`deadline:${formatCompactDate(deadline, now)}`)
     }
     const pLabel = PRIORITY_LABELS[t.priority]
     if (pLabel) parts.push(pLabel)
@@ -297,6 +303,7 @@ export function buildFromDb(
       title: t.title,
       project_name: projectMap.get(t.project_id) ?? null,
       due_at: t.due_at,
+      deadline_at: t.deadline_at,
       priority: t.priority,
       labels,
       rrule: t.rrule ?? null,

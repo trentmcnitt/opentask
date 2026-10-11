@@ -118,7 +118,7 @@ test('with the Overdue filter on, every overdue task shows: no "Show all" cap', 
       await expect(rows).toHaveCount(6)
 
       await page
-        .getByRole('button', { name: /^Overdue/ })
+        .getByRole('button', { name: /^Over target/ })
         .first()
         .click()
       await expect(rows).toHaveCount(12)

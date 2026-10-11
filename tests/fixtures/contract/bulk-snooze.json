@@ -6,6 +6,7 @@
     "skipped_high": 0,
     "snoozed_high": 0,
     "skipped_reminders": 1,
-    "skipped_no_due_date": 0
+    "skipped_no_due_date": 0,
+    "skipped_deadline": 0
   }
 }

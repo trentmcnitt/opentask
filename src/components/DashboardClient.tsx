@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -264,9 +265,14 @@ function useBulkActions(
       const result = await saveQuickPanelChanges(allIds, changes, dateTaskIds)
       bumpUndoCount()
       fetchTasks()
+      // A deadline-capped task is never moved silently: the toast says it stayed.
+      const kept = result.skippedDeadline
+        ? ` · ${result.skippedDeadline} kept before ${result.skippedDeadline === 1 ? 'its' : 'their'} deadline`
+        : ''
       showToast({
         message:
-          result.description || `${result.tasksAffected} ${taskWord(result.tasksAffected)} updated`,
+          (result.description ||
+            `${result.tasksAffected} ${taskWord(result.tasksAffected)} updated`) + kept,
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
@@ -1781,7 +1787,7 @@ function TrackColumn({
  * raised its own toast with Undo, so this one offers nothing to click.
  */
 function notifyOverdueFilterCleared() {
-  showToast({ message: 'No overdue tasks left — Overdue filter cleared' })
+  showToast({ message: `Nothing ${OVER_TARGET_LOWER} left — ${OVER_TARGET} filter cleared` })
 }
 
 function DashboardView({
@@ -2364,6 +2370,7 @@ function DashboardView({
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
           <TaskList
             tasks={tasks}
+            timeSlots={timeSlots}
             uncapped={overdueFilterOn}
             sortedGroups={sortedGroups}
             orderedIds={orderedIds}
@@ -2377,6 +2384,16 @@ function DashboardView({
             revealRef={revealTaskRef}
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
+            // Remove target (2026-10-10): back to its horizon's task segment.
+            // Silences a deadline's implied nag too, or "remove" would do nothing.
+            onRemoveTarget={(task) =>
+              void actions
+                .handleSaveAllChanges(task.id, {
+                  due_at: null,
+                  ...(task.deadline_at ? { deadline_nag_off: true } : {}),
+                })
+                .catch(() => undefined)
+            }
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}
             keyboardFocusedId={keyboardFocusedId}

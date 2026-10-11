@@ -75,6 +75,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           userTimezone: user.timezone,
           taskId: task_id,
           until,
+          // A notification's snooze button is one explicit tap with no room for
+          // a confirm, so it is honored past a deadline rather than refused
+          // (2026-10-10). The cap is for sweeps and the app's quick grid.
+          allowPastDeadline: true,
         })
         log.info('notifications', `Action complete: ${action} on task ${task_id}`)
         return success({ action, task_id, until, result })

@@ -33,6 +33,14 @@ const VALID_TASK_COLUMNS = new Set([
   'anchor_dow',
   'anchor_dom',
   'original_due_at',
+  // Task model (2026-10-10). Must be here: this allowlist throws on an unknown
+  // field, and a throw inside undoEntry wedges the stack (see is_tracked below).
+  'deadline_at',
+  'horizon',
+  'horizon_set_at',
+  'last_considered_at',
+  'segment_deferred_at',
+  'deadline_nag_off',
   'deleted_at',
   'archived_at',
   'labels',
@@ -121,6 +129,11 @@ export function applyFieldsToTask(
         // so without this branch better-sqlite3 refuses the raw JS boolean.
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
+      } else if (dbColumn === 'deadline_nag_off') {
+        // Task model (2026-10-10): a boolean in the snapshot, 0/1 in the column.
+        // Without this an Undo of remove-target throws and wedges the stack.
+        setClauses.push(`${dbColumn} = ?`)
+        values.push((state as { deadline_nag_off?: boolean }).deadline_nag_off ? 1 : 0)
       } else if (JSON_OBJECT_COLUMNS.has(dbColumn)) {
         // The snapshot holds the parsed object (rowToTask's shape);
         // better-sqlite3 cannot bind a plain object.

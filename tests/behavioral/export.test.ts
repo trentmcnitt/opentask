@@ -250,6 +250,7 @@ describe('Data export', () => {
         shared: false,
         sort_order: 0,
         color: null,
+        description: 'Work, not home',
         active_count: 5,
         overdue_count: 2,
         created_at: '2026-01-01T00:00:00Z',
@@ -257,6 +258,7 @@ describe('Data export', () => {
       const csv = projectsToCsv([project])
       const dataRow = csv.split('\n')[1]
       expect(dataRow).toContain('"Test Project"')
+      expect(dataRow).toContain('"Work, not home"')
       expect(dataRow).toContain('"5"')
       expect(dataRow).toContain('"2"')
     })
@@ -268,6 +270,7 @@ describe('Data export', () => {
  */
 function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
   return {
+    target_at: null,
     id: 1,
     user_id: 1,
     project_id: 1,
@@ -292,6 +295,12 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     anchor_dow: null,
     anchor_dom: null,
     original_due_at: null,
+    deadline_at: null,
+    horizon: null,
+    horizon_set_at: null,
+    last_considered_at: null,
+    segment_deferred_at: null,
+    deadline_nag_off: false,
     last_notified_at: null,
     last_critical_alert_at: null,
     auto_snooze_minutes: null,

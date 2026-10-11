@@ -23,7 +23,9 @@
  * - P0-P2: user.auto_snooze_minutes (default 30 min)
  */
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
+import { deadlineCandidateSql, withEffectiveTarget } from '@/core/tasks/currently-due'
 import { log } from '@/lib/logger'
 import { HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
@@ -62,6 +64,10 @@ interface OverdueTask {
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
   timezone: string
+  // Task model (2026-10-10): to put a deadline's implied target in due_at.
+  deadline_at?: string | null
+  deadline_nag_off?: number
+  morning_time?: string | null
   /**
    * The due time this task is actually being notified about, from
    * `effectiveDueAt` (§4.6 as amended 2026-09-07). For anything carrying a
@@ -143,12 +149,12 @@ function splitIntoBuckets(tasks: OverdueTask[]): {
     regular: {
       individual: regular.slice(0, REGULAR_CAP),
       overflow: Math.max(0, regular.length - REGULAR_CAP),
-      label: 'tasks overdue',
+      label: `tasks ${OVER_TARGET_LOWER}`,
     },
     high: {
       individual: high.slice(0, HIGH_CAP),
       overflow: Math.max(0, high.length - HIGH_CAP),
-      label: 'high priority tasks overdue',
+      label: `high priority tasks ${OVER_TARGET_LOWER}`,
     },
     urgent: {
       individual: urgent,
@@ -162,7 +168,7 @@ function splitIntoBuckets(tasks: OverdueTask[]): {
 async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
   await sendPushNotification(task.user_id, {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
-    body: 'Overdue task',
+    body: `${OVER_TARGET} task`,
     data: { url: `${APP_URL}/?task=${task.id}`, taskId: task.id },
   })
 }
@@ -171,7 +177,7 @@ async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
 async function sendSummaryWebPush(userId: number, count: number, label: string): Promise<void> {
   await sendPushNotification(userId, {
     title: `${count} more ${label}`,
-    body: 'Open app to see all overdue tasks',
+    body: `Open app to see all ${OVER_TARGET_LOWER} tasks`,
     data: { url: `${APP_URL}/?filter=overdue` },
   })
 }
@@ -184,7 +190,7 @@ async function sendIndividualApns(
 ): Promise<void> {
   await sendApnsNotification(task.user_id, {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
-    body: 'Overdue task',
+    body: `${OVER_TARGET} task`,
     taskId: task.id,
     // The occurrence being notified about, not the stored due_at (§4.6) — for
     // a recurring task those differ, and the client would otherwise show a
@@ -225,7 +231,7 @@ async function sendBucket(
         sendApnsSummaryNotification(
           userId,
           `${bucket.overflow} more ${bucket.label}`,
-          'Open app to see all overdue tasks',
+          `Open app to see all ${OVER_TARGET_LOWER} tasks`,
           bucket.overflow,
           overdueCount,
         ),
@@ -305,6 +311,7 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
                t.rrule, t.recurrence_mode, t.anchor_time,
+               t.deadline_at, t.deadline_nag_off, u.morning_time,
                u.timezone,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
@@ -327,13 +334,22 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))
+            OR ${deadlineCandidateSql()}
           )
         ORDER BY t.priority DESC, t.due_at ASC
       `,
       )
       .all(now.toISOString()) as OverdueTask[]
 
-    const overdueTasks = candidates.flatMap((task) => {
+    // A deadline's implied target (2026-10-10) is decided in JS — see
+    // `withEffectiveTarget` — and sorted back into priority, then due order.
+    const targeted = candidates
+      .map(withEffectiveTarget)
+      .sort(
+        (a, b) =>
+          b.priority - a.priority || (a.due_at ?? '\uffff').localeCompare(b.due_at ?? '\uffff'),
+      )
+    const overdueTasks = targeted.flatMap((task) => {
       const effective = effectiveDueAt(task, task.timezone, now)
       if (!effective || effective.getTime() > now.getTime()) return []
       return [{ ...task, effective_due_at: effective.toISOString() }]

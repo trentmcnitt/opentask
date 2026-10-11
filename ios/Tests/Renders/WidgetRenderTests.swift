@@ -83,7 +83,17 @@ final class WidgetRenderTests: XCTestCase {
         let env = try environment()
         try FileManager.default.createDirectory(at: env.outDir, withIntermediateDirectories: true)
 
-        let groups = try load("reminders", as: RemindersPayload.self, from: env.dataDir).groups
+        let remindersPayload = try load("reminders", as: RemindersPayload.self, from: env.dataDir)
+        let groups = remindersPayload.groups
+        // Task segments (2026-10-10): the page ahead of the slots, when the
+        // account has one today.
+        let segments = TaskSegmentDTO.listed(remindersPayload.taskSegments)
+        let segmentPage = RemindersTimeline.naturalPage(groups: groups, segments: segments, now: env.now)
+        let remindersSegment: RemindersEntry? = segmentPage.segmentIndex == nil ? nil : RemindersEntry(
+            date: env.now, groups: groups, segments: segments,
+            slotIndex: segmentPage.slotIndex, segmentIndex: segmentPage.segmentIndex,
+            staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
+        )
         let tasks = try load("tasks", as: TasksPage.self, from: env.dataDir).tasks
         let projects = try load("projects", as: ProjectsPage.self, from: env.dataDir).projects
         let labelConfig = try load("label-config", as: UserPreferencesLabelConfigPage.self, from: env.dataDir).labelConfig
@@ -91,15 +101,15 @@ final class WidgetRenderTests: XCTestCase {
 
         // Reminders: the clock's period, and "day complete" that evening.
         let reminders = RemindersEntry(
-            date: env.now, groups: groups,
-            slotIndex: RemindersTimeline.naturalSlotIndex(in: groups, now: env.now),
+            date: env.now, groups: groups, segments: [],
+            slotIndex: RemindersTimeline.naturalSlotIndex(in: groups, now: env.now), segmentIndex: nil,
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
         let evening = Calendar.current.date(bySettingHour: 21, minute: 48, second: 0, of: env.now)!
         let allHandled = groups.map(Self.handledAll)
         let remindersDone = RemindersEntry(
-            date: evening, groups: allHandled,
-            slotIndex: RemindersTimeline.naturalSlotIndex(in: allHandled, now: evening),
+            date: evening, groups: allHandled, segments: [],
+            slotIndex: RemindersTimeline.naturalSlotIndex(in: allHandled, now: evening), segmentIndex: nil,
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
 
@@ -149,6 +159,15 @@ final class WidgetRenderTests: XCTestCase {
                     name: "widget-reminders-\(familyName)-\(theme)",
                     shows: "Reminders widget, \(familyName), the 9:41 AM period", theme: theme, env: env
                 )
+                if let remindersSegment, family != .systemSmall {
+                    try render(
+                        RemindersWidgetView(entry: remindersSegment, familyOverride: family), size: size, scheme: scheme,
+                        wash: false,
+                        name: "widget-reminders-\(familyName)-task-segment-\(theme)",
+                        shows: "Reminders widget, \(familyName), a task segment page ahead of the slots",
+                        theme: theme, env: env
+                    )
+                }
                 try render(
                     RemindersWidgetView(entry: remindersDone, familyOverride: family), size: size, scheme: scheme,
                     wash: ReminderDayProgress.isDayComplete(remindersDone.groups),

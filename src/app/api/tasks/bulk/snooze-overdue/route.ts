@@ -70,7 +70,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           ? String(input.delta_minutes)
           : prefs.default_snooze_option
 
-      until = computeSnoozeTime(option, user.timezone, prefs.morning_time)
+      until = computeSnoozeTime(option, user.timezone, prefs.morning_time, listTimeSlots(user.id))
     }
 
     // Which tasks are actually due now (§4.6). A recurring task's due_at
@@ -99,6 +99,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         skipped_high: 0,
         snoozed_high: 0,
         skipped_reminders: 0,
+        skipped_deadline: 0,
         until,
         message: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
         feedback_notification: false,
@@ -156,6 +157,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
+      // 2026-10-10, additive: left where they were because the sweep would
+      // have moved them past their deadline.
+      skipped_deadline: result.deadlineSkipped,
       // The resolved target (ISO), so a client can say where things went.
       until,
       // Ready-to-display summary for clients that can't branch on the counts
@@ -163,6 +167,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // toast (`useSnoozeOverdue`): `skipped_urgent` counts High AND Urgent, so
       // Urgent alone is the difference.
       message: bulkSnoozeMessage({
+        deadline: result.deadlineSkipped,
         affected: result.tasksAffected,
         highAffected: result.highSnoozed,
         high: result.highSkipped,

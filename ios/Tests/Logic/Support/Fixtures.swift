@@ -50,6 +50,9 @@ enum Fixtures {
 
     /// Task placeholders, as the writer assigns them.
     static let daily = 101, weekly = 102, monthly = 103, stretch = 104, planTomorrow = 105, plants = 106
+    /// The task-segment row in `reminders-segments.json` (2026-10-10): a
+    /// one-off "days" task with a deadline and no target, considered today.
+    static let squeakyDoor = 110
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }
@@ -64,11 +67,15 @@ class WidgetStoreTestCase: XCTestCase {
         super.setUp()
         suiteName = "test.\(UUID().uuidString)"
         WidgetStore.suiteOverride = UserDefaults(suiteName: suiteName)
+        // The implied deadline target's morning time, pinned (never the App
+        // Group's — on macOS that is the installed Mac app's).
+        TargetContextStore.override = .some("09:00")
     }
 
     override func tearDown() {
         WidgetStore.suiteOverride?.removePersistentDomain(forName: suiteName)
         WidgetStore.suiteOverride = nil
+        TargetContextStore.override = nil
         super.tearDown()
     }
 }

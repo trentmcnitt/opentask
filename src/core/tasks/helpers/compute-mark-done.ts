@@ -8,6 +8,7 @@
 
 import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
+import { advanceDeadline } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 
 export interface MarkDoneStats {
@@ -23,6 +24,8 @@ export interface RecurringComputation {
    * nothing. See the tracked branch in `computeMarkDone`.
    */
   nextDueAt: string | null
+  /** The deadline moved with the occurrence (`advanceDeadline`); unchanged when none. */
+  nextDeadlineAt: string | null
   prevDueAt: string | null
   stats: MarkDoneStats
   fieldsChanged: string[]
@@ -79,14 +82,17 @@ export function computeMarkDone(
           prevDueAt: task.due_at ? new Date(task.due_at) : null,
         })
 
+    const nextDueAt = nextOccurrence?.toISOString() ?? null
     return {
       type: 'recurring',
-      nextDueAt: nextOccurrence?.toISOString() ?? null,
+      nextDueAt,
+      nextDeadlineAt: advanceDeadline(task, nextDueAt, userTimezone),
       prevDueAt: task.due_at,
       stats,
       fieldsChanged: [
         'due_at',
         'original_due_at',
+        'deadline_at',
         // §5: the period boundary resets tracked progress, so it must be in
         // fieldsChanged or undo would restore due_at without restoring the
         // count that went with it.

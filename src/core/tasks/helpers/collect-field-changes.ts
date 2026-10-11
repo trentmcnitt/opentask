@@ -8,7 +8,7 @@
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { NotFoundError, ForbiddenError, ValidationError, PastDeadlineError } from '@/core/errors'
 import {
   QUOTA_DUE_DATE_MESSAGE,
   QUOTA_PERIOD_MESSAGE,
@@ -16,6 +16,8 @@ import {
   TRACKED_REMINDER_MESSAGE,
 } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
+import { crossesDeadline, impliedTargetAt } from '@/lib/task-segments'
+import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
@@ -23,6 +25,11 @@ export type FieldChangesInput = TaskUpdateInput & {
   labels_add?: string[]
   labels_remove?: string[]
   reset_original_due_at?: boolean
+  /**
+   * Server-internal (never in a request schema): "Target today" marks the task
+   * considered in the same write, so one undo entry covers both.
+   */
+  last_considered_at?: string
 }
 
 export interface FieldChangeData {
@@ -132,13 +139,14 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 
   // Track basic field changes
   collectBasicFields(data, task, input, userId, skipProjectValidation)
+  collectTaskModelFields(data, task, input, now)
   collectQuotaPromptFields(data, task, input)
 
   // Track rrule changes with anchor derivation
   const rruleChanged = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
 
   // Track due_at changes with snooze detection
-  collectDueAtChanges(data, task, input, rruleChanged)
+  collectDueAtChanges(data, task, input, rruleChanged, now)
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
@@ -257,6 +265,51 @@ function collectOriginReset(data: FieldChangeData, task: Task, input: FieldChang
   }
   if (task.snooze_count !== 0) {
     trackField(data, 'snooze_count', task.snooze_count, 0)
+  }
+}
+
+/**
+ * Task model fields (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
+ *
+ * `deadline_at` is an ordinary field — no snooze path ever sends it, which is
+ * what keeps a snooze from moving a deadline. Changing `horizon` restarts its
+ * clock (`horizon_set_at`), which Process reads to ask whether it should grow;
+ * re-sending the same horizon is not a change and leaves the clock alone.
+ */
+function collectTaskModelFields(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  now: Date,
+): void {
+  if (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at) {
+    trackField(data, 'deadline_at', task.deadline_at, input.deadline_at)
+  }
+  // Remove-target sends `deadline_nag_off: true` to silence the deadline's
+  // implied nag too. A NEW deadline is new information and turns it back on,
+  // unless the same request says otherwise.
+  const nagOff =
+    input.deadline_nag_off ??
+    (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at ? false : undefined)
+  if (nagOff !== undefined && nagOff !== task.deadline_nag_off) {
+    trackField(data, 'deadline_nag_off', task.deadline_nag_off, nagOff, undefined, nagOff ? 1 : 0)
+  }
+  if (input.last_considered_at !== undefined) {
+    trackField(data, 'last_considered_at', task.last_considered_at, input.last_considered_at)
+  }
+  if (input.horizon !== undefined && input.horizon !== task.horizon) {
+    trackField(data, 'horizon', task.horizon, input.horizon)
+    trackField(
+      data,
+      'horizon_set_at',
+      task.horizon_set_at,
+      input.horizon ? now.toISOString() : null,
+    )
+  } else if (input.affirm_horizon) {
+    // Process "keep": the horizon stays as it is (unset stays unset) and its
+    // growth clock restarts, so Process stops asking until it is long past
+    // again. Undo restores the old stamp like any other field.
+    trackField(data, 'horizon_set_at', task.horizon_set_at, now.toISOString())
   }
 }
 
@@ -596,6 +649,26 @@ function collectRruleChanges(
 }
 
 /**
+ * A SNOOZE that lands past the deadline — confirmed while the deadline was
+ * still ahead, or any snooze once it has passed — turns the deadline's implied
+ * nag off for the task (2026-10-10, ruling A2). Otherwise the implied target,
+ * which a target past the deadline no longer hides, would keep nagging and the
+ * snooze the user just chose would do nothing. A deliberate re-target past the
+ * deadline is NOT a snooze and leaves the implied nag on, so a target set past
+ * its own deadline never hides the deadline. A new deadline turns it back on.
+ */
+function keepSnoozePastDeadline(
+  data: FieldChangeData,
+  task: Task,
+  deadline: string | null,
+  until: string,
+): void {
+  if (!deadline || Date.parse(until) <= Date.parse(deadline)) return
+  if (data.fieldsChanged.includes('deadline_nag_off') || task.deadline_nag_off) return
+  trackField(data, 'deadline_nag_off', task.deadline_nag_off, true, undefined, 1)
+}
+
+/**
  * Collect due_at changes with snooze detection
  *
  * When due_at changes without rrule changing, it's treated as a snooze:
@@ -611,6 +684,7 @@ function collectDueAtChanges(
   task: Task,
   input: FieldChangesInput,
   rruleChanged: boolean,
+  now: Date,
 ): void {
   // If rrule changed, due_at was handled there (if auto-computed)
   // Special case: when clearing rrule to null AND due_at to null together,
@@ -637,6 +711,32 @@ function collectDueAtChanges(
 
   trackField(data, 'due_at', task.due_at, input.due_at)
 
+  // A deadline-only task whose implied target (deadline − DEADLINE_LEAD_DAYS)
+  // has ARRIVED is already nagging: moving it is a snooze of that target, not
+  // giving a dateless task its first date (2026-10-10). It is capped by the
+  // deadline, counts as a snooze, and keeps the implied target as its origin,
+  // so the age badge doesn't reset.
+  const implied = task.deadline_at ? impliedTargetAt(task, getTargetContext(task.user_id)) : null
+  const impliedArrived = implied !== null && Date.parse(implied) <= now.getTime()
+  if (
+    impliedArrived &&
+    !rruleChanged &&
+    !input.reset_original_due_at &&
+    task.due_at === null &&
+    input.due_at !== null
+  ) {
+    data.isSnoozeScenario = true
+    if (crossesDeadline(task.deadline_at, input.due_at, now) && !input.allow_past_deadline) {
+      throw new PastDeadlineError()
+    }
+    keepSnoozePastDeadline(data, task, task.deadline_at, input.due_at)
+    if (task.original_due_at !== implied) {
+      trackField(data, 'original_due_at', task.original_due_at, implied)
+    }
+    trackField(data, 'snooze_count', task.snooze_count, task.snooze_count + 1)
+    return
+  }
+
   // Apply snooze logic if task had a previous due_at and is being moved to a new date
   // (not when clearing due_at to null — that's not a snooze).
   //
@@ -660,6 +760,16 @@ function collectDueAtChanges(
   ) {
     data.isSnoozeScenario = true
 
+    // The deadline caps a snooze (2026-10-10): never silently — refused unless
+    // the caller says the user confirmed it. A deliberate re-target is not a
+    // snooze and is not capped. Bulk paths filter such tasks out before here.
+    const deadline =
+      data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
+    if (crossesDeadline(deadline, input.due_at) && !input.allow_past_deadline) {
+      throw new PastDeadlineError()
+    }
+    keepSnoozePastDeadline(data, task, deadline, input.due_at)
+
     // Set original_due_at if not already set (preserve existing)
     if (task.original_due_at === null) {
       data.setClauses.push('original_due_at = ?')
@@ -678,18 +788,20 @@ function collectDueAtChanges(
     data.afterState.snooze_count = newSnoozeCount
   }
 
-  // When due_at is set for the first time on a task that had no due date,
-  // also set original_due_at to track the occurrence origin timestamp.
+  // When a task with no date gets one, the occurrence origin — which is also
+  // the target-age clock (2026-10-10) — starts at the new date. ALWAYS, even
+  // if a stale origin is somehow still stored: a fresh target must never show
+  // an age inherited from an old one ("target today" reading "14d" on day one).
   if (
     task.due_at === null &&
     input.due_at !== null &&
-    task.original_due_at === null &&
+    task.original_due_at !== input.due_at &&
     !data.fieldsChanged.includes('original_due_at')
   ) {
     data.setClauses.push('original_due_at = ?')
     data.values.push(input.due_at)
     data.fieldsChanged.push('original_due_at')
-    data.beforeState.original_due_at = null
+    data.beforeState.original_due_at = task.original_due_at
     data.afterState.original_due_at = input.due_at
   }
 

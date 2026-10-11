@@ -12,6 +12,7 @@ export interface ProjectRow {
   shared: number
   sort_order: number
   color: string | null
+  description: string | null
   active_count: number
   overdue_count: number
   created_at: string
@@ -25,6 +26,7 @@ export function formatProjectResponse(row: ProjectRow): Project {
     shared: row.shared === 1,
     sort_order: row.sort_order,
     color: (row.color as LabelColor) ?? null,
+    description: row.description ?? null,
     active_count: row.active_count,
     overdue_count: row.overdue_count,
     created_at: row.created_at,

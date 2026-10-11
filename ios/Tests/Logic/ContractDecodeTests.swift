@@ -151,7 +151,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     /// pre-action cache, yields the server's own post-action payload — every
     /// group, every prompt, sibling rows included.
     func testConfirmPromptActionReproducesThePostDidPayload() throws {
-        WidgetStore.saveReminders(try Fixtures.reminders("reminders-initial"))
+        WidgetStore.saveReminders(try Fixtures.reminders("reminders-initial"), taskSegments: [])
         let result = try Fixtures.decode(APIClient.PromptActionResult.self, "quota-prompts-did")
         WidgetStore.confirmPromptAction(Fixtures.promptKey(Fixtures.daily, 1), did: true, tasks: result.tasks)
 
@@ -185,7 +185,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     /// the post-did cache, yields the server's own pre-did payload: the
     /// put-back is the did-it undone, every group and prompt included.
     func testConfirmPromptRestoreReproducesThePreDidPayload() throws {
-        WidgetStore.saveReminders(try Fixtures.reminders("reminders-after-did"))
+        WidgetStore.saveReminders(try Fixtures.reminders("reminders-after-did"), taskSegments: [])
         let result = try Fixtures.decode(APIClient.PromptRestoreResult.self, "quota-prompts-restore")
         WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.daily, 1), tasks: result.tasks)
 
@@ -272,6 +272,92 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // 6 creates + did + progress + bulk complete.
         XCTAssertEqual(status.undoableCount, 9)
         XCTAssertEqual(status.redoableCount, 0)
+    }
+
+    // MARK: Task segments (2026-10-10)
+
+    /// `GET /api/reminders` after the segment row was considered: the
+    /// top-level `task_segments`, never inside a group.
+    func testRemindersTaskSegments() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-segments")
+        XCTAssertEqual(payload.taskSegments.map(\.horizon), ["days"])
+        let days = try XCTUnwrap(payload.taskSegments.first)
+        XCTAssertEqual(days.horizonValue, .days)
+        XCTAssertEqual(days.label, "Days")
+        XCTAssertEqual(days.pageKey, -10)
+        XCTAssertFalse(days.nudge)
+        XCTAssertEqual(days.tasks.map(\.id), [Fixtures.squeakyDoor])
+        XCTAssertEqual(days.tasks.map(\.state), [.considered])
+        XCTAssertEqual(days.waitingCount, 0)
+        XCTAssertEqual(days.consideredTasks.count, 1)
+        XCTAssertTrue(days.isListed, "a considered row keeps the segment listed, so it can go green")
+
+        let row = try XCTUnwrap(days.tasks.first).task
+        XCTAssertEqual(row.title, "Fix the squeaky door")
+        XCTAssertEqual(row.horizon, "days")
+        XCTAssertEqual(row.horizonLabel, "Days")
+        XCTAssertNil(row.dueAt)
+        XCTAssertEqual(row.deadlineAt, Fixtures.pinnedTimestamp)
+        XCTAssertNil(row.originalDueAt)
+        XCTAssertFalse(row.deadlineNagOff)
+        XCTAssertFalse(row.isReminder)
+
+        // Field by field against the raw JSON — a renamed key would otherwise
+        // decode silently as nil/false.
+        let raw = try Fixtures.object("reminders-segments")
+        let rawSegment = try XCTUnwrap((raw["task_segments"] as? [[String: Any]])?.first)
+        XCTAssertEqual(rawSegment["horizon"] as? String, "days")
+        XCTAssertEqual(rawSegment["waiting"] as? Int, days.waitingCount)
+        XCTAssertEqual(rawSegment["considered"] as? Int, days.consideredTasks.count)
+        let rawTask = try XCTUnwrap((rawSegment["tasks"] as? [[String: Any]])?.first)
+        XCTAssertEqual(rawTask["segment_state"] as? String, "considered")
+        XCTAssertEqual(rawTask["horizon"] as? String, row.horizon)
+        XCTAssertEqual(rawTask["deadline_at"] as? String, row.deadlineAt)
+        XCTAssertEqual(rawTask["deadline_nag_off"] as? Bool, row.deadlineNagOff)
+        XCTAssertTrue(rawTask["target_at"] is NSNull, "target_at mirrors due_at")
+
+        // Segments stay out of every group, and out of every reminders count.
+        let groupIds = Set(payload.groups.flatMap { $0.reminders + $0.consideredItems }.map(\.id))
+        XCTAssertFalse(groupIds.contains(Fixtures.squeakyDoor))
+        XCTAssertFalse(payload.groups.flatMap(\.prompts).contains { $0.taskId == Fixtures.squeakyDoor })
+    }
+
+    /// A segment row survives the App Group / watch cache round trip — state
+    /// and the new task fields included.
+    func testSegmentRowRoundTripsThroughACache() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-segments")
+        let data = try JSONEncoder().encode(payload)
+        let back = try JSONDecoder().decode(RemindersPayload.self, from: data)
+        XCTAssertEqual(back.taskSegments, payload.taskSegments)
+        XCTAssertEqual(back.groups, payload.groups)
+    }
+
+    /// An older server (or an older cache) has no `task_segments` at all.
+    func testRemindersWithoutSegmentsStillDecode() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders")
+        XCTAssertEqual(payload.taskSegments, [])
+        XCTAssertEqual(payload.groups.count, 6)
+    }
+
+    func testSegmentConsiderResponse() throws {
+        let result = try Fixtures.decode(APIClient.SegmentConsiderResult.self, "task-segments-consider")
+        XCTAssertEqual(result.considered, 1)
+    }
+
+    /// Every task in every fixture carries the task-model fields now.
+    func testOpenTasksCarryTheTaskModelFields() throws {
+        let raw = try XCTUnwrap(try Fixtures.object("tasks")["tasks"] as? [[String: Any]])
+        for task in raw {
+            for key in ["target_at", "deadline_at", "horizon", "original_due_at", "deadline_nag_off"] {
+                XCTAssertTrue(task.keys.contains(key), "task \(task["id"] ?? "?") lacks \(key)")
+            }
+            XCTAssertEqual(task["target_at"] as? String, task["due_at"] as? String, "target_at == due_at")
+        }
+        let tasks = try Fixtures.decode(TasksPage.self, "tasks").tasks
+        let dated = try XCTUnwrap(tasks.first { $0.id == Fixtures.stretch })
+        XCTAssertEqual(dated.originalDueAt, Fixtures.pinnedTimestamp)
+        XCTAssertNil(dated.horizon)
+        XCTAssertNil(dated.horizonLabel, "unset shows as nothing, never as Weeks")
     }
 
     // MARK: GET /api/tasks/counts (the foreground badge)

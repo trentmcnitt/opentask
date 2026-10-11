@@ -22,6 +22,15 @@ struct RemindersPageView: View {
         // crashed on first run.
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                // Task segments first, ahead of the time slot (2026-10-10,
+                // spec §3: "task segments open first, ahead of the Early
+                // morning slot"). Their own sections, never inside the
+                // slot's list or its "N left".
+                if model.hasLoadedOnce {
+                    ForEach(model.listedSegments.filter(\.hasWaiting)) { segment in
+                        TaskSegmentSection(segment: segment, model: model)
+                    }
+                }
                 header
                 if !model.reminderGroups.isEmpty {
                     SlotProgressStrip(groups: model.reminderGroups, currentIndex: model.displayedSlotIndex)
@@ -364,6 +373,106 @@ struct PromptRowView: View {
     static let didTarget = CGSize(width: 40, height: 28)
 }
 
+/// One task segment on the Reminders page (2026-10-10, docs/TASK-MODEL.md
+/// § Task segments): "Tasks · Days · 3 left", its waiting rows in the
+/// server's fixed order, and Defer all. Shown only while something waits —
+/// a considered row leaves the list (the toolbar Undo brings it back).
+struct TaskSegmentSection: View {
+    let segment: TaskSegmentDTO
+    @ObservedObject var model: WatchViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tasks · \(segment.label)")
+                    .font(.headline)
+                Text(segment.nudge ? "\(segment.waitingCount) left · try Process" : "\(segment.waitingCount) left")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(segment.waitingTasks) { row in
+                SegmentRowView(
+                    task: row.task, segmentHorizon: segment.horizon,
+                    consider: { model.considerSegmentTask(row.task) },
+                    done: { model.completeSegmentTask(row.task) }
+                )
+            }
+            Button {
+                model.deferSegment(segment)
+            } label: {
+                Label("Defer all", systemImage: "arrow.turn.down.right")
+                    .font(.caption)
+            }
+            .tint(WatchTheme.accent)
+            .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
+            Divider()
+        }
+    }
+}
+
+/// One task segment row — `PromptRowView`'s shape: circle and title on top
+/// (a tap anywhere there considers, "I saw it", never a completion — the web
+/// row's rule), then a line with the small words (horizon when it differs
+/// from the segment's, a future target "Nov 1", the deadline) and the done
+/// checkbox on the right. Horizon change and remove-target are not on the
+/// watch: they live in the app (amendment 16 allows a deep link; the watch
+/// has no web view to link into).
+struct SegmentRowView: View {
+    let task: TaskDTO
+    let segmentHorizon: String
+    let consider: () -> Void
+    let done: () -> Void
+
+    private var meta: String? { task.segmentMeta(segmentHorizon: segmentHorizon) }
+
+    private var spoken: String {
+        let words = meta.map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
+        return NotesGlyph.accessibilityLabel("\(task.title)\(words)", hasNotes: task.hasNotes)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "circle")
+                    .foregroundStyle(WatchTheme.accent)
+                    .font(.caption)
+                    .padding(.top, 3)
+                    .accessibilityHidden(true)
+                WatchTheme.titleText(Text(task.title), hasNotes: task.hasNotes)
+                    .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: consider)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(Text("Considered: \(spoken)"))
+
+            HStack(spacing: 0) {
+                if let meta {
+                    Text(meta)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 20)
+                }
+                Spacer(minLength: 0)
+                Button(action: done) {
+                    Image(systemName: "square")
+                        .font(.body)
+                        .foregroundStyle(WatchTheme.accent)
+                        .frame(width: PromptRowView.didTarget.width, height: PromptRowView.didTarget.height)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Done: \(spoken)"))
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// Shared empty state — the Tasks page's "All caught up" (nothing up next),
 /// and the Reminders page's finished-period states (`periodFinishedView`:
 /// "Complete" / "Day complete", 2026-09-29), which pass their own words.
@@ -421,6 +530,12 @@ struct LoadErrorView: View {
 // Quota prompts (2026-09-24) on realistic sample data: two reminders, then the
 // sixteen prompts — stripe, count, the dashed circle (tap = considered) and the
 // square (did it). The second preview has three handled, so they're gone.
+#Preview("Reminders — task segment first") {
+    NavigationStack {
+        RemindersPageView(model: .previewReminders(segments: true))
+    }
+}
+
 #Preview("Reminders — prompts") {
     NavigationStack {
         RemindersPageView(model: .previewReminders())

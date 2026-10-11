@@ -166,7 +166,8 @@ export const enrichmentPriorityScenarios: AITestScenario[] = [
       quality_notes:
         'Priority should be 3-4. "Time sensitive" signals high importance — P3 (high) is the ' +
         'expected value, P4 is acceptable given the explicit time pressure. ' +
-        'Title: "RSVP for the wedding" or similar. due_at should be Friday. ' +
+        'Title: "RSVP for the wedding" or similar. deadline_at should be Friday, end of day; due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it). ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
   },

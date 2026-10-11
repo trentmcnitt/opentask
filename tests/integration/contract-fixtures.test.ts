@@ -454,6 +454,21 @@ describe('contract fixtures (native clients)', () => {
       until: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(),
       include_task_ids: [created.dateless],
     })
+
+    // 10. task segments (2026-10-10): a one-off with a horizon and a deadline,
+    //     considered from its segment — LAST, so no earlier placeholder moves.
+    //     A task created today waits for its segment's next day (creating it
+    //     is seeing it), so the clock-independent way to put one in today's
+    //     segment is to consider it: it is listed, ticked, all day.
+    await make('segment', {
+      title: 'Fix the squeaky door',
+      horizon: 'days',
+      deadline_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    })
+    captured['task-segments-consider'] = await call('/api/task-segments/consider', {
+      ids: [created.segment],
+    })
+    captured['reminders-segments'] = await call('/api/reminders')
   })
 
   const names = [
@@ -468,6 +483,8 @@ describe('contract fixtures (native clients)', () => {
     'time-slots',
     'completions',
     'undo-status',
+    'task-segments-consider',
+    'reminders-segments',
     'quota-prompts-restore',
     'task-counts',
     'bulk-snooze',

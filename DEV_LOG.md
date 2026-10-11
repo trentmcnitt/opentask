@@ -4,6 +4,27 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 10-10-26
+
+### Deadline, target, horizon, and task segments
+
+**Why.** "I have 25 overdue things, and I'm really not overdue on 25 things." On 10-10, 25 tasks sat overdue, bulk-snoozed 12–14 times a day, and 123 of 136 one-off tasks were finished after their date. One `due_at` was carrying four things: real deadlines, the times Trent wanted to start, AI placeholders and pure awareness, while that weekend's seven real deadlines lived only in task notes. His verdict was about the system, not his habits: "I don't want to think of snoozing as something I shouldn't be doing." The design came out of a personal-hub session the same day, with two red-team passes and Trent's rulings.
+
+**What.** A task now carries three separate answers. `due_at` is the **target**, when nagging starts (API `target_at`, `due_at` kept as a deprecated alias; `retarget` for `reset_original_due_at`). `deadline_at` is the real cutoff: no snooze moves it, and a snooze can't cross it while it's still ahead (a single snooze gets 409 `PAST_DEADLINE` and the toast's "Snooze anyway"; a bulk one leaves the task and reports `skipped_deadline`). `horizon` (days / weeks / months / eventually, unset read as weeks) is the pace, pulled in by a near deadline and never grown on its own. Before its target arrives a one-off task sits in a **task segment** on the reminders screen, one per horizon on its own day, with a circle for "considered", Defer All and "Target today"; once the target arrives it is **over target**, the old overdue, nagged by the same machinery. Never both. `original_due_at` is the first-target date, and over-target rows show its age ("2d"). A recurring task's deadline moves with the occurrence. The deploy is additive schema only: clearing Trent's old dates is a separate per-task proposal from the personal-hub session, applied through the API after he approves it. `docs/TASK-MODEL.md` § Deadline, target, horizon and § Task segments have the rules.
+
+**Judgment calls** (the build's, not Trent's — each easy to reverse):
+
+- **A notification's snooze button is honored past a deadline.** It is one explicit tap with no room for a confirm, and refusing it from a lock screen would just fail silently. The cap applies to sweeps and the app's quick grid.
+- **Segments are a top-level `task_segments` array in `GET /api/reminders`, not inside `groups`.** A native build that predates them ignores the key, so its "Complete all" can never archive a real task, and segments are not time slots anyway.
+- **On the dashboard's reminders panel, a segment shows as a card above the slot pager, not as pager pages.** It stays while anything in it is waiting, then folds away and the slots have the panel to themselves. On the Reminders screen segments come first, ahead of the first period, as Trent confirmed ("tasks are an early-day thing").
+- **Recurring tasks never appear in segments**, and never get an implied target. Their schedule already brings them round.
+- **"Eventually" comes round on the first Saturday of January, April, July and October.** Trent said quarterly; the months are this build's choice. Likewise the 90-day step at which a deadline pulls a horizon in to months.
+- **`DEADLINE_LEAD_DAYS = 4` is tentative** (Trent: "maybe 4 days early for all priorities"). A deadline with no target nags from then, computed and never stored; remove-target silences it and a new deadline turns it back on.
+- **The words are provisional.** "Over target" ("not a fan of the name") and "Horizon" ("doesn't resonate") each live in one constant (`src/lib/task-model-words.ts`), so a better word is a one-line change on the web. API names don't change with them.
+- **The snooze cap is provisional too.** Past the deadline nagging continues with a past-deadline marker (Trent: "sometimes it's for a client and you're in a rush"). A better post-deadline behavior is still open.
+
+---
+
 ## 10-05-26
 
 ### A notification when AI can't process a task

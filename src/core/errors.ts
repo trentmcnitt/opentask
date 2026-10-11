@@ -50,3 +50,20 @@ export class AuthError extends AppError {
     this.name = 'AuthError'
   }
 }
+
+/**
+ * A snooze would move a task's target past its deadline (2026-10-10, spec §4).
+ * Never a silent clamp — the app does not reinterpret an explicit instruction
+ * — so a single snooze is refused with this (409, `PAST_DEADLINE`) and the
+ * client asks first, resending with `allow_past_deadline: true`. Bulk paths
+ * skip such a task and report it instead (`skipped_deadline`).
+ */
+export class PastDeadlineError extends AppError {
+  constructor(message: string = PAST_DEADLINE_MESSAGE) {
+    super(message, 409, 'PAST_DEADLINE')
+    this.name = 'PastDeadlineError'
+  }
+}
+
+export const PAST_DEADLINE_MESSAGE =
+  'That snooze would move the target past the deadline — send allow_past_deadline: true to do it anyway'

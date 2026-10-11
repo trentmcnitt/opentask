@@ -27,6 +27,8 @@ function result(overrides: Partial<EnrichmentResult> = {}): EnrichmentResult {
   return {
     title: 'Notice what I am grateful for',
     due_at: null,
+    deadline_at: null,
+    horizon: null,
     priority: 0,
     labels: [],
     project_name: null,

@@ -159,7 +159,8 @@ export const enrichmentVoiceScenarios: AITestScenario[] = [
         'Title MUST preserve "the blue one not the red one" — these are specific details. ' +
         'Expected: "Return the blue one not the red one to Target" or similar. ' +
         'NOT acceptable: "Return item to Target" (lost the color detail). ' +
-        'due_at should be Sunday.',
+        'deadline_at should be Sunday, end of day; due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it).',
     },
   },
   {

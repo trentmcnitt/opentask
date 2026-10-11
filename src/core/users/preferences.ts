@@ -11,6 +11,7 @@ import { getDb, withTransaction } from '@/core/db'
 import { createLabel, deleteLabel, SYSTEM_LABELS, isReservedLabel } from '@/core/labels'
 import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { nowUtc } from '@/core/recurrence'
 import type { PriorityDisplayConfig } from '@/types'
 
 export const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
@@ -50,6 +51,12 @@ export interface PreferencesRow {
   sweep_feedback_notifications_enabled: number
   critical_alert_volume: number
   ai_context: string | null
+  /**
+   * When `ai_context` last changed (2026-10-10). Server-stamped by
+   * `updatePreferences`, never written by a client: the staleness warning
+   * (`src/lib/ai-context-staleness.ts`) reads it.
+   */
+  ai_context_updated_at: string | null
   ai_mode: string
   ai_show_scores: number
   ai_show_signals: number
@@ -105,6 +112,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   sweep_feedback_notifications_enabled: 1,
   critical_alert_volume: 1.0,
   ai_context: null,
+  ai_context_updated_at: null,
   ai_mode: 'on',
   ai_show_scores: 1,
   ai_show_signals: 1,
@@ -191,16 +199,26 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
     if (!PREFERENCE_COLUMNS.includes(column)) throw new Error(`Unknown preference: ${column}`)
   }
   const labelConfigChanged = typeof changes.label_config === 'string'
+  const aiContextSent = changes.ai_context !== undefined
   if (columns.length > 0) {
-    const assignments = columns.map((column) => `${column} = ?`).join(', ')
     withTransaction((db) => {
-      const oldLabelConfig = labelConfigChanged
-        ? readPreferencesRow(userId)?.label_config
-        : undefined
-      db.prepare(`UPDATE users SET ${assignments} WHERE id = ?`).run(
-        ...columns.map((column) => changes[column]),
+      const old = labelConfigChanged || aiContextSent ? readPreferencesRow(userId) : undefined
+      // THE AI CONTEXT'S AGE (2026-10-10): stamped here, so every writer of
+      // `ai_context` keeps it, and only when the text actually changes —
+      // Trent asked for a warning when the context "hasn't been updated", so
+      // re-saving the same words leaves the clock alone. Clearing it (null)
+      // is a change and stamps.
+      const stamp: Partial<Record<PreferenceColumn, unknown>> =
+        aiContextSent && old && (old.ai_context ?? null) !== (changes.ai_context ?? null)
+          ? { ai_context_updated_at: nowUtc() }
+          : {}
+      const all = { ...changes, ...stamp }
+      const cols = Object.keys(all) as PreferenceColumn[]
+      db.prepare(`UPDATE users SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`).run(
+        ...cols.map((column) => all[column]),
         userId,
       )
+      const oldLabelConfig = old?.label_config
       if (labelConfigChanged) {
         syncLabelRegistry(userId, oldLabelConfig, changes.label_config as string)
       }

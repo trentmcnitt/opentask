@@ -18,6 +18,7 @@ export {
   validateBulkSnooze,
   validateBulkEdit,
   validateBulkDelete,
+  validateSegmentIds,
   validateBulkSnoozeOverdue,
   TRACKED_REMINDER_MESSAGE,
   QUOTA_DUE_DATE_MESSAGE,
@@ -38,6 +39,7 @@ export type {
 } from './task'
 
 export {
+  PROJECT_DESCRIPTION_MAX,
   projectCreateSchema,
   projectUpdateSchema,
   validateProjectCreate,

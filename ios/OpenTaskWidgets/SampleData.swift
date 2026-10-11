@@ -73,8 +73,8 @@ enum SampleData {
         let groups = reminderGroups
         return RemindersEntry(
             date: Date(),
-            groups: groups,
-            slotIndex: RemindersTimeline.naturalSlotIndex(in: groups),
+            groups: groups, segments: [],
+            slotIndex: RemindersTimeline.naturalSlotIndex(in: groups), segmentIndex: nil,
             staleSince: nil,
             isSignedOut: false,
             canUndo: false,

@@ -110,6 +110,40 @@ extension WatchCache {
     }
 }
 
+// MARK: - Task segments (2026-10-10)
+
+extension WatchCache {
+    /// `GET /api/reminders`' top-level `task_segments`, under their own key
+    /// — never inside the cached groups (a group's reminders are what every
+    /// "Complete all" completes). A separate key rather than a new reminders
+    /// format, so a cache from an older build still reads, with no segments.
+    private static let taskSegmentsKey = "watch.taskSegments.v1"
+
+    static func saveTaskSegments(_ segments: [TaskSegmentDTO]) {
+        guard let data = try? JSONEncoder().encode(segments) else { return }
+        defaults?.set(data, forKey: taskSegmentsKey)
+    }
+
+    static func loadTaskSegments() -> [TaskSegmentDTO] {
+        guard let data = defaults?.data(forKey: taskSegmentsKey),
+              let segments = try? JSONDecoder().decode([TaskSegmentDTO].self, from: data)
+        else { return [] }
+        return segments
+    }
+
+    /// Mirror a segment action into the cache — `state` for a consider or a
+    /// defer, nil to drop the row (done) — so the Smart Stack card agrees
+    /// even when its own fetch fails.
+    static func setSegmentRow(taskId: Int, state: SegmentTaskDTO.State?) {
+        saveTaskSegments(loadTaskSegments().map { segment in
+            segment.replacingTasks(segment.tasks.compactMap { row in
+                guard row.id == taskId else { return row }
+                return state.map { row.with(state: $0) }
+            })
+        })
+    }
+}
+
 // MARK: - Quotas page
 
 extension WatchCache {

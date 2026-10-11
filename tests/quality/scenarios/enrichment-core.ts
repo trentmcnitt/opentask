@@ -77,7 +77,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title should be cleaned of dictation artifacts (um, like, you know, or whatever). ' +
         'Something like "Get the car fixed" or "Go get the car fixed". ' +
-        'due_at should be approximately next week. ' +
+        '"maybe next week" names a window, not a day (task model 2026-10-10): horizon weeks with due_at null is preferred; a due_at next week is acceptable. ' +
         'Labels must be an empty array — no explicit label request in input. Priority 0 or 1.',
     },
   },
@@ -345,7 +345,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "File property tax appeal" or similar. ' +
         'Priority: 0 is acceptable (no explicit keyword), but >= 1 would also be reasonable given the legal deadline. ' +
-        'due_at should be February 28th. ' +
+        'deadline_at should be February 28th, end of day ("the deadline is" is a stated cutoff); due_at null. ' +
         'notes MUST preserve: case number (2026-PT-44821), dollar amounts ($285k vs $340k), ' +
         'phone with extension (312-555-0400 ext 247). ' +
         'Labels must be an empty array — no explicit label request in input.',
@@ -530,7 +530,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Pick up Ellie\'s EpiPen" or similar (date/alert phrase removed). ' +
         'Priority MUST be 4 — "critical" is a P4 keyword. ' +
         'Labels must be empty — "critical" is not a label, it maps to priority. ' +
-        'due_at should be Friday.',
+        'deadline_at should be Friday, or end of Thursday ("before Friday" is a cutoff either way); due_at null preferred.',
     },
   },
   {
@@ -556,7 +556,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Submit the quarterly report" or similar (urgency phrase removed). ' +
         'Labels should be an empty array — no explicit label request in input. ' +
         'Priority should be 2-3 (importance signal without "urgent"/"critical" keyword — NOT 4). ' +
-        'due_at should be Wednesday EOD. ' +
+        'deadline_at should be Wednesday end of day (23:59, or 17:00 read as business end of day is acceptable); due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it). ' +
         'project_name should be null — no explicit project assignment.',
     },
   },
@@ -578,7 +579,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Read the critical thinking chapter" or similar. ' +
         'Priority MUST be 0 — "critical thinking" is an academic concept, not an urgency signal. ' +
         'Labels must be an empty array — no explicit label request in input. ' +
-        'due_at should be Monday.',
+        'deadline_at should be Monday, end of day; due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it).',
     },
   },
 
@@ -632,7 +634,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Refill mom\'s heart medication" or similar (urgency/alert phrases removed). ' +
         'Priority MUST be 4 (explicit "urgent" and "critical"). ' +
         'Labels must be empty — no explicit label request in input. ' +
-        'due_at should be tonight at 9:00 PM local (e.g., T21:00:00, no Z suffix). ' +
+        'The pharmacy closing at 9pm tonight is a cutoff: deadline_at tonight at 9:00 PM local (T21:00:00, no Z suffix) is preferred. A due_at tonight at or before 9:00 PM instead is acceptable; anything after 9 PM is wrong. ' +
         'notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main).',
     },
   },

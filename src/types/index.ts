@@ -24,6 +24,8 @@ export interface Project {
   shared: boolean
   sort_order: number
   color: LabelColor | null
+  /** What belongs in this project (2026-10-10), at most PROJECT_DESCRIPTION_MAX chars; null when unset. */
+  description: string | null
   active_count: number
   overdue_count: number
   created_at: string
@@ -87,8 +89,30 @@ export interface Task {
   anchor_dow: number | null // 0=Mon..6=Sun
   anchor_dom: number | null // 1-31
 
-  // Snooze tracking (stores the original due_at when task is first snoozed)
+  // Snooze tracking (stores the original due_at when task is first snoozed).
+  // Also the FIRST-TARGET date (2026-10-10): kept by a snooze, reset by a
+  // deliberate re-target, so the target-age badge counts from it.
   original_due_at: string | null
+
+  /**
+   * Task model (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
+   * `due_at` above is the TARGET — when nagging starts. `deadline_at` is the
+   * real cutoff: a snooze never moves it, and it caps one.
+   */
+  deadline_at: string | null
+  /** How soon it should get done. null = unset (treated as weeks). */
+  horizon: 'days' | 'weeks' | 'months' | 'eventually' | null
+  /** When `horizon` was last set or re-affirmed (Process's growth clock). */
+  horizon_set_at: string | null
+  /** "I saw it", from a task segment's circle. Never a completion. */
+  last_considered_at: string | null
+  /** A task segment's Defer All: hidden for that local day. Not a consider. */
+  segment_deferred_at: string | null
+  /**
+   * Turns off the deadline's implied nag (deadline − DEADLINE_LEAD_DAYS) on a
+   * task with no target — what remove-target sets. A new deadline clears it.
+   */
+  deadline_nag_off: boolean
 
   // Notifications
   last_notified_at: string | null
@@ -218,6 +242,9 @@ export type UndoAction =
   // Quota reminders (2026-09-24): prompts considered and/or "did it". A batch
   // mixed with reminder completions logs as 'bulk_done' instead.
   | 'quota_prompt'
+  // Task model (2026-10-10): a task segment's circle (considered) or Defer All.
+  // Field snapshots of last_considered_at / segment_deferred_at; never a completion.
+  | 'task_segment'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,
@@ -270,6 +297,7 @@ export type ErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'CONFLICT'
+  | 'PAST_DEADLINE'
   | 'SERVICE_UNAVAILABLE'
   | 'INTERNAL_ERROR'
 

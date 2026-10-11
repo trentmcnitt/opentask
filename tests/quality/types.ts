@@ -12,11 +12,25 @@ export interface AITestScenario {
   /** Unique scenario ID, e.g., "enrich-garbled-dictation" */
   id: string
   /** Which AI feature this scenario tests */
-  feature: 'enrichment' | 'enrichment_reminder' | 'whats_next' | 'insights' | 'quick_take'
+  feature:
+    | 'enrichment'
+    | 'enrichment_reminder'
+    | 'whats_next'
+    | 'insights'
+    | 'quick_take'
+    | 'process_projects'
+    | 'process_duplicates'
   /** Human-readable description of what this scenario tests */
   description: string
   /** Input data specific to the feature being tested */
-  input: EnrichmentInput | ReminderEnrichmentInput | WhatsNextInput | InsightsInput | QuickTakeInput
+  input:
+    | EnrichmentInput
+    | ReminderEnrichmentInput
+    | WhatsNextInput
+    | InsightsInput
+    | QuickTakeInput
+    | ProcessProjectsInput
+    | ProcessDuplicatesInput
   /** Requirements for Layer 1 structural checks and Layer 2 quality evaluation */
   requirements: ScenarioRequirements
 }
@@ -96,6 +110,23 @@ export interface QuickTakeInput {
   tasks: TaskSummary[]
 }
 
+/**
+ * Process — project recommendations (2026-10-10). The same prompt builder and
+ * sanitizer as production (`src/core/ai/process.ts`).
+ */
+export interface ProcessProjectsInput {
+  /** Candidate projects (production excludes the Inbox) with their descriptions */
+  projects: Array<{ id: number; name: string; description: string | null }>
+  tasks: Array<{ id: number; title: string; notes: string | null }>
+  userContext?: string
+}
+
+/** Process — possible duplicates among open one-off tasks (2026-10-10). */
+export interface ProcessDuplicatesInput {
+  tasks: Array<{ id: number; title: string; notes: string | null; project_name?: string | null }>
+  userContext?: string
+}
+
 export interface ScenarioRequirements {
   /** Fields/values that MUST be present in the output */
   must_include?: Record<string, unknown>
@@ -111,6 +142,15 @@ export interface ScenarioRequirements {
     signal_checks?: Record<number, { must_have?: string[]; must_not_have?: string[] }>
     /** Minimum % of tasks with zero signals (default 50) */
     min_zero_signal_pct?: number
+  }
+  /** Deterministic Process checks enforced automatically in Layer 1 */
+  process_expectations?: {
+    /** task_id -> required project_id (null = must recommend no project or be absent) */
+    projects?: Record<number, number | null>
+    /** Each listed set of ids must appear together in one group */
+    duplicate_groups?: number[][]
+    /** No group may contain both ids of a pair */
+    not_duplicates?: Array<[number, number]>
   }
 }
 

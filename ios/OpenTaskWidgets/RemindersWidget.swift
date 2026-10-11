@@ -6,8 +6,20 @@ import WidgetKit
 struct RemindersEntry: TimelineEntry {
     let date: Date
     let groups: [ReminderGroupDTO]
-    /// Index into `groups`. Never out of range — the provider clamps.
+    /// Today's LISTED task segments (2026-10-10; `TaskSegmentDTO.listed`,
+    /// after the pending filters), in screen order — the pages that come
+    /// BEFORE the time slots in the widget's ring. Never merged into
+    /// `groups`: no slot count, strip, "N of M" or day-complete reads them
+    /// (amendment 8). No default, so every construction site says what it
+    /// shows.
+    let segments: [TaskSegmentDTO]
+    /// Index into `groups`. Never out of range — the provider clamps. While a
+    /// segment page is on screen this is the clock's natural slot, which the
+    /// slot-only families (2×2, Lock Screen) keep showing.
     let slotIndex: Int
+    /// Non-nil while a task segment page is on screen: an index into
+    /// `segments`.
+    let segmentIndex: Int?
     /// Non-nil when this entry was rendered from the App Group cache because a
     /// fetch failed. Drives the "as of HH:MM" note.
     let staleSince: Date?
@@ -31,152 +43,11 @@ struct RemindersEntry: TimelineEntry {
         guard groups.indices.contains(slotIndex) else { return nil }
         return groups[slotIndex]
     }
-}
 
-// MARK: - Slot resolution
-
-/// Where "which time slot am I looking at" is decided.
-///
-/// Split out of the provider because `ShiftReminderSlotIntent` has to answer
-/// the same question from a completely different process entry point, and two
-/// implementations of this rule would drift.
-enum RemindersTimeline {
-
-    /// The group the clock is in right now: latest slot whose `start_time` is
-    /// at or before the current local time.
-    ///
-    /// Before the first boundary of the day (the small hours) no slot has
-    /// started yet. That falls back to the first slot rather than to the
-    /// trailing "Anytime" group — at 5am the useful answer is "here's what's
-    /// coming", not "here's the bucket for items with no time".
-    static func naturalSlotIndex(in groups: [ReminderGroupDTO], now: Date = Date()) -> Int {
-        guard !groups.isEmpty else { return 0 }
-
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: now)
-        let minutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-
-        var best: Int?
-        var bestStart = -1
-        for (index, group) in groups.enumerated() {
-            guard let start = group.slot?.startMinutes, start <= minutes, start > bestStart else {
-                continue
-            }
-            bestStart = start
-            best = index
-        }
-        if let best { return best }
-
-        return groups.firstIndex(where: { $0.slot != nil }) ?? 0
-    }
-
-    /// The group actually shown: the user's chevron override while it is still
-    /// valid, otherwise the natural slot.
-    ///
-    /// SIDE EFFECT: a stale override is deleted here. An override is stale once
-    /// real time has moved into a different slot than the one the user was
-    /// standing in when they navigated — that is the "reset the override when
-    /// the timeline refreshes into a new slot" rule, expressed as data rather
-    /// than as a timer.
-    static func displayedSlotIndex(in groups: [ReminderGroupDTO], now: Date = Date()) -> Int {
-        let natural = naturalSlotIndex(in: groups, now: now)
-        guard !groups.isEmpty, let override = WidgetStore.slotOverride() else { return natural }
-
-        guard groups.indices.contains(natural),
-              groups[natural].slotKey == override.naturalSlotKey,
-              let index = groups.firstIndex(where: { $0.slotKey == override.slotKey })
-        else {
-            WidgetStore.clearSlotOverride()
-            return natural
-        }
-        return index
-    }
-
-    /// Remaining slot boundaries today, as (fire date, group index).
-    ///
-    /// Scheduling an entry at each one makes the widget flip to the next slot
-    /// at exactly the right minute without spending any of the refresh budget —
-    /// the entries are all delivered by the single timeline WidgetKit already
-    /// asked for.
-    static func upcomingBoundaries(
-        in groups: [ReminderGroupDTO],
-        now: Date = Date()
-    ) -> [(date: Date, index: Int)] {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: now)
-
-        return groups.enumerated().compactMap { index, group in
-            guard let minutes = group.slot?.startMinutes,
-                  let fire = calendar.date(byAdding: .minute, value: minutes, to: startOfDay),
-                  fire > now
-            else {
-                return nil
-            }
-            return (fire, index)
-        }
-    }
-
-    /// Has this slot's time arrived? Mirrors the web's `ReminderSlotBar.
-    /// hasStarted` (`src/components/ReminderSlotBar.tsx`) — the un-slotted
-    /// "Anytime" group has no start time and is always available, so it
-    /// counts as started rather than "coming up later".
-    static func hasStarted(_ group: ReminderGroupDTO, now: Date = Date()) -> Bool {
-        guard let minutes = group.slot?.startMinutes else { return true }
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: now)
-        let nowMinutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        return nowMinutes >= minutes
-    }
-
-    /// After completing an item that leaves the ON-SCREEN slot with nothing
-    /// waiting, jump to the EARLIEST slot that still has something — Trent,
-    /// 2026-09-23: "once I finish morning it should take me automatically
-    /// back to early morning ... so I can keep checking things off and
-    /// automatically switch." Also the fix for his other complaint that
-    /// prompted this: "I finished everything for the morning ... I didn't
-    /// even realize I actually did not finish the things for early
-    /// morning" — an already-passed slot with leftovers should not go
-    /// unnoticed just because a later one is on screen.
-    ///
-    /// Searches index 0 through the NATURAL slot (the clock's own position)
-    /// inclusive — never a slot whose time hasn't come, and never forward of
-    /// "now" even if the on-screen slot was itself ahead of natural. A no-op
-    /// (stays put) when the on-screen slot still has something, or when
-    /// nothing earlier does either. Writes through the EXISTING slot-override
-    /// mechanism (`WidgetStore.setSlotOverride`), so this reads to
-    /// `displayedSlotIndex` exactly like a manual chevron tap — including
-    /// self-expiring once the real clock moves into a new natural slot.
-    ///
-    /// `groups` should be the CACHED payload as of the moment of the tap
-    /// (`WidgetStore.loadReminders()`); this filters it with
-    /// `WidgetStore.filterPending` itself, so the just-tapped item (already
-    /// staged as a tombstone by the caller) reads as gone here too.
-    ///
-    /// Waiting quota prompts (2026-09-24) count as "something waiting" here,
-    /// exactly like reminders: a slot whose reminders are done but whose
-    /// prompts are not is not finished, and acting on a slot's last prompt
-    /// advances just as checking off its last reminder does.
-    static func autoAdvanceSlot(in groups: [ReminderGroupDTO], now: Date = Date()) {
-        let filtered = WidgetStore.filterPending(groups, now: now)
-        guard !filtered.isEmpty else { return }
-
-        let displayed = displayedSlotIndex(in: filtered, now: now)
-        guard filtered.indices.contains(displayed), filtered[displayed].hasNothingWaiting else {
-            return // the on-screen slot still has something waiting
-        }
-
-        let natural = naturalSlotIndex(in: filtered, now: now)
-        guard filtered.indices.contains(natural) else { return }
-        guard let target = filtered[0...natural].firstIndex(where: { !$0.hasNothingWaiting }) else {
-            return // nothing from the day's first slot through now is waiting either — stay
-        }
-
-        setSlotOverride(slotKey: filtered[target].slotKey, naturalSlotKey: filtered[natural].slotKey)
-    }
-
-    /// Thin wrapper so `autoAdvanceSlot` reads as plainly as the intents that
-    /// call the same store function directly.
-    private static func setSlotOverride(slotKey: Int, naturalSlotKey: Int) {
-        WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: naturalSlotKey)
-        WidgetStore.markInteraction()
+    /// The task segment on screen, or nil on a slot page.
+    var segment: TaskSegmentDTO? {
+        guard let segmentIndex, segments.indices.contains(segmentIndex) else { return nil }
+        return segments[segmentIndex]
     }
 }
 
@@ -212,15 +83,22 @@ struct RemindersProvider: TimelineProvider {
 
             var entries = [entry]
             if !entry.isSignedOut {
-                // Boundary entries always show the *natural* slot for their
+                // Boundary entries always show the *natural* page for their
                 // moment, so crossing into a new slot visibly overrides
-                // whatever the user had chevroned to.
+                // whatever the user had chevroned to. A task segment still
+                // waiting stays the natural page across a boundary (it is
+                // ahead of every slot until considered or deferred).
                 for boundary in RemindersTimeline.upcomingBoundaries(in: entry.groups).prefix(8) {
+                    let page = RemindersTimeline.naturalPage(
+                        groups: entry.groups, segments: entry.segments, now: boundary.date
+                    )
                     entries.append(
                         RemindersEntry(
                             date: boundary.date,
                             groups: entry.groups,
-                            slotIndex: boundary.index,
+                            segments: entry.segments,
+                            slotIndex: page.slotIndex,
+                            segmentIndex: page.segmentIndex,
                             staleSince: entry.staleSince,
                             isSignedOut: false,
                             canUndo: entry.canUndo,
@@ -240,25 +118,25 @@ struct RemindersProvider: TimelineProvider {
                 // `now`.
                 if entry.actionDescription != nil, let expiry = WidgetStore.lastActionExpiry(),
                     expiry > entry.date {
-                    // Which slot should still be on screen once the
+                    // Which page should still be on screen once the
                     // indication turns off: whichever entry built above is
                     // dated latest at or before `expiry` — almost always
                     // `entry` itself, but if a slot boundary happens to fall
-                    // inside this 60s window, that boundary's NATURAL slot is
+                    // inside this 60s window, that boundary's NATURAL page is
                     // what should still be showing at expiry. Deliberately
-                    // NOT `RemindersTimeline.displayedSlotIndex(now: expiry)`
+                    // NOT `RemindersTimeline.displayedPage(now: expiry)`
                     // — that has the side effect of clearing a stale
                     // override, which must only happen against the REAL
                     // clock, not a hypothetical future timestamp being
                     // pre-computed here.
-                    let slotAtExpiry =
-                        entries.filter { $0.date <= expiry }.max { $0.date < $1.date }?.slotIndex
-                        ?? entry.slotIndex
+                    let atExpiry = entries.filter { $0.date <= expiry }.max { $0.date < $1.date } ?? entry
                     entries.append(
                         RemindersEntry(
                             date: expiry,
                             groups: entry.groups,
-                            slotIndex: slotAtExpiry,
+                            segments: entry.segments,
+                            slotIndex: atExpiry.slotIndex,
+                            segmentIndex: atExpiry.segmentIndex,
                             staleSince: entry.staleSince,
                             isSignedOut: false,
                             canUndo: entry.canUndo,
@@ -280,6 +158,29 @@ struct RemindersProvider: TimelineProvider {
         }
     }
 
+    /// An entry for `now` showing `groups`/`segments` as they will be drawn:
+    /// every optimistic marker applied, segments narrowed to the listed ones,
+    /// on the displayed page.
+    private func entry(
+        now: Date, groups rawGroups: [ReminderGroupDTO], segments rawSegments: [TaskSegmentDTO], staleSince: Date?
+    ) -> RemindersEntry {
+        let groups = WidgetStore.filterPending(rawGroups, now: now)
+        let segments = TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(rawSegments, now: now))
+        let page = RemindersTimeline.displayedPage(groups: groups, segments: segments, now: now)
+        return RemindersEntry(
+            date: now,
+            groups: groups,
+            segments: segments,
+            slotIndex: page.slotIndex,
+            segmentIndex: page.segmentIndex,
+            staleSince: staleSince,
+            isSignedOut: false,
+            canUndo: WidgetStore.canUndo,
+            canRedo: WidgetStore.canRedo,
+            actionDescription: WidgetStore.lastActionDescription(at: now)
+        )
+    }
+
     /// Fetch, falling back to the App Group cache. Never throws to the caller —
     /// a widget's only honest failure modes are "signed out" and "stale".
     private func currentEntry() async -> RemindersEntry {
@@ -287,8 +188,8 @@ struct RemindersProvider: TimelineProvider {
 
         guard APIClient.shared.isConfigured else {
             return RemindersEntry(
-                date: now, groups: [], slotIndex: 0, staleSince: nil, isSignedOut: true,
-                canUndo: false, canRedo: false, actionDescription: nil
+                date: now, groups: [], segments: [], slotIndex: 0, segmentIndex: nil, staleSince: nil,
+                isSignedOut: true, canUndo: false, canRedo: false, actionDescription: nil
             )
         }
 
@@ -299,17 +200,7 @@ struct RemindersProvider: TimelineProvider {
         // gated on no intent having declared this cache stale since
         // (2026-09-24) — see `WidgetStore.canRepaintRemindersFromCache`.
         if WidgetStore.canRepaintRemindersFromCache(now: now), let cached = WidgetStore.loadReminders() {
-            let groups = WidgetStore.filterPending(cached.value.groups, now: now)
-            return RemindersEntry(
-                date: now,
-                groups: groups,
-                slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
-                staleSince: nil,
-                isSignedOut: false,
-                canUndo: WidgetStore.canUndo,
-                canRedo: WidgetStore.canRedo,
-                actionDescription: WidgetStore.lastActionDescription(at: now)
-            )
+            return entry(now: now, groups: cached.value.groups, segments: cached.value.taskSegments, staleSince: nil)
         }
 
         do {
@@ -322,37 +213,20 @@ struct RemindersProvider: TimelineProvider {
             async let reminders = APIClient.shared.fetchReminders()
             async let undoStatus: APIClient.UndoStatus? = try? APIClient.shared.fetchUndoStatus()
             let (payload, status) = try await (reminders, undoStatus)
-            WidgetStore.saveReminders(payload.groups, fetchStartedAt: now)
+            WidgetStore.saveReminders(payload.groups, taskSegments: payload.taskSegments, fetchStartedAt: now)
             if let status {
                 WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
             }
             // Filter even the fresh fetch: a tombstoned completion may not have
             // committed server-side yet, and resurrecting it for one refresh
             // cycle would look like the check-off didn't take.
-            let groups = WidgetStore.filterPending(payload.groups, now: now)
-            return RemindersEntry(
-                date: now,
-                groups: groups,
-                slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
-                staleSince: nil,
-                isSignedOut: false,
-                canUndo: WidgetStore.canUndo,
-                canRedo: WidgetStore.canRedo,
-                actionDescription: WidgetStore.lastActionDescription(at: now)
-            )
+            return entry(now: now, groups: payload.groups, segments: payload.taskSegments, staleSince: nil)
         } catch {
             print("[OpenTaskWidgets] Reminders fetch failed: \(error)")
             let cached = WidgetStore.loadReminders()
-            let groups = WidgetStore.filterPending(cached?.value.groups ?? [], now: now)
-            return RemindersEntry(
-                date: now,
-                groups: groups,
-                slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
-                staleSince: cached?.fetchedAt,
-                isSignedOut: false,
-                canUndo: WidgetStore.canUndo,
-                canRedo: WidgetStore.canRedo,
-                actionDescription: WidgetStore.lastActionDescription(at: now)
+            return entry(
+                now: now, groups: cached?.value.groups ?? [], segments: cached?.value.taskSegments ?? [],
+                staleSince: cached?.fetchedAt
             )
         }
     }
@@ -559,8 +433,8 @@ private enum ReminderPreviewData {
     static func entry(slotIndex: Int = 0, at date: Date? = nil) -> RemindersEntry {
         RemindersEntry(
             date: date ?? now,
-            groups: groups,
-            slotIndex: slotIndex,
+            groups: groups, segments: [],
+            slotIndex: slotIndex, segmentIndex: nil,
             staleSince: nil,
             isSignedOut: false,
             canUndo: true,
@@ -580,7 +454,7 @@ private enum ReminderPreviewData {
             consideredItems: g.consideredItems + g.reminders, prompts: g.prompts.map { $0.handled(did: false) }
         )
         return RemindersEntry(
-            date: afternoon, groups: gs, slotIndex: 3, staleSince: nil, isSignedOut: false,
+            date: afternoon, groups: gs, segments: [], slotIndex: 3, segmentIndex: nil, staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )
     }
@@ -596,7 +470,7 @@ private enum ReminderPreviewData {
             prompts: g.prompts
         )
         return RemindersEntry(
-            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            date: now, groups: gs, segments: [], slotIndex: 0, segmentIndex: nil, staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )
     }
@@ -610,7 +484,7 @@ private enum ReminderPreviewData {
         let handled: [String: Bool] = ["q:83:1:2026-09-24": true, "q:116:0:2026-09-24": false, "q:193:0:2026-09-24": true]
         gs[0] = g.replacingPrompts(g.prompts.map { p in handled[p.promptKey].map { p.handled(did: $0) } ?? p })
         return RemindersEntry(
-            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            date: now, groups: gs, segments: [], slotIndex: 0, segmentIndex: nil, staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )
     }
@@ -625,7 +499,7 @@ private enum ReminderPreviewData {
             consideredItems: g.reminders + g.consideredItems, prompts: g.prompts
         )
         return RemindersEntry(
-            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            date: now, groups: gs, segments: [], slotIndex: 0, segmentIndex: nil, staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )
     }
@@ -643,6 +517,66 @@ private enum ReminderPreviewData {
     /// data with fewer slots still renders.
     static var eveningIndex: Int { max(0, min(4, groups.count - 1)) }
     static var eveningKey: Int { groups[eveningIndex].slot?.id ?? -1 }
+
+    // MARK: Task segments (2026-10-10) — invented titles, a real day's shape:
+    // a "Days" segment with a mix of set and unset horizons, a deadline, a
+    // future target, one long title, and one row already considered.
+
+    private static func iso(daysFromNow days: Int, hour: Int = 9) -> String {
+        let day = Calendar.current.date(byAdding: .day, value: days, to: now) ?? now
+        let at = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: day) ?? day
+        return DateHelpers.formatISO(at)
+    }
+
+    static var segments: [TaskSegmentDTO] {
+        PreviewLocalData.taskSegments ?? [
+            TaskSegmentDTO(horizon: "days", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9101, title: "Call the insurance office about the renewal letter", priority: 3, horizon: "days"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9102, title: "Fix the squeaky gate hinge", priority: 2, dueAt: iso(daysFromNow: 3), deadlineAt: iso(daysFromNow: 6, hour: 17), horizon: "days"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9103, title: "Order the replacement filter for the kitchen tap", priority: 1), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Book the dentist for the kids — ask about the Saturday morning slots before the school term starts again", hasNotes: true, horizon: "weeks"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9105, title: "Return the library books", dueAt: iso(daysFromNow: 22), horizon: "days"), state: .considered),
+            ]),
+            TaskSegmentDTO(horizon: "weeks", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9202, title: "Research a new laptop bag", dueAt: iso(daysFromNow: 12), horizon: "months"), state: .waiting),
+            ]),
+        ]
+    }
+
+    /// The natural page with segments waiting: the Days segment, ahead of
+    /// every slot.
+    static func segmentEntry() -> RemindersEntry {
+        let page = RemindersTimeline.naturalPage(groups: groups, segments: segments, now: now)
+        return RemindersEntry(
+            date: now, groups: groups, segments: segments, slotIndex: page.slotIndex,
+            segmentIndex: page.segmentIndex, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+}
+
+#Preview("Reminders Large — task segment (Days)", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -10)
+    ReminderPreviewData.segmentEntry()
+}
+
+#Preview("Reminders Large — task segment, considered shown", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: true, slotKey: -10)
+    ReminderPreviewData.segmentEntry()
+}
+
+#Preview("Reminders Medium — task segment (Days)", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    ReminderPreviewData.segmentEntry()
 }
 
 #Preview("Reminders Large — page 1", as: .systemLarge) {
@@ -887,7 +821,7 @@ private enum DayCompletePreviewData {
 
     static func entry(at date: Date, groups: [ReminderGroupDTO], slotIndex: Int) -> RemindersEntry {
         RemindersEntry(
-            date: date, groups: groups, slotIndex: slotIndex, staleSince: nil, isSignedOut: false,
+            date: date, groups: groups, segments: [], slotIndex: slotIndex, segmentIndex: nil, staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )
     }

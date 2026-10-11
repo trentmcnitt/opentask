@@ -984,6 +984,10 @@ paths:
                   description: |
                     Task IDs to snooze even if they are P4/Urgent. Used by
                     explicit user selections to bypass the default urgent skip.
+                allow_past_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
       responses:
         '200':
           description: Bulk operation result
@@ -1051,6 +1055,10 @@ paths:
                   items:
                     type: integer
                   description: Tasks to include even if not currently due (e.g. the P4 being acted on).
+                allow_past_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
                 notify:
                   type: boolean
                   default: true
@@ -1085,6 +1093,9 @@ paths:
                       skipped_reminders:
                         type: integer
                         description: Reminders left in place (reminders are period-locked).
+                      skipped_deadline:
+                        type: integer
+                        description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
                       until:
                         type: string
                         format: date-time
@@ -1173,6 +1184,10 @@ paths:
                     Task ids that bypass the High/Urgent snooze filter when `changes.due_at`
                     moves a date without changing `rrule` (explicit picks), as on
                     bulk/snooze. Reminders and quotas are never given a date.
+                allow_past_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
                 delta_minutes:
                   type: integer
                   minimum: -1440
@@ -1468,6 +1483,159 @@ paths:
 
   # --- Reminders (§6) ---
 
+  /api/task-segments/consider:
+    post:
+      summary: Mark task-segment rows considered
+      operationId: taskSegmentConsider
+      tags: [Reminders]
+      description: >
+        The circle: stamps `last_considered_at`. Never a completion. One undo entry; logged even when already considered today. The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      considered: { type: integer }
+  /api/task-segments/defer:
+    post:
+      summary: Defer task-segment rows to tomorrow
+      operationId: taskSegmentDefer
+      tags: [Reminders]
+      description: >
+        Defer All: stamps `segment_deferred_at`; off today's segment, back tomorrow. Not a consider. One undo entry. The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deferred: { type: integer }
+  /api/task-segments/target-today:
+    post:
+      summary: Target tasks today
+      operationId: taskSegmentTargetToday
+      tags: [Reminders]
+      description: >
+        A deliberate target (age restarts) at the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour. Also marks them considered. One undo entry (bulk edit). The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      until: { type: string, format: date-time }
+                      affected: { type: integer }
+  /api/process:
+    get:
+      summary: What Process works through
+      operationId: getProcess
+      tags: [Tasks]
+      description: >
+        The in-app Process button's lists, computed by rule (no AI, so it works with AI off). Read-only:
+        Process writes through PATCH, bulk edit (`affirm_horizon`, `target_at: null` with
+        `deadline_nag_off: true`), target-today and DELETE. Only the caller's own open one-off tasks
+        (not reminders, quotas or recurring tasks).
+
+        - `inbox`: tasks still in the Inbox project, oldest first.
+        - `growth`: tasks long past their horizon, longest first. Measured from `horizon_set_at`, else
+          `created_at`; days after 14 days, weeks or unset after 60, months after 180 (eventually never).
+          Asks for the next horizon up. Excludes tasks whose target has arrived (they are in the old-target
+          lists or on the dashboard) and tasks whose deadline is close enough to steer the horizon (90 days
+          or past). `from` is null for an unset horizon. `can_act` (priority 2+) offers "do it" / "raise
+          priority" beside "grow".
+        - `stale_targets`: tasks whose target arrived 7+ days ago (`age_days`, measured from the first
+          target, so snoozing does not reset it), oldest first.
+        - `stale_targets_with_deadline`: the same for tasks with a deadline, listed apart so a client's
+          nag is never stopped by default.
+      responses:
+        '200':
+          description: Process lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      inbox_project_id: { type: [integer, 'null'] }
+                      inbox:
+                        type: array
+                        items: { $ref: '#/components/schemas/Task' }
+                      growth:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task: { $ref: '#/components/schemas/Task' }
+                            from:
+                              type: [string, 'null']
+                              enum: [days, weeks, months, null]
+                            to:
+                              type: string
+                              enum: [weeks, months, eventually]
+                            days_on_horizon: { type: integer }
+                            can_act: { type: boolean }
+                      stale_targets:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProcessStaleTarget' }
+                      stale_targets_with_deadline:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProcessStaleTarget' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/reminders:
     get:
       summary: Today's incomplete reminders grouped by time slot
@@ -1519,6 +1687,42 @@ paths:
                       prompts_considered_total:
                         type: integer
                         description: Quota prompts handled today, all slots.
+                      task_segments:
+                        type: array
+                        description: |
+                          Task segments (2026-10-10): one-off tasks whose
+                          target hasn't arrived, one segment per horizon
+                          (days daily; weeks Saturdays; months the first
+                          Saturday; eventually the first Saturday of Jan, Apr,
+                          Jul, Oct), in screen order. A task not considered
+                          since its segment came round shows daily until it
+                          is. TOP-LEVEL, never inside `groups`; never counted
+                          in `total`, the nav badge or the slot notifications.
+                        items:
+                          type: object
+                          properties:
+                            horizon:
+                              type: string
+                              enum: [days, weeks, months, eventually]
+                            tasks:
+                              type: array
+                              items:
+                                allOf:
+                                  - $ref: '#/components/schemas/Task'
+                                  - type: object
+                                    properties:
+                                      segment_state:
+                                        type: string
+                                        enum: [waiting, considered, deferred]
+                            waiting:
+                              type: integer
+                            considered:
+                              type: integer
+                            deferred:
+                              type: integer
+                            nudge:
+                              type: boolean
+                              description: Over 50 items — suggest Process or AI help.
                       has_any:
                         type: boolean
                         description: |
@@ -1630,6 +1834,13 @@ paths:
                   type: [string, 'null']
                   enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
                   description: Omitted or null = a random colour not yet used by another of the user's projects.
+                description:
+                  type: [string, 'null']
+                  maxLength: 280
+                  description: |
+                    What belongs in this project, so the AI and API clients
+                    file tasks correctly. Trimmed; at most 280 characters after
+                    trimming (400 over that). `null` or an empty string clears it.
       responses:
         '201':
           description: Created project
@@ -1745,6 +1956,13 @@ paths:
                 color:
                   type: [string, 'null']
                   enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
+                description:
+                  type: [string, 'null']
+                  maxLength: 280
+                  description: |
+                    What belongs in this project, so the AI and API clients
+                    file tasks correctly. Trimmed; at most 280 characters after
+                    trimming (400 over that). `null` or an empty string clears it.
       responses:
         '200':
           description: Updated project
@@ -3242,6 +3460,124 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  # --- Process (AI half of the Process button) ---
+
+  /api/process/recommend-projects:
+    post:
+      summary: Recommend a project for each task
+      operationId: recommendProjects
+      tags: [AI]
+      description: |
+        For the Process button's sorting step: the project each given task
+        probably belongs in, or `null` when none clearly fits. The AI only
+        recommends — nothing is written; the user picks. It reads each
+        project's `description` (what belongs there) and the user's global
+        `ai_context`.
+
+        Ids that are not the caller's own live tasks are ignored. A
+        `project_id` is always one of the caller's own or shared projects,
+        never the Inbox; a model answer naming any other project is dropped,
+        so a task can be missing from `recommendations` (no recommendation).
+        Entries follow the order of `ids`.
+
+        AI disabled (server-wide, or the user's Insights mode set to off)
+        returns `{ recommendations: [] }` with 200, never an error. Uses the
+        Insights feature's AI mode, model and timeout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: integer
+                    minimum: 1
+      responses:
+        '200':
+          description: Recommendations (empty when AI is off)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      recommendations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_id:
+                              type: integer
+                            project_id:
+                              type: [integer, 'null']
+                              description: The recommended project, or null when none fits.
+                            reason:
+                              type: string
+                              description: One short sentence to show next to the pick.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: The model call failed or returned nothing usable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/process/duplicates:
+    get:
+      summary: Possible duplicate tasks
+      operationId: findDuplicates
+      tags: [AI]
+      description: |
+        For the Process button's duplicate step: groups of the caller's open
+        one-off tasks (not recurring tasks, reminders or quotas) that look like
+        the same piece of work. Each group has 2+ task ids and a task is in at
+        most one group. Nothing is written. Scans the newest 600 such tasks.
+
+        AI disabled (server-wide, or the user's Insights mode set to off)
+        returns `{ groups: [] }` with 200, never an error.
+      responses:
+        '200':
+          description: Duplicate groups (empty when AI is off or none were found)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_ids:
+                              type: array
+                              minItems: 2
+                              items:
+                                type: integer
+                            reason:
+                              type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: The model call failed or returned nothing usable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   # --- Notifications ---
 
   /api/notifications/actions:
@@ -3812,6 +4148,39 @@ components:
             then on. Progress logged after that boundary stays in the new
             period. With INTERVAL > 1 the short period is at most one week and
             the next period runs the full interval from the boundary.
+        default_snooze_option:
+          type: string
+          default: '60'
+          description: |
+            Where a single-tap snooze sends an overdue task (the row's snooze
+            button, a swipe), and what `POST /api/tasks/bulk/snooze-overdue`
+            uses with an empty body. A string count of minutes (`"1"` to
+            `"1440"`; an hour or more is rounded to the nearest hour),
+            `"tomorrow"` (tomorrow at `morning_time`), or `"next_period"`: the
+            start of the next reminder period - later today, or tomorrow's
+            first period once the day's last one has begun. With no periods,
+            `"next_period"` acts as `"60"`.
+        ai_context:
+          type: [string, 'null']
+          maxLength: 1000
+          description: |
+            Free-text context about the user that every AI feature sees
+            (Settings -> AI Context). Trimmed; an empty string clears it
+            (`null`). Not writable by the demo account (403).
+        ai_context_updated_at:
+          type: [string, 'null']
+          format: date-time
+          readOnly: true
+          description: |
+            When `ai_context` last changed (UTC), stamped by the server on a
+            PATCH that changes the text - re-sending the same text leaves it
+            alone, clearing it counts as a change. `null` when it has never
+            changed since this was first recorded (2026-10-10). The app shows a
+            quiet "review your AI context" nudge once it is 21 days old, or
+            when it is `null`. Not writable: a PATCH carrying only this field
+            is a 400. To mark the context reviewed without changing it, PATCH
+            `ai_context_reviewed: true` (write-only; anything but `true` is a
+            400; 403 for the demo account), which restamps it to now.
     PromptKeys:
       type: object
       required: [keys]
@@ -3968,6 +4337,47 @@ components:
         original_due_at:
           type: [string, 'null']
           format: date-time
+          description: >
+            The occurrence origin, and the FIRST-TARGET date (2026-10-10): a
+            snooze keeps it, a deliberate re-target (or a task getting a
+            target after having none) restarts it. The target-age badge counts
+            whole local days from it.
+        target_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            The TARGET — when nagging starts (2026-10-10). The primary name;
+            `due_at` carries the same value under its deprecated name.
+        deadline_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            The real cutoff. Never moved by a snooze; while it is still ahead it
+            caps one (see PATCH `allow_past_deadline`). With no target, the
+            task is over target from 4 days before it (computed, not stored)
+            unless `deadline_nag_off`. On a recurring task it moves with each
+            occurrence.
+        horizon:
+          type: [string, 'null']
+          enum: [days, weeks, months, eventually, null]
+          description: >
+            How soon it should get done; picks the task segment it appears in.
+            null = unset (treated as weeks, never reported as set).
+        horizon_set_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the horizon was last set — Process's growth clock.
+        last_considered_at:
+          type: [string, 'null']
+          format: date-time
+          description: The task-segment circle ("I saw it"). Never a completion.
+        segment_deferred_at:
+          type: [string, 'null']
+          format: date-time
+          description: A task segment's Defer All — hidden for that local day.
+        deadline_nag_off:
+          type: boolean
+          description: Silences the deadline's implied nag (set by remove-target).
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -4097,6 +4507,16 @@ components:
       properties:
         title:
           type: string
+        target_at:
+          type: [string, 'null']
+          format: date-time
+          description: The target (primary name). `due_at` is accepted as its deprecated alias; sending both with different values is a 400.
+        deadline_at:
+          type: [string, 'null']
+          format: date-time
+        horizon:
+          type: [string, 'null']
+          enum: [days, weeks, months, eventually, null]
         short_title:
           type: [string, 'null']
           maxLength: 24
@@ -4247,6 +4667,13 @@ components:
           type: [integer, 'null']
           description: The undo_log entry for this change (POST /api/undo/batch with through_id undoes exactly it); null for a rename.
 
+    ProcessStaleTarget:
+      type: object
+      properties:
+        task: { $ref: '#/components/schemas/Task' }
+        age_days:
+          type: integer
+          description: Whole days since the first target (7 or more).
     TaskUpdate:
       type: object
       properties:
@@ -4275,6 +4702,33 @@ components:
             snoozed; an explicit reschedule is allowed. Sent together with
             `rrule`, the date is honored and the rule's anchors are derived
             from it (a re-schedule, never a snooze). A quota has no due date.
+        target_at:
+          type: [string, 'null']
+          format: date-time
+          description: The target (primary name). `due_at` is accepted as its deprecated alias; sending both with different values is a 400.
+        deadline_at:
+          type: [string, 'null']
+          format: date-time
+        horizon:
+          type: [string, 'null']
+          enum: [days, weeks, months, eventually, null]
+        retarget:
+          type: boolean
+          description: Alias of `reset_original_due_at` (a deliberate re-target).
+        deadline_nag_off:
+          type: boolean
+          description: >
+            Silence the deadline's implied nag on a task with no target (remove-target sends it with `target_at: null`). A new `deadline_at` clears it.
+        affirm_horizon:
+          type: boolean
+          description: >
+            Keep the current horizon and restart its growth clock (`horizon_set_at` = now) without changing it — an unset horizon stays unset. Process's "keep" answer to a growth ask. Ignored when the same request changes `horizon` (that restarts the clock anyway). Also accepted in bulk edit `changes`.
+        allow_past_deadline:
+          type: boolean
+          description: |
+            A snooze that would move the target past a deadline that is still
+            ahead is refused with 409 `PAST_DEADLINE`; send this once the user
+            confirms. A deliberate re-target is not capped. PROVISIONAL.
         reset_original_due_at:
           type: boolean
           description: |
@@ -4334,6 +4788,13 @@ components:
         color:
           type: [string, 'null']
           enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
+        description:
+          type: [string, 'null']
+          maxLength: 280
+          description: >-
+            What belongs in this project (at most 280 characters), set in
+            Settings or over the API; null when unset. Read it to choose a
+            project for a new task.
         active_count:
           type: integer
           description: The caller's own open tasks in the project, quotas excluded
@@ -4708,6 +5169,9 @@ components:
         skipped_reminders:
           type: integer
           description: Reminders skipped — they are bucket-locked and never snoozed
+        skipped_deadline:
+          type: integer
+          description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
         skipped_no_due_date:
           type: integer
           description: Relative mode only — tasks with no due_at to add the delta to

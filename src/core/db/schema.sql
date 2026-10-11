@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS users (
   wake_time     TEXT NOT NULL DEFAULT '07:00',
   sleep_time    TEXT NOT NULL DEFAULT '22:00',
   ai_context    TEXT,
+  -- When ai_context last changed (2026-10-10): the staleness warning reads it.
+  ai_context_updated_at TEXT,
   ai_mode       TEXT NOT NULL DEFAULT 'on',
   ai_show_scores INTEGER NOT NULL DEFAULT 1,
   ai_show_signals INTEGER NOT NULL DEFAULT 1,
@@ -97,6 +99,9 @@ CREATE TABLE IF NOT EXISTS projects (
   shared     INTEGER NOT NULL DEFAULT 0,
   sort_order INTEGER NOT NULL DEFAULT 0,
   color      TEXT,
+  -- What belongs in this project (2026-10-10), so the AI and desks choose a
+  -- project correctly. Capped at PROJECT_DESCRIPTION_MAX in validation.
+  description TEXT DEFAULT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -167,6 +172,27 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- progress or prompt action and restored by undo like any other field. A
   -- date other than today reads as empty.
   quota_day_state TEXT DEFAULT NULL,
+
+  -- Task model (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
+  -- `due_at` is the TARGET: when nagging starts, soft, snoozable.
+  -- `deadline_at` is the real cutoff: never moved by a snooze, and it caps one.
+  deadline_at   TEXT DEFAULT NULL,
+  -- How soon the task should get done: 'days' | 'weeks' | 'months' |
+  -- 'eventually'. NULL = unset, treated as weeks but never reported as set.
+  -- Decides which task segment on the reminders screen it appears in.
+  horizon       TEXT DEFAULT NULL,
+  -- When `horizon` was last set or re-affirmed — the clock Process reads to ask
+  -- whether a horizon should grow. NULL reads as created_at.
+  horizon_set_at TEXT DEFAULT NULL,
+  -- "I saw it" from a task segment's circle. Never a completion.
+  last_considered_at TEXT DEFAULT NULL,
+  -- A task segment's "Defer All": hidden for the rest of that local day,
+  -- back tomorrow. Not a consider.
+  segment_deferred_at TEXT DEFAULT NULL,
+  -- A task with a deadline and no target nags from DEADLINE_LEAD_DAYS before
+  -- the deadline (computed, never stored). Remove-target sets this to turn
+  -- that off for the task; a new deadline turns it back on.
+  deadline_nag_off INTEGER NOT NULL DEFAULT 0,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

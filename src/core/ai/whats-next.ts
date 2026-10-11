@@ -229,11 +229,19 @@ export function getCachedWhatsNext(
 /**
  * Select tasks relevant for the What's Next prompt.
  *
- * Simple filter: include everything except tasks due more than 7 days out.
- * Overdue tasks, tasks due within 7 days, and tasks with no due date are all included.
+ * Simple filter: include everything except tasks targeted more than 7 days out.
+ * Overdue tasks, tasks targeted within 7 days, and tasks with no target are all
+ * included — and so is a task whose DEADLINE falls within 7 days (or has
+ * passed), however far out its target sits (2026-10-10: the deadline is the
+ * real cutoff, and a far target must not hide a near one).
  * The AI prompt itself handles prioritization and exclusion logic.
  */
-function selectRelevantTasks(tasks: TaskSummary[]): TaskSummary[] {
+export function selectRelevantTasks(tasks: TaskSummary[]): TaskSummary[] {
   const cutoff = Date.now() + 7 * 24 * 60 * 60 * 1000
-  return tasks.filter((t) => !t.due_at || new Date(t.due_at).getTime() <= cutoff)
+  return tasks.filter(
+    (t) =>
+      !t.due_at ||
+      new Date(t.due_at).getTime() <= cutoff ||
+      (t.deadline_at != null && new Date(t.deadline_at).getTime() <= cutoff),
+  )
 }

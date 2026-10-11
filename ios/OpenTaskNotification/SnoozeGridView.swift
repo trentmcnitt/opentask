@@ -136,7 +136,7 @@ struct SnoozeGridView: View {
                     Image(systemName: "tray.full")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text("\(taskCount) overdue tasks")
+                    Text("\(taskCount) \(TaskWording.overTargetLower)")
                         .font(.subheadline.weight(.semibold))
                 }
             }

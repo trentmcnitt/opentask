@@ -111,7 +111,7 @@ enum TasksTimeline {
     /// Due times still ahead of us today. An entry at each one lets a task
     /// visibly tip into overdue at the right minute without spending budget.
     static func upcomingDueDates(in tasks: [TaskDTO], now: Date = Date()) -> [Date] {
-        tasks.compactMap(\.dueDate).filter { $0 > now }.sorted()
+        tasks.compactMap(\.effectiveTargetDate).filter { $0 > now }.sorted()
     }
 
     // MARK: Day complete (2026-09-29)

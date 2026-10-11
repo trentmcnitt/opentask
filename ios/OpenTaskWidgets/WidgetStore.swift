@@ -57,6 +57,30 @@ enum WidgetStore {
 
     struct RemindersCache: Codable {
         let groups: [ReminderGroupDTO]
+        /// Today's task segments (2026-10-10) — `RemindersPayload.
+        /// taskSegments`, kept beside the groups and never inside one. Carried
+        /// by EVERY write of this cache (no default in the init): the fast
+        /// path repaints from it after each tap, so a write that dropped them
+        /// would blank every segment page until the next fetch. A custom
+        /// `init(from:)` — the `TasksCache.completions` rule — so a cache from
+        /// a build before segments still decodes, with none.
+        let taskSegments: [TaskSegmentDTO]
+
+        enum CodingKeys: String, CodingKey {
+            case groups
+            case taskSegments = "task_segments"
+        }
+
+        init(groups: [ReminderGroupDTO], taskSegments: [TaskSegmentDTO]) {
+            self.groups = groups
+            self.taskSegments = taskSegments
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            groups = try c.decodeIfPresent([ReminderGroupDTO].self, forKey: .groups) ?? []
+            taskSegments = try c.decodeIfPresent([TaskSegmentDTO].self, forKey: .taskSegments) ?? []
+        }
     }
 
     struct TasksCache: Codable {
@@ -111,8 +135,10 @@ enum WidgetStore {
     /// settles a pending `clearInteraction()` only if the fetch began after
     /// it (see "Fetch required" below): a response already on the wire when
     /// the cache was declared stale can't carry the change that made it so.
-    static func saveReminders(_ groups: [ReminderGroupDTO], fetchStartedAt: Date = Date()) {
-        save(RemindersCache(groups: groups), forKey: remindersKey)
+    static func saveReminders(
+        _ groups: [ReminderGroupDTO], taskSegments: [TaskSegmentDTO], fetchStartedAt: Date = Date()
+    ) {
+        save(RemindersCache(groups: groups, taskSegments: taskSegments), forKey: remindersKey)
         settleFetchRequirement(remindersFetchRequiredKey, fetchStartedAt: fetchStartedAt)
     }
 
@@ -194,6 +220,9 @@ enum WidgetStore {
             + progressMap().values.map { $0[stampIndex] }
             + (latestPromptActionStamp().map { [$0] } ?? [])
             + Array(pendingMap(pendingPromptRestoresKey).values)
+            // Task segment considers (2026-10-10), like a prompt tap.
+            + Array(pendingMap(pendingSegmentConsidersKey).values)
+            + Array(pendingMap(pendingSegmentTargetsKey).values)
         return stamps.contains { $0 >= cutoff }
     }
 
@@ -553,7 +582,12 @@ enum WidgetStore {
                     prompts: group.prompts
                 )
             }
-            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+            // A done task segment row (2026-10-10) leaves its segment: the
+            // server's payload drops a completed task from `task_segments`.
+            let segments = cached.value.taskSegments.map { segment in
+                segment.replacingTasks(segment.tasks.filter { $0.id != id })
+            }
+            save(RemindersCache(groups: groups, taskSegments: segments), forKey: remindersKey, at: cached.fetchedAt)
         }
         if let cached = loadTasks() {
             let completedTask = cached.value.tasks.first(where: { $0.id == id })
@@ -744,7 +778,7 @@ enum WidgetStore {
                     prompts: group.prompts
                 )
             }
-            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+            save(RemindersCache(groups: groups, taskSegments: cached.value.taskSegments), forKey: remindersKey, at: cached.fetchedAt)
         }
         if kind == TasksWidget.kind, let cached = loadTasks() {
             let completions = cached.value.completions.filter { $0.taskId != id }
@@ -984,6 +1018,10 @@ enum WidgetStore {
         // Prompt put-backs (2026-09-25): an undone put-back must show the
         // prompt handled again.
         defaults?.removeObject(forKey: pendingPromptRestoresKey)
+        // Task segment considers (2026-10-10): an undone consider must show
+        // the row waiting again.
+        defaults?.removeObject(forKey: pendingSegmentConsidersKey)
+        defaults?.removeObject(forKey: pendingSegmentTargetsKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -1066,6 +1104,162 @@ enum WidgetStore {
                 prompts: prompts
             )
         }
+    }
+
+    // MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
+    //
+    // A segment row's two taps, drawn before the server answers like every
+    // other check-off here:
+    // - DONE (the right-hand checkbox) is an ordinary completion —
+    //   `CompleteTaskIntent`, the completion tombstone and outbox entry — so
+    //   `filterPendingSegments` hides a tombstoned row exactly as
+    //   `filterPending` hides a reminder.
+    // - CONSIDER (the left-hand circle) has its own tombstone, keyed by task
+    //   id, drawn as the row flipped to `considered` (the server returns
+    //   considered rows too, flagged, so the segment can go green) — the
+    //   twin of a prompt's `handled(did:)` render. Queued in the outbox as
+    //   `.considerSegment`; `confirmSegmentConsider` writes the server's
+    //   answer into the cache.
+    // - DEFER ALL is not optimistic: one deliberate tap per segment, sent
+    //   from the intent, its answer written in by `confirmSegmentDefer`.
+
+    private static let pendingSegmentConsidersKey = "widget.pendingSegmentConsiders"
+
+    static func stagePendingSegmentConsider(_ id: Int, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingSegmentConsidersKey)
+        map[String(id)] = now.timeIntervalSince1970
+        defaults?.set(map, forKey: pendingSegmentConsidersKey)
+    }
+
+    static func clearPendingSegmentConsider(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        clearPendingSegmentConsiderLocked(id)
+    }
+
+    private static func clearPendingSegmentConsiderLocked(_ id: Int) {
+        var map = pendingMap(pendingSegmentConsidersKey)
+        map.removeValue(forKey: String(id))
+        defaults?.set(map, forKey: pendingSegmentConsidersKey)
+    }
+
+    /// Live consider tombstones, plus every consider still queued in the
+    /// outbox (an offline tap stays drawn considered while it is queued).
+    static func pendingSegmentConsiders(now: Date = Date()) -> Set<Int> {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var ids = liveIdsLocked(pendingSegmentConsidersKey, now: now)
+        for entry in outboxEntriesLocked() {
+            if case .considerSegment(let taskId) = entry.mutation { ids.insert(taskId) }
+        }
+        return ids
+    }
+
+    /// The segment twin of `filterPending(_ groups:)` — every render path
+    /// passes the cached or fetched segments through this. A completed row
+    /// is hidden; a considered one is drawn considered. Order is never
+    /// changed: acting on one row never moves the rest under the finger.
+    static func filterPendingSegments(_ segments: [TaskSegmentDTO], now: Date = Date()) -> [TaskSegmentDTO] {
+        // A done row and a "Target today" row both leave the segment.
+        let leaving = pendingCompletions(now: now).union(pendingSegmentTargets(now: now))
+        let considering = pendingSegmentConsiders(now: now)
+        guard !leaving.isEmpty || !considering.isEmpty else { return segments }
+        return segments.map { segment in
+            segment.replacingTasks(segment.tasks.compactMap { row in
+                if leaving.contains(row.id) { return nil }
+                if considering.contains(row.id), row.state != .considered { return row.with(state: .considered) }
+                return row
+            })
+        }
+    }
+
+    /// The server took a consider: the row is `considered` in the cache, so
+    /// the next tap repaints from cache with it ticked, and the tombstone goes.
+    static func confirmSegmentConsider(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if let cached = loadReminders() {
+            let segments = cached.value.taskSegments.map { segment in
+                segment.replacingTasks(segment.tasks.map { $0.id == id ? $0.with(state: .considered) : $0 })
+            }
+            save(
+                RemindersCache(groups: cached.value.groups, taskSegments: segments),
+                forKey: remindersKey, at: cached.fetchedAt
+            )
+        }
+        clearPendingSegmentConsiderLocked(id)
+    }
+
+    // "Target today" (2026-10-11): the row LEAVES the segment — the task now
+    // has a target today, so it belongs to the over-target channel (spec §3,
+    // "never both"). Its own tombstone, drawn as the row gone, like a done.
+
+    private static let pendingSegmentTargetsKey = "widget.pendingSegmentTargets"
+
+    static func stagePendingSegmentTarget(_ id: Int, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingSegmentTargetsKey)
+        map[String(id)] = now.timeIntervalSince1970
+        defaults?.set(map, forKey: pendingSegmentTargetsKey)
+    }
+
+    static func clearPendingSegmentTarget(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        clearPendingSegmentTargetLocked(id)
+    }
+
+    private static func clearPendingSegmentTargetLocked(_ id: Int) {
+        var map = pendingMap(pendingSegmentTargetsKey)
+        map.removeValue(forKey: String(id))
+        defaults?.set(map, forKey: pendingSegmentTargetsKey)
+    }
+
+    /// Live "Target today" tombstones plus every one still queued.
+    static func pendingSegmentTargets(now: Date = Date()) -> Set<Int> {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var ids = liveIdsLocked(pendingSegmentTargetsKey, now: now)
+        for entry in outboxEntriesLocked() {
+            if case .targetSegmentToday(let taskId) = entry.mutation { ids.insert(taskId) }
+        }
+        return ids
+    }
+
+    /// The server took a "Target today": the row is out of the cached
+    /// segments. The task's new target lives in the Tasks payload, which the
+    /// next pass fetches (`requireTasksFetch` — the server chose the time).
+    static func confirmSegmentTarget(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if let cached = loadReminders() {
+            let segments = cached.value.taskSegments.map { segment in
+                segment.replacingTasks(segment.tasks.filter { $0.id != id })
+            }
+            save(
+                RemindersCache(groups: cached.value.groups, taskSegments: segments),
+                forKey: remindersKey, at: cached.fetchedAt
+            )
+        }
+        clearPendingSegmentTargetLocked(id)
+    }
+
+    /// The server took a Defer All: those rows are `deferred` (off today's
+    /// list, back tomorrow) in the cache.
+    static func confirmSegmentDefer(_ ids: Set<Int>) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let cached = loadReminders() else { return }
+        let segments = cached.value.taskSegments.map { segment in
+            segment.replacingTasks(segment.tasks.map { ids.contains($0.id) ? $0.with(state: .deferred) : $0 })
+        }
+        save(
+            RemindersCache(groups: cached.value.groups, taskSegments: segments),
+            forKey: remindersKey, at: cached.fetchedAt
+        )
     }
 
     // MARK: - Quota prompt actions (quota reminders, 2026-09-24)
@@ -1231,7 +1425,7 @@ enum WidgetStore {
                     )
                 })
             }
-            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+            save(RemindersCache(groups: groups, taskSegments: cached.value.taskSegments), forKey: remindersKey, at: cached.fetchedAt)
         } else {
             needsFetch = true
         }
@@ -1304,7 +1498,7 @@ enum WidgetStore {
                 return p
             })
         }
-        save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+        save(RemindersCache(groups: groups, taskSegments: cached.value.taskSegments), forKey: remindersKey, at: cached.fetchedAt)
     }
 
     /// Write tasks the SERVER returned (a prompt action's `tasks`) into the
@@ -1884,6 +2078,16 @@ enum WidgetStore {
             case prompt(key: String, did: Bool)
             /// `POST /api/tasks/:id/progress`.
             case progress(taskId: Int, delta: Int)
+            /// `POST /api/task-segments/consider` (2026-10-10): a task
+            /// segment row's circle — "I saw it", never a completion.
+            /// Idempotent in effect, so a retry is a resend.
+            case considerSegment(taskId: Int)
+            /// `POST /api/task-segments/target-today` (2026-10-11): "Target
+            /// today" on a task segment row — a deliberate target today (the
+            /// server also stamps it considered), so the row leaves the
+            /// segment for the over-target channel. Resending re-targets the
+            /// same task to the same slot the same day, so a retry is a resend.
+            case targetSegmentToday(taskId: Int)
         }
 
         let id: UUID
@@ -2023,6 +2227,10 @@ enum WidgetStore {
             clearPendingPromptAction(key)
         case .progress(let taskId, let delta):
             clearPendingProgress(taskId, delta: delta)
+        case .considerSegment(let taskId):
+            clearPendingSegmentConsider(taskId)
+        case .targetSegmentToday(let taskId):
+            clearPendingSegmentTarget(taskId)
         }
         restoreSlotOverrideBeforeAutoAdvance(ifMatches: entry.createdDate)
     }
@@ -2030,9 +2238,12 @@ enum WidgetStore {
     /// The cached `due_at` and title of `id`, from whichever payload holds
     /// it — what `CompleteTaskIntent` records in its outbox entry.
     static func cachedTaskInfo(_ id: Int) -> (dueAt: String?, title: String?) {
-        if let groups = loadReminders()?.value.groups {
-            for group in groups {
+        if let cached = loadReminders()?.value {
+            for group in cached.groups {
                 if let task = group.reminders.first(where: { $0.id == id }) { return (task.dueAt, task.title) }
+            }
+            for segment in cached.taskSegments {
+                if let row = segment.tasks.first(where: { $0.id == id }) { return (row.task.dueAt, row.task.title) }
             }
         }
         if let task = loadTasks()?.value.tasks.first(where: { $0.id == id }) { return (task.dueAt, task.title) }
