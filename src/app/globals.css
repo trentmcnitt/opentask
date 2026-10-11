@@ -23,6 +23,9 @@
   /* Pre-blended badge colors: equivalent of 80% opacity on --background, but fully opaque
      so underlying icons don't show through. Adjust L/C values to change perceived opacity. */
   --badge-destructive: oklch(0.662 0.196 27.325);
+  /* Over target (2026-10-11): a calm plum, deliberately not red — an arrived
+     target is not a failure (Trent). Distinct from the reminders' violet. */
+  --over-target: oklch(0.56 0.17 322);
   --badge-neutral: oklch(0.368 0 0);
   /* Reminders get their own hue rather than the neutral grey: §6 says a waiting
      thought is never overdue, so it must not be red, but grey read as disabled
@@ -61,6 +64,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --badge-destructive: oklch(0.55 0.22 27.325);
+  --over-target: oklch(0.7 0.15 322);
   --badge-neutral: oklch(0.803 0 0);
   --badge-reminders: oklch(0.62 0.19 295);
   --ai-glow: oklch(0.6 0.18 270);
@@ -102,6 +106,7 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-badge-destructive: var(--badge-destructive);
+  --color-over-target: var(--over-target);
   --color-badge-neutral: var(--badge-neutral);
   --color-badge-reminders: var(--badge-reminders);
   --color-border: var(--border);

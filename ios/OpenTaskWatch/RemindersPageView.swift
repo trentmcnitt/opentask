@@ -22,15 +22,6 @@ struct RemindersPageView: View {
         // crashed on first run.
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                // Task segments first, ahead of the time slot (2026-10-10,
-                // spec §3: "task segments open first, ahead of the Early
-                // morning slot"). Their own sections, never inside the
-                // slot's list or its "N left".
-                if model.hasLoadedOnce {
-                    ForEach(model.listedSegments.filter(\.hasWaiting)) { segment in
-                        TaskSegmentSection(segment: segment, model: model)
-                    }
-                }
                 header
                 if !model.reminderGroups.isEmpty {
                     SlotProgressStrip(groups: model.reminderGroups, currentIndex: model.displayedSlotIndex)
@@ -43,6 +34,16 @@ struct RemindersPageView: View {
                 }
 
                 content
+
+                // Task segments UNDER the time slot (Trent, 10-11: "Tasks
+                // should go underneath Reminders"; 10-10 had them first).
+                // Their own sections, never inside the slot's list or its
+                // "N left".
+                if model.hasLoadedOnce {
+                    ForEach(model.listedSegments.filter(\.hasWaiting)) { segment in
+                        TaskSegmentSection(segment: segment, model: model)
+                    }
+                }
             }
             .padding(.horizontal, 4)
         }

@@ -412,7 +412,7 @@ export function TaskRow({
         'bg-card min-h-[62px] border',
         'hover:border-border/80 transition-colors',
         isAiHighlighted && !isSelected && 'bg-blue-50/50 dark:bg-blue-950/20',
-        isOverdue && 'border-l-destructive border-l-4',
+        isOverdue && 'border-l-over-target border-l-4',
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
         // Right border for priority (user preference)
         priorityDisplay.rightBorder && priorityColors && 'border-r-4',
@@ -808,7 +808,7 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     const snoozedClass = isSnoozed ? 'text-blue-400' : undefined
     segments.push({
       text: dueParts.relative,
-      className: isOverdue ? 'text-destructive font-medium' : snoozedClass,
+      className: isOverdue ? 'text-over-target font-medium' : snoozedClass,
     })
     if (dueParts.absolute) {
       segments.push({ text: dueParts.absolute, className: isOverdue ? undefined : snoozedClass })
@@ -877,10 +877,12 @@ function TargetAgeTab({ task, timezone }: { task: Task; timezone: string }) {
       data-target-age={days}
       title={`${days} day${days === 1 ? '' : 's'} since its first target`}
       className={cn(
-        'pointer-events-none absolute -top-px right-3 rounded-b-md px-1.5 pt-px pb-0.5 text-[11px] leading-none font-semibold tabular-nums',
-        tone === 'gray' && 'bg-muted text-muted-foreground',
-        tone === 'amber' && 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
-        tone === 'red' && 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300',
+        // A true corner tab (mockup C): flush with the card's top-right
+        // corner, over its border, sharing its rounded corner.
+        'pointer-events-none absolute -top-px -right-px rounded-tr-lg rounded-bl-md px-2 py-1 text-[11px] leading-none font-semibold tabular-nums',
+        tone === 'light' && 'bg-over-target/10 text-over-target',
+        tone === 'medium' && 'bg-over-target/25 text-over-target',
+        tone === 'strong' && 'bg-over-target text-white',
       )}
     >
       {days}d

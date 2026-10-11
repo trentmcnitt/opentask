@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, CalendarClock, ChevronDown } from 'lucide-react'
+import { Check, CalendarClock, ChevronDown, FolderOpen } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
+import { getPriorityOption } from '@/lib/priority'
+import { useProjects } from '@/components/ProjectsProvider'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
@@ -29,8 +31,9 @@ import type { Task } from '@/types'
  * § Task segments).
  *
  * Tasks whose target hasn't arrived, for awareness — one segment per horizon,
- * each on its own day, shown FIRST: "tasks are an early-day thing". Separate
- * from the time slots, and never counted in the headline, the nav badge or
+ * each on its own day, shown UNDER the reminder slots (Trent, 10-11: "Tasks
+ * should go underneath Reminders"; it replaced 10-10's "first"). Separate from
+ * the time slots, and never counted in the headline, the nav badge or
  * "Considered all so far".
  *
  * The row copies the reminder row (`ReminderRow`) where it can — the circle on
@@ -45,8 +48,9 @@ import type { Task } from '@/types'
  * so rather than pretending to be "weeks"), a future target as a date chip
  * ("Nov 1"), and the deadline.
  *
- * Considered rows stay, filled green, so the segment can go green; deferred
- * ones leave for today. A segment with nothing left waiting is finished for
+ * Considered rows LEAVE the list like considered reminders, so the next row
+ * moves up under the pointer; the bar counts them, so the segment goes green.
+ * Deferred ones leave for today. A segment with nothing left waiting is finished for
  * the day. Over SEGMENT_NUDGE_THRESHOLD items it suggests Process or AI help.
  */
 /** Rows a segment shows on the dashboard panel before "Show all". */
@@ -65,7 +69,11 @@ export function TaskSegmentCard({
 }) {
   const panel = variant === 'panel'
   const [showAll, setShowAll] = useState(false)
-  const shown = segment.rows.filter((r) => r.state !== 'deferred')
+  // Only what still waits is listed (Trent, 10-11: "that's not how it works
+  // with Reminders"): a considered row LEAVES, so the next one moves up under
+  // the pointer and the list can be tapped through without moving the mouse.
+  // The bar above still counts the considered ones, so the segment goes green.
+  const shown = segment.rows.filter((r) => r.state === 'waiting')
   // The dashboard panel shares its column with the slot pager, so a long
   // segment shows its first PANEL_SEGMENT_CAP rows and a "Show all" (the slot
   // cards' own cap pattern). The Reminders page shows everything.
@@ -179,7 +187,7 @@ function TaskSegmentRow({
         }
       }}
       className={cn(
-        'group flex items-start gap-3 rounded-lg px-1 py-1.5',
+        'group flex items-start gap-3 rounded-lg py-1.5 pr-2 pl-1',
         considered ? 'opacity-60' : 'hover:bg-foreground/[0.03] cursor-pointer',
       )}
     >
@@ -259,11 +267,27 @@ function TaskSegmentRow({
  * height — the segment stays bite-size.
  */
 function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
+  const { projects } = useProjects()
+  const project = projects.find((p) => p.id === task.project_id)
+  const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const target = task.due_at ? DateTime.fromISO(task.due_at).setZone(timezone) : null
   const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null
-  if (!target && !deadline) return null
+  // The dashboard row's context, compactly (Trent, 10-11): the project, the
+  // priority, a future target and the deadline. Segments hold one-off tasks
+  // only, so there is never a recurrence to show.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {project && (
+        <span data-segment-project className="inline-flex items-center gap-1">
+          <FolderOpen className="size-3" aria-hidden />
+          {project.name}
+        </span>
+      )}
+      {priority && (
+        <span data-segment-priority className={priority.color}>
+          {priority.label}
+        </span>
+      )}
       {target && (
         <span data-target-chip title={`Target ${target.toFormat('ccc LLL d, h:mm a')}`}>
           {target.toFormat('LLL d')}

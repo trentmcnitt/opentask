@@ -302,7 +302,6 @@ export function DashboardRemindersPanel({
       data-reminders-slot={key}
       className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
     >
-      {segmentCard}
       <SlotPagerHeader
         label={label}
         time={time}
@@ -374,6 +373,7 @@ export function DashboardRemindersPanel({
         />
       )}
 
+      {segmentCard}
       {editor.modal}
       {prompts.modal}
     </section>
@@ -381,10 +381,10 @@ export function DashboardRemindersPanel({
 }
 
 /**
- * Task segments (2026-10-10) open FIRST on the panel: while anything in one is
- * still waiting, its card sits above the slot pager and stays until it is
- * considered or deferred ("tasks are an early-day thing"). Once nothing is
- * waiting it folds away and the slots have the panel to themselves.
+ * Task segments sit UNDER the slot pager on the panel (Trent, 10-11: "Tasks
+ * should go underneath Reminders"; 10-10 had them first): while anything in
+ * one is still waiting, its card shows below the slot and stays until it is
+ * considered or deferred. Once nothing is waiting it folds away.
  */
 function usePanelSegment(
   reminders: ReturnType<typeof useReminders>,
@@ -406,7 +406,7 @@ function PanelSegment(props: {
   timezone: string
 }) {
   return (
-    <div className="border-foreground/5 border-b">
+    <div className="border-foreground/5 border-t">
       <TaskSegmentCard {...props} variant="panel" />
     </div>
   )

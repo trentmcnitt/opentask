@@ -42,20 +42,21 @@ enum RemindersTimeline {
 
     // MARK: The page ring (2026-10-10, task segments)
     //
-    // The widget's period ring is `[task segments…] + [time slots…]`: the
-    // segments open first, ahead of Early morning, in the order the
-    // reminders screen walks through (spec §3, confirmed by Trent 10-10).
+    // The widget's period ring is `[time slots…] + [task segments…]`: the
+    // segments come AFTER the slots, as they sit under them on the reminders
+    // screen (Trent, 10-11: "Tasks should go underneath Reminders" — it
+    // replaced 10-10's segments-first).
     // Every page has an Int key in ONE space — a slot's `slotKey` (its id,
     // or -1 for Anytime) and a segment's `pageKey` (-10…-13) — so the
     // existing slot override, its natural-page anchor, the bottom pager's
     // per-page index and the chevrons all address a segment page with no
     // new storage.
     //
-    // The NATURAL page is the first segment with a row still waiting, else
-    // the clock's slot: the pager stays on a task segment until it is
-    // considered or deferred (amendment 10), then falls through to the slots
-    // on its own. Segments never enter `groups`, so nothing slot-shaped —
-    // the strip, "N of M", day complete, auto-advance's search — sees them.
+    // The NATURAL page is the clock's slot, as before task segments existed;
+    // a segment is a chevron past the last slot (or the natural page when the
+    // day has no slots at all). Segments never enter `groups`, so nothing
+    // slot-shaped — the strip, "N of M", day complete, auto-advance's search —
+    // sees them.
 
     /// What is on screen: a slot (`segmentIndex == nil`) or a segment.
     struct DisplayedPage: Equatable {
@@ -68,17 +69,17 @@ enum RemindersTimeline {
 
     /// Every page's key, in ring order. `segments` must already be listed.
     static func pageKeys(groups: [ReminderGroupDTO], segments: [TaskSegmentDTO]) -> [Int] {
-        segments.map(\.pageKey) + groups.map(\.slotKey)
+        groups.map(\.slotKey) + segments.map(\.pageKey)
     }
 
-    /// The natural page's key — first segment still waiting, else the
-    /// clock's slot — or nil when there are no pages at all.
+    /// The natural page's key — the clock's slot; with no slots, the first
+    /// segment still waiting (else the first) — or nil when there are no
+    /// pages at all.
     static func naturalPageKey(
         groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()
     ) -> Int? {
-        if let waiting = segments.first(where: \.hasWaiting) { return waiting.pageKey }
         if !groups.isEmpty { return groups[naturalSlotIndex(in: groups, now: now)].slotKey }
-        return segments.first?.pageKey
+        return (segments.first(where: \.hasWaiting) ?? segments.first)?.pageKey
     }
 
     /// The page `key` names, with `naturalSlot` standing in for the slot on

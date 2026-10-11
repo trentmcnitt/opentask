@@ -244,9 +244,14 @@ export function segmentState(
   return { horizon, state: 'waiting' }
 }
 
-/** Target-age color steps (spec §4; placeholders Trent may tune). */
-export const TARGET_AGE_AMBER_DAYS = 3
-export const TARGET_AGE_RED_DAYS = 7
+/**
+ * Target-age steps (spec §4; thresholds are placeholders Trent may tune). The
+ * steps are three depths of ONE calm plum (`--over-target`), never red or
+ * amber: an arrived target signals nothing wrong (Trent, 2026-10-11). Red is
+ * kept for a passed deadline only.
+ */
+export const TARGET_AGE_MEDIUM_DAYS = 3
+export const TARGET_AGE_STRONG_DAYS = 7
 /** Process's one-tap "remove targets aged 7d+" threshold. */
 export const STALE_TARGET_DAYS = 7
 
@@ -276,12 +281,12 @@ export function targetAgeDays(
   return days > 0 ? days : null
 }
 
-export type TargetAgeTone = 'gray' | 'amber' | 'red'
+export type TargetAgeTone = 'light' | 'medium' | 'strong'
 
 export function targetAgeTone(days: number): TargetAgeTone {
-  if (days >= TARGET_AGE_RED_DAYS) return 'red'
-  if (days >= TARGET_AGE_AMBER_DAYS) return 'amber'
-  return 'gray'
+  if (days >= TARGET_AGE_STRONG_DAYS) return 'strong'
+  if (days >= TARGET_AGE_MEDIUM_DAYS) return 'medium'
+  return 'light'
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */

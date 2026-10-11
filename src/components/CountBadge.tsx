@@ -20,7 +20,8 @@ interface CountBadgeProps {
 
 const variantStyles = {
   default: 'bg-muted text-muted-foreground',
-  overdue: 'bg-destructive/15 text-destructive',
+  // Over target (2026-10-11): plum, not red — an arrived target isn't a failure.
+  overdue: 'bg-over-target/15 text-over-target',
   today: 'bg-primary/15 text-primary',
   done: 'bg-green-600/15 text-green-700 dark:text-green-400',
 }

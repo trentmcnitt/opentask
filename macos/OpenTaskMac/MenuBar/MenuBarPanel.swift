@@ -49,7 +49,7 @@ struct MenuBarPanel: View {
                 Text("OpenTask").font(.headline)
                 Text(summary)
                     .font(.caption)
-                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : Color.red)
+                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : WidgetTheme.overTarget)
             }
             Spacer()
             Button {
@@ -151,7 +151,7 @@ struct MenuBarPanel: View {
                     if let due = task.effectiveTargetDate {
                         Text(dueText(due, isOverdue: isOverdue))
                             .font(.caption)
-                            .foregroundStyle(isOverdue ? Color.red : Color.secondary)
+                            .foregroundStyle(isOverdue ? WidgetTheme.overTarget : Color.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

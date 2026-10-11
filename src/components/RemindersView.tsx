@@ -620,11 +620,12 @@ export function RemindersView({
     ],
   )
 
-  // The task segments, first and in screen order (days, weeks, months,
+  // The task segments, UNDER the slots (Trent, 10-11: "Tasks should go
+  // underneath Reminders"), in screen order (days, weeks, months,
   // eventually). Not shown while searching — search covers reminders only.
   const segmentCards =
     segments.segments.length > 0 ? (
-      <div className="mb-3 space-y-3" data-task-segments>
+      <div className="mt-3 space-y-3" data-task-segments>
         {segments.segments.map((segment) => (
           <TaskSegmentCard
             key={segment.horizon}
@@ -670,8 +671,8 @@ export function RemindersView({
         />
       ) : visibleGroups.length === 0 ? (
         <>
-          {segmentCards}
           <RemindersEmptyState allClear={consideredAny || hasAny} headingLevel={1} />
+          {segmentCards}
         </>
       ) : (
         <>
@@ -686,7 +687,6 @@ export function RemindersView({
               need to undo"). Each finished slot still opens to its considered
               items and their put-back; the headline and the green bar are the
               all-clear. */}
-          {segmentCards}
           {
             <div className="space-y-3">
               {[...summary.started, ...summary.later].map((group) => {
@@ -716,6 +716,7 @@ export function RemindersView({
               })}
             </div>
           }
+          {segmentCards}
         </>
       )}
 
