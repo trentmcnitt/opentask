@@ -583,6 +583,20 @@ describe('round trip: every remaining preference', () => {
     })
   })
 
+  // Settings → Default snooze → "Next period" (2026-10-10).
+  test('default_snooze_option also takes "next_period"', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_snooze_option: 'next_period' },
+    })
+    expect(res.status).toBe(200)
+    expect(await readPref('default_snooze_option')).toBe('next_period')
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_snooze_option: '60' },
+    })
+  })
+
   test('quota_prompt_slot_id saves one of the user’s periods, reads back, and clears to null', async () => {
     expect(await readPref('quota_prompt_slot_id')).toBeNull()
     const slots = (await (await apiFetch('/api/time-slots')).json()).data.time_slots as {
@@ -724,5 +738,77 @@ describe('week_start anchors weekly quotas on the chosen day', () => {
 
     await apiFetch('/api/user/preferences', { method: 'PATCH', body: { week_start: 'sunday' } })
     await apiFetch(`/api/tasks/${id}`, { method: 'DELETE' })
+  })
+})
+
+/**
+ * The global AI context over the API (task-model redesign, 2026-10-10):
+ * readable and writable, and `ai_context_updated_at` — read-only, stamped by
+ * the server — moves only when the text changes. It drives the staleness
+ * warning in the left bar and the phone menu.
+ */
+describe('ai_context and ai_context_updated_at', () => {
+  async function read() {
+    const res = await apiFetch('/api/user/preferences')
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    return { context: data.ai_context, at: data.ai_context_updated_at }
+  }
+
+  afterAll(async () => {
+    await apiFetch('/api/user/preferences', { method: 'PATCH', body: { ai_context: null } })
+  })
+
+  test('GET carries both fields', async () => {
+    const { context, at } = await read()
+    expect(context === null || typeof context === 'string').toBe(true)
+    expect(at === null || typeof at === 'string').toBe(true)
+  })
+
+  test('a change is stamped; the same text again is not', async () => {
+    const before = Date.now()
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context: '  Integration context  ' },
+    })
+    expect(res.status).toBe(200)
+    const patched = (await res.json()).data
+    expect(patched.ai_context).toBe('Integration context')
+    expect(Date.parse(patched.ai_context_updated_at)).toBeGreaterThanOrEqual(before - 1000)
+
+    const again = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context: 'Integration context' },
+    })
+    expect((await again.json()).data.ai_context_updated_at).toBe(patched.ai_context_updated_at)
+    expect((await read()).at).toBe(patched.ai_context_updated_at)
+  })
+
+  test('the stamp cannot be written by a client', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context_updated_at: '2020-01-01T00:00:00.000Z' },
+    })
+    expect(res.status).toBe(400)
+    expect((await read()).at).not.toBe('2020-01-01T00:00:00.000Z')
+  })
+
+  // "Still accurate": a review without an edit restamps it, text unchanged.
+  test('ai_context_reviewed: true restamps without changing the text', async () => {
+    const { context, at } = await read()
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context_reviewed: true },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    expect(data.ai_context).toBe(context)
+    expect(Date.parse(data.ai_context_updated_at)).toBeGreaterThanOrEqual(Date.parse(at ?? '0'))
+
+    const bad = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context_reviewed: false },
+    })
+    expect(bad.status).toBe(400)
   })
 })

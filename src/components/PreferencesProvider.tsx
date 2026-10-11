@@ -86,6 +86,8 @@ interface PreferencesContextValue {
   setCriticalAlertVolume: (volume: number) => void
   aiContext: string | null
   setAiContext: (context: string | null) => void
+  aiContextUpdatedAt: string | null
+  setAiContextUpdatedAt: (at: string | null) => void
   aiMode: AiMode
   setAiMode: (mode: AiMode) => void
   aiShowScores: boolean
@@ -164,6 +166,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setCriticalAlertVolume: () => {},
   aiContext: null,
   setAiContext: () => {},
+  aiContextUpdatedAt: null,
+  setAiContextUpdatedAt: () => {},
   aiMode: 'on',
   setAiMode: () => {},
   aiShowScores: true,
@@ -289,6 +293,7 @@ function makeFieldSetters(set: FieldSet) {
     setSweepFeedbackNotificationsEnabled: field('sweepFeedbackNotificationsEnabled'),
     setCriticalAlertVolume: field('criticalAlertVolume'),
     setAiContext: field('aiContext'),
+    setAiContextUpdatedAt: field('aiContextUpdatedAt'),
     setAiMode: field('aiMode'),
     setAiShowScores: field('aiShowScores'),
     setAiShowSignals: field('aiShowSignals'),
@@ -560,8 +565,9 @@ export function useQuotasPagePreference() {
 }
 
 export function useAiContext() {
-  const { aiContext, setAiContext } = useContext(PreferencesContext)
-  return { aiContext, setAiContext }
+  const { aiContext, setAiContext, aiContextUpdatedAt, setAiContextUpdatedAt } =
+    useContext(PreferencesContext)
+  return { aiContext, setAiContext, aiContextUpdatedAt, setAiContextUpdatedAt }
 }
 
 export function useNotificationConfig() {

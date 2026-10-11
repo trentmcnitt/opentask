@@ -39,6 +39,7 @@ export type {
 } from './task'
 
 export {
+  PROJECT_DESCRIPTION_MAX,
   projectCreateSchema,
   projectUpdateSchema,
   validateProjectCreate,

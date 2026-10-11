@@ -24,6 +24,8 @@ export interface Project {
   shared: boolean
   sort_order: number
   color: LabelColor | null
+  /** What belongs in this project (2026-10-10), at most PROJECT_DESCRIPTION_MAX chars; null when unset. */
+  description: string | null
   active_count: number
   overdue_count: number
   created_at: string
