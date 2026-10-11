@@ -203,6 +203,7 @@ function DefaultSnoozeRow() {
         </div>
       ) : (
         <select
+          aria-label="Default snooze"
           value={isPreset ? defaultSnoozeOption : 'custom'}
           onChange={(e) => {
             const val = e.target.value
