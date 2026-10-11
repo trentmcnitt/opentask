@@ -265,9 +265,14 @@ function useBulkActions(
       const result = await saveQuickPanelChanges(allIds, changes, dateTaskIds)
       bumpUndoCount()
       fetchTasks()
+      // A deadline-capped task is never moved silently: the toast says it stayed.
+      const kept = result.skippedDeadline
+        ? ` · ${result.skippedDeadline} kept before ${result.skippedDeadline === 1 ? 'its' : 'their'} deadline`
+        : ''
       showToast({
         message:
-          result.description || `${result.tasksAffected} ${taskWord(result.tasksAffected)} updated`,
+          (result.description ||
+            `${result.tasksAffected} ${taskWord(result.tasksAffected)} updated`) + kept,
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
@@ -2365,6 +2370,7 @@ function DashboardView({
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
           <TaskList
             tasks={tasks}
+            timeSlots={timeSlots}
             uncapped={overdueFilterOn}
             sortedGroups={sortedGroups}
             orderedIds={orderedIds}
@@ -2380,9 +2386,12 @@ function DashboardView({
             onSnooze={actions.handleSnooze}
             // Remove target (2026-10-10): back to its horizon's task segment.
             // Silences a deadline's implied nag too, or "remove" would do nothing.
-            onRemoveTarget={(taskId) =>
+            onRemoveTarget={(task) =>
               void actions
-                .handleSaveAllChanges(taskId, { due_at: null, deadline_nag_off: true })
+                .handleSaveAllChanges(task.id, {
+                  due_at: null,
+                  ...(task.deadline_at ? { deadline_nag_off: true } : {}),
+                })
                 .catch(() => undefined)
             }
             onLabelClick={onToggleLabel}

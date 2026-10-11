@@ -24,6 +24,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProjectPreviewCount, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { isJustAdded } from '@/lib/just-added'
 
 /**
@@ -56,6 +57,12 @@ import { useSelection, type SelectionContextType } from './SelectionProvider'
 interface TaskListProps {
   tasks: Task[]
   /**
+   * The user's periods, for a default snooze option of "Next period"
+   * (2026-10-10): the swipe and each row's snooze tap resolve it against these.
+   * Passed down rather than fetched per row (see `SnoozeMenu`'s slot cache).
+   */
+  timeSlots?: TimeSlot[]
+  /**
    * Show every row of every group — no "Show all" / "Show less" cap. Set
    * while the Overdue filter is on (Trent, 2026-10-01): clearing overdue
    * tasks one by one, a capped group hid the rest and read as "done".
@@ -80,7 +87,7 @@ interface TaskListProps {
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
-  onRemoveTarget?: (taskId: number) => void
+  onRemoveTarget?: (task: Task) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -180,8 +187,12 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   ai_insights: 'AI score',
 }
 
+/** One stable empty list, so a caller without periods doesn't change the callbacks' deps. */
+const NO_SLOTS: TimeSlot[] = []
+
 export function TaskList({
   tasks,
+  timeSlots = NO_SLOTS,
   uncapped = false,
   sortedGroups,
   orderedIds,
@@ -321,13 +332,13 @@ export function TaskList({
   const handleSwipeLeft = useCallback(
     (task: Task) => {
       if (isOverdue(task, now)) {
-        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots)
         requestSnooze(task, until)
       } else {
         onDoubleClick?.(task)
       }
     },
-    [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick, now],
+    [defaultSnoozeOption, timezone, morningTime, timeSlots, requestSnooze, onDoubleClick, now],
   )
 
   /**
@@ -398,6 +409,7 @@ export function TaskList({
       >
         <TaskRow
           task={task}
+          timeSlots={timeSlots}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
           onRemoveTarget={onRemoveTarget}

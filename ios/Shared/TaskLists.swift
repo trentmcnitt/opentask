@@ -20,13 +20,13 @@ enum TaskLists {
     ///   being glanced at — it answers a different question ("how far in",
     ///   not "is it done").
     static func eligible(_ tasks: [TaskDTO]) -> [TaskDTO] {
-        tasks.filter { !$0.isReminder && !$0.isTracked && $0.dueDate != nil }
+        tasks.filter { !$0.isReminder && !$0.isTracked && $0.effectiveTargetDate != nil }
     }
 
     static func sortedSoonestFirst(_ tasks: [TaskDTO]) -> [TaskDTO] {
         tasks.sorted { lhs, rhs in
-            let l = lhs.dueDate ?? .distantFuture
-            let r = rhs.dueDate ?? .distantFuture
+            let l = lhs.effectiveTargetDate ?? .distantFuture
+            let r = rhs.effectiveTargetDate ?? .distantFuture
             // Soonest (so: most overdue) first; priority breaks ties.
             if l != r { return l < r }
             return lhs.priority > rhs.priority
@@ -63,7 +63,7 @@ enum TaskLists {
         guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else {
             return []
         }
-        return sortedSoonestFirst(eligible(tasks).filter { ($0.dueDate ?? .distantFuture) < endOfDay })
+        return sortedSoonestFirst(eligible(tasks).filter { ($0.effectiveTargetDate ?? .distantFuture) < endOfDay })
     }
 
     /// Every eligible task, soonest (most overdue) first, with NO end-of-day

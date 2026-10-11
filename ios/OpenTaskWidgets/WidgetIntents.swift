@@ -311,9 +311,9 @@ struct CompleteTaskIntent: AppIntent {
         // (unconditionally — restoring an unchanged override is a no-op) so
         // a failed completion, or a later Undo, can put the display back.
         let isReminders = kind == RemindersWidget.kind
-        if isReminders, let cached = WidgetStore.loadReminders()?.value.groups {
+        if isReminders, let cached = WidgetStore.loadReminders()?.value {
             WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
-            RemindersTimeline.autoAdvanceSlot(in: cached, now: mutationInstant)
+            RemindersTimeline.autoAdvanceSlot(in: cached.groups, segments: cached.taskSegments, now: mutationInstant)
         }
 
         // THE CHANGE (2026-09-30, instant check-off): the server call no
@@ -496,7 +496,8 @@ struct ActOnPromptIntent: AppIntent {
         guard WidgetStore.pendingPromptActions(now: mutationInstant)[promptKey] == nil else {
             return .result()
         }
-        let cachedGroups = WidgetStore.loadReminders()?.value.groups
+        let cached = WidgetStore.loadReminders()?.value
+        let cachedGroups = cached?.groups
         let title = cachedGroups?.flatMap(\.prompts).first { $0.promptKey == promptKey }?.title
         WidgetStore.stagePendingPromptAction(promptKey, did: did, now: mutationInstant)
         // Auto-advance, exactly as a reminder check-off does: acting on the
@@ -504,9 +505,9 @@ struct ActOnPromptIntent: AppIntent {
         // slot that still has something. `autoAdvanceSlot` filters through
         // the tombstone just staged, so it sees this prompt as handled.
         // Snapshotted first so a failure, or a later Undo, puts it back.
-        if let cachedGroups {
+        if let cached {
             WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
-            RemindersTimeline.autoAdvanceSlot(in: cachedGroups, now: mutationInstant)
+            RemindersTimeline.autoAdvanceSlot(in: cached.groups, segments: cached.taskSegments, now: mutationInstant)
         }
         WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
             mutation: .prompt(key: promptKey, did: did),
@@ -516,6 +517,132 @@ struct ActOnPromptIntent: AppIntent {
         // macOS's repaint; iOS repaints on the free interaction reload.
         await reloadTappedWidget(kind: RemindersWidget.kind)
         kickWidgetOutbox()
+        return .result()
+    }
+}
+
+// MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
+
+/// A task segment row's LEFT circle: "I saw it" (`POST
+/// /api/task-segments/consider`) — never a completion; the right-hand
+/// checkbox is the ordinary `CompleteTaskIntent`. The prompt-consider
+/// pattern exactly: stage a tombstone (the row draws considered at once),
+/// queue the send in the outbox, return; the drain writes the answer into
+/// the cache (`WidgetStore.confirmSegmentConsider`) or, on a definite
+/// refusal, takes the tick back. A misfire is undone with the header's Undo.
+struct ConsiderSegmentTaskIntent: AppIntent {
+    static var title: LocalizedStringResource = "Consider Task"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    init() {}
+
+    init(taskId: Int) {
+        self.taskId = taskId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let mutationInstant = Date()
+        // Already considered or queued: a double tap before the repaint.
+        guard !WidgetStore.pendingSegmentConsiders(now: mutationInstant).contains(taskId) else {
+            return .result()
+        }
+        let title = WidgetStore.cachedTaskInfo(taskId).title
+        WidgetStore.stagePendingSegmentConsider(taskId, now: mutationInstant)
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .considerSegment(taskId: taskId),
+            widgetKind: RemindersWidget.kind, createdAt: mutationInstant, title: title
+        ))
+        WidgetStore.recordLocalMutationForUndoCount()
+        // macOS's repaint; iOS repaints on the free interaction reload.
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+        kickWidgetOutbox()
+        return .result()
+    }
+}
+
+/// "Target today" on a task segment row (2026-10-11, spec §3: just left of
+/// the checkbox): `POST /api/task-segments/target-today` — a deliberate
+/// target today at the time the Snooze-all button would use (the server
+/// picks it), and the server also stamps the task considered. The row LEAVES
+/// the segment: from now on the task is the over-target channel's. Queued
+/// like the consider circle — tombstone (`stagePendingSegmentTarget`, the row
+/// drawn gone), outbox `.targetSegmentToday`, return — so it is instant and
+/// survives being offline; a definite refusal puts the row back. Undo takes
+/// it back like any other action.
+struct TargetSegmentTodayIntent: AppIntent {
+    static var title: LocalizedStringResource = "Target Task Today"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    init() {}
+
+    init(taskId: Int) {
+        self.taskId = taskId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let mutationInstant = Date()
+        // Already targeted or queued: a double tap before the repaint.
+        guard !WidgetStore.pendingSegmentTargets(now: mutationInstant).contains(taskId) else {
+            return .result()
+        }
+        let title = WidgetStore.cachedTaskInfo(taskId).title
+        WidgetStore.stagePendingSegmentTarget(taskId, now: mutationInstant)
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .targetSegmentToday(taskId: taskId),
+            widgetKind: RemindersWidget.kind, createdAt: mutationInstant, title: title
+        ))
+        WidgetStore.recordLocalMutationForUndoCount()
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+        kickWidgetOutbox()
+        return .result()
+    }
+}
+
+/// "Defer all" on a task segment page: every row still waiting leaves
+/// today's segment and comes back tomorrow (`POST /api/task-segments/defer`)
+/// — the counterpart of considering them all, and NOT a consider, which
+/// keeps "considered" honest (amendment 9). One deliberate tap per segment,
+/// so it is sent from here rather than queued; the answer is written into
+/// the cache (`confirmSegmentDefer`), and the widget moves on to the next
+/// page by itself — a segment with nothing waiting is no longer the natural
+/// page. One server undo entry: the header's Undo takes it back.
+struct DeferSegmentIntent: AppIntent {
+    static var title: LocalizedStringResource = "Defer Task Segment"
+    static var isDiscoverable: Bool { false }
+
+    /// The segment's horizon ("days", …): the rows to defer are read from
+    /// the cache at tap time, so a button archived with an older list never
+    /// defers a row that has since been considered.
+    @Parameter(title: "Horizon")
+    var horizon: String
+
+    init() {}
+
+    init(horizon: String) {
+        self.horizon = horizon
+    }
+
+    func perform() async throws -> some IntentResult {
+        let (_, segments) = RemindersTimeline.cachedPages()
+        guard let segment = segments.first(where: { $0.horizon == horizon }) else { return .result() }
+        let ids = segment.waitingTasks.map(\.id)
+        guard !ids.isEmpty else { return .result() }
+        do {
+            try await APIClient.shared.deferSegmentTasks(ids: ids)
+            WidgetStore.confirmSegmentDefer(Set(ids))
+            WidgetStore.recordLocalMutationForUndoCount()
+            WidgetStore.markInteraction()
+        } catch {
+            print("[OpenTaskWidgets] Defer segment \(horizon) failed: \(error)")
+            WidgetStore.requireRemindersFetch()
+        }
+        await reloadTappedWidget(kind: RemindersWidget.kind)
         return .result()
     }
 }
@@ -617,18 +744,20 @@ struct ShiftReminderSlotIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let groups = WidgetStore.loadReminders()?.value.groups ?? []
-        guard !groups.isEmpty else { return .result() }
+        // The whole page ring — task segments first, then the slots
+        // (2026-10-10) — from the same filtered cache the provider draws.
+        let (groups, segments) = RemindersTimeline.cachedPages()
+        let keys = RemindersTimeline.pageKeys(groups: groups, segments: segments)
+        guard !keys.isEmpty,
+              let naturalKey = RemindersTimeline.naturalPageKey(groups: groups, segments: segments)
+        else { return .result() }
 
-        let natural = RemindersTimeline.naturalSlotIndex(in: groups)
-        let current = RemindersTimeline.displayedSlotIndex(in: groups)
-        let count = groups.count
+        let shownKey = RemindersTimeline.displayedPageKey(groups: groups, segments: segments)
+        let current = keys.firstIndex(where: { $0 == shownKey }) ?? 0
+        let count = keys.count
         let target = ((current + offset) % count + count) % count
 
-        WidgetStore.setSlotOverride(
-            slotKey: groups[target].slotKey,
-            naturalSlotKey: groups[natural].slotKey
-        )
+        WidgetStore.setSlotOverride(slotKey: keys[target], naturalSlotKey: naturalKey)
         // View-state only: fast path + single-kind reload, so the flip paints
         // from cache instead of waiting out a network fetch.
         WidgetStore.markInteraction()
@@ -657,15 +786,16 @@ struct JumpToReminderSlotIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let groups = WidgetStore.loadReminders()?.value.groups ?? []
+        let (groups, segments) = RemindersTimeline.cachedPages()
         // A widget on the Home Screen can be tapped against an archived
         // snapshot from before the cache last refreshed — guard against a
         // slot key that no longer exists rather than setting an override
-        // `displayedSlotIndex` can never resolve back to.
-        guard groups.contains(where: { $0.slotKey == slotKey }) else { return .result() }
+        // `displayedPage` can never resolve back to.
+        guard RemindersTimeline.pageKeys(groups: groups, segments: segments).contains(slotKey),
+              let naturalKey = RemindersTimeline.naturalPageKey(groups: groups, segments: segments)
+        else { return .result() }
 
-        let natural = RemindersTimeline.naturalSlotIndex(in: groups)
-        WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: groups[natural].slotKey)
+        WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: naturalKey)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadTappedWidget(kind: RemindersWidget.kind)
@@ -743,11 +873,12 @@ struct ShiftReminderPageIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let groups = WidgetStore.filterPending(WidgetStore.loadReminders()?.value.groups ?? [])
-        let index = RemindersTimeline.displayedSlotIndex(in: groups)
-        guard groups.indices.contains(index) else { return .result() }
-
-        let slotKey = groups[index].slotKey
+        // Keyed by the page on screen — a slot's key or a task segment's
+        // (2026-10-10), one key space (`RemindersTimeline`'s page ring).
+        let (groups, segments) = RemindersTimeline.cachedPages()
+        guard let slotKey = RemindersTimeline.displayedPageKey(groups: groups, segments: segments) else {
+            return .result()
+        }
         let current = WidgetStore.remindersPage(for: slotKey)
         WidgetStore.setRemindersPage(current + offset, for: slotKey)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
@@ -1129,7 +1260,7 @@ private func refetchAllPayloads() async {
 
 private func refetchReminders() async {
     if let payload = try? await APIClient.shared.fetchReminders() {
-        WidgetStore.saveReminders(payload.groups)
+        WidgetStore.saveReminders(payload.groups, taskSegments: payload.taskSegments)
     }
 }
 

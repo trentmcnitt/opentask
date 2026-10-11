@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Check, CalendarClock, ChevronDown } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
@@ -48,6 +49,9 @@ import type { Task } from '@/types'
  * ones leave for today. A segment with nothing left waiting is finished for
  * the day. Over SEGMENT_NUDGE_THRESHOLD items it suggests Process or AI help.
  */
+/** Rows a segment shows on the dashboard panel before "Show all". */
+export const PANEL_SEGMENT_CAP = 6
+
 export function TaskSegmentCard({
   segment,
   actions,
@@ -60,6 +64,13 @@ export function TaskSegmentCard({
   variant?: 'surface' | 'panel'
 }) {
   const panel = variant === 'panel'
+  const [showAll, setShowAll] = useState(false)
+  const shown = segment.rows.filter((r) => r.state !== 'deferred')
+  // The dashboard panel shares its column with the slot pager, so a long
+  // segment shows its first PANEL_SEGMENT_CAP rows and a "Show all" (the slot
+  // cards' own cap pattern). The Reminders page shows everything.
+  const capped = panel && !showAll && shown.length > PANEL_SEGMENT_CAP
+  const visible = capped ? shown.slice(0, PANEL_SEGMENT_CAP) : shown
   const total = segment.rows.length
   const doneCount = segment.considered + segment.deferred
   const finished = segment.waiting === 0
@@ -113,19 +124,26 @@ export function TaskSegmentCard({
       )}
 
       <ul className="space-y-0.5">
-        {segment.rows
-          .filter((r) => r.state !== 'deferred')
-          .map((row) => (
-            <TaskSegmentRow
-              key={row.task.id}
-              row={row}
-              actions={actions}
-              timezone={timezone}
-              panel={panel}
-              segmentHorizon={segment.horizon}
-            />
-          ))}
+        {visible.map((row) => (
+          <TaskSegmentRow
+            key={row.task.id}
+            row={row}
+            actions={actions}
+            timezone={timezone}
+            panel={panel}
+            segmentHorizon={segment.horizon}
+          />
+        ))}
       </ul>
+      {panel && shown.length > PANEL_SEGMENT_CAP && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="text-muted-foreground hover:text-foreground mt-1 w-full rounded-md py-1.5 text-xs font-medium"
+        >
+          {showAll ? 'Show fewer' : `Show all ${shown.length}`}
+        </button>
+      )}
     </section>
   )
 }

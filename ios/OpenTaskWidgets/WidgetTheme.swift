@@ -578,7 +578,7 @@ enum WidgetTheme {
     /// label's width and height are exactly what `TasksListView.layout
     /// (for:)` measured.
     static func dueLabelText(for task: TaskDTO, now: Date = Date(), stacked: Bool = false) -> Text {
-        guard let due = task.dueDate else { return Text("") }
+        guard let due = task.effectiveTargetDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
         if overdue {
@@ -1303,10 +1303,13 @@ struct ListBottomBar<Leading: View, Pager: View, Trailing: View>: View {
 /// a second list of equal visual weight.
 struct DoneDivider: View {
     let count: Int
+    /// "DONE"; a task segment page says "CONSIDERED" (2026-10-10) — its
+    /// handled rows were seen, not done.
+    var label = "DONE"
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("DONE · \(count)")
+            Text("\(label) · \(count)")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
@@ -1713,7 +1716,7 @@ struct SelectEntryButton: View {
     }
 }
 
-/// The "All overdue (N)" bottom bar — acts on the WHOLE server-side overdue
+/// The "All over target (N)" bottom bar — acts on the WHOLE server-side overdue
 /// set via `SnoozeAllOverdueIntent`, not just what's on screen (see that
 /// intent's doc). Snooze mode shows it on every page; resting mode shows it
 /// on the Overdue page (Trent, 2026-09-28), so snoozing everything there is
@@ -1730,7 +1733,7 @@ struct SnoozeAllOverdueBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("All overdue (\(count)):")
+            Text("All \(TaskWording.overTargetLower) (\(count)):")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

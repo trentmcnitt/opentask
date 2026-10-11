@@ -1834,6 +1834,13 @@ paths:
                   type: [string, 'null']
                   enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
                   description: Omitted or null = a random colour not yet used by another of the user's projects.
+                description:
+                  type: [string, 'null']
+                  maxLength: 280
+                  description: |
+                    What belongs in this project, so the AI and API clients
+                    file tasks correctly. Trimmed; at most 280 characters after
+                    trimming (400 over that). `null` or an empty string clears it.
       responses:
         '201':
           description: Created project
@@ -1949,6 +1956,13 @@ paths:
                 color:
                   type: [string, 'null']
                   enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
+                description:
+                  type: [string, 'null']
+                  maxLength: 280
+                  description: |
+                    What belongs in this project, so the AI and API clients
+                    file tasks correctly. Trimmed; at most 280 characters after
+                    trimming (400 over that). `null` or an empty string clears it.
       responses:
         '200':
           description: Updated project
@@ -4016,6 +4030,39 @@ components:
             then on. Progress logged after that boundary stays in the new
             period. With INTERVAL > 1 the short period is at most one week and
             the next period runs the full interval from the boundary.
+        default_snooze_option:
+          type: string
+          default: '60'
+          description: |
+            Where a single-tap snooze sends an overdue task (the row's snooze
+            button, a swipe), and what `POST /api/tasks/bulk/snooze-overdue`
+            uses with an empty body. A string count of minutes (`"1"` to
+            `"1440"`; an hour or more is rounded to the nearest hour),
+            `"tomorrow"` (tomorrow at `morning_time`), or `"next_period"`: the
+            start of the next reminder period - later today, or tomorrow's
+            first period once the day's last one has begun. With no periods,
+            `"next_period"` acts as `"60"`.
+        ai_context:
+          type: [string, 'null']
+          maxLength: 1000
+          description: |
+            Free-text context about the user that every AI feature sees
+            (Settings -> AI Context). Trimmed; an empty string clears it
+            (`null`). Not writable by the demo account (403).
+        ai_context_updated_at:
+          type: [string, 'null']
+          format: date-time
+          readOnly: true
+          description: |
+            When `ai_context` last changed (UTC), stamped by the server on a
+            PATCH that changes the text - re-sending the same text leaves it
+            alone, clearing it counts as a change. `null` when it has never
+            changed since this was first recorded (2026-10-10). The app shows a
+            quiet "review your AI context" nudge once it is 21 days old, or
+            when it is `null`. Not writable: a PATCH carrying only this field
+            is a 400. To mark the context reviewed without changing it, PATCH
+            `ai_context_reviewed: true` (write-only; anything but `true` is a
+            400; 403 for the demo account), which restamps it to now.
     PromptKeys:
       type: object
       required: [keys]
@@ -4623,6 +4670,13 @@ components:
         color:
           type: [string, 'null']
           enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
+        description:
+          type: [string, 'null']
+          maxLength: 280
+          description: >-
+            What belongs in this project (at most 280 characters), set in
+            Settings or over the API; null when unset. Read it to choose a
+            project for a new task.
         active_count:
           type: integer
           description: The caller's own open tasks in the project, quotas excluded

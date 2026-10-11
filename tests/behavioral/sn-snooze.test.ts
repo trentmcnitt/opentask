@@ -957,6 +957,45 @@ describe('computeSnoozeTime rounding', () => {
   })
 })
 
+/**
+ * SN-022..024: the default snooze option "next_period" (Settings → Default
+ * snooze, 2026-10-10). The row's snooze tap and the swipe resolve it with the
+ * user's periods: the next period to start — later today, or tomorrow's first
+ * once the day's last has begun (the same target as the snooze menu's and the
+ * notification's "Next period"). Only with no periods at all does it fall back
+ * to +1 hour (rounded like any hour snooze).
+ */
+describe('computeSnoozeTime: next_period', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const slots = [{ start_time: '07:00' }, { start_time: '12:00' }, { start_time: '17:30' }]
+
+  test('SN-022: the next period later today', () => {
+    // 10:15 Chicago
+    vi.setSystemTime(new Date('2026-01-15T16:15:00Z'))
+    const d = DateTime.fromISO(
+      computeSnoozeTime('next_period', 'America/Chicago', '09:00', slots),
+    ).setZone('America/Chicago')
+    expect(d.toFormat('dd HH:mm')).toBe('15 12:00')
+  })
+
+  test("SN-023: after the day's last period has begun, the top of the next hour (amendment 17)", () => {
+    // 21:10 Chicago
+    vi.setSystemTime(new Date('2026-01-16T03:10:00Z'))
+    const d = DateTime.fromISO(
+      computeSnoozeTime('next_period', 'America/Chicago', '09:00', slots),
+    ).setZone('America/Chicago')
+    expect(d.toFormat('dd HH:mm')).toBe('15 22:00')
+  })
+
+  test('SN-024: no periods → the top of the next hour', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
+    expect(computeSnoozeTime('next_period', 'UTC', '09:00', [])).toBe('2026-01-15T09:00:00.000Z')
+  })
+})
+
 describe('snapToHour', () => {
   test('rounds up when minutes >= 35', () => {
     const result = snapToHour(new Date('2026-01-15T08:45:00Z'))

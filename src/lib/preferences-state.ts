@@ -77,6 +77,8 @@ export interface Prefs {
   sweepFeedbackNotificationsEnabled: boolean
   criticalAlertVolume: number
   aiContext: string | null
+  /** When `aiContext` last changed (server-stamped); null when never recorded. */
+  aiContextUpdatedAt: string | null
   aiMode: AiMode
   aiShowScores: boolean
   aiShowSignals: boolean
@@ -120,6 +122,7 @@ export const DEFAULT_PREFS: Prefs = {
   sweepFeedbackNotificationsEnabled: true,
   criticalAlertVolume: 1.0,
   aiContext: null,
+  aiContextUpdatedAt: null,
   aiMode: 'on',
   aiShowScores: true,
   aiShowSignals: true,
@@ -196,6 +199,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'sweepFeedbackNotificationsEnabled', data.sweep_feedback_notifications_enabled)
   take(out, 'criticalAlertVolume', data.critical_alert_volume)
   take(out, 'aiContext', data.ai_context)
+  take(out, 'aiContextUpdatedAt', data.ai_context_updated_at)
   // Defensive mapping: accept valid modes, anything else present is 'on'.
   if (data.ai_mode) out.aiMode = data.ai_mode === 'off' ? 'off' : 'on'
   take(out, 'aiShowScores', data.ai_show_scores)

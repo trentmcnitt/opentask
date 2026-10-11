@@ -154,7 +154,7 @@ export function markUndone(options: MarkDoneOptions): Task {
   }
 
   if (isRecurring(task.rrule)) {
-    return putBackLatestOccurrence(task, userId)
+    return putBackLatestOccurrence(task, userId, options.userTimezone)
   }
 
   // Must be done
@@ -261,7 +261,7 @@ interface CompletionRow {
  * the completion would otherwise be overwritten — and if there is no
  * completion to put back.
  */
-function putBackLatestOccurrence(task: Task, userId: number): Task {
+function putBackLatestOccurrence(task: Task, userId: number, userTimezone: string): Task {
   const db = getDb()
   const latest = db
     .prepare(
@@ -287,7 +287,7 @@ function putBackLatestOccurrence(task: Task, userId: number): Task {
   const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
   const restoredLastCompleted = previous?.completed_at ?? null
   // The deadline goes back with the occurrence, by the same offset it moved.
-  const restoredDeadline = advanceDeadline(task, latest.due_at_was)
+  const restoredDeadline = advanceDeadline(task, latest.due_at_was, userTimezone)
   const fieldsChanged = [
     'due_at',
     'original_due_at',

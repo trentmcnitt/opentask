@@ -22,6 +22,7 @@ import { useDashboardTabClick } from '@/hooks/useDashboardTabClick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
+import { AiContextStaleSidebarLink } from '@/components/AiContextStaleLink'
 
 interface SidebarProps {
   onAddClick?: () => void
@@ -169,6 +170,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             </GuardedLink>
           )
         })}
+        <AiContextStaleSidebarLink />
         <a
           href={DOCS_URL}
           target="_blank"

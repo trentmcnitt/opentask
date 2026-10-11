@@ -153,6 +153,7 @@ export function projectsToCsv(projects: Project[]): string {
     'name',
     'sort_order',
     'color',
+    'description',
     'active_count',
     'overdue_count',
     'created_at',

@@ -19,6 +19,10 @@ import WatchKit
 @MainActor
 final class WatchViewModel: ObservableObject {
     @Published private(set) var reminderGroups: [ReminderGroupDTO] = []
+    /// Today's task segments (2026-10-10), as the server sent them — kept
+    /// apart from `reminderGroups`, never merged into a group. Read them
+    /// through `listedSegments`, which draws in-flight considers.
+    @Published private(set) var taskSegments: [TaskSegmentDTO] = []
     @Published private(set) var tasks: [TaskDTO] = []
     @Published private(set) var projects: [ProjectDTO] = []
     /// Label display colors for the Quotas page's stripes (`GET /api/user/
@@ -166,8 +170,11 @@ final class WatchViewModel: ObservableObject {
         if case let .success(payload) = rem {
             reminderGroups = overlayingPendingPrompts(payload.groups)
             WatchCache.saveReminders(payload.groups)
+            taskSegments = payload.taskSegments
+            WatchCache.saveTaskSegments(payload.taskSegments)
         } else if let cached = WatchCache.loadReminders() {
             reminderGroups = overlayingPendingPrompts(cached)
+            taskSegments = WatchCache.loadTaskSegments()
         }
 
         if case let .success(fetched) = tsk, case let .success(proj) = proj {
@@ -275,6 +282,96 @@ final class WatchViewModel: ObservableObject {
                 WKInterfaceDevice.current().play(.failure)
             }
             await load()
+        }
+    }
+
+    // MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
+
+    /// Considers whose round trip is still in flight — drawn considered over
+    /// every payload, so a fetch that lands mid-flight can't flash the row
+    /// back (the `pendingPromptActions` rule).
+    private var pendingSegmentConsiders: Set<Int> = []
+
+    /// Segments with a row on today's list, in screen order, with in-flight
+    /// considers drawn. The Reminders page shows each one that still has a
+    /// row waiting, ahead of the time slot.
+    var listedSegments: [TaskSegmentDTO] {
+        let drawn = pendingSegmentConsiders.isEmpty ? taskSegments : taskSegments.map { segment in
+            segment.replacingTasks(segment.tasks.map {
+                pendingSegmentConsiders.contains($0.id) && $0.state == .waiting ? $0.with(state: .considered) : $0
+            })
+        }
+        return TaskSegmentDTO.listed(drawn)
+    }
+
+    /// Edit one row of the live segments: a new state, or nil to drop it.
+    private func setSegmentRow(_ taskId: Int, state: SegmentTaskDTO.State?) {
+        taskSegments = taskSegments.map { segment in
+            segment.replacingTasks(segment.tasks.compactMap { row in
+                guard row.id == taskId else { return row }
+                return state.map { row.with(state: $0) }
+            })
+        }
+    }
+
+    /// The circle (or a tap on the row): "I saw it" — `POST
+    /// /api/task-segments/consider`, never a completion. Optimistic; the
+    /// toolbar Undo takes a misfire back.
+    func considerSegmentTask(_ task: TaskDTO) {
+        guard !pendingSegmentConsiders.contains(task.id) else { return }
+        pendingSegmentConsiders.insert(task.id)
+        WKInterfaceDevice.current().play(.click)
+        Task {
+            do {
+                try await api.considerSegmentTasks(ids: [task.id])
+                setSegmentRow(task.id, state: .considered)
+                WatchCache.setSegmentRow(taskId: task.id, state: .considered)
+                canUndo = true
+                WKInterfaceDevice.current().play(.success)
+            } catch {
+                WKInterfaceDevice.current().play(.failure)
+            }
+            pendingSegmentConsiders.remove(task.id)
+            await refreshReminders()
+            WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        }
+    }
+
+    /// The checkbox: done — the ordinary completion (`markDone`), the row
+    /// leaves its segment.
+    func completeSegmentTask(_ task: TaskDTO) {
+        setSegmentRow(task.id, state: nil)
+        WKInterfaceDevice.current().play(.click)
+        Task {
+            do {
+                try await api.markDone(taskId: task.id)
+                WatchCache.setSegmentRow(taskId: task.id, state: nil)
+                WKInterfaceDevice.current().play(.success)
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                WKInterfaceDevice.current().play(.failure)
+            }
+            await load()
+        }
+    }
+
+    /// Defer all: every row still waiting in `segment` goes to tomorrow —
+    /// not a consider (amendment 9). One server undo entry.
+    func deferSegment(_ segment: TaskSegmentDTO) {
+        let ids = segment.waitingTasks.map(\.id)
+        guard !ids.isEmpty else { return }
+        ids.forEach { setSegmentRow($0, state: .deferred) }
+        WKInterfaceDevice.current().play(.click)
+        Task {
+            do {
+                try await api.deferSegmentTasks(ids: ids)
+                ids.forEach { WatchCache.setSegmentRow(taskId: $0, state: .deferred) }
+                WKInterfaceDevice.current().play(.success)
+                WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+            } catch {
+                WKInterfaceDevice.current().play(.failure)
+            }
+            await refreshReminders()
         }
     }
 
@@ -395,6 +492,8 @@ final class WatchViewModel: ObservableObject {
         guard let payload = try? await api.fetchReminders() else { return }
         reminderGroups = overlayingPendingPrompts(payload.groups)
         WatchCache.saveReminders(payload.groups)
+        taskSegments = payload.taskSegments
+        WatchCache.saveTaskSegments(payload.taskSegments)
     }
 
     // MARK: - Tasks
@@ -651,9 +750,10 @@ extension WatchViewModel {
     /// The Reminders page with the sample Early morning prompts, the slot
     /// pinned to Early morning (`slotOverride`) so the preview doesn't
     /// depend on the clock.
-    static func previewReminders(handled: [String: Bool] = [:]) -> WatchViewModel {
+    static func previewReminders(handled: [String: Bool] = [:], segments: Bool = false) -> WatchViewModel {
         let model = WatchViewModel()
         model.reminderGroups = WatchPreviewData.reminderGroups(handled: handled)
+        model.taskSegments = segments ? WatchPreviewData.taskSegments : []
         model.slotOverride = 0
         model.hasLoadedOnce = true
         model.canUndo = true

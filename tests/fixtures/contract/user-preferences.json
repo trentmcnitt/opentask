@@ -35,6 +35,7 @@
     "sweep_feedback_notifications_enabled": true,
     "critical_alert_volume": 1,
     "ai_context": null,
+    "ai_context_updated_at": null,
     "ai_mode": "on",
     "ai_show_scores": true,
     "ai_show_signals": true,

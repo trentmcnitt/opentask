@@ -44,7 +44,13 @@ export function computeSnoozeTime(
       .toISO()!
   }
   if (option === NEXT_PERIOD_OPTION) {
-    return nextPeriodStart(slots, timezone) ?? computeSnoozeTime('60', timezone, morningTime)
+    // The next period still TODAY; with none left today, the top of the next
+    // hour (spec amendment 17), not tomorrow's first period. The sweep's own
+    // `slot: "next"` (Shortcuts) is resolved elsewhere and is unchanged.
+    const next = nextPeriodStart(slots, timezone)
+    const now = DateTime.now().setZone(timezone)
+    if (next && DateTime.fromISO(next).setZone(timezone).hasSame(now, 'day')) return next
+    return now.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!
   }
 
   const minutes = parseInt(option, 10)
@@ -97,6 +103,9 @@ export function bulkSnoozeCompactLabel(
   hasPeriods: boolean,
 ): string {
   if (bulkSnoozeDefault === 'next_period' && hasPeriods) return 'Next'
+  // The default option can be "next_period" as well; without periods
+  // `computeSnoozeTime` reads it as an hour, so the badge does too.
+  if (defaultSnoozeOption === NEXT_PERIOD_OPTION && !hasPeriods) return '+1h'
   return formatCompactSnoozeLabel(defaultSnoozeOption)
 }
 

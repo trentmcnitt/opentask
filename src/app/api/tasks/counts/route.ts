@@ -8,6 +8,7 @@
  * from, with the same pure function, so the two never disagree.
  */
 
+import { getTargetContext } from '@/core/tasks/target-context'
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
@@ -29,7 +30,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const tasks = formatTasksResponse(getTasks({ userId: user.id, limit: 1000 })).filter(
       (t) => !t.is_reminder && !isTracked(t),
     )
-    return success(countTasks(tasks, user.timezone))
+    return success(countTasks(tasks, user.timezone, new Date(), getTargetContext(user.id)))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'GET /api/tasks/counts error:', err)

@@ -2,6 +2,8 @@
 
 Reference for OpenTask's notification system: architecture, platform capabilities, and constraints.
 
+**Over target = overdue** (2026-10-10). The UI now says "over target" where it said "overdue": a task whose target (`due_at`) has arrived. The notifier, the badge and the sweeps are the same machinery under the old code names (`checkOverdueTasks`, `getOverdueCount`, `snooze-overdue`), and this document keeps "overdue" for them. What reaches the user reads from the `OVER_TARGET` constant (`src/lib/task-model-words.ts`): "Over target task", "N more tasks over target", "2 High still over target". Two things changed beyond the word, both below: a deadline with no target nags from an implied target, and task segments never notify. See `docs/TASK-MODEL.md` § Deadline, target, horizon.
+
 ## Architecture
 
 Two channels:
@@ -15,11 +17,11 @@ Notifications run as an in-process cron job via `node-cron` in `src/instrumentat
 
 Consolidation caps prevent notification flooding:
 
-| Bucket  | Priorities | Individual cap | Summary if overflow                  |
-| ------- | ---------- | -------------- | ------------------------------------ |
-| Regular | P0-P2      | 4              | "N more tasks overdue"               |
-| High    | P3         | 5              | "N more high priority tasks overdue" |
-| Urgent  | P4         | Unlimited      | None                                 |
+| Bucket  | Priorities | Individual cap | Summary if overflow                      |
+| ------- | ---------- | -------------- | ---------------------------------------- |
+| Regular | P0-P2      | 4              | "N more tasks over target"               |
+| High    | P3         | 5              | "N more high priority tasks over target" |
+| Urgent  | P4         | Unlimited      | None                                     |
 
 Within each bucket, highest priority tasks get individual notification slots first (P2 before P1 before P0), then most overdue. Both Web Push and APNs follow the same consolidation rules.
 
@@ -60,6 +62,10 @@ APNs notifications include `collapseId: "task-{id}"`. iOS replaces (not stacks) 
 Per-task `auto_snooze_minutes` overrides the user default.
 
 Intervals count from each task's due time, not from the clock: a P3 task due at 8:07 notifies at 8:07, 8:22, 8:37. The first notification goes out on the checker's tick at the due minute (the query takes `due_at <= now`), and only once — see `isNotificationBoundary()` in `overdue-checker.ts`.
+
+**A deadline with no target joins the same cadence** (2026-10-10). The checker shortlists deadline rows in SQL (`deadlineCandidateSql`) and puts each row's effective target in `due_at` in JS (`withEffectiveTarget`, `src/core/tasks/currently-due.ts` — SQLite can't do the user's timezone): the earlier of the task's own target and its **implied** one, the user's `morning_time` on the day `DEADLINE_LEAD_DAYS` (4) before the deadline. The implied target exists for a one-off with a deadline, no `deadline_nag_off`, and either no target or a target past the deadline (a target set past its own deadline never hides it). So a deadline-only task starts nagging that morning at its priority's interval, exactly like a set target. A snooze past the deadline (confirmed, or after it has passed) sets `deadline_nag_off` so the snooze holds; a deliberate re-target does not. Remove target on such a task sets `deadline_nag_off`, which stops it; a new deadline turns it back on. Past a deadline nothing changes: nagging continues at the same cadence, and the row carries a past-deadline marker in the app. The badge (`getOverdueCount` → `countCurrentlyDue`) counts the same tasks.
+
+**Task segments never notify.** Tasks whose target hasn't arrived sit in task segments on the reminders screen. They send no push, never count in a slot's push or the hourly nags, and are never in the badge (`docs/TASK-MODEL.md` § Task segments).
 
 ### Files
 
@@ -143,7 +149,7 @@ Token-based authentication with Apple's Push Notification service. Requires an A
 
 ### App icon badge
 
-The badge is the user's overdue count (`getOverdueCount` in `dismiss.ts`: open tasks past due, no reminders, no quotas).
+The badge is the user's overdue (over-target) count (`getOverdueCount` in `dismiss.ts`: open tasks past their effective target, no reminders, no quotas, no task-segment rows — those have not reached a target).
 
 **The push.** A badge-only APNs notification (`buildBadgeNotification` in `apns.ts`):
 
@@ -203,6 +209,7 @@ Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push 
 - userInfo: `reminder_count` is the total of reminders plus waiting prompts, which is what the checklist header shows while it loads. `prompt_count` is how many of those are prompts.
 - Off switches: with the user's `quota_prompts_enabled` off, or `OPENTASK_QUOTA_PROMPTS=off` on the server, prompts are gone from the pushes, the nags and their counts too. They live inside `getQuotaPromptsBySlot`.
 - Never in the badge: `countCurrentlyDue` excludes quotas (`is_tracked` / `progress_target > 1`) and reminders.
+- Task segments (2026-10-10) are not slot items: `waitingBySlot` never reads them, so they never keep a slot unfinished, never add to a body's count and never trigger a push.
 - Cost: prompts are computed only for a user whose slot opens this minute, or who is awake at the top of the hour with nags left to spend today. That is one quota query per call, never one per minute for every user.
 - The native checklist shows at most 8 rows (`maxVisibleRows`), reminders first, then prompts, then "+N more". "Complete all" covers every row, including hidden ones. It considers waiting prompts without logging progress, except prompts staged as "did it", which keep their +1.
 
@@ -288,22 +295,22 @@ Added 2026-10-05. Until then a failed enrichment was silent: the task kept the r
 
 - The request was authenticated with a **Bearer token**. A session cookie (or proxy-header auth) is the web UI, which shows the toast.
 - The request did not send `notify: false`. The rule: **a surface that shows the sweep's result itself sends `notify: false`**, so the user doesn't get the same news twice. Those are the iPhone's Home Screen quick actions (iOS opens the app and the page shows the toast; `QuickActionHandler.swift`), the watch's bulk snooze sheet (`WatchViewModel.bulkSnoozeOverdue`) and Smart Stack card (`WatchWidgetIntents.swift`), and the Mac menu-bar panel (`MenuBarModel.snoozeAll`), all through `APIClient.snoozeOverdue*(notify:)`. Surfaces that don't show the result keep the push: the notification buttons on every device (this push is how they report), the iPhone widget's "All overdue" bar, and the Mac's Snooze menu items (`MenuActions`, which alert only when nothing moved).
-- Something High or Urgent is **still overdue** after the sweep. If nothing was left, nothing is sent.
+- Something High or Urgent is **still over target** after the sweep. If nothing was left, nothing is sent.
 - The user has `notifications_enabled` and `sweep_feedback_notifications_enabled`, and is not the demo user.
 
 The route decides after the sweep commits (`planSweepFeedback`) and sends without awaiting (`void sendSweepFeedback(...)`), so the response isn't held up. `feedback_notification` in the response says whether this call sent one, so a Shortcut can show `data.message` only when no notification is coming.
 
-**What it says.** Counts only, never titles (Trent asked for no Urgent titles on the lock screen). The title follows `bulkSnoozeMessage`, the web toast's wording; the body uses the watch and Mac wording for what stayed (`SweepLine`, `ios/Shared/SweepSummary.swift`); `until` is in the user's timezone (`formatSnoozeTarget`):
+**What it says.** Counts only, never titles (Trent asked for no Urgent titles on the lock screen). The title follows `bulkSnoozeMessage`, the web toast's wording; the body uses the watch and Mac wording for what stayed (`SweepLine`, `ios/Shared/SweepSummary.swift`); `until` is in the user's timezone (`formatSnoozeTarget`). Tasks the sweep left before their deadline (2026-10-10) are not in this push and never trigger it; they are in the response's `skipped_deadline` and the web toast's "· N kept before their deadline":
 
-| Left behind                      | Title                                                | Body                                                                  |
-| -------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- |
-| High (first press)               | Snoozed 8 tasks until 3:00 PM                        | 2 High still overdue. Snooze again to move the High ones              |
-| High and Urgent                  | Snoozed 8 tasks until 3:00 PM                        | 2 High and 1 Urgent still overdue. Snooze again to move the High ones |
-| Urgent (something moved)         | Snoozed 4 tasks until 3:00 PM                        | 1 Urgent still overdue. Urgent can't be bulk snoozed                  |
-| Urgent (second press moved High) | Snoozed 2 high-priority tasks until tomorrow 9:00 AM | 1 Urgent still overdue. Urgent can't be bulk snoozed                  |
-| Urgent only, nothing snoozable   | Nothing snoozed                                      | 3 Urgent can't be bulk snoozed                                        |
-| High and Urgent, nothing moved   | Nothing snoozed                                      | 2 High and 1 Urgent still overdue                                     |
-| Nothing High or Urgent           | (not sent)                                           |                                                                       |
+| Left behind                      | Title                                                | Body                                                                      |
+| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| High (first press)               | Snoozed 8 tasks until 3:00 PM                        | 2 High still over target. Snooze again to move the High ones              |
+| High and Urgent                  | Snoozed 8 tasks until 3:00 PM                        | 2 High and 1 Urgent still over target. Snooze again to move the High ones |
+| Urgent (something moved)         | Snoozed 4 tasks until 3:00 PM                        | 1 Urgent still over target. Urgent can't be bulk snoozed                  |
+| Urgent (second press moved High) | Snoozed 2 high-priority tasks until tomorrow 9:00 AM | 1 Urgent still over target. Urgent can't be bulk snoozed                  |
+| Urgent only, nothing snoozable   | Nothing snoozed                                      | 3 Urgent can't be bulk snoozed                                            |
+| High and Urgent, nothing moved   | Nothing snoozed                                      | 2 High and 1 Urgent still over target                                     |
+| Nothing High or Urgent           | (not sent)                                           |                                                                           |
 
 The last "Nothing snoozed" row has no "snooze again" hint because another press would do the same (it happens only in relative mode, when the lower tasks left have no due date).
 
@@ -314,7 +321,7 @@ The last "Nothing snoozed" row has no "snooze again" hint because another press 
   "aps": {
     "alert": {
       "title": "Snoozed 8 tasks until 3:00 PM",
-      "body": "2 High still overdue. Snooze again to move the High ones"
+      "body": "2 High still over target. Snooze again to move the High ones"
     },
     "category": "TASK_SUMMARY",
     "thread-id": "ot-tasks",
@@ -330,7 +337,7 @@ The last "Nothing snoozed" row has no "snooze again" hint because another press 
 **How it goes away (the lifecycle).** It has no `taskId`, so the per-task `dismiss` push (`dismissNotificationsForTasks`) never clears it. After every sweep the apps clear the banners of the tiers the sweep moved (`dismissNotificationsAfterSweep`, `ios/Shared/NotificationConstants.swift`), and a banner with no `priority` counts as 0 there. This push goes out while the response to that same sweep is on its way back, so with no priority it could arrive first and be cleared by the sweep it reports. So it carries `priority`: the highest tier it names, 4 if any Urgent was left, else 3. As a result:
 
 - The sweep that produced it (which clears P0–P2 banners) leaves it standing.
-- A later sweep that moves the High tier clears a "High still overdue" banner, which is exactly when that banner becomes stale.
+- A later sweep that moves the High tier clears a "High still over target" banner, which is exactly when that banner becomes stale.
 - One that names Urgent is never cleared by a sweep, because Urgent is never swept. It goes when a newer result replaces it, when the user taps or acts on it (the action runner removes a summary's own banner; a body tap clears all), or with the `dismiss-all` sent when the app is opened.
 
 When the user later clears every overdue task some other way (one at a time, in the app), a lingering result banner is not dismissed by the server. That is deliberate and consistent with the overdue summary push: opening the app sends `dismiss-all`, which clears it on every device.
@@ -368,7 +375,7 @@ Requires the `remote-notification` background mode in the app's entitlements.
 
 ### Notification actions
 
-Native apps can register up to 4 action buttons per notification category. OpenTask registers `TASK_REMINDER` (Done, +1hr, All +1hr, then the All → period actions), `TASK_SUMMARY` (All +1hr and the period actions), `SLOT_REMINDER` (Complete all) and `TASK_ADDED` (Done, Delete — the "AI finished" notification). The content extension (Phase 4) can dynamically replace the first three with a snooze grid. Every button posts to `POST /api/notifications/actions` (`done`, `snooze`, `snooze30`, `snooze2h`, `delete`) or a bulk endpoint, through `NotificationActionRunner`.
+Native apps can register up to 4 action buttons per notification category. OpenTask registers `TASK_REMINDER` (Done, +1hr, All +1hr, then the All → period actions), `TASK_SUMMARY` (All +1hr and the period actions), `SLOT_REMINDER` (Complete all) and `TASK_ADDED` (Done, Delete — the "AI finished" notification). The content extension (Phase 4) can dynamically replace the first three with a snooze grid. Every button posts to `POST /api/notifications/actions` (`done`, `snooze`, `snooze30`, `snooze2h`, `delete`) or a bulk endpoint, through `NotificationActionRunner`. A single task's snooze button is honored even past a deadline that is still ahead (2026-10-10): one explicit tap leaves no room for the app's confirm. The bulk "All" buttons go through the sweep, which leaves such a task where it is.
 
 ## WidgetKit push (widget sync)
 

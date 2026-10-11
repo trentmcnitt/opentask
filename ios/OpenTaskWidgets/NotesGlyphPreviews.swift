@@ -33,7 +33,7 @@ private enum NotesGlyphPreviewData {
 
     static func reminders(slotIndex: Int) -> RemindersEntry {
         RemindersEntry(
-            date: now, groups: groups, slotIndex: max(0, min(slotIndex, groups.count - 1)),
+            date: now, groups: groups, segments: [], slotIndex: max(0, min(slotIndex, groups.count - 1)), segmentIndex: nil,
             staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )

@@ -94,11 +94,34 @@ private struct ReminderCardView: View {
                             ? card.title
                             : "\(card.title)\(QuotaPromptDTO.countSeparator)\(card.countText ?? "")")
                     }
+                } else if let meta = card.segmentMeta {
+                    // A task segment row (2026-10-10): its small words
+                    // ("Weeks · Nov 1") ride with the title.
+                    FittingTitle(title: "\(card.title) · \(meta)")
                 } else {
                     FittingTitle(title: card.title)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if let taskId = card.segmentTaskId {
+                // ☐ DONE on a task segment row — the prompt card's ☐ column,
+                // bottom-aligned beside the consider button.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Button(intent: CompleteSegmentCardIntent(taskId: taskId)) {
+                        Image(systemName: "square")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(WatchTheme.accent)
+                            .widgetAccentable()
+                            .frame(width: ReminderStackMetrics.didColumn, height: ReminderStackMetrics.buttonColumn)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Done")
+                }
+                .frame(width: ReminderStackMetrics.didColumn)
+            }
 
             if let promptKey = card.promptKey, ReminderStackMetrics.promptCardShowsDidIt {
                 // ☐ DID IT, its own column beside ✓'s, bottom-aligned with
@@ -174,14 +197,19 @@ private struct ReminderCardView: View {
     /// the button means "seen", not "done", as on every other prompt surface.
     /// Same disc, same size.
     private var considerButton: some View {
-        let label = Image(systemName: card.promptKey == nil ? "checkmark" : "circle.dashed")
+        let glyph = card.segmentTaskId != nil ? "circle" : (card.promptKey == nil ? "checkmark" : "circle.dashed")
+        let label = Image(systemName: glyph)
             .font(.system(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: ReminderStackMetrics.buttonColumn, height: ReminderStackMetrics.buttonColumn)
             .background(Circle().fill(WatchTheme.accent).widgetAccentable())
             .contentShape(Circle())
         return Group {
-            if let promptKey = card.promptKey {
+            if let taskId = card.segmentTaskId {
+                // A task segment row: "I saw it" — never a completion.
+                Button(intent: ConsiderSegmentCardIntent(taskId: taskId)) { label }
+                    .accessibilityLabel("Considered")
+            } else if let promptKey = card.promptKey {
                 Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: false)) { label }
                     .accessibilityLabel("Considered")
             } else {
@@ -243,7 +271,7 @@ private struct UrgentLine: View {
     let count: Int
 
     var body: some View {
-        Text("\(count) urgent overdue")
+        Text("\(count) urgent \(TaskWording.overTargetLower)")
             .font(.caption2)
             .foregroundStyle(WatchTheme.overdue)
             .lineLimit(1)
@@ -297,7 +325,7 @@ private struct OverdueCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Label {
-                Text("\(card.count) overdue")
+                Text("\(card.count) \(TaskWording.overTargetLower)")
                     .font(.headline)
             } icon: {
                 Image(systemName: "exclamationmark.circle.fill")
@@ -325,13 +353,13 @@ private struct OverdueCardView: View {
                     pill(Text("+1h"), filled: true)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Snooze all overdue one hour")
+                .accessibilityLabel("Snooze everything \(TaskWording.overTargetLower) one hour")
 
                 Button(intent: SnoozeOverdueNextPeriodIntent(targetLabel: card.targetLabel ?? "")) {
                     pill(nextPeriodLabel, filled: false)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Snooze all overdue to the next period")
+                .accessibilityLabel("Snooze everything \(TaskWording.overTargetLower) to the next period")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -426,7 +454,7 @@ private struct RingContent: View {
 
     var body: some View {
         Gauge(value: ring.fraction) {
-            Text(ring.isOverdue ? "Overdue" : "Left")
+            Text(ring.isOverdue ? TaskWording.overTarget : "Left")
         } currentValueLabel: {
             Text("\(ring.count)")
         }

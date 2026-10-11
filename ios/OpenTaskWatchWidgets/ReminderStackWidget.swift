@@ -41,7 +41,7 @@ struct ReminderStackProvider: TimelineProvider {
             let now = Date()
             let fetched = await fetchInputs()
             _ = await registration
-            let entries = fetched.map { buildEntries(groups: $0.groups, tasks: $0.tasks, now: now) }
+            let entries = fetched.map { buildEntries(groups: $0.groups, tasks: $0.tasks, segments: $0.segments, now: now) }
                 ?? cachedEntries(now: now)
             let refresh = ReminderStackTimeline.refreshDate(
                 groups: fetched?.groups ?? WatchCache.loadReminders() ?? [],
@@ -74,6 +74,7 @@ struct ReminderStackProvider: TimelineProvider {
     private struct Inputs {
         let groups: [ReminderGroupDTO]
         let tasks: [TaskDTO]
+        let segments: [TaskSegmentDTO]
     }
 
     /// Live fetch, writing through `WatchCache` on success (the watch app's
@@ -88,6 +89,7 @@ struct ReminderStackProvider: TimelineProvider {
 
         guard let reminders else { return nil }
         WatchCache.saveReminders(reminders.groups)
+        WatchCache.saveTaskSegments(reminders.taskSegments)
         if let slots, !slots.isEmpty {
             TimeSlotStore.save(slots)
         }
@@ -96,20 +98,27 @@ struct ReminderStackProvider: TimelineProvider {
             // write path and takes both, and no widget view needs projects.
             WatchCache.saveTasks(tasks, projects: WatchCache.loadTasks()?.projects ?? [])
         }
-        return Inputs(groups: reminders.groups, tasks: tasks ?? WatchCache.loadTasks()?.tasks ?? [])
+        return Inputs(
+            groups: reminders.groups, tasks: tasks ?? WatchCache.loadTasks()?.tasks ?? [],
+            segments: reminders.taskSegments
+        )
     }
 
     private func cachedEntries(now: Date) -> [WatchWidgetEntry] {
         guard APIClient.shared.isConfigured else { return [.signedOut] }
         guard let groups = WatchCache.loadReminders() else { return [] }
-        return buildEntries(groups: groups, tasks: WatchCache.loadTasks()?.tasks ?? [], now: now)
+        return buildEntries(
+            groups: groups, tasks: WatchCache.loadTasks()?.tasks ?? [], segments: WatchCache.loadTaskSegments(), now: now
+        )
     }
 
     /// The entry for now plus one per `changeDates` instant. Skip state and
     /// ✓ tombstones are read per entry date (a future entry past a slot
     /// change must not inherit the old slot's skips — `skippedKeys` pairs them
     /// with the slot key, which handles it).
-    private func buildEntries(groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date) -> [WatchWidgetEntry] {
+    private func buildEntries(
+        groups: [ReminderGroupDTO], tasks: [TaskDTO], segments: [TaskSegmentDTO], now: Date
+    ) -> [WatchWidgetEntry] {
         let slots = slotList(groups: groups)
         let snooze = WatchWidgetState.snoozeResult(now: now)
         let dates = [now] + ReminderStackTimeline.changeDates(
@@ -122,6 +131,7 @@ struct ReminderStackProvider: TimelineProvider {
                 skipped: { WatchWidgetState.skippedKeys(slotKey: $0, now: date) },
                 pendingDone: WatchWidgetState.pendingDoneIds(now: date),
                 pendingPrompts: WatchWidgetState.pendingPrompts(now: date),
+                segments: segments,
                 snoozeResult: WatchWidgetState.snoozeResult(now: date),
                 slots: slots,
                 at: date
@@ -181,7 +191,7 @@ struct ReminderStackWidget: Widget {
             ReminderStackWidgetView(entry: entry)
         }
         .configurationDisplayName("OpenTask")
-        .description("Check off the current slot's reminders, or snooze what's overdue.")
+        .description("Check off the current slot's reminders, or snooze what's \(TaskWording.overTargetLower).")
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryCorner])
     }
 }
