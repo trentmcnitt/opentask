@@ -117,7 +117,7 @@ private struct TasksSmallView: View {
                             .lineLimit(1)
                         // On the Overdue page the label above already says
                         // "Overdue" — don't say it twice.
-                        Text(entry.isOverdueScope ? taskNoun(entry.overdueCount(now: entry.date)) : "overdue")
+                        Text(entry.isOverdueScope ? taskNoun(entry.overdueCount(now: entry.date)) : TaskWording.overTargetLower)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -837,10 +837,10 @@ private struct TasksListView: View {
             if entry.isOverdueScope {
                 parts.append("\(entry.tasks.count) \(taskNoun(entry.tasks.count))")
             } else if overdue == entry.tasks.count {
-                parts.append("\(overdue) overdue")
+                parts.append("\(overdue) \(TaskWording.overTargetLower)")
             } else {
                 parts.append("\(entry.tasks.count) due")
-                if overdue > 0 { parts.append("\(overdue) overdue") }
+                if overdue > 0 { parts.append("\(overdue) \(TaskWording.overTargetLower)") }
             }
         }
         if showCompleted, !entry.doneTasks.isEmpty { parts.append("\(entry.doneTasks.count) done") }

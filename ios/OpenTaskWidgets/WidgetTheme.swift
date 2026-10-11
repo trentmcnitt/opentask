@@ -1713,7 +1713,7 @@ struct SelectEntryButton: View {
     }
 }
 
-/// The "All overdue (N)" bottom bar — acts on the WHOLE server-side overdue
+/// The "All over target (N)" bottom bar — acts on the WHOLE server-side overdue
 /// set via `SnoozeAllOverdueIntent`, not just what's on screen (see that
 /// intent's doc). Snooze mode shows it on every page; resting mode shows it
 /// on the Overdue page (Trent, 2026-09-28), so snoozing everything there is
@@ -1730,7 +1730,7 @@ struct SnoozeAllOverdueBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("All overdue (\(count)):")
+            Text("All \(TaskWording.overTargetLower) (\(count)):")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

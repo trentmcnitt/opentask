@@ -48,7 +48,7 @@ struct TasksPageView: View {
                     } label: {
                         HStack {
                             Image(systemName: "clock.badge.exclamationmark")
-                            Text("All overdue (\(overdueCount))")
+                            Text("All \(TaskWording.overTargetLower) (\(overdueCount))")
                             Spacer()
                         }
                         .foregroundStyle(WatchTheme.overdue)

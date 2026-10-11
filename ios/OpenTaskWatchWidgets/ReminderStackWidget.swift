@@ -181,7 +181,7 @@ struct ReminderStackWidget: Widget {
             ReminderStackWidgetView(entry: entry)
         }
         .configurationDisplayName("OpenTask")
-        .description("Check off the current slot's reminders, or snooze what's overdue.")
+        .description("Check off the current slot's reminders, or snooze what's \(TaskWording.overTargetLower).")
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryCorner])
     }
 }

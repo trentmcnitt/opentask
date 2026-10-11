@@ -53,7 +53,7 @@ struct TasksEntry: TimelineEntry {
     /// "Overdue" (2026-09-25, `overdueScope`), ahead of them while anything
     /// is overdue; a real project id falls through to that project's name.
     var scopeLabel: String {
-        if scope == WidgetStore.overdueScope { return "Overdue" }
+        if scope == WidgetStore.overdueScope { return TaskWording.overTarget }
         if scope == WidgetStore.upNextScope { return "Up next" }
         guard scope != WidgetStore.allProjects else { return "Today" }
         return projects.first(where: { $0.id == scope })?.name ?? "Today"

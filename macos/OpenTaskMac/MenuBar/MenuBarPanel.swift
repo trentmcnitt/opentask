@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Row controls mirror the phone Tasks widget's snooze mode: a circle to
 /// complete, "⏭" for the next period, "+1h". The bulk bar is the widget's
-/// "All overdue (N): ⏭ 4:30 PM · +1h".
+/// "All over target (N): ⏭ 4:30 PM · +1h".
 struct MenuBarPanel: View {
     @ObservedObject var model: MenuBarModel
     @FocusState private var addFocused: Bool
@@ -65,7 +65,7 @@ struct MenuBarPanel: View {
     private var summary: String {
         guard model.hasLoaded else { return "Loading…" }
         let n = model.overdue.count
-        return n == 0 ? "Nothing overdue" : "\(n) overdue"
+        return n == 0 ? "Nothing \(TaskWording.overTargetLower)" : "\(n) \(TaskWording.overTargetLower)"
     }
 
     // MARK: - Quick add
@@ -180,7 +180,7 @@ struct MenuBarPanel: View {
 
     private var bulkBar: some View {
         HStack(spacing: 6) {
-            Text("All overdue (\(model.sweepCount)):")
+            Text("All \(TaskWording.overTargetLower) (\(model.sweepCount)):")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 4)
@@ -194,11 +194,11 @@ struct MenuBarPanel: View {
             ) {
                 model.snoozeAll(.nextPeriod)
             }
-            .help("Snooze all overdue to the next period")
+            .help("Snooze everything \(TaskWording.overTargetLower) to the next period")
             pill(systemImage: nil, text: "+1h", filled: false) {
                 model.snoozeAll(.plusOneHour)
             }
-            .help("Snooze all overdue one hour")
+            .help("Snooze everything \(TaskWording.overTargetLower) one hour")
         }
         .disabled(model.isSweeping)
     }

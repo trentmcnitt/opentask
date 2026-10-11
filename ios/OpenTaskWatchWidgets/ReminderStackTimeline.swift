@@ -324,7 +324,7 @@ enum ReminderStackTimeline {
         active: ReminderGroupDTO?, groups: [ReminderGroupDTO], overdue: Int, now: Date
     ) -> WatchWidgetEntry.Ring {
         if overdue > 0 {
-            return .init(count: overdue, fraction: 0, isOverdue: true, label: "Overdue")
+            return .init(count: overdue, fraction: 0, isOverdue: true, label: TaskWording.overTarget)
         }
         guard let active else {
             return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "Complete")

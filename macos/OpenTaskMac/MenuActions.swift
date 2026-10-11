@@ -130,8 +130,8 @@ enum MenuActions {
                 total += n
             }
         }
-        guard !parts.isEmpty else { return "No overdue tasks." }
-        return "\(parts.joined(separator: " and ")) task\(total == 1 ? " is" : "s are") still overdue. "
+        guard !parts.isEmpty else { return "Nothing \(TaskWording.overTargetLower)." }
+        return "\(parts.joined(separator: " and ")) task\(total == 1 ? " is" : "s are") still \(TaskWording.overTargetLower). "
             + "Urgent tasks are never bulk-snoozed, and High tasks only once nothing lower is left."
     }
 

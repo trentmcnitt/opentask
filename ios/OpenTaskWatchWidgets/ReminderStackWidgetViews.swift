@@ -243,7 +243,7 @@ private struct UrgentLine: View {
     let count: Int
 
     var body: some View {
-        Text("\(count) urgent overdue")
+        Text("\(count) urgent \(TaskWording.overTargetLower)")
             .font(.caption2)
             .foregroundStyle(WatchTheme.overdue)
             .lineLimit(1)
@@ -297,7 +297,7 @@ private struct OverdueCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Label {
-                Text("\(card.count) overdue")
+                Text("\(card.count) \(TaskWording.overTargetLower)")
                     .font(.headline)
             } icon: {
                 Image(systemName: "exclamationmark.circle.fill")
@@ -325,13 +325,13 @@ private struct OverdueCardView: View {
                     pill(Text("+1h"), filled: true)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Snooze all overdue one hour")
+                .accessibilityLabel("Snooze everything \(TaskWording.overTargetLower) one hour")
 
                 Button(intent: SnoozeOverdueNextPeriodIntent(targetLabel: card.targetLabel ?? "")) {
                     pill(nextPeriodLabel, filled: false)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Snooze all overdue to the next period")
+                .accessibilityLabel("Snooze everything \(TaskWording.overTargetLower) to the next period")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -426,7 +426,7 @@ private struct RingContent: View {
 
     var body: some View {
         Gauge(value: ring.fraction) {
-            Text(ring.isOverdue ? "Overdue" : "Left")
+            Text(ring.isOverdue ? TaskWording.overTarget : "Left")
         } currentValueLabel: {
             Text("\(ring.count)")
         }
