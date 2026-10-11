@@ -101,12 +101,12 @@ export const taskModelReviewScenarios: AITestScenario[] = [
     requirements: {
       must_include: {},
       quality_notes:
-        'ID 201 (P0, no target, deadline in 2 days): MEDIUM-HIGH (45-90) with act_soon — the voucher expires soon; the deadline field earns act_soon at P0. ' +
+        'ID 201 (P0, no target of its own, deadline in 2 days — the model sees an implied "(from deadline)" target 2 days ago): MEDIUM-HIGH (45-90) with act_soon — the voucher expires soon; the deadline field earns act_soon at P0, and being past a "(from deadline)" target must NOT be scored as routine P0-3 overdue. ' +
         'ID 202 (P3, target tomorrow, deadline ~6 weeks out): LOW (0-35), NO act_soon — a near target is not a near deadline. ' +
         'ID 203 (P1, 4 days past its target, no deadline): LOW-MEDIUM (10-45), NO act_soon — past a target is not a consequence. ' +
         'ID 204 (P2, deadline passed yesterday): HIGH-ish (50-95), act_soon expected — the return window just closed, commentary should say so (maybe still returnable, check). ' +
         'ID 205 (P0, horizon months, 12 days old): LOW (0-30), no signals — the user chose a slow pace; not stale (under 21 days). ' +
-        'ID 206 (P2, target in 10 days but deadline in 4 days): MEDIUM-HIGH (40-85), act_soon — the deadline lands BEFORE the target; commentary should notice the target is after the deadline. ' +
+        'ID 206 (P2, own target in 10 days but deadline in 4 days — the model sees the implied "(from deadline)" target, today): MEDIUM-HIGH (40-85), act_soon — the deadline is what matters; commentary should be about the deadline. ' +
         'Commentary must not invent deadlines for tasks without one (203, 205).',
       insights_expectations: {
         score_ranges: {
@@ -179,8 +179,8 @@ export const taskModelReviewScenarios: AITestScenario[] = [
     requirements: {
       must_include: {},
       quality_notes:
-        'ID 301 MUST be surfaced: its deadline is ~3 days away even though its target is ~12 days out and it is P0. ' +
-        'The reason should mention the deadline/expiry (and ideally that the target is after it). ' +
+        'ID 301 MUST be surfaced: its deadline is ~3 days away even though its own target is ~12 days out and it is P0 (the model sees the implied "(from deadline)" target instead). ' +
+        'The reason should mention the deadline/expiry. ' +
         'ID 302 (horizon months, young) should not be surfaced as urgent. ' +
         'ID 304 must not be described as having an imminent deadline (its deadline is a month out). ' +
         'No reason may invent a deadline for 302 or 303.',
