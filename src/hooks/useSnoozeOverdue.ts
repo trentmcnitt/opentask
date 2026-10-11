@@ -70,8 +70,12 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       // is no next period, so the option is the fallback either way.
       const nextPeriod =
         bulkSnoozeDefault === 'next_period' ? nextPeriodStart(timeSlots, timezone, now) : null
+      // The default option can be "next_period" too (2026-10-10), so it gets
+      // the slots as well; with none it reads as +1h.
       const snoozeUntil =
-        until ?? nextPeriod ?? computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+        until ??
+        nextPeriod ??
+        computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots)
 
       try {
         const res = await fetch('/api/tasks/bulk/snooze', {

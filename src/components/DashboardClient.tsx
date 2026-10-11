@@ -2364,6 +2364,7 @@ function DashboardView({
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
           <TaskList
             tasks={tasks}
+            timeSlots={timeSlots}
             uncapped={overdueFilterOn}
             sortedGroups={sortedGroups}
             orderedIds={orderedIds}

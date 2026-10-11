@@ -583,6 +583,20 @@ describe('round trip: every remaining preference', () => {
     })
   })
 
+  // Settings → Default snooze → "Next period" (2026-10-10).
+  test('default_snooze_option also takes "next_period"', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_snooze_option: 'next_period' },
+    })
+    expect(res.status).toBe(200)
+    expect(await readPref('default_snooze_option')).toBe('next_period')
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_snooze_option: '60' },
+    })
+  })
+
   test('quota_prompt_slot_id saves one of the user’s periods, reads back, and clears to null', async () => {
     expect(await readPref('quota_prompt_slot_id')).toBeNull()
     const slots = (await (await apiFetch('/api/time-slots')).json()).data.time_slots as {

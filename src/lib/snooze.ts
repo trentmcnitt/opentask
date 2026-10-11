@@ -97,6 +97,9 @@ export function bulkSnoozeCompactLabel(
   hasPeriods: boolean,
 ): string {
   if (bulkSnoozeDefault === 'next_period' && hasPeriods) return 'Next'
+  // The default option can be "next_period" as well; without periods
+  // `computeSnoozeTime` reads it as an hour, so the badge does too.
+  if (defaultSnoozeOption === NEXT_PERIOD_OPTION && !hasPeriods) return '+1h'
   return formatCompactSnoozeLabel(defaultSnoozeOption)
 }
 

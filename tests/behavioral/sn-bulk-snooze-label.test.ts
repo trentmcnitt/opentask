@@ -1,5 +1,5 @@
 /**
- * The snooze-all clock's corner badge (SL-001 through SL-003): it says where a
+ * The snooze-all clock's corner badge (SL-001 through SL-004): it says where a
  * plain press sends the overdue tasks.
  *
  * The bug: the badge read only the default snooze option ("+1h"), while a
@@ -26,5 +26,12 @@ describe('bulkSnoozeCompactLabel', () => {
     expect(bulkSnoozeCompactLabel('default_option', '30', true)).toBe('+30m')
     expect(bulkSnoozeCompactLabel('default_option', '120', true)).toBe('+2h')
     expect(bulkSnoozeCompactLabel('default_option', 'tomorrow', true)).toBe('AM')
+  })
+
+  test('SL-004: a default option of "Next period" reads "Next", or "+1h" with no periods', () => {
+    expect(bulkSnoozeCompactLabel('default_option', 'next_period', true)).toBe('Next')
+    // No periods: computeSnoozeTime reads "next_period" as an hour — so must the badge.
+    expect(bulkSnoozeCompactLabel('default_option', 'next_period', false)).toBe('+1h')
+    expect(bulkSnoozeCompactLabel('next_period', 'next_period', false)).toBe('+1h')
   })
 })
