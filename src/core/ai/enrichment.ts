@@ -807,8 +807,16 @@ function toUtcTimes(input: EnrichmentResult, timezone: string, taskId: number): 
  */
 function parseLocalDateTime(value: string, timezone: string): DateTime | null {
   const bare = value.replace(/Z$/i, '').replace(/[+-]\d{2}:?\d{2}$/, '')
-  const local = DateTime.fromISO(bare, { zone: timezone })
-  return local.isValid ? local : null
+  // Luxon is configured to THROW on an invalid DateTime (throwOnInvalid), so
+  // `isValid` alone never sees a bad value: "2026/10/16 23:59" passes the
+  // schema's Date.parse check but is not ISO, and used to fail the whole
+  // enrichment instead of just dropping the one field.
+  try {
+    const local = DateTime.fromISO(bare, { zone: timezone })
+    return local.isValid ? local : null
+  } catch {
+    return null
+  }
 }
 
 /**
