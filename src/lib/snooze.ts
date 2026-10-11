@@ -128,6 +128,8 @@ export interface BulkSnoozeSkips {
   high: number
   /** P4 skipped — never bulk-snoozable at all. */
   urgent: number
+  /** Left where they were: the sweep would have crossed their deadline (2026-10-10). */
+  deadline?: number
 }
 
 /** "2 high", "1 urgent", "2 high, 1 urgent". Empty when nothing was skipped. */
@@ -161,9 +163,19 @@ export function bulkSnoozeMessage({
   highAffected = 0,
   high,
   urgent,
+  deadline = 0,
 }: BulkSnoozeSkips): string {
   const list = skipList(high, urgent)
+  // A deadline-capped task is never silently clamped: the toast says it stayed.
+  const kept =
+    deadline > 0 ? ` · ${deadline} kept before ${deadline === 1 ? 'its' : 'their'} deadline` : ''
+  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + kept
+}
 
+function bulkSnoozeCore(
+  { affected, highAffected = 0, high, urgent }: BulkSnoozeSkips,
+  list: string,
+): string {
   if (affected > 0) {
     // "HIGH-PRIORITY" WHEN THAT IS ALL IT MOVED (Trent, 2026-09-22). High is
     // swept only once nothing lower is left, so a double snooze is two presses:

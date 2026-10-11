@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
+import { isPastDeadline, targetAgeDays, targetAgeTone } from '@/lib/task-segments'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -389,7 +390,7 @@ export function TaskRow({
         }
       }}
       className={cn(
-        'group flex items-center gap-3 rounded-lg p-3 select-none',
+        'group relative flex items-center gap-3 rounded-lg p-3 select-none',
         // min-h-[62px] matches the natural height when snooze button is present:
         // snooze button (36px h-9) + padding (24px) + border (2px) = 62px
         // This prevents single-line tasks from shrinking when entering selection mode.
@@ -415,6 +416,10 @@ export function TaskRow({
         highlighted && 'animate-row-highlight',
       )}
     >
+      {/* The target's age (2026-10-10): a tab flush with the corner on an
+          over-target row, counted from the FIRST target — a snooze keeps it,
+          a deliberate re-target restarts it. Blank on the target day. */}
+      {isOverdue && !tracked && <TargetAgeTab task={task} timezone={timezone} />}
       {/* Selection checkbox (shown in selection mode) or Done button */}
       {isSelectionMode ? (
         <Checkbox
@@ -793,6 +798,12 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     segments.push({ text: formatRRuleCompact(task.rrule, task.anchor_time) })
   }
 
+  // The deadline (2026-10-10): its own field now, never moved by a snooze.
+  // Past it, the row says so — nagging continues (Trent: "sometimes it's for a
+  // client and you're in a rush"), and this marker is the honest label.
+  const deadline = deadlineSegment(task, timezone)
+  if (deadline) segments.push(deadline)
+
   // Show "snoozed from" when the due date has drifted from the original
   if (isSnoozed && task.original_due_at) {
     const text = formatOriginalDueAt(task.original_due_at, timezone)
@@ -813,6 +824,47 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   }
 
   return segments
+}
+
+/**
+ * The deadline (2026-10-10): its own field now, never moved by a snooze.
+ * Past it, the row says so — nagging continues (Trent: "sometimes it's for a
+ * client and you're in a rush"), and this marker is the honest label.
+ */
+function deadlineSegment(task: Task, timezone: string): MetaSegment | null {
+  if (!task.deadline_at) return null
+  const when = formatDueTimeParts(task.deadline_at, timezone)
+  if (isPastDeadline(task.deadline_at, new Date())) {
+    return {
+      text: `past deadline ${when.absolute || when.relative}`,
+      className: 'text-destructive font-semibold',
+    }
+  }
+  return {
+    text: `deadline ${when.relative}`,
+    className: 'text-amber-700 dark:text-amber-400 font-medium',
+  }
+}
+
+/** The over-target age tab — see the render site. Nothing on the target day. */
+function TargetAgeTab({ task, timezone }: { task: Task; timezone: string }) {
+  const days = targetAgeDays(task, timezone, new Date())
+  if (days === null) return null
+  const tone = targetAgeTone(days)
+  return (
+    <span
+      data-target-age={days}
+      title={`${days} day${days === 1 ? '' : 's'} since its first target`}
+      className={cn(
+        'pointer-events-none absolute -top-px right-3 rounded-b-md px-1.5 pt-px pb-0.5 text-[11px] leading-none font-semibold tabular-nums',
+        tone === 'gray' && 'bg-muted text-muted-foreground',
+        tone === 'amber' && 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
+        tone === 'red' && 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300',
+      )}
+    >
+      {days}d
+    </span>
+  )
 }
 
 /**

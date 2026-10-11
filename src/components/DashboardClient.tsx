@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1781,7 +1782,7 @@ function TrackColumn({
  * raised its own toast with Undo, so this one offers nothing to click.
  */
 function notifyOverdueFilterCleared() {
-  showToast({ message: 'No overdue tasks left — Overdue filter cleared' })
+  showToast({ message: `Nothing ${OVER_TARGET_LOWER} left — ${OVER_TARGET} filter cleared` })
 }
 
 function DashboardView({

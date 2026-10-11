@@ -1,5 +1,7 @@
 'use client'
 
+import { TaskSegmentCard } from '@/components/TaskSegmentCard'
+import { useTaskSegments, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -179,6 +181,7 @@ export function DashboardRemindersPanel({
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
+  const { segments, openSegment } = usePanelSegment(reminders, onUndo, onCompleted)
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
   // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
   // No leaving animation here, like the reminder rows (see the docblock).
@@ -221,7 +224,10 @@ export function DashboardRemindersPanel({
   // Nothing anywhere today (no reminders waiting, none considered) — nothing
   // to show, the same way `TrackPanel` returns null with no quotas.
   const hasAnything = groups.some((g) => groupWaiting(g) > 0 || groupConsidered(g) > 0)
-  if (!hasAnything) return null
+  const segmentCard = openSegment && (
+    <PanelSegment segment={openSegment} actions={segments} timezone={timezone} />
+  )
+  if (!hasAnything) return segmentCard ? <SegmentOnlyPanel>{segmentCard}</SegmentOnlyPanel> : null
 
   // `new Date()` at the call site, not hoisted to a variable: this keeps the
   // call a fresh object identity every render, so the React Compiler cannot
@@ -296,6 +302,7 @@ export function DashboardRemindersPanel({
       data-reminders-slot={key}
       className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
     >
+      {segmentCard}
       <SlotPagerHeader
         label={label}
         time={time}
@@ -369,6 +376,47 @@ export function DashboardRemindersPanel({
 
       {editor.modal}
       {prompts.modal}
+    </section>
+  )
+}
+
+/**
+ * Task segments (2026-10-10) open FIRST on the panel: while anything in one is
+ * still waiting, its card sits above the slot pager and stays until it is
+ * considered or deferred ("tasks are an early-day thing"). Once nothing is
+ * waiting it folds away and the slots have the panel to themselves.
+ */
+function usePanelSegment(
+  reminders: ReturnType<typeof useReminders>,
+  onUndo: () => void,
+  onCompleted: () => void,
+) {
+  const segments = useTaskSegments({
+    segments: reminders.taskSegments,
+    refresh: reminders.refresh,
+    onUndo,
+    onCompleted,
+  })
+  return { segments, openSegment: segments.segments.find((s) => s.waiting > 0) }
+}
+
+function PanelSegment(props: {
+  segment: SegmentView
+  actions: TaskSegmentActions
+  timezone: string
+}) {
+  return (
+    <div className="border-foreground/5 border-b">
+      <TaskSegmentCard {...props} variant="panel" />
+    </div>
+  )
+}
+
+/** The panel on a day with task segments but no reminders. */
+function SegmentOnlyPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <section aria-label="Reminders" data-reminders-panel className="bg-muted/30 mb-6 rounded-2xl">
+      {children}
     </section>
   )
 }

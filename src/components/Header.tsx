@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
@@ -479,12 +480,16 @@ function TaskCountBadges({
         <CountBadge
           count={overdueCount}
           variant="overdue"
-          tooltip={overdueActive ? 'Show all tasks' : `${overdueCount} overdue — show only these`}
+          tooltip={
+            overdueActive
+              ? 'Show all tasks'
+              : `${overdueCount} ${OVER_TARGET_LOWER} — show only these`
+          }
           onClick={() => applyFilter('overdue')}
           ariaLabel={
             overdueActive
-              ? `${overdueCount} overdue — clear the overdue filter`
-              : `${overdueCount} overdue — show only overdue tasks`
+              ? `${overdueCount} ${OVER_TARGET_LOWER} — clear the ${OVER_TARGET_LOWER} filter`
+              : `${overdueCount} ${OVER_TARGET_LOWER} — show only ${OVER_TARGET_LOWER} tasks`
           }
           pressed={overdueActive}
           className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"
