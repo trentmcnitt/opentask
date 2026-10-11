@@ -1150,6 +1150,26 @@ paths:
                         type: string
                     project_id:
                       type: integer
+                    target_at:
+                      type: [string, 'null']
+                      format: date-time
+                      description: >-
+                        The new target for every task (`due_at` is the deprecated alias;
+                        `null` removes the target). A move of an existing target is a
+                        snooze and is subject to the deadline cap — see
+                        `allow_past_deadline_ids` / `cap_at_deadline_ids`.
+                    deadline_at:
+                      type: [string, 'null']
+                      format: date-time
+                    horizon:
+                      type: [string, 'null']
+                      enum: [days, weeks, months, eventually, null]
+                    deadline_nag_off:
+                      type: boolean
+                      description: Turn the deadline's implied 4-day nag off (what remove target sets).
+                    affirm_horizon:
+                      type: boolean
+                      description: Keep each task's horizon and restart its growth clock (Process's "keep").
                     quota_prompt_config:
                       type: [object, 'null']
                       description: >-
