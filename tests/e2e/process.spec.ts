@@ -75,8 +75,11 @@ test.describe('Process', () => {
     }
     await expect(title).toHaveText(inboxTitle)
     // Fixed order, Settings order, Inbox not offered; no AI → no highlight.
+    // (Other specs add projects of their own after these two.)
     const buttons = modal.locator('[data-process-project]')
-    await expect(buttons).toHaveText(['Routine', 'Work'])
+    await expect(buttons.first()).toHaveText('Routine')
+    await expect(buttons.nth(1)).toHaveText('Work')
+    await expect(modal.locator('[data-process-project="Inbox"]')).toHaveCount(0)
     await expect(modal.locator('[data-suggested]')).toHaveCount(0)
     await modal.locator('[data-process-project="Work"]').click()
     await expect(page.getByText('Moved to Work')).toBeVisible()
