@@ -22,6 +22,7 @@ import { insightsScenarios } from './insights'
 import { insightsLargeScenarios } from './insights-large'
 import { quickTakeScenarios } from './quick-take'
 import { taskModelReviewScenarios } from './task-model-review'
+import { processScenarios } from './process'
 
 export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentCoreScenarios,
@@ -44,6 +45,7 @@ export const allScenarios: AITestScenario[] = [
   ...insightsLargeScenarios,
   ...quickTakeScenarios,
   ...taskModelReviewScenarios,
+  ...processScenarios,
 ]
 
 export { whatsNextScenarios, insightsScenarios, insightsLargeScenarios, quickTakeScenarios }

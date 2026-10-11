@@ -34,6 +34,18 @@ For each scenario:
 - Was `null` returned when no date was mentioned?
 - Was the time reasonable for vague references? ("morning" = 8-10am local, "afternoon" = 1-3pm)
 
+### 2b. Target, deadline and horizon (task model, 2026-10-10)
+
+`due_at` is the **target** (the day the user said to do it), `deadline_at` the **real cutoff**, `horizon` the **pace**. Layer 1 sees local datetimes (before UTC conversion).
+
+- Is `deadline_at` set ONLY from stated cutoff wording ("by", "before", "due", "expires", "the deadline is", "closes at")? An inferred deadline — from urgency, topic (a bill, taxes) or a target date — is a **failure**: it caps the user's snoozing.
+- A cutoff day with no time → end of that day (T23:59:00 or very close). A stated time is kept.
+- A cutoff-only date leaves `due_at` null. A cutoff AND a "do it X" day sets both, unswapped.
+- "do it Saturday", "remind me Thursday at 9", "tomorrow" are targets: `deadline_at` null.
+- Is `horizon` set ONLY from explicit pace wording ("this week" → weeks, "sometime this month" → months, "in the next few days" / "today or tomorrow" → days, "eventually" / "someday" → eventually)? A horizon from topic or size ("fix the squeaky door" → eventually) is a **failure**. A named day is not a pace.
+- "by the end of the month" is a deadline, not a horizon.
+- Recurring tasks and reminders: `deadline_at` and `horizon` null.
+
 ### 3. Priority Inference
 
 - Was an explicit priority signal correctly captured? ("URGENT" = 4, "high priority" = 3)
@@ -125,7 +137,12 @@ For each scenario:
 
 ### 5. Overdue/Deadline Distinction
 
-- For priority 3-4 overdue tasks: does commentary treat the deadline as real and urgent?
+Task lines show `target:` (soft, snoozable — "overdue" means past it), `deadline:` (the real cutoff, only when set) and `horizon:` (pace, only when set).
+
+- A `deadline:` within the week (or passed) is time-sensitive at ANY priority — does commentary treat it as real?
+- A far `deadline:` is not urgent, even at P3-4, even when the target is near.
+- Is no deadline invented for a task with no `deadline:` field and none in its notes?
+- For priority 3-4 tasks with a deadline in their notes (no field): is it treated as real?
 - For priority 0-2 overdue tasks: does commentary focus on age/deferral, NOT hours overdue?
 - Are notes referenced when they provide relevant context?
 - Is recurrence_mode: from_completion correctly interpreted (overdue = the user hasn't completed the last occurrence)?
@@ -156,7 +173,7 @@ For each scenario:
 
 - Are signals from the correct vocabulary? (stale, act_soon, quick_win, vague, misprioritized, review)
 - Is "stale" applied to tasks sitting 3+ weeks with no progress?
-- Is "act_soon" applied only for real consequences (P3-4 deadline, filing window), NOT routine P0-2 overdue?
+- Is "act_soon" applied only for real consequences — a `deadline:` within 7 days or passed (any priority), or a P3-4 deadline/filing window stated in notes — and NOT for routine overdue targets or a `deadline:` weeks away?
 - Is "quick_win" applied to small, concrete tasks doable in under 10 minutes?
 - Is "vague" applied only when the title is genuinely unclear AND notes don't clarify?
 - Is "misprioritized" applied when priority clearly doesn't match content?
@@ -238,6 +255,24 @@ For scenarios with 50+ tasks, evaluate these additional criteria:
 
 - Are any facts stated (task counts, project names, dates) actually correct given the input data?
 - Does it avoid hallucinating tasks, projects, or dates that don't exist?
+
+---
+
+## Process Evaluation Criteria (2026-10-10)
+
+### Project recommendations (`process_projects`)
+
+- One entry per task, `project_id` from the given list or null — never an invented id, never the Inbox.
+- A project only when the task clearly fits (description first, then name, then user context). Two equal fits or none → null. A confident wrong pick is worse than null.
+- Descriptions outweigh names; user context resolves people ("Dana" → Family when context says Dana is the wife).
+- Reasons: one short sentence naming what matched. No lecturing.
+
+### Duplicates (`process_duplicates`)
+
+- Groups only tasks that are the same piece of work in different words.
+- Related-but-different work (buy paint / paint the fence; call mom / visit mom; email Sam / email Jordan; rent / electric bill) must NOT be grouped.
+- Conservative: an empty `groups` is a correct answer for a list without duplicates. Any false group is a failure.
+- Reasons short and specific.
 
 ---
 

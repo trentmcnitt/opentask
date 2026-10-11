@@ -38,6 +38,8 @@ import type {
   WhatsNextInput,
   InsightsInput,
   QuickTakeInput,
+  ProcessProjectsInput,
+  ProcessDuplicatesInput,
   ScenarioRequirements,
   ScenarioOutput,
   RunSummary,
@@ -241,6 +243,26 @@ describe('AI Quality — Layer 1', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Process scenarios (2026-10-10)
+  // -------------------------------------------------------------------------
+
+  describe('Process', () => {
+    const processTests = allScenarios.filter(
+      (s) => s.feature === 'process_projects' || s.feature === 'process_duplicates',
+    )
+
+    for (const scenario of processTests) {
+      test.skipIf(!AI_ENABLED)(
+        scenario.id,
+        async () => {
+          await runScenario(scenario)
+        },
+        300_000,
+      )
+    }
+  })
+
+  // -------------------------------------------------------------------------
   // Insights scenarios
   // -------------------------------------------------------------------------
 
@@ -317,6 +339,14 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
       }
       case 'quick_take':
         ;({ output, durationMs } = await runQuickTake(scenario.input as QuickTakeInput))
+        break
+      case 'process_projects':
+        ;({ output, durationMs } = await runProcessProjects(scenario.input as ProcessProjectsInput))
+        break
+      case 'process_duplicates':
+        ;({ output, durationMs } = await runProcessDuplicates(
+          scenario.input as ProcessDuplicatesInput,
+        ))
         break
     }
 
@@ -739,6 +769,83 @@ Score every task above. Return one entry per task in "tasks".`
 }
 
 /**
+ * Process (2026-10-10) — the production prompt builders, schemas and
+ * sanitizers from src/core/ai/process.ts; only the DB lookups are replaced by
+ * the scenario's own projects and tasks. Model: the Insights feature's, as in
+ * production.
+ */
+async function runProcessQuery<T>(
+  prompt: string,
+  schema: import('zod').ZodType<T>,
+  action: string,
+  inputText: string,
+): Promise<{ parsed: T; durationMs: number }> {
+  const { aiQuery } = await import('@/core/ai/sdk')
+  const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
+  const { z } = await import('zod')
+
+  const provider = getTestProvider()
+  const result = await aiQuery({
+    prompt,
+    outputSchema: z.toJSONSchema(schema) as Record<string, unknown>,
+    model: getModelForFeature('insights'),
+    maxTurns: provider === 'sdk' ? 3 : 1,
+    userId: QUALITY_TEST_USER_ID,
+    action,
+    inputText,
+    timeoutMs: 280_000,
+    provider,
+  })
+  const parsed = parseAIResponse(result, schema, action, (text) => {
+    const json = extractJsonFromText(text)
+    if (!json) return null
+    const attempt = schema.safeParse(json)
+    return attempt.success ? attempt.data : null
+  })
+  if (!parsed) throw new Error(`${action} failed: ${result.error || 'Could not parse output'}`)
+  return { parsed, durationMs: result.durationMs }
+}
+
+async function runProcessProjects(
+  input: ProcessProjectsInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { buildRecommendProjectsPrompt, ProjectRecommendationsSchema, sanitizeRecommendations } =
+    await import('@/core/ai/process')
+  const { parsed, durationMs } = await runProcessQuery(
+    buildRecommendProjectsPrompt(input),
+    ProjectRecommendationsSchema,
+    'quality_test_process_projects',
+    `${input.tasks.length} tasks`,
+  )
+  const recommendations = sanitizeRecommendations(
+    parsed.recommendations,
+    input.tasks.map((t) => t.id),
+    new Set(input.projects.map((p) => p.id)),
+  )
+  if (recommendations.length !== parsed.recommendations.length) {
+    console.log(
+      `[quality] process sanitizer dropped ${parsed.recommendations.length - recommendations.length} recommendation(s)`,
+    )
+  }
+  return { output: { recommendations }, durationMs }
+}
+
+async function runProcessDuplicates(
+  input: ProcessDuplicatesInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { buildDuplicatesPrompt, DuplicateGroupsSchema, sanitizeDuplicateGroups } =
+    await import('@/core/ai/process')
+  const { parsed, durationMs } = await runProcessQuery(
+    buildDuplicatesPrompt(input),
+    DuplicateGroupsSchema,
+    'quality_test_process_duplicates',
+    `${input.tasks.length} tasks`,
+  )
+  const groups = sanitizeDuplicateGroups(parsed.groups, new Set(input.tasks.map((t) => t.id)))
+  return { output: { groups }, durationMs }
+}
+
+/**
  * Run insights via the production processInsightsChunks code path.
  *
  * Calls startInsightsGeneration + polls getInsightsSessionStatus to completion,
@@ -889,7 +996,11 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     }
   }
 
-  // Feature-specific schema validation
+  validateFeatureSchema(scenario, output)
+}
+
+/** Feature-specific schema validation. */
+function validateFeatureSchema(scenario: AITestScenario, output: Record<string, unknown>): void {
   switch (scenario.feature) {
     case 'enrichment':
       validateEnrichmentSchema(scenario.id, output)
@@ -909,6 +1020,43 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     case 'quick_take':
       validateQuickTakeSchema(scenario.id, output)
       break
+    case 'process_projects':
+    case 'process_duplicates':
+      validateProcessExpectations(scenario.id, output, scenario.requirements)
+      break
+  }
+}
+
+/** Process (2026-10-10): shape plus the scenario's deterministic expectations. */
+function validateProcessExpectations(
+  id: string,
+  output: Record<string, unknown>,
+  requirements: ScenarioRequirements,
+): void {
+  const expect = requirements.process_expectations ?? {}
+  if (output.recommendations !== undefined) {
+    const recs = output.recommendations as Array<{ task_id: number; project_id: number | null }>
+    if (!Array.isArray(recs)) throw new Error(`[${id}] recommendations must be an array`)
+    for (const [taskId, projectId] of Object.entries(expect.projects ?? {})) {
+      const rec = recs.find((r) => r.task_id === Number(taskId))
+      const got = rec ? rec.project_id : null
+      if (got !== projectId) {
+        throw new Error(`[${id}] task ${taskId}: expected project ${projectId}, got ${got}`)
+      }
+    }
+    return
+  }
+  const groups = output.groups as Array<{ task_ids: number[] }>
+  if (!Array.isArray(groups)) throw new Error(`[${id}] groups must be an array`)
+  for (const wanted of expect.duplicate_groups ?? []) {
+    if (!groups.some((g) => wanted.every((tid) => g.task_ids.includes(tid)))) {
+      throw new Error(`[${id}] expected ${JSON.stringify(wanted)} grouped together`)
+    }
+  }
+  for (const [a, b] of expect.not_duplicates ?? []) {
+    if (groups.some((g) => g.task_ids.includes(a) && g.task_ids.includes(b))) {
+      throw new Error(`[${id}] ${a} and ${b} must not be grouped as duplicates`)
+    }
   }
 }
 
