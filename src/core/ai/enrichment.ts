@@ -887,18 +887,39 @@ export function sanitizeTaskModelFields(
   return { ...enrichment, deadline_at: deadlineAt, horizon }
 }
 
-/** A deadline further in the past than this is a wrong year, not a missed cutoff. */
-const STALE_DEADLINE_DAYS = 7
+/** A date further in the past than this is a wrong year, not a missed date. */
+const STALE_DATE_DAYS = 7
 
 /**
- * Date sanity for the model's (still local) target and deadline — two mistakes
- * the prompt forbids but the model still made in the quality runs:
+ * A model-supplied local datetime more than STALE_DATE_DAYS in the past, moved
+ * forward a year at a time (twice at most). Returns the (possibly unchanged)
+ * DateTime, or null when the value does not parse.
+ */
+function rollStaleYear(value: string, timezone: string, now: Date): DateTime | null {
+  let local = parseLocalDateTime(value, timezone)
+  if (!local) return null
+  const staleBefore = DateTime.fromJSDate(now).minus({ days: STALE_DATE_DAYS })
+  for (let i = 0; i < 2 && local < staleBefore; i++) local = local.plus({ years: 1 })
+  return local
+}
+
+function toLocalIso(local: DateTime | null, fallback: string | null): string | null {
+  if (!local) return fallback
+  return local.toISO({ includeOffset: false, suppressMilliseconds: true }) ?? fallback
+}
+
+/**
+ * Date sanity for the model's (still local) target and deadline — mistakes the
+ * prompt forbids but the model still made in the quality runs:
  *
  * - A month and day with no year in the past ("the deadline is February 28th"
- *   said in October) came back as THIS year's, already-passed date. A deadline
- *   more than STALE_DEADLINE_DAYS in the past is moved forward a year (twice at
- *   most). A fresh task with a deadline long gone is a year slip; one that
- *   passed days ago ("it expired Monday") is left as said.
+ *   said in October; "every year on March 1st" given March 1st of THIS year)
+ *   came back already passed. A deadline, or a RECURRING task's first date,
+ *   more than STALE_DATE_DAYS in the past is moved forward a year (twice at
+ *   most) — on a fresh task that is a year slip, and a yearly or quarterly rule
+ *   still lands on an occurrence a whole year on. A one-off target is not
+ *   touched (unchanged behaviour). One that passed days ago ("it expired Monday") is left as
+ *   said.
  * - A target after the deadline ("closes at 9pm tonight" with a made-up 10pm
  *   target). The deadline is what the user stated, so the target goes; with no
  *   target the deadline's own lead-time nag takes over.
@@ -910,19 +931,23 @@ export function alignTaskModelDates(
   timezone: string,
   now: Date = new Date(),
 ): EnrichmentResult {
-  let deadline = enrichment.deadline_at
-    ? parseLocalDateTime(enrichment.deadline_at, timezone)
+  const deadline = enrichment.deadline_at
+    ? rollStaleYear(enrichment.deadline_at, timezone, now)
     : null
-  if (!deadline) return enrichment
-
-  const staleBefore = DateTime.fromJSDate(now).minus({ days: STALE_DEADLINE_DAYS })
-  for (let i = 0; i < 2 && deadline < staleBefore; i++) deadline = deadline.plus({ years: 1 })
-  const deadlineAt =
-    deadline.toISO({ includeOffset: false, suppressMilliseconds: true }) ?? enrichment.deadline_at
-
-  const target = enrichment.due_at ? parseLocalDateTime(enrichment.due_at, timezone) : null
-  const dueAt = target && target > deadline ? null : enrichment.due_at
-  return { ...enrichment, deadline_at: deadlineAt, due_at: dueAt }
+  // A one-off target is left as the model wrote it (only the deadline check
+  // below applies); a recurring task's FIRST date is rolled, since a past one
+  // makes the whole series overdue on creation.
+  const target = !enrichment.due_at
+    ? null
+    : enrichment.rrule
+      ? rollStaleYear(enrichment.due_at, timezone, now)
+      : parseLocalDateTime(enrichment.due_at, timezone)
+  const targetAfterDeadline = target !== null && deadline !== null && target > deadline
+  return {
+    ...enrichment,
+    deadline_at: toLocalIso(deadline, enrichment.deadline_at),
+    due_at: targetAfterDeadline ? null : toLocalIso(target, enrichment.due_at),
+  }
 }
 
 /**

@@ -241,6 +241,16 @@ describe('date sanity (alignTaskModelDates)', () => {
     ).toBe('2027-02-28T23:59:00')
   })
 
+  test('a recurring first date given this year by mistake is next year', () => {
+    expect(
+      alignTaskModelDates(
+        result({ due_at: '2026-03-01T09:00:00', rrule: 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1' }),
+        TEST_TIMEZONE,
+        now,
+      ).due_at,
+    ).toBe('2027-03-01T09:00:00')
+  })
+
   test('a deadline that passed days ago stays as said', () => {
     expect(
       alignTaskModelDates(result({ deadline_at: '2026-10-07T23:59:00' }), TEST_TIMEZONE, now)
