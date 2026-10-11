@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Clock, CalendarDays } from 'lucide-react'
+import { Clock, XCircle, CalendarDays } from 'lucide-react'
 import {
   Sheet,
   SheetContent,
@@ -62,6 +62,9 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
   return slots
 }
 
+/** The menu's remove-target entry (not a snooze option). */
+const REMOVE_TARGET = 'remove-target'
+
 interface SnoozeMenuProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -69,6 +72,11 @@ interface SnoozeMenuProps {
   onSnooze: (until: string) => void
   /** Trigger element — rendered as-is; parent controls click/long-press behavior */
   children?: React.ReactNode
+  /**
+   * Remove the target (2026-10-10): the task goes back to its horizon's task
+   * segment instead of being snoozed. Offered only where the caller passes it.
+   */
+  onRemoveTarget?: () => void
 }
 
 /**
@@ -77,7 +85,13 @@ interface SnoozeMenuProps {
  * Mobile: bottom Sheet. Children (trigger button) are never wrapped in a Radix trigger
  * to avoid event interception — the parent component controls open state directly.
  */
-export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMenuProps) {
+export function SnoozeMenu({
+  open,
+  onOpenChange,
+  onSnooze,
+  children,
+  onRemoveTarget,
+}: SnoozeMenuProps) {
   const isMobile = useIsMobile()
   const timezone = useTimezone()
   const { morningTime } = useSnoozePreferences()
@@ -129,9 +143,15 @@ export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMen
       ? []
       : [{ label: `Tomorrow at ${formatMorningTime(morningTime)}`, option: 'tomorrow' }]),
     { label: 'Custom...', option: 'custom' },
+    ...(onRemoveTarget ? [{ label: 'Remove target', option: REMOVE_TARGET }] : []),
   ]
 
   const handleSelect = (option: string) => {
+    if (option === REMOVE_TARGET) {
+      onOpenChange(false)
+      onRemoveTarget?.()
+      return
+    }
     if (option === 'custom') {
       onOpenChange(false)
       setCustomPickerOpen(true)
@@ -170,6 +190,8 @@ export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMen
                 >
                   {opt.option === 'custom' ? (
                     <CalendarDays className="text-muted-foreground size-4" />
+                  ) : opt.option === REMOVE_TARGET ? (
+                    <XCircle className="text-muted-foreground size-4" />
                   ) : (
                     <Clock className="text-muted-foreground size-4" />
                   )}
@@ -302,6 +324,8 @@ function SnoozeDropdown({
         >
           {opt.option === 'custom' ? (
             <CalendarDays className="size-4 flex-shrink-0" />
+          ) : opt.option === REMOVE_TARGET ? (
+            <XCircle className="size-4 flex-shrink-0" />
           ) : (
             <Clock className="size-4 flex-shrink-0" />
           )}
