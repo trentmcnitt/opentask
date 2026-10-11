@@ -1303,10 +1303,13 @@ struct ListBottomBar<Leading: View, Pager: View, Trailing: View>: View {
 /// a second list of equal visual weight.
 struct DoneDivider: View {
     let count: Int
+    /// "DONE"; a task segment page says "CONSIDERED" (2026-10-10) — its
+    /// handled rows were seen, not done.
+    var label = "DONE"
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("DONE · \(count)")
+            Text("\(label) · \(count)")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)

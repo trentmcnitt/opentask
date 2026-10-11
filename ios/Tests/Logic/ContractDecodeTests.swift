@@ -151,7 +151,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     /// pre-action cache, yields the server's own post-action payload — every
     /// group, every prompt, sibling rows included.
     func testConfirmPromptActionReproducesThePostDidPayload() throws {
-        WidgetStore.saveReminders(try Fixtures.reminders("reminders-initial"))
+        WidgetStore.saveReminders(try Fixtures.reminders("reminders-initial"), taskSegments: [])
         let result = try Fixtures.decode(APIClient.PromptActionResult.self, "quota-prompts-did")
         WidgetStore.confirmPromptAction(Fixtures.promptKey(Fixtures.daily, 1), did: true, tasks: result.tasks)
 
@@ -185,7 +185,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     /// the post-did cache, yields the server's own pre-did payload: the
     /// put-back is the did-it undone, every group and prompt included.
     func testConfirmPromptRestoreReproducesThePreDidPayload() throws {
-        WidgetStore.saveReminders(try Fixtures.reminders("reminders-after-did"))
+        WidgetStore.saveReminders(try Fixtures.reminders("reminders-after-did"), taskSegments: [])
         let result = try Fixtures.decode(APIClient.PromptRestoreResult.self, "quota-prompts-restore")
         WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.daily, 1), tasks: result.tasks)
 

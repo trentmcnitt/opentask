@@ -162,6 +162,7 @@
 		CCA721EC95F789A3C87B16AD /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		CD4A273A28EC06F63F76B38C /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E9D38B33CBD58AAFF49E4E /* WatchRootView.swift */; };
 		CF6960C7D35D368C65EAA274 /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9DE5729A90E0CE58D2894BC /* StatusView.swift */; };
+		CFA96438104E39CC31A0D909 /* RemindersTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0606D2DEED3C84F0971B9DC9 /* RemindersTimeline.swift */; };
 		D0A0BBA8DAB1EEBA31E6B7DF /* WatchWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CE54C7BC66E592BF8F24C7 /* WatchWidgetState.swift */; };
 		D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
 		D0F191F9E7B622184BE88525 /* WatchWidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0878BC1DF19A90C9D6DA829 /* WatchWidgetPushHandler.swift */; };
@@ -272,6 +273,7 @@
 		00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlan.swift; sourceTree = "<group>"; };
 		01EF2F2D55539C4136F5B174 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		05985361163237D67D8A8462 /* SessionBootstrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBootstrapper.swift; sourceTree = "<group>"; };
+		0606D2DEED3C84F0971B9DC9 /* RemindersTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersTimeline.swift; sourceTree = "<group>"; };
 		156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskModels.swift; sourceTree = "<group>"; };
 		17A08BC471071DBA22DD4A5E /* ReminderStackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderStackWidgetViews.swift; sourceTree = "<group>"; };
 		186FCE9C574F0644BB68C310 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -471,6 +473,7 @@
 				9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */,
 				B0BA880E80F8E982F77B4147 /* NotesGlyphPreviews.swift */,
 				5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */,
+				0606D2DEED3C84F0971B9DC9 /* RemindersTimeline.swift */,
 				A44BF1E5D3EAA30D3259E9BE /* RemindersWidget.swift */,
 				DD91DE11F4F065B831544415 /* RemindersWidgetViews.swift */,
 				B1A737E1E1E5CCDFBB3EAC37 /* SampleData.swift */,
@@ -840,6 +843,7 @@
 				A852C9E09C4B2B91B98C41C5 /* PromptDeepLink.swift in Sources */,
 				4A6E1467539DCA234BB4D10B /* QuotaRules.swift in Sources */,
 				440A98EA687A8E35950CA98D /* ReminderDayProgress.swift in Sources */,
+				CFA96438104E39CC31A0D909 /* RemindersTimeline.swift in Sources */,
 				C0CCFFB530B0228F0C1F38E1 /* RemindersWidget.swift in Sources */,
 				18B931AA2B27BB6109A4EC10 /* RemindersWidgetViews.swift in Sources */,
 				966038B9656BF4F8140022D0 /* SampleData.swift in Sources */,

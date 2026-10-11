@@ -91,15 +91,15 @@ final class WidgetRenderTests: XCTestCase {
 
         // Reminders: the clock's period, and "day complete" that evening.
         let reminders = RemindersEntry(
-            date: env.now, groups: groups,
-            slotIndex: RemindersTimeline.naturalSlotIndex(in: groups, now: env.now),
+            date: env.now, groups: groups, segments: [],
+            slotIndex: RemindersTimeline.naturalSlotIndex(in: groups, now: env.now), segmentIndex: nil,
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
         let evening = Calendar.current.date(bySettingHour: 21, minute: 48, second: 0, of: env.now)!
         let allHandled = groups.map(Self.handledAll)
         let remindersDone = RemindersEntry(
-            date: evening, groups: allHandled,
-            slotIndex: RemindersTimeline.naturalSlotIndex(in: allHandled, now: evening),
+            date: evening, groups: allHandled, segments: [],
+            slotIndex: RemindersTimeline.naturalSlotIndex(in: allHandled, now: evening), segmentIndex: nil,
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
 

@@ -46,7 +46,7 @@ struct RemindersWidgetView: View {
                     // system's own background.
                     ZStack {
                         Rectangle().fill(.fill.tertiary)
-                        if ReminderDayProgress.isDayComplete(entry.groups) {
+                        if showsDayCompleteWash {
                             Rectangle().fill(WidgetTheme.dayCompleteWash)
                         }
                     }
@@ -68,14 +68,33 @@ struct RemindersWidgetView: View {
         case .systemSmall:
             RemindersSmallView(entry: entry)
         case .systemMedium:
-            RemindersListView(entry: entry, isLarge: false)
+            listView(isLarge: false)
                 .backgroundTapOpens(WidgetLink.reminders)
         default:
             // No row ceiling (2026-09-24): the list pages by real row
             // height, as many as fit — see `RemindersListView`'s doc.
-            RemindersListView(entry: entry, isLarge: true)
+            listView(isLarge: true)
                 .backgroundTapOpens(WidgetLink.reminders)
         }
+    }
+
+    /// A task segment page (2026-10-10) or a time slot's list. The 2×2 and
+    /// the Lock Screen stay slot-only: they are glanceable reminder counts,
+    /// and segment rows count toward no reminders number (amendment 8).
+    @ViewBuilder
+    private func listView(isLarge: Bool) -> some View {
+        if let segment = entry.segment {
+            TaskSegmentListView(entry: entry, segment: segment, isLarge: isLarge)
+        } else {
+            RemindersListView(entry: entry, isLarge: isLarge)
+        }
+    }
+
+    /// The day-complete wash belongs to the slot pages: a task segment page
+    /// with rows still waiting is not a finished day.
+    private var showsDayCompleteWash: Bool {
+        let onSegmentPage = entry.segment != nil && family != .systemSmall
+        return !onSegmentPage && ReminderDayProgress.isDayComplete(entry.groups)
     }
 }
 
@@ -280,7 +299,7 @@ private struct RemindersListView: View {
 
     /// The slot ring wraps (`ShiftReminderSlotIntent`), so both chevrons stay
     /// live whenever there is more than one slot to move between.
-    private var canPage: Bool { entry.groups.count > 1 }
+    private var canPage: Bool { entry.groups.count + entry.segments.count > 1 }
 
     private var rowSpacing: CGFloat {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
@@ -1345,6 +1364,395 @@ private struct DonePromptRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text("Put back: \(prompt.title), \(prompt.countText)"))
         }
+    }
+}
+
+// MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
+
+/// One row of a task segment page: a waiting task, the "CONSIDERED · N"
+/// divider, or a task considered today (shown only with the "done" dot on).
+private enum SegmentListItem {
+    case waiting(TaskDTO)
+    case divider(count: Int)
+    case considered(TaskDTO)
+
+    var id: String {
+        switch self {
+        case .waiting(let task): return "seg-\(task.id)"
+        case .divider: return "seg-divider"
+        case .considered(let task): return "seg-considered-\(task.id)"
+        }
+    }
+}
+
+/// The widths a task segment row spends on things that are not its label —
+/// the one place the pager's measurement and the row's drawing read them.
+enum SegmentRowMetrics {
+    /// Circle (leading) and checkbox (trailing), each on the reminder row's
+    /// 36pt finger column, with the reminder row's 10pt gap beside each.
+    static let gap: CGFloat = 10
+
+    static func titleWidth(in width: CGFloat) -> CGFloat {
+        width - 2 * WidgetTheme.rowMarkerSize - 2 * gap
+    }
+}
+
+/// A task segment page of the Reminders widget (2026-10-10): one horizon's
+/// one-off tasks that are up for a look today, ahead of the time slots in
+/// the page ring (`RemindersTimeline`'s page ring). A sibling of
+/// `RemindersListView`, copying its machinery — the real header above a
+/// `RenderedTextReader`, every row's height measured up front and paged by
+/// `WidgetTheme.pages`, the bottom row with its pager and "done" dot — so a
+/// segment page pages, measures and taps exactly like a period does.
+///
+/// What differs (spec §3, amendment 16):
+/// - Rows are TASKS, never reminders: the circle on the LEFT considers ("I
+///   saw it", `ConsiderSegmentTaskIntent`), the checkbox on the RIGHT
+///   completes (`CompleteTaskIntent`, the ordinary completion). The title
+///   carries the task's set horizon and a future target's day in small
+///   secondary words ("Fix the gate · Days · Nov 1"); an unset horizon shows
+///   nothing. The title links to the task on the dashboard, where its
+///   horizon and target can be changed (deep link in place of in-widget
+///   controls, amendment 16).
+/// - Order is the server's (priority, then id) and fixed: a considered row
+///   leaves the open list but nothing else moves.
+/// - The bottom row's leading control is "Defer all" (`DeferSegmentIntent`)
+///   while anything waits: the whole segment's rest goes to tomorrow.
+/// - Nothing here counts toward any reminders number (amendment 8): the
+///   slot strip is drawn for orientation only, with no period marked current.
+private struct TaskSegmentListView: View {
+    let entry: RemindersEntry
+    let segment: TaskSegmentDTO
+    let isLarge: Bool
+
+    private var showCompleted: Bool {
+        isLarge && WidgetStore.showCompleted(for: RemindersWidget.kind)
+    }
+
+    private var items: [SegmentListItem] {
+        let open = segment.waitingTasks.map { SegmentListItem.waiting($0.task) }
+        let considered = segment.consideredTasks
+        guard showCompleted, !considered.isEmpty else { return open }
+        return open + [.divider(count: considered.count)] + considered.map { .considered($0.task) }
+    }
+
+    private var rowSpacing: CGFloat {
+        isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
+    }
+
+    /// See `RemindersListView.rowFloor`/`markerBleed`.
+    private var rowFloor: CGFloat {
+        #if os(iOS)
+        isLarge ? 0 : WidgetTheme.rowMarkerSize
+        #else
+        0
+        #endif
+    }
+
+    private var markerBleed: CGFloat {
+        #if os(iOS)
+        isLarge ? WidgetTheme.rowSpacing / 2 : 0
+        #else
+        0
+        #endif
+    }
+
+    var body: some View {
+        if entry.isSignedOut {
+            WidgetSignedOutView()
+        } else {
+            VStack(alignment: .leading, spacing: rowSpacing) {
+                header
+                if isLarge {
+                    ReminderSlotStrip(groups: entry.groups, currentIndex: -1, now: entry.date)
+                }
+                RenderedTextReader { size, metrics in
+                    listBody(size: size, metrics: metrics)
+                }
+                if let staleSince = entry.staleSince {
+                    HStack {
+                        Spacer()
+                        StalenessNote(fetchedAt: staleSince)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    /// `RemindersListView.listBody`'s layout, verbatim in its arithmetic.
+    private func listBody(size: CGSize, metrics: WidgetTextMetrics) -> some View {
+        let items = items
+        let barHeight = metrics.bottomBarHeight
+        let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
+        let layouts = items.map { layout(for: $0, width: size.width, budget: budget, metrics: metrics) }
+        let pages = WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget) {
+            if case .divider = items[$0] { return true }
+            return false
+        }
+        let page = isLarge ? min(max(WidgetStore.remindersPage(for: segment.pageKey), 0), pages.count - 1) : 0
+        let range = pages[page]
+
+        return VStack(alignment: .leading, spacing: 0) {
+            if items.isEmpty {
+                WidgetEmptyView(symbol: "checkmark.seal.fill", message: "All considered")
+            } else {
+                VStack(alignment: .leading, spacing: rowSpacing) {
+                    ForEach(range.map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
+                        row(items[ref.index], layout: layouts[ref.index], metrics: metrics)
+                            .frame(height: layouts[ref.index].height, alignment: .top)
+                            .transition(.identity)
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if isLarge {
+                ListBottomBar(height: barHeight) {
+                    deferAll(width: size.width, pages: pages.count, page: page, metrics: metrics)
+                } pager: {
+                    if pages.count > 1 {
+                        ListPager(
+                            page: page,
+                            totalPages: pages.count,
+                            previous: ShiftReminderPageIntent(offset: -1),
+                            next: ShiftReminderPageIntent(offset: 1)
+                        )
+                    }
+                } trailing: {
+                    CompletedDotToggle(
+                        intent: ToggleShowCompletedIntent(kind: RemindersWidget.kind),
+                        isOn: showCompleted, label: "done", height: barHeight
+                    )
+                }
+                .padding(.top, rowSpacing)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+
+    private func label(_ task: TaskDTO) -> String { task.segmentLabelText(now: entry.date) }
+
+    private func layout(
+        for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
+    ) -> ReminderRowLayout {
+        switch item {
+        case .divider:
+            return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
+        case .waiting(let task), .considered(let task):
+            let isWaiting: Bool
+            if case .waiting = item { isWaiting = true } else { isWaiting = false }
+            let fit = metrics.titleLines(
+                label(task), width: SegmentRowMetrics.titleWidth(in: width),
+                weight: isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular,
+                maxHeight: budget, hasNotes: task.hasNotes
+            )
+            if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
+            return ReminderRowLayout(
+                lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), isWaiting ? rowFloor : 0)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ item: SegmentListItem, layout: ReminderRowLayout, metrics: WidgetTextMetrics) -> some View {
+        switch item {
+        case .divider(let count):
+            DoneDivider(count: count, label: "CONSIDERED")
+        case .waiting(let task):
+            SegmentTaskRow(
+                task: task, considered: false, now: entry.date, lines: layout.lines, height: layout.height,
+                shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes)
+            )
+        case .considered(let task):
+            SegmentTaskRow(
+                task: task, considered: true, now: entry.date, lines: layout.lines, height: layout.height,
+                shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes)
+            )
+        }
+    }
+
+    /// "Defer all", left of the pager, while anything waits — measured like
+    /// the slot pages' "4 of 7" and left out when it wouldn't clear the pager.
+    @ViewBuilder
+    private func deferAll(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
+        let text = "Defer all"
+        if segment.hasWaiting, WidgetTheme.fitsLeftOfPager(
+            width: WidgetTheme.measuredWidth(for: text, font: metrics.caption2Font),
+            cardWidth: width, pagerText: pages > 1 ? "\(page + 1)/\(pages)" : nil, metrics: metrics
+        ) {
+            Button(intent: DeferSegmentIntent(horizon: segment.horizon)) {
+                Text(text)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(WidgetTheme.indigoAccent)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .frame(height: metrics.bottomBarHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
+        }
+    }
+
+    // MARK: Header — `RemindersListView.header`'s layout
+
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
+                titleLink.layoutPriority(1)
+                Spacer(minLength: 0)
+                undoRedo
+                chevrons
+            }
+            HStack(alignment: .top, spacing: WidgetTheme.headerSpacing) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Link(destination: WidgetLink.reminders) { title.contentShape(Rectangle()) }
+                    HStack(alignment: .center, spacing: WidgetTheme.headerSpacing) {
+                        Link(destination: WidgetLink.reminders) { subtitle.contentShape(Rectangle()) }
+                        Spacer(minLength: 0)
+                        undoRedo.padding(.vertical, -UndoRedoButtons.verticalPadding)
+                    }
+                }
+                .layoutPriority(1)
+                chevrons
+            }
+        }
+        .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
+    }
+
+    private var titleLink: some View {
+        Link(destination: WidgetLink.reminders) {
+            VStack(alignment: .leading, spacing: 1) {
+                title
+                subtitle
+            }
+            .contentShape(Rectangle())
+        }
+    }
+
+    /// "Tasks · Days" — never truncates (the period title's rule).
+    private var title: some View {
+        Text("Tasks · \(segment.label)")
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// "5 left", "all considered"; over the nudge threshold it suggests
+    /// Process instead of a tap-through (spec §3, ~50 items).
+    private var subtitle: some View {
+        Text(entry.actionDescription ?? subtitleText)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+
+    private var subtitleText: String {
+        let waiting = segment.waitingCount
+        let count = waiting == 0 ? "all considered" : "\(waiting) left"
+        return segment.nudge ? "\(count) · try Process" : count
+    }
+
+    private var undoRedo: some View {
+        UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: RemindersWidget.kind)
+    }
+
+    private var chevrons: some View {
+        ChevronPager(
+            previous: ShiftReminderSlotIntent(offset: -1),
+            next: ShiftReminderSlotIntent(offset: 1),
+            hasPrevious: entry.groups.count + entry.segments.count > 1,
+            hasNext: entry.groups.count + entry.segments.count > 1,
+            previousLabel: "Previous page",
+            nextLabel: "Next page"
+        )
+    }
+}
+
+/// One task segment row: circle (consider) · title · checkbox (done).
+///
+/// `ReminderRow`'s grammar — the title is a `Link`, the controls are
+/// `Button(intent:)` siblings in their own fixed 36pt columns, never
+/// overlapping, each centred on the title's FIRST line with its tap target
+/// bled half a row gap into the gaps (see `ReminderRow`'s two-frame doc).
+///
+/// Considered rows (the "done" dot's list) draw the circle filled and inert:
+/// there is no un-consider — the header's Undo takes a misfire back. Their
+/// checkbox stays live: a considered task is still open, and done is done.
+private struct SegmentTaskRow: View {
+    let task: TaskDTO
+    let considered: Bool
+    let now: Date
+    let lines: Int
+    let height: CGFloat
+    let shrinks: Bool
+    let firstLineHeight: CGFloat
+    let markerBleed: CGFloat
+    let notesGlyphSize: CGFloat?
+
+    private var spoken: String {
+        let meta = task.segmentMeta(now: now).map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
+        return NotesGlyph.accessibilityLabel("\(task.title)\(meta)", hasNotes: task.hasNotes)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SegmentRowMetrics.gap) {
+            if considered {
+                marker(Image(systemName: "circle.inset.filled"), color: .secondary)
+                    .accessibilityLabel(Text("Considered today: \(spoken)"))
+            } else {
+                Button(intent: ConsiderSegmentTaskIntent(taskId: task.id)) {
+                    marker(Image(systemName: "circle"), color: WidgetTheme.priorityColor(task.priority))
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, -markerBleed)
+                .accessibilityLabel(Text("Considered: \(spoken)"))
+            }
+
+            Link(destination: WidgetLink.task(task.id)) {
+                WidgetTheme.titleText(titleText, notesGlyphSize: notesGlyphSize)
+                    .font(.subheadline)
+                    .opacity(considered ? 1 : WidgetTheme.priorityOpacity(task.priority))
+                    .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
+                    .contentShape(Rectangle())
+                    .accessibilityLabel(Text(spoken))
+            }
+
+            Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
+                marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.priorityColor(task.priority))
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, -markerBleed)
+            .accessibilityLabel(Text("Done: \(spoken)"))
+        }
+    }
+
+    /// Title in the row's weight, then the horizon / target words small and
+    /// secondary — the exact string `segmentLabelText` measured.
+    private var titleText: Text {
+        let title = Text(task.title)
+            .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
+            .foregroundStyle(considered ? Color.secondary : Color.primary)
+        guard let meta = task.segmentMeta(now: now) else { return title }
+        return title + Text("\(QuotaPromptDTO.countSeparator)\(meta)").foregroundStyle(.secondary)
+    }
+
+    /// `ReminderRow`'s two frames: centred on line 1, target the row's full
+    /// height plus the bleed.
+    private func marker(_ image: Image, color: Color) -> some View {
+        image
+            .font(.system(size: 19, weight: .light))
+            .foregroundStyle(color)
+            .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
+            .padding(.top, markerBleed)
+            .frame(width: WidgetTheme.rowMarkerSize, height: height + 2 * markerBleed, alignment: .top)
+            .contentShape(Rectangle())
     }
 }
 

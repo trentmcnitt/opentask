@@ -93,6 +93,26 @@ enum TargetAge {
     }
 }
 
+extension TaskDTO {
+    /// The small words after a task segment row's title: its SET horizon
+    /// ("Days" — nothing when unset, never "Weeks") and a future target's day
+    /// ("Nov 1"), "Days · Nov 1". Nil when there is neither. Spaces are
+    /// non-breaking so the words wrap as one unit, like a prompt's count.
+    func segmentMeta(now: Date = Date(), calendar: Calendar = .current) -> String? {
+        let parts = [horizonLabel, TargetAge.futureTargetChip(self, now: now, calendar: calendar)]
+            .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{00A0}·\u{00A0}")
+    }
+
+    /// The whole segment row label as ONE string — title, separator, meta —
+    /// the string both the row's `Text` and the pager's measurement build
+    /// from (the `QuotaPromptDTO.labelText` rule).
+    func segmentLabelText(now: Date = Date(), calendar: Calendar = .current) -> String {
+        guard let meta = segmentMeta(now: now, calendar: calendar) else { return title }
+        return "\(title)\(QuotaPromptDTO.countSeparator)\(meta)"
+    }
+}
+
 /// User-facing words of the 2026-10-10 task model that are PROVISIONAL
 /// (amendment 4): each lives in exactly one constant so a rename is one edit.
 /// API names are unchanged — the server still says `overdue` in
