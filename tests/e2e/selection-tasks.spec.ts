@@ -472,8 +472,8 @@ test.describe('Dashboard multi-select — the panel date line and "…" menu', (
         const dialog = await openPanel(page, ids.length)
 
         await dialog.getByRole('button', { name: 'More options' }).click()
-        await page.getByRole('menuitem', { name: 'Clear due dates' }).click()
-        await expect(dialog.locator('[data-quick-panel-date]')).toHaveText('No due date')
+        await page.getByRole('menuitem', { name: 'Remove targets' }).click()
+        await expect(dialog.locator('[data-quick-panel-date]')).toContainText('No target')
 
         const sent = page.waitForResponse(isPost('/api/tasks/bulk/edit'))
         await dialog.getByRole('button', { name: 'Save', exact: true }).click()
@@ -501,7 +501,7 @@ test.describe('Dashboard multi-select — the panel date line and "…" menu', (
         await openDashboard(page, ids[0])
         await select(page, ids)
         const dialog = await openPanel(page, ids.length)
-        await expect(dialog.locator('[data-quick-panel-date]')).toHaveText('No due date')
+        await expect(dialog.locator('[data-quick-panel-date]')).toContainText('No target')
         await expect(dialog.getByRole('button', { name: 'More options' })).toHaveCount(0)
       })
     } finally {

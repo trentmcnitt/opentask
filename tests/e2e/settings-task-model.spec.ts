@@ -18,16 +18,21 @@ import { test, expect, uniqueTitle, waitForPreferenceSave, waitForPrefsLoaded } 
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
-/** The next period's start, as `nextPeriodStart` (src/lib/time-slot-assign.ts) computes it. */
+/**
+ * Where "Next period" sends a tap, as `computeSnoozeTime('next_period', …)`
+ * (src/lib/snooze.ts) decides: the next period if it starts later TODAY, else
+ * the top of the next hour (spec amendment 17) — never tomorrow's first.
+ */
 function nextPeriodStart(starts: string[], timezone: string): string {
   const local = DateTime.now().setZone(timezone)
-  return starts
+  const later = starts
     .map((hhmm) => {
       const [hour, minute] = hhmm.split(':').map(Number)
-      const today = local.set({ hour, minute, second: 0, millisecond: 0 })
-      return (today > local ? today : today.plus({ days: 1 })).toUTC().toISO()!
+      return local.set({ hour, minute, second: 0, millisecond: 0 })
     })
-    .sort()[0]
+    .filter((t) => t > local)
+    .sort((a, b) => a.toMillis() - b.toMillis())[0]
+  return (later ?? local.startOf('hour').plus({ hours: 1 })).toUTC().toISO()!
 }
 
 test('Default snooze "Next period": saved, read back, and used by a row tap', async ({

@@ -33,7 +33,7 @@ const pinned = (page: Page) => page.locator('[data-pinned-date-chip="overdue"]')
  *  them") starts the same way. */
 const redPill = (page: Page) =>
   page.getByRole('button', {
-    name: /^\d+ overdue — (show only overdue tasks|clear the overdue filter)$/,
+    name: /^\d+ over target — (show only over target tasks|clear the over target filter)$/,
   })
 const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ due today — / })
 const firstGroup = (page: Page) => page.locator('[data-task-group]').first()
@@ -167,7 +167,10 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
       // Its number is the pinned chip's (and the red pill's) — one date facet.
       const chipCount = ((await pinned(page).getAttribute('aria-label')) ?? '').match(/\d+/)
       expect(chipCount).not.toBeNull()
-      await expect(button).toHaveAttribute('aria-label', new RegExp(`^${chipCount![0]} overdue — `))
+      await expect(button).toHaveAttribute(
+        'aria-label',
+        new RegExp(`^${chipCount![0]} over target — `),
+      )
       // Icon only: the count lives in the label, not on the button face.
       await expect(button).toHaveText('')
       // The list starts below the panels — there is somewhere to jump to.
@@ -260,7 +263,7 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
           expect(chipCount).not.toBeNull()
           await expect(button).toHaveAttribute(
             'aria-label',
-            new RegExp(`^${chipCount![0]} overdue — `),
+            new RegExp(`^${chipCount![0]} over target — `),
           )
           await expectPinnedToViewportCorner(page)
 

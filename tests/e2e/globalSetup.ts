@@ -204,6 +204,18 @@ export default async function globalSetup() {
   // Shifting all of them by the same day keeps their order.
   db.exec(`UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '-1 day')`)
 
+  // Task segments (2026-10-10): a task created before today whose target
+  // hasn't arrived shows in its horizon's segment on the reminders surfaces —
+  // which would put "Buy groceries" on screen twice for every spec that looks
+  // for it, on whichever weekday the run happens. The seeded one-offs are made
+  // "eventually" (first Saturday of a quarter) and considered now, so they stay
+  // out of today's segments; tests/e2e/tm-task-segments.spec.ts makes its own.
+  db.exec(
+    `UPDATE tasks SET horizon = 'eventually',
+       last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+     WHERE rrule IS NULL`,
+  )
+
   db.close()
   console.log('[e2e] Database seeded at', DB_PATH)
 }

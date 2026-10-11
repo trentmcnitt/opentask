@@ -41,7 +41,7 @@ test.describe('Task segments', () => {
     const titles = ['A', 'B', 'C'].map((s) => uniqueTitle(`TM seg ${s}`))
     const ids: number[] = []
     for (const title of titles) ids.push(await create(page, { title, horizon: 'days' }))
-    backdateCreated(ids)
+    backdateCreated(ids, { inSegments: true })
     try {
       await page.goto('/reminders')
       const days = page.locator('[data-task-segment="days"]')
@@ -85,7 +85,7 @@ test.describe('Task segments', () => {
 
   test('the horizon chip changes the horizon', async ({ authenticatedPage: page }) => {
     const id = await create(page, { title: uniqueTitle('TM horizon'), horizon: 'days' })
-    backdateCreated([id])
+    backdateCreated([id], { inSegments: true })
     try {
       await page.goto('/reminders')
       await segmentRow(page, id).locator('[data-horizon-chip]').click()
