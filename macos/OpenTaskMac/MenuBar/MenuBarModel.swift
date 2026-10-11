@@ -140,8 +140,12 @@ final class MenuBarModel: ObservableObject {
             target, tasks: [(id: task.id, dueAt: task.dueDate)], now: Date(), slots: slots
         )
         act(on: task.id) {
-            let moved = await TaskSnoozePlan.send(requests)
-            return moved.contains(task.id) ? nil : "Couldn't snooze \"\(task.title)\""
+            var capped = false
+            let moved = await TaskSnoozePlan.send(requests, onCappedAtDeadline: { _ in capped = true })
+            guard moved.contains(task.id) else { return "Couldn't snooze \"\(task.title)\"" }
+            // Ruling A3: a quick snooze stops AT a deadline still ahead — say so.
+            guard capped, let deadline = task.deadlineDate else { return nil }
+            return "Snoozed to deadline \(deadline.formatted(date: .omitted, time: .shortened))"
         }
     }
 

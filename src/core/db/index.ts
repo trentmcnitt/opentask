@@ -194,7 +194,7 @@ function runMigrations(database: Database.Database): void {
 
   // Sort order persistence (2026-03)
   if (!hasColumn(database, 'users', 'default_sort')) {
-    database.exec("ALTER TABLE users ADD COLUMN default_sort TEXT NOT NULL DEFAULT 'due_date'")
+    database.exec("ALTER TABLE users ADD COLUMN default_sort TEXT NOT NULL DEFAULT 'horizon'")
   }
   if (!hasColumn(database, 'users', 'default_sort_reversed')) {
     database.exec('ALTER TABLE users ADD COLUMN default_sort_reversed INTEGER NOT NULL DEFAULT 0')

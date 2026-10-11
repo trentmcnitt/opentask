@@ -90,9 +90,22 @@ export function setClientTargetContext(ctx: TargetContext | null): void {
 export function impliedTargetAt(
   task: TargetFields,
   ctx: TargetContext | null = clientContext,
+  now: Date = new Date(),
 ): string | null {
-  if (task.deadline_at === null || task.deadline_nag_off || task.rrule) return null
-  if (task.due_at !== null && Date.parse(task.due_at) <= Date.parse(task.deadline_at)) return null
+  if (task.deadline_at === null || task.rrule) return null
+  const deadlineMs = Date.parse(task.deadline_at)
+  // A target of the user's own at or before the deadline is honored as set.
+  if (task.due_at !== null && Date.parse(task.due_at) <= deadlineMs) return null
+  if (task.deadline_nag_off) {
+    // Silenced (remove target, or a snooze past the deadline) — but the nag
+    // RE-ARMS on the deadline day itself (ruling A4, Trent 10-11): on its last
+    // day a deadline task is silenced only by done, delete or the per-task nag
+    // override. A task with a target of its own (a deliberate snooze past the
+    // deadline) is left to that target once the deadline has passed, so a
+    // snooze after the deadline still holds; with no target it keeps nagging.
+    if (task.due_at !== null && deadlineMs <= now.getTime()) return null
+    return deadlineDayStart(task.deadline_at, ctx)
+  }
   const deadline = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
   if (!ctx) return deadline.minus({ days: DEADLINE_LEAD_DAYS }).toISO()!
   const [hour, minute] = ctx.morningTime.split(':').map(Number)
@@ -105,6 +118,18 @@ export function impliedTargetAt(
 }
 
 /**
+ * When a silenced deadline re-arms (ruling A4): the user's morning on the
+ * deadline's own local day — or the deadline itself if it falls earlier.
+ */
+function deadlineDayStart(deadlineAt: string, ctx: TargetContext | null): string {
+  const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
+  if (!ctx) return deadline.startOf('day').toISO()!
+  const [hour, minute] = ctx.morningTime.split(':').map(Number)
+  const morning = deadline.setZone(ctx.timezone).set({ hour, minute, second: 0, millisecond: 0 })
+  return (morning < deadline ? morning : deadline).toUTC().toISO()!
+}
+
+/**
  * The target the task nags from: the earlier of its own and the deadline's
  * implied one (which only exists when there is no target, or the target is
  * past the deadline).
@@ -112,8 +137,9 @@ export function impliedTargetAt(
 export function effectiveTargetAt(
   task: TargetFields,
   ctx: TargetContext | null = clientContext,
+  now: Date = new Date(),
 ): string | null {
-  const implied = impliedTargetAt(task, ctx)
+  const implied = impliedTargetAt(task, ctx, now)
   if (task.due_at === null) return implied
   if (implied === null) return task.due_at
   return Date.parse(implied) < Date.parse(task.due_at) ? implied : task.due_at
@@ -225,7 +251,7 @@ export function segmentState(
   now: Date,
   ctx: TargetContext | null = clientContext,
 ): { horizon: HorizonValue; state: SegmentState } | null {
-  if (targetIsToday(effectiveTargetAt(task, ctx), timezone, now)) return null
+  if (targetIsToday(effectiveTargetAt(task, ctx, now), timezone, now)) return null
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const horizon = effectiveHorizon(task, now)
 
@@ -267,7 +293,7 @@ export function targetAgeDays(
   now: Date,
   ctx: TargetContext | null = clientContext,
 ): number | null {
-  const target = effectiveTargetAt(task, ctx)
+  const target = effectiveTargetAt(task, ctx, now)
   if (!target || Date.parse(target) > now.getTime()) return null
   // Its own target counts from its first one; an implied target from itself.
   // Never from before the task existed (2026-10-11): a task created with a

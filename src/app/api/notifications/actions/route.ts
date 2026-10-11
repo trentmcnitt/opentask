@@ -16,6 +16,7 @@
  * the token from the shared Keychain (App Group) and includes it in the JSON body.
  */
 
+import { sendDeadlineCapFeedback } from '@/core/notifications/deadline-cap-feedback'
 import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
@@ -75,13 +76,25 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           userTimezone: user.timezone,
           taskId: task_id,
           until,
-          // A notification's snooze button is one explicit tap with no room for
-          // a confirm, so it is honored past a deadline rather than refused
-          // (2026-10-10). The cap is for sweeps and the app's quick grid.
-          allowPastDeadline: true,
+          // A notification's snooze button is one tap with no room for a
+          // confirm: it stops AT the deadline instead of passing it (ruling
+          // A3, Trent 10-11). Only the web's "Snooze anyway" goes past.
+          capAtDeadline: true,
         })
         log.info('notifications', `Action complete: ${action} on task ${task_id}`)
-        return success({ action, task_id, until, result })
+        // A3: `until` is where the task actually went — the deadline when the
+        // snooze would have crossed it.
+        const landed = result.task.due_at ?? until
+        // The button runs in the background and shows nothing: say it in a
+        // quiet push (deadline-cap-feedback.ts).
+        if (landed !== until) void sendDeadlineCapFeedback(user.id, landed, user.timezone)
+        return success({
+          action,
+          task_id,
+          until: landed,
+          capped_at_deadline: landed !== until,
+          result,
+        })
       }
 
       case 'delete': {

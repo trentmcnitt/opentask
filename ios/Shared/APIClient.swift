@@ -104,17 +104,14 @@ final class APIClient {
 
     /// Snooze a task to a specific ISO 8601 datetime.
     ///
-    /// `allow_past_deadline: true` (2026-10-10): the server refuses (409
-    /// `PAST_DEADLINE`) a single snooze that would carry the target past a
-    /// deadline still ahead, unless the request says the user meant it. This
-    /// is one explicit tap with no room for a confirm, so it always says so —
-    /// the notification action route's own rule. A 409 from a server path
-    /// that still refuses surfaces as `APIError.serverError(409)`, a plain
-    /// failure for the caller to report.
+    /// `cap_at_deadline: true` (ruling A3, 2026-10-11): a one-tap snooze
+    /// stops AT a deadline still ahead instead of passing it — the server
+    /// moves the target to the deadline. Only the web's "Snooze anyway" goes
+    /// past. A 409 from an older server surfaces as `APIError.serverError(409)`.
     func snoozeTo(taskId: Int, dueAt: String) async throws {
         try await request(method: "PATCH", path: "/api/tasks/\(taskId)", body: [
             "due_at": dueAt,
-            "allow_past_deadline": true,
+            "cap_at_deadline": true,
         ])
     }
 
@@ -218,7 +215,8 @@ final class APIClient {
             skippedOnPriority: responseData["skipped_urgent"] as? Int ?? 0,
             skippedHigh: responseData["skipped_high"] as? Int ?? 0,
             snoozedHigh: responseData["snoozed_high"] as? Int ?? 0,
-            skippedDeadline: responseData["skipped_deadline"] as? Int ?? 0
+            skippedDeadline: responseData["skipped_deadline"] as? Int ?? 0,
+            cappedDeadline: responseData["capped_deadline"] as? Int ?? 0
         )
     }
 
@@ -248,9 +246,13 @@ final class APIClient {
         /// Tasks left where they were because the snooze would have carried
         /// their target past a deadline still ahead (2026-10-10, the server's
         /// `skipped_deadline`; 0 from an older server). A sweep skips them on
-        /// purpose; an explicit per-row tap avoids it by sending
-        /// `allow_past_deadline_ids` (`bulkSnoozeTasks`).
+        /// purpose; an explicit per-row tap stops at the deadline instead by
+        /// sending `cap_at_deadline_ids` (`bulkSnoozeTasks`, ruling A3).
         var skippedDeadline: Int = 0
+        /// Snoozed only as far as their deadline (ruling A3, 2026-10-11, the
+        /// server's `capped_deadline` for the ids in `cap_at_deadline_ids`;
+        /// 0 from an older server).
+        var cappedDeadline: Int = 0
     }
 
     /// Complete N tasks in ONE request (§6.1 batch checklist).
@@ -484,16 +486,17 @@ final class APIClient {
     @discardableResult
     func bulkSnoozeTasks(
         ids: [Int], until: String? = nil, deltaMinutes: Int? = nil, includeTaskIds: [Int]? = nil,
-        allowPastDeadlineIds: [Int]? = nil
+        capAtDeadlineIds: [Int]? = nil
     ) async throws -> BulkSnoozeResult {
         var body: [String: Any] = ["ids": ids]
         if let until { body["until"] = until }
         if let deltaMinutes { body["delta_minutes"] = deltaMinutes }
         if let includeTaskIds { body["include_task_ids"] = includeTaskIds }
-        // 2026-10-10: the server skips a task whose snooze would cross a
-        // deadline still ahead (`skipped_deadline`) unless its id is here —
-        // an explicit per-row/selected tap passes its own ids, a sweep never.
-        if let allowPastDeadlineIds { body["allow_past_deadline_ids"] = allowPastDeadlineIds }
+        // The server skips a task whose snooze would cross a deadline still
+        // ahead (`skipped_deadline`), or, for an id here, stops it AT the
+        // deadline (ruling A3, 2026-10-11) — an explicit per-row/selected tap
+        // passes its own ids, a sweep never.
+        if let capAtDeadlineIds { body["cap_at_deadline_ids"] = capAtDeadlineIds }
         let data = try await post(path: "/api/tasks/bulk/snooze", body: body)
         return parseBulkSnoozeResult(data)
     }

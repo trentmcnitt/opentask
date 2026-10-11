@@ -17,6 +17,9 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
+import { effectiveTargetAt } from '@/lib/task-segments'
+import { DEADLINE_TODAY_HOLDS } from '@/lib/task-model-words'
+import { getTargetContext } from './target-context'
 import { getTaskById } from './read'
 import { canUserAccessTask } from './access'
 import { applyFieldChanges, collectFieldChanges } from './helpers'
@@ -131,6 +134,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       afterState: data.afterState,
       userTimezone,
       projectName,
+      cappedAtDeadline: data.cappedAtDeadline,
     })
     logAction(userId, 'edit', description, data.fieldsChanged, [snapshot])
 
@@ -152,7 +156,15 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     const updatedTask = getTaskById(taskId)
     if (!updatedTask) throw new Error('Failed to retrieve updated task')
 
-    return { task: updatedTask, fieldsChanged: data.fieldsChanged, description }
+    // A4: a snooze on the deadline's own day is saved, but the re-armed nag
+    // keeps the task over target — say why instead of looking like nothing
+    // happened (the undo log keeps the plain description).
+    const holds = data.isSnoozeScenario && deadlineHolds(updatedTask, userId)
+    return {
+      task: updatedTask,
+      fieldsChanged: data.fieldsChanged,
+      description: holds ? DEADLINE_TODAY_HOLDS : description,
+    }
   })
 
   // Cancel pending AI enrichment — user's manual edit takes precedence.
@@ -186,4 +198,17 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   }
 
   return result
+}
+
+/**
+ * Whether a just-snoozed task is still over target because its deadline-day
+ * nag re-armed (ruling A4): its own target is in the future, but the
+ * effective one has arrived.
+ */
+function deadlineHolds(task: Task, userId: number): boolean {
+  if (!task.deadline_at || !task.due_at) return false
+  const now = Date.now()
+  if (Date.parse(task.due_at) <= now) return false
+  const target = effectiveTargetAt(task, getTargetContext(userId), new Date(now))
+  return target !== null && Date.parse(target) <= now
 }

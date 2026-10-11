@@ -35,6 +35,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       deltaMinutes: input.delta_minutes,
       includeTaskIds: input.include_task_ids,
       allowPastDeadlineIds: input.allow_past_deadline_ids,
+      capAtDeadlineIds: input.cap_at_deadline_ids,
     })
 
     notifyDemoEngagement(user.name, 'update')
@@ -58,6 +59,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // their deadline. Resend their ids in `allow_past_deadline_ids` once the
       // user confirms.
       skipped_deadline: result.deadlineSkipped,
+      // A3 (2026-10-11): snoozed only as far as their deadline.
+      capped_deadline: result.deadlineCapped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

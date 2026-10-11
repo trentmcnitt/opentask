@@ -67,6 +67,22 @@ final class TargetAgeTests: XCTestCase {
         XCTAssertTrue(t.isOverdue(now: now), "over target although due_at is null")
     }
 
+    /// A4 (2026-10-11): remove-target silences the 4-day nag, but it re-arms
+    /// on the deadline's own day — at the morning, or the deadline if earlier.
+    func testASilencedDeadlineReArmsOnItsDay() {
+        let t = task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true)
+        XCTAssertEqual(
+            TargetAge.impliedTargetDate(t, morningTime: "09:00", calendar: calendar, now: now),
+            DateHelpers.parseISO("2026-10-13T14:00:00.000Z")
+        )
+        // With a target of its own, it is left to it once the deadline passed.
+        let snoozed = task(
+            due: "2026-10-15T14:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z", nagOff: true
+        )
+        let after = DateHelpers.parseISO("2026-10-14T15:00:00.000Z")!
+        XCTAssertNil(TargetAge.impliedTargetDate(snoozed, morningTime: "09:00", calendar: calendar, now: after))
+    }
+
     func testWithNoMorningTimeItFallsBackToDeadlineMinusFourDays() {
         let t = task(deadline: "2026-10-13T23:00:00.000Z")
         XCTAssertEqual(
@@ -100,13 +116,17 @@ final class TargetAgeTests: XCTestCase {
         XCTAssertNil(TargetAge.impliedTargetDate(atDeadline, morningTime: "09:00", calendar: calendar))
     }
 
+    /// Remove-target silences the 4-day nag, and only until the deadline's
+    /// own day (ruling A4); a recurring task never has an implied target.
     func testImpliedTargetIsOffWithRemoveTargetOrRecurrence() {
-        XCTAssertNil(TargetAge.impliedTargetDate(task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true)))
+        let silenced = task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true)
+        XCTAssertEqual(
+            TargetAge.impliedTargetDate(silenced, morningTime: "09:00", calendar: calendar, now: now),
+            DateHelpers.parseISO("2026-10-13T14:00:00.000Z"),
+            "re-armed on the deadline day, not 4 days out"
+        )
         XCTAssertNil(TargetAge.impliedTargetDate(task(deadline: "2026-10-13T23:00:00.000Z", rrule: "FREQ=WEEKLY")))
-        XCTAssertNil(TargetAge.impliedTargetDate(
-            task(due: "2026-10-20T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z", nagOff: true)
-        ))
-        XCTAssertFalse(task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true).isOverdue(now: now))
+        XCTAssertFalse(silenced.isOverdue(now: now))
     }
 
     func testTaskListsSeeTheImpliedTarget() {

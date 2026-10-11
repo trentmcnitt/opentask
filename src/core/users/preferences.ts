@@ -86,7 +86,7 @@ export type PreferenceChanges = Partial<Record<PreferenceColumn, unknown>>
 /** Fallback row when user record is missing (should not happen in practice). */
 const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   default_grouping: 'project',
-  default_sort: 'due_date',
+  default_sort: 'horizon',
   default_sort_reversed: 0,
   filters_expanded: 0,
   project_preview_count: 6,

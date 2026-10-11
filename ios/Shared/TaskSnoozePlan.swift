@@ -140,33 +140,41 @@ enum TaskSnoozePlan {
     /// `include_task_ids` mirrors each request's ids: an explicit,
     /// deliberate tap on a task always bypasses the P3/P4 sweep-safety
     /// filter — the web's own convention (`src/lib/save-quick-panel-changes.ts`).
-    /// `allow_past_deadline_ids` mirrors them too (2026-10-10): every caller
-    /// is an explicit per-row or selected-task tap, so a deadline still ahead
-    /// doesn't make the server skip it. The "all overdue" sweeps never come
-    /// through here and never send it — skipping there is intended.
+    /// `cap_at_deadline_ids` mirrors them too (ruling A3, 2026-10-11): every
+    /// caller is an explicit per-row or selected-task tap, so a snooze that
+    /// would cross a deadline still ahead stops AT it rather than being
+    /// skipped. The "all overdue" sweeps never come through here and never
+    /// send it — skipping there is intended.
+    ///
+    /// `onCappedAtDeadline` hears how many of a request's tasks stopped at
+    /// their deadline, so a surface with a feedback line can say so (the Mac
+    /// menu bar: "Snoozed to deadline 6:00 PM").
     ///
     /// `afterEach` runs once per request that succeeded (the phone widget
     /// bumps its local undo count there — one server undo entry each).
     static func send(
         _ requests: [Request],
-        afterEach: (Request) -> Void = { _ in }
+        afterEach: (Request) -> Void = { _ in },
+        onCappedAtDeadline: (Int) -> Void = { _ in }
     ) async -> Set<Int> {
         var moved: Set<Int> = []
         for request in requests {
             do {
+                let result: APIClient.BulkSnoozeResult
                 switch request.kind {
                 case .until(let until):
-                    try await APIClient.shared.bulkSnoozeTasks(
+                    result = try await APIClient.shared.bulkSnoozeTasks(
                         ids: request.ids, until: DateHelpers.formatISO(until), includeTaskIds: request.ids,
-                        allowPastDeadlineIds: request.ids
+                        capAtDeadlineIds: request.ids
                     )
                 case .deltaMinutes(let minutes):
-                    try await APIClient.shared.bulkSnoozeTasks(
+                    result = try await APIClient.shared.bulkSnoozeTasks(
                         ids: request.ids, deltaMinutes: minutes, includeTaskIds: request.ids,
-                        allowPastDeadlineIds: request.ids
+                        capAtDeadlineIds: request.ids
                     )
                 }
                 moved.formUnion(request.ids)
+                if result.cappedDeadline > 0 { onCappedAtDeadline(result.cappedDeadline) }
                 afterEach(request)
             } catch {
                 print("[OpenTask] Snooze \(request.ids) failed: \(error)")

@@ -37,6 +37,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       deltaMinutes: input.delta_minutes,
       dateTaskIds: input.date_task_ids,
       allowPastDeadlineIds: input.allow_past_deadline_ids,
+      capAtDeadlineIds: input.cap_at_deadline_ids,
     })
 
     notifyDemoEngagement(user.name, 'update')

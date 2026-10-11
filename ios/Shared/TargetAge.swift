@@ -35,10 +35,23 @@ enum TargetAge {
     /// morning time known, a plain deadline − 4 × 24h (the server's own
     /// context-less fallback).
     static func impliedTargetDate(
-        _ task: TaskDTO, morningTime: String? = TargetContextStore.morningTime, calendar: Calendar = .current
+        _ task: TaskDTO, morningTime: String? = TargetContextStore.morningTime, calendar: Calendar = .current,
+        now: Date = Date()
     ) -> Date? {
-        guard !task.deadlineNagOff, task.rrule == nil, let deadline = task.deadlineDate else { return nil }
+        guard task.rrule == nil, let deadline = task.deadlineDate else { return nil }
+        // A target of the user's own at or before the deadline is honored as set.
         if let due = task.dueDate, due <= deadline { return nil }
+        if task.deadlineNagOff {
+            // Silenced — but it RE-ARMS on the deadline day itself (ruling A4,
+            // 2026-10-11): the morning of the deadline's own day, or the
+            // deadline if earlier. A task with its own target (a deliberate
+            // snooze past the deadline) is left to it once the deadline passes.
+            if task.dueDate != nil, deadline <= now { return nil }
+            guard let morningTime, let (hour, minute) = parseHHMM(morningTime),
+                  let morning = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: deadline)
+            else { return calendar.startOfDay(for: deadline) }
+            return min(morning, deadline)
+        }
         guard let morningTime, let (hour, minute) = parseHHMM(morningTime),
               let leadDay = calendar.date(byAdding: .day, value: -deadlineLeadDays, to: deadline),
               let morning = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: leadDay)
@@ -51,9 +64,10 @@ enum TargetAge {
     /// The target the task nags from: the EARLIER of its own and the
     /// deadline's implied one (the server's `effectiveTargetAt`).
     static func effectiveTargetDate(
-        _ task: TaskDTO, morningTime: String? = TargetContextStore.morningTime, calendar: Calendar = .current
+        _ task: TaskDTO, morningTime: String? = TargetContextStore.morningTime, calendar: Calendar = .current,
+        now: Date = Date()
     ) -> Date? {
-        let implied = impliedTargetDate(task, morningTime: morningTime, calendar: calendar)
+        let implied = impliedTargetDate(task, morningTime: morningTime, calendar: calendar, now: now)
         guard let due = task.dueDate else { return implied }
         guard let implied else { return due }
         return implied < due ? implied : due
@@ -80,7 +94,7 @@ enum TargetAge {
         _ task: TaskDTO, now: Date = Date(), calendar: Calendar = .current,
         morningTime: String? = TargetContextStore.morningTime
     ) -> Int? {
-        guard let target = effectiveTargetDate(task, morningTime: morningTime, calendar: calendar),
+        guard let target = effectiveTargetDate(task, morningTime: morningTime, calendar: calendar, now: now),
               target <= now
         else { return nil }
         var first: Date

@@ -7,6 +7,7 @@
  * confirm). PROVISIONAL, like the cap itself.
  */
 import { showToast } from '@/lib/toast'
+import { DEADLINE_TODAY_HOLDS } from '@/lib/task-model-words'
 
 export class PastDeadlineRefusal extends Error {
   readonly code = 'PAST_DEADLINE'
@@ -37,9 +38,15 @@ export function offerSnoozeAnyway(refusal: PastDeadlineRefusal): void {
       label: 'Snooze anyway',
       onClick: () => {
         refusal.retry().then(
-          () =>
+          (result) =>
             showToast({
-              message: 'Snoozed past the deadline',
+              // On the deadline's own day the nag stays on (ruling A4): the
+              // server's description says so, and the toast passes it on.
+              message:
+                (result as { description?: string } | undefined)?.description ===
+                DEADLINE_TODAY_HOLDS
+                  ? DEADLINE_TODAY_HOLDS
+                  : 'Snoozed past the deadline',
               type: 'success',
               action: { label: 'Undo', onClick: () => void undoLast() },
             }),

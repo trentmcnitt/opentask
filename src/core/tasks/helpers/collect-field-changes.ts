@@ -39,6 +39,8 @@ export interface FieldChangeData {
   beforeState: Partial<Task> & { id: number }
   afterState: Partial<Task> & { id: number }
   isSnoozeScenario: boolean
+  /** A3 (2026-10-11): `cap_at_deadline` stopped this snooze AT the deadline. */
+  cappedAtDeadline?: boolean
 }
 
 export interface CollectFieldChangesOptions {
@@ -123,10 +125,11 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // it, `effectiveDueAt` asks rrule.js for today's occurrence of a bare weekly
   // rule, which lands on an arbitrary weekday. Clearing it here rather than in
   // updateTask means bulk edit retires correctly too.
-  const input: FieldChangesInput =
+  const retired: FieldChangesInput =
     wasTracked && !willBeTracked && options.input.rrule === undefined
       ? { ...options.input, rrule: null }
       : options.input
+  const input = capSnoozeAtDeadline(task, retired, now)
 
   const data: FieldChangeData = {
     setClauses: [],
@@ -135,6 +138,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     beforeState: { id: task.id, title: task.title },
     afterState: { id: task.id, title: task.title },
     isSnoozeScenario: false,
+    cappedAtDeadline: input !== retired,
   }
 
   // Track basic field changes
@@ -266,6 +270,21 @@ function collectOriginReset(data: FieldChangeData, task: Task, input: FieldChang
   if (task.snooze_count !== 0) {
     trackField(data, 'snooze_count', task.snooze_count, 0)
   }
+}
+
+/**
+ * A3 (Trent, 2026-10-11): a QUICK snooze — a notification, widget, watch, Mac
+ * menu bar or native row — stops AT the deadline instead of passing it, and
+ * says so. The caller opts in with `cap_at_deadline`; only the web's explicit
+ * "Snooze anyway" (`allow_past_deadline`) goes past. Only a snooze is capped:
+ * not a re-target, not a schedule change, and only while the deadline is ahead.
+ */
+function capSnoozeAtDeadline(task: Task, input: FieldChangesInput, now: Date): FieldChangesInput {
+  if (!input.cap_at_deadline || !input.due_at || input.reset_original_due_at) return input
+  if (input.rrule !== undefined) return input
+  const deadline = input.deadline_at !== undefined ? input.deadline_at : task.deadline_at
+  if (!crossesDeadline(deadline, input.due_at, now)) return input
+  return { ...input, due_at: deadline }
 }
 
 /**

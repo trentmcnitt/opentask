@@ -68,7 +68,12 @@ async function createUser() {
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
 
   const result = db
-    .prepare('INSERT INTO users (email, name, password_hash, timezone) VALUES (?, ?, ?, ?)')
+    // default_sort is explicit: a database created before 2026-10-11 still
+    // carries the column's old 'due_date' default, and a new user starts on
+    // the horizon sort either way.
+    .prepare(
+      "INSERT INTO users (email, name, password_hash, timezone, default_sort) VALUES (?, ?, ?, ?, 'horizon')",
+    )
     .run(email, username, passwordHash, timezone)
 
   const userId = result.lastInsertRowid as number

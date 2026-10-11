@@ -5,7 +5,7 @@
  */
 
 import { getTargetContext } from './target-context'
-import { crossesDeadline, effectiveTargetAt } from '@/lib/task-segments'
+import { crossesDeadline, effectiveTargetAt, type TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
@@ -377,6 +377,8 @@ export interface BulkSnoozeOptions {
    * `deadlineSkipped` (2026-10-10) — the way an Urgent task is.
    */
   allowPastDeadlineIds?: number[]
+  /** A3 (2026-10-11): ids whose snooze stops AT their deadline, reported. */
+  capAtDeadlineIds?: number[]
 }
 
 export interface BulkSnoozeResult {
@@ -401,6 +403,8 @@ export interface BulkSnoozeResult {
   noDueDateSkipped: number
   /** Left where they were: the snooze would have crossed their deadline. */
   deadlineSkipped: number
+  /** Snoozed only as far as their deadline (`capAtDeadlineIds`, A3). */
+  deadlineCapped: number
   /**
    * The ids actually moved, in the order they were snoozed.
    *
@@ -431,10 +435,50 @@ export interface BulkSnoozeResult {
  * dateless task (absolute mode only) gets its first date, which is not a
  * snooze; a task already due at the target is left alone and not counted.
  */
+/**
+ * Where one task's bulk snooze lands against its deadline. The deadline caps
+ * a snooze (2026-10-10): one that would cross a deadline still ahead is
+ * skipped and reported (null) — or, for an id the caller listed in
+ * `capAtDeadlineIds`, moved only as far as the deadline (ruling A3,
+ * 2026-10-11). An id the user confirmed (`allowed`) goes where asked. Only a
+ * SNOOZE is capped — a dateless task getting its first date is setting a
+ * target — and the EFFECTIVE target counts: a deadline-only task already
+ * nagging from its implied target is being snoozed too.
+ */
+function placeAgainstDeadline(
+  task: Task,
+  dueAt: string,
+  opts: { allowed: boolean; cap: boolean; ctx: TargetContext; now: Date },
+): { dueAt: string; capped: boolean } | null {
+  const target = effectiveTargetAt(task, opts.ctx, opts.now)
+  const nagging = target !== null && Date.parse(target) <= opts.now.getTime()
+  const isSnooze = task.due_at !== null || nagging
+  if (!isSnooze || opts.allowed || !crossesDeadline(task.deadline_at, dueAt, opts.now)) {
+    return { dueAt, capped: false }
+  }
+  if (opts.cap && task.deadline_at) return { dueAt: task.deadline_at, capped: true }
+  return null
+}
+
+/** Exactly one of `until` / `deltaMinutes`, and a parseable `until`. */
+function validateSnoozeMode(until: string | undefined, deltaMinutes: number | undefined): void {
+  if (until === undefined && deltaMinutes === undefined) {
+    throw new ValidationError('Either until or deltaMinutes must be provided')
+  }
+  if (until !== undefined && deltaMinutes !== undefined) {
+    throw new ValidationError('Cannot provide both until and deltaMinutes')
+  }
+  // A past `until` is allowed: the tasks just show as over target at once.
+  if (until !== undefined && isNaN(new Date(until).getTime())) {
+    throw new ValidationError('Invalid snooze target datetime')
+  }
+}
+
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds, dueBeforeIds } =
     options
   const allowPastDeadline = new Set(options.allowPastDeadlineIds ?? [])
+  const capAtDeadline = new Set(options.capAtDeadlineIds ?? [])
 
   if (taskIds.length === 0) {
     return {
@@ -446,26 +490,12 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       reminderSkipped: 0,
       noDueDateSkipped: 0,
       deadlineSkipped: 0,
+      deadlineCapped: 0,
       snoozedIds: [],
     }
   }
 
-  // Validate that exactly one mode is specified
-  if (until === undefined && deltaMinutes === undefined) {
-    throw new ValidationError('Either until or deltaMinutes must be provided')
-  }
-  if (until !== undefined && deltaMinutes !== undefined) {
-    throw new ValidationError('Cannot provide both until and deltaMinutes')
-  }
-
-  // Validate absolute snooze target if provided
-  if (until !== undefined) {
-    const snoozeTarget = new Date(until)
-    if (isNaN(snoozeTarget.getTime())) {
-      throw new ValidationError('Invalid snooze target datetime')
-    }
-  }
-  // Note: We allow snoozing to past times - tasks will just appear overdue immediately.
+  validateSnoozeMode(until, deltaMinutes)
 
   const nowStr = nowUtc()
 
@@ -503,12 +533,14 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       reminderSkipped,
       noDueDateSkipped,
       deadlineSkipped: 0,
+      deadlineCapped: 0,
       snoozedIds: [],
     }
   }
 
   const nowDate = new Date()
   let deadlineSkipped = 0
+  let deadlineCapped = 0
   const targetCtx = getTargetContext(userId)
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
@@ -524,7 +556,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       // Absolute mode: every task gets the same target. Relative mode: the
       // delta is added to each task's own due_at (dateless tasks were filtered
       // out above).
-      const newDueAt =
+      let newDueAt =
         until !== undefined
           ? until
           : new Date(new Date(task.due_at!).getTime() + deltaMinutes! * 60_000).toISOString()
@@ -538,19 +570,19 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       // of `{ due_at }`. The reminder and quota filters above still run first,
       // so a sweep skips those rows instead of failing; the refusals inside
       // `collectFieldChanges` are only a safety net here.
-      // The deadline caps a snooze (2026-10-10): skipped and reported, never
-      // clamped. Only a SNOOZE is capped — a dateless task getting its first
-      // date is setting a target, not snoozing one.
       const allowed = allowPastDeadline.has(task.id)
-      // The EFFECTIVE target: a deadline-only task already nagging from its
-      // implied target is snoozed too, so it is capped like any other.
-      const target = effectiveTargetAt(task, targetCtx)
-      const nagging = target !== null && Date.parse(target) <= nowDate.getTime()
-      const isSnooze = task.due_at !== null || nagging
-      if (isSnooze && !allowed && crossesDeadline(task.deadline_at, newDueAt)) {
+      const placed = placeAgainstDeadline(task, newDueAt, {
+        allowed,
+        cap: capAtDeadline.has(task.id),
+        ctx: targetCtx,
+        now: nowDate,
+      })
+      if (placed === null) {
         deadlineSkipped++
         continue
       }
+      if (placed.capped) deadlineCapped++
+      newDueAt = placed.dueAt
 
       const data = collectFieldChanges({
         task,
@@ -598,6 +630,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       reminderSkipped,
       noDueDateSkipped,
       deadlineSkipped,
+      deadlineCapped,
       snoozedIds: moved.map((t) => t.id),
     }
   })
@@ -705,6 +738,8 @@ export interface BulkEditOptions {
   dateTaskIds?: number[]
   /** Ids the user confirmed snoozing past their deadline (see `BulkSnoozeOptions`). */
   allowPastDeadlineIds?: number[]
+  /** A3: ids whose snooze stops AT their deadline (see `BulkSnoozeOptions`). */
+  capAtDeadlineIds?: number[]
 }
 
 export interface BulkEditResult {
@@ -789,7 +824,7 @@ function planBulkEditDates(
   changes: BulkEditChanges,
   opts: Pick<
     BulkEditOptions,
-    'includeTaskIds' | 'deltaMinutes' | 'dateTaskIds' | 'allowPastDeadlineIds'
+    'includeTaskIds' | 'deltaMinutes' | 'dateTaskIds' | 'allowPastDeadlineIds' | 'capAtDeadlineIds'
   >,
 ): BulkEditDatePlan {
   const { includeTaskIds, deltaMinutes, dateTaskIds } = opts
@@ -839,7 +874,11 @@ function planBulkEditDates(
   // confirmed it. A deliberate re-target (`reset_original_due_at`) is not a
   // snooze and is not capped.
   if (isSnoozeEdit && !changes.reset_original_due_at) {
-    const allowed = new Set(opts.allowPastDeadlineIds ?? [])
+    // A capped id isn't withheld: `inputFor` moves it only as far as its deadline.
+    const allowed = new Set([
+      ...(opts.allowPastDeadlineIds ?? []),
+      ...(opts.capAtDeadlineIds ?? []),
+    ])
     const before = plan.skipped
     const now = Date.now()
     const targetCtx = t0Ctx(tasks)
@@ -960,6 +999,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       input.due_at = new Date(new Date(task.due_at).getTime() + deltaMinutes * 60_000).toISOString()
     }
     if (options.allowPastDeadlineIds?.includes(task.id)) input.allow_past_deadline = true
+    else if (options.capAtDeadlineIds?.includes(task.id)) input.cap_at_deadline = true
     if (input.quota_prompt_config) {
       input.quota_prompt_config = mergePromptConfig(
         task.quota_prompt_config,

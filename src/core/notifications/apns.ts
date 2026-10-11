@@ -599,6 +599,49 @@ export async function sendApnsSweepResultNotification(
   )
 }
 
+/** One deadline-cap note at a time: a newer one replaces the older. */
+export const DEADLINE_CAP_COLLAPSE_ID = 'deadline-cap'
+
+/**
+ * "Snoozed to deadline 6:00 PM" (deadline-cap-feedback.ts, ruling A3): a quick
+ * snooze from a notification button stopped AT the deadline instead of where
+ * it was asked. A banner without sound, like the sweep result above.
+ *
+ * NO `taskId` on purpose: the capped snooze itself sends the per-task
+ * `dismiss` push for that task, and a banner carrying its id would be cleared
+ * by it whenever the silent push lands second. No category either — there is
+ * nothing to act on; tapping opens the app, which clears it with dismiss-all.
+ */
+export function buildDeadlineCapNotification(
+  deviceToken: string,
+  topic: string,
+  payload: { title: string; body: string },
+): Notification {
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    threadId: NOTIFICATION_THREADS.tasks,
+    collapseId: DEADLINE_CAP_COLLAPSE_ID,
+    priority: Priority.immediate,
+    data: { kind: DEADLINE_CAP_COLLAPSE_ID },
+    aps: { 'interruption-level': 'active' },
+  })
+}
+
+export async function sendApnsDeadlineCapNotification(
+  userId: number,
+  payload: { title: string; body: string },
+): Promise<void> {
+  await sendToAllDevices(
+    userId,
+    (device) => buildDeadlineCapNotification(device.device_token, device.bundle_id, payload),
+    'deadline cap notifications',
+    (devices) => {
+      log.info('apns', `Sending deadline cap notification to ${devices.length} device(s)`)
+    },
+  )
+}
+
 /**
  * Whether a registered device shows an app-icon badge. The watch app registers
  * its own APNs token (bundle id `<app>.watchapp`, Apple's naming for a watch

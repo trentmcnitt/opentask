@@ -988,6 +988,10 @@ paths:
                   type: array
                   items: { type: integer }
                   description: Ids the user confirmed snoozing past their deadline (2026-10-10).
+                cap_at_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids whose snooze stops AT their deadline instead of being skipped (ruling A3, 2026-10-11) — what the native one-tap snoozes send. Counted in `capped_deadline` on bulk snooze.
       responses:
         '200':
           description: Bulk operation result
@@ -1188,6 +1192,10 @@ paths:
                   type: array
                   items: { type: integer }
                   description: Ids the user confirmed snoozing past their deadline (2026-10-10).
+                cap_at_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids whose snooze stops AT their deadline instead of being skipped (ruling A3, 2026-10-11) — what the native one-tap snoozes send. Counted in `capped_deadline` on bulk snooze.
                 delta_minutes:
                   type: integer
                   minimum: -1440
@@ -4729,6 +4737,15 @@ components:
             A snooze that would move the target past a deadline that is still
             ahead is refused with 409 `PAST_DEADLINE`; send this once the user
             confirms. A deliberate re-target is not capped. PROVISIONAL.
+        cap_at_deadline:
+          type: boolean
+          description: |
+            Ruling A3 (2026-10-11): a quick snooze from a native surface stops
+            AT a deadline still ahead instead of passing it — the target is
+            moved to the deadline and the response says `capped_at_deadline:
+            true` (the description reads "Snoozed to deadline …"). Only a
+            snooze is capped, and `allow_past_deadline` wins. Also on
+            `POST /api/tasks/{id}/snooze`.
         reset_original_due_at:
           type: boolean
           description: |
@@ -5172,6 +5189,9 @@ components:
         skipped_deadline:
           type: integer
           description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
+        capped_deadline:
+          type: integer
+          description: Snoozed only as far as their deadline — ids in `cap_at_deadline_ids` whose snooze would have crossed it (ruling A3, 2026-10-11). `POST /api/tasks/bulk/snooze` only.
         skipped_no_due_date:
           type: integer
           description: Relative mode only — tasks with no due_at to add the delta to

@@ -9,9 +9,11 @@
 import { describe, test, expect, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
-import { createTask, updateTask, markDone, bulkSnooze } from '@/core/tasks'
+import { createTask, updateTask, markDone, bulkSnooze, bulkEdit } from '@/core/tasks'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { getTaskById } from '@/core/tasks/read'
+import { snoozeTask } from '@/core/tasks/snooze'
+import { getPreferences } from '@/core/users/preferences'
 import { executeUndo, executeRedo } from '@/core/undo'
 import {
   considerTasks,
@@ -32,6 +34,7 @@ import {
 import { countTasks } from '@/lib/task-counts'
 import { normalizeTargetAliases } from '@/core/validation/task'
 import { formatTaskResponse } from '@/lib/format-task'
+import { DEADLINE_TODAY_HOLDS } from '@/lib/task-model-words'
 import { PastDeadlineError, ValidationError } from '@/core/errors'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -503,6 +506,135 @@ describe('Task model', () => {
         input: { horizon: 'months' },
       })
       expect(getTaskById(t.id)!.horizon_set_at).not.toBe(first)
+    })
+  })
+
+  describe('rulings A3 and A4 (Trent, 2026-10-11)', () => {
+    test('TM-060: a quick snooze stops AT the deadline, says so, and keeps the nag on (A3)', () => {
+      const t = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
+      const r = snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        until: at('2026-10-11T09:00'),
+        capAtDeadline: true,
+      })
+      expect(r.task.due_at).toBe(at('2026-10-10T18:00'))
+      expect(getTaskById(t.id)!.deadline_nag_off).toBe(false)
+      // Under the deadline it is an ordinary snooze.
+      const free = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-14T18:00') })
+      const r2 = snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: free.id,
+        until: at('2026-10-11T09:00'),
+        capAtDeadline: true,
+      })
+      expect(r2.task.due_at).toBe(at('2026-10-11T09:00'))
+      // A passed deadline caps nothing: a snooze after it goes where asked.
+      const late = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
+      const r3 = snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: late.id,
+        until: at('2026-10-11T09:00'),
+        capAtDeadline: true,
+      })
+      expect(r3.task.due_at).toBe(at('2026-10-11T09:00'))
+    })
+
+    test('TM-061: bulk snooze and bulk edit cap the listed ids and count them (A3)', () => {
+      const capped = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
+      const free = make({ due_at: at('2026-10-10T09:00') })
+      const r = bulkSnooze({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskIds: [capped.id, free.id],
+        until: at('2026-10-11T09:00'),
+        capAtDeadlineIds: [capped.id, free.id],
+      })
+      expect(r.tasksAffected).toBe(2)
+      expect(r.deadlineCapped).toBe(1)
+      expect(r.deadlineSkipped).toBe(0)
+      expect(getTaskById(capped.id)!.due_at).toBe(at('2026-10-10T18:00'))
+      expect(getTaskById(free.id)!.due_at).toBe(at('2026-10-11T09:00'))
+
+      const viaEdit = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T20:00') })
+      bulkEdit({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskIds: [viaEdit.id],
+        changes: { due_at: at('2026-10-12T09:00') },
+        capAtDeadlineIds: [viaEdit.id],
+      })
+      expect(getTaskById(viaEdit.id)!.due_at).toBe(at('2026-10-10T20:00'))
+    })
+
+    test('TM-062: remove-target silences the 4-day nag but it re-arms on the deadline day (A4)', () => {
+      const t = make({ deadline_at: at('2026-10-13T18:00') })
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        input: { due_at: null, deadline_nag_off: true },
+      })
+      const ctx = { timezone: tz, morningTime: '09:00' }
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
+      // The deadline's own day, at the morning time.
+      expect(impliedTargetAt(getTaskById(t.id)!, ctx)).toBe(at('2026-10-13T09:00'))
+      vi.setSystemTime(new Date(at('2026-10-13T09:30')))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+      // And stays on after the deadline passes, until done.
+      vi.setSystemTime(new Date(at('2026-10-14T09:30')))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+    })
+
+    test('TM-063: re-arming leaves a target at or before the deadline alone (A4)', () => {
+      const ctx = { timezone: tz, morningTime: '09:00' }
+      const base = {
+        rrule: null,
+        deadline_at: at('2026-10-13T18:00'),
+        deadline_nag_off: true,
+      }
+      // The user's own target before the deadline is honored as set.
+      expect(impliedTargetAt({ ...base, due_at: at('2026-10-13T15:00') }, ctx)).toBeNull()
+      // A target past the deadline: the deadline morning comes first.
+      const past = { ...base, due_at: at('2026-10-15T09:00') }
+      expect(effectiveTargetAt(past, ctx, SAT)).toBe(at('2026-10-13T09:00'))
+      // Once the deadline has passed, that target (a deliberate snooze past it) holds.
+      expect(effectiveTargetAt(past, ctx, new Date(at('2026-10-14T09:00')))).toBe(
+        at('2026-10-15T09:00'),
+      )
+      // A deadline earlier than the morning re-arms at the deadline itself.
+      const early = { ...base, due_at: null, deadline_at: at('2026-10-13T07:00') }
+      expect(impliedTargetAt(early, ctx)).toBe(at('2026-10-13T07:00'))
+    })
+
+    test('TM-065: a snooze on the deadline day is saved, and says why the nag stays (A4)', () => {
+      vi.setSystemTime(new Date(at('2026-10-13T10:00')))
+      const t = make({ deadline_at: at('2026-10-13T18:00') })
+      const r = updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        input: { due_at: at('2026-10-14T09:00'), allow_past_deadline: true },
+      })
+      expect(r.task.due_at).toBe(at('2026-10-14T09:00'))
+      expect(r.description).toBe(DEADLINE_TODAY_HOLDS)
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+      // An ordinary snooze before the deadline says what it did.
+      const u = make({ due_at: at('2026-10-13T09:00'), deadline_at: at('2026-10-13T18:00') })
+      const r2 = updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: u.id,
+        input: { due_at: at('2026-10-13T15:00') },
+      })
+      expect(r2.description).not.toBe(DEADLINE_TODAY_HOLDS)
+    })
+
+    test('TM-064: a new user starts on the horizon sort', () => {
+      expect(getPreferences(TEST_USER_ID).default_sort).toBe('horizon')
     })
   })
 })
