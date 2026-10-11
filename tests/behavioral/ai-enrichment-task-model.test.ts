@@ -211,6 +211,16 @@ describe('the guard (sanitizeTaskModelFields)', () => {
     ).toMatchObject({ deadline_at: null, horizon: null })
   })
 
+  test('"latest" and "good through" are cutoff wording; bare "through" is not', () => {
+    const deadline = (text: string) =>
+      sanitizeTaskModelFields(result({ deadline_at: '2026-10-12T10:00:00' }), text).deadline_at
+    expect(deadline('text Matthew today, latest tomorrow 10 AM')).toBe('2026-10-12T10:00:00')
+    expect(deadline('return the library books Friday at the latest')).toBe('2026-10-12T10:00:00')
+    expect(deadline('use the coupon, it is good through the 20th')).toBe('2026-10-12T10:00:00')
+    expect(deadline('the sale runs through Sunday, buy the rug')).toBe('2026-10-12T10:00:00')
+    expect(deadline('go through the mail Monday')).toBeNull()
+  })
+
   test('bare "today" / "tomorrow" are a day, not a pace', () => {
     expect(
       sanitizeTaskModelFields(result({ horizon: 'days' }), 'call mom tomorrow').horizon,

@@ -827,9 +827,14 @@ function parseLocalDateTime(value: string, timezone: string): DateTime | null {
 /**
  * Words that state a cutoff. `deadline_at` survives only when the input has one
  * — see `sanitizeTaskModelFields`.
+ *
+ * "latest" covers "tomorrow 10 AM at the latest" / "latest tomorrow 10 AM"
+ * (quick capture: a target today AND a cutoff). "through" counts only after a
+ * validity word ("good through the 20th", "the sale runs through Sunday") —
+ * bare "through" is mostly "go through the mail", which states no cutoff.
  */
 const DEADLINE_CUE =
-  /\b(by|before|due|deadline|deadlines|expire|expires|expired|expiring|expiry|expiration|until|till|no later than|close|closes|closing|cut-?off|last day|ends?|runs? out)\b/i
+  /\b(by|before|due|deadline|deadlines|expire|expires|expired|expiring|expiry|expiration|until|till|no later than|latest|(?:good|valid|open|lasts?|runs?|only) (?:through|thru)|close|closes|closing|cut-?off|last day|ends?|runs? out)\b/i
 
 /**
  * Words that state a pace. `horizon` survives only when the input has one. Bare

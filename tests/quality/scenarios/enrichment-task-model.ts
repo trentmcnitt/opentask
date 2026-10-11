@@ -157,6 +157,95 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
     },
   },
 
+  {
+    id: 'enrich-tm-target-today-latest-tomorrow',
+    feature: 'enrichment',
+    description:
+      'Quick capture: "today, latest tomorrow 10 AM" → target today AND deadline tomorrow 10 AM',
+    input: {
+      text: 'text Matthew today, latest tomorrow 10 AM',
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        due_at: iso(0),
+        deadline_at: iso(1),
+        horizon: null,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        '"today" is when to do it → due_at today: the default task time (9:00 AM) if it has not passed yet, otherwise ' +
+        'the next reasonable time today (a run after ~10 PM may fairly land on tomorrow morning, before the deadline — minor). ' +
+        '"latest tomorrow 10 AM" is the cutoff → deadline_at tomorrow at 10:00 AM local (T10:00:00), not end of day. ' +
+        'The target must not fall after the deadline. Title "Text Matthew" (both date phrases removed).',
+    },
+  },
+  {
+    id: 'enrich-tm-at-the-latest',
+    feature: 'enrichment',
+    description: '"<day> at the latest" is a cutoff → deadline only, no target',
+    input: {
+      text: `return the library books ${weekday(4)} at the latest`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: iso(4),
+        due_at: null,
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        `"${weekday(4)} at the latest" is a cutoff → deadline_at the coming ${weekday(4)}, end of day (T23:59:00). ` +
+        'due_at MUST be null — no day to do it was named, only the latest day. Title "Return the library books".',
+    },
+  },
+  {
+    id: 'enrich-tm-good-through',
+    feature: 'enrichment',
+    description: '"good through the 20th" is a cutoff → deadline only',
+    input: {
+      text: `use the bookstore gift card, it's good through the ${ordinal(9)}`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: iso(9),
+        due_at: null,
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        `"good through the ${ordinal(9)}" means usable through that day → deadline_at ${monthDay(9)}, end of day. ` +
+        'due_at null (no day to use it was named). Title "Use the bookstore gift card"; the validity phrase may go to notes or be dropped.',
+    },
+  },
+  {
+    id: 'enrich-tm-pace-and-deadline',
+    feature: 'enrichment',
+    description: 'Pace wording AND a cutoff in one line → horizon and deadline, no target',
+    input: {
+      text: `sometime this week give Dana a heads-up about the schedule change, it needs to happen by ${weekday(5)}`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        horizon: 'weeks',
+        deadline_at: iso(5),
+        due_at: null,
+        labels: [],
+      },
+      quality_notes:
+        `"sometime this week" is a pace → horizon weeks. "by ${weekday(5)}" is the cutoff → deadline_at the coming ${weekday(5)}, end of day. ` +
+        'due_at MUST be null — neither phrase names a day to do it. Title "Give Dana a heads-up about the schedule change".',
+    },
+  },
+
   // ---------------------------------------------------------------------------
   // A date that is a target, not a deadline
   // ---------------------------------------------------------------------------
