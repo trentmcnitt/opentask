@@ -1573,6 +1573,37 @@ paths:
                     type: object
                     properties:
                       deferred: { type: integer }
+  /api/task-segments/restore:
+    post:
+      summary: Put task-segment rows back
+      operationId: taskSegmentRestore
+      tags: [Reminders]
+      description: >
+        The put-back behind "Show N considered" (2026-10-11): clears `last_considered_at` and `segment_deferred_at`, so each row waits in its segment again today and comes back daily until it is considered. One undo entry. The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      restored: { type: integer }
   /api/task-segments/target-today:
     post:
       summary: Target tasks today

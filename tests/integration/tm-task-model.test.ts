@@ -120,6 +120,14 @@ describe('Task model over HTTP', () => {
     expect((await json(c)).data.considered).toBe(1)
     const d = await apiFetch('/api/task-segments/defer', { method: 'POST', body: { ids: [t.id] } })
     expect((await json(d)).data.deferred).toBe(1)
+    const r = await apiFetch('/api/task-segments/restore', {
+      method: 'POST',
+      body: { ids: [t.id] },
+    })
+    expect((await json(r)).data.restored).toBe(1)
+    const back = (await json(await apiFetch(`/api/tasks/${t.id}`))).data
+    expect(back.last_considered_at).toBeNull()
+    expect(back.segment_deferred_at).toBeNull()
     const tt = await apiFetch('/api/task-segments/target-today', {
       method: 'POST',
       body: { ids: [t.id] },

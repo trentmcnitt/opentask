@@ -741,10 +741,12 @@ test.describe('Reminders surface', () => {
       await openReminders(page)
       const surface = page.getByRole('region', { name: 'Reminders' })
 
-      // Nothing is folded on arrival — the whole day is readable by scrolling.
+      // No slot is folded on arrival — the whole day is readable by scrolling.
       // This is the point: an unfinished morning thought must stay visible at
-      // four in the afternoon without hunting for it.
-      await expect(surface.getByRole('button', { expanded: false })).toHaveCount(0)
+      // four in the afternoon without hunting for it. (Scoped to the slots: a
+      // task segment's "Show N considered" is folded by design.)
+      const slots = surface.locator('[data-slot-group]')
+      await expect(slots.getByRole('button', { expanded: false })).toHaveCount(0)
       await expect(page.getByRole('option', { name: 'An early unfinished thought' })).toBeVisible()
       await expect(page.getByRole('option', { name: 'A thought for much later' })).toBeVisible()
       // No scroll on arrival (Trent, 2026-09-22): it used to jump to the slot
@@ -758,9 +760,9 @@ test.describe('Reminders surface', () => {
       }
 
       // Folding one still works and sticks — the default is a default, not a lock.
-      const first = surface.getByRole('button', { expanded: true }).first()
+      const first = slots.getByRole('button', { expanded: true }).first()
       await first.click()
-      await expect(surface.getByRole('button', { expanded: false })).toHaveCount(1)
+      await expect(slots.getByRole('button', { expanded: false })).toHaveCount(1)
     } finally {
       await deleteTasks(page, ids)
     }

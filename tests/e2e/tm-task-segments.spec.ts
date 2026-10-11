@@ -89,6 +89,43 @@ test.describe('Task segments', () => {
     }
   })
 
+  test('counts "X of Y"; Show considered lists the considered rows and puts one back', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    for (const s of ['A', 'B']) {
+      ids.push(await create(page, { title: uniqueTitle(`TM put back ${s}`), horizon: 'days' }))
+    }
+    backdateCreated(ids, { inSegments: true })
+    try {
+      await page.goto('/reminders')
+      const days = page.locator('[data-task-segment="days"]')
+      const count = days.getByLabel(/^\d+ of \d+ considered$/)
+      await expect(count).toBeVisible()
+      const before = (await count.getAttribute('aria-label'))!.match(/^(\d+) of (\d+)/)!
+      await segmentRow(page, ids[0])
+        .getByRole('button', { name: /as considered/ })
+        .click()
+      await expect(segmentRow(page, ids[0])).toHaveCount(0)
+      // The considered count climbs; the segment's size stays put.
+      await expect(count).toHaveAttribute(
+        'aria-label',
+        `${Number(before[1]) + 1} of ${before[2]} considered`,
+      )
+
+      // Folded by default; open it and put the row back.
+      const considered = days.locator(`[data-considered-task-id="${ids[0]}"]`)
+      await expect(considered).toHaveCount(0)
+      await days.locator('[data-segment-considered-toggle]').click()
+      await expect(considered).toBeVisible()
+      await considered.getByRole('button', { name: /^Put back/ }).click()
+      await expect(segmentRow(page, ids[0])).toBeVisible()
+      await expect.poll(async () => (await stateOf(page, ids[0])).last_considered_at).toBeNull()
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
   test('the horizon chip changes the horizon', async ({ authenticatedPage: page }) => {
     const id = await create(page, { title: uniqueTitle('TM horizon'), horizon: 'days' })
     backdateCreated([id], { inSegments: true })

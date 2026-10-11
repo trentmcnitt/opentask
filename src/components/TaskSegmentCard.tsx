@@ -6,7 +6,6 @@ import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,14 +85,31 @@ export function TaskSegmentCard({
     <section
       aria-label={`Tasks: ${HORIZON_LABELS[segment.horizon]}`}
       data-task-segment={segment.horizon}
-      className={cn(panel ? 'px-3 pt-3 pb-2' : 'bg-muted/30 rounded-2xl px-3 py-3')}
+      // The card's inset + the row's own padding = the slot rows' (12px on both
+      // surfaces), so circles and checkboxes line up down the whole column.
+      className={cn(panel ? 'px-2 pt-3 pb-2' : 'bg-muted/30 rounded-2xl px-1 py-3')}
     >
-      <header className="flex items-start gap-2 px-1">
+      <div className={cn('flex items-start gap-2', panel ? 'px-1' : 'px-2')}>
         <div className="min-w-0 flex-1">
           <h2 className="text-foreground text-sm font-semibold">
             Tasks · {HORIZON_LABELS[segment.horizon]}
-            <span className="text-muted-foreground ml-2 text-xs font-normal">
-              {finished ? 'Done for today' : `${segment.waiting} to consider`}
+            {/* "X of Y", the slots' count (Trent, 2026-10-11): X is what was
+                handled today — considered, or deferred by Defer all — and Y
+                the segment's size today, so the number climbs rather than
+                counting down. A task marked done leaves the segment
+                altogether, so it is in neither. */}
+            <span
+              className={cn(
+                'ml-2 text-xs font-normal tabular-nums',
+                finished ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+              )}
+              aria-label={`${doneCount} of ${total} considered`}
+            >
+              <span className={cn(!finished && 'text-foreground font-medium')}>{doneCount}</span> of{' '}
+              {total}
+              {finished && (
+                <Check className="ml-1 inline size-3.5 align-[-2px]" strokeWidth={2.5} />
+              )}
             </span>
           </h2>
           <p className="text-muted-foreground/80 text-xs">{HORIZON_HINTS[segment.horizon]}</p>
@@ -108,9 +124,15 @@ export function TaskSegmentCard({
             Defer all
           </button>
         )}
-      </header>
+      </div>
 
-      <div className="bg-foreground/10 mx-1 mt-2 mb-2 h-1 overflow-hidden rounded-full" aria-hidden>
+      <div
+        className={cn(
+          'bg-foreground/10 mt-2 mb-2 h-1 overflow-hidden rounded-full',
+          panel ? 'mx-1' : 'mx-2',
+        )}
+        aria-hidden
+      >
         <div
           className="h-full rounded-full bg-green-600 transition-[width]"
           style={{ width: `${total === 0 ? 0 : (doneCount / total) * 100}%` }}
@@ -120,7 +142,12 @@ export function TaskSegmentCard({
       {/* Counted from what still waits, so it leaves as rows are considered,
           without waiting for the next fetch (the server's `nudge` rule). */}
       {segment.waiting > SEGMENT_NUDGE_THRESHOLD && (
-        <p className="text-muted-foreground mx-1 mb-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
+        <p
+          className={cn(
+            'text-muted-foreground mb-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs',
+            panel ? 'mx-1' : 'mx-2',
+          )}
+        >
           Over {SEGMENT_NUDGE_THRESHOLD} tasks to consider. Use{' '}
           <button
             type="button"
@@ -154,6 +181,11 @@ export function TaskSegmentCard({
           {showAll ? 'Show fewer' : `Show all ${shown.length}`}
         </button>
       )}
+      <SegmentConsideredDisclosure
+        rows={segment.rows.filter((r) => r.state !== 'waiting')}
+        label={HORIZON_LABELS[segment.horizon]}
+        onPutBack={(task) => void actions.restore(task)}
+      />
     </section>
   )
 }
@@ -188,17 +220,28 @@ function TaskSegmentRow({
           consider()
         }
       }}
+      // The SAME geometry as the rows around it (Trent, 2026-10-11: circles and
+      // checkboxes must line up down the whole card): on the panel the
+      // panel's reminder row (`gap-2.5 px-1 py-1.5`, 19px controls, 13.5px
+      // title), on /reminders the page's (`gap-3 px-2 py-2.5`, 24px controls,
+      // 16px title) — `QuotaPromptRow`'s two variants, exactly.
       className={cn(
-        'group flex items-start gap-3 rounded-lg py-1.5 pr-2 pl-1',
-        considered ? 'opacity-60' : 'hover:bg-foreground/[0.03] cursor-pointer',
+        'group flex items-start rounded-xl',
+        panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
+        considered
+          ? 'opacity-60'
+          : cn('cursor-pointer', panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'),
       )}
     >
       {considered ? (
         <span
           aria-hidden
-          className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white"
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
+            panel ? 'size-[19px]' : 'mt-[3px] size-6',
+          )}
         >
-          <Check className="size-3.5" strokeWidth={3} />
+          <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
         </span>
       ) : (
         <button
@@ -210,26 +253,38 @@ function TaskSegmentRow({
           }}
           aria-label={`Mark "${task.title}" as considered`}
           title="Considered (seen — not done)"
-          className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors"
+          className={cn(
+            'hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
+            panel ? 'border-foreground/25 size-[19px]' : 'border-foreground/20 mt-[3px] size-6',
+          )}
         >
           <Check
-            className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
+            className={cn(
+              'group-hover:text-foreground/40 text-transparent transition-colors',
+              panel ? 'size-3' : 'size-3.5',
+            )}
             strokeWidth={3}
           />
         </button>
       )}
       <div className="min-w-0 flex-1">
         <p
-          className={cn('text-pretty', panel ? 'text-[13.5px] leading-5' : 'text-[16px] leading-6')}
+          className={cn(
+            'text-foreground text-pretty',
+            panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
+          )}
         >
-          <span className={task.priority >= 3 ? 'text-foreground font-medium' : 'text-foreground'}>
-            {task.title}
-          </span>
+          {task.title}
         </p>
         <TaskSegmentMeta task={task} timezone={timezone} />
       </div>
       {!considered && (
-        <div className="-mr-1 flex shrink-0 items-center gap-0.5 pt-0.5 sm:gap-1.5">
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0.5 sm:gap-1.5',
+            panel ? '-my-[3px]' : 'mt-[3px]',
+          )}
+        >
           <HorizonChip
             task={task}
             segmentHorizon={segmentHorizon}
@@ -249,14 +304,29 @@ function TaskSegmentRow({
             {/* Icon-only on a phone, so the title keeps the width. */}
             <span className="sr-only sm:not-sr-only">Today</span>
           </button>
-          <Checkbox
-            checked={false}
-            onCheckedChange={() => void actions.done(task)}
-            onClick={(e) => e.stopPropagation()}
+          {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
+              stock checkbox: same size, radius, border and no shadow. */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              void actions.done(task)
+            }}
             aria-label={`Done: "${task.title}"`}
             title="Done"
-            className="size-6 cursor-pointer"
-          />
+            className={cn(
+              'group/done border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
+              panel ? 'size-[19px]' : 'size-6',
+            )}
+          >
+            <Check
+              className={cn(
+                'group-hover/done:text-foreground/50 text-transparent transition-colors',
+                panel ? 'size-3' : 'size-3.5',
+              )}
+              strokeWidth={3}
+            />
+          </button>
         </div>
       )}
     </li>
@@ -361,5 +431,63 @@ export function HorizonChip({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * "Show N considered" (2026-10-11): today's considered and deferred rows,
+ * folded away by default so the rapid-fire list stays short — the slots'
+ * `ConsideredDisclosure`, on both the Reminders page and the dashboard panel.
+ * A row's filled circle puts it back (`/api/task-segments/restore`): it waits
+ * again, and comes back daily until it is considered.
+ */
+function SegmentConsideredDisclosure({
+  rows,
+  label,
+  onPutBack,
+}: {
+  rows: SegmentRow[]
+  label: string
+  onPutBack: (task: Task) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (rows.length === 0) return null
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-segment-considered-toggle
+        className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground mt-1 w-full rounded-lg py-2 pl-9 text-left text-xs font-medium transition-colors"
+      >
+        {open ? 'Hide' : 'Show'} {rows.length} considered
+      </button>
+      {open && (
+        <ul className="space-y-0.5 px-1" aria-label={`Considered in Tasks · ${label}`}>
+          {rows.map(({ task, state }) => (
+            <li
+              key={task.id}
+              data-considered-task-id={task.id}
+              className="flex items-start gap-3 rounded-xl px-2 py-2"
+            >
+              <button
+                type="button"
+                onClick={() => onPutBack(task)}
+                aria-label={`Put back "${task.title}"`}
+                title="Put back"
+                className="mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+              >
+                <Check className="size-3" strokeWidth={3} />
+              </button>
+              <p className="text-muted-foreground min-w-0 flex-1 text-[14px] leading-snug text-pretty">
+                {task.title}
+                {state === 'deferred' && <span className="ml-1.5 text-xs">· deferred</span>}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }

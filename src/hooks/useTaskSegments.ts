@@ -191,7 +191,20 @@ export function useTaskSegments({
     [onUndo, onCompleted, refresh],
   )
 
-  return { segments: view, consider, done, targetToday, deferAll, setHorizon }
+  // Put back (2026-10-11): a considered or deferred row from "Show N
+  // considered" waits again — the slots' put-back.
+  const restore = useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        'waiting',
+        () => post('/api/task-segments/restore', { ids: [task.id] }),
+        `Put back: “${task.title}”`,
+      ),
+    [run],
+  )
+
+  return { segments: view, consider, done, targetToday, deferAll, setHorizon, restore }
 }
 
 export type TaskSegmentActions = ReturnType<typeof useTaskSegments>
