@@ -31,6 +31,11 @@ const CLIPBOARD_SORT_LABELS: Record<SortOption, { default: string; reversed: str
 export interface FormattedTask extends Task {
   is_recurring: boolean
   is_snoozed: boolean
+  /**
+   * The TARGET (2026-10-10): when nagging starts. The primary name; `due_at`
+   * is the same value under its deprecated name, kept for older clients.
+   */
+  target_at: string | null
 }
 
 /**
@@ -39,6 +44,7 @@ export interface FormattedTask extends Task {
 export function formatTaskResponse(task: Task): FormattedTask {
   return {
     ...task,
+    target_at: task.due_at,
     is_recurring: task.rrule !== null,
     // Snoozed = the due date has moved off its occurrence origin. The same
     // test the row's snoozed indicator uses (TaskRow). It used to be

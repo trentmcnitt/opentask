@@ -4,6 +4,7 @@
  * Handles both recurring (advance in place) and one-off (archive) tasks.
  */
 
+import { advanceDeadline } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
@@ -285,9 +286,12 @@ function putBackLatestOccurrence(task: Task, userId: number): Task {
   const restoredCount = Math.max(0, task.completion_count - 1)
   const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
   const restoredLastCompleted = previous?.completed_at ?? null
+  // The deadline goes back with the occurrence, by the same offset it moved.
+  const restoredDeadline = advanceDeadline(task, latest.due_at_was)
   const fieldsChanged = [
     'due_at',
     'original_due_at',
+    'deadline_at',
     'completion_count',
     'first_completed_at',
     'last_completed_at',
@@ -296,13 +300,14 @@ function putBackLatestOccurrence(task: Task, userId: number): Task {
   const updatedTask = withTransaction((tx) => {
     tx.prepare(
       `UPDATE tasks
-        SET due_at = ?, original_due_at = ?,
+        SET due_at = ?, original_due_at = ?, deadline_at = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
             updated_at = ?
         WHERE id = ?`,
     ).run(
       latest.due_at_was,
       latest.due_at_was,
+      restoredDeadline,
       restoredCount,
       restoredFirstCompleted,
       restoredLastCompleted,
@@ -320,6 +325,7 @@ function putBackLatestOccurrence(task: Task, userId: number): Task {
         title: task.title,
         due_at: task.due_at,
         original_due_at: task.original_due_at,
+        deadline_at: task.deadline_at,
         completion_count: task.completion_count,
         first_completed_at: task.first_completed_at,
         last_completed_at: task.last_completed_at,
@@ -329,6 +335,7 @@ function putBackLatestOccurrence(task: Task, userId: number): Task {
         title: task.title,
         due_at: latest.due_at_was,
         original_due_at: latest.due_at_was,
+        deadline_at: restoredDeadline,
         completion_count: restoredCount,
         first_completed_at: restoredFirstCompleted,
         last_completed_at: restoredLastCompleted,

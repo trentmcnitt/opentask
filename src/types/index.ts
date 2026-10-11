@@ -106,6 +106,11 @@ export interface Task {
   last_considered_at: string | null
   /** A task segment's Defer All: hidden for that local day. Not a consider. */
   segment_deferred_at: string | null
+  /**
+   * Turns off the deadline's implied nag (deadline − DEADLINE_LEAD_DAYS) on a
+   * task with no target — what remove-target sets. A new deadline clears it.
+   */
+  deadline_nag_off: boolean
 
   // Notifications
   last_notified_at: string | null
@@ -235,6 +240,9 @@ export type UndoAction =
   // Quota reminders (2026-09-24): prompts considered and/or "did it". A batch
   // mixed with reminder completions logs as 'bulk_done' instead.
   | 'quota_prompt'
+  // Task model (2026-10-10): a task segment's circle (considered) or Defer All.
+  // Field snapshots of last_considered_at / segment_deferred_at; never a completion.
+  | 'task_segment'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,
@@ -287,6 +295,7 @@ export type ErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'CONFLICT'
+  | 'PAST_DEADLINE'
   | 'SERVICE_UNAVAILABLE'
   | 'INTERNAL_ERROR'
 

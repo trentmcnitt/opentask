@@ -45,6 +45,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       userTimezone: user.timezone,
       taskId,
       until: input.until,
+      allowPastDeadline: input.allow_past_deadline,
     })
 
     notifyDemoEngagement(user.name, 'update')

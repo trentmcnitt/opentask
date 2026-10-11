@@ -24,6 +24,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { effectiveTargetSql } from '@/core/tasks/currently-due'
 import { log } from '@/lib/logger'
 import { HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
@@ -302,7 +303,7 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
     const candidates = db
       .prepare(
         `
-        SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
+        SELECT t.id, t.title, ${effectiveTargetSql()} AS due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
                t.rrule, t.recurrence_mode, t.anchor_time,
                u.timezone,
@@ -326,9 +327,9 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           AND t.is_reminder = 0
           AND (
             t.rrule IS NOT NULL
-            OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))
+            OR datetime(${effectiveTargetSql()}) <= datetime(?)
           )
-        ORDER BY t.priority DESC, t.due_at ASC
+        ORDER BY t.priority DESC, 3 ASC
       `,
       )
       .all(now.toISOString()) as OverdueTask[]

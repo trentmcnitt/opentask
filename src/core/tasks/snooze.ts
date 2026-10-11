@@ -20,6 +20,8 @@ export interface SnoozeTaskOptions {
   userTimezone: string
   taskId: number
   until: string // ISO 8601 datetime
+  /** The user confirmed a snooze past the deadline (otherwise 409 PAST_DEADLINE). */
+  allowPastDeadline?: boolean
 }
 
 export interface SnoozeResult {
@@ -37,7 +39,7 @@ export interface SnoozeResult {
  * 2. Delegates to updateTask which handles snooze logic internally
  */
 export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
-  const { userId, userTimezone, taskId, until } = options
+  const { userId, userTimezone, taskId, until, allowPastDeadline } = options
 
   // Pre-validation (snooze-specific checks)
   // 'allow': the trashed refusal comes later, after the reminder/quota/done
@@ -89,7 +91,7 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     userId,
     userTimezone,
     taskId,
-    input: { due_at: until },
+    input: { due_at: until, allow_past_deadline: allowPastDeadline },
     prefetchedTask: task,
     skipWebhookDispatch: true, // snoozeTask dispatches task.snoozed below
   })

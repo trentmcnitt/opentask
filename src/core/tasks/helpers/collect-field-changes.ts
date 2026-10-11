@@ -8,7 +8,7 @@
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { NotFoundError, ForbiddenError, ValidationError, PastDeadlineError } from '@/core/errors'
 import {
   QUOTA_DUE_DATE_MESSAGE,
   QUOTA_PERIOD_MESSAGE,
@@ -16,6 +16,7 @@ import {
   TRACKED_REMINDER_MESSAGE,
 } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
+import { crossesDeadline } from '@/lib/task-segments'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
@@ -23,6 +24,11 @@ export type FieldChangesInput = TaskUpdateInput & {
   labels_add?: string[]
   labels_remove?: string[]
   reset_original_due_at?: boolean
+  /**
+   * Server-internal (never in a request schema): "Target today" marks the task
+   * considered in the same write, so one undo entry covers both.
+   */
+  last_considered_at?: string
 }
 
 export interface FieldChangeData {
@@ -277,6 +283,18 @@ function collectTaskModelFields(
 ): void {
   if (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at) {
     trackField(data, 'deadline_at', task.deadline_at, input.deadline_at)
+  }
+  // Remove-target sends `deadline_nag_off: true` to silence the deadline's
+  // implied nag too. A NEW deadline is new information and turns it back on,
+  // unless the same request says otherwise.
+  const nagOff =
+    input.deadline_nag_off ??
+    (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at ? false : undefined)
+  if (nagOff !== undefined && nagOff !== task.deadline_nag_off) {
+    trackField(data, 'deadline_nag_off', task.deadline_nag_off, nagOff, undefined, nagOff ? 1 : 0)
+  }
+  if (input.last_considered_at !== undefined) {
+    trackField(data, 'last_considered_at', task.last_considered_at, input.last_considered_at)
   }
   if (input.horizon !== undefined && input.horizon !== task.horizon) {
     trackField(data, 'horizon', task.horizon, input.horizon)
@@ -689,6 +707,15 @@ function collectDueAtChanges(
   ) {
     data.isSnoozeScenario = true
 
+    // The deadline caps a snooze (2026-10-10): never silently — refused unless
+    // the caller says the user confirmed it. A deliberate re-target is not a
+    // snooze and is not capped. Bulk paths filter such tasks out before here.
+    const deadline =
+      data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
+    if (crossesDeadline(deadline, input.due_at) && !input.allow_past_deadline) {
+      throw new PastDeadlineError()
+    }
+
     // Set original_due_at if not already set (preserve existing)
     if (task.original_due_at === null) {
       data.setClauses.push('original_due_at = ?')
@@ -707,18 +734,20 @@ function collectDueAtChanges(
     data.afterState.snooze_count = newSnoozeCount
   }
 
-  // When due_at is set for the first time on a task that had no due date,
-  // also set original_due_at to track the occurrence origin timestamp.
+  // When a task with no date gets one, the occurrence origin — which is also
+  // the target-age clock (2026-10-10) — starts at the new date. ALWAYS, even
+  // if a stale origin is somehow still stored: a fresh target must never show
+  // an age inherited from an old one ("target today" reading "14d" on day one).
   if (
     task.due_at === null &&
     input.due_at !== null &&
-    task.original_due_at === null &&
+    task.original_due_at !== input.due_at &&
     !data.fieldsChanged.includes('original_due_at')
   ) {
     data.setClauses.push('original_due_at = ?')
     data.values.push(input.due_at)
     data.fieldsChanged.push('original_due_at')
-    data.beforeState.original_due_at = null
+    data.beforeState.original_due_at = task.original_due_at
     data.afterState.original_due_at = input.due_at
   }
 

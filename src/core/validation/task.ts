@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { ValidationError } from '@/core/errors'
 import { isValidRRule, isPeriodRRule } from '@/core/recurrence/rrule-builder'
 
 /**
@@ -287,6 +288,7 @@ export const taskUpdateSchema = z
     due_at: dateTimeString.nullable().optional(),
     deadline_at: dateTimeString.nullable().optional(),
     horizon: horizon.optional(),
+    deadline_nag_off: z.boolean().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
     project_id: z.number().int().positive().optional(),
@@ -295,6 +297,9 @@ export const taskUpdateSchema = z
     notes: z.string().max(10000, 'Notes too long').nullable().optional(),
     auto_snooze_minutes: autoSnoozeMinutes.optional(),
     reset_original_due_at: z.boolean().optional(),
+    // A snooze past `deadline_at` is refused (409 PAST_DEADLINE) unless this
+    // says the user confirmed it (2026-10-10).
+    allow_past_deadline: z.boolean().optional(),
     create_label: createLabelFlag,
     progress_target: progressTarget.optional(),
     progress_current: progressCurrent.optional(),
@@ -313,6 +318,7 @@ export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
  */
 export const snoozeSchema = z.object({
   until: dateTimeString,
+  allow_past_deadline: z.boolean().optional(),
 })
 
 export type SnoozeInput = z.infer<typeof snoozeSchema>
@@ -353,6 +359,8 @@ export const bulkSnoozeSchema = z
       .max(525600, 'Cannot snooze more than 1 year')
       .optional(),
     include_task_ids: z.array(z.number().int().positive()).max(500).optional(),
+    // 2026-10-10: ids the user confirmed snoozing past their deadline.
+    allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
   })
   .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
     message: 'Either until or delta_minutes must be provided',
@@ -406,12 +414,23 @@ export const bulkEditSchema = z
       .max(525600, 'Cannot snooze more than 1 year')
       .optional(),
     date_task_ids: z.array(z.number().int().positive()).max(500).optional(),
+    allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
   })
   .refine((data) => !(data.delta_minutes !== undefined && data.changes.due_at !== undefined), {
     message: 'Cannot provide both changes.due_at and delta_minutes',
   })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>
+
+/**
+ * Task segment actions (2026-10-10): consider, defer, target today. Body:
+ * `{ ids: [taskId, ...] }` — the caller's own open tasks only.
+ */
+export const segmentIdsSchema = z.object({ ids: bulkIds })
+
+export function validateSegmentIds(input: unknown): { ids: number[] } {
+  return segmentIdsSchema.parse(input)
+}
 
 /**
  * Bulk delete input schema
@@ -425,12 +444,37 @@ export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>
 /**
  * Validate and transform input
  */
+/**
+ * The target's API names (2026-10-10). `target_at` is the primary name for the
+ * target and `due_at` its deprecated alias — older native builds, Shortcuts
+ * and the desks send `due_at`, so both are accepted and both are returned
+ * (`formatTaskResponse`). Likewise `retarget: true` for
+ * `reset_original_due_at: true` (a deliberate re-target, which restarts the
+ * target's age). The column is still `due_at`; this only maps the names.
+ * Sending both names with different values is refused rather than guessed.
+ */
+export function normalizeTargetAliases(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const out: Record<string, unknown> = { ...(input as Record<string, unknown>) }
+  const alias = (primary: string, legacy: string) => {
+    if (!(primary in out)) return
+    if (legacy in out && JSON.stringify(out[legacy]) !== JSON.stringify(out[primary])) {
+      throw new ValidationError(`Send ${primary} or ${legacy}, not both with different values`)
+    }
+    out[legacy] = out[primary]
+    delete out[primary]
+  }
+  alias('target_at', 'due_at')
+  alias('retarget', 'reset_original_due_at')
+  return out
+}
+
 export function validateTaskCreate(input: unknown): TaskCreateInput {
-  return taskCreateSchema.parse(input)
+  return taskCreateSchema.parse(normalizeTargetAliases(input))
 }
 
 export function validateTaskUpdate(input: unknown): TaskUpdateInput {
-  return taskUpdateSchema.parse(input)
+  return taskUpdateSchema.parse(normalizeTargetAliases(input))
 }
 
 export function validateSnooze(input: unknown): SnoozeInput {
@@ -446,7 +490,14 @@ export function validateBulkSnooze(input: unknown): BulkSnoozeInput {
 }
 
 export function validateBulkEdit(input: unknown): BulkEditInput {
-  return bulkEditSchema.parse(input)
+  const body =
+    input && typeof input === 'object' && 'changes' in input
+      ? {
+          ...(input as Record<string, unknown>),
+          changes: normalizeTargetAliases((input as { changes: unknown }).changes),
+        }
+      : input
+  return bulkEditSchema.parse(body)
 }
 
 export function validateBulkDelete(input: unknown): BulkDeleteInput {

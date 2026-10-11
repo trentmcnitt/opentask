@@ -15,6 +15,22 @@
 
 import { getDb } from '@/core/db'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
+import { DEADLINE_LEAD_DAYS } from '@/lib/task-segments'
+
+/**
+ * A task's TARGET in SQL (2026-10-10): its `due_at`, else — for a one-off with
+ * a deadline, no target, and the deadline nag not turned off — the deadline
+ * minus DEADLINE_LEAD_DAYS. The SQL twin of `effectiveTargetAt`
+ * (`src/lib/task-segments.ts`). Computed, never stored, so nothing drifts.
+ *
+ * Every query that decides "over target" selects this AS due_at, so the rest
+ * of the due-ness machinery (`isCurrentlyDue`, the notifier's cadence math)
+ * reads an implied target exactly like a set one.
+ */
+export function effectiveTargetSql(alias = 't'): string {
+  const a = alias
+  return `COALESCE(${a}.due_at, CASE WHEN ${a}.deadline_at IS NOT NULL AND ${a}.deadline_nag_off = 0 AND ${a}.rrule IS NULL THEN strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.deadline_at, '-${DEADLINE_LEAD_DAYS} days') END)`
+}
 
 interface DueCandidate {
   id: number
@@ -36,7 +52,8 @@ interface DueCandidate {
 function fetchDueCandidates(userId: number): DueCandidate[] {
   return getDb()
     .prepare(
-      `SELECT t.id, t.project_id, t.due_at, t.rrule, t.recurrence_mode, t.anchor_time, u.timezone
+      `SELECT t.id, t.project_id, ${effectiveTargetSql()} AS due_at, t.rrule, t.recurrence_mode,
+              t.anchor_time, u.timezone
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
         WHERE t.user_id = ?
@@ -56,9 +73,9 @@ function fetchDueCandidates(userId: number): DueCandidate[] {
           AND t.is_reminder = 0
           AND (
             t.rrule IS NOT NULL
-            OR (t.due_at IS NOT NULL AND datetime(t.due_at) < datetime('now'))
+            OR datetime(${effectiveTargetSql()}) < datetime('now')
           )
-        ORDER BY t.due_at ASC`,
+        ORDER BY 3 ASC`,
     )
     .all(userId) as DueCandidate[]
 }

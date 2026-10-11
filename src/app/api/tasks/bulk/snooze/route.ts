@@ -34,6 +34,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until: input.until,
       deltaMinutes: input.delta_minutes,
       includeTaskIds: input.include_task_ids,
+      allowPastDeadlineIds: input.allow_past_deadline_ids,
     })
 
     notifyDemoEngagement(user.name, 'update')
@@ -53,6 +54,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
       skipped_no_due_date: result.noDueDateSkipped,
+      // 2026-10-10: left where they were — the snooze would have crossed
+      // their deadline. Resend their ids in `allow_past_deadline_ids` once the
+      // user confirms.
+      skipped_deadline: result.deadlineSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

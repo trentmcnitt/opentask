@@ -40,6 +40,7 @@ const VALID_TASK_COLUMNS = new Set([
   'horizon_set_at',
   'last_considered_at',
   'segment_deferred_at',
+  'deadline_nag_off',
   'deleted_at',
   'archived_at',
   'labels',

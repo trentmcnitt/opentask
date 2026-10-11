@@ -189,6 +189,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- A task segment's "Defer All": hidden for the rest of that local day,
   -- back tomorrow. Not a consider.
   segment_deferred_at TEXT DEFAULT NULL,
+  -- A task with a deadline and no target nags from DEADLINE_LEAD_DAYS before
+  -- the deadline (computed, never stored). Remove-target sets this to turn
+  -- that off for the task; a new deadline turns it back on.
+  deadline_nag_off INTEGER NOT NULL DEFAULT 0,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

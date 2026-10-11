@@ -48,7 +48,7 @@ function executeRecurringMarkDone(
   userId: number,
   nowStr: string,
 ): ExecuteMarkDoneResult {
-  const { nextDueAt, prevDueAt, stats } = computation
+  const { nextDueAt, nextDeadlineAt, prevDueAt, stats } = computation
 
   // Create completion record
   const completionResult = tx
@@ -73,7 +73,7 @@ function executeRecurringMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET due_at = ?, original_due_at = ?,
+    SET due_at = ?, original_due_at = ?, deadline_at = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         progress_current = 0,
         updated_at = ?
@@ -82,6 +82,7 @@ function executeRecurringMarkDone(
   ).run(
     nextDueAt,
     nextDueAt, // original_due_at tracks the new occurrence's origin timestamp
+    nextDeadlineAt, // the deadline moves with the occurrence (advanceDeadline)
     stats.completionCount,
     stats.firstCompletedAt,
     stats.lastCompletedAt,
@@ -94,6 +95,7 @@ function executeRecurringMarkDone(
     id: task.id,
     due_at: nextDueAt,
     original_due_at: nextDueAt,
+    deadline_at: nextDeadlineAt,
     progress_current: 0,
     completion_count: stats.completionCount,
     first_completed_at: stats.firstCompletedAt,
@@ -113,6 +115,7 @@ function executeRecurringMarkDone(
       title: task.title,
       due_at: task.due_at,
       original_due_at: task.original_due_at,
+      deadline_at: task.deadline_at,
       progress_current: task.progress_current,
       completion_count: task.completion_count,
       first_completed_at: task.first_completed_at,

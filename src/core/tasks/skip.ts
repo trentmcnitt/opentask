@@ -19,6 +19,7 @@
  * that completions stay honest, NOT so anyone can infer avoidance from it.
  */
 
+import { advanceDeadline } from '@/lib/task-segments'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
@@ -96,24 +97,27 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
             completedAt: new Date(),
             prevDueAt: task.due_at ? new Date(task.due_at) : null,
           }).toISOString()
+      // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`).
+      const nextDeadlineAt = advanceDeadline(task, nextDueAt)
 
       // §5: advancing the occurrence is a period boundary, so a tracked task's
       // progress resets here exactly as it would on completion.
       tx.prepare(
         `UPDATE tasks
-            SET due_at = ?, original_due_at = ?, skip_count = ?, progress_current = 0,
-                updated_at = ?
+            SET due_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
+                progress_current = 0, updated_at = ?
           WHERE id = ?`,
-      ).run(nextDueAt, nextDueAt, skipCount, nowStr, taskId)
+      ).run(nextDueAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, taskId)
 
       after = {
         ...task,
         due_at: nextDueAt,
         original_due_at: nextDueAt,
+        deadline_at: nextDeadlineAt,
         skip_count: skipCount,
         progress_current: 0,
       }
-      fieldsChanged = ['due_at', 'original_due_at', 'skip_count', 'progress_current']
+      fieldsChanged = ['due_at', 'original_due_at', 'deadline_at', 'skip_count', 'progress_current']
     } else {
       // Archived, never completed. done stays 0 — that is the entire point.
       tx.prepare(

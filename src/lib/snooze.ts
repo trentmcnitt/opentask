@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { taskWord } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import type { BulkSnoozeDefault } from '@/lib/preferences-state'
+import { nextPeriodStart } from '@/lib/time-slot-assign'
 
 const HOUR_ROUND_THRESHOLD = 35
 
@@ -19,12 +20,20 @@ export function snapToHour(date: Date): Date {
 /**
  * Compute the UTC ISO string for a snooze target time.
  *
- * @param option - Snooze option: 'tomorrow' or a string-integer of minutes (e.g., '60', '120')
+ * @param option - Snooze option: 'tomorrow', 'next_period', or a string-integer
+ *   of minutes (e.g., '60', '120')
  * @param timezone - User's IANA timezone (e.g., 'America/Chicago')
  * @param morningTime - User's configured morning time in HH:MM format (e.g., '09:00')
+ * @param slots - The user's periods, for 'next_period' (2026-10-10: the single-tap
+ *   default can be the next period too). With none, 'next_period' reads as an hour.
  * @returns UTC ISO string for the snooze target
  */
-export function computeSnoozeTime(option: string, timezone: string, morningTime: string): string {
+export function computeSnoozeTime(
+  option: string,
+  timezone: string,
+  morningTime: string,
+  slots: { start_time: string }[] = [],
+): string {
   if (option === 'tomorrow') {
     const [hour, minute] = morningTime.split(':').map(Number)
     return DateTime.now()
@@ -33,6 +42,9 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
       .set({ hour, minute, second: 0, millisecond: 0 })
       .toUTC()
       .toISO()!
+  }
+  if (option === NEXT_PERIOD_OPTION) {
+    return nextPeriodStart(slots, timezone) ?? computeSnoozeTime('60', timezone, morningTime)
   }
 
   const minutes = parseInt(option, 10)
@@ -43,6 +55,9 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
   // Sub-hour: exact minutes from now
   return new Date(Date.now() + minutes * 60 * 1000).toISOString()
 }
+
+/** The `default_snooze_option` value meaning "the next period" (2026-10-10). */
+export const NEXT_PERIOD_OPTION = 'next_period'
 
 /**
  * Format a morning time string for display.
@@ -59,6 +74,7 @@ export function formatMorningTime(morningTime: string): string {
  */
 export function formatCompactSnoozeLabel(option: string): string {
   if (option === 'tomorrow') return 'AM'
+  if (option === NEXT_PERIOD_OPTION) return 'Next'
   const minutes = parseInt(option, 10)
   if (minutes < 60) return `+${minutes}m`
   const h = Math.floor(minutes / 60)
@@ -92,6 +108,7 @@ export function formatSnoozeOptionLabel(option: string, morningTime: string): st
   if (option === 'tomorrow') {
     return `Tomorrow at ${formatMorningTime(morningTime)}`
   }
+  if (option === NEXT_PERIOD_OPTION) return 'Next period'
   const minutes = parseInt(option, 10)
   if (minutes < 60) return `${minutes} min`
   if (minutes === 60) return '1 hour'

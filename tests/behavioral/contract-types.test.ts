@@ -112,6 +112,8 @@ const TASK: Record<keyof FormattedTask, Field> = {
   horizon_set_at: STR_N,
   last_considered_at: STR_N,
   segment_deferred_at: STR_N,
+  deadline_nag_off: BOOL,
+  target_at: STR_N,
   last_notified_at: STR_N,
   last_critical_alert_at: STR_N,
   auto_snooze_minutes: INT_N,
@@ -187,7 +189,12 @@ interface Group extends Obj {
   prompts: Obj[]
 }
 
-const REMINDER_FIXTURES = ['reminders-initial', 'reminders-after-did', 'reminders']
+const REMINDER_FIXTURES = [
+  'reminders-initial',
+  'reminders-after-did',
+  'reminders',
+  'reminders-segments',
+]
 
 function groups(name: string): Group[] {
   return data(name).groups as Group[]
@@ -279,6 +286,23 @@ describe('contract fixtures match the TS types', () => {
         expectShape(task.quota_day_state, QUOTA_DAY_STATE, `${where} task ${task.id} day state`)
       }
     }
+  })
+
+  test('task segments: each row is a FormattedTask plus segment_state', () => {
+    // 2026-10-10. A top-level array beside `groups`, never inside it.
+    const segs = data('reminders-segments').task_segments as Obj[]
+    expect(segs.length).toBe(1)
+    for (const seg of segs) {
+      expect(['days', 'weeks', 'months', 'eventually']).toContain(seg.horizon)
+      for (const k of ['waiting', 'considered', 'deferred']) expect(typeof seg[k]).toBe('number')
+      expect(typeof seg.nudge).toBe('boolean')
+      for (const row of seg.tasks as Obj[]) {
+        expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
+        const task = Object.fromEntries(Object.entries(row).filter(([k]) => k !== 'segment_state'))
+        expectShape(task, TASK, `segment task ${row.id}`)
+      }
+    }
+    expect(data('task-segments-consider').considered).toBe(1)
   })
 
   test('the progress response is a FormattedTask plus met/description', () => {

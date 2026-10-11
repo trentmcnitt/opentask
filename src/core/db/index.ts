@@ -327,6 +327,9 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  if (!hasColumn(database, 'tasks', 'deadline_nag_off')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN deadline_nag_off INTEGER NOT NULL DEFAULT 0')
+  }
   if (!hasColumn(database, 'projects', 'description')) {
     database.exec('ALTER TABLE projects ADD COLUMN description TEXT DEFAULT NULL')
   }

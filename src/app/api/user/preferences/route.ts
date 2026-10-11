@@ -310,10 +310,12 @@ function validateGeneralFields(
   if (body.default_snooze_option !== undefined) {
     const val = body.default_snooze_option
     if (typeof val !== 'string') return 'default_snooze_option must be a string'
-    if (val !== 'tomorrow') {
+    // 'next_period' (2026-10-10): the single-tap snooze can go to the next
+    // period, as the snooze-all button can.
+    if (val !== 'tomorrow' && val !== 'next_period') {
       const num = parseInt(val, 10)
       if (isNaN(num) || num < 1 || num > 1440 || String(num) !== val)
-        return 'default_snooze_option must be "tomorrow" or a string integer 1-1440'
+        return 'default_snooze_option must be "tomorrow", "next_period" or a string integer 1-1440'
     }
     changes.default_snooze_option = val
   }

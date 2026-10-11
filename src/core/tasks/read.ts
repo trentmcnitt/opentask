@@ -38,6 +38,7 @@ const TASK_COLUMNS = [
   'horizon_set_at',
   'last_considered_at',
   'segment_deferred_at',
+  'deadline_nag_off',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -253,6 +254,7 @@ export interface TaskRow {
   horizon_set_at: string | null
   last_considered_at: string | null
   segment_deferred_at: string | null
+  deadline_nag_off: number
   last_notified_at: string | null
   last_critical_alert_at: string | null
   auto_snooze_minutes: number | null
@@ -314,6 +316,7 @@ export function rowToTask(row: TaskRow): Task {
     horizon_set_at: row.horizon_set_at ?? null,
     last_considered_at: row.last_considered_at ?? null,
     segment_deferred_at: row.segment_deferred_at ?? null,
+    deadline_nag_off: (row.deadline_nag_off ?? 0) === 1,
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,
     auto_snooze_minutes: row.auto_snooze_minutes,

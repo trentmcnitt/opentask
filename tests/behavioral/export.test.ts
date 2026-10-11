@@ -268,6 +268,7 @@ describe('Data export', () => {
  */
 function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
   return {
+    target_at: null,
     id: 1,
     user_id: 1,
     project_id: 1,
@@ -297,6 +298,7 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     horizon_set_at: null,
     last_considered_at: null,
     segment_deferred_at: null,
+    deadline_nag_off: false,
     last_notified_at: null,
     last_critical_alert_at: null,
     auto_snooze_minutes: null,
