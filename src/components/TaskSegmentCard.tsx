@@ -201,7 +201,7 @@ function TaskSegmentRow({
         <TaskSegmentMeta task={task} timezone={timezone} />
       </div>
       {!considered && (
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+        <div className="-mr-1 flex shrink-0 items-center gap-0.5 pt-0.5 sm:gap-1.5">
           <HorizonChip
             task={task}
             segmentHorizon={segmentHorizon}
@@ -218,7 +218,8 @@ function TaskSegmentRow({
             className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium"
           >
             <CalendarClock className="size-3.5" />
-            <span className={panel ? 'sr-only sm:not-sr-only' : undefined}>Today</span>
+            {/* Icon-only on a phone, so the title keeps the width. */}
+            <span className="sr-only sm:not-sr-only">Today</span>
           </button>
           <Checkbox
             checked={false}
