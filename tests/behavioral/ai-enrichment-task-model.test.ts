@@ -38,6 +38,7 @@ import {
   enrichSingleTask,
   sanitizeTaskModelFields,
   sanitizeReminderEnrichment,
+  alignTaskModelDates,
   _resetCircuitBreaker,
   _resetProcessingState,
 } from '@/core/ai/enrichment'
@@ -227,6 +228,40 @@ describe('the guard (sanitizeTaskModelFields)', () => {
     )
     expect(out.deadline_at).toBeNull()
     expect(out.horizon).toBeNull()
+  })
+})
+
+describe('date sanity (alignTaskModelDates)', () => {
+  const now = new Date('2026-10-11T01:00:00Z') // Sat Oct 10, 8 PM Chicago
+
+  test('a month/day long past is next year', () => {
+    expect(
+      alignTaskModelDates(result({ deadline_at: '2026-02-28T23:59:00' }), TEST_TIMEZONE, now)
+        .deadline_at,
+    ).toBe('2027-02-28T23:59:00')
+  })
+
+  test('a deadline that passed days ago stays as said', () => {
+    expect(
+      alignTaskModelDates(result({ deadline_at: '2026-10-07T23:59:00' }), TEST_TIMEZONE, now)
+        .deadline_at,
+    ).toBe('2026-10-07T23:59:00')
+  })
+
+  test('a target after the deadline is dropped; one before it is kept', () => {
+    const late = alignTaskModelDates(
+      result({ due_at: '2026-10-10T22:00:00', deadline_at: '2026-10-10T21:00:00' }),
+      TEST_TIMEZONE,
+      now,
+    )
+    expect(late).toMatchObject({ due_at: null, deadline_at: '2026-10-10T21:00:00' })
+
+    const early = alignTaskModelDates(
+      result({ due_at: '2026-10-14T09:00:00', deadline_at: '2026-10-17T23:59:00' }),
+      TEST_TIMEZONE,
+      now,
+    )
+    expect(early.due_at).toBe('2026-10-14T09:00:00')
   })
 })
 

@@ -456,7 +456,8 @@ async function runEnrichment(
   // so the scenario is judged on what the database would receive. When the
   // guard changes the model's answer, the raw value is logged so a prompt
   // regression the guard is hiding still shows up in the run output.
-  const { filterProjectMatch, sanitizeTaskModelFields } = await import('@/core/ai/enrichment')
+  const { filterProjectMatch, sanitizeTaskModelFields, alignTaskModelDates } =
+    await import('@/core/ai/enrichment')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -466,10 +467,14 @@ async function runEnrichment(
 
   // Same for the task model's deadline/horizon guard (2026-10-10): judged on
   // what production stores, with the raw answer logged when the guard changed it.
-  const taskModel = sanitizeTaskModelFields(parsed, input.text)
-  if (taskModel.deadline_at !== parsed.deadline_at || taskModel.horizon !== parsed.horizon) {
+  const taskModel = alignTaskModelDates(sanitizeTaskModelFields(parsed, input.text), input.timezone)
+  if (
+    taskModel.deadline_at !== parsed.deadline_at ||
+    taskModel.horizon !== parsed.horizon ||
+    taskModel.due_at !== parsed.due_at
+  ) {
     console.log(
-      `[quality] task-model guard changed deadline_at "${parsed.deadline_at}" / horizon "${parsed.horizon}" for: ${input.text}`,
+      `[quality] task-model guard changed due_at "${parsed.due_at}" / deadline_at "${parsed.deadline_at}" / horizon "${parsed.horizon}" for: ${input.text}`,
     )
   }
 
@@ -1319,7 +1324,7 @@ function validateInsightsExpectations(
     if (signals.includes('act_soon') && !actSoonAllowedHere(task)) {
       throw new Error(
         `[${id}] task ${item.task_id} ("${task.title}") has "act_soon" signal but is P${task.priority} ` +
-          `with deadline ${task.deadline_at ?? 'none'} (act_soon needs a deadline within 7 days, or P3+ without one)`,
+          `with deadline ${String(task.deadline_at)} (act_soon needs a deadline within 7 days, or P3+ without one)`,
       )
     }
   }

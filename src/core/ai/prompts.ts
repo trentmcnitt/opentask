@@ -816,6 +816,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - due_at is the TARGET — the day the user said to do it. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
+- Urgency is priority, not a date: "urgent X" / "critical alert X" with no day or time named → due_at null
 - horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
 - Return due_at and deadline_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
 - When no specific time is mentioned for a target, use the configured default task time (if already past, use a reasonable near-future time)

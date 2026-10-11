@@ -745,7 +745,12 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   }
 
   if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, defaultSlotLabel)
-  else parsed = sanitizeTaskModelFields(parsed, textToEnrich, row.id)
+  else {
+    parsed = alignTaskModelDates(
+      sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+      user.timezone,
+    )
+  }
 
   parsed = toUtcTimes(parsed, user.timezone, row.id)
 
@@ -880,6 +885,44 @@ export function sanitizeTaskModelFields(
     horizon = null
   }
   return { ...enrichment, deadline_at: deadlineAt, horizon }
+}
+
+/** A deadline further in the past than this is a wrong year, not a missed cutoff. */
+const STALE_DEADLINE_DAYS = 7
+
+/**
+ * Date sanity for the model's (still local) target and deadline — two mistakes
+ * the prompt forbids but the model still made in the quality runs:
+ *
+ * - A month and day with no year in the past ("the deadline is February 28th"
+ *   said in October) came back as THIS year's, already-passed date. A deadline
+ *   more than STALE_DEADLINE_DAYS in the past is moved forward a year (twice at
+ *   most). A fresh task with a deadline long gone is a year slip; one that
+ *   passed days ago ("it expired Monday") is left as said.
+ * - A target after the deadline ("closes at 9pm tonight" with a made-up 10pm
+ *   target). The deadline is what the user stated, so the target goes; with no
+ *   target the deadline's own lead-time nag takes over.
+ *
+ * Pure apart from `now`; exported for the quality harness and tests.
+ */
+export function alignTaskModelDates(
+  enrichment: EnrichmentResult,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  let deadline = enrichment.deadline_at
+    ? parseLocalDateTime(enrichment.deadline_at, timezone)
+    : null
+  if (!deadline) return enrichment
+
+  const staleBefore = DateTime.fromJSDate(now).minus({ days: STALE_DEADLINE_DAYS })
+  for (let i = 0; i < 2 && deadline < staleBefore; i++) deadline = deadline.plus({ years: 1 })
+  const deadlineAt =
+    deadline.toISO({ includeOffset: false, suppressMilliseconds: true }) ?? enrichment.deadline_at
+
+  const target = enrichment.due_at ? parseLocalDateTime(enrichment.due_at, timezone) : null
+  const dueAt = target && target > deadline ? null : enrichment.due_at
+  return { ...enrichment, deadline_at: deadlineAt, due_at: dueAt }
 }
 
 /**
