@@ -264,6 +264,7 @@ Quick Take uses its own system prompt (`QUICK_TAKE_SYSTEM_PROMPT`) defined in `q
 - `enrichTask(task, user)` — runs enrichment query through warm slot or API
 - `applyEnrichment(task, result, user)` — applies changes via `withTransaction()` + `logAction()`
 - `filterExplicitLabels()` — post-parse guard that strips AI-inferred labels unless the user's input contains explicit label-intent language
+- `alignTaskModelDates()` — rolls a long-past deadline or recurring first date forward a year; drops a target that falls after the deadline
 - `sanitizeTaskModelFields()` — post-parse guard for `deadline_at` (dropped without a cutoff word in the input) and `horizon` (dropped without a pace word); both dropped on a recurring result
 - `sanitizeReminderEnrichment()` — clears every task-shaped field on a reminder, `deadline_at` and `horizon` included
 
@@ -415,7 +416,7 @@ Extracted labels pass through `filterExplicitLabels()` — a post-parse guard th
 - `horizon` is the **pace**, set ONLY from explicit pace wording: "today or tomorrow" / "in the next few days" → days, "this week" → weeks, "sometime this month" → months, "eventually" / "someday" → eventually. Otherwise null (unset, read as weeks). Never from topic or size (Trent's 09-28 "no inference from topic" ruling), never from priority words ("no rush" is still priority 1), never from a named day. "By the end of the month" is a deadline, not a horizon. Setting a horizon also stamps `horizon_set_at`.
 - Recurring tasks, reminders and quotas get neither field; a cutoff on a recurring task stays its time in `due_at` ("every Friday by 5pm").
 
-`sanitizeTaskModelFields()` backs the prompt in code: it drops a deadline when the input has no cutoff word, a horizon when it has no pace word, and both on a recurring result. It cannot tell whether a present cue word is used as one ("drop it off before work" is a target) — that stays the prompt's job. Like a target, both fields are set-only: a null from the model never clears what the task already has. The enrichment toast names them ("Deadline Fri 11:59 PM", "Within weeks").
+`sanitizeTaskModelFields()` backs the prompt in code: it drops a deadline when the input has no cutoff word, a horizon when it has no pace word, and both on a recurring result. `alignTaskModelDates()` then fixes two date slips the model still made in testing: a deadline (or a recurring task's first date) more than 7 days in the past is a wrong year and moves forward a year, and a target that falls after the deadline is dropped. The guard cannot tell whether a present cue word is used as one ("drop it off before work" is a target) — that stays the prompt's job. Like a target, both fields are set-only: a null from the model never clears what the task already has. The enrichment toast names them ("Deadline Fri 11:59 PM", "Within weeks").
 
 ### Quick Take
 
