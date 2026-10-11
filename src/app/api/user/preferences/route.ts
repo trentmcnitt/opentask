@@ -48,6 +48,7 @@ const VALID_SORT_OPTIONS = [
   'age',
   'modified',
   'original_due',
+  'horizon',
   'ai_insights',
 ] as const
 const VALID_AI_MODES = ['off', 'on'] as const

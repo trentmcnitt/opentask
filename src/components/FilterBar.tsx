@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useCallback } from 'react'
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { ChevronDown, Filter, Loader2, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -522,12 +523,12 @@ function PinnedOverdueChip({
         aria-pressed={selected}
         aria-label={
           selected
-            ? `Overdue, ${count} — showing only overdue tasks; tap to show all`
-            : `Overdue, ${count} — show only overdue tasks`
+            ? `${OVER_TARGET}, ${count} — showing only ${OVER_TARGET_LOWER} tasks; tap to show all`
+            : `${OVER_TARGET}, ${count} — show only ${OVER_TARGET_LOWER} tasks`
         }
-        title={selected ? 'Show all tasks' : 'Show only overdue tasks'}
+        title={selected ? 'Show all tasks' : `Show only ${OVER_TARGET_LOWER} tasks`}
       >
-        <span className="leading-none">Overdue</span>
+        <span className="leading-none">{OVER_TARGET}</span>
         <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>
       </button>
     </Badge>

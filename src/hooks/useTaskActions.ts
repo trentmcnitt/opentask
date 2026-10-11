@@ -1,5 +1,6 @@
 'use client'
 
+import { isPastDeadlineBody, offerSnoozeAnyway, PastDeadlineRefusal } from '@/lib/past-deadline'
 import {
   useCallback,
   useRef,
@@ -129,7 +130,26 @@ export function useTaskActions(config: UseTaskActionsConfig) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ until }),
         })
-        if (!res.ok) throw new Error('Failed to snooze')
+        if (!res.ok) {
+          const body = await res.json().catch(() => null)
+          if (isPastDeadlineBody(body)) {
+            cfg.onRefresh()
+            offerSnoozeAnyway(
+              new PastDeadlineRefusal('Past the deadline', () =>
+                fetch(`/api/tasks/${taskId}/snooze`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ until, allow_past_deadline: true }),
+                }).then((r) => {
+                  if (!r.ok) throw new Error('Failed to snooze')
+                  cfg.onRefresh()
+                }),
+              ),
+            )
+            return
+          }
+          throw new Error('Failed to snooze')
+        }
         const data = await res.json()
         cfg.onRefresh()
         bumpUndoCount()
@@ -170,6 +190,9 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       } catch (err) {
         cfg.onRefresh()
         showSaveError(err)
+        // A refused snooze past the deadline is answered on its toast ("Snooze
+        // anyway"), so the popover closes as for any finished choice.
+        if (err instanceof PastDeadlineRefusal) return
         // Reported above; rethrown so the dashboard's quick-action popover
         // keeps its staged edits and stays open instead of closing as if the
         // save had worked (the refresh above undoes the optimistic update).
