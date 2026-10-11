@@ -19,6 +19,8 @@ import { useSyncStream } from '@/hooks/useSyncStream'
 import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
 import { usePromptDeepLink } from '@/hooks/useRemindersDeepLinks'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
+import { TaskSegmentCard } from '@/components/TaskSegmentCard'
+import { useTaskSegments } from '@/hooks/useTaskSegments'
 import { usePromptRows } from '@/components/QuotaPromptRow'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import type { ReminderRowHandlers } from '@/components/reminders/ReminderRow'
@@ -136,8 +138,12 @@ export function RemindersView({
     remove,
     refresh,
     notToday,
+    taskSegments,
     create,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
+  // Task segments (2026-10-10): tasks whose target hasn't arrived, shown FIRST
+  // — "tasks are an early-day thing". Separate from the slots, never counted.
+  const segments = useTaskSegments({ segments: taskSegments, refresh, onUndo, onCompleted })
   const router = useRouter()
   // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
   const selection = useSelectionMode<number | string>()
@@ -614,6 +620,22 @@ export function RemindersView({
     ],
   )
 
+  // The task segments, first and in screen order (days, weeks, months,
+  // eventually). Not shown while searching — search covers reminders only.
+  const segmentCards =
+    segments.segments.length > 0 ? (
+      <div className="mb-3 space-y-3" data-task-segments>
+        {segments.segments.map((segment) => (
+          <TaskSegmentCard
+            key={segment.horizon}
+            segment={segment}
+            actions={segments}
+            timezone={timezone}
+          />
+        ))}
+      </div>
+    ) : null
+
   return (
     // Clearance below the last row for the floating selection bar, so the
     // end of the list can always be scrolled out from under it.
@@ -647,7 +669,10 @@ export function RemindersView({
           onOpenDetail={openDetail}
         />
       ) : visibleGroups.length === 0 ? (
-        <RemindersEmptyState allClear={consideredAny || hasAny} headingLevel={1} />
+        <>
+          {segmentCards}
+          <RemindersEmptyState allClear={consideredAny || hasAny} headingLevel={1} />
+        </>
       ) : (
         <>
           <RemindersHeadline
@@ -661,6 +686,7 @@ export function RemindersView({
               need to undo"). Each finished slot still opens to its considered
               items and their put-back; the headline and the green bar are the
               all-clear. */}
+          {segmentCards}
           {
             <div className="space-y-3">
               {[...summary.started, ...summary.later].map((group) => {

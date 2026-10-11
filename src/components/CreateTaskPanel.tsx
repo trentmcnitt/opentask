@@ -138,6 +138,10 @@ function buildCreateBody(fields: QuickActionPanelChanges & { title: string }) {
   if (fields.notes !== undefined && fields.notes !== null) {
     body.notes = fields.notes
   }
+  // Task model (2026-10-10). Either one makes the create "structured", so the
+  // AI never overwrites a deadline or horizon the user set by hand.
+  if (fields.deadline_at) body.deadline_at = fields.deadline_at
+  if (fields.horizon) body.horizon = fields.horizon
   return body
 }
 

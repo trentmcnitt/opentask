@@ -71,12 +71,12 @@ describe('the copy (counts only)', () => {
       sweepFeedbackContent(counts({ affected: 8, high: 2 }), UNTIL_3PM, TEST_TIMEZONE),
     ).toEqual({
       title: 'Snoozed 8 tasks until 3:00 PM',
-      body: '2 High still overdue. Snooze again to move the High ones',
+      body: '2 High still over target. Snooze again to move the High ones',
       priority: 3,
     })
     expect(
       sweepFeedbackContent(counts({ affected: 1, high: 1 }), UNTIL_3PM, TEST_TIMEZONE)?.body,
-    ).toBe('1 High still overdue. Snooze again to move the High one')
+    ).toBe('1 High still over target. Snooze again to move the High one')
   })
 
   test('High and Urgent left: both named, the hint is about High only', () => {
@@ -84,7 +84,7 @@ describe('the copy (counts only)', () => {
       sweepFeedbackContent(counts({ affected: 8, high: 2, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE),
     ).toEqual({
       title: 'Snoozed 8 tasks until 3:00 PM',
-      body: '2 High and 1 Urgent still overdue. Snooze again to move the High ones',
+      body: '2 High and 1 Urgent still over target. Snooze again to move the High ones',
       priority: 4,
     })
   })
@@ -102,7 +102,7 @@ describe('the copy (counts only)', () => {
       sweepFeedbackContent(counts({ affected: 4, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE),
     ).toEqual({
       title: 'Snoozed 4 tasks until 3:00 PM',
-      body: "1 Urgent still overdue. Urgent can't be bulk snoozed",
+      body: "1 Urgent still over target. Urgent can't be bulk snoozed",
       priority: 4,
     })
   })
@@ -116,7 +116,7 @@ describe('the copy (counts only)', () => {
       ),
     ).toEqual({
       title: 'Snoozed 2 high-priority tasks until tomorrow 9:00 AM',
-      body: "1 Urgent still overdue. Urgent can't be bulk snoozed",
+      body: "1 Urgent still over target. Urgent can't be bulk snoozed",
       priority: 4,
     })
   })
@@ -124,7 +124,7 @@ describe('the copy (counts only)', () => {
   test('nothing moved but High left: no "snooze again" (it would do the same)', () => {
     expect(sweepFeedbackContent(counts({ high: 2, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE)).toEqual({
       title: 'Nothing snoozed',
-      body: '2 High and 1 Urgent still overdue',
+      body: '2 High and 1 Urgent still over target',
       priority: 4,
     })
   })
@@ -140,7 +140,7 @@ describe('the decision', () => {
   test('a Bearer-token sweep that left High/Urgent: sent, with the grid count', () => {
     expect(decideSweepFeedback(input({ affected: 8, high: 2, urgent: 1 }), USER_ON)).toEqual({
       title: 'Snoozed 8 tasks until 3:00 PM',
-      body: '2 High and 1 Urgent still overdue. Snooze again to move the High ones',
+      body: '2 High and 1 Urgent still over target. Snooze again to move the High ones',
       priority: 4,
       totalOverdueCount: 3,
     })
@@ -204,7 +204,7 @@ describe('the APNs payload', () => {
   test('a banner without sound, TASK_SUMMARY on the tasks thread, its own collapse id', () => {
     const n = buildSweepResultNotification('tok', 'io.mcnitt.opentask', {
       title: 'Snoozed 8 tasks until 3:00 PM',
-      body: '2 High still overdue. Snooze again to move the High ones',
+      body: '2 High still over target. Snooze again to move the High ones',
       totalOverdueCount: 2,
       priority: 3,
     })
@@ -220,7 +220,7 @@ describe('the APNs payload', () => {
       aps: {
         alert: {
           title: 'Snoozed 8 tasks until 3:00 PM',
-          body: '2 High still overdue. Snooze again to move the High ones',
+          body: '2 High still over target. Snooze again to move the High ones',
         },
         category: 'TASK_SUMMARY',
         'thread-id': 'ot-tasks',

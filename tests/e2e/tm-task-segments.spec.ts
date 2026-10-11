@@ -1,0 +1,120 @@
+/**
+ * Task segments on the reminders screen, and the dashboard's over-target marks
+ * (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
+ *
+ * A task created today waits for its segment's next day (creating it counts as
+ * seeing it), so each spec makes its tasks with a `days` horizon and moves
+ * their `created_at` back a day (`backdateCreated`) — a days segment comes
+ * round every day, so they are waiting today at any hour.
+ *
+ * Isolation: every task is created here under a unique title and trashed in
+ * `finally`. Checks read the server back over the API rather than trusting a
+ * row leaving the screen.
+ */
+import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
+import type { Page } from '@playwright/test'
+
+const DAY = 24 * 60 * 60 * 1000
+
+async function create(page: Page, data: Record<string, unknown>): Promise<number> {
+  const res = await page.request.post('/api/tasks', { data })
+  expect(res.ok(), `create ${JSON.stringify(data)}`).toBeTruthy()
+  return (await res.json()).data.id as number
+}
+
+async function stateOf(page: Page, id: number): Promise<Record<string, unknown>> {
+  const res = await page.request.get(`/api/tasks/${id}`)
+  return (await res.json()).data as Record<string, unknown>
+}
+
+async function trash(page: Page, ids: number[]) {
+  if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
+}
+
+const segmentRow = (page: Page, id: number) =>
+  page.locator('[data-task-segments]').locator(`[data-segment-task="${id}"]`)
+
+test.describe('Task segments', () => {
+  test('come first on /reminders; circle considers, Today targets, Defer all defers', async ({
+    authenticatedPage: page,
+  }) => {
+    const titles = ['A', 'B', 'C'].map((s) => uniqueTitle(`TM seg ${s}`))
+    const ids: number[] = []
+    for (const title of titles) ids.push(await create(page, { title, horizon: 'days' }))
+    backdateCreated(ids)
+    try {
+      await page.goto('/reminders')
+      const days = page.locator('[data-task-segment="days"]')
+      await expect(days).toBeVisible()
+      for (const id of ids) await expect(segmentRow(page, id)).toBeVisible()
+
+      // First on the screen: above every slot card.
+      const slot = page.locator('[data-slot-key], [data-reminder-slot]').first()
+      if (await slot.count()) {
+        const segBox = await days.boundingBox()
+        const slotBox = await slot.boundingBox()
+        expect(segBox!.y).toBeLessThan(slotBox!.y)
+      }
+
+      // Circle → considered (never a completion).
+      await segmentRow(page, ids[0])
+        .getByRole('button', { name: /as considered/ })
+        .click()
+      await expect(segmentRow(page, ids[0])).toHaveAttribute('data-segment-state', 'considered')
+      await expect.poll(async () => (await stateOf(page, ids[0])).last_considered_at).not.toBeNull()
+      expect((await stateOf(page, ids[0])).done).toBe(false)
+
+      // Today → a target today; the row leaves the segment.
+      await segmentRow(page, ids[1])
+        .getByRole('button', { name: /^Target .* today$/ })
+        .click()
+      await expect(segmentRow(page, ids[1])).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, ids[1])).target_at).not.toBeNull()
+
+      // Defer all → off today's list, not considered.
+      await days.getByRole('button', { name: 'Defer all' }).click()
+      await expect(segmentRow(page, ids[2])).toHaveCount(0)
+      await expect
+        .poll(async () => (await stateOf(page, ids[2])).segment_deferred_at)
+        .not.toBeNull()
+      expect((await stateOf(page, ids[2])).last_considered_at).toBeNull()
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
+  test('the horizon chip changes the horizon', async ({ authenticatedPage: page }) => {
+    const id = await create(page, { title: uniqueTitle('TM horizon'), horizon: 'days' })
+    backdateCreated([id])
+    try {
+      await page.goto('/reminders')
+      await segmentRow(page, id).locator('[data-horizon-chip]').click()
+      await page.getByRole('menuitemradio', { name: 'Months' }).click()
+      await expect.poll(async () => (await stateOf(page, id)).horizon).toBe('months')
+    } finally {
+      await trash(page, [id])
+    }
+  })
+})
+
+test.describe('Dashboard over-target marks', () => {
+  test('the age tab counts days since the first target; a passed deadline is marked', async ({
+    authenticatedPage: page,
+  }) => {
+    const threeDaysAgo = new Date(Date.now() - 3 * DAY - 60_000).toISOString()
+    const id = await create(page, {
+      title: uniqueTitle('TM aged'),
+      target_at: threeDaysAgo,
+      deadline_at: new Date(Date.now() - DAY).toISOString(),
+    })
+    try {
+      await page.goto('/')
+      const row = page.locator(`#task-row-${id}`)
+      await expect(row).toBeVisible()
+      await expect(row.locator('[data-target-age]')).toHaveText(/^[34]d$/)
+      await expect(row).toContainText('past deadline')
+    } finally {
+      await trash(page, [id])
+    }
+  })
+})

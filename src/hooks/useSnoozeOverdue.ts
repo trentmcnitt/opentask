@@ -10,6 +10,7 @@
  * lives in `filterForBulkSnooze`; the server decides, this hook only reports.
  */
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useCallback } from 'react'
 import { isOverdue } from '@/lib/task-counts'
 import type { Task } from '@/types'
@@ -60,7 +61,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       const overdueTasks = displayTasks.filter((t) => isOverdue(t, now))
 
       if (overdueTasks.length === 0) {
-        showToast({ message: 'No overdue tasks' })
+        showToast({ message: `Nothing ${OVER_TARGET_LOWER}` })
         return
       }
 
@@ -102,6 +103,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
           highAffected: snoozedHigh,
           high: skippedHigh,
           urgent: skippedByPriority - skippedHigh,
+          deadline: responseData.data?.skipped_deadline ?? 0,
         })
 
         showToast({

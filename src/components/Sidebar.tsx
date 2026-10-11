@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import {
@@ -86,7 +87,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
                       {taskCounts.overdue > 0 && (
                         <span
                           className="bg-destructive/15 text-destructive rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                          aria-label={`${taskCounts.overdue} overdue`}
+                          aria-label={`${taskCounts.overdue} ${OVER_TARGET_LOWER}`}
                         >
                           {taskCounts.overdue}
                         </span>

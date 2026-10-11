@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1781,7 +1782,7 @@ function TrackColumn({
  * raised its own toast with Undo, so this one offers nothing to click.
  */
 function notifyOverdueFilterCleared() {
-  showToast({ message: 'No overdue tasks left — Overdue filter cleared' })
+  showToast({ message: `Nothing ${OVER_TARGET_LOWER} left — ${OVER_TARGET} filter cleared` })
 }
 
 function DashboardView({
@@ -2377,6 +2378,13 @@ function DashboardView({
             revealRef={revealTaskRef}
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
+            // Remove target (2026-10-10): back to its horizon's task segment.
+            // Silences a deadline's implied nag too, or "remove" would do nothing.
+            onRemoveTarget={(taskId) =>
+              void actions
+                .handleSaveAllChanges(taskId, { due_at: null, deadline_nag_off: true })
+                .catch(() => undefined)
+            }
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}
             keyboardFocusedId={keyboardFocusedId}

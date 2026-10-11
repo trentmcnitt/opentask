@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -73,7 +74,7 @@ export function SnoozeSection() {
             period, with this to flip back while he decides. */}
         <SettingRow
           label="Snooze-all button"
-          description="Where a tap of the clock sends every overdue task"
+          description={`Where a tap of the clock sends every ${OVER_TARGET_LOWER} task`}
         >
           <select
             aria-label="Snooze-all button"

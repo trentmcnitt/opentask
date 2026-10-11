@@ -1,6 +1,7 @@
 'use client'
 
 // Selection integration via context
+import { HORIZON_WORD } from '@/lib/task-model-words'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown, ChevronDown, Layers } from 'lucide-react'
 import { TaskRow } from './TaskRow'
@@ -79,6 +80,7 @@ interface TaskListProps {
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
+  onRemoveTarget?: (taskId: number) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -162,6 +164,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
   age: { default: 'Newest', reversed: 'Oldest' },
   modified: { default: 'Modified ↓', reversed: 'Modified ↑' },
   original_due: { default: 'Original Due ↓', reversed: 'Original Due ↑' },
+  horizon: { default: 'Horizon ↓', reversed: 'Horizon ↑' },
   ai_insights: { default: 'AI Score ↓', reversed: 'AI Score ↑' },
 }
 
@@ -173,6 +176,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   age: 'Date added',
   modified: 'Date modified',
   original_due: 'Original due date',
+  horizon: `${HORIZON_WORD}, then deadline`,
   ai_insights: 'AI score',
 }
 
@@ -186,6 +190,7 @@ export function TaskList({
   now,
   onDone,
   onSnooze,
+  onRemoveTarget,
   onLabelClick,
   onTaskFocus,
   keyboardFocusedId,
@@ -395,6 +400,7 @@ export function TaskList({
           task={task}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
+          onRemoveTarget={onRemoveTarget}
           // `isOverdue` is the Tasks page's one definition (the
           // top bar's pills use it too). §5: it never counts a
           // quota — its period is what is "due", and the bar
@@ -665,8 +671,8 @@ export function SortDropdown({
     : SORT_BUTTON_LABELS[sortOption].default
 
   const options: SortOption[] = showAiInsights
-    ? ['ai_insights', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
-    : ['due_date', 'priority', 'title', 'age', 'modified', 'original_due']
+    ? ['ai_insights', 'horizon', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
+    : ['horizon', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
