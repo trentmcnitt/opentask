@@ -97,7 +97,9 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
    - "months" — "this month", "sometime this month", "in the next month or two", "within a few months"
    - "eventually" — "eventually", "someday", "one of these days", "at some point", "no timeline"
 
-   Otherwise null. **Never infer a horizon** from the topic or size of the task (a squeaky door is not "eventually"; a bill is not "days"), from priority words ("no rush", "whenever", "urgent" set priority only), or from a target or deadline date ("call mom tomorrow" → horizon null). A cutoff phrase is a deadline, not a pace: "by the end of the month" → deadline_at, horizon null; "sometime this month" → horizon months, no deadline. Recurring tasks get horizon null.
+   Otherwise null. **Never infer a horizon** from the topic or size of the task (a squeaky door is not "eventually"; a bill is not "days"), from priority words, or from a target or deadline date ("call mom tomorrow" → horizon null). A cutoff phrase is a deadline, not a pace: "by the end of the month" → deadline_at, horizon null; "sometime this month" → horizon months, no deadline. Recurring tasks get horizon null.
+
+   **Horizon never replaces priority.** Low-priority wording ("no rush", "whenever you get a chance", "this can wait", "not urgent") still sets priority 1, exactly as before — it is not a pace and gives horizon null on its own. When a sentence has both ("this can wait, do it at some point"), set priority 1 AND horizon eventually.
 
 5. **priority** — Integer 0-4:
    - 0 = unset (default — no priority signal)
@@ -807,7 +809,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - due_at is the TARGET — the day the user said to do it. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
-- horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Recurring tasks: deadline_at and horizon null
+- horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
 - Return due_at and deadline_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
 - When no specific time is mentioned for a target, use the configured default task time (if already past, use a reasonable near-future time)
 - When uncertain about priority, prefer 0 over guessing — but don't ignore strong emotional signals (hyperbolic urgency = P3-4, not P0)

@@ -1027,6 +1027,13 @@ function validateFeatureSchema(scenario: AITestScenario, output: Record<string, 
   }
 }
 
+function actSoonAllowedHere(task: { priority: number; deadline_at?: string | null }): boolean {
+  if (task.deadline_at) {
+    return (Date.parse(task.deadline_at) - Date.now()) / 86_400_000 <= 7
+  }
+  return task.priority >= 3
+}
+
 /** Process (2026-10-10): shape plus the scenario's deterministic expectations. */
 function validateProcessExpectations(
   id: string,
@@ -1306,11 +1313,13 @@ function validateInsightsExpectations(
       }
     }
 
-    // act_soon priority gate: act_soon requires P3+
-    if (signals.includes('act_soon') && task.priority < 3) {
+    // act_soon gate — mirrors actSoonAllowed() in src/core/ai/insights.ts
+    // (2026-10-10): a stored deadline within 7 days allows it at any priority,
+    // a further one forbids it; with no deadline it needs P3+.
+    if (signals.includes('act_soon') && !actSoonAllowedHere(task)) {
       throw new Error(
         `[${id}] task ${item.task_id} ("${task.title}") has "act_soon" signal but is P${task.priority} ` +
-          `(act_soon requires P3+)`,
+          `with deadline ${task.deadline_at ?? 'none'} (act_soon needs a deadline within 7 days, or P3+ without one)`,
       )
     }
   }
