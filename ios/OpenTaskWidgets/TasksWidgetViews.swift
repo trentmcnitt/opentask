@@ -1206,9 +1206,11 @@ private struct TargetAgeBadge: View {
         guard days != nil || past else { return 0 }
         var width: CGFloat = 0
         if let days {
-            width += WidgetTheme.measuredWidth(
-                for: TargetAge.badgeText(days: days), font: metrics.caption2Font
-            ) + 2 * horizontalPadding
+            // Measured in the weight it is drawn in (caption2 SEMIBOLD) —
+            // the regular caption2 would budget a point or two short.
+            let font = WidgetTheme.PlatformFont.systemFont(ofSize: metrics.caption2Font.pointSize, weight: .semibold)
+            width += WidgetTheme.measuredWidth(for: TargetAge.badgeText(days: days), font: font)
+                + 2 * horizontalPadding
         }
         if past { width += flagWidth + (days != nil ? innerSpacing : 0) }
         return ceil(width) + gap
