@@ -3242,6 +3242,124 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  # --- Process (AI half of the Process button) ---
+
+  /api/process/recommend-projects:
+    post:
+      summary: Recommend a project for each task
+      operationId: recommendProjects
+      tags: [AI]
+      description: |
+        For the Process button's sorting step: the project each given task
+        probably belongs in, or `null` when none clearly fits. The AI only
+        recommends — nothing is written; the user picks. It reads each
+        project's `description` (what belongs there) and the user's global
+        `ai_context`.
+
+        Ids that are not the caller's own live tasks are ignored. A
+        `project_id` is always one of the caller's own or shared projects,
+        never the Inbox; a model answer naming any other project is dropped,
+        so a task can be missing from `recommendations` (no recommendation).
+        Entries follow the order of `ids`.
+
+        AI disabled (server-wide, or the user's Insights mode set to off)
+        returns `{ recommendations: [] }` with 200, never an error. Uses the
+        Insights feature's AI mode, model and timeout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: integer
+                    minimum: 1
+      responses:
+        '200':
+          description: Recommendations (empty when AI is off)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      recommendations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_id:
+                              type: integer
+                            project_id:
+                              type: [integer, 'null']
+                              description: The recommended project, or null when none fits.
+                            reason:
+                              type: string
+                              description: One short sentence to show next to the pick.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: The model call failed or returned nothing usable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/process/duplicates:
+    get:
+      summary: Possible duplicate tasks
+      operationId: findDuplicates
+      tags: [AI]
+      description: |
+        For the Process button's duplicate step: groups of the caller's open
+        one-off tasks (not recurring tasks, reminders or quotas) that look like
+        the same piece of work. Each group has 2+ task ids and a task is in at
+        most one group. Nothing is written. Scans the newest 600 such tasks.
+
+        AI disabled (server-wide, or the user's Insights mode set to off)
+        returns `{ groups: [] }` with 200, never an error.
+      responses:
+        '200':
+          description: Duplicate groups (empty when AI is off or none were found)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_ids:
+                              type: array
+                              minItems: 2
+                              items:
+                                type: integer
+                            reason:
+                              type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: The model call failed or returned nothing usable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   # --- Notifications ---
 
   /api/notifications/actions:

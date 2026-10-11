@@ -192,6 +192,7 @@ src/core/ai/
 ├── quick-take-slot.ts  — Warm SDK slot for Quick Take (latest-wins cancellation)
 ├── whats-next.ts       — What's Next recommendations (surfaces overlooked tasks)
 ├── insights.ts         — AI Insights batch scoring, signals, and session management
+├── process.ts          — Process button: project recommendations and duplicate groups
 ├── format.ts           — Shared task formatting for AI prompts
 ├── user-context.ts     — User AI context and per-feature mode preferences
 ├── task-summaries.ts   — Compact task data builder for AI prompts
@@ -200,7 +201,8 @@ src/core/ai/
 
 ### `types.ts`
 
-- `EnrichmentResultSchema` — Zod schema for task enrichment output (title, due_at, priority, labels, project_name, rrule, auto_snooze_minutes, recurrence_mode, notes, reasoning)
+- `EnrichmentResultSchema` — Zod schema for task enrichment output (title, due_at — the target, deadline_at, horizon, priority, labels, project_name, rrule, auto_snooze_minutes, recurrence_mode, notes, reasoning). `deadline_at` and `horizon` default to null so a text-fallback answer without them still parses
+- `TaskSummary` — also carries optional `deadline_at` and `horizon` (2026-10-10)
 - `WhatsNextResultSchema` — surfaced tasks + reasons + summary
 - `InsightsItemSchema` / `InsightsBatchResultSchema` — per-task score, commentary, and signals
 - `TaskSummary` — compact task representation for AI prompts
@@ -262,6 +264,8 @@ Quick Take uses its own system prompt (`QUICK_TAKE_SYSTEM_PROMPT`) defined in `q
 - `enrichTask(task, user)` — runs enrichment query through warm slot or API
 - `applyEnrichment(task, result, user)` — applies changes via `withTransaction()` + `logAction()`
 - `filterExplicitLabels()` — post-parse guard that strips AI-inferred labels unless the user's input contains explicit label-intent language
+- `sanitizeTaskModelFields()` — post-parse guard for `deadline_at` (dropped without a cutoff word in the input) and `horizon` (dropped without a pace word); both dropped on a recurring result
+- `sanitizeReminderEnrichment()` — clears every task-shaped field on a reminder, `deadline_at` and `horizon` included
 
 ### `quick-take.ts`
 
@@ -280,14 +284,15 @@ Quick Take uses its own system prompt (`QUICK_TAKE_SYSTEM_PROMPT`) defined in `q
 
 - `generateWhatsNext(userId, timezone, tasks)` — surfaces overlooked tasks via per-query call
 - `getCachedWhatsNext(userId)` — returns cached result from `ai_activity_log` if generated today
-- Task selection: includes tasks due within 7 days, overdue, or with no due date
+- Task selection (`selectRelevantTasks`): includes tasks targeted within 7 days, overdue, or with no target — and any task whose `deadline_at` is within 7 days or passed, however far out its target is
 
 ### `insights.ts`
 
 - `startInsightsGeneration(userId, timezone, tasks)` — fire-and-forget background generation with session tracking
 - `generateInsightsForUser(userId, timezone, tasks)` — blocking generation (used by nightly cron)
 - `getInsightsSessionStatus()` / `getInsightsResults()` / `hasInsightsResults()` — retrieval and polling
-- `sanitizeSignals()` — defense-in-depth enforcement of signal rules (P4 score ceiling, act_soon requires P3+, stale requires 21+ days old)
+- `sanitizeSignals()` — defense-in-depth enforcement of signal rules (P4 score ceiling, `actSoonAllowed()` for act_soon, stale requires 21+ days old)
+- `actSoonAllowed()` — a stored `deadline_at` within 7 days (or passed) allows act_soon at any priority, and one further out forbids it at any priority; a task with no deadline falls back to P3+ (deadlines written in notes)
 - `INSIGHTS_SIGNALS` / `SIGNAL_MAP` — signal vocabulary with display properties (label, color, icon)
 - Chunking: single call for ≤500 tasks, shuffled equal chunks for larger lists with calibration summary
 
@@ -313,8 +318,16 @@ Shared utilities for warm slot infrastructure: `SlotState` type, `BaseSlotStats`
 
 - `formatLocalDate()` — ISO UTC to human-readable local time
 - `formatAge()` — pre-computed age string (prevents AI hallucination)
-- `formatTaskLine()` — consistent one-line task format for AI prompts
+- `formatTaskLine()` — consistent one-line task format for AI prompts: `target:` (the old due date; `none` when unset), `deadline:` and `horizon:` only when set, and `(first target: …)` for P3+ tasks whose target moved
 - `getScheduleBlock()` — user's wake/sleep schedule for prompts
+
+### `process.ts`
+
+- `recommendProjects(userId, taskIds)` — the project each task probably belongs in, or null; reads project `description`s and the user's `ai_context`. Never writes
+- `findDuplicates(userId)` — groups of open one-off tasks that look like the same work. Never writes
+- `buildRecommendProjectsPrompt()` / `buildDuplicatesPrompt()` — pure prompt builders shared with the quality harness
+- `sanitizeRecommendations()` / `sanitizeDuplicateGroups()` — drop anything the model was not given (unknown task ids, a project the user doesn't have, groups under two tasks, a task in two groups)
+- Returns `{ status: 'ok' | 'disabled' | 'failed' }`; uses the Insights feature's mode, model and timeout
 
 ### `parse-helpers.ts`
 
@@ -385,6 +398,7 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | Quick Take  | One-liner commentary on task creation                | Sonnet        | Task creation (async, after enrichment) | —                        |
 | What's Next | Surface easily overlooked tasks                      | Haiku         | 3 AM cron + on-demand                   | ai_activity_log (daily)  |
 | Insights    | Batch task scoring, commentary, and signal detection | Opus          | On-demand + nightly cron                | ai_insights_results (DB) |
+| Process     | Project recommendations and duplicate groups         | (Insights')   | On-demand (Process button)              | —                        |
 
 ### Enrichment
 
@@ -394,6 +408,15 @@ Parses natural language task input into structured fields: clean title, due date
 
 Extracted labels pass through `filterExplicitLabels()` — a post-parse guard that strips AI-inferred labels unless the user's input contains explicit label-intent language (e.g., "label it", "tag it", "mark it as").
 
+**Target, deadline and horizon** (task model, 2026-10-10; docs/TASK-MODEL.md § Deadline, target, horizon). The single due date became three fields, and enrichment fills each only from what the user said:
+
+- `due_at` is the **target** — the day the user said to do it ("tomorrow", "do it Saturday", "remind me Thursday at 9"), exactly as before.
+- `deadline_at` is the **real cutoff**, set ONLY from stated cutoff wording: "by Friday", "before the 17th", "due to the client Monday 10am", "expires Oct 13", "the deadline is Feb 28", "closes at 9pm". A cutoff day with no time is the end of that day (23:59 local). A cutoff-only date leaves `due_at` null (the app nags from the deadline on its own); "Cancel M365 by Oct 17, do it Wednesday" sets both. Never inferred — not from urgency, topic, or a target date. An AI-guessed deadline is worse than an AI-guessed date because it caps snoozing.
+- `horizon` is the **pace**, set ONLY from explicit pace wording: "today or tomorrow" / "in the next few days" → days, "this week" → weeks, "sometime this month" → months, "eventually" / "someday" → eventually. Otherwise null (unset, read as weeks). Never from topic or size (Trent's 09-28 "no inference from topic" ruling), never from priority words ("no rush" is still priority 1), never from a named day. "By the end of the month" is a deadline, not a horizon. Setting a horizon also stamps `horizon_set_at`.
+- Recurring tasks, reminders and quotas get neither field; a cutoff on a recurring task stays its time in `due_at` ("every Friday by 5pm").
+
+`sanitizeTaskModelFields()` backs the prompt in code: it drops a deadline when the input has no cutoff word, a horizon when it has no pace word, and both on a recurring result. It cannot tell whether a present cue word is used as one ("drop it off before work" is a target) — that stays the prompt's job. Like a target, both fields are set-only: a null from the model never clears what the task already has. The enrichment toast names them ("Deadline Fri 11:59 PM", "Within weeks").
+
 ### Quick Take
 
 Generates a snappy one-liner after task quick-add, showing awareness of the user's existing tasks. Cross-references when relevant ("3 Acme tasks this week — this makes it a theme") or gives a brief observation.
@@ -402,7 +425,9 @@ The prompt is split into a static system prompt (loaded once at slot init) and a
 
 ### What's Next
 
-Helps the user decide what to focus on — surfacing tasks that deserve attention, are easy to forget, or represent opportunities for progress. Filters to tasks due within 7 days, overdue, or undated. Results cached in `ai_activity_log` for same-day retrieval.
+Helps the user decide what to focus on — surfacing tasks that deserve attention, are easy to forget, or represent opportunities for progress. Filters to tasks targeted within 7 days, overdue, or with no target, plus any task whose deadline is within 7 days. Results cached in `ai_activity_log` for same-day retrieval.
+
+**Target vs deadline in What's Next and Insights** (2026-10-10). The prompts used to read a P3/P4 due date as a deadline. The deadline is its own field now: task lines show `target:` (soft — being past it is routine for P0-3), `deadline:` and `horizon:`, and the shared behavioral model says a deadline is the real cutoff at any priority. Tasks with no `deadline:` field may still state one in their notes (every task created before the field existed), so a P3-4 deadline in the notes is still honored.
 
 ### Insights
 
@@ -417,7 +442,16 @@ Batch-processes the user's entire task list, scoring each task 0-100 based on ho
 | `vague`          | Unclear what this requires               |
 | `misprioritized` | Priority seems off for what this is      |
 
-Code-enforced signal rules (defense-in-depth): P4 scores capped at 25, `act_soon` requires P3+, `stale` requires 21+ days old. Lists over 500 tasks are shuffled and split into equal chunks, each with a calibration summary of the full list. Extended thinking enabled for Opus models.
+Code-enforced signal rules (defense-in-depth): P4 scores capped at 25; `act_soon` needs a real cutoff within 7 days — a stored `deadline_at` within 7 days or passed (any priority; a stored deadline further out forbids it at any priority), or, with no stored deadline, P3+ (a deadline in the notes); `stale` requires 21+ days old. Lists over 500 tasks are shuffled and split into equal chunks, each with a calibration summary of the full list. Extended thinking enabled for Opus models.
+
+### Process
+
+The AI half of the Process button (spec §5): two read-only endpoints the Process modal calls. Both only **recommend** — nothing is written; the user decides.
+
+- `POST /api/process/recommend-projects` — body `{ ids }` (1–100 task ids) → `{ recommendations: [{ task_id, project_id | null, reason }] }`. Topic-based suggestion is allowed here, unlike in enrichment, because the user picks: the modal shows every project in a fixed order with the recommendation highlighted. The prompt gives each project's `description` (what belongs there; `projects.description`) and the user's global `ai_context`. Candidates are the user's own and shared projects minus the Inbox; a recommended id outside that set is dropped, so the task simply has no recommendation.
+- `GET /api/process/duplicates` → `{ groups: [{ task_ids, reason }] }` — possible duplicates among the newest 600 open one-off tasks (no recurring tasks, reminders or quotas). Conservative by design; ids not in the candidate list are dropped, a task appears in at most one group, and groups under two tasks are discarded.
+
+AI disabled (server-wide, or the user's Insights mode off) returns an empty list with 200 — never an error. A failed model call returns 503. Both use the Insights feature's mode, model and timeout rather than a feature of their own (a fifth feature would need new user columns and Settings UI for two buttons inside one modal).
 
 ---
 
@@ -604,6 +638,9 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-projects.ts`    | Project assignment — explicit and name match           | 10    |
 | `enrichment-voice.ts`       | Voice preservation                                     | 8     |
 | `enrichment-reminders.ts`   | Reminder enrichment — cadence and time slots (§6)      | 11    |
+| `enrichment-task-model.ts`  | Target, deadline and horizon (2026-10-10)              | 16    |
+| `task-model-review.ts`      | Deadline field in Insights and What's Next             | 2     |
+| `process.ts`                | Process: project recommendations and duplicates        | 4     |
 | `quick-take.ts`             | Quick Take                                             | 12    |
 | `insights.ts`               | AI Insights scoring and signals                        | 11    |
 | `whats-next.ts`             | What's Next recommendations                            | 8     |
@@ -611,7 +648,9 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `helpers/generate-tasks.ts` | Realistic task list generator (used by insights-large) | —     |
 | `index.ts`                  | Barrel export                                          | —     |
 
-**Total: 148 scenarios** (103 enrichment + 11 enrichment_reminder + 12 quick_take + 14 insights + 8 whats_next)
+**Total: 180 scenarios** (129 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
+
+Scenarios that need a value the run date decides (a deadline "7 days from now") compute it at load time; `must_include` accepts `~date:YYYY-MM-DD` (a local datetime on that day, any time) and `~notnull`. Process scenarios use `process_expectations` (required project per task, groups that must appear, pairs that must not be grouped).
 
 Reminder scenarios are a separate feature, not a subset of enrichment: a
 reminder has its own user prompt (`buildReminderEnrichmentUserPrompt`) built
@@ -628,7 +667,7 @@ rule carries no BYHOUR. Before that it was the slot current at enrichment time.
 Each scenario defines:
 
 - `id` — unique identifier (e.g., `enrich-garbled-dictation`)
-- `feature` — which AI feature (`enrichment`, `whats_next`, `insights`)
+- `feature` — which AI feature (`enrichment`, `enrichment_reminder`, `whats_next`, `insights`, `quick_take`, `process_projects`, `process_duplicates`)
 - `input` — feature-specific input data
 - `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
 
