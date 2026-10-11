@@ -17,6 +17,7 @@ import {
 } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { crossesDeadline, impliedTargetAt } from '@/lib/task-segments'
+import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
@@ -643,6 +644,26 @@ function collectRruleChanges(
 }
 
 /**
+ * A SNOOZE that lands past the deadline — confirmed while the deadline was
+ * still ahead, or any snooze once it has passed — turns the deadline's implied
+ * nag off for the task (2026-10-10, ruling A2). Otherwise the implied target,
+ * which a target past the deadline no longer hides, would keep nagging and the
+ * snooze the user just chose would do nothing. A deliberate re-target past the
+ * deadline is NOT a snooze and leaves the implied nag on, so a target set past
+ * its own deadline never hides the deadline. A new deadline turns it back on.
+ */
+function keepSnoozePastDeadline(
+  data: FieldChangeData,
+  task: Task,
+  deadline: string | null,
+  until: string,
+): void {
+  if (!deadline || Date.parse(until) <= Date.parse(deadline)) return
+  if (data.fieldsChanged.includes('deadline_nag_off') || task.deadline_nag_off) return
+  trackField(data, 'deadline_nag_off', task.deadline_nag_off, true, undefined, 1)
+}
+
+/**
  * Collect due_at changes with snooze detection
  *
  * When due_at changes without rrule changing, it's treated as a snooze:
@@ -690,7 +711,7 @@ function collectDueAtChanges(
   // giving a dateless task its first date (2026-10-10). It is capped by the
   // deadline, counts as a snooze, and keeps the implied target as its origin,
   // so the age badge doesn't reset.
-  const implied = impliedTargetAt(task)
+  const implied = task.deadline_at ? impliedTargetAt(task, getTargetContext(task.user_id)) : null
   const impliedArrived = implied !== null && Date.parse(implied) <= now.getTime()
   if (
     impliedArrived &&
@@ -703,6 +724,7 @@ function collectDueAtChanges(
     if (crossesDeadline(task.deadline_at, input.due_at, now) && !input.allow_past_deadline) {
       throw new PastDeadlineError()
     }
+    keepSnoozePastDeadline(data, task, task.deadline_at, input.due_at)
     if (task.original_due_at !== implied) {
       trackField(data, 'original_due_at', task.original_due_at, implied)
     }
@@ -741,6 +763,7 @@ function collectDueAtChanges(
     if (crossesDeadline(deadline, input.due_at) && !input.allow_past_deadline) {
       throw new PastDeadlineError()
     }
+    keepSnoozePastDeadline(data, task, deadline, input.due_at)
 
     // Set original_due_at if not already set (preserve existing)
     if (task.original_due_at === null) {

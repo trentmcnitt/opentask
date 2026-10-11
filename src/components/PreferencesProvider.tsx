@@ -1,5 +1,7 @@
 'use client'
 
+import { useTimezone } from '@/hooks/useTimezone'
+import { setClientTargetContext } from '@/lib/task-segments'
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
@@ -332,6 +334,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const { status } = useSession()
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
+  const timezone = useTimezone()
   const [dirty] = useState(createDirtyTracker)
   const [saver] = useState(() =>
     createPreferenceSaver((body) =>
@@ -404,6 +407,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     window.addEventListener('opentask-device-token', onDeviceToken)
     return () => window.removeEventListener('opentask-device-token', onDeviceToken)
   }, [status])
+
+  // The user's clock for a deadline's implied target (2026-10-10, ruling B2):
+  // set during render, before any child reads a task's target, so the first
+  // paint already agrees with the server. A plain module value, not state —
+  // nothing re-renders on it; the prefs that feed it already do.
+  setClientTargetContext({ timezone, morningTime: prefs.morningTime })
 
   return (
     <PreferencesContext.Provider

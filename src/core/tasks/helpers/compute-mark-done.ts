@@ -86,7 +86,7 @@ export function computeMarkDone(
     return {
       type: 'recurring',
       nextDueAt,
-      nextDeadlineAt: advanceDeadline(task, nextDueAt),
+      nextDeadlineAt: advanceDeadline(task, nextDueAt, userTimezone),
       prevDueAt: task.due_at,
       stats,
       fieldsChanged: [

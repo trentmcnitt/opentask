@@ -26,6 +26,7 @@ import {
   latestSegmentDay,
   targetAgeDays,
   impliedTargetAt,
+  effectiveTargetAt,
   advanceDeadline,
 } from '@/lib/task-segments'
 import { countTasks } from '@/lib/task-counts'
@@ -299,7 +300,7 @@ describe('Task model', () => {
     })
 
     test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its age', () => {
-      // Deadline Oct 12 18:00 → implied target Oct 8 18:00: nagging since then.
+      // Deadline Oct 12 18:00 → implied target Oct 8 09:00: nagging since then.
       const t = make({ deadline_at: at('2026-10-12T18:00') })
       // A sweep past the deadline leaves it and reports it.
       const swept = bulkSnooze({
@@ -327,10 +328,71 @@ describe('Task model', () => {
         taskId: t.id,
         input: { due_at: at('2026-10-10T16:00') },
       }).task
-      expect(snoozed.original_due_at).toBe(at('2026-10-08T18:00'))
+      // The implied target is the MORNING of the lead day (ruling B2).
+      expect(snoozed.original_due_at).toBe(at('2026-10-08T09:00'))
       expect(snoozed.snooze_count).toBe(1)
       vi.setSystemTime(new Date(at('2026-10-10T17:00')))
       expect(targetAgeDays(snoozed, tz, new Date())).toBe(2)
+    })
+
+    test('TM-038: a target set past its own deadline never hides the deadline (A2)', () => {
+      const ctx = { timezone: tz, morningTime: '09:00' }
+      // Target Oct 20, deadline Oct 13 18:00 → nags from Oct 9 09:00.
+      const t = make({ due_at: at('2026-10-20T09:00'), deadline_at: at('2026-10-13T18:00') })
+      expect(effectiveTargetAt(t, ctx)).toBe(at('2026-10-09T09:00'))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+      // A target at or before the deadline is honoured as set.
+      const ok = make({ due_at: at('2026-10-13T08:00'), deadline_at: at('2026-10-13T18:00') })
+      expect(effectiveTargetAt(ok, ctx)).toBe(at('2026-10-13T08:00'))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(ok.id)
+    })
+
+    test('TM-039: a confirmed snooze past the deadline turns the implied nag off, so it holds', () => {
+      const t = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-11T18:00') })
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        input: { due_at: at('2026-10-12T09:00'), allow_past_deadline: true },
+      })
+      expect(getTaskById(t.id)!.deadline_nag_off).toBe(true)
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
+      // A deliberate re-target past the deadline is not a snooze: nag stays on.
+      const r = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-11T18:00') })
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: r.id,
+        input: { due_at: at('2026-10-12T09:00'), reset_original_due_at: true },
+      })
+      expect(getTaskById(r.id)!.deadline_nag_off).toBe(false)
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(r.id)
+    })
+
+    test('TM-040: the implied nag starts at the morning of the lead day, not at 23:59 (B2)', () => {
+      expect(
+        impliedTargetAt(
+          { due_at: null, deadline_at: at('2026-10-17T23:59') },
+          { timezone: tz, morningTime: '08:30' },
+        ),
+      ).toBe(at('2026-10-13T08:30'))
+    })
+
+    test('TM-041: a recurring deadline keeps its local time across DST', () => {
+      // Sunday 08:00 occurrence, deadline that Sunday 18:00 local. Next
+      // occurrence is after the Nov 1 DST change: still 18:00 local.
+      const next = advanceDeadline(
+        {
+          deadline_at: at('2026-10-25T18:00'),
+          due_at: at('2026-10-25T08:00'),
+          original_due_at: at('2026-10-25T08:00'),
+        },
+        at('2026-11-01T08:00'),
+        tz,
+      )
+      expect(DateTime.fromISO(next!).setZone(tz).toFormat('yyyy-LL-dd HH:mm')).toBe(
+        '2026-11-01 18:00',
+      )
     })
 
     test('TM-035: a recurring deadline moves with the occurrence on done and on skip', () => {
@@ -359,6 +421,7 @@ describe('Task model', () => {
             original_due_at: at('2026-10-11T08:00'),
           },
           at('2026-10-18T08:00'),
+          tz,
         ),
       ).toBe(at('2026-10-18T18:00'))
     })

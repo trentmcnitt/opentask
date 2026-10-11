@@ -4,6 +4,7 @@
  * All bulk operations execute as a single transaction and produce a single undo entry.
  */
 
+import { getTargetContext } from './target-context'
 import { crossesDeadline, effectiveTargetAt } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
@@ -508,6 +509,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const nowDate = new Date()
   let deadlineSkipped = 0
+  const targetCtx = getTargetContext(userId)
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
@@ -542,7 +544,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       const allowed = allowPastDeadline.has(task.id)
       // The EFFECTIVE target: a deadline-only task already nagging from its
       // implied target is snoozed too, so it is capped like any other.
-      const target = effectiveTargetAt(task)
+      const target = effectiveTargetAt(task, targetCtx)
       const nagging = target !== null && Date.parse(target) <= nowDate.getTime()
       const isSnooze = task.due_at !== null || nagging
       if (isSnooze && !allowed && crossesDeadline(task.deadline_at, newDueAt)) {
@@ -777,6 +779,11 @@ function dropQuotasFromDatedBatch(
  *   `includeTaskIds` rescue for explicit picks;
  * - it is a relative move and the task has no date to move.
  */
+/** The batch owner's clock (a bulk edit is one user's tasks). */
+function t0Ctx(tasks: Task[]) {
+  return tasks[0] ? getTargetContext(tasks[0].user_id) : null
+}
+
 function planBulkEditDates(
   tasks: Task[],
   changes: BulkEditChanges,
@@ -835,8 +842,9 @@ function planBulkEditDates(
     const allowed = new Set(opts.allowPastDeadlineIds ?? [])
     const before = plan.skipped
     const now = Date.now()
+    const targetCtx = t0Ctx(tasks)
     withhold((t) => {
-      const current = effectiveTargetAt(t)
+      const current = effectiveTargetAt(t, targetCtx)
       const nagging = current !== null && Date.parse(current) <= now
       if ((t.due_at === null && !nagging) || allowed.has(t.id) || current === null) return true
       const target =

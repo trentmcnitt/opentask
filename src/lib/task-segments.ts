@@ -60,16 +60,63 @@ export interface TargetFields {
   rrule?: string | null
 }
 
-/** The deadline's implied target (deadline − DEADLINE_LEAD_DAYS), when it applies. */
-export function impliedTargetAt(task: TargetFields): string | null {
-  if (task.due_at !== null || task.deadline_at === null || task.deadline_nag_off) return null
-  if (task.rrule) return null
-  return new Date(Date.parse(task.deadline_at) - DEADLINE_LEAD_DAYS * DAY_MS).toISOString()
+/**
+ * Whose clock the implied target is read on: the deadline's lead day starts at
+ * the user's MORNING (`users.morning_time`), not at the deadline's own time of
+ * day — an end-of-day deadline must not first nag at 23:59 four days out.
+ * Server code always passes it (every user has their own); the browser sets
+ * its one user's once (`setClientTargetContext`). Without one the lead is a
+ * plain DEADLINE_LEAD_DAYS × 24h.
+ */
+export interface TargetContext {
+  timezone: string
+  morningTime: string
 }
 
-/** The target the task nags from: its own, else the deadline's implied one. */
-export function effectiveTargetAt(task: TargetFields): string | null {
-  return task.due_at ?? impliedTargetAt(task)
+let clientContext: TargetContext | null = null
+
+/** Browser only: the signed-in user's clock, for every implied target read. */
+export function setClientTargetContext(ctx: TargetContext | null): void {
+  clientContext = ctx
+}
+
+/**
+ * The deadline's implied target, when it applies (2026-10-10, rulings A2/B2):
+ * the morning of the day DEADLINE_LEAD_DAYS before the deadline, for a one-off
+ * with a deadline whose implied nag isn't off, and which has either no target
+ * or a target AFTER the deadline — a target set past its own deadline never
+ * hides the deadline. A target at or before the deadline is honoured as set.
+ */
+export function impliedTargetAt(
+  task: TargetFields,
+  ctx: TargetContext | null = clientContext,
+): string | null {
+  if (task.deadline_at === null || task.deadline_nag_off || task.rrule) return null
+  if (task.due_at !== null && Date.parse(task.due_at) <= Date.parse(task.deadline_at)) return null
+  const deadline = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
+  if (!ctx) return deadline.minus({ days: DEADLINE_LEAD_DAYS }).toISO()!
+  const [hour, minute] = ctx.morningTime.split(':').map(Number)
+  return deadline
+    .setZone(ctx.timezone)
+    .minus({ days: DEADLINE_LEAD_DAYS })
+    .set({ hour, minute, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()!
+}
+
+/**
+ * The target the task nags from: the earlier of its own and the deadline's
+ * implied one (which only exists when there is no target, or the target is
+ * past the deadline).
+ */
+export function effectiveTargetAt(
+  task: TargetFields,
+  ctx: TargetContext | null = clientContext,
+): string | null {
+  const implied = impliedTargetAt(task, ctx)
+  if (task.due_at === null) return implied
+  if (implied === null) return task.due_at
+  return Date.parse(implied) < Date.parse(task.due_at) ? implied : task.due_at
 }
 
 /** The horizon a deadline implies on its own, or null when it is far enough away to imply none. */
@@ -176,8 +223,9 @@ export function segmentState(
   task: SegmentTaskFields,
   timezone: string,
   now: Date,
+  ctx: TargetContext | null = clientContext,
 ): { horizon: HorizonValue; state: SegmentState } | null {
-  if (targetIsToday(effectiveTargetAt(task), timezone, now)) return null
+  if (targetIsToday(effectiveTargetAt(task, ctx), timezone, now)) return null
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const horizon = effectiveHorizon(task, now)
 
@@ -212,10 +260,12 @@ export function targetAgeDays(
   task: TargetFields & { original_due_at: string | null },
   timezone: string,
   now: Date,
+  ctx: TargetContext | null = clientContext,
 ): number | null {
-  const target = effectiveTargetAt(task)
+  const target = effectiveTargetAt(task, ctx)
   if (!target || Date.parse(target) > now.getTime()) return null
-  const first = task.due_at ? (task.original_due_at ?? task.due_at) : target
+  // Its own target counts from its first one; an implied target from itself.
+  const first = target === task.due_at ? (task.original_due_at ?? task.due_at) : target
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const days = Math.round(today.diff(localDay(first, timezone), 'days').days)
   return days > 0 ? days : null
@@ -260,9 +310,25 @@ export function crossesDeadline(
 export function advanceDeadline(
   task: { deadline_at: string | null; due_at: string | null; original_due_at: string | null },
   nextDueAt: string | null,
+  timezone: string,
 ): string | null {
   const origin = task.original_due_at ?? task.due_at
   if (!task.deadline_at || !nextDueAt || !origin) return task.deadline_at
-  const offset = Date.parse(task.deadline_at) - Date.parse(origin)
-  return new Date(Date.parse(nextDueAt) + offset).toISOString()
+  // In LOCAL WALL-CLOCK time, so a DST change between occurrences doesn't
+  // shift it by an hour: the same number of calendar days after the
+  // occurrence, at the deadline's own local time of day.
+  const from = DateTime.fromISO(origin, { zone: 'utc' }).setZone(timezone)
+  const deadline = DateTime.fromISO(task.deadline_at, { zone: 'utc' }).setZone(timezone)
+  const days = Math.round(deadline.startOf('day').diff(from.startOf('day'), 'days').days)
+  return DateTime.fromISO(nextDueAt, { zone: 'utc' })
+    .setZone(timezone)
+    .plus({ days })
+    .set({
+      hour: deadline.hour,
+      minute: deadline.minute,
+      second: deadline.second,
+      millisecond: deadline.millisecond,
+    })
+    .toUTC()
+    .toISO()!
 }
