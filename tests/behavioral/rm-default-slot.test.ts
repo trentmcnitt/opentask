@@ -256,6 +256,8 @@ describe('sanitizeReminderEnrichment — the default slot', () => {
   const result = (rrule: string | null): EnrichmentResult => ({
     title: 't',
     due_at: null,
+    deadline_at: null,
+    horizon: null,
     priority: 0,
     labels: [],
     project_name: null,

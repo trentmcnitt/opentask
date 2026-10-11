@@ -8,6 +8,7 @@
 
 import { z } from 'zod'
 import { isValidRRule } from '@/core/recurrence/rrule-builder'
+import { HORIZON_ORDER } from '@/lib/task-segments'
 
 /**
  * Structured output schema for task enrichment.
@@ -21,10 +22,30 @@ export const EnrichmentResultSchema = z.object({
   due_at: z
     .string()
     .nullable()
-    .describe('ISO 8601 local datetime (no Z, no offset), or null if no date mentioned')
+    .describe(
+      'The TARGET: when the user said to do it or be reminded. ISO 8601 local datetime (no Z, no offset), or null',
+    )
     .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
       message: 'due_at must be a valid ISO 8601 datetime',
     }),
+  // Task model (2026-10-10). Both default to null so a text-fallback response
+  // written without them still parses; in the JSON schema they are required
+  // (Zod's output mode), so structured output always carries them.
+  deadline_at: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      'The real outside cutoff the wording states ("by", "expires", "due to the client"). ISO 8601 local datetime, or null',
+    )
+    .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
+      message: 'deadline_at must be a valid ISO 8601 datetime',
+    }),
+  horizon: z
+    .enum(HORIZON_ORDER)
+    .nullable()
+    .default(null)
+    .describe('Pace the wording states: days, weeks, months, eventually — or null'),
   priority: z.number().int().min(0).max(4).describe('0=unset, 1=low, 2=medium, 3=high, 4=urgent'),
   labels: z.array(z.string()).describe('Relevant labels extracted from the text'),
   project_name: z.string().nullable().describe('Suggested project name, or null'),
@@ -99,6 +120,14 @@ export interface TaskSummary {
   rrule: string | null
   notes: string | null
   recurrence_mode: 'from_due' | 'from_completion'
+  /**
+   * Task model (2026-10-10). `due_at` above is the TARGET; this is the real
+   * cutoff. Optional so hand-written quality scenarios that predate the field
+   * still type-check — absent reads as "no deadline".
+   */
+  deadline_at?: string | null
+  /** Pace: days | weeks | months | eventually. Absent/null = not set. */
+  horizon?: 'days' | 'weeks' | 'months' | 'eventually' | null
 }
 
 /**
