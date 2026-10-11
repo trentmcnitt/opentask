@@ -83,7 +83,7 @@ test.describe('Overdue follows the clock', () => {
     const id = await openWithTaskDueSoon(page)
     await expect(pinned(page)).toHaveCount(0)
     await expect(redPill(page)).toHaveCount(0)
-    await expect(row(page, id)).not.toHaveClass(/border-l-destructive/)
+    await expect(row(page, id)).not.toHaveClass(/border-l-over-target/)
 
     // No reload, no data change: only time passes.
     await page.clock.fastForward('02:00')
@@ -91,7 +91,7 @@ test.describe('Overdue follows the clock', () => {
     await expect(pinned(page)).toBeVisible()
     await expect(pinned(page)).toHaveAttribute('aria-label', /^Over target, 1 /)
     await expect(redPill(page)).toHaveAttribute('aria-label', /^1 over target — /)
-    await expect(row(page, id)).toHaveClass(/border-l-destructive/)
+    await expect(row(page, id)).toHaveClass(/border-l-over-target/)
   })
 
   test.describe('phone', () => {
