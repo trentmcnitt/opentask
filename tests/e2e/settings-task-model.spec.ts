@@ -118,8 +118,8 @@ test('Project description: add with a live count, read back, clear', async ({
     expect((await patched).ok()).toBe(true)
 
     await page.reload()
-    const shown = row.getByRole('button', { name: `Edit description of ${name}` })
-    await expect(shown).toHaveText(text)
+    const shown = row.getByRole('button', { name: `Edit description: ${text}` })
+    await expect(shown).toBeVisible()
     expect((await (await page.request.get(`/api/projects/${id}`)).json()).data.description).toBe(
       text,
     )
@@ -148,8 +148,13 @@ test('the AI-context nudge stays out of the left bar while AI is off', async ({
   const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
   expect(prefs.ai_available).toBe(false)
   expect(prefs).toHaveProperty('ai_context_updated_at')
-  await page.goto('/settings')
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  // Wait for the preferences to load: before they do, AI reads as off
+  // whatever the server says, and this would pass for the wrong reason.
+  await waitForPrefsLoaded(
+    page,
+    () => page.goto('/settings'),
+    page.getByRole('heading', { name: 'Settings' }),
+  )
   await expect(page.locator('aside').getByRole('link', { name: 'Settings' })).toBeVisible()
   await expect(page.locator('[data-ai-context-stale]')).toHaveCount(0)
 })

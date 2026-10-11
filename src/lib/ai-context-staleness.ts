@@ -57,7 +57,8 @@ export function aiContextStalenessLabel(s: AiContextStaleness): string {
 /** "today", "yesterday", "12 days ago" — the age Settings shows under the field. */
 export function formatAiContextAge(updatedAt: string, now: Date = new Date()): string {
   const days = Math.floor((now.getTime() - Date.parse(updatedAt)) / DAY_MS)
-  if (!(days > 0)) return 'today'
+  if (Number.isNaN(days)) return 'at an unknown time'
+  if (days <= 0) return 'today'
   if (days === 1) return 'yesterday'
   return `${days} days ago`
 }

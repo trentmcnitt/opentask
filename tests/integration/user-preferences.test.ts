@@ -792,4 +792,23 @@ describe('ai_context and ai_context_updated_at', () => {
     expect(res.status).toBe(400)
     expect((await read()).at).not.toBe('2020-01-01T00:00:00.000Z')
   })
+
+  // "Still accurate": a review without an edit restamps it, text unchanged.
+  test('ai_context_reviewed: true restamps without changing the text', async () => {
+    const { context, at } = await read()
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context_reviewed: true },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+    expect(data.ai_context).toBe(context)
+    expect(Date.parse(data.ai_context_updated_at)).toBeGreaterThanOrEqual(Date.parse(at ?? '0'))
+
+    const bad = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_context_reviewed: false },
+    })
+    expect(bad.status).toBe(400)
+  })
 })

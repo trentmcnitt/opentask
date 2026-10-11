@@ -177,7 +177,10 @@ function DefaultSnoozeRow() {
   const isPreset = DEFAULT_SNOOZE_PRESETS.includes(defaultSnoozeOption)
 
   return (
-    <SettingRow label="Default snooze" description="Duration used for single-tap snooze">
+    <SettingRow
+      label="Default snooze"
+      description="Where a single tap or swipe snoozes an overdue task"
+    >
       {showCustom ? (
         <div className="flex items-center gap-2">
           <Input

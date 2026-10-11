@@ -382,6 +382,15 @@ function validateAiFields(
     changes.ai_context = resolved
   }
 
+  // "I looked and it is still right" (Settings → AI Context → Mark reviewed):
+  // restamps `ai_context_updated_at` without changing the text, so the
+  // staleness nudge can be cleared by a review, not only by an edit. The
+  // stamp itself is never client-supplied — only `true` is accepted here.
+  if (body.ai_context_reviewed !== undefined) {
+    if (body.ai_context_reviewed !== true) return 'ai_context_reviewed must be true'
+    changes.ai_context_updated_at = new Date().toISOString()
+  }
+
   if (body.ai_mode !== undefined) {
     if (!VALID_AI_MODES.includes(body.ai_mode as (typeof VALID_AI_MODES)[number]))
       return 'ai_mode must be "off" or "on"'
@@ -596,6 +605,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
 // AI fields that demo users cannot modify
 const DEMO_PROTECTED_FIELDS = [
   'ai_context',
+  'ai_context_reviewed',
   'ai_mode',
   'ai_enrichment_mode',
   'ai_quicktake_mode',

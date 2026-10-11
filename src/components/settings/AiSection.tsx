@@ -98,6 +98,31 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
     if (data && data.ai_context_updated_at !== undefined) {
       setAiContextUpdatedAt(data.ai_context_updated_at)
     }
+    // Back to showing the saved value, so trimmed whitespace doesn't leave
+    // the field looking unsaved.
+    if (data) setDraft(null)
+  }
+
+  // A review without an edit: the context is still right, so restamp it
+  // (`ai_context_reviewed`) and the nudge goes away for another three weeks.
+  const handleReviewed = async () => {
+    if (isDemo) {
+      showDemoToast()
+      return
+    }
+    const prev = aiContextUpdatedAt
+    const data = await savePreference<{ ai_context_updated_at?: string | null }>(
+      { ai_context_reviewed: true },
+      {
+        apply: () => {},
+        revert: () => setAiContextUpdatedAt(prev),
+        successMessage: 'Marked as reviewed',
+        errorMessage: 'Failed to save',
+      },
+    )
+    if (data?.ai_context_updated_at !== undefined) {
+      setAiContextUpdatedAt(data.ai_context_updated_at)
+    }
   }
 
   return (
@@ -128,15 +153,29 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
             </span>
           )}
         </span>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleSave}
-          disabled={!dirty || isDemo}
-          className="h-8"
-        >
-          Save
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Only while stale and unedited: an edit's Save restamps anyway.
+              Plain text, like the nudge that led here. */}
+          {stale && !dirty && !isDemo && (
+            <button
+              type="button"
+              data-ai-context-reviewed
+              onClick={handleReviewed}
+              className="text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              {aiContext ? 'Still accurate' : 'Not needed'}
+            </button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={!dirty || isDemo}
+            className="h-8"
+          >
+            Save
+          </Button>
+        </div>
       </div>
     </>
   )

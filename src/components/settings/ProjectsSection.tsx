@@ -104,7 +104,7 @@ export function ProjectsSection() {
     <>
       <SettingsSection
         title="Projects"
-        description="Drag to reorder projects. This order is used in the sidebar and project picker. A description says what belongs in a project, so the AI files tasks correctly."
+        description="Drag to reorder projects. This order is used in the sidebar and project picker. A description says what belongs in a project, for the AI and for apps that file tasks over the API."
       >
         {projectOrder.length > 0 && (
           <SortableProjectList
@@ -239,6 +239,11 @@ function ProjectRow({
   // PATCH /api/projects/:id is owner-only, so only the owner gets the editor;
   // a member of someone else's shared project sees the description read-only.
   const isOwner = !!full && String(full.owner_id) === session?.user?.id
+  // The description being edited (null: not editing). Held here so the
+  // "Add description" affordance can sit on the name's line — see
+  // `ProjectDescription`.
+  const [draft, setDraft] = useState<string | null>(null)
+  const canAdd = isOwner && !full?.description && draft === null
   return (
     <div
       data-project-row={project.id}
@@ -256,7 +261,18 @@ function ProjectRow({
         {full?.color && (
           <span className={`size-2.5 flex-shrink-0 rounded-full ${LABEL_COLORS[full.color].dot}`} />
         )}
-        <span className="flex-1 truncate text-sm">{project.name}</span>
+        <span className="min-w-0 truncate text-sm">{project.name}</span>
+        {canAdd && (
+          <button
+            type="button"
+            data-project-description-add
+            onClick={() => setDraft('')}
+            className="shrink-0 text-xs text-zinc-400 transition-opacity hover:text-zinc-600 focus-visible:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100 dark:text-zinc-500 dark:hover:text-zinc-300"
+          >
+            Add description
+          </button>
+        )}
+        <span className="flex-1" />
         {isShared && <span className="text-xs text-zinc-400">Shared</span>}
         <Badge variant="secondary" className="text-xs tabular-nums">
           {project.active_count ?? 0}
@@ -271,7 +287,15 @@ function ProjectRow({
           </button>
         )}
       </div>
-      {full && <ProjectDescription project={full} editable={isOwner} onSaved={onSaved} />}
+      {full && (
+        <ProjectDescription
+          project={full}
+          editable={isOwner}
+          draft={draft}
+          setDraft={setDraft}
+          onSaved={onSaved}
+        />
+      )}
     </div>
   )
 }
@@ -283,10 +307,11 @@ function ProjectRow({
  *
  * Shown in full under the name, never clipped: it is at most a couple of
  * sentences, and a half-shown definition misleads. Click it to edit. With
- * none, the row offers "Add description" as plain muted text — the text is
- * the affordance, no icon (Trent's rule) — revealed on hover or focus from
- * `md` up so a list of undescribed projects doesn't read as a column of empty
- * slots; always shown on a phone, which has no hover.
+ * none, `ProjectRow` offers "Add description" as plain muted text on the
+ * name's line — the text is the affordance, no icon (Trent's rule), and it
+ * takes no height of its own, so undescribed projects keep the list as tight
+ * as before. From `md` up it shows on hover or focus; always on a phone,
+ * which has no hover.
  *
  * Saving trims (the API does too); an emptied field clears the description.
  * Escape cancels; Cmd/Ctrl+Enter saves.
@@ -294,13 +319,16 @@ function ProjectRow({
 function ProjectDescription({
   project,
   editable,
+  draft,
+  setDraft,
   onSaved,
 }: {
   project: Project
   editable: boolean
+  draft: string | null
+  setDraft: (draft: string | null) => void
   onSaved: () => Promise<void> | void
 }) {
-  const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const saved = project.description ?? ''
 
@@ -376,33 +404,24 @@ function ProjectDescription({
     )
   }
 
-  if (saved) {
-    const text = (
-      <span className="text-xs whitespace-pre-wrap text-zinc-500 dark:text-zinc-400">{saved}</span>
-    )
-    if (!editable) return <div className="mt-0.5 ml-6 text-left">{text}</div>
-    return (
-      <button
-        type="button"
-        data-project-description
-        onClick={() => setDraft(saved)}
-        aria-label={`Edit description of ${project.name}`}
-        className="mt-0.5 ml-6 block cursor-text rounded text-left"
-      >
-        {text}
-      </button>
-    )
-  }
-
-  if (!editable) return null
+  if (!saved) return null
+  // The text size and leading on the element itself: an inline span inside a
+  // block left the button's own line height between wrapped lines.
+  const textClass =
+    'mt-0.5 ml-6 block text-left text-xs leading-snug whitespace-pre-wrap text-zinc-500 dark:text-zinc-400'
+  if (!editable) return <div className={textClass}>{saved}</div>
   return (
     <button
       type="button"
-      data-project-description-add
-      onClick={() => setDraft('')}
-      className="mt-0.5 ml-6 block text-xs text-zinc-400 transition-opacity hover:text-zinc-600 focus-visible:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100 dark:text-zinc-500 dark:hover:text-zinc-300"
+      data-project-description
+      onClick={() => setDraft(saved)}
+      data-project-description-of={project.name}
+      className={`${textClass} cursor-text rounded`}
     >
-      Add description
+      {/* The description is the button's name, so a screen reader hears it;
+          the prefix says what a press does. */}
+      <span className="sr-only">Edit description: </span>
+      {saved}
     </button>
   )
 }

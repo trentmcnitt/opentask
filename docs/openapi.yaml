@@ -3856,7 +3856,9 @@ components:
             changed since this was first recorded (2026-10-10). The app shows a
             quiet "review your AI context" nudge once it is 21 days old, or
             when it is `null`. Not writable: a PATCH carrying only this field
-            is a 400.
+            is a 400. To mark the context reviewed without changing it, PATCH
+            `ai_context_reviewed: true` (write-only; anything but `true` is a
+            400; 403 for the demo account), which restamps it to now.
     PromptKeys:
       type: object
       required: [keys]
