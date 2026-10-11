@@ -1,9 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { DetailModalShell } from '@/components/DetailModalShell'
 import { cn } from '@/lib/utils'
+import { ProcessShell } from './ProcessShell'
 import { ProcessInboxStep } from './ProcessInboxStep'
 import { ProcessDuplicatesStep } from './ProcessDuplicatesStep'
 import { HORIZON_WORD, ProcessGrowthStep } from './ProcessGrowthStep'
@@ -27,10 +27,9 @@ const STEP_ORDER: StepId[] = ['inbox', 'duplicates', 'growth', 'targets']
  * pops up … For what it can't sort, it shows me the task and I pick the
  * project". Opened from the top bar's menu (`ProcessMenuItem`).
  *
- * The chrome is `DetailModalShell` — a dialog on a wide screen, a bottom
- * sheet on a phone, like every other modal surface. It never holds unsaved
- * edits (every tap writes at once, with Undo on its toast), so the shell's
- * dirty guard is always off.
+ * The chrome is `ProcessShell` — `DetailModalShell`'s dialog/sheet, minus the
+ * unsaved-changes guard (every tap writes at once, with Undo on its toast)
+ * and with taps on a toast kept from closing it.
  *
  * STEPS. A step with nothing in it is not shown ("no chrome for something
  * that isn't there"); the step you are on stays, saying it is done, with Next
@@ -46,7 +45,6 @@ export function ProcessModal({
   onOpenChange: (open: boolean) => void
   timezone: string
 }) {
-  const dirtyRef = useRef(false)
   const flow = useProcessFlow(open)
   const actions = useProcessBatchActions(flow)
   const [chosen, setChosen] = useState<StepId | null>(null)
@@ -70,15 +68,7 @@ export function ProcessModal({
   }
 
   return (
-    <DetailModalShell
-      open={open}
-      title="Process"
-      description="Sort the Inbox, find duplicates, grow horizons and clear old targets"
-      isDirty={false}
-      dirtyRef={dirtyRef}
-      onClose={close}
-      onSave={close}
-    >
+    <ProcessShell open={open} onClose={close}>
       <div className="flex flex-col gap-4 pt-1" data-process-modal>
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Process</h2>
@@ -120,7 +110,7 @@ export function ProcessModal({
           </div>
         )}
       </div>
-    </DetailModalShell>
+    </ProcessShell>
   )
 }
 

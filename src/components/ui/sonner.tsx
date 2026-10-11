@@ -67,7 +67,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={(resolvedTheme as 'light' | 'dark') ?? 'light'}
       richColors
-      className="toaster group"
+      // A modal dialog (Radix) sets `pointer-events: none` on <body> and the
+      // toasts inherit it, so a toast's Undo could not be clicked while a modal
+      // was open — the overlay took the click. Process stays open across its
+      // toasts, so their Undo has to work (2026-10-10).
+      className="toaster group [&_[data-sonner-toast]]:pointer-events-auto"
       // Clear the selection bar when one is up, so the toast and its Undo sit
       // above it rather than across it. The bar is 56px tall and sits at
       // bottom-6 on a wide screen and bottom-20 above the phone's tab bar;
