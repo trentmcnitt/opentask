@@ -46,7 +46,7 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Schedule eye exam" or similar — extract the core action from the rambling. ' +
-        'due_at should be approximately next week. ' +
+        '"maybe sometime next week" is a pace with no day (task model 2026-10-10): horizon weeks with due_at null is preferred; a due_at next week is acceptable. ' +
         'Priority 0 — no urgency signal. All the hedging language should be removed.',
     },
   },

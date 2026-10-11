@@ -76,11 +76,15 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "do it Saturday", "remind me Thursday at 9"). When no specific time is mentioned, use the configured default task time from the user prompt. If no date is mentioned, return null.
 
-   A date that only says when the task must be done BY ("by Friday", "before the 17th", "expires Oct 13") is a deadline, not a target: put it in deadline_at and leave due_at null. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both.
+   The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
+
+   A date that only says when the task must be done BY ("by Friday", "before the 17th", "expires Oct 13") is a deadline, not a target: put it in deadline_at and leave due_at null. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both. A target never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
+
+   No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "right now" / "immediately" / "tonight" name a time).
 
    Return the date and time in the user's local timezone. Do NOT convert to UTC or append a Z suffix — the application handles timezone conversion. Example: if the user says "3pm tomorrow" in America/Chicago, return \`2026-03-05T15:00:00\` (not \`2026-03-05T21:00:00Z\`).
 
-   Use the current **local** time (not UTC) to determine today's date and day of week. When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date.
+   Use the current **local** time (not UTC) to determine today's date and day of week. When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date. A month and day with no year ("February 28th", "Oct 13") means the NEXT time that date comes round: if it has already passed this year, use next year. This applies to due_at and deadline_at alike.
 
    When "today" is mentioned with no specific time and the default task time has already passed, use the next reasonable time (e.g., one hour from now or early evening) rather than setting a time in the past.
 
@@ -98,9 +102,11 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
    - "months" — "this month", "sometime this month", "in the next month or two", "within a few months"
    - "eventually" — "eventually", "someday", "one of these days", "at some point", "no timeline"
 
+   A bare "next week" / "next month" names a window, not a pace: give it a horizon (weeks / months) and leave due_at null, rather than inventing a day inside it — unless the user also names the day.
+
    Otherwise null. **Never infer a horizon** from the topic or size of the task (a squeaky door is not "eventually"; a bill is not "days"), from priority words, or from a target or deadline date ("call mom tomorrow" → horizon null). A cutoff phrase is a deadline, not a pace: "by the end of the month" → deadline_at, horizon null; "sometime this month" → horizon months, no deadline. Recurring tasks get horizon null.
 
-   **Horizon never replaces priority.** Low-priority wording ("no rush", "whenever you get a chance", "this can wait", "not urgent") still sets priority 1, exactly as before — it is not a pace and gives horizon null on its own. When a sentence has both ("this can wait, do it at some point"), set priority 1 AND horizon eventually.
+   **Horizon never replaces priority.** Low-priority wording ("no rush", "whenever you get a chance", "this can wait", "not urgent") still sets priority 1, exactly as before — it is not a pace and gives horizon null on its own. When a sentence has both ("this can wait, do it at some point"), set priority 1 AND horizon eventually. Likewise "soon" ("should probably do this soon") is a mild priority signal (1-2), not a pace: it sets no horizon.
 
 5. **priority** — Integer 0-4:
    - 0 = unset (default — no priority signal)

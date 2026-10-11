@@ -77,7 +77,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title should be cleaned of dictation artifacts (um, like, you know, or whatever). ' +
         'Something like "Get the car fixed" or "Go get the car fixed". ' +
-        'due_at should be approximately next week. ' +
+        '"maybe next week" names a window, not a day (task model 2026-10-10): horizon weeks with due_at null is preferred; a due_at next week is acceptable. ' +
         'Labels must be an empty array — no explicit label request in input. Priority 0 or 1.',
     },
   },
