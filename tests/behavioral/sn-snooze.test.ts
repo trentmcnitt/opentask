@@ -981,21 +981,18 @@ describe('computeSnoozeTime: next_period', () => {
     expect(d.toFormat('dd HH:mm')).toBe('15 12:00')
   })
 
-  test("SN-023: after the day's last period has begun, tomorrow's first", () => {
-    // 21:00 Chicago
-    vi.setSystemTime(new Date('2026-01-16T03:00:00Z'))
+  test("SN-023: after the day's last period has begun, the top of the next hour (amendment 17)", () => {
+    // 21:10 Chicago
+    vi.setSystemTime(new Date('2026-01-16T03:10:00Z'))
     const d = DateTime.fromISO(
       computeSnoozeTime('next_period', 'America/Chicago', '09:00', slots),
     ).setZone('America/Chicago')
-    expect(d.toFormat('dd HH:mm')).toBe('16 07:00')
+    expect(d.toFormat('dd HH:mm')).toBe('15 22:00')
   })
 
-  test('SN-024: no periods → +1 hour, rounded like "60"', () => {
+  test('SN-024: no periods → the top of the next hour', () => {
     vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
-    expect(computeSnoozeTime('next_period', 'UTC', '09:00', [])).toBe(
-      computeSnoozeTime('60', 'UTC', '09:00'),
-    )
-    expect(computeSnoozeTime('next_period', 'UTC', '09:00')).toBe('2026-01-15T10:00:00.000Z')
+    expect(computeSnoozeTime('next_period', 'UTC', '09:00', [])).toBe('2026-01-15T09:00:00.000Z')
   })
 })
 
