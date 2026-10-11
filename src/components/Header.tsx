@@ -44,6 +44,8 @@ import { useAiAvailable } from '@/components/PreferencesProvider'
 import { useAiSlotState } from '@/hooks/useAiSlotState'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
+import { ProcessMenuItem } from '@/components/process/ProcessMenuItem'
+import { ProcessModal } from '@/components/process/ProcessModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { DOCS_URL } from '@/lib/docs-url'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
@@ -145,6 +147,7 @@ export function Header({
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
+  const [processOpen, setProcessOpen] = useState(false)
   const [menuOpened, setMenuOpened] = useState(false)
   const aiAvailable = useAiAvailable()
   // The AI Status item's dot: fetched the first time the menu opens, then kept.
@@ -317,6 +320,7 @@ export function Header({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
+                {timezone && <ProcessMenuItem onSelect={() => setProcessOpen(true)} />}
                 {aiAvailable && (
                   <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                     <Bot className="size-4" />
@@ -390,6 +394,9 @@ export function Header({
 
       {timezone && (
         <AIStatusModal open={aiStatusOpen} onOpenChange={setAiStatusOpen} timezone={timezone} />
+      )}
+      {timezone && (
+        <ProcessModal open={processOpen} onOpenChange={setProcessOpen} timezone={timezone} />
       )}
     </TooltipProvider>
   )
