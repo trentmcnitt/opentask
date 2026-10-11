@@ -52,7 +52,11 @@ export interface TaskSegment {
   waiting: number
   considered: number
   deferred: number
-  /** Over SEGMENT_NUDGE_THRESHOLD items: suggest Process or AI help. */
+  /**
+   * Over SEGMENT_NUDGE_THRESHOLD tasks still WAITING: suggest Process or AI
+   * help. Considered and deferred rows don't count — they aren't "here" any
+   * more (Trent, 2026-10-11: a "2 to consider" card said "Over 50 tasks here").
+   */
   nudge: boolean
 }
 
@@ -95,7 +99,7 @@ export function getTaskSegments(userId: number, timezone: string, now = new Date
       waiting: count('waiting'),
       considered: count('considered'),
       deferred: count('deferred'),
-      nudge: tasks.length > SEGMENT_NUDGE_THRESHOLD,
+      nudge: count('waiting') > SEGMENT_NUDGE_THRESHOLD,
     }
   })
 }

@@ -117,9 +117,11 @@ export function TaskSegmentCard({
         />
       </div>
 
-      {segment.nudge && (
+      {/* Counted from what still waits, so it leaves as rows are considered,
+          without waiting for the next fetch (the server's `nudge` rule). */}
+      {segment.waiting > SEGMENT_NUDGE_THRESHOLD && (
         <p className="text-muted-foreground mx-1 mb-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
-          Over {SEGMENT_NUDGE_THRESHOLD} tasks here. Use{' '}
+          Over {SEGMENT_NUDGE_THRESHOLD} tasks to consider. Use{' '}
           <button
             type="button"
             className="text-foreground underline underline-offset-2"
