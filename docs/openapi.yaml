@@ -984,6 +984,10 @@ paths:
                   description: |
                     Task IDs to snooze even if they are P4/Urgent. Used by
                     explicit user selections to bypass the default urgent skip.
+                allow_past_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
       responses:
         '200':
           description: Bulk operation result
@@ -1051,6 +1055,10 @@ paths:
                   items:
                     type: integer
                   description: Tasks to include even if not currently due (e.g. the P4 being acted on).
+                allow_past_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
                 notify:
                   type: boolean
                   default: true
@@ -1085,6 +1093,9 @@ paths:
                       skipped_reminders:
                         type: integer
                         description: Reminders left in place (reminders are period-locked).
+                      skipped_deadline:
+                        type: integer
+                        description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
                       until:
                         type: string
                         format: date-time
@@ -1173,6 +1184,10 @@ paths:
                     Task ids that bypass the High/Urgent snooze filter when `changes.due_at`
                     moves a date without changing `rrule` (explicit picks), as on
                     bulk/snooze. Reminders and quotas are never given a date.
+                allow_past_deadline_ids:
+                  type: array
+                  items: { type: integer }
+                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
                 delta_minutes:
                   type: integer
                   minimum: -1440
@@ -1468,6 +1483,100 @@ paths:
 
   # --- Reminders (§6) ---
 
+  /api/task-segments/consider:
+    post:
+      summary: Mark task-segment rows considered
+      operationId: taskSegmentConsider
+      tags: [Reminders]
+      description: >
+        The circle: stamps `last_considered_at`. Never a completion. One undo entry; logged even when already considered today. The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      considered: { type: integer }
+  /api/task-segments/defer:
+    post:
+      summary: Defer task-segment rows to tomorrow
+      operationId: taskSegmentDefer
+      tags: [Reminders]
+      description: >
+        Defer All: stamps `segment_deferred_at`; off today's segment, back tomorrow. Not a consider. One undo entry. The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deferred: { type: integer }
+  /api/task-segments/target-today:
+    post:
+      summary: Target tasks today
+      operationId: taskSegmentTargetToday
+      tags: [Reminders]
+      description: >
+        A deliberate target (age restarts) at the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour. Also marks them considered. One undo entry (bulk edit). The caller's own open tasks only; anything else refuses the
+        whole request (400).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      until: { type: string, format: date-time }
+                      affected: { type: integer }
   /api/reminders:
     get:
       summary: Today's incomplete reminders grouped by time slot
@@ -1519,6 +1628,42 @@ paths:
                       prompts_considered_total:
                         type: integer
                         description: Quota prompts handled today, all slots.
+                      task_segments:
+                        type: array
+                        description: |
+                          Task segments (2026-10-10): one-off tasks whose
+                          target hasn't arrived, one segment per horizon
+                          (days daily; weeks Saturdays; months the first
+                          Saturday; eventually the first Saturday of Jan, Apr,
+                          Jul, Oct), in screen order. A task not considered
+                          since its segment came round shows daily until it
+                          is. TOP-LEVEL, never inside `groups`; never counted
+                          in `total`, the nav badge or the slot notifications.
+                        items:
+                          type: object
+                          properties:
+                            horizon:
+                              type: string
+                              enum: [days, weeks, months, eventually]
+                            tasks:
+                              type: array
+                              items:
+                                allOf:
+                                  - $ref: '#/components/schemas/Task'
+                                  - type: object
+                                    properties:
+                                      segment_state:
+                                        type: string
+                                        enum: [waiting, considered, deferred]
+                            waiting:
+                              type: integer
+                            considered:
+                              type: integer
+                            deferred:
+                              type: integer
+                            nudge:
+                              type: boolean
+                              description: Over 50 items — suggest Process or AI help.
                       has_any:
                         type: boolean
                         description: |
@@ -3968,6 +4113,47 @@ components:
         original_due_at:
           type: [string, 'null']
           format: date-time
+          description: >
+            The occurrence origin, and the FIRST-TARGET date (2026-10-10): a
+            snooze keeps it, a deliberate re-target (or a task getting a
+            target after having none) restarts it. The target-age badge counts
+            whole local days from it.
+        target_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            The TARGET — when nagging starts (2026-10-10). The primary name;
+            `due_at` carries the same value under its deprecated name.
+        deadline_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            The real cutoff. Never moved by a snooze; while it is still ahead it
+            caps one (see PATCH `allow_past_deadline`). With no target, the
+            task is over target from 4 days before it (computed, not stored)
+            unless `deadline_nag_off`. On a recurring task it moves with each
+            occurrence.
+        horizon:
+          type: [string, 'null']
+          enum: [days, weeks, months, eventually, null]
+          description: >
+            How soon it should get done; picks the task segment it appears in.
+            null = unset (treated as weeks, never reported as set).
+        horizon_set_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the horizon was last set — Process's growth clock.
+        last_considered_at:
+          type: [string, 'null']
+          format: date-time
+          description: The task-segment circle ("I saw it"). Never a completion.
+        segment_deferred_at:
+          type: [string, 'null']
+          format: date-time
+          description: A task segment's Defer All — hidden for that local day.
+        deadline_nag_off:
+          type: boolean
+          description: Silences the deadline's implied nag (set by remove-target).
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -4097,6 +4283,16 @@ components:
       properties:
         title:
           type: string
+        target_at:
+          type: [string, 'null']
+          format: date-time
+          description: The target (primary name). `due_at` is accepted as its deprecated alias; sending both with different values is a 400.
+        deadline_at:
+          type: [string, 'null']
+          format: date-time
+        horizon:
+          type: [string, 'null']
+          enum: [days, weeks, months, eventually, null]
         short_title:
           type: [string, 'null']
           maxLength: 24
@@ -4275,6 +4471,29 @@ components:
             snoozed; an explicit reschedule is allowed. Sent together with
             `rrule`, the date is honored and the rule's anchors are derived
             from it (a re-schedule, never a snooze). A quota has no due date.
+        target_at:
+          type: [string, 'null']
+          format: date-time
+          description: The target (primary name). `due_at` is accepted as its deprecated alias; sending both with different values is a 400.
+        deadline_at:
+          type: [string, 'null']
+          format: date-time
+        horizon:
+          type: [string, 'null']
+          enum: [days, weeks, months, eventually, null]
+        retarget:
+          type: boolean
+          description: Alias of `reset_original_due_at` (a deliberate re-target).
+        deadline_nag_off:
+          type: boolean
+          description: >
+            Silence the deadline's implied nag on a task with no target (remove-target sends it with `target_at: null`). A new `deadline_at` clears it.
+        allow_past_deadline:
+          type: boolean
+          description: |
+            A snooze that would move the target past a deadline that is still
+            ahead is refused with 409 `PAST_DEADLINE`; send this once the user
+            confirms. A deliberate re-target is not capped. PROVISIONAL.
         reset_original_due_at:
           type: boolean
           description: |
@@ -4708,6 +4927,9 @@ components:
         skipped_reminders:
           type: integer
           description: Reminders skipped — they are bucket-locked and never snoozed
+        skipped_deadline:
+          type: integer
+          description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
         skipped_no_due_date:
           type: integer
           description: Relative mode only — tasks with no due_at to add the delta to

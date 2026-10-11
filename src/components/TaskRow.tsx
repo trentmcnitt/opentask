@@ -82,6 +82,8 @@ interface TaskRowProps {
   onDone: () => void
   /** Called with (taskId, until) for immediate snooze */
   onSnooze: (taskId: number, until: string) => void
+  /** Remove the target (2026-10-10) — offered in the snooze hold menu. */
+  onRemoveTarget?: (taskId: number) => void
   isOverdue?: boolean
   isSelected?: boolean
   isSelectionMode?: boolean
@@ -185,6 +187,7 @@ export function TaskRow({
   task,
   onDone,
   onSnooze,
+  onRemoveTarget,
   isOverdue,
   isSelected = false,
   isSelectionMode = false,
@@ -662,6 +665,9 @@ export function TaskRow({
           open={snoozeMenuOpen}
           onOpenChange={setSnoozeMenuOpen}
           onSnooze={(until) => onSnooze(task.id, until)}
+          onRemoveTarget={
+            onRemoveTarget && task.due_at && !task.rrule ? () => onRemoveTarget(task.id) : undefined
+          }
         >
           <Button
             variant="ghost"

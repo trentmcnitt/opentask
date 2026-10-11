@@ -80,6 +80,7 @@ interface TaskListProps {
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
+  onRemoveTarget?: (taskId: number) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -189,6 +190,7 @@ export function TaskList({
   now,
   onDone,
   onSnooze,
+  onRemoveTarget,
   onLabelClick,
   onTaskFocus,
   keyboardFocusedId,
@@ -398,6 +400,7 @@ export function TaskList({
           task={task}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
+          onRemoveTarget={onRemoveTarget}
           // `isOverdue` is the Tasks page's one definition (the
           // top bar's pills use it too). §5: it never counts a
           // quota — its period is what is "due", and the bar

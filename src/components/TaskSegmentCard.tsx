@@ -122,6 +122,7 @@ export function TaskSegmentCard({
               actions={actions}
               timezone={timezone}
               panel={panel}
+              segmentHorizon={segment.horizon}
             />
           ))}
       </ul>
@@ -134,11 +135,13 @@ function TaskSegmentRow({
   actions,
   timezone,
   panel,
+  segmentHorizon,
 }: {
   row: SegmentRow
   actions: TaskSegmentActions
   timezone: string
   panel: boolean
+  segmentHorizon: HorizonValue
 }) {
   const { task } = row
   const considered = row.state === 'considered'
@@ -195,10 +198,15 @@ function TaskSegmentRow({
             {task.title}
           </span>
         </p>
-        <TaskSegmentMeta task={task} timezone={timezone} actions={actions} />
+        <TaskSegmentMeta task={task} timezone={timezone} />
       </div>
       {!considered && (
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+        <div className="-mr-1 flex shrink-0 items-center gap-0.5 pt-0.5 sm:gap-1.5">
+          <HorizonChip
+            task={task}
+            segmentHorizon={segmentHorizon}
+            onChange={(h) => void actions.setHorizon(task, h)}
+          />
           <button
             type="button"
             onClick={(e) => {
@@ -210,7 +218,8 @@ function TaskSegmentRow({
             className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium"
           >
             <CalendarClock className="size-3.5" />
-            <span className={panel ? 'sr-only sm:not-sr-only' : undefined}>Today</span>
+            {/* Icon-only on a phone, so the title keeps the width. */}
+            <span className="sr-only sm:not-sr-only">Today</span>
           </button>
           <Checkbox
             checked={false}
@@ -226,20 +235,17 @@ function TaskSegmentRow({
   )
 }
 
-function TaskSegmentMeta({
-  task,
-  timezone,
-  actions,
-}: {
-  task: Task
-  timezone: string
-  actions: TaskSegmentActions
-}) {
+/**
+ * The second line, only when there is something to say: a future target date
+ * ("Nov 1") or a deadline. Without either the row is one line, a reminder row's
+ * height — the segment stays bite-size.
+ */
+function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
   const target = task.due_at ? DateTime.fromISO(task.due_at).setZone(timezone) : null
   const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null
+  if (!target && !deadline) return null
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <HorizonChip task={task} onChange={(h) => void actions.setHorizon(task, h)} />
       {target && (
         <span data-target-chip title={`Target ${target.toFormat('ccc LLL d, h:mm a')}`}>
           {target.toFormat('LLL d')}
@@ -255,17 +261,27 @@ function TaskSegmentMeta({
 }
 
 /**
- * The horizon, visible and changeable (spec §3). Unset shows as "Unset" — it
- * is treated as weeks, but never reported as if the user had said so.
+ * The horizon, visible and changeable (spec §3). Unset is never reported as if
+ * the user had said "weeks".
+ *
+ * On a segment row (`segmentHorizon` given) the segment header already names
+ * the horizon, so the chip is quiet: its word shows only when the task's own
+ * horizon differs from the segment's (a deadline pulled it in), a faint dot
+ * marks unset, and otherwise it is just the small chevron — still one tap to
+ * change. In the editor it always shows its word.
  */
 export function HorizonChip({
   task,
   onChange,
+  segmentHorizon,
 }: {
   task: Pick<Task, 'horizon' | 'title'>
   onChange: (horizon: HorizonValue | null) => void
+  segmentHorizon?: HorizonValue
 }) {
   const label = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
+  const quiet = segmentHorizon !== undefined
+  const shown = !quiet || (task.horizon !== null && task.horizon !== segmentHorizon)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -273,12 +289,16 @@ export function HorizonChip({
         onPointerDown={(e) => e.stopPropagation()}
         data-horizon-chip
         aria-label={`${HORIZON_WORD}: ${label}. Change`}
+        title={`${HORIZON_WORD}: ${label}`}
         className={cn(
-          'hover:bg-foreground/5 inline-flex items-center gap-0.5 rounded px-1 py-0.5',
-          task.horizon ? 'text-foreground/70' : 'text-muted-foreground/70 italic',
+          'hover:bg-foreground/5 inline-flex items-center gap-0.5 rounded px-1 py-1 text-xs',
+          task.horizon ? 'text-foreground/60' : 'text-muted-foreground/70 italic',
         )}
       >
-        {label}
+        {quiet && !task.horizon && (
+          <span aria-hidden className="bg-muted-foreground/40 size-1.5 rounded-full" />
+        )}
+        {shown && label}
         <ChevronDown className="size-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
