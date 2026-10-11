@@ -245,8 +245,8 @@ describe('contract fixtures match the TS types', () => {
         }
       }
     }
-    // Two daily rows, weekly, monthly — in each of the three captures.
-    expect(seen).toBe(12)
+    // Two daily rows, weekly, monthly — in each of the four captures.
+    expect(seen).toBe(16)
   })
 
   test('group counts agree with the shared counting helpers', () => {
