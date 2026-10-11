@@ -30,6 +30,8 @@ interface OverdueJumpFabProps {
  *   FAB's blue, white or dark grey (all rejected: blue made the two buttons
  *   twins, white/grey read as a black disc in dark mode). A red "unread" dot
  *   was mocked and liked but left off for now to keep it quiet.
+ *   2026-10-11: coral became the over-target plum (`bg-over-target`) — Trent
+ *   wants nothing about an arrived target to signal that anything is wrong.
  * - **A 48px circle, icon only**, the snooze FAB's size and shape so the two
  *   stack as one column. No number on it, so it can't read as a second copy
  *   of the snooze FAB's red count badge; the count and destination are in the
@@ -88,8 +90,8 @@ export function OverdueJumpFab({
     : `${overdueCount} ${OVER_TARGET_LOWER} — show only ${OVER_TARGET_LOWER} tasks and scroll to them`
   const pill = `size-12 items-center justify-center rounded-full text-white shadow-md ${
     overdueFilterOn
-      ? 'bg-[#e0503d] ring-2 ring-[#fb7a6a] ring-offset-2 ring-offset-background hover:bg-[#d4452f]'
-      : 'bg-[#fb7a6a] hover:bg-[#f86a58] active:bg-[#f86a58]'
+      ? 'bg-over-target ring-2 ring-over-target/50 ring-offset-2 ring-offset-background hover:bg-over-target/90'
+      : 'bg-over-target/80 hover:bg-over-target/90 active:bg-over-target/90'
   }`
 
   if (placement === 'phone') {

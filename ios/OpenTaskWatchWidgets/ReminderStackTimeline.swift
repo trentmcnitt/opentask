@@ -181,21 +181,6 @@ enum ReminderStackTimeline {
             )
         }
 
-        // Task segments (2026-10-10) come ahead of the slots — "task
-        // segments open first" (spec §3) — but after the overdue rules
-        // above, which outrank every reminder. Their own card, never a
-        // slot's item, never in a slot's "N left".
-        let liveSegments = applyingPending(done: pendingDone, prompts: pendingPrompts, to: segments)
-        if let segment = TaskSegmentDTO.listed(liveSegments).first(where: \.hasWaiting) {
-            let skips = skipped(segment.pageKey)
-            let remaining = segmentCards(segment, urgent: urgent)
-            let index = remaining.firstIndex { !skips.contains($0.itemKey) } ?? 0
-            return WatchWidgetEntry(
-                date: date, content: .reminder(remaining[index]), ring: ring,
-                relevance: TimelineEntryRelevance(score: 50)
-            )
-        }
-
         if let group = active {
             let skips = skipped(group.slotKey)
             let remaining = cardItems(in: group, slotUrgent: urgent)
@@ -207,6 +192,21 @@ enum ReminderStackTimeline {
             return WatchWidgetEntry(
                 date: date, content: .reminder(card), ring: ring,
                 relevance: TimelineEntryRelevance(score: slotJustStarted(group, now: date) ? 90 : 50)
+            )
+        }
+
+        // Task segments come AFTER the slots (Trent, 10-11: "Tasks should
+        // go underneath Reminders"): a waiting segment takes the card once no
+        // started slot has anything waiting. Their own card, never a slot's
+        // item, never in a slot's "N left".
+        let liveSegments = applyingPending(done: pendingDone, prompts: pendingPrompts, to: segments)
+        if let segment = TaskSegmentDTO.listed(liveSegments).first(where: \.hasWaiting) {
+            let skips = skipped(segment.pageKey)
+            let remaining = segmentCards(segment, urgent: urgent)
+            let index = remaining.firstIndex { !skips.contains($0.itemKey) } ?? 0
+            return WatchWidgetEntry(
+                date: date, content: .reminder(remaining[index]), ring: ring,
+                relevance: TimelineEntryRelevance(score: 50)
             )
         }
 

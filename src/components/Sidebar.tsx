@@ -87,7 +87,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
                     <span className="ml-auto flex items-center gap-1" data-tasks-badge>
                       {taskCounts.overdue > 0 && (
                         <span
-                          className="bg-destructive/15 text-destructive rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                          className="bg-over-target/15 text-over-target rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
                           aria-label={`${taskCounts.overdue} ${OVER_TARGET_LOWER}`}
                         >
                           {taskCounts.overdue}

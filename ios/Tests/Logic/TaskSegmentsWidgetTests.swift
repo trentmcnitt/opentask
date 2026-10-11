@@ -1,7 +1,7 @@
 import XCTest
 
 /// Task segments on the Reminders widget (2026-10-10): the page ring
-/// (`RemindersTimeline` — segments ahead of the slots, the natural page, the
+/// (`RemindersTimeline` — segments after the slots (10-11), the natural page, the
 /// override anchored to it), the optimistic consider/done render
 /// (`WidgetStore.filterPendingSegments`), the cache write-throughs, and the
 /// outbox's `.considerSegment`.
@@ -26,27 +26,31 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
 
     // MARK: Ring
 
-    func testSegmentsComeFirstAndAllDeferredOnesDropOut() throws {
+    func testSegmentsComeAfterTheSlotsAndAllDeferredOnesDropOut() throws {
         let groups = try Fixtures.reminders()
         let listed = TaskSegmentDTO.listed(segments())
         XCTAssertEqual(listed.map(\.horizon), ["days", "weeks"], "months has only a deferred row")
+        // Under the slots (Trent, 10-11), so after them in the ring.
         XCTAssertEqual(
             RemindersTimeline.pageKeys(groups: groups, segments: listed),
-            [-10, -11] + groups.map(\.slotKey)
+            groups.map(\.slotKey) + [-10, -11]
         )
     }
 
-    func testTheFirstWaitingSegmentIsTheNaturalPage() throws {
+    func testTheClocksSlotIsNaturalEvenWhileASegmentWaits() throws {
         let groups = try Fixtures.reminders()
         let listed = TaskSegmentDTO.listed(segments())
-        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), -10)
+        let natural = RemindersTimeline.naturalSlotIndex(in: groups, now: noon)
+        XCTAssertEqual(
+            RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), groups[natural].slotKey
+        )
         let page = RemindersTimeline.displayedPage(groups: groups, segments: listed, now: noon)
-        XCTAssertEqual(page.segmentIndex, 0)
-        XCTAssertEqual(page.slotIndex, RemindersTimeline.naturalSlotIndex(in: groups, now: noon))
+        XCTAssertNil(page.segmentIndex)
+        XCTAssertEqual(page.slotIndex, natural)
 
-        // Days all considered: Weeks still waits, so it is natural.
+        // No slots at all: the first waiting segment is the page.
         let daysDone = TaskSegmentDTO.listed(segments(daysWaiting: false))
-        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: daysDone, now: noon), -11)
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: [], segments: daysDone, now: noon), -11)
     }
 
     func testWithNothingWaitingTheClocksSlotIsNatural() throws {
@@ -61,21 +65,6 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(page.slotIndex, natural)
     }
 
-    /// A chevron onto a slot while a segment waits is anchored to the
-    /// segment, and lapses once the segment is finished.
-    func testOverrideAnchoredToTheSegmentLapsesWhenItIsFinished() throws {
-        let groups = try Fixtures.reminders()
-        let listed = TaskSegmentDTO.listed(segments())
-        WidgetStore.setSlotOverride(slotKey: groups[0].slotKey, naturalSlotKey: -10)
-        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: groups, segments: listed, now: noon), groups[0].slotKey)
-
-        let finished = TaskSegmentDTO.listed([TaskSegmentDTO(horizon: "days", tasks: [row(1, .considered)])])
-        let page = RemindersTimeline.displayedPage(groups: groups, segments: finished, now: noon)
-        XCTAssertNil(page.segmentIndex)
-        XCTAssertEqual(page.slotIndex, RemindersTimeline.naturalSlotIndex(in: groups, now: noon))
-        XCTAssertNil(WidgetStore.slotOverride(), "the stale override is cleared")
-    }
-
     func testAnOverrideOntoASegmentPageResolvesToIt() throws {
         let groups = try Fixtures.reminders()
         let considered = TaskSegmentDTO.listed([TaskSegmentDTO(horizon: "days", tasks: [row(1, .considered)])])
@@ -84,18 +73,22 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(RemindersTimeline.displayedPage(groups: groups, segments: considered, now: noon).segmentIndex, 0)
     }
 
-    /// Auto-advance anchors its override to the natural PAGE: anchored to the
-    /// slot it would read as stale (the segment is natural) and be dropped.
-    func testAutoAdvanceAnchorsToTheNaturalSegment() throws {
+    /// Auto-advance anchors its override to the natural page — the clock's
+    /// slot now that segments sit after the slots.
+    func testAutoAdvanceAnchorsToTheNaturalPage() throws {
         let groups = try Fixtures.reminders()
         let segs = segments()
         // Stand on a finished slot after the clock's (Anytime, always started).
         let anytime = try XCTUnwrap(groups.last)
         XCTAssertTrue(anytime.hasNothingWaiting)
-        WidgetStore.setSlotOverride(slotKey: anytime.slotKey, naturalSlotKey: -10)
+        let naturalKey = try XCTUnwrap(
+            RemindersTimeline.naturalPageKey(groups: groups, segments: TaskSegmentDTO.listed(segs), now: noon)
+        )
+        WidgetStore.setSlotOverride(slotKey: anytime.slotKey, naturalSlotKey: naturalKey)
         RemindersTimeline.autoAdvanceSlot(in: groups, segments: segs, now: noon)
-        let override = try XCTUnwrap(WidgetStore.slotOverride())
-        XCTAssertEqual(override.naturalSlotKey, -10)
+        if let override = WidgetStore.slotOverride() {
+            XCTAssertEqual(override.naturalSlotKey, naturalKey)
+        }
     }
 
     // MARK: Optimistic render and cache

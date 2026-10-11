@@ -114,11 +114,12 @@ private struct TaskRow: View {
     let task: TaskDTO
     let project: ProjectDTO?
 
+    /// The plum's depth for each age step (`TargetAge.Tone`), 2026-10-11.
     static func tint(_ tone: TargetAge.Tone) -> Color {
         switch tone {
-        case .gray: return .secondary
-        case .amber: return .orange
-        case .red: return .red
+        case .light: return WatchTheme.overdue.opacity(0.75)
+        case .medium: return WatchTheme.overdue
+        case .strong: return WatchTheme.overdue
         }
     }
 
@@ -140,9 +141,10 @@ private struct TaskRow: View {
                             .font(.caption2)
                             .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)
                         // The target-age badge (2026-10-10, spec §4): "2d"
-                        // since the FIRST target, toned 1–2 gray, 3–6 amber,
-                        // 7+ red; blank on the target day. Then a red flag
-                        // once the deadline has passed.
+                        // since the FIRST target, toned in three depths of
+                        // plum (1–2 light, 3–6 medium, 7+ strong); blank on
+                        // the target day. Then a red flag once the deadline
+                        // has passed (red is for a passed deadline only).
                         if let days = TargetAge.days(task) {
                             Text(TargetAge.badgeText(days: days))
                                 .font(.caption2.weight(.semibold).monospacedDigit())

@@ -1181,7 +1181,7 @@ private struct TaskRow: View {
 /// over-target row, just left of the due label: "2d" — whole local days since
 /// the task's FIRST target (`TargetAge.days`; a snooze keeps the clock, a
 /// deliberate re-target resets it), blank on the target day — in a small
-/// tinted tab, 1–2 days gray, 3–6 amber, 7+ red. A red flag follows when the
+/// tinted tab in three depths of plum (1–2 light, 3–6 medium, 7+ strong). A red flag follows when the
 /// deadline has passed (nagging continues past a deadline; the flag is how
 /// the row says so).
 ///
@@ -1216,11 +1216,12 @@ private struct TargetAgeBadge: View {
         return ceil(width) + gap
     }
 
+    /// The plum's depth for each age step (`TargetAge.Tone`).
     private func tint(_ tone: TargetAge.Tone) -> Color {
         switch tone {
-        case .gray: return .secondary
-        case .amber: return .orange
-        case .red: return .red
+        case .light: return WidgetTheme.overTarget.opacity(0.75)
+        case .medium: return WidgetTheme.overTarget
+        case .strong: return WidgetTheme.overTarget
         }
     }
 
@@ -1240,7 +1241,7 @@ private struct TargetAgeBadge: View {
                         .padding(.horizontal, Self.horizontalPadding)
                         .background(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(tint(tone).opacity(0.15))
+                                .fill(tint(tone).opacity(tone == .strong ? 0.35 : 0.15))
                         )
                         .accessibilityLabel(Text("\(days) days \(TaskWording.overTargetLower)"))
                 }

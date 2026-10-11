@@ -23,7 +23,9 @@ enum WatchTheme {
     /// pill, project/due-date chip badges (`src/components/TaskRow.tsx`,
     /// `Header.tsx`, `chip-due-badges.ts`) — never orange/amber, which this
     /// surface briefly (and wrongly) used for the same meaning.
-    static let overdue = Color.red
+    /// 2026-10-11: plum, not red — the web's `--over-target`; Trent wants
+    /// nothing about an arrived target to signal that anything is wrong.
+    static let overdue = Color(red: 0.78, green: 0.45, blue: 0.74)
 
     /// Quotas' Takeback mode (`QuotasPageView`): the armed ⊖ toggle and each
     /// row's "−1". Same value as the phone widget's `WidgetTheme.

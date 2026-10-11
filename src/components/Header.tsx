@@ -503,7 +503,11 @@ function TaskCountBadges({
         <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
           <div className="flex flex-col gap-1">
             <span>{taskCount} total tasks</span>
-            {overdueCount > 0 && <span className="text-destructive">{overdueCount} overdue</span>}
+            {overdueCount > 0 && (
+              <span className="text-over-target">
+                {overdueCount} {OVER_TARGET_LOWER}
+              </span>
+            )}
             {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
           </div>
         </PopoverContent>

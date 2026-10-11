@@ -161,12 +161,12 @@ final class TargetAgeTests: XCTestCase {
     }
 
     func testToneSteps() {
-        XCTAssertEqual(TargetAge.tone(days: 1), .gray)
-        XCTAssertEqual(TargetAge.tone(days: 2), .gray)
-        XCTAssertEqual(TargetAge.tone(days: 3), .amber)
-        XCTAssertEqual(TargetAge.tone(days: 6), .amber)
-        XCTAssertEqual(TargetAge.tone(days: 7), .red)
-        XCTAssertEqual(TargetAge.tone(days: 40), .red)
+        XCTAssertEqual(TargetAge.tone(days: 1), .light)
+        XCTAssertEqual(TargetAge.tone(days: 2), .light)
+        XCTAssertEqual(TargetAge.tone(days: 3), .medium)
+        XCTAssertEqual(TargetAge.tone(days: 6), .medium)
+        XCTAssertEqual(TargetAge.tone(days: 7), .strong)
+        XCTAssertEqual(TargetAge.tone(days: 40), .strong)
         XCTAssertEqual(TargetAge.badgeText(days: 2), "2d")
     }
 

@@ -1200,7 +1200,7 @@ export function QuickActionPanel({
                       isDateDirty
                         ? 'font-bold text-blue-500'
                         : isPast
-                          ? 'text-destructive font-medium'
+                          ? 'text-over-target font-medium'
                           : 'text-muted-foreground',
                     )}
                   >

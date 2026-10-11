@@ -92,7 +92,7 @@ export function SnoozeOverdueTrigger({
         >
           <Clock className="size-5" />
           {overdueCount > 0 && (
-            <span className="bg-badge-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
+            <span className="bg-over-target absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold text-white">
               {countText}
             </span>
           )}
@@ -112,7 +112,7 @@ export function SnoozeOverdueTrigger({
         >
           <Clock className="size-5" />
           {overdueCount > 0 && (
-            <span className="bg-badge-destructive text-destructive-foreground absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold">
+            <span className="bg-over-target absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white">
               {countText}
             </span>
           )}

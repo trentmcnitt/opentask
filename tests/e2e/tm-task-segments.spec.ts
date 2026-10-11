@@ -37,7 +37,7 @@ const segmentRow = (page: Page, id: number) =>
   page.locator('[data-task-segments]').locator(`[data-segment-task="${id}"]`)
 
 test.describe('Task segments', () => {
-  test('come first on /reminders; circle considers, Today targets, Defer all defers', async ({
+  test('sit under the slots on /reminders; circle considers, Today targets, Defer all defers', async ({
     authenticatedPage: page,
   }) => {
     const titles = ['A', 'B', 'C'].map((s) => uniqueTitle(`TM seg ${s}`))
@@ -50,19 +50,21 @@ test.describe('Task segments', () => {
       await expect(days).toBeVisible()
       for (const id of ids) await expect(segmentRow(page, id)).toBeVisible()
 
-      // First on the screen: above every slot card.
-      const slot = page.locator('[data-slot-key], [data-reminder-slot]').first()
+      // Under the reminder slots (Trent, 10-11): below the last slot card.
+      const slot = page.locator('[data-slot-key]').last()
       if (await slot.count()) {
         const segBox = await days.boundingBox()
         const slotBox = await slot.boundingBox()
-        expect(segBox!.y).toBeLessThan(slotBox!.y)
+        expect(segBox!.y).toBeGreaterThan(slotBox!.y)
       }
 
       // Circle → considered (never a completion).
       await segmentRow(page, ids[0])
         .getByRole('button', { name: /as considered/ })
         .click()
-      await expect(segmentRow(page, ids[0])).toHaveAttribute('data-segment-state', 'considered')
+      // It leaves the list, like a considered reminder, so the next row moves
+      // up under the pointer.
+      await expect(segmentRow(page, ids[0])).toHaveCount(0)
       await expect.poll(async () => (await stateOf(page, ids[0])).last_considered_at).not.toBeNull()
       expect((await stateOf(page, ids[0])).done).toBe(false)
 
@@ -80,6 +82,8 @@ test.describe('Task segments', () => {
         .poll(async () => (await stateOf(page, ids[2])).segment_deferred_at)
         .not.toBeNull()
       expect((await stateOf(page, ids[2])).last_considered_at).toBeNull()
+      // Defer all never touches a row already considered.
+      expect((await stateOf(page, ids[0])).segment_deferred_at).toBeNull()
     } finally {
       await trash(page, ids)
     }

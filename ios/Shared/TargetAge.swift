@@ -21,10 +21,10 @@ enum TargetAge {
     /// days early for all priorities").
     static let deadlineLeadDays = 4
 
-    /// The server's `TARGET_AGE_AMBER_DAYS` / `TARGET_AGE_RED_DAYS`
+    /// The server's `TARGET_AGE_MEDIUM_DAYS` / `TARGET_AGE_STRONG_DAYS`
     /// (placeholders Trent may tune).
-    static let amberDays = 3
-    static let redDays = 7
+    static let mediumDays = 3
+    static let strongDays = 7
 
     /// The deadline's implied target, when it applies (the server's
     /// `impliedTargetAt`): a one-off (no rrule) with a deadline, the nag not
@@ -101,15 +101,18 @@ enum TargetAge {
         return days > 0 ? days : nil
     }
 
+    /// Three depths of ONE calm plum (the web's `--over-target`), never red or
+    /// amber: an arrived target signals nothing wrong (Trent, 2026-10-11). Red
+    /// is kept for a passed deadline only.
     enum Tone: Equatable {
-        case gray, amber, red
+        case light, medium, strong
     }
 
-    /// 1–2 days gray, 3–6 amber, 7+ red.
+    /// 1–2 days light, 3–6 medium, 7+ strong.
     static func tone(days: Int) -> Tone {
-        if days >= redDays { return .red }
-        if days >= amberDays { return .amber }
-        return .gray
+        if days >= strongDays { return .strong }
+        if days >= mediumDays { return .medium }
+        return .light
     }
 
     /// The badge's text: just the age — "2d", never "2d over" (spec §4).

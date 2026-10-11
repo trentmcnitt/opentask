@@ -115,6 +115,10 @@ enum WidgetTheme {
     /// resting one. It never colors a count, a bar or a pace mark.
     static let takebackTint = Color.red
 
+    /// Over target (2026-10-11): a calm plum, the web's `--over-target` —
+    /// never red, which is kept for a passed deadline only (Trent).
+    static let overTarget = Color(red: 0.62, green: 0.27, blue: 0.58)
+
     // MARK: - Metrics
 
     static let rowSpacing: CGFloat = 10
@@ -582,10 +586,11 @@ enum WidgetTheme {
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
         if overdue {
-            // All red (2026-09-25): the day word ("Yesterday", "Wed",
-            // "Sep 12") is part of what's late, so it wears the same red as
-            // the time, stacked over it exactly like an upcoming label.
-            let red = Color.red.opacity(0.9)
+            // All one color (2026-09-25): the day word ("Yesterday", "Wed",
+            // "Sep 12") is part of what's late, so it wears the same tint as
+            // the time, stacked over it exactly like an upcoming label. Plum,
+            // not red, since 2026-10-11 (WidgetTheme.overTarget).
+            let red = WidgetTheme.overTarget
             var text: Text?
             if let dayWord = parts.dayWord { text = Text(dayWord).foregroundStyle(red) }
             if let time = parts.time {
