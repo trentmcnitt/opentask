@@ -4,7 +4,7 @@ import { Flag } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
-import { HorizonChip } from '@/components/TaskSegmentCard'
+import { HorizonChip } from '@/components/TaskSegmentRow'
 import { DEADLINE_WORD, HORIZON_WORD } from '@/lib/task-model-words'
 import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
 

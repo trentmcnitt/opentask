@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { showToast } from '@/lib/toast'
-import type { HorizonValue, SegmentState } from '@/lib/task-segments'
+import { effectiveHorizon, type HorizonValue, type SegmentState } from '@/lib/task-segments'
 import { HORIZON_LABELS } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import type { Task } from '@/types'
@@ -20,7 +20,8 @@ import type { Task } from '@/types'
  * - checkbox → done (`POST /api/tasks/{id}/done`, the same as a dashboard tick)
  * - Target today → a deliberate target today; the row leaves the segment
  * - Defer All → everything still waiting in that segment, back tomorrow
- * - horizon chip → a new horizon (the row may change segment on refresh)
+ * - horizon chip → a new horizon (the row may change segment on refresh; the
+ *   toast then says "Moved to Tasks · <Horizon>")
  */
 
 type Overlay = SegmentState | 'gone'
@@ -166,7 +167,7 @@ export function useTaskSegments({
     [run],
   )
   const setHorizon = useCallback(
-    async (task: Task, horizon: HorizonValue | null) => {
+    async (task: Task, horizon: HorizonValue | null, segment?: HorizonValue) => {
       inFlight.current++
       try {
         const res = await fetch(`/api/tasks/${task.id}`, {
@@ -176,7 +177,7 @@ export function useTaskSegments({
         })
         if (!res.ok) throw new Error('Could not change the horizon')
         showToast({
-          message: horizon ? `Horizon: ${HORIZON_LABELS[horizon]}` : 'Horizon cleared',
+          message: horizonToast(task, horizon, segment),
           type: 'success',
           action: { label: 'Undo', onClick: onUndo },
         })
@@ -205,6 +206,21 @@ export function useTaskSegments({
   )
 
   return { segments: view, consider, done, targetToday, deferAll, setHorizon, restore }
+}
+
+/**
+ * The horizon chip's toast. When the change moves the row to another segment,
+ * it says where it went ("Moved to Tasks · Months", 2026-10-11) — the row is
+ * about to leave the list, and "Horizon: Months" didn't say that. Compared on
+ * the EFFECTIVE horizon (a deadline can pull a task in, so a new set horizon
+ * may leave it where it is); unchanged, it keeps the plain "Horizon: X".
+ */
+function horizonToast(task: Task, horizon: HorizonValue | null, segment?: HorizonValue): string {
+  if (segment) {
+    const next = effectiveHorizon({ horizon, deadline_at: task.deadline_at }, new Date())
+    if (next !== segment) return `Moved to Tasks · ${HORIZON_LABELS[next]}`
+  }
+  return horizon ? `Horizon: ${HORIZON_LABELS[horizon]}` : 'Horizon cleared'
 }
 
 export type TaskSegmentActions = ReturnType<typeof useTaskSegments>

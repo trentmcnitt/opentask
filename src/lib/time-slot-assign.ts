@@ -306,3 +306,59 @@ export function slotAfterFinishing(
   }
   return finished < natural ? natural : null
 }
+
+/**
+ * The dashboard reminders panel's pager walks PAGES: every slot group, then
+ * every task segment with a row today (2026-10-11, Trent: "days, weeks, etc.
+ * should be individual segments and behave similarly to the segments for
+ * reminders"). These two rules extend `naturalSlotIndex` and
+ * `slotAfterFinishing` to that list. Both take what each page has waiting, in
+ * pager order, and how many of the pages are slots (the slots come first).
+ *
+ * A task segment has no start time: it is today's from the first minute, so
+ * it is never "not yet due". But it is not the day's spine either — an
+ * unfinished slot up to now always comes before it.
+ */
+
+/**
+ * Where the pager opens: the natural slot (`naturalSlotIndex`), unless no slot
+ * up to and including it has anything waiting and a task segment does — then
+ * the first task segment still waiting. A finished morning with three tasks to
+ * consider opens on the tasks rather than on a green "4 of 4"; a slot from
+ * earlier in the day still waiting keeps today's landing.
+ */
+export function naturalPageIndex(
+  waiting: number[],
+  slotCount: number,
+  naturalSlot: number,
+): number {
+  for (let i = 0; i <= naturalSlot && i < slotCount; i++) {
+    if (waiting[i] > 0) return naturalSlot
+  }
+  for (let i = slotCount; i < waiting.length; i++) {
+    if (waiting[i] > 0) return i
+  }
+  return slotCount > 0 ? naturalSlot : 0
+}
+
+/**
+ * Where the pager goes when the page on screen has just been finished (its
+ * last row considered, or a "Considered all" / "Defer all"), or null to stay.
+ * `slotAfterFinishing`'s rule with the task segments after the slots: the
+ * earliest slot up to now still waiting, else the first task segment still
+ * waiting, else — for a past slot — the natural slot.
+ */
+export function pageAfterFinishing(
+  waiting: number[],
+  slotCount: number,
+  finished: number,
+  naturalSlot: number,
+): number | null {
+  for (let i = 0; i <= naturalSlot && i < slotCount; i++) {
+    if (i !== finished && waiting[i] > 0) return i
+  }
+  for (let i = slotCount; i < waiting.length; i++) {
+    if (i !== finished && waiting[i] > 0) return i
+  }
+  return finished < naturalSlot ? naturalSlot : null
+}

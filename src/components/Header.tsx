@@ -152,7 +152,7 @@ export function Header({
   const [processOpen, setProcessOpen] = useState(false)
   // Bumped on each opening: the modal remounts, so every Process starts fresh.
   const [processSession, setProcessSession] = useState(0)
-  // A task segment's "over 50" nudge (TaskSegmentCard) asks for Process.
+  // A task segment's "over 50" nudge (`SegmentNudge` in TaskSegmentRow) asks for Process.
   useEffect(() => {
     const open = () => {
       setProcessSession((n) => n + 1)

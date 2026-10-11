@@ -208,11 +208,16 @@ export default async function globalSetup() {
   // hasn't arrived shows in its horizon's segment on the reminders surfaces —
   // which would put "Buy groceries" on screen twice for every spec that looks
   // for it, on whichever weekday the run happens. The seeded one-offs are made
-  // "eventually" (first Saturday of a quarter) and considered now, so they stay
-  // out of today's segments; tests/e2e/tm-task-segments.spec.ts makes its own.
+  // "eventually" (first Saturday of a quarter) and stamped considered a day
+  // AHEAD, so they stay out of today's segments; tests/e2e/tm-task-segments.spec.ts
+  // makes its own. Not "now": a task considered TODAY is still in its segment,
+  // as a considered row, and since 2026-10-11 every segment is a page of the
+  // dashboard panel's pager — a "Tasks · Eventually 3 of 3" page after the
+  // slots that every pager spec would have to step over. A day ahead is never
+  // "today" and is past every segment day, so the segment never forms.
   db.exec(
     `UPDATE tasks SET horizon = 'eventually',
-       last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day')
      WHERE rrule IS NULL`,
   )
 

@@ -1,21 +1,37 @@
 'use client'
 
-import { TaskSegmentCard } from '@/components/TaskSegmentCard'
-import { useTaskSegments, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, ChevronRight, Forward } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
-import { naturalSlotIndex, slotAfterFinishing, type TimeSlot } from '@/lib/time-slot-assign'
+import { slotHasStarted } from '@/lib/reminders-summary'
+import {
+  naturalPageIndex,
+  naturalSlotIndex,
+  pageAfterFinishing,
+  type TimeSlot,
+} from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup, type UseRemindersReturn } from '@/hooks/useReminders'
+import { useTaskSegments, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import { NotesMarker } from '@/components/NotesMarker'
 import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
+import {
+  ConsideredSegmentRow,
+  SegmentNudge,
+  TaskSegmentRow,
+  handledRows,
+  segmentCounts,
+  segmentHint,
+  segmentKey,
+  segmentLabel,
+  waitingRows,
+} from '@/components/TaskSegmentRow'
 import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveReminderDetail } from '@/lib/save-reminder-detail'
@@ -138,25 +154,195 @@ function useRowEditor({
 }
 
 /**
- * What changed about the slot on screen since the last render, and whether
+ * One page of the pager: a slot, or a TASK SEGMENT (2026-10-11).
+ *
+ * Trent: "why isn't tasks segmented like reminders? days, weeks, etc. should
+ * be individual segments and behave similarly to the segments for reminders."
+ * So each task segment with a row today is a page AFTER the last slot — its
+ * own bar in the strip, the same chevrons, the same header and "X of Y" (the
+ * tap that shows what was considered, with put-back) — where it used to be a
+ * card stacked under the pager. Everything index-based here (the chevrons,
+ * the bar, the finishing move, the natural page) walks this one list.
+ *
+ * `waiting`/`considered`/`total` are a page's numbers as the header and the
+ * bar read them. For a task segment "considered" is what was handled today —
+ * considered or deferred — the segment's own "X of Y" (`segmentCounts`).
+ */
+type PanelPage =
+  | {
+      kind: 'slot'
+      key: string
+      label: string
+      hint: string | null
+      group: ReminderGroup
+      waiting: number
+      considered: number
+      total: number
+      started: boolean
+    }
+  | {
+      kind: 'tasks'
+      key: string
+      label: string
+      hint: string
+      segment: SegmentView
+      waiting: number
+      considered: number
+      total: number
+      started: true
+    }
+
+/**
+ * The pages in pager order: the slots (only when the day has any reminder at
+ * all — an empty day of slots is nothing to page through), then each task
+ * segment with a row today, in screen order (days → eventually).
+ */
+function buildPages(
+  groups: ReminderGroup[],
+  segments: SegmentView[],
+  timezone: string,
+  now: Date,
+): { pages: PanelPage[]; slotCount: number } {
+  const hasAnything = groups.some((g) => groupWaiting(g) > 0 || groupConsidered(g) > 0)
+  const slots: PanelPage[] = hasAnything
+    ? groups.map((group) => {
+        const waiting = groupWaiting(group)
+        const considered = groupConsidered(group)
+        return {
+          kind: 'slot' as const,
+          key: slotGroupKey(group),
+          label: slotLabel(group),
+          hint: group.slot ? formatClockTime(group.slot.start_time) : null,
+          group,
+          waiting,
+          considered,
+          total: waiting + considered,
+          started: slotHasStarted(group.slot, timezone, now),
+        }
+      })
+    : []
+  const tasks: PanelPage[] = segments.map((segment) => {
+    const { handled, total } = segmentCounts(segment)
+    return {
+      kind: 'tasks' as const,
+      key: segmentKey(segment),
+      label: segmentLabel(segment),
+      hint: segmentHint(segment),
+      segment,
+      waiting: segment.waiting,
+      considered: handled,
+      total,
+      started: true as const,
+    }
+  })
+  return { pages: [...slots, ...tasks], slotCount: slots.length }
+}
+
+/**
+ * What changed about the page on screen since the last render, and whether
  * that was finishing it: the new `seen` to record (null when nothing changed)
- * and the slot key to move to, if finishing a past slot means moving on.
+ * and the page key to move to, if finishing it means moving on.
+ *
+ * A finished TASK page with nowhere to go pins itself (`to` = its own key):
+ * the natural page can be a task segment (`naturalPageIndex`), and once it is
+ * finished the natural page moves back to the slot, which would yank the
+ * pager away from the "3 of 3 ✓" just earned. A finished slot needs no pin:
+ * the natural slot does not depend on what is waiting.
  */
 function afterFinishing(
   seen: { key: string; waiting: number } | null,
-  groups: ReminderGroup[],
+  pages: PanelPage[],
   index: number,
-  natural: number,
+  slotCount: number,
+  naturalSlot: number,
 ): { seen: { key: string; waiting: number }; to: string | null } | null {
-  const key = slotGroupKey(groups[index])
-  const waiting = groupWaiting(groups[index])
-  if (seen?.key === key && seen.waiting === waiting) return null
-  const finished = seen?.key === key && seen.waiting > 0 && waiting === 0
-  const target = finished ? slotAfterFinishing(groups, index, natural) : null
-  const landing = groups[target ?? index]
+  const page = pages[index]
+  if (seen?.key === page.key && seen.waiting === page.waiting) return null
+  const finished = seen?.key === page.key && seen.waiting > 0 && page.waiting === 0
+  const target = finished
+    ? pageAfterFinishing(
+        pages.map((p) => p.waiting),
+        slotCount,
+        index,
+        naturalSlot,
+      )
+    : null
+  const landing = pages[target ?? index]
+  const pin = finished && target === null && page.kind === 'tasks'
   return {
-    seen: { key: slotGroupKey(landing), waiting: groupWaiting(landing) },
-    to: target === null ? null : slotGroupKey(landing),
+    seen: { key: landing.key, waiting: landing.waiting },
+    to: target !== null ? landing.key : pin ? page.key : null,
+  }
+}
+
+/**
+ * The pager's state: which page is on screen, which pages are uncapped, and
+ * whether the page's considered rows are showing.
+ */
+function usePanelPager(pages: PanelPage[], slotCount: number, naturalSlot: number) {
+  // The chevron override, by page key rather than index: pages can reorder or
+  // shrink on a refresh, and a key survives that where an index wouldn't.
+  const [overrideKey, setOverrideKey] = useState<string | null>(null)
+  // Per-page uncapped state — a Set so paging away and back remembers it.
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
+  // The page on screen and how many were waiting in it at the last render —
+  // how finishing it is told apart from paging to one already finished. See
+  // `pageAfterFinishing`.
+  const [seen, setSeen] = useState<{ key: string; waiting: number } | null>(null)
+  // Whether this page's already-considered rows are showing. Per-page, and
+  // reset by paging, because "what did I already do here" is a question about
+  // one page rather than a mode the panel sits in.
+  const [showConsidered, setShowConsidered] = useState(false)
+  if (pages.length === 0) return null
+
+  const natural = naturalPageIndex(
+    pages.map((p) => p.waiting),
+    slotCount,
+    naturalSlot,
+  )
+  const overrideIndex = overrideKey ? pages.findIndex((p) => p.key === overrideKey) : -1
+  const index = overrideIndex >= 0 ? overrideIndex : natural
+  const page = pages[index]
+
+  // FINISHING A PAGE MOVES THE PAGER TO THE EARLIEST UNDONE ONE (Trent,
+  // 2026-09-22, refined 2026-09-23 — see `pageAfterFinishing` for the rule;
+  // task segments come after the slots since 2026-10-11). Only a page that
+  // went from something waiting to nothing, while on screen, counts: paging
+  // to one that was already done leaves you there to look at it. Last
+  // check-off, "Considered all" and "Defer all" all qualify. Set during
+  // render, not in an effect, so the emptied page is never painted before the
+  // move.
+  const move = afterFinishing(seen, pages, index, slotCount, naturalSlot)
+  if (move) {
+    setSeen(move.seen)
+    if (move.to) {
+      setOverrideKey(move.to)
+      if (move.to !== page.key) setShowConsidered(false)
+    }
+  }
+
+  const goTo = (nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= pages.length) return
+    setOverrideKey(pages[nextIndex].key)
+    setShowConsidered(false)
+  }
+  const expanded = expandedKeys.has(page.key)
+  const setExpanded = (next: boolean) => {
+    setExpandedKeys((prev) => {
+      const copy = new Set(prev)
+      if (next) copy.add(page.key)
+      else copy.delete(page.key)
+      return copy
+    })
+  }
+  return {
+    page,
+    index,
+    goTo,
+    expanded,
+    setExpanded,
+    showConsidered,
+    toggleConsidered: () => setShowConsidered((v) => !v),
   }
 }
 
@@ -181,7 +367,12 @@ export function DashboardRemindersPanel({
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
-  const { segments, panelSegments } = usePanelSegment(reminders, onUndo, onCompleted)
+  const segments = useTaskSegments({
+    segments: reminders.taskSegments,
+    refresh,
+    onUndo,
+    onCompleted,
+  })
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
   // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
   // No leaving animation here, like the reminder rows (see the docblock).
@@ -199,10 +390,6 @@ export function DashboardRemindersPanel({
   // per row: only ever one bubble at a time, the same way `TrackPanel` holds
   // a single `detailId` for its chips.
   const [peekId, setPeekId] = useState<number | null>(null)
-  // Whether this slot's already-considered thoughts are showing. Per-slot, and
-  // reset by paging, because "what did I already do here" is a question about
-  // one slot rather than a mode the panel sits in.
-  const [showConsidered, setShowConsidered] = useState(false)
 
   useEffect(() => {
     refreshRef.current = () => void refresh()
@@ -211,73 +398,137 @@ export function DashboardRemindersPanel({
     }
   }, [refreshRef, refresh])
 
-  // The chevron override, by slot key rather than index: `groups` can reorder
-  // or shrink on a refresh, and a key survives that where an index wouldn't.
-  const [overrideKey, setOverrideKey] = useState<string | null>(null)
-  // Per-slot uncapped state — a Set so paging away and back remembers it.
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
-  // The slot on screen and how many were waiting in it at the last render —
-  // how finishing it is told apart from paging to one already finished. See
-  // `slotAfterFinishing`.
-  const [seen, setSeen] = useState<{ key: string; waiting: number } | null>(null)
-
-  // Nothing anywhere today (no reminders waiting, none considered) — nothing
-  // to show, the same way `TrackPanel` returns null with no quotas.
-  const hasAnything = groups.some((g) => groupWaiting(g) > 0 || groupConsidered(g) > 0)
-  const segmentCard =
-    panelSegments.length > 0 ? (
-      <PanelSegments segments={panelSegments} actions={segments} timezone={timezone} />
-    ) : null
-  if (!hasAnything) return segmentCard ? <SegmentOnlyPanel>{segmentCard}</SegmentOnlyPanel> : null
-
   // `new Date()` at the call site, not hoisted to a variable: this keeps the
   // call a fresh object identity every render, so the React Compiler cannot
   // memoize it away as "pure in groups/timezone" and skip recomputing purely
   // because the wall clock moved — see the module docblock's "component state
   // that recomputes... on each render is sufficient" assumption.
   const now = new Date()
-  const natural = naturalSlotIndex(groups, timezone, now)
-  const overrideIndex = overrideKey ? groups.findIndex((g) => slotGroupKey(g) === overrideKey) : -1
-  const index = overrideIndex >= 0 ? overrideIndex : natural
-  const group = groups[index]
-  const key = slotGroupKey(group)
-  const expanded = expandedKeys.has(key)
+  const { pages, slotCount } = buildPages(groups, segments.segments, timezone, now)
+  const naturalSlot = slotCount > 0 ? naturalSlotIndex(groups, timezone, now) : 0
+  const pager = usePanelPager(pages, slotCount, naturalSlot)
+  // Nothing anywhere today — no reminder waiting or considered, no task
+  // segment — nothing to show, the same way `TrackPanel` returns null with no
+  // quotas.
+  if (!pager) return null
+  const { page, index, expanded, setExpanded, showConsidered } = pager
+
+  return (
+    <section
+      aria-label="Reminders"
+      data-reminders-panel
+      data-reminders-slot={page.key}
+      data-reminders-page={page.kind}
+      data-task-segment={page.kind === 'tasks' ? page.segment.horizon : undefined}
+      className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
+    >
+      <SlotPagerHeader
+        label={page.label}
+        time={page.hint}
+        considered={page.considered}
+        total={page.total}
+        expanded={expanded}
+        canGoPrev={index > 0}
+        canGoNext={index < pages.length - 1}
+        onPrev={() => pager.goTo(index - 1)}
+        onNext={() => pager.goTo(index + 1)}
+        sweep={
+          expanded ? (
+            <PagerSweep
+              page={page}
+              onConsiderAll={(group) => void completeGroup(group)}
+              onDeferAll={(segment) => void segments.deferAll(segment)}
+            />
+          ) : null
+        }
+        onToggleExpanded={() => setExpanded(!expanded)}
+        showConsidered={showConsidered}
+        onToggleConsidered={pager.toggleConsidered}
+      />
+
+      {/* Replaces the per-slot hairline this panel used to show only while a
+          slot was expanded — which meant a short slot, the common case, showed
+          no progress at all (Trent, 2026-09-21: "I don't see any indication of
+          progress, which is a little disappointing"). The bar is always on
+          screen and covers every page — the slots, then the task segments —
+          so it answers that for the whole day rather than for whichever one
+          happens to be open. */}
+      <ReminderSlotBar
+        items={pages}
+        currentIndex={index}
+        onJump={(next) => {
+          pager.goTo(next)
+          setPeekId(null)
+        }}
+      />
+
+      {page.kind === 'slot' ? (
+        <SlotPageBody
+          group={page.group}
+          label={page.label}
+          expanded={expanded}
+          showConsidered={showConsidered}
+          onToggleExpanded={() => setExpanded(!expanded)}
+          rowList={(rows) => (
+            <PanelRowList
+              rows={rows}
+              expanded={expanded}
+              label={page.label}
+              peekId={peekId}
+              setPeekId={setPeekId}
+              onComplete={(reminder) => void complete(reminder)}
+              onRemove={(task) => void remove([task])}
+              onOpenEditor={editor.open}
+              renderPrompt={prompts.renderPrompt}
+              timeSlots={timeSlots}
+              timezone={timezone}
+            />
+          )}
+          onPutBack={(task) => void putBack(task)}
+          onPutBackPrompt={(prompt) => void putBackPrompt(prompt)}
+        />
+      ) : (
+        <TaskPageBody
+          segment={page.segment}
+          actions={segments}
+          timezone={timezone}
+          expanded={expanded}
+          showConsidered={showConsidered}
+          onToggleExpanded={() => setExpanded(!expanded)}
+        />
+      )}
+
+      {editor.modal}
+      {prompts.modal}
+    </section>
+  )
+}
+
+/**
+ * A slot page's body: its rows (reminders, then waiting quota prompts), what
+ * was considered when the count is tapped, and "Show more".
+ */
+function SlotPageBody({
+  group,
+  label,
+  expanded,
+  showConsidered,
+  onToggleExpanded,
+  rowList,
+  onPutBack,
+  onPutBackPrompt,
+}: {
+  group: ReminderGroup
+  label: string
+  expanded: boolean
+  showConsidered: boolean
+  onToggleExpanded: () => void
+  rowList: (rows: PanelSlotRow[]) => React.ReactNode
+  onPutBack: (task: Task) => void
+  onPutBackPrompt: (prompt: QuotaPrompt) => void
+}) {
   const rows = slotRows(group)
   const count = rows.length
-  const considered = groupConsidered(group)
-
-  // FINISHING A SLOT MOVES THE PAGER TO THE EARLIEST UNDONE ONE (Trent,
-  // 2026-09-22, refined 2026-09-23 — see `slotAfterFinishing` for the rule). Only a slot that went from something
-  // waiting to nothing, while on screen, counts: paging to a slot that was
-  // already done leaves you there to look at it. Last check-off and
-  // "Considered all" both qualify. Set during render, not in an effect, so the
-  // emptied slot is never painted before the move.
-  const move = afterFinishing(seen, groups, index, natural)
-  if (move) {
-    setSeen(move.seen)
-    if (move.to) {
-      setOverrideKey(move.to)
-      setShowConsidered(false)
-    }
-  }
-
-  const goTo = (nextIndex: number) => {
-    if (nextIndex < 0 || nextIndex >= groups.length) return
-    setOverrideKey(slotGroupKey(groups[nextIndex]))
-    setShowConsidered(false)
-  }
-  const setExpanded = (next: boolean) => {
-    setExpandedKeys((prev) => {
-      const copy = new Set(prev)
-      if (next) copy.add(key)
-      else copy.delete(key)
-      return copy
-    })
-  }
-
-  const label = slotLabel(group)
-  const time = group.slot ? formatClockTime(group.slot.start_time) : null
-  const total = count + considered
   // WHICH ROWS ARE ON SCREEN IS DECIDED IN CSS, NOT HERE.
   //
   // The cap is per-width, and reading the width in JS is the one thing this
@@ -293,157 +544,139 @@ export function DashboardRemindersPanel({
   // panel stops sharing vertical space with the day and gets a column of its
   // own, which is the whole reason the narrow cap is tighter.
   const visible = expanded ? rows : rows.slice(0, WIDE_CAP)
-  const hiddenWhenNarrow = count - NARROW_CAP
-  const hiddenWhenWide = count - WIDE_CAP
-
   return (
-    <section
-      aria-label="Reminders"
-      data-reminders-panel
-      data-reminders-slot={key}
-      className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
-    >
-      <SlotPagerHeader
-        label={label}
-        time={time}
-        considered={considered}
-        total={total}
-        expanded={expanded}
-        canGoPrev={index > 0}
-        canGoNext={index < groups.length - 1}
-        onPrev={() => goTo(index - 1)}
-        onNext={() => goTo(index + 1)}
-        onConsiderAll={() => void completeGroup(group)}
-        onToggleExpanded={() => setExpanded(!expanded)}
-        showConsidered={showConsidered}
-        onToggleConsidered={() => setShowConsidered((v) => !v)}
-      />
-
-      {/* Replaces the per-slot hairline this panel used to show only while a
-          slot was expanded — which meant a short slot, the common case, showed
-          no progress at all (Trent, 2026-09-21: "I don't see any indication of
-          progress, which is a little disappointing"). The bar is always on
-          screen and covers every slot, so it answers that for the whole day
-          rather than for whichever one happens to be open. */}
-      <ReminderSlotBar
-        groups={groups}
-        currentIndex={index}
-        timezone={timezone}
-        now={now}
-        onJump={(next) => {
-          setOverrideKey(slotGroupKey(groups[next]))
-          setPeekId(null)
-          setShowConsidered(false)
-        }}
-      />
-
+    <>
       {count === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
       ) : (
-        <PanelRowList
-          rows={visible}
-          expanded={expanded}
-          label={label}
-          peekId={peekId}
-          setPeekId={setPeekId}
-          onComplete={(reminder) => void complete(reminder)}
-          onRemove={(task) => void remove([task])}
-          onOpenEditor={editor.open}
-          renderPrompt={prompts.renderPrompt}
-          timeSlots={timeSlots}
-          timezone={timezone}
-        />
+        rowList(visible)
       )}
-
-      {showConsidered && considered > 0 && (
+      {showConsidered && groupConsidered(group) > 0 && (
         <ConsideredList
           items={group.consideredItems}
           prompts={group.prompts.filter((p) => !promptWaiting(p))}
           label={label}
-          onPutBack={(task) => void putBack(task)}
-          onPutBackPrompt={(prompt) => void putBackPrompt(prompt)}
+          onPutBack={onPutBack}
+          onPutBackPrompt={onPutBackPrompt}
         />
       )}
-
-      {hiddenWhenNarrow > 0 && (
+      {count - NARROW_CAP > 0 && (
         <RowCountToggle
           expanded={expanded}
-          hiddenWhenNarrow={hiddenWhenNarrow}
-          hiddenWhenWide={hiddenWhenWide}
-          onToggle={() => setExpanded(!expanded)}
+          hiddenWhenNarrow={count - NARROW_CAP}
+          hiddenWhenWide={count - WIDE_CAP}
+          onToggle={onToggleExpanded}
         />
       )}
-
-      {segmentCard}
-      {editor.modal}
-      {prompts.modal}
-    </section>
-  )
-}
-
-/**
- * Task segments sit UNDER the slot pager on the panel (Trent, 10-11: "Tasks
- * should go underneath Reminders"; 10-10 had them first). Every segment with
- * a row today shows: one still waiting at full size, a finished one as just
- * its header ("4 of 4 ✓") and its "Show 4 considered", so a consider can be
- * put back from the panel too (2026-10-11 — it used to fold away).
- */
-function usePanelSegment(
-  reminders: ReturnType<typeof useReminders>,
-  onUndo: () => void,
-  onCompleted: () => void,
-) {
-  const segments = useTaskSegments({
-    segments: reminders.taskSegments,
-    refresh: reminders.refresh,
-    onUndo,
-    onCompleted,
-  })
-  return { segments, panelSegments: segments.segments }
-}
-
-/** Every segment with a row today, in screen order (days → eventually). */
-function PanelSegments({
-  segments,
-  actions,
-  timezone,
-}: {
-  segments: SegmentView[]
-  actions: TaskSegmentActions
-  timezone: string
-}) {
-  return (
-    <>
-      {segments.map((segment) => (
-        <PanelSegment
-          key={segment.horizon}
-          segment={segment}
-          actions={actions}
-          timezone={timezone}
-        />
-      ))}
     </>
   )
 }
 
-function PanelSegment(props: {
+/**
+ * A task segment's page: the same body as a slot's, with the segment's rows
+ * (circle = consider, Today, horizon chip, done square — the panel row
+ * geometry), its considered and deferred rows behind the count with their
+ * put-back, and the slot pages' row cap and "Show more".
+ */
+function TaskPageBody({
+  segment,
+  actions,
+  timezone,
+  expanded,
+  showConsidered,
+  onToggleExpanded,
+}: {
   segment: SegmentView
   actions: TaskSegmentActions
   timezone: string
+  expanded: boolean
+  showConsidered: boolean
+  onToggleExpanded: () => void
 }) {
+  const label = segmentLabel(segment)
+  const rows = waitingRows(segment)
+  const handled = handledRows(segment)
+  const visible = expanded ? rows : rows.slice(0, WIDE_CAP)
   return (
-    <div className="border-foreground/5 border-t">
-      <TaskSegmentCard {...props} variant="panel" />
-    </div>
+    <>
+      <SegmentNudge segment={segment} className="mx-3" />
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
+      ) : (
+        <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>
+          {visible.map((row, i) => (
+            <TaskSegmentRow
+              key={row.task.id}
+              row={row}
+              actions={actions}
+              timezone={timezone}
+              panel
+              segmentHorizon={segment.horizon}
+              hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
+            />
+          ))}
+        </ul>
+      )}
+      {showConsidered && handled.length > 0 && (
+        <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
+          {handled.map((row) => (
+            <ConsideredSegmentRow
+              key={row.task.id}
+              row={row}
+              panel
+              onPutBack={(task) => void actions.restore(task)}
+            />
+          ))}
+        </ul>
+      )}
+      {rows.length - NARROW_CAP > 0 && (
+        <RowCountToggle
+          expanded={expanded}
+          hiddenWhenNarrow={rows.length - NARROW_CAP}
+          hiddenWhenWide={rows.length - WIDE_CAP}
+          onToggle={onToggleExpanded}
+        />
+      )}
+    </>
   )
 }
 
-/** The panel on a day with task segments but no reminders. */
-function SegmentOnlyPanel({ children }: { children: React.ReactNode }) {
+/**
+ * The header's sweep, in the place a slot has always had it: "Considered all"
+ * on a slot, "Defer all" on a task segment (2026-10-11) — the segment's way to
+ * clear today's list without considering each row. Only while the page is
+ * expanded, like the slot's, and never when there is nothing to sweep.
+ */
+function PagerSweep({
+  page,
+  onConsiderAll,
+  onDeferAll,
+}: {
+  page: PanelPage
+  onConsiderAll: (group: ReminderGroup) => void
+  onDeferAll: (segment: SegmentView) => void
+}) {
+  const slot = page.kind === 'slot'
+  if (slot ? page.total === 0 : page.waiting === 0) return null
   return (
-    <section aria-label="Reminders" data-reminders-panel className="bg-muted/30 mb-6 rounded-2xl">
-      {children}
-    </section>
+    <button
+      type="button"
+      onClick={() => (page.kind === 'slot' ? onConsiderAll(page.group) : onDeferAll(page.segment))}
+      aria-label={
+        slot
+          ? `Mark all in ${page.label} as considered`
+          : `Defer all ${page.waiting} in ${page.label}`
+      }
+      title={slot ? undefined : "Take the rest off today's list; they come back tomorrow"}
+      className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium transition-colors"
+    >
+      {slot ? (
+        <CheckCheck className="size-3.5" strokeWidth={2.5} />
+      ) : (
+        <Forward className="size-3.5" strokeWidth={2.5} />
+      )}
+      <span className="hidden sm:inline">{slot ? 'Considered all' : 'Defer all'}</span>
+    </button>
   )
 }
 
@@ -523,8 +756,8 @@ function PanelRowList({
 }
 
 /**
- * Prev chevron / slot name + time / count / (Considered all, expanded only) /
- * next chevron — one row, mirroring the widget's own `ChevronPager` header
+ * Prev chevron / page name + time (a task segment: its hint) / count /
+ * (Considered all or Defer all, expanded only) / next chevron — one row, mirroring the widget's own `ChevronPager` header
  * except for the readout: the widget says "N left", this says the mockup's
  * "<considered> of <total>" so the number reads the same way the real
  * Reminders page's slot counter does (climbs, never counts down).
@@ -539,7 +772,7 @@ function SlotPagerHeader({
   canGoNext,
   onPrev,
   onNext,
-  onConsiderAll,
+  sweep,
   onToggleExpanded,
   showConsidered,
   onToggleConsidered,
@@ -553,7 +786,8 @@ function SlotPagerHeader({
   canGoNext: boolean
   onPrev: () => void
   onNext: () => void
-  onConsiderAll: () => void
+  /** "Considered all" on a slot, "Defer all" on a task segment (`PagerSweep`). */
+  sweep: React.ReactNode
   /** Tapping the bar between the chevrons opens and shuts the slot. */
   onToggleExpanded: () => void
   showConsidered: boolean
@@ -593,7 +827,7 @@ function SlotPagerHeader({
         data-slot-header-toggle
         className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
       >
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 truncate">
           <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
             {label}
           </span>
@@ -666,17 +900,7 @@ function SlotPagerHeader({
         </span>
       )}
 
-      {expanded && total > 0 && (
-        <button
-          type="button"
-          onClick={onConsiderAll}
-          aria-label={`Mark all in ${label} as considered`}
-          className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium transition-colors"
-        >
-          <CheckCheck className="size-3.5" strokeWidth={2.5} />
-          <span className="hidden sm:inline">Considered all</span>
-        </button>
-      )}
+      {sweep}
 
       <button
         type="button"
