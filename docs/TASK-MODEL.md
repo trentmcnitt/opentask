@@ -1,37 +1,170 @@
-# Task Model & Due Date Philosophy
+# Task Model
 
-Complete reference for the OpenTask task data model and due date semantics. The main `AGENTS.md` has a brief summary; this file has the full details.
+Complete reference for the OpenTask task data model: deadline, target and horizon, task segments, priority, recurrence, snooze, quotas and undo. The main `AGENTS.md` has a brief summary; this file has the full details.
 
-## Due Date Philosophy
+## Deadline, target, horizon
 
-OpenTask is not a traditional task manager. Due dates for most tasks are **reminders, not deadlines**. Understanding that distinction is critical for interpreting task data correctly, especially in AI features. See `docs/DESIGN.md` for the full rationale.
+The 2026-10-10 task model. Until then one field, `due_at`, carried four different things: real deadlines, the times Trent wanted to start, AI placeholders, and pure awareness. Daily bulk snoozing bent it until "overdue" meant nothing ("I have 25 overdue things, and I'm really not overdue on 25 things" — Trent, 10-10). Now a task carries a separate answer for each question:
 
-**Priority determines whether a due date is a deadline or a reminder:**
+| Column        | API name                                | Meaning                                                                                                    | Moved by                                                       |
+| ------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `due_at`      | `target_at` (`due_at` deprecated alias) | The **target**: when nagging starts. A soft commitment to a day and time                                   | Snooze (keeps the age), re-target (restarts it), remove target |
+| `deadline_at` | `deadline_at`                           | The **deadline**: the real cutoff. It can move, but only deliberately                                      | Only an explicit write of the field. Never a snooze            |
+| `horizon`     | `horizon`                               | How soon it should get done, its pace: `days`, `weeks`, `months`, `eventually`, or `null` (unset, = weeks) | Only an explicit write. Nothing grows or shrinks it on its own |
+| `priority`    | `priority`                              | Unchanged: what missing it costs                                                                           | Unchanged                                                      |
 
-- **Priority 0-1 (Unset/Low):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem.
-- **Priority 2 (Medium):** `due_at` is a reminder. Eligible for bulk snooze. Being overdue has low significance.
-- **Priority 3 (High):** `due_at` is a deadline. High tasks resist a sweep so a defensive bulk snooze can't silently re-date a real deadline — but they are not exempt from one: a bulk snooze takes them once no lower-priority task in the same batch is still eligible (see **Bulk snooze** below). Being overdue is significant. `HIGH_PRIORITY_THRESHOLD = 3` in `src/lib/priority.ts` is the boundary.
-- **Priority 4 (Urgent):** `due_at` is a hard deadline. Urgent tasks resist sweeps _and_ break through everything (critical-level notifications). They must be snoozed individually, so every due date change is a deliberate decision. Being overdue is always significant. `URGENT_PRIORITY = 4` in `src/lib/priority.ts`.
+Target, deadline and horizon are each nullable and independent of the others. The pure rules live in `src/lib/task-segments.ts`, shared by the server and the web UI. `tests/behavioral/tm-task-model.test.ts` has the rules as tests.
 
-| Priority        | Due date means | Bulk snooze                     | "Overdue" significance |
-| --------------- | -------------- | ------------------------------- | ---------------------- |
-| 0-1 (Unset/Low) | Reminder       | Eligible                        | Normal — not a problem |
-| 2 (Medium)      | Reminder       | Eligible                        | Low                    |
-| 3 (High)        | Deadline       | Only when nothing lower is left | Significant            |
-| 4 (Urgent)      | Hard deadline  | Never                           | Critical               |
+### API names
 
-**Bulk snooze:** P0-P2 are always swept. **P3 (High) is swept only when no lower-priority task in the same batch is still eligible** — so the first press clears P0-P2 and a second press, finding only High left, takes it. Two presses, no mode, no second button. P4 (Urgent) is never swept: its due date is a hard deadline and every change to one has to be a deliberate, individual act.
+`target_at` is the primary name for the target, in requests and responses. `due_at` is its deprecated alias: older native builds, Shortcuts and the desks send it, so it is still accepted, and it is still returned with the same value (`formatTaskResponse`). Likewise `retarget: true` is the primary name for `reset_original_due_at: true`. The DB column is still `due_at`. `normalizeTargetAliases` (`src/core/validation/task.ts`) maps the names on create, update and the `changes` of a bulk edit. Sending both names with different values is a 400, never a guess.
+
+Reads also expose `deadline_at`, `horizon`, `horizon_set_at`, `last_considered_at`, `segment_deferred_at`, `deadline_nag_off` and `original_due_at` (the first-target date).
+
+### Target
+
+The target is when a task starts nagging: the dashboard's over-target list, the overdue notifications, the app-icon badge. Before its target arrives, or with no target, a one-off task sits in a [task segment](#task-segments) instead. **Never both.**
+
+**The target's age.** `original_due_at` is the first-target date, and the age clock:
+
+| Change                                                              | `original_due_at`              |
+| ------------------------------------------------------------------- | ------------------------------ |
+| Any snooze (see [Snooze](#snooze))                                  | Kept: the age keeps counting   |
+| Re-target (`retarget: true`, the target line's own picker)          | = the new target: age restarts |
+| A task with no target gets one (any path, including "Target today") | = the new target: age restarts |
+| Remove target (`target_at: null`)                                   | Cleared                        |
+
+A no-target → target change always restarts the clock, even if a stale origin is somehow still stored, so a fresh target never shows an age inherited from an old one (`collectDueAtChanges`, `src/core/tasks/helpers/collect-field-changes.ts`).
+
+**Target-age badge.** An over-target row carries a corner tab with just the age ("2d"): whole local days since the first target (`targetAgeDays`). Blank on the target day itself. Colors: 1–2 days gray, 3–6 amber, 7+ red (`TARGET_AGE_AMBER_DAYS = 3`, `TARGET_AGE_RED_DAYS = 7`, placeholders Trent may tune). A deadline-only task's age counts from its implied target.
+
+**Remove target** sends the task back to its horizon's segment. On a task with a deadline it also sets `deadline_nag_off`, or removing would do nothing: the deadline's implied target would keep the task over target.
+
+There is no automatic target lapse. Over-target items are cleared by done, remove target, Process ("remove targets aged 7d+", `STALE_TARGET_DAYS = 7`, which leaves deadline tasks out) and review.
+
+### Deadline
+
+`deadline_at` is an ordinary field. No snooze path ever sends it, which is what keeps a snooze from moving it. Enrichment sets it only from an outside date stated in the wording: an AI-guessed deadline is worse than an AI-guessed date, because it caps snoozing.
+
+**The deadline caps a snooze, but only while it is still ahead.** `crossesDeadline(deadline, until)` is true when the deadline is in the future and the snooze lands past it. It is never a silent clamp:
+
+| Path                                                                     | Snooze past a deadline that is still ahead                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Single snooze (snooze endpoint, `PATCH { target_at }`, the quick grid)   | Refused: 409 `PAST_DEADLINE` (`PastDeadlineError`). Resend with `allow_past_deadline: true` once the user confirms. On the web the confirm is the refusal toast's "Snooze anyway" button, with Undo after (`src/lib/past-deadline.ts`), not a modal |
+| Bulk snooze, snooze-overdue, bulk edit with a date                       | The task is left where it is and counted in `skipped_deadline`, the way an Urgent task is. Ids in `allow_past_deadline_ids` go through. The web toast adds "· N kept before their deadline"                                                         |
+| Notification snooze buttons (`POST /api/notifications/actions`)          | Honored: one explicit tap, with no room for a confirm                                                                                                                                                                                               |
+| Re-target (`retarget: true`), or a task with no target getting its first | Not capped: that sets a target, it doesn't snooze one                                                                                                                                                                                               |
+
+**Past the deadline, nagging continues** (Trent: "sometimes it's for a client and you're in a rush, so we can't just stop nagging"). The cap is off, snooze works as it always did, and the over-target row carries a past-deadline marker (`isPastDeadline`). A better post-deadline behavior is an open question; none is built. **The cap is PROVISIONAL.**
+
+**A deadline with no target still nags.** A one-off task with a deadline and no target has an **implied target** at `deadline − DEADLINE_LEAD_DAYS` (4 days, at every priority; tentative, tuned in `src/lib/task-segments.ts`). It is computed, never stored, so nothing drifts. `effectiveTargetAt` is the TypeScript rule and `effectiveTargetSql()` (`src/core/tasks/currently-due.ts`) its SQL twin, which every over-target query selects `AS due_at`, so the notifier's cadence math, the badge and the counts read an implied target exactly like a set one. `deadline_nag_off` (what remove target sets) turns it off for that task. Any change to `deadline_at` turns it back on, unless the same request says otherwise: a new deadline is new information. Recurring tasks never get an implied target.
+
+**A recurring deadline moves with the occurrence** (the weekly Upwork lock). On done, skip and put-back, `advanceDeadline` keeps the deadline the same distance from the new occurrence as it was from the current one. It measures from the occurrence origin (`original_due_at`), so a snoozed occurrence never shifts it. Left alone, a stale deadline would cap every later snooze.
+
+### Horizon
+
+How soon the task should get done. It decides which [task segment](#task-segments) the task appears in, and nothing else. `null` is unset: treated as `weeks`, but never reported as set (`task.horizon` stays null, and the UI says "Unset"). Enrichment sets it only from explicit pace wording ("sometime this month"). Changing it restarts `horizon_set_at`, the clock Process reads to ask whether a horizon should grow; re-sending the same value is not a change.
+
+**Effective horizon** (`effectiveHorizon`) is the sooner of the set horizon (unset = weeks) and the one the deadline implies:
+
+| Deadline         | Implies  |
+| ---------------- | -------- |
+| ≤ 7 days away    | `days`   |
+| ≤ 21 days away   | `weeks`  |
+| ≤ 90 days away   | `months` |
+| Further, or none | nothing  |
+
+A deadline only ever pulls a horizon **in**. Nothing grows one on its own: growth is Process asking and the user saying yes. The 90-day step is this build's call, so a deadline months away still surfaces monthly on an "eventually" task.
+
+The dashboard's `horizon` sort (`src/lib/task-grouping.ts`) orders over target first, then effective horizon, deadline, priority, newest.
+
+### Over target
+
+"Over target" is what "overdue" was: a task whose target, set or implied, has arrived. Same machinery, new word — see [Over target (overdue)](#over-target-overdue) for the code. The code, the API and the query parameters keep "overdue". The UI word lives in one constant, `OVER_TARGET` in `src/lib/task-model-words.ts`, beside `HORIZON_WORD` and the horizon labels. Both words are **PROVISIONAL** (Trent: "not a fan of the name"; "horizon" "doesn't resonate"). The native apps keep their own copy.
+
+## Task segments
+
+Rules in `src/lib/task-segments.ts`; reads and actions in `src/core/tasks/task-segments.ts`; the card and row in `src/components/TaskSegmentCard.tsx`.
+
+A task segment lists tasks whose target hasn't arrived, for awareness, on the reminders screen. It answers "out of sight, out of mind": a squeaky door isn't worth today, but without being reminded at some clip, the day it would fit naturally is missed too.
+
+**Which tasks.** The user's own open, one-off tasks: not deleted, not archived, not recurring (its schedule already brings it round), not a reminder, not a quota. Only the owner's: a task in someone else's shared project is theirs to consider. And only while its effective target is not today or earlier. A target later **today** already takes a task out (`targetIsToday` compares local days), so "Target today" moves it to the dashboard at once instead of showing it in both places until the hour comes.
+
+**One segment per effective horizon, each on its own day** (`latestSegmentDay`):
+
+| Horizon      | Comes round                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `days`       | Every day                                                         |
+| `weeks`      | Every Saturday                                                    |
+| `months`     | The first Saturday of the month (it stacks with weeks that day)   |
+| `eventually` | The first Saturday of each quarter: January, April, July, October |
+
+A segment shows only on a day it has items.
+
+**Carry-over.** A task appears once its segment has come round since the task was last **seen**, and keeps appearing, day after day, until it is considered ("anything not considered shows again the next day until it is"). Seen is the later of `last_considered_at` and `created_at`. Writing a task down is seeing it, so a weeks task added on Tuesday waits for Saturday.
+
+**States** (`segment_state` on each row): `waiting`; `considered` (considered today: the row stays, ticked green, so the segment can go green); `deferred` (Defer All today: off today's list, back tomorrow).
+
+**Order.** Priority, then id. Horizon decides **whether** a task shows, never where, so acting on one never reorders the rest under the finger (the 09-05 rule).
+
+**Over 50 items** (`nudge`, strictly more than `SEGMENT_NUDGE_THRESHOLD`) the segment suggests Process or AI help instead of a tap-through.
+
+**Never counted, never notified.** Segments are not in `groups[]`. Their rows never count in the reminders headline, the nav badge, "Considered all so far", the slot notifications or the hourly unfinished-slot nag, and a segment never sends a notification. Anything time-critical has a target, and a task whose target has arrived is on the dashboard, not here.
+
+**Where it shows.** First on the Reminders screen, ahead of the first period ("tasks are an early-day thing"). On the dashboard's reminders panel, a segment's card sits above the slot pager while anything in it is waiting, then folds away.
+
+**The row.** Circle on the left = considered (never a completion; a tap anywhere else on the row does the same, as on a reminder). Checkbox on the right = done. "Today" (target today) sits just left of the checkbox. The meta line shows the horizon as a chip that changes it, a future target as a date chip ("Nov 1"), and the deadline.
+
+**API.** `GET /api/reminders` returns a top-level `task_segments` array. It is deliberately not inside `groups`: a native build that predates it ignores the key, so its "Complete all" can never reach a real task.
+
+```json
+"task_segments": [
+  {
+    "horizon": "weeks",
+    "tasks": [{ "id": 12, "title": "…", "target_at": null, "segment_state": "waiting" }],
+    "waiting": 3,
+    "considered": 1,
+    "deferred": 0,
+    "nudge": false
+  }
+]
+```
+
+Each task is a full `formatTaskResponse` row plus `segment_state`. Three actions, each with the body `{ "ids": [taskId, ...] }`. The ids must be the caller's own open tasks; anything else is a 400, not a skip. Each action is one transaction and one undo entry (`task_segment`, or the bulk edit's for Target today), logged even when nothing changed, so a toast's Undo never reaches an older action.
+
+| Endpoint                               | Effect                                                                                                                                                                                                                                                                                                                                                                                                             | Response              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| `POST /api/task-segments/consider`     | The circle: stamps `last_considered_at`. "I saw it." Never a completion                                                                                                                                                                                                                                                                                                                                            | `{ considered }`      |
+| `POST /api/task-segments/defer`        | Defer All: stamps `segment_deferred_at`. Off today's segment, back tomorrow. Not a consider, which keeps "considered" honest                                                                                                                                                                                                                                                                                       | `{ deferred }`        |
+| `POST /api/task-segments/target-today` | A deliberate target (`retarget`: the age starts there) at the time the Snooze-all button goes to (`bulk_snooze_default`: the next period, or the default snooze option) if that is still today, else the top of the next hour (`targetTodayTime`). Also stamps considered, in the same bulk edit, so one Undo puts back both. Every id counts as an explicit pick, so the High/Urgent sweep filter never drops one | `{ until, affected }` |
+
+## Priority and bulk snooze
+
+Priority is **what missing the task costs**. It no longer says whether a date is a deadline: the deadline is its own field (see [Deadline](#deadline)), and a low-priority meal voucher that expires on the 11th still expires on the 11th. Priority sets the nag cadence (`docs/NOTIFICATIONS.md` § Repeat intervals), the notification's interruption level, and how a bulk snooze treats an over-target task:
+
+| Priority        | Bulk snooze                     | Over-target significance |
+| --------------- | ------------------------------- | ------------------------ |
+| 0-1 (Unset/Low) | Eligible                        | Normal — not a problem   |
+| 2 (Medium)      | Eligible                        | Low                      |
+| 3 (High)        | Only when nothing lower is left | Significant              |
+| 4 (Urgent)      | Never                           | Critical                 |
+
+`HIGH_PRIORITY_THRESHOLD = 3` and `URGENT_PRIORITY = 4` in `src/lib/priority.ts` are the boundaries. Urgent tasks also break through everything (critical-level notifications) and must be snoozed individually, so every change to one is a deliberate decision. On top of the priority rules, a task whose snooze would cross a deadline that is still ahead stays put (see [Deadline](#deadline)).
+
+**Bulk snooze:** P0-P2 are always swept. **P3 (High) is swept only when no lower-priority task in the same batch is still eligible** — so the first press clears P0-P2 and a second press, finding only High left, takes it. Two presses, no mode, no second button. P4 (Urgent) is never swept: every change to an Urgent task's target has to be a deliberate, individual act.
 
 The test is "is anything lower still eligible", **not** "is the batch pure": a P4 sitting in the batch does not hold the High tier back, because a P4 is never swept and would otherwise block it forever. `include_task_ids` still rescues an explicitly chosen task at any priority. The rule lives in `filterForBulkSnooze` (`src/core/tasks/bulk.ts`).
 
-Why the change (Trent, 2026-09-15): with four overdue High tasks and nothing else late, the sweep button reported "no snoozable tasks" and the list stayed wrong. Excluding High outright protects a deadline from a sweep the user did not read; a sweep aimed at a batch that is already nothing but deadlines is the user looking straight at them and pressing anyway.
+Why the change (Trent, 2026-09-15): with four overdue High tasks and nothing else late, the sweep button reported "no snoozable tasks" and the list stayed wrong. Excluding High outright protects a High task from a sweep the user did not read; a sweep aimed at a batch that is already nothing but High tasks is the user looking straight at them and pressing anyway. (Written when P3/P4 dates stood in for deadlines. A real deadline is now protected by the deadline cap at any priority.)
 
 **Implications for code and AI:**
 
+- A task's real cutoff is `deadline_at`, never its target. Don't read a target as a deadline at any priority, and don't infer a deadline from priority.
 - `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
-- The gap between `original_due_at` and `due_at` shows how much total time the due date has shifted, but not how many snoozes occurred or why. Don't infer snooze counts or user intent from dates alone.
+- `original_due_at` is the first-target date: the gap to `due_at` is how far snoozing has moved the target since it was set, but not how many snoozes occurred or why. Don't infer snooze counts or user intent from dates alone.
 - `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
-- For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks." These tasks ride the bulk sweep, so a shifted due date reflects a sweep the user never read, not a decision.
+- For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks." These tasks ride the bulk sweep, so a shifted target reflects a sweep the user never read, not a decision.
+- An unset `horizon` is unset, not "weeks": never report it as stated.
 
 ## Priority Values
 
@@ -64,17 +197,17 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 ## Snooze
 
-Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow.
+Snooze moves the target (`due_at`) without modifying recurrence, and never touches `deadline_at`. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow.
 
 **Snooze vs explicit reschedule** (Trent, 2026-09-24). `original_due_at` is the occurrence origin; a task is **snoozed** when `due_at` has moved off it (`is_snoozed` = `original_due_at` set and `!== due_at`, the same test as the row's snoozed indicator). A freshly dated task is not snoozed — `createTask` sets the origin to the first date.
 
-| Change to an existing date                                                                                                                             | What it is          | `original_due_at`       | `snooze_count` |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | ----------------------- | -------------- |
-| Snooze endpoint, bulk snooze, snooze-overdue, notification snooze, quick-panel +1h/preset/Now buttons, bare `PATCH { due_at }` (iOS content extension) | Snooze              | Kept (set on first one) | +1             |
-| `PATCH { due_at, reset_original_due_at: true }` — the quick panel's date picker                                                                        | Explicit reschedule | = the new `due_at`      | Reset to 0     |
-| `PATCH { rrule, due_at }`                                                                                                                              | Re-schedule         | Cleared                 | Unchanged      |
+| Change to an existing date                                                                                                                                                | What it is  | `original_due_at`       | `snooze_count` |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------------------- | -------------- |
+| Snooze endpoint, bulk snooze, snooze-overdue, notification snooze, quick-panel +1h/preset/Now buttons, bare `PATCH { target_at }` or `{ due_at }` (iOS content extension) | Snooze      | Kept (set on first one) | +1             |
+| `PATCH { target_at, retarget: true }` (alias `reset_original_due_at`) — the target line's own picker; also "Target today"                                                 | Re-target   | = the new `due_at`      | Reset to 0     |
+| `PATCH { rrule, due_at }`                                                                                                                                                 | Re-schedule | Cleared                 | Unchanged      |
 
-A task with **no** date is not snoozed by any of these: it gets its first date (origin = that date, `snooze_count` unchanged, no snooze stat), and a task already due at the target is left alone. Bulk snooze follows the same rule as `PATCH` and bulk edit — it goes through the same `collectFieldChanges` (2026-09-29; it used to count both as snoozes). A bare `PATCH { due_at }` stays a snooze because the iOS content extension snoozes with exactly that payload, so the reschedule has to opt in. Undo restores the prior `original_due_at` and `snooze_count` either way. `PATCH { rrule, due_at }` honors the date and derives the rule's anchors from it, like `createTask` (it used to be dropped).
+A task with **no** date is not snoozed by any of these: it gets its first date (origin = that date, `snooze_count` unchanged, no snooze stat), and a task already due at the target is left alone. Bulk snooze follows the same rule as `PATCH` and bulk edit — it goes through the same `collectFieldChanges` (2026-09-29; it used to count both as snoozes). A bare `PATCH { due_at }` stays a snooze because the iOS content extension snoozes with exactly that payload, so the reschedule has to opt in. Undo restores the prior `original_due_at` and `snooze_count` either way. A snooze past a deadline that is still ahead is refused or skipped (see [Deadline](#deadline)). `default_snooze_option` (the single-tap snooze) also accepts `next_period` (2026-10-10). `PATCH { rrule, due_at }` honors the date and derives the rule's anchors from it, like `createTask` (it used to be dropped).
 
 **Default reminder slot** (2026-09-28). A reminder created without a schedule — `POST /api/tasks {"title", "is_reminder": true}` with `rrule` omitted and no `due_at`, as an Apple Shortcut or the Reminders quick add sends — is given `FREQ=DAILY;BYHOUR=h;BYMINUTE=m` at the start of the user's default reminder slot (`defaultReminderRule`, `src/core/time-slots/index.ts`), so it never starts in "Anytime". It is still title-only for the enrichment trigger (judged on the caller's input), and enrichment with no time cue keeps it in that slot. The setting is `users.quota_prompt_slot_id` (API alias `default_reminder_slot_id`) — the same default quota prompts use, resolved the same way (`resolvePromptSlot`: the stored slot, else the first period). An explicit `rrule: null` stays unscheduled (a one-time reminder); a supplied rule is used as sent; a user with no slots gets no default.
 
@@ -123,9 +256,9 @@ Each is one transaction and one undo entry (`quota_prompt`, or the `bulk_done` e
 
 **A −1 that takes back a did-it** (2026-09-25; settles PR #92's open question). When the count drops so a did-it no longer holds, that prompt waits again: its key leaves `did`, `considered` and `did_applied` (`withLogged`, `brokenDids` in `src/lib/quota-prompts.ts`). A daily #k did-it holds while today's count is at least k. Any other quota's holds while anything is still logged today. A prompt that was only considered stays considered through a −1.
 
-## Overdue
+## Over target (overdue)
 
-"Overdue" everywhere — the badge, the notifier, the snooze-overdue sweep and `GET /api/tasks?overdue=true` — is `getCurrentlyDueTaskIds` (`src/core/tasks/currently-due.ts`): reminders and quotas are never overdue, and a recurring task's due-ness is derived from its schedule (`effectiveDueAt`).
+"Over target" in the UI, "overdue" in the code and the API. Everywhere — the badge, the notifier, the snooze-overdue sweep and `GET /api/tasks?overdue=true` — it is `getCurrentlyDueTaskIds` (`src/core/tasks/currently-due.ts`): reminders and quotas are never over target, and a recurring task's due-ness is derived from its schedule (`effectiveDueAt`). Since 2026-10-10 these queries read the **effective** target (`effectiveTargetSql()`: `due_at`, else a one-off's deadline minus `DEADLINE_LEAD_DAYS` unless `deadline_nag_off`), so a deadline-only task joins at its implied target. The client counts (`countTasks`, `src/lib/task-counts.ts`) read the same rule through `effectiveTargetAt`. A sweep to a time gives a deadline-only task its first real target (a first date, not a snooze, so the deadline cap doesn't apply); a relative sweep (+N minutes) skips it, having no date to add to.
 
 ## Updating Recurrence Rules
 
@@ -142,7 +275,7 @@ Functions from `@/core/undo`:
 ```ts
 logAction(
   userId: number,
-  action: UndoAction, // 'done' | 'undone' | 'snooze' | 'edit' | 'delete' | 'create' | 'restore' | 'bulk_*' | 'progress' | 'skip' | 'time_slot_*' | 'quota_prompt'
+  action: UndoAction, // 'done' | 'undone' | 'snooze' | 'edit' | 'delete' | 'create' | 'restore' | 'bulk_*' | 'progress' | 'skip' | 'time_slot_*' | 'quota_prompt' | 'task_segment'
   description: string | null,
   fieldsChanged: string[],
   snapshots: UndoSnapshot[],
