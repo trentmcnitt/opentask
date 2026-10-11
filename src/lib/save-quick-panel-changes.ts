@@ -8,6 +8,8 @@ export interface SaveQuickPanelChangesResult {
   tasksAffected: number
   /** Tasks skipped because they had no due date (relative snooze on multi-task) */
   skippedNoDueDate?: number
+  /** Kept where they were: the snooze would have crossed their deadline (2026-10-10). */
+  skippedDeadline?: number
 }
 
 /** The one request a quick-panel save turns into — see `planQuickPanelSave`. */
@@ -46,7 +48,7 @@ export async function saveQuickPanelChanges(
     body: JSON.stringify(plan.body),
   })
   const json = (await res.json().catch(() => null)) as {
-    data?: { tasks_affected?: number; skipped_no_due_date?: number }
+    data?: { tasks_affected?: number; skipped_no_due_date?: number; skipped_deadline?: number }
     error?: string
   } | null
   if (!res.ok) throw new Error(json?.error || 'Bulk save failed')
@@ -54,6 +56,7 @@ export async function saveQuickPanelChanges(
   return {
     tasksAffected: json?.data?.tasks_affected ?? taskIds.length,
     skippedNoDueDate: skipped > 0 ? skipped : undefined,
+    skippedDeadline: json?.data?.skipped_deadline || undefined,
   }
 }
 

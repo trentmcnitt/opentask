@@ -123,7 +123,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
     /// count, neither is done any more, the put-back row is un-considered,
     /// and the tombstone retires (the cache is the truth now).
     func testConfirmPromptRestoreRecountsDownAndRetiresTheTombstone() throws {
-        WidgetStore.saveReminders(try groups())
+        WidgetStore.saveReminders(try groups(), taskSegments: [])
         let one = Fixtures.promptKey(Fixtures.daily, 1)
         WidgetStore.confirmPromptAction(one, did: true, tasks: [dailyQuota(current: 2)])
         WidgetStore.stagePendingPromptRestore(one, now: now)
@@ -141,7 +141,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
     /// takes back only what a did-it added — and the cache says so rather
     /// than keep drawing the optimistic "waiting".
     func testConfirmPromptRestoreKeepsADailyRowTheCountStillReaches() throws {
-        WidgetStore.saveReminders(try groups("reminders-after-did"))
+        WidgetStore.saveReminders(try groups("reminders-after-did"), taskSegments: [])
         let one = Fixtures.promptKey(Fixtures.daily, 1)
         WidgetStore.stagePendingPromptRestore(one, now: now)
         WidgetStore.confirmPromptRestore(one, tasks: [dailyQuota(current: 1)])
@@ -156,7 +156,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
     /// A once-a-day prompt is done while anything was logged today — only
     /// the server knows that — so its put-back makes the next pass fetch.
     func testConfirmPromptRestoreOfAWeeklyPromptRequiresAFetch() throws {
-        WidgetStore.saveReminders(try groups("reminders"))
+        WidgetStore.saveReminders(try groups("reminders"), taskSegments: [])
         WidgetStore.markInteraction(now: now)
         XCTAssertTrue(WidgetStore.canRepaintRemindersFromCache(now: now))
         let weekly = try Fixtures.decode(TaskDTO.self, "task-progress")
@@ -166,7 +166,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
 
     /// Daily rows re-count WITHOUT a fetch when nothing is left in doubt.
     func testConfirmPromptRestoreOfADailyPromptRepaintsFromCache() throws {
-        WidgetStore.saveReminders(try groups("reminders-after-did"))
+        WidgetStore.saveReminders(try groups("reminders-after-did"), taskSegments: [])
         WidgetStore.markInteraction(now: now)
         WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.daily, 1), tasks: [dailyQuota(current: 0)])
         XCTAssertTrue(WidgetStore.canRepaintRemindersFromCache(now: now))
@@ -179,7 +179,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
     /// a fetch (the server's `getQuotaPromptsBySlot` rule: done once the
     /// count reaches the row's number).
     func testConfirmPromptActionRecountsSiblingRows() throws {
-        WidgetStore.saveReminders(try groups())
+        WidgetStore.saveReminders(try groups(), taskSegments: [])
         WidgetStore.confirmPromptAction(
             Fixtures.promptKey(Fixtures.daily, 1), did: true, tasks: [dailyQuota(current: 2)]
         )
@@ -197,7 +197,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
 
     func testConfirmPromptActionKeepsFetchedAt() throws {
         let fetched = now.addingTimeInterval(-600)
-        WidgetStore.save(WidgetStore.RemindersCache(groups: try groups()), forKey: "widget.cache.reminders", at: fetched)
+        WidgetStore.save(WidgetStore.RemindersCache(groups: try groups(), taskSegments: []), forKey: "widget.cache.reminders", at: fetched)
         WidgetStore.confirmPromptAction(Fixtures.promptKey(Fixtures.monthly, 0), did: false, tasks: [])
         XCTAssertEqual(WidgetStore.loadReminders()?.fetchedAt, fetched, "an 'as of' note the cache earned survives")
     }
@@ -249,10 +249,10 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
 
         // A response already on the wire when the cache went stale can't
         // carry the change: it doesn't settle the stamp.
-        WidgetStore.saveReminders(try groups(), fetchStartedAt: now.addingTimeInterval(-1))
+        WidgetStore.saveReminders(try groups(), taskSegments: [], fetchStartedAt: now.addingTimeInterval(-1))
         XCTAssertFalse(WidgetStore.canRepaintRemindersFromCache(now: now))
 
-        WidgetStore.saveReminders(try groups(), fetchStartedAt: now.addingTimeInterval(1))
+        WidgetStore.saveReminders(try groups(), taskSegments: [], fetchStartedAt: now.addingTimeInterval(1))
         XCTAssertTrue(WidgetStore.canRepaintRemindersFromCache(now: now.addingTimeInterval(1)))
     }
 
@@ -286,7 +286,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
     /// tombstone), moving to its slot's `considered` and DONE list — the
     /// "reminders started popping back up" bug (2026-09-23).
     func testConfirmCompletionMovesAReminderToConsidered() throws {
-        WidgetStore.saveReminders(try groups())
+        WidgetStore.saveReminders(try groups(), taskSegments: [])
         WidgetStore.confirmCompletion(Fixtures.stretch)
         let early = try XCTUnwrap(WidgetStore.loadReminders()).value.groups[0]
         XCTAssertEqual(early.reminders.map(\.id), [])
@@ -301,7 +301,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
 
     /// The seam itself: nothing reaches the real App Group suite.
     func testSuiteOverrideIsolatesTheStore() throws {
-        WidgetStore.saveReminders(try groups())
+        WidgetStore.saveReminders(try groups(), taskSegments: [])
         XCTAssertNotNil(WidgetStore.loadReminders())
         let saved = WidgetStore.suiteOverride
         let other = "test.\(UUID().uuidString)"

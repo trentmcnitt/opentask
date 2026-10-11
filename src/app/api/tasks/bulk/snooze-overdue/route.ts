@@ -167,6 +167,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // toast (`useSnoozeOverdue`): `skipped_urgent` counts High AND Urgent, so
       // Urgent alone is the difference.
       message: bulkSnoozeMessage({
+        deadline: result.deadlineSkipped,
         affected: result.tasksAffected,
         highAffected: result.highSnoozed,
         high: result.highSkipped,

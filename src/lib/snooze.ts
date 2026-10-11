@@ -44,7 +44,13 @@ export function computeSnoozeTime(
       .toISO()!
   }
   if (option === NEXT_PERIOD_OPTION) {
-    return nextPeriodStart(slots, timezone) ?? computeSnoozeTime('60', timezone, morningTime)
+    // The next period still TODAY; with none left today, the top of the next
+    // hour (spec amendment 17), not tomorrow's first period. The sweep's own
+    // `slot: "next"` (Shortcuts) is resolved elsewhere and is unchanged.
+    const next = nextPeriodStart(slots, timezone)
+    const now = DateTime.now().setZone(timezone)
+    if (next && DateTime.fromISO(next).setZone(timezone).hasSame(now, 'day')) return next
+    return now.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!
   }
 
   const minutes = parseInt(option, 10)
@@ -97,6 +103,9 @@ export function bulkSnoozeCompactLabel(
   hasPeriods: boolean,
 ): string {
   if (bulkSnoozeDefault === 'next_period' && hasPeriods) return 'Next'
+  // The default option can be "next_period" as well; without periods
+  // `computeSnoozeTime` reads it as an hour, so the badge does too.
+  if (defaultSnoozeOption === NEXT_PERIOD_OPTION && !hasPeriods) return '+1h'
   return formatCompactSnoozeLabel(defaultSnoozeOption)
 }
 
@@ -128,6 +137,8 @@ export interface BulkSnoozeSkips {
   high: number
   /** P4 skipped — never bulk-snoozable at all. */
   urgent: number
+  /** Left where they were: the sweep would have crossed their deadline (2026-10-10). */
+  deadline?: number
 }
 
 /** "2 high", "1 urgent", "2 high, 1 urgent". Empty when nothing was skipped. */
@@ -161,9 +172,19 @@ export function bulkSnoozeMessage({
   highAffected = 0,
   high,
   urgent,
+  deadline = 0,
 }: BulkSnoozeSkips): string {
   const list = skipList(high, urgent)
+  // A deadline-capped task is never silently clamped: the toast says it stayed.
+  const kept =
+    deadline > 0 ? ` · ${deadline} kept before ${deadline === 1 ? 'its' : 'their'} deadline` : ''
+  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + kept
+}
 
+function bulkSnoozeCore(
+  { affected, highAffected = 0, high, urgent }: BulkSnoozeSkips,
+  list: string,
+): string {
   if (affected > 0) {
     // "HIGH-PRIORITY" WHEN THAT IS ALL IT MOVED (Trent, 2026-09-22). High is
     // swept only once nothing lower is left, so a double snooze is two presses:

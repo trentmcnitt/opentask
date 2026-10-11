@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Info, Loader2, Check, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -10,6 +10,7 @@ import type { FeatureMode, FeatureInfo, FeatureInfoMap } from '@/components/Pref
 import { savePreference } from '@/lib/save-preference'
 import { showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { aiContextStaleness, formatAiContextAge } from '@/lib/ai-context-staleness'
 import { SettingsSection } from './SettingsSection'
 
 type FeatureKey = 'enrichment' | 'quicktake' | 'whats_next' | 'insights'
@@ -58,10 +59,23 @@ export function AiSection({ isDemo }: { isDemo: boolean }) {
  * when the preferences load, without an effect copying the value across.
  */
 function AiContextEditor({ isDemo }: { isDemo: boolean }) {
-  const { aiContext, setAiContext } = useAiContext()
+  const { aiContext, setAiContext, aiContextUpdatedAt, setAiContextUpdatedAt } = useAiContext()
   const [draft, setDraft] = useState<string | null>(null)
   const value = draft ?? aiContext ?? ''
   const dirty = value !== (aiContext ?? '')
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
+  const [now] = useState(() => new Date())
+  const stale = aiContextStaleness(aiContext, aiContextUpdatedAt, now) !== null
+
+  // The staleness warning (left bar, phone menu) links to
+  // `/settings#ai-context`. The page renders this section only once the
+  // preferences have loaded, after the browser's own jump-to-hash has come
+  // and gone, so bring the field into view and focus it here.
+  useEffect(() => {
+    if (window.location.hash !== '#ai-context') return
+    fieldRef.current?.scrollIntoView({ block: 'center' })
+    fieldRef.current?.focus({ preventScroll: true })
+  }, [])
 
   const handleSave = async () => {
     if (isDemo) {
@@ -70,7 +84,7 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
     }
     const newValue = value.trim() || null
     const prev = aiContext
-    await savePreference(
+    const data = await savePreference<{ ai_context_updated_at?: string | null }>(
       { ai_context: newValue },
       {
         apply: () => setAiContext(newValue),
@@ -79,11 +93,44 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
         errorMessage: 'Failed to save AI context',
       },
     )
+    // The server stamps the change; take its time so the staleness warning
+    // clears now rather than on the next load.
+    if (data && data.ai_context_updated_at !== undefined) {
+      setAiContextUpdatedAt(data.ai_context_updated_at)
+    }
+    // Back to showing the saved value, so trimmed whitespace doesn't leave
+    // the field looking unsaved.
+    if (data) setDraft(null)
+  }
+
+  // A review without an edit: the context is still right, so restamp it
+  // (`ai_context_reviewed`) and the nudge goes away for another three weeks.
+  const handleReviewed = async () => {
+    if (isDemo) {
+      showDemoToast()
+      return
+    }
+    const prev = aiContextUpdatedAt
+    const data = await savePreference<{ ai_context_updated_at?: string | null }>(
+      { ai_context_reviewed: true },
+      {
+        apply: () => {},
+        revert: () => setAiContextUpdatedAt(prev),
+        successMessage: 'Marked as reviewed',
+        errorMessage: 'Failed to save',
+      },
+    )
+    if (data?.ai_context_updated_at !== undefined) {
+      setAiContextUpdatedAt(data.ai_context_updated_at)
+    }
   }
 
   return (
     <>
       <Textarea
+        ref={fieldRef}
+        id="ai-context"
+        data-ai-context-field
         value={value}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={
@@ -91,20 +138,44 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
         }
         maxLength={1000}
         rows={3}
-        className="mb-2 text-sm"
+        className="mb-2 scroll-mt-24 text-sm"
         disabled={isDemo}
       />
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-400">{value.length}/1000</span>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleSave}
-          disabled={!dirty || isDemo}
-          className="h-8"
-        >
-          Save
-        </Button>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-zinc-400">
+          {value.length}/1000
+          {/* Its age, so the left bar's "4 weeks old" has an answer here.
+              Darker (not a new hue) once it is stale. */}
+          {aiContextUpdatedAt && (
+            <span data-ai-context-age className={cn(stale && 'text-zinc-600 dark:text-zinc-300')}>
+              {' '}
+              · updated {formatAiContextAge(aiContextUpdatedAt, now)}
+            </span>
+          )}
+        </span>
+        <div className="flex items-center gap-2">
+          {/* Only while stale and unedited: an edit's Save restamps anyway.
+              Plain text, like the nudge that led here. */}
+          {stale && !dirty && !isDemo && (
+            <button
+              type="button"
+              data-ai-context-reviewed
+              onClick={handleReviewed}
+              className="text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              {aiContext ? 'Still accurate' : 'Not needed'}
+            </button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={!dirty || isDemo}
+            className="h-8"
+          >
+            Save
+          </Button>
+        </div>
       </div>
     </>
   )

@@ -53,7 +53,7 @@ struct TasksEntry: TimelineEntry {
     /// "Overdue" (2026-09-25, `overdueScope`), ahead of them while anything
     /// is overdue; a real project id falls through to that project's name.
     var scopeLabel: String {
-        if scope == WidgetStore.overdueScope { return "Overdue" }
+        if scope == WidgetStore.overdueScope { return TaskWording.overTarget }
         if scope == WidgetStore.upNextScope { return "Up next" }
         guard scope != WidgetStore.allProjects else { return "Today" }
         return projects.first(where: { $0.id == scope })?.name ?? "Today"
@@ -526,9 +526,9 @@ private enum TasksPreviewData {
     static func overdueEntry() -> TasksEntry {
         func ago(_ hours: Double) -> String { DateHelpers.formatISO(now.addingTimeInterval(-hours * 3600)) }
         let overdue = [
-            TaskDTO(id: 800_001, projectId: 4434, title: "Renew the library card before the branch closes for the holiday weekend", priority: 2, dueAt: ago(96)),
-            TaskDTO(id: 800_002, projectId: 6, title: "Send the quarterly summary to the team, including the open questions from last week's review", priority: 3, dueAt: ago(50)),
-            TaskDTO(id: 800_003, projectId: 1, title: "Water the plants", priority: 1, dueAt: ago(26)),
+            TaskDTO(id: 800_001, projectId: 4434, title: "Renew the library card before the branch closes for the holiday weekend", priority: 2, dueAt: ago(96), originalDueAt: ago(240)),
+            TaskDTO(id: 800_002, projectId: 6, title: "Send the quarterly summary to the team, including the open questions from last week's review", priority: 3, dueAt: ago(50), deadlineAt: ago(20)),
+            TaskDTO(id: 800_003, projectId: 1, title: "Water the plants", priority: 1, dueAt: ago(26), originalDueAt: ago(100)),
             TaskDTO(id: 800_004, projectId: 4799, title: "Rotate the backup drive and check that last night's snapshot finished", priority: 2, dueAt: ago(5)),
             TaskDTO(id: 800_005, projectId: 4434, title: "Call the dentist to move the appointment", priority: 1, dueAt: ago(1)),
         ]

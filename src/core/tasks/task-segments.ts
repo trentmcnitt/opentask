@@ -21,6 +21,7 @@
  * a misfire is undone with the standard Undo.
  */
 
+import { getTargetContext } from './target-context'
 import { getDb, withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
@@ -56,7 +57,7 @@ export interface TaskSegment {
 }
 
 /** The user's segment-eligible tasks: own, open, one-off, not a reminder or quota. */
-function eligibleTasks(userId: number): Task[] {
+export function eligibleTasks(userId: number): Task[] {
   const rows = getDb()
     .prepare(
       `SELECT ${taskColumns()} FROM tasks
@@ -75,8 +76,9 @@ function eligibleTasks(userId: number): Task[] {
  */
 export function getTaskSegments(userId: number, timezone: string, now = new Date()): TaskSegment[] {
   const byHorizon = new Map<HorizonValue, SegmentTask[]>()
+  const ctx = getTargetContext(userId)
   for (const task of eligibleTasks(userId)) {
-    const placed = segmentState(task, timezone, now)
+    const placed = segmentState(task, timezone, now, ctx)
     if (!placed) continue
     const list = byHorizon.get(placed.horizon) ?? []
     list.push({ task, state: placed.state })

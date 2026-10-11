@@ -129,6 +129,11 @@ export function applyFieldsToTask(
         // so without this branch better-sqlite3 refuses the raw JS boolean.
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
+      } else if (dbColumn === 'deadline_nag_off') {
+        // Task model (2026-10-10): a boolean in the snapshot, 0/1 in the column.
+        // Without this an Undo of remove-target throws and wedges the stack.
+        setClauses.push(`${dbColumn} = ?`)
+        values.push((state as { deadline_nag_off?: boolean }).deadline_nag_off ? 1 : 0)
       } else if (JSON_OBJECT_COLUMNS.has(dbColumn)) {
         // The snapshot holds the parsed object (rowToTask's shape);
         // better-sqlite3 cannot bind a plain object.

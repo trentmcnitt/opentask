@@ -269,6 +269,7 @@ targets:
       - path: ../ios/OpenTaskWidgets/WidgetStore.swift
       - path: ../ios/OpenTaskWidgets/WidgetOutbox.swift
       - path: ../ios/OpenTaskWidgets/TasksTimeline.swift
+      - path: ../ios/OpenTaskWidgets/RemindersTimeline.swift
       - path: ../ios/OpenTaskWidgets/DueLabel.swift
       - path: ../ios/WatchShared/WatchQuotaLogic.swift
       - path: ../ios/WatchShared/WatchSlotLogic.swift

@@ -33,8 +33,8 @@ enum SweepLine: Equatable {
     var text: String {
         switch self {
         case .includedHigh(let n): return "Included \(n) High"
-        case .highStillOverdue(let n): return "\(n) High still overdue"
-        case .urgentStillOverdue(let n): return "\(n) Urgent still overdue"
+        case .highStillOverdue(let n): return "\(n) High still \(TaskWording.overTargetLower)"
+        case .urgentStillOverdue(let n): return "\(n) Urgent still \(TaskWording.overTargetLower)"
         }
     }
 

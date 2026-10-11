@@ -118,5 +118,21 @@ enum WatchPreviewData {
         quota(id: 23534, title: "Run the weekly backup check on the external drive", rrule: "FREQ=WEEKLY", current: 0, target: 1, labels: ["admin", "ai-added"]),
         quota(id: 221, title: "Rowing Sets", rrule: "FREQ=WEEKLY", current: 2, target: 3, labels: ["health"]),
     ]
+
+    /// Task segments (2026-10-10) — invented titles: a Days segment with a
+    /// pulled-in Weeks task, a future target and a deadline.
+    static var taskSegments: [TaskSegmentDTO] {
+        let day: TimeInterval = 24 * 60 * 60
+        let soon = DateHelpers.formatISO(Date().addingTimeInterval(3 * day))
+        let deadline = DateHelpers.formatISO(Date().addingTimeInterval(6 * day))
+        return [
+            TaskSegmentDTO(horizon: "days", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9101, title: "Call the insurance office about the renewal letter", priority: 3, horizon: "days"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9102, title: "Fix the squeaky gate hinge", dueAt: soon, horizon: "days"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9103, title: "Book the dentist for the kids", deadlineAt: deadline, horizon: "weeks"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Return the library books", horizon: "days"), state: .considered),
+            ]),
+        ]
+    }
 }
 #endif

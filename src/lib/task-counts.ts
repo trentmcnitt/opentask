@@ -7,7 +7,7 @@
 import type { Task } from '@/types'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { isTracked } from '@/lib/track'
-import { effectiveTargetAt } from '@/lib/task-segments'
+import { effectiveTargetAt, type TargetContext } from '@/lib/task-segments'
 
 export interface TaskCounts {
   total: number
@@ -25,14 +25,17 @@ type CountableTask = Pick<Task, 'due_at' | 'progress_target' | 'is_tracked'> &
  * one (`effectiveTargetAt`) — a deadline-only task is over target from
  * DEADLINE_LEAD_DAYS out, like the notifier and the badge say. Null for a quota.
  */
-function countableTarget(task: CountableTask): string | null {
+function countableTarget(task: CountableTask, ctx?: TargetContext): string | null {
   if (isTracked(task)) return null
-  return effectiveTargetAt({
-    due_at: task.due_at,
-    deadline_at: task.deadline_at ?? null,
-    deadline_nag_off: task.deadline_nag_off,
-    rrule: task.rrule,
-  })
+  return effectiveTargetAt(
+    {
+      due_at: task.due_at,
+      deadline_at: task.deadline_at ?? null,
+      deadline_nag_off: task.deadline_nag_off,
+      rrule: task.rrule,
+    },
+    ctx,
+  )
 }
 
 /**
@@ -61,8 +64,8 @@ export function hasDebtDueDate(task: CountableTask): task is CountableTask & { d
  * remembers where it was), so a snoozed task is overdue only once its NEW
  * time passes — `original_due_at` is deliberately not consulted.
  */
-export function isOverdue(task: CountableTask, now: Date): boolean {
-  const target = countableTarget(task)
+export function isOverdue(task: CountableTask, now: Date, ctx?: TargetContext): boolean {
+  const target = countableTarget(task, ctx)
   return target !== null && new Date(target) < now
 }
 
@@ -70,12 +73,13 @@ export function countTasks(
   tasks: CountableTask[],
   timezone: string,
   now: Date = new Date(),
+  ctx?: TargetContext,
 ): TaskCounts {
   const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(timezone, now)
   let overdue = 0
   let today = 0
   for (const t of tasks) {
-    const target = countableTarget(t)
+    const target = countableTarget(t, ctx)
     if (target === null) continue
     const due = new Date(target)
     if (due < now) overdue++

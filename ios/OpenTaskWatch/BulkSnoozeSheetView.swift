@@ -58,7 +58,7 @@ struct BulkSnoozeSheetView: View {
 
     @ViewBuilder
     private var choosingContent: some View {
-        Text("Snooze \(model.overdueTasks.count) overdue")
+        Text("Snooze \(model.overdueTasks.count) \(TaskWording.overTargetLower)")
             .font(.headline)
             .multilineTextAlignment(.center)
 
@@ -90,7 +90,7 @@ struct BulkSnoozeSheetView: View {
         // used to say "High and Urgent items are never bulk-snoozed", which
         // is wrong for High (coordinator review, PR #60: a task genuinely
         // does get included on, e.g., the second press of a double snooze).
-        Text("Urgent never snoozes · High only if nothing lower is overdue")
+        Text("Urgent never snoozes · High only if nothing lower is \(TaskWording.overTargetLower)")
             .font(.caption2)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

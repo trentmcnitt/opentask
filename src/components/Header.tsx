@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
 import Image from 'next/image'
@@ -44,9 +45,12 @@ import { useAiAvailable } from '@/components/PreferencesProvider'
 import { useAiSlotState } from '@/hooks/useAiSlotState'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
+import { ProcessMenuItem } from '@/components/process/ProcessMenuItem'
+import { ProcessModal } from '@/components/process/ProcessModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { DOCS_URL } from '@/lib/docs-url'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
+import { AiContextStaleMenuItem } from '@/components/AiContextStaleLink'
 
 interface HeaderProps {
   title?: string
@@ -145,6 +149,18 @@ export function Header({
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
+  const [processOpen, setProcessOpen] = useState(false)
+  // Bumped on each opening: the modal remounts, so every Process starts fresh.
+  const [processSession, setProcessSession] = useState(0)
+  // A task segment's "over 50" nudge (TaskSegmentCard) asks for Process.
+  useEffect(() => {
+    const open = () => {
+      setProcessSession((n) => n + 1)
+      setProcessOpen(true)
+    }
+    window.addEventListener('open-process', open)
+    return () => window.removeEventListener('open-process', open)
+  }, [])
   const [menuOpened, setMenuOpened] = useState(false)
   const aiAvailable = useAiAvailable()
   // The AI Status item's dot: fetched the first time the menu opens, then kept.
@@ -317,6 +333,14 @@ export function Header({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
+                {timezone && (
+                  <ProcessMenuItem
+                    onSelect={() => {
+                      setProcessSession((n) => n + 1)
+                      setProcessOpen(true)
+                    }}
+                  />
+                )}
                 {aiAvailable && (
                   <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                     <Bot className="size-4" />
@@ -376,6 +400,7 @@ export function Header({
                     Settings
                   </GuardedLink>
                 </DropdownMenuItem>
+                <AiContextStaleMenuItem />
                 <DropdownMenuItem asChild>
                   <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
                     <BookOpen className="size-4" />
@@ -390,6 +415,14 @@ export function Header({
 
       {timezone && (
         <AIStatusModal open={aiStatusOpen} onOpenChange={setAiStatusOpen} timezone={timezone} />
+      )}
+      {timezone && (
+        <ProcessModal
+          key={processSession}
+          open={processOpen}
+          onOpenChange={setProcessOpen}
+          timezone={timezone}
+        />
       )}
     </TooltipProvider>
   )
@@ -479,12 +512,16 @@ function TaskCountBadges({
         <CountBadge
           count={overdueCount}
           variant="overdue"
-          tooltip={overdueActive ? 'Show all tasks' : `${overdueCount} overdue — show only these`}
+          tooltip={
+            overdueActive
+              ? 'Show all tasks'
+              : `${overdueCount} ${OVER_TARGET_LOWER} — show only these`
+          }
           onClick={() => applyFilter('overdue')}
           ariaLabel={
             overdueActive
-              ? `${overdueCount} overdue — clear the overdue filter`
-              : `${overdueCount} overdue — show only overdue tasks`
+              ? `${overdueCount} ${OVER_TARGET_LOWER} — clear the ${OVER_TARGET_LOWER} filter`
+              : `${overdueCount} ${OVER_TARGET_LOWER} — show only ${OVER_TARGET_LOWER} tasks`
           }
           pressed={overdueActive}
           className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"

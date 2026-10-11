@@ -1,5 +1,8 @@
 'use client'
 
+import type { HorizonValue } from '@/lib/task-segments'
+import { TARGET_WORD } from '@/lib/task-model-words'
+import { TaskModelFields } from '@/components/TaskModelFields'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Repeat,
@@ -110,6 +113,13 @@ export interface QuickActionPanelChanges {
   notes?: string | null
   /** §6: move this item on/off the Reminders surface. Single-task only. */
   is_reminder?: boolean
+  /** Task model (2026-10-10). Single-task only. */
+  deadline_at?: string | null
+  horizon?: HorizonValue | null
+  /** Remove-target on a task with a deadline also silences the deadline's nag. */
+  deadline_nag_off?: boolean
+  /** The user confirmed a snooze past the deadline (the refusal toast's button). */
+  allow_past_deadline?: boolean
 }
 
 export interface QuickActionPanelProps {
@@ -182,6 +192,8 @@ type DirtyField =
   | 'resetOrigin'
   | 'isReminder'
   | 'notes'
+  | 'deadline'
+  | 'horizon'
 
 /**
  * The fields that make create mode dirty (besides the title, which is compared
@@ -190,6 +202,8 @@ type DirtyField =
  * change from its defaults, and this list keeps that membership as it was.
  */
 const CREATE_MODE_DIRTY_FIELDS: readonly DirtyField[] = [
+  'deadline',
+  'horizon',
   'priority',
   'labels',
   'rrule',
@@ -351,6 +365,9 @@ export function QuickActionPanel({
   // pendingNotes: undefined = no change, null = clear, string = new value
   const [pendingNotes, setPendingNotes] = useState<string | null | undefined>(undefined)
   const [notesExpanded, setNotesExpanded] = useState(false)
+  // Task model (2026-10-10): undefined = no change, null = clear.
+  const [pendingDeadline, setPendingDeadline] = useState<string | null | undefined>(undefined)
+  const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -410,6 +427,8 @@ export function QuickActionPanel({
   const displayProject = pendingProject ?? effectiveTask?.project_id
   // §6 Reminders flag — staged value wins, otherwise the task's stored flag.
   const displayIsReminder = pendingIsReminder ?? effectiveTask?.is_reminder ?? false
+  // Reminders and quotas carry no deadline or horizon (2026-10-10).
+  const isReminderLike = displayIsReminder || (effectiveTask ? isTracked(effectiveTask) : false)
 
   // Preview of new due_at when changing recurrence for non-overdue tasks
   // This helps users understand what date the task will move to with the new schedule
@@ -476,6 +495,8 @@ export function QuickActionPanel({
     resetOrigin: pendingResetOrigin,
     isReminder: isReminderDirty,
     notes: pendingNotes !== undefined,
+    deadline: pendingDeadline !== undefined,
+    horizon: pendingHorizon !== undefined,
   }
   // Edit mode: any staged field at all.
   const hasPendingChanges = Object.values(fieldDirty).some(Boolean)
@@ -747,8 +768,23 @@ export function QuickActionPanel({
     }
     if (pendingIsReminder !== null) changes.is_reminder = pendingIsReminder
     if (pendingNotes !== undefined) changes.notes = pendingNotes
+    if (pendingDeadline !== undefined) changes.deadline_at = pendingDeadline
+    if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
+    // Remove target on a task with a deadline also turns off the deadline's
+    // implied nag (deadline − 4 days) — otherwise "remove" would do nothing.
+    if (
+      pendingDueAtCleared &&
+      (pendingDeadline ??
+        effectiveTask?.deadline_at ??
+        (isBulkMode && selectedTasks?.some((t) => t.deadline_at)))
+    ) {
+      changes.deadline_nag_off = true
+    }
     return changes
   }, [
+    pendingDeadline,
+    pendingHorizon,
+    effectiveTask?.deadline_at,
     pendingTitle,
     editingTitle,
     titleDraft,
@@ -791,6 +827,8 @@ export function QuickActionPanel({
     setPendingIsReminder(null)
     setPendingNotes(undefined)
     setNotesExpanded(false)
+    setPendingDeadline(undefined)
+    setPendingHorizon(undefined)
   }, [])
 
   // Create mode handler: collects all staged fields + title, calls onCreate, then resets.
@@ -1131,6 +1169,7 @@ export function QuickActionPanel({
               className="inline-flex cursor-pointer items-center gap-1 text-xs select-text"
             >
               <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
+              <span className="text-muted-foreground/70">{TARGET_WORD}</span>
               {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
                 <span
                   className={cn(
@@ -1138,7 +1177,7 @@ export function QuickActionPanel({
                     pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
                   )}
                 >
-                  No due date
+                  No target
                 </span>
               ) : (
                 <>
@@ -1176,6 +1215,26 @@ export function QuickActionPanel({
               )}
             </p>
           </DateTimePicker>
+          {/* Deadline + horizon (2026-10-10): their own lines, never moved by a
+              snooze button. Ordinary tasks only — a reminder or a quota has
+              neither — and one task at a time (Process sets horizons in bulk). */}
+          {!isBulkMode && !isReminderLike && (
+            <TaskModelFields
+              deadline={
+                pendingDeadline !== undefined
+                  ? pendingDeadline
+                  : (effectiveTask?.deadline_at ?? null)
+              }
+              horizon={
+                pendingHorizon !== undefined ? pendingHorizon : (effectiveTask?.horizon ?? null)
+              }
+              deadlineDirty={pendingDeadline !== undefined}
+              horizonDirty={pendingHorizon !== undefined}
+              timezone={timezone}
+              onDeadline={setPendingDeadline}
+              onHorizon={setPendingHorizon}
+            />
+          )}
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
           {previewDueAt && (
             <p className="mt-0.5 text-xs font-medium text-blue-500">
@@ -1585,7 +1644,9 @@ export function QuickActionPanel({
                     <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
                       {/* Clear due date - only for single task with due_at or rrule */}
                       {isSingleTask &&
-                        (effectiveTask?.due_at || effectiveTask?.rrule) &&
+                        (effectiveTask?.due_at ||
+                          effectiveTask?.rrule ||
+                          (effectiveTask?.deadline_at && !effectiveTask.deadline_nag_off)) &&
                         !pendingDueAtCleared && (
                           <DropdownMenuItem
                             // `inset` matches the left padding DropdownMenuCheckboxItem
@@ -1601,14 +1662,14 @@ export function QuickActionPanel({
                             }}
                           >
                             <XCircle className="mr-2 size-4" />
-                            Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
+                            Remove target{effectiveTask?.rrule ? ' & recurrence' : ''}
                           </DropdownMenuItem>
                         )}
                       {/* Clear due date - multi-task: applies to every selected task on Save */}
                       {showBulkClearItem && (
                         <DropdownMenuItem inset onClick={handleBulkClearDueDate}>
                           <XCircle className="mr-2 size-4" />
-                          Clear due dates{bulkHasRecurrence ? ' & recurrence' : ''}
+                          Remove targets{bulkHasRecurrence ? ' & recurrence' : ''}
                         </DropdownMenuItem>
                       )}
                       {/*

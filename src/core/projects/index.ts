@@ -55,7 +55,7 @@ export function getProjectNameMap(projectIds: number[]): Map<number, string> {
  * The list and the single-project read share this, so their counts agree.
  */
 const PROJECT_SELECT = `
-  SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.color, p.created_at,
+  SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.color, p.description, p.created_at,
     (SELECT COUNT(*) FROM tasks t
      WHERE t.project_id = p.id AND t.user_id = ?
        AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
@@ -137,15 +137,23 @@ export function createProject(userId: number, input: ProjectCreateInput): Projec
 
   const result = db
     .prepare(
-      `INSERT INTO projects (name, owner_id, shared, sort_order, color, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, owner_id, shared, sort_order, color, description, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(input.name.trim(), userId, input.shared ? 1 : 0, sortOrder, color, nowUtc())
+    .run(
+      input.name.trim(),
+      userId,
+      input.shared ? 1 : 0,
+      sortOrder,
+      color,
+      input.description || null,
+      nowUtc(),
+    )
 
   // A new project has no tasks, so there are no counts to compute.
   const row = db
     .prepare(
-      'SELECT id, name, owner_id, shared, sort_order, color, created_at FROM projects WHERE id = ?',
+      'SELECT id, name, owner_id, shared, sort_order, color, description, created_at FROM projects WHERE id = ?',
     )
     .get(Number(result.lastInsertRowid)) as Omit<ProjectRowWithoutOverdue, 'active_count'>
   return formatProjectResponse({ ...row, active_count: 0, overdue_count: 0 })
@@ -169,7 +177,7 @@ function requireOwnedProject(
 }
 
 /**
- * Update a project's name, order, sharing or color. Owner only.
+ * Update a project's name, order, sharing, color or description. Owner only.
  *
  * The Inbox can't be renamed: getInboxId — and so createTask and
  * deleteProject — finds the Inbox by its name, so a renamed Inbox would leave
@@ -208,6 +216,11 @@ export function updateProject(
   if (input.color !== undefined) {
     updates.push('color = ?')
     values.push(input.color)
+  }
+  // Already trimmed and capped by validation; `null` (or "") clears it.
+  if (input.description !== undefined) {
+    updates.push('description = ?')
+    values.push(input.description || null)
   }
   if (updates.length > 0) {
     getDb()

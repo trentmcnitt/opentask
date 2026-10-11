@@ -1,5 +1,6 @@
 'use client'
 
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -189,7 +190,7 @@ function AutoSnoozeRows() {
       {/* Default auto-snooze */}
       <AutoSnoozeRow
         label="Default auto-snooze"
-        description="Repeat interval for unset-priority (P0) overdue tasks"
+        description={`Repeat interval for unset-priority (P0) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeDefault}
         onChange={(v) =>
           savePreferenceField('auto_snooze_minutes', v, autoSnoozeDefault, setAutoSnoozeDefault)
@@ -198,7 +199,7 @@ function AutoSnoozeRows() {
       {/* §4.1: Low is rare but never silent */}
       <AutoSnoozeRow
         label="Low auto-snooze"
-        description="Repeat interval for low (P1) overdue tasks"
+        description={`Repeat interval for low (P1) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeLow}
         onChange={(v) =>
           savePreferenceField('auto_snooze_low_minutes', v, autoSnoozeLow, setAutoSnoozeLow)
@@ -207,7 +208,7 @@ function AutoSnoozeRows() {
       {/* §4.1: Medium is NOT notify-once — one missed glance would lose it */}
       <AutoSnoozeRow
         label="Medium auto-snooze"
-        description="Repeat interval for medium (P2) overdue tasks"
+        description={`Repeat interval for medium (P2) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeMedium}
         onChange={(v) =>
           savePreferenceField(
@@ -222,7 +223,7 @@ function AutoSnoozeRows() {
       {/* High auto-snooze */}
       <AutoSnoozeRow
         label="High auto-snooze"
-        description="Repeat interval for high (P3) overdue tasks"
+        description={`Repeat interval for high (P3) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeHigh}
         onChange={(v) =>
           savePreferenceField('auto_snooze_high_minutes', v, autoSnoozeHigh, setAutoSnoozeHigh)
@@ -232,7 +233,7 @@ function AutoSnoozeRows() {
       {/* Urgent auto-snooze */}
       <AutoSnoozeRow
         label="Urgent auto-snooze"
-        description="Repeat interval for urgent (P4) overdue tasks"
+        description={`Repeat interval for urgent (P4) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeUrgent}
         onChange={(v) =>
           savePreferenceField(

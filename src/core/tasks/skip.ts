@@ -98,7 +98,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
             prevDueAt: task.due_at ? new Date(task.due_at) : null,
           }).toISOString()
       // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`).
-      const nextDeadlineAt = advanceDeadline(task, nextDueAt)
+      const nextDeadlineAt = advanceDeadline(task, nextDueAt, userTimezone)
 
       // §5: advancing the occurrence is a period boundary, so a tracked task's
       // progress resets here exactly as it would on completion.

@@ -24,7 +24,7 @@ const pinned = (page: Page) => page.locator('[data-pinned-date-chip="overdue"]')
  *  them") starts the same way. */
 const redPill = (page: Page) =>
   page.getByRole('button', {
-    name: /^\d+ overdue — (show only overdue tasks|clear the overdue filter)$/,
+    name: /^\d+ over target — (show only over target tasks|clear the over target filter)$/,
   })
 const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ due today — / })
 const banner = (page: Page) => page.getByText(/Showing \d+ of \d+ tasks/)

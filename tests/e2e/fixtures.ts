@@ -95,13 +95,24 @@ export function waitForPreferenceSave(page: Page, field: string) {
  * the list backdates the tasks it made first. The server reads SQLite in WAL mode, so the next
  * fetch sees the write.
  */
-export function backdateCreated(ids: number[]): void {
+export function backdateCreated(ids: number[], opts: { inSegments?: boolean } = {}): void {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const stmt = db.prepare(
       `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
     )
-    for (const id of ids) stmt.run(id)
+    // A task created before today shows in its horizon's task segment
+    // (2026-10-10) — a second copy of its title on the dashboard. Unless a
+    // spec wants exactly that (`inSegments`), keep it out: an "eventually"
+    // horizon (first Saturday of a quarter) and considered now.
+    const hide = db.prepare(
+      `UPDATE tasks SET horizon = COALESCE(horizon, 'eventually'),
+         last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
+    )
+    for (const id of ids) {
+      stmt.run(id)
+      if (!opts.inSegments) hide.run(id)
+    }
   } finally {
     db.close()
   }
