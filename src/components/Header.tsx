@@ -47,6 +47,7 @@ import { AIStatusModal } from '@/components/AIStatusModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { DOCS_URL } from '@/lib/docs-url'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
+import { AiContextStaleMenuItem } from '@/components/AiContextStaleLink'
 
 interface HeaderProps {
   title?: string
@@ -376,6 +377,7 @@ export function Header({
                     Settings
                   </GuardedLink>
                 </DropdownMenuItem>
+                <AiContextStaleMenuItem />
                 <DropdownMenuItem asChild>
                   <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
                     <BookOpen className="size-4" />

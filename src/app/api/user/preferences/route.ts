@@ -564,6 +564,9 @@ function formatPreferencesResponse(row: PreferencesRow) {
     sweep_feedback_notifications_enabled: row.sweep_feedback_notifications_enabled !== 0,
     critical_alert_volume: row.critical_alert_volume,
     ai_context: row.ai_context,
+    // When `ai_context` last changed (null: never, or not since 2026-10-10,
+    // when this began to be recorded). Read-only — the server stamps it.
+    ai_context_updated_at: row.ai_context_updated_at,
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
     ai_show_signals: row.ai_show_signals !== 0,
