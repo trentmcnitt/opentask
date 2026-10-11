@@ -88,7 +88,7 @@ export function ProcessModal({
                 aria-selected={s === step}
                 onClick={() => setChosen(s)}
                 className={cn(
-                  'rounded-full px-2.5 py-1 text-xs transition-colors',
+                  'rounded-full px-2.5 py-1 text-xs',
                   s === step
                     ? 'bg-foreground text-background'
                     : 'bg-muted text-muted-foreground hover:text-foreground',
