@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'

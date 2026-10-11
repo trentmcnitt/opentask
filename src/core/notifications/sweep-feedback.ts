@@ -61,7 +61,7 @@
  * fire-and-forget, after the sweep has committed and without delaying the response.
  */
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { taskWord } from '@/lib/utils'

@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET } from '@/lib/task-model-words'
 import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'

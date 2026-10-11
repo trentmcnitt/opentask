@@ -11,7 +11,7 @@
  * (`bg-indigo-100`/`dark:bg-indigo-900/40` + `text-indigo-700`/`dark:text-indigo-300`)
  * matches the signal-badge treatment in TaskRow.tsx.
  */
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { cn } from '@/lib/utils'
 
 interface ChipDueBadgesProps {

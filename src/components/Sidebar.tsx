@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import {

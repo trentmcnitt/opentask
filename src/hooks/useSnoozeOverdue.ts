@@ -10,7 +10,7 @@
  * lives in `filterForBulkSnooze`; the server decides, this hook only reports.
  */
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useCallback } from 'react'
 import { isOverdue } from '@/lib/task-counts'
 import type { Task } from '@/types'

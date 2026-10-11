@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useState } from 'react'
 import { Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'

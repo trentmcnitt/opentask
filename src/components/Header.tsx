@@ -1,7 +1,7 @@
 'use client'
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
-import { useState } from 'react'
+import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
 import Image from 'next/image'
@@ -152,6 +152,15 @@ export function Header({
   const [processOpen, setProcessOpen] = useState(false)
   // Bumped on each opening: the modal remounts, so every Process starts fresh.
   const [processSession, setProcessSession] = useState(0)
+  // A task segment's "over 50" nudge (TaskSegmentCard) asks for Process.
+  useEffect(() => {
+    const open = () => {
+      setProcessSession((n) => n + 1)
+      setProcessOpen(true)
+    }
+    window.addEventListener('open-process', open)
+    return () => window.removeEventListener('open-process', open)
+  }, [])
   const [menuOpened, setMenuOpened] = useState(false)
   const aiAvailable = useAiAvailable()
   // The AI Status item's dot: fetched the first time the menu opens, then kept.
