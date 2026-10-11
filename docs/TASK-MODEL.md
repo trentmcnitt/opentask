@@ -111,7 +111,7 @@ A segment shows only on a day it has items.
 
 **Never counted, never notified.** Segments are not in `groups[]`. Their rows never count in the reminders headline, the nav badge, "Considered all so far", the slot notifications or the hourly unfinished-slot nag, and a segment never sends a notification. Anything time-critical has a target, and a task whose target has arrived is on the dashboard, not here.
 
-**Where it shows.** First on the Reminders screen, ahead of the first period ("tasks are an early-day thing"). On the dashboard's reminders panel, a segment's card sits above the slot pager while anything in it is waiting, then folds away.
+**Where it shows.** Under the periods on the Reminders screen (Trent, 2026-10-11: "Tasks should go underneath Reminders"; 10-10 had them first). On the dashboard's reminders panel, a segment's card sits at the bottom of the section while anything in it is waiting, then folds away. The native surfaces follow: the Reminders widget's page ring is slots then segments with the clock's slot as the natural page, and the watch shows segments after the period's rows.
 
 **The row.** Circle on the left = considered (never a completion; a tap anywhere else on the row does the same, as on a reminder). Checkbox on the right = done. "Today" (target today) sits just left of the checkbox. A quiet horizon chip changes the horizon in one tap; it shows its word only when the task's own horizon differs from the segment's (a deadline pulled it in), and a faint dot marks unset. A second line appears only when there is something to say: a future target as a date chip ("Nov 1"), or the deadline. Without either the row is one line, a reminder row's height.
 
