@@ -63,6 +63,11 @@ struct WatchWidgetEntry: TimelineEntry {
         /// take the card over (see `ReminderStackTimeline.content`), but they
         /// must not vanish either: a small red line under the header.
         let urgentOverdue: Int
+        /// Non-nil for a TASK SEGMENT row (2026-10-10): the button is the
+        /// segment's consider ("I saw it", never a completion) and ☐ is done.
+        var segmentTaskId: Int? = nil
+        /// A segment row's small words ("Weeks · Nov 1", `TaskDTO.segmentMeta`).
+        var segmentMeta: String? = nil
     }
 
     struct CaughtUpCard: Equatable {
@@ -144,6 +149,7 @@ enum ReminderStackTimeline {
         skipped: (Int) -> Set<String>,
         pendingDone: Set<Int>,
         pendingPrompts: [String: Bool] = [:],
+        segments: [TaskSegmentDTO] = [],
         snoozeResult: WatchWidgetState.SnoozeResult?,
         slots: [TimeSlotDTO],
         at date: Date
@@ -172,6 +178,21 @@ enum ReminderStackTimeline {
             return WatchWidgetEntry(
                 date: date, content: .overdue(card), ring: ring,
                 relevance: TimelineEntryRelevance(score: 100)
+            )
+        }
+
+        // Task segments (2026-10-10) come ahead of the slots — "task
+        // segments open first" (spec §3) — but after the overdue rules
+        // above, which outrank every reminder. Their own card, never a
+        // slot's item, never in a slot's "N left".
+        let liveSegments = applyingPending(done: pendingDone, prompts: pendingPrompts, to: segments)
+        if let segment = TaskSegmentDTO.listed(liveSegments).first(where: \.hasWaiting) {
+            let skips = skipped(segment.pageKey)
+            let remaining = segmentCards(segment, urgent: urgent)
+            let index = remaining.firstIndex { !skips.contains($0.itemKey) } ?? 0
+            return WatchWidgetEntry(
+                date: date, content: .reminder(remaining[index]), ring: ring,
+                relevance: TimelineEntryRelevance(score: 50)
             )
         }
 
@@ -254,6 +275,41 @@ enum ReminderStackTimeline {
         return reminders + prompts
     }
 
+    /// The card key of a task segment row — `s:<id>`, beside a reminder's
+    /// `r:<id>` and a prompt's `q:…`. Also the key its in-flight consider is
+    /// staged under (`WatchWidgetState.stagePendingPrompt`, did: false).
+    static func segmentItemKey(_ taskId: Int) -> String { "s:\(taskId)" }
+
+    /// A segment's waiting rows as cards, in the server's order.
+    static func segmentCards(_ segment: TaskSegmentDTO, urgent: Int) -> [WatchWidgetEntry.ReminderCard] {
+        let rows = segment.waitingTasks
+        let keys = rows.map { segmentItemKey($0.id) }
+        return rows.map { row in
+            WatchWidgetEntry.ReminderCard(
+                itemKey: segmentItemKey(row.id), taskId: row.id, promptKey: nil, title: row.task.title,
+                stripeColor: nil, slotLabel: "Tasks · \(segment.label)", slotKey: segment.pageKey,
+                remainingKeys: keys, urgentOverdue: urgent,
+                segmentTaskId: row.id,
+                segmentMeta: row.task.segmentMeta(segmentHorizon: segment.horizon)?
+                    .replacingOccurrences(of: "\u{00A0}", with: " ")
+            )
+        }
+    }
+
+    /// In-flight segment taps drawn over the cached segments: a done row is
+    /// gone, a considered one (staged under its `s:` key) is considered.
+    static func applyingPending(
+        done: Set<Int>, prompts: [String: Bool], to segments: [TaskSegmentDTO]
+    ) -> [TaskSegmentDTO] {
+        segments.map { segment in
+            segment.replacingTasks(segment.tasks.compactMap { row in
+                if done.contains(row.id) { return nil }
+                if prompts[segmentItemKey(row.id)] != nil, row.state == .waiting { return row.with(state: .considered) }
+                return row
+            })
+        }
+    }
+
     /// Within the first 30 min of the slot's start — the Smart Stack should
     /// rank the card highest right as a slot opens.
     private static func slotJustStarted(_ group: ReminderGroupDTO, now: Date) -> Bool {
@@ -324,7 +380,7 @@ enum ReminderStackTimeline {
         active: ReminderGroupDTO?, groups: [ReminderGroupDTO], overdue: Int, now: Date
     ) -> WatchWidgetEntry.Ring {
         if overdue > 0 {
-            return .init(count: overdue, fraction: 0, isOverdue: true, label: "Overdue")
+            return .init(count: overdue, fraction: 0, isOverdue: true, label: TaskWording.overTarget)
         }
         guard let active else {
             return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "Complete")

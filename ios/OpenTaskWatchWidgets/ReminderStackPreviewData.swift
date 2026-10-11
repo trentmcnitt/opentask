@@ -171,6 +171,20 @@ enum ReminderStackPreviewData {
 
     // MARK: The states
 
+    /// A task segment (2026-10-10) ahead of the slot: "Tasks · Days · 2 left",
+    /// a Weeks task pulled into Days with its deadline, ○ considers, ☐ done.
+    static let segmentCard: WatchWidgetEntry = ReminderStackTimeline.entry(
+        groups: groups(considered: [11: 1]), tasks: [], skipped: { _ in [] }, pendingDone: [],
+        segments: [TaskSegmentDTO(horizon: "days", tasks: [
+            SegmentTaskDTO(
+                task: TaskDTO(id: 9103, title: "Book the dentist for the kids", deadlineAt: "2026-09-29T22:00:00.000Z", horizon: "weeks"),
+                state: .waiting
+            ),
+            SegmentTaskDTO(task: TaskDTO(id: 9101, title: "Fix the squeaky gate hinge", horizon: "days"), state: .waiting),
+        ])],
+        snoozeResult: nil, slots: slots, at: at(8, 47)
+    )
+
     /// The complaint screenshot's state, redone: Early morning, one
     /// considered, "Breakfast ( Oatmeal, Berries, Walnuts )" next.
     static let supplements = entry(groups(considered: [11: 1]), at: at(8, 47))
@@ -225,6 +239,12 @@ enum ReminderStackPreviewData {
         groups(considered: [11: 8, 12: 5, 13: 4, 14: 1]), tasks: tasks, at: at(17, 31),
         snooze: .init(at: at(17, 31), tasksAffected: 2, snoozedHigh: 2, skippedHigh: 0, skippedUrgent: 0, targetLabel: "Evening")
     )
+}
+
+#Preview("Task segment card", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.segmentCard
 }
 
 #Preview("Breakfast (the complaint)", as: .accessoryRectangular) {

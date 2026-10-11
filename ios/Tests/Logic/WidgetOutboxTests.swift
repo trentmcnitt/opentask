@@ -58,7 +58,7 @@ final class WidgetOutboxTests: WidgetStoreTestCase {
     }
 
     private func seedReminders() throws {
-        WidgetStore.saveReminders(try Fixtures.reminders("reminders-initial"), fetchStartedAt: t0)
+        WidgetStore.saveReminders(try Fixtures.reminders("reminders-initial"), taskSegments: [], fetchStartedAt: t0)
     }
 
     private func cachedReminderIds() -> Set<Int> {
@@ -480,6 +480,7 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
         case did([String])
         case progress(Int, Int)
         case fetchState(Int)
+        case considerSegment([Int])
     }
 
     private let lock = NSLock()
@@ -487,6 +488,7 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     var markDoneResults: [Result<Void, Error>] = []
     var promptResults: [Result<APIClient.PromptActionResult, Error>] = []
     var progressResults: [Result<TaskDTO?, Error>] = []
+    var segmentResults: [Result<Int, Error>] = []
     var taskStates: [Int: [Result<APIClient.TaskState?, Error>]] = [:]
     /// Suspend inside `markDone`, so concurrent drains really interleave.
     var yieldsInMarkDone = false
@@ -533,6 +535,12 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     func logProgress(taskId: Int, delta: Int) async throws -> TaskDTO? {
         record(.progress(taskId, delta))
         return try pop(&progressResults, default: nil).get()
+    }
+
+    @discardableResult
+    func considerSegmentTasks(ids: [Int]) async throws -> Int {
+        record(.considerSegment(ids))
+        return try pop(&segmentResults, default: ids.count).get()
     }
 
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState? {

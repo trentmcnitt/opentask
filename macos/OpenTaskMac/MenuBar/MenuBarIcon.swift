@@ -79,7 +79,7 @@ enum MenuBarIcon {
             return true
         }
         image.isTemplate = false
-        image.accessibilityDescription = "OpenTask, \(count) overdue"
+        image.accessibilityDescription = "OpenTask, \(count) \(TaskWording.overTargetLower)"
         return image
     }
 }

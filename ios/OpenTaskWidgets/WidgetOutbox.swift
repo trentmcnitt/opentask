@@ -135,6 +135,37 @@ actor WidgetOutboxDrainer {
             return await processPrompt(entry, key: key, did: did, into: &report)
         case .progress(let taskId, let delta):
             return await processProgress(entry, taskId: taskId, delta: delta, age: age, into: &report)
+        case .considerSegment(let taskId):
+            return await processSegmentConsider(entry, taskId: taskId, into: &report)
+        }
+    }
+
+    // MARK: Task segment consider (2026-10-10)
+
+    /// "I saw it" on a task segment row. Safe to resend: considering a row
+    /// that is already considered today changes nothing on the server. A 4xx
+    /// (the task is gone, or not this user's) is a definite failure, and the
+    /// row honestly goes back to waiting.
+    private func processSegmentConsider(
+        _ entry: WidgetStore.OutboxEntry, taskId: Int, into report: inout OutboxDrainReport
+    ) async -> Bool {
+        guard WidgetStore.beginSendingOutboxEntry(entry.id, now: clock()) != nil else { return true }
+        do {
+            try await transport.considerSegmentTasks(ids: [taskId])
+            WidgetStore.confirmSegmentConsider(taskId)
+            WidgetStore.recordMutation(now: entry.createdDate)
+            WidgetStore.removeOutboxEntry(entry.id)
+            report.confirmedKinds.insert(entry.widgetKind)
+            return true
+        } catch {
+            let failure = OutboxFailure(error)
+            print("[OpenTaskWidgets] Outbox consider segment \(taskId) failed (\(failure)): \(error)")
+            guard failure == .rejected else {
+                WidgetStore.requeueOutboxEntry(entry.id)
+                return false
+            }
+            fail(entry, into: &report)
+            return true
         }
     }
 
@@ -426,6 +457,9 @@ protocol WidgetOutboxTransport: AnyObject {
     func considerPrompts(keys: [String]) async throws -> APIClient.PromptActionResult
     func didPrompts(keys: [String]) async throws -> APIClient.PromptActionResult
     func logProgress(taskId: Int, delta: Int) async throws -> TaskDTO?
+    /// `POST /api/task-segments/consider`; returns how many were considered.
+    @discardableResult
+    func considerSegmentTasks(ids: [Int]) async throws -> Int
     /// `nil` = the task is gone (404).
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState?
 }

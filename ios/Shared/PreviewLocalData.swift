@@ -47,6 +47,14 @@ enum PreviewLocalData {
         load("reminders", as: RemindersPayload.self)?.groups
     }
 
+    /// `GET /api/reminders`' top-level `task_segments` (2026-10-10) →
+    /// `reminders.json`; nil when the file is missing or has none.
+    static var taskSegments: [TaskSegmentDTO]? {
+        guard let segments = load("reminders", as: RemindersPayload.self)?.taskSegments, !segments.isEmpty
+        else { return nil }
+        return segments
+    }
+
     /// `GET /api/tasks?done=false` → `tasks.json`.
     static var openTasks: [TaskDTO]? {
         load("tasks", as: TasksPage.self)?.tasks
