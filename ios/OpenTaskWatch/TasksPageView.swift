@@ -126,7 +126,7 @@ private struct TaskRow: View {
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
 
-                if let due = task.dueDate {
+                if let due = task.effectiveTargetDate {
                     Text(WatchFormatting.dueLine(for: due))
                         .font(.caption2)
                         .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)

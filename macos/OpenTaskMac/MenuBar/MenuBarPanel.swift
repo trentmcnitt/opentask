@@ -148,7 +148,7 @@ struct MenuBarPanel: View {
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let due = task.dueDate {
+                    if let due = task.effectiveTargetDate {
                         Text(dueText(due, isOverdue: isOverdue))
                             .font(.caption)
                             .foregroundStyle(isOverdue ? Color.red : Color.secondary)

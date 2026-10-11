@@ -73,6 +73,27 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// for the same fact) — see `NotesKey`.
     let hasNotes: Bool
 
+    // MARK: Task model fields (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon)
+    //
+    // `dueAt` above is the TARGET now: when nagging starts. The server also
+    // sends it as `target_at` (the primary name since 10-10; `due_at` is the
+    // deprecated alias, always the same value), so the native clients keep
+    // reading `due_at`. All four are decoded with `decodeIfPresent`, so an
+    // older server, or a cache written by an older build, still parses.
+
+    /// UTC ISO 8601 — the real cutoff. Snooze never moves it. Nil = none.
+    let deadlineAt: String?
+    /// "days" / "weeks" / "months" / "eventually", or nil = UNSET. Unset is
+    /// treated as weeks by the server's segment rules, but must be SHOWN as
+    /// unset, never as "weeks" (spec §2) — read it through `horizonLabel`.
+    let horizon: String?
+    /// UTC ISO 8601 — the FIRST-TARGET date: kept by a snooze, reset by a
+    /// deliberate re-target. The target-age badge's clock (`TargetAge`).
+    let originalDueAt: String?
+    /// Remove-target turned off the deadline's implied nag for this task
+    /// (`TargetAge.impliedTarget`).
+    let deadlineNagOff: Bool
+
     enum CodingKeys: String, CodingKey {
         case id
         case projectId = "project_id"
@@ -89,6 +110,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case labels
         case shortTitle = "short_title"
         case hasNotes = "has_notes"
+        case deadlineAt = "deadline_at"
+        case horizon
+        case originalDueAt = "original_due_at"
+        case deadlineNagOff = "deadline_nag_off"
     }
 
     /// Decode-only: the server's raw `notes`. Deliberately NOT in
@@ -128,6 +153,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
             let raw = try decoder.container(keyedBy: NotesKey.self).decodeIfPresent(String.self, forKey: .notes)
             hasNotes = !(raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        deadlineAt = try c.decodeIfPresent(String.self, forKey: .deadlineAt)
+        horizon = try c.decodeIfPresent(String.self, forKey: .horizon)
+        originalDueAt = try c.decodeIfPresent(String.self, forKey: .originalDueAt)
+        deadlineNagOff = try c.decodeIfPresent(Bool.self, forKey: .deadlineNagOff) ?? false
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -151,7 +180,11 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         isReminder: Bool = false,
         labels: [String] = [],
         shortTitle: String? = nil,
-        hasNotes: Bool = false
+        hasNotes: Bool = false,
+        deadlineAt: String? = nil,
+        horizon: String? = nil,
+        originalDueAt: String? = nil,
+        deadlineNagOff: Bool = false
     ) {
         self.id = id
         self.projectId = projectId
@@ -168,6 +201,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.labels = labels
         self.shortTitle = shortTitle
         self.hasNotes = hasNotes
+        self.deadlineAt = deadlineAt
+        self.horizon = horizon
+        self.originalDueAt = originalDueAt
+        self.deadlineNagOff = deadlineNagOff
     }
 
     var dueDate: Date? {
@@ -221,10 +258,50 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         return copy
     }
 
+    /// "Over target" (2026-10-10 — what used to be "overdue"; the user-facing
+    /// words live in `TaskWording`): the EFFECTIVE target has passed. That is
+    /// `due_at`, or for a deadline-only task the deadline's implied target
+    /// (`TargetAge.effectiveTargetDate`), which the server nags from while
+    /// `due_at` stays null — so a plain `due_at < now` would miss it.
     func isOverdue(now: Date = Date()) -> Bool {
-        guard let dueDate else { return false }
-        return dueDate < now
+        guard let target = effectiveTargetDate else { return false }
+        return target < now
     }
+
+    /// The target the task nags from: its own `due_at`, else the deadline's
+    /// implied one. See `TargetAge`.
+    var effectiveTargetDate: Date? { TargetAge.effectiveTargetDate(self) }
+
+    var deadlineDate: Date? {
+        guard let deadlineAt else { return nil }
+        return DateHelpers.parseISO(deadlineAt)
+    }
+
+    /// "Days" / "Weeks" / "Months" / "Eventually", or nil when the horizon is
+    /// unset (shown as nothing — never as "Weeks", spec §2) or unrecognised.
+    var horizonLabel: String? { TaskHorizon(rawValue: horizon ?? "")?.label }
+}
+
+// MARK: - Horizon (2026-10-10)
+
+/// A task's pace — which task segment of the reminders screen it appears in.
+/// The server's `HORIZON_ORDER` (`src/lib/task-segments.ts`), in screen order.
+/// The word "horizon" is provisional (amendment 4): nothing user-facing says
+/// it — rows show only the value ("Days").
+enum TaskHorizon: String, CaseIterable, Codable {
+    case days, weeks, months, eventually
+
+    var label: String {
+        switch self {
+        case .days: return "Days"
+        case .weeks: return "Weeks"
+        case .months: return "Months"
+        case .eventually: return "Eventually"
+        }
+    }
+
+    /// Position in screen order (days first).
+    var order: Int { Self.allCases.firstIndex(of: self) ?? 0 }
 }
 
 // MARK: - Notes mark (2026-09-25)
@@ -623,9 +700,150 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
 
 struct RemindersPayload: Codable {
     let groups: [ReminderGroupDTO]
+    /// Today's task segments (2026-10-10), TOP-LEVEL on purpose: never inside
+    /// `groups`, and never to be merged into a group's `reminders` or
+    /// `prompts` — every "Complete all" path completes a group's reminders, and
+    /// an old build's would archive real tasks. Decoded with a default, so a
+    /// server that predates segments still parses (and simply has none).
+    let taskSegments: [TaskSegmentDTO]
 
     enum CodingKeys: String, CodingKey {
         case groups
+        case taskSegments = "task_segments"
+    }
+
+    init(groups: [ReminderGroupDTO], taskSegments: [TaskSegmentDTO]) {
+        self.groups = groups
+        self.taskSegments = taskSegments
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        groups = try c.decodeIfPresent([ReminderGroupDTO].self, forKey: .groups) ?? []
+        taskSegments = try c.decodeIfPresent([TaskSegmentDTO].self, forKey: .taskSegments) ?? []
+    }
+}
+
+// MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
+
+/// One task segment from `GET /api/reminders`' top-level `task_segments`
+/// (`src/core/tasks/task-segments.ts`'s `TaskSegment`): a horizon's open,
+/// one-off tasks that are up for a look today. A task sits here BEFORE its
+/// target arrives (or with no target), for awareness; once the target arrives
+/// it leaves for the "over target" machinery. Never both.
+///
+/// Rows carry their state: `waiting` (the circle is open), `considered` ("I saw
+/// it" today — never a completion) or `deferred` (Defer All: off today's list,
+/// back tomorrow). Counts are computed from the rows, like
+/// `ReminderGroupDTO.waitingCount`, rather than trusting the payload's
+/// `waiting`/`considered`: the optimistic paths edit rows in place, and a
+/// stored count would not follow.
+///
+/// Segment rows count toward NO reminders count (amendment 8): not a slot's
+/// headline, not the day's "N of M", not "day complete".
+struct TaskSegmentDTO: Codable, Hashable, Identifiable {
+    /// The server's horizon string ("days" …). Kept raw so an unknown future
+    /// horizon still decodes; read it through `horizonValue`/`label`.
+    let horizon: String
+    /// In the server's order: priority, then id — fixed, so acting on one
+    /// never reorders the rest under the finger.
+    let tasks: [SegmentTaskDTO]
+    /// Over ~50 items the screen suggests Process or AI help instead.
+    let nudge: Bool
+
+    var id: String { horizon }
+
+    enum CodingKeys: String, CodingKey {
+        case horizon, tasks, nudge
+    }
+
+    /// NO default for `tasks` — the `ReminderGroupDTO.prompts` rule: every
+    /// rebuild (tombstone filters, the watch's optimistic edits) must say what
+    /// happens to the rows.
+    init(horizon: String, tasks: [SegmentTaskDTO], nudge: Bool = false) {
+        self.horizon = horizon
+        self.tasks = tasks
+        self.nudge = nudge
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        horizon = try c.decodeIfPresent(String.self, forKey: .horizon) ?? TaskHorizon.weeks.rawValue
+        tasks = try c.decodeIfPresent([SegmentTaskDTO].self, forKey: .tasks) ?? []
+        nudge = try c.decodeIfPresent(Bool.self, forKey: .nudge) ?? false
+    }
+
+    var horizonValue: TaskHorizon? { TaskHorizon(rawValue: horizon) }
+
+    /// "Days", "Weeks", … — the segment's page title.
+    var label: String { horizonValue?.label ?? horizon.capitalized }
+
+    /// Stable page key for the widget's and the watch's page ring, in the
+    /// same Int space as `ReminderGroupDTO.slotKey` (real slot ids are
+    /// positive, -1 is Anytime): -10 days, -11 weeks, -12 months, -13
+    /// eventually. So the existing slot-override storage, page index and
+    /// chevrons address a segment page with no new storage.
+    var pageKey: Int { -(10 + (horizonValue?.order ?? 4)) }
+
+    /// Rows on today's list: deferred ones are gone until tomorrow.
+    var listedTasks: [SegmentTaskDTO] { tasks.filter { $0.state != .deferred } }
+    var waitingTasks: [SegmentTaskDTO] { tasks.filter { $0.state == .waiting } }
+    var consideredTasks: [SegmentTaskDTO] { tasks.filter { $0.state == .considered } }
+    var waitingCount: Int { waitingTasks.count }
+    var hasWaiting: Bool { waitingCount > 0 }
+    /// Whether the segment is a page today: anything listed (waiting, or
+    /// considered — so it can go green). All-deferred segments drop out.
+    var isListed: Bool { !listedTasks.isEmpty }
+
+    func replacingTasks(_ tasks: [SegmentTaskDTO]) -> TaskSegmentDTO {
+        TaskSegmentDTO(horizon: horizon, tasks: tasks, nudge: nudge)
+    }
+
+    /// Segments with a page today, in screen order.
+    static func listed(_ segments: [TaskSegmentDTO]) -> [TaskSegmentDTO] {
+        segments.filter(\.isListed)
+    }
+}
+
+/// A task segment row: the full task plus its `segment_state`. On the wire
+/// it is ONE flat object (the task's fields and `segment_state` side by
+/// side), so both `TaskDTO` and this read the same keyed container.
+struct SegmentTaskDTO: Codable, Hashable, Identifiable {
+    enum State: String, Codable {
+        case waiting, considered, deferred
+    }
+
+    let task: TaskDTO
+    let state: State
+
+    var id: Int { task.id }
+
+    private enum CodingKeys: String, CodingKey {
+        case state = "segment_state"
+    }
+
+    init(task: TaskDTO, state: State) {
+        self.task = task
+        self.state = state
+    }
+
+    init(from decoder: Decoder) throws {
+        task = try TaskDTO(from: decoder)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // An unknown future state reads as waiting: the row stays actionable
+        // rather than the whole segment failing to decode.
+        let raw = try c.decodeIfPresent(String.self, forKey: .state) ?? State.waiting.rawValue
+        state = State(rawValue: raw) ?? .waiting
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try task.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(state, forKey: .state)
+    }
+
+    func with(state: State) -> SegmentTaskDTO {
+        SegmentTaskDTO(task: task, state: state)
     }
 }
 

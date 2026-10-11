@@ -130,7 +130,7 @@ private struct TasksSmallView: View {
                         .foregroundStyle(.primary)
                         .minimumScaleFactor(WidgetTheme.overflowTitleScale)
 
-                    if next.dueDate != nil {
+                    if next.effectiveTargetDate != nil {
                         // Day-naming (2026-09-23) — see `WidgetTheme.
                         // dueLabelText`'s doc; "anywhere a task time shows"
                         // includes this 2×2's "next up" line.
@@ -531,7 +531,7 @@ private struct TasksListView: View {
 
     /// `task`'s due label, split — `nil` when it has no due date.
     private func dueParts(for task: TaskDTO) -> WidgetTheme.DueLabelParts? {
-        guard let due = task.dueDate else { return nil }
+        guard let due = task.effectiveTargetDate else { return nil }
         return WidgetTheme.dueLabelParts(for: due, now: entry.date, isOverdue: task.isOverdue(now: entry.date))
     }
 
@@ -1078,7 +1078,7 @@ private struct TaskRow: View {
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                 .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
 
-            if task.dueDate != nil {
+            if task.effectiveTargetDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
                 // AM" (further), "Oct 2" (date-only). Overdue (2026-09-25):

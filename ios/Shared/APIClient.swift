@@ -392,6 +392,44 @@ final class APIClient {
             ?? PromptActionResult(considered: 0, did: 0, tasks: [], decoded: false)
     }
 
+    // MARK: Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
+    //
+    // The three task-segment actions, each `{ ids: [taskId, ...] }` and each
+    // ONE server undo entry (the standard `POST /api/undo` takes it back).
+    // Done on a segment row is NOT here: it is the ordinary completion
+    // (`markDone`, through the widget outbox, or `completeTasks(ids:)`).
+
+    /// `POST /api/task-segments/consider` → `{ "considered": N }`.
+    struct SegmentConsiderResult: Decodable, Equatable {
+        let considered: Int
+    }
+
+    /// The segment row's circle: "I saw it" — stamps `last_considered_at`.
+    /// NEVER a completion. Idempotent in effect (considering a row already
+    /// considered today changes nothing but still logs an undo entry), so a
+    /// resend after a cut-off request is safe.
+    @discardableResult
+    func considerSegmentTasks(ids: [Int]) async throws -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let data = try await post(path: "/api/task-segments/consider", body: ["ids": ids])
+        return (try? JSONDecoder().decode(APIEnvelope<SegmentConsiderResult>.self, from: data).data.considered) ?? 0
+    }
+
+    /// Defer All: off today's segment, back tomorrow. Not a consider.
+    @discardableResult
+    func deferSegmentTasks(ids: [Int]) async throws -> Data {
+        guard !ids.isEmpty else { return Data() }
+        return try await post(path: "/api/task-segments/defer", body: ["ids": ids])
+    }
+
+    /// "Target today": a deliberate target today (the age clock starts
+    /// there), also marking the rows considered. Response `{ until, affected }`.
+    @discardableResult
+    func targetSegmentTasksToday(ids: [Int]) async throws -> Data {
+        guard !ids.isEmpty else { return Data() }
+        return try await post(path: "/api/task-segments/target-today", body: ["ids": ids])
+    }
+
     /// Snooze SPECIFIC tasks by id — `POST /api/tasks/bulk/snooze`
     /// (2026-09-23, Tasks widget snooze mode / bulk select). The ids-based
     /// twin of `snoozeOverdue`'s sweep: that endpoint (`bulk/snooze-overdue`)
