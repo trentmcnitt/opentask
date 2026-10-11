@@ -16,7 +16,7 @@ import {
   TRACKED_REMINDER_MESSAGE,
 } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
-import { crossesDeadline } from '@/lib/task-segments'
+import { crossesDeadline, impliedTargetAt } from '@/lib/task-segments'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
@@ -145,7 +145,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   const rruleChanged = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
 
   // Track due_at changes with snooze detection
-  collectDueAtChanges(data, task, input, rruleChanged)
+  collectDueAtChanges(data, task, input, rruleChanged, now)
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
@@ -658,6 +658,7 @@ function collectDueAtChanges(
   task: Task,
   input: FieldChangesInput,
   rruleChanged: boolean,
+  now: Date,
 ): void {
   // If rrule changed, due_at was handled there (if auto-computed)
   // Special case: when clearing rrule to null AND due_at to null together,
@@ -683,6 +684,31 @@ function collectDueAtChanges(
   if (input.due_at === undefined || input.due_at === task.due_at) return
 
   trackField(data, 'due_at', task.due_at, input.due_at)
+
+  // A deadline-only task whose implied target (deadline − DEADLINE_LEAD_DAYS)
+  // has ARRIVED is already nagging: moving it is a snooze of that target, not
+  // giving a dateless task its first date (2026-10-10). It is capped by the
+  // deadline, counts as a snooze, and keeps the implied target as its origin,
+  // so the age badge doesn't reset.
+  const implied = impliedTargetAt(task)
+  const impliedArrived = implied !== null && Date.parse(implied) <= now.getTime()
+  if (
+    impliedArrived &&
+    !rruleChanged &&
+    !input.reset_original_due_at &&
+    task.due_at === null &&
+    input.due_at !== null
+  ) {
+    data.isSnoozeScenario = true
+    if (crossesDeadline(task.deadline_at, input.due_at, now) && !input.allow_past_deadline) {
+      throw new PastDeadlineError()
+    }
+    if (task.original_due_at !== implied) {
+      trackField(data, 'original_due_at', task.original_due_at, implied)
+    }
+    trackField(data, 'snooze_count', task.snooze_count, task.snooze_count + 1)
+    return
+  }
 
   // Apply snooze logic if task had a previous due_at and is being moved to a new date
   // (not when clearing due_at to null — that's not a snooze).

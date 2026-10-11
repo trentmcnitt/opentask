@@ -12,7 +12,7 @@ import { getDb } from '@/core/db'
 import { createTask, updateTask, markDone, bulkSnooze } from '@/core/tasks'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { getTaskById } from '@/core/tasks/read'
-import { executeUndo } from '@/core/undo'
+import { executeUndo, executeRedo } from '@/core/undo'
 import {
   considerTasks,
   deferTasks,
@@ -282,6 +282,12 @@ describe('Task model', () => {
       // Back in its effective-horizon segment: 3 days out is "days".
       age(t.id, '2026-10-01T09:00')
       expect(segmentOf(t.id)).toEqual({ horizon: 'days', state: 'waiting' })
+      // Undo and redo of that write (a boolean column) work and leave the
+      // stack usable — the remove-target Undo used to throw and wedge it.
+      executeUndo(TEST_USER_ID)
+      expect(getTaskById(t.id)!.deadline_nag_off).toBe(false)
+      executeRedo(TEST_USER_ID)
+      expect(getTaskById(t.id)!.deadline_nag_off).toBe(true)
       // A new deadline turns the nag back on.
       updateTask({
         userId: TEST_USER_ID,
@@ -290,6 +296,41 @@ describe('Task model', () => {
         input: { deadline_at: at('2026-10-12T18:00') },
       })
       expect(getTaskById(t.id)!.deadline_nag_off).toBe(false)
+    })
+
+    test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its age', () => {
+      // Deadline Oct 12 18:00 → implied target Oct 8 18:00: nagging since then.
+      const t = make({ deadline_at: at('2026-10-12T18:00') })
+      // A sweep past the deadline leaves it and reports it.
+      const swept = bulkSnooze({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskIds: [t.id],
+        until: at('2026-10-13T09:00'),
+      })
+      expect(swept.deadlineSkipped).toBe(1)
+      expect(getTaskById(t.id)!.due_at).toBeNull()
+      // A single snooze past it is refused unless confirmed.
+      expect(() =>
+        updateTask({
+          userId: TEST_USER_ID,
+          userTimezone: tz,
+          taskId: t.id,
+          input: { due_at: at('2026-10-13T09:00') },
+        }),
+      ).toThrow(PastDeadlineError)
+      // A snooze inside the deadline is a snooze: the age counts from the
+      // implied target, not from the snooze.
+      const snoozed = updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        input: { due_at: at('2026-10-10T16:00') },
+      }).task
+      expect(snoozed.original_due_at).toBe(at('2026-10-08T18:00'))
+      expect(snoozed.snooze_count).toBe(1)
+      vi.setSystemTime(new Date(at('2026-10-10T17:00')))
+      expect(targetAgeDays(snoozed, tz, new Date())).toBe(2)
     })
 
     test('TM-035: a recurring deadline moves with the occurrence on done and on skip', () => {

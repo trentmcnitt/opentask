@@ -4,7 +4,7 @@
  * All bulk operations execute as a single transaction and produce a single undo entry.
  */
 
-import { crossesDeadline } from '@/lib/task-segments'
+import { crossesDeadline, effectiveTargetAt } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
@@ -540,7 +540,12 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       // clamped. Only a SNOOZE is capped — a dateless task getting its first
       // date is setting a target, not snoozing one.
       const allowed = allowPastDeadline.has(task.id)
-      if (task.due_at !== null && !allowed && crossesDeadline(task.deadline_at, newDueAt)) {
+      // The EFFECTIVE target: a deadline-only task already nagging from its
+      // implied target is snoozed too, so it is capped like any other.
+      const target = effectiveTargetAt(task)
+      const nagging = target !== null && Date.parse(target) <= nowDate.getTime()
+      const isSnooze = task.due_at !== null || nagging
+      if (isSnooze && !allowed && crossesDeadline(task.deadline_at, newDueAt)) {
         deadlineSkipped++
         continue
       }
@@ -829,11 +834,14 @@ function planBulkEditDates(
   if (isSnoozeEdit && !changes.reset_original_due_at) {
     const allowed = new Set(opts.allowPastDeadlineIds ?? [])
     const before = plan.skipped
+    const now = Date.now()
     withhold((t) => {
-      if (t.due_at === null || allowed.has(t.id)) return true
+      const current = effectiveTargetAt(t)
+      const nagging = current !== null && Date.parse(current) <= now
+      if ((t.due_at === null && !nagging) || allowed.has(t.id) || current === null) return true
       const target =
         deltaMinutes !== undefined
-          ? new Date(Date.parse(t.due_at) + deltaMinutes * 60_000).toISOString()
+          ? new Date(Date.parse(current) + deltaMinutes * 60_000).toISOString()
           : changes.due_at
       return !target || !crossesDeadline(t.deadline_at, target)
     })

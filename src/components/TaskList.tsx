@@ -87,7 +87,7 @@ interface TaskListProps {
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
-  onRemoveTarget?: (taskId: number) => void
+  onRemoveTarget?: (task: Task) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */

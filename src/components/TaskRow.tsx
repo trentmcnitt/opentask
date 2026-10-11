@@ -26,7 +26,12 @@ import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
-import { isPastDeadline, targetAgeDays, targetAgeTone } from '@/lib/task-segments'
+import {
+  effectiveTargetAt,
+  isPastDeadline,
+  targetAgeDays,
+  targetAgeTone,
+} from '@/lib/task-segments'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -86,7 +91,7 @@ interface TaskRowProps {
   /** Called with (taskId, until) for immediate snooze */
   onSnooze: (taskId: number, until: string) => void
   /** Remove the target (2026-10-10) — offered in the snooze hold menu. */
-  onRemoveTarget?: (taskId: number) => void
+  onRemoveTarget?: (task: Task) => void
   isOverdue?: boolean
   isSelected?: boolean
   isSelectionMode?: boolean
@@ -673,7 +678,10 @@ export function TaskRow({
           onOpenChange={setSnoozeMenuOpen}
           onSnooze={(until) => onSnooze(task.id, until)}
           onRemoveTarget={
-            onRemoveTarget && task.due_at && !task.rrule ? () => onRemoveTarget(task.id) : undefined
+            // Any target it nags from — its own, or a deadline's implied one.
+            onRemoveTarget && effectiveTargetAt(task) && !task.rrule
+              ? () => onRemoveTarget(task)
+              : undefined
           }
         >
           <Button

@@ -772,7 +772,12 @@ export function QuickActionPanel({
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
     // Remove target on a task with a deadline also turns off the deadline's
     // implied nag (deadline − 4 days) — otherwise "remove" would do nothing.
-    if (pendingDueAtCleared && (pendingDeadline ?? effectiveTask?.deadline_at)) {
+    if (
+      pendingDueAtCleared &&
+      (pendingDeadline ??
+        effectiveTask?.deadline_at ??
+        (isBulkMode && selectedTasks?.some((t) => t.deadline_at)))
+    ) {
       changes.deadline_nag_off = true
     }
     return changes
@@ -1639,7 +1644,9 @@ export function QuickActionPanel({
                     <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
                       {/* Clear due date - only for single task with due_at or rrule */}
                       {isSingleTask &&
-                        (effectiveTask?.due_at || effectiveTask?.rrule) &&
+                        (effectiveTask?.due_at ||
+                          effectiveTask?.rrule ||
+                          (effectiveTask?.deadline_at && !effectiveTask.deadline_nag_off)) &&
                         !pendingDueAtCleared && (
                           <DropdownMenuItem
                             // `inset` matches the left padding DropdownMenuCheckboxItem
