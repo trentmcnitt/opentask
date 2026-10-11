@@ -70,7 +70,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
     const body = await request.json()
     const input = validateTaskUpdate(body)
 
-    const { task, fieldsChanged, description } = updateTask({
+    const { task, fieldsChanged, description, cappedAtDeadline } = updateTask({
       userId: user.id,
       userTimezone: user.timezone,
       taskId,
@@ -80,11 +80,6 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
     // A3 (2026-10-11): a native quick snooze (`cap_at_deadline`, the
     // notification content extension's custom time) that stopped AT the
     // deadline says so in a quiet push — that surface shows nothing itself.
-    const cappedAtDeadline =
-      input.cap_at_deadline === true &&
-      typeof input.due_at === 'string' &&
-      task.due_at !== null &&
-      task.due_at !== input.due_at
     if (cappedAtDeadline) void sendDeadlineCapFeedback(user.id, task.due_at!, user.timezone)
 
     notifyDemoEngagement(user.name, 'update')
@@ -92,7 +87,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       ...formatTaskResponse(task),
       fields_changed: fieldsChanged,
       description,
-      capped_at_deadline: cappedAtDeadline,
+      capped_at_deadline: cappedAtDeadline === true,
     })
   } catch (err) {
     if (err instanceof ZodError) {

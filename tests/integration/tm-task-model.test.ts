@@ -166,6 +166,20 @@ describe('Task model over HTTP', () => {
     expect(patched.data.capped_at_deadline).toBe(true)
     expect(patched.data.deadline_nag_off).toBe(false)
 
+    // Under a far deadline it is an ordinary snooze, and says so.
+    const far = await create({
+      title: 'tm cap far',
+      due_at: iso(-HOUR),
+      deadline_at: iso(240 * HOUR),
+    })
+    const uncapped = await json(
+      await apiFetch(`/api/tasks/${far.id}`, {
+        method: 'PATCH',
+        body: { due_at: iso(24 * HOUR), cap_at_deadline: true },
+      }),
+    )
+    expect(uncapped.data.capped_at_deadline).toBe(false)
+
     const b = await create({ title: 'tm cap bulk', due_at: iso(-HOUR), deadline_at: deadline })
     const bulk = await json(
       await apiFetch('/api/tasks/bulk/snooze', {

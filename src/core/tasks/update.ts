@@ -44,6 +44,8 @@ export interface UpdateTaskResult {
   task: Task
   fieldsChanged: string[]
   description: string
+  /** A3: `cap_at_deadline` moved this snooze to the deadline (`capSnoozeAtDeadline`). */
+  cappedAtDeadline?: boolean
 }
 
 /** Task fields no widget (iOS, macOS, watchOS) decodes or draws. */
@@ -164,6 +166,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       task: updatedTask,
       fieldsChanged: data.fieldsChanged,
       description: holds ? DEADLINE_TODAY_HOLDS : description,
+      cappedAtDeadline: data.cappedAtDeadline === true,
     }
   })
 

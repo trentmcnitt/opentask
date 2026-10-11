@@ -84,15 +84,15 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         log.info('notifications', `Action complete: ${action} on task ${task_id}`)
         // A3: `until` is where the task actually went — the deadline when the
         // snooze would have crossed it.
-        const landed = result.task.due_at ?? until
+        const landed = result.cappedAtDeadline ? result.task.due_at! : until
         // The button runs in the background and shows nothing: say it in a
         // quiet push (deadline-cap-feedback.ts).
-        if (landed !== until) void sendDeadlineCapFeedback(user.id, landed, user.timezone)
+        if (result.cappedAtDeadline) void sendDeadlineCapFeedback(user.id, landed, user.timezone)
         return success({
           action,
           task_id,
           until: landed,
-          capped_at_deadline: landed !== until,
+          capped_at_deadline: result.cappedAtDeadline,
           result,
         })
       }

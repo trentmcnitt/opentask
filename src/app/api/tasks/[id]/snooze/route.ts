@@ -57,7 +57,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       original_due_at: result.originalDueAt,
       description: result.description,
       // A3: the snooze stopped AT the deadline instead of where it was asked.
-      capped_at_deadline: result.task.due_at !== input.until,
+      capped_at_deadline: result.cappedAtDeadline,
     })
   } catch (err) {
     if (err instanceof ZodError) {
