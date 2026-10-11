@@ -128,7 +128,8 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Email john.smith@example.com about the invoice" or similar. ' +
         'The email address MUST be preserved exactly — in title or notes. ' +
-        'due_at should be Friday.',
+        'deadline_at should be Friday, end of day; due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it).',
     },
   },
   {

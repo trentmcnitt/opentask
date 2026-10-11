@@ -160,7 +160,9 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Send the TPS report to accounting" or similar. ' +
         'Labels MUST be empty — work context does NOT warrant a "work" label. ' +
-        'project_name should be null — no explicit project assignment.',
+        'project_name should be null — no explicit project assignment. ' +
+        'deadline_at should be Friday, end of day; due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it).',
     },
   },
   {
@@ -207,7 +209,7 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
         'Title: "Pick up emergency inhaler" or similar. ' +
         'Priority MUST be 4 — "critical" is a P4 keyword. ' +
         'Labels must be empty — "critical" is not a label, it maps to priority. ' +
-        'due_at should be today at 5pm.',
+        'deadline_at should be today at 5:00 PM ("before 5pm" is a cutoff); due_at null preferred — a target today before 5pm is a minor deviation, not a failure.',
     },
   },
   {

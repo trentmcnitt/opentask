@@ -16,10 +16,12 @@ import { enrichmentEdgeScenarios } from './enrichment-edge'
 import { enrichmentContextScenarios } from './enrichment-context'
 import { enrichmentProjectScenarios } from './enrichment-projects'
 import { enrichmentPriorityScenarios } from './enrichment-priority'
+import { enrichmentTaskModelScenarios } from './enrichment-task-model'
 import { whatsNextScenarios } from './whats-next'
 import { insightsScenarios } from './insights'
 import { insightsLargeScenarios } from './insights-large'
 import { quickTakeScenarios } from './quick-take'
+import { taskModelReviewScenarios } from './task-model-review'
 
 export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentCoreScenarios,
@@ -32,6 +34,7 @@ export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentContextScenarios,
   ...enrichmentProjectScenarios,
   ...enrichmentPriorityScenarios,
+  ...enrichmentTaskModelScenarios,
 ]
 
 export const allScenarios: AITestScenario[] = [
@@ -40,6 +43,7 @@ export const allScenarios: AITestScenario[] = [
   ...insightsScenarios,
   ...insightsLargeScenarios,
   ...quickTakeScenarios,
+  ...taskModelReviewScenarios,
 ]
 
 export { whatsNextScenarios, insightsScenarios, insightsLargeScenarios, quickTakeScenarios }

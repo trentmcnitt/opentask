@@ -108,7 +108,8 @@ export const enrichmentProjectScenarios: AITestScenario[] = [
       quality_notes:
         'project_name MUST be null — applying to a company is job-search TOPIC, but the text does not contain the name "job search". ' +
         'Inference from topic is forbidden. ' +
-        'due_at should be the coming Friday at the default task time. Title like "Apply to Acme".',
+        'deadline_at should be the coming Friday, end of day; due_at null' +
+        ' (task model 2026-10-10: "by X" is a cutoff, not a day to do it). Title like "Apply to Acme".',
     },
   },
   {

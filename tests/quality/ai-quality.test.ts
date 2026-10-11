@@ -426,7 +426,7 @@ async function runEnrichment(
   // so the scenario is judged on what the database would receive. When the
   // guard changes the model's answer, the raw value is logged so a prompt
   // regression the guard is hiding still shows up in the run output.
-  const { filterProjectMatch } = await import('@/core/ai/enrichment')
+  const { filterProjectMatch, sanitizeTaskModelFields } = await import('@/core/ai/enrichment')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -434,8 +434,17 @@ async function runEnrichment(
     )
   }
 
+  // Same for the task model's deadline/horizon guard (2026-10-10): judged on
+  // what production stores, with the raw answer logged when the guard changed it.
+  const taskModel = sanitizeTaskModelFields(parsed, input.text)
+  if (taskModel.deadline_at !== parsed.deadline_at || taskModel.horizon !== parsed.horizon) {
+    console.log(
+      `[quality] task-model guard changed deadline_at "${parsed.deadline_at}" / horizon "${parsed.horizon}" for: ${input.text}`,
+    )
+  }
+
   return {
-    output: { ...parsed, project_name: guarded } as unknown as Record<string, unknown>,
+    output: { ...taskModel, project_name: guarded } as unknown as Record<string, unknown>,
     durationMs: result.durationMs,
   }
 }
@@ -595,6 +604,7 @@ async function runQuickTake(
     title: t.title,
     project_name: t.project_name ?? null,
     due_at: t.due_at,
+    deadline_at: t.deadline_at ?? null,
     priority: t.priority,
     labels: t.labels,
     rrule: t.rrule ?? null,
@@ -821,6 +831,8 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
             `[${scenario.id}] Expected ${key} = ${expectedValue}, got ${JSON.stringify(actualValue)}`,
           )
         }
+      } else if (typeof expectedValue === 'string' && expectedValue.startsWith('~')) {
+        checkSpecialExpectation(scenario.id, key, expectedValue, actualValue)
       } else if (typeof expectedValue === 'string') {
         if (
           typeof actualValue !== 'string' ||
@@ -900,6 +912,41 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
   }
 }
 
+/**
+ * `must_include` matchers for values a scenario cannot spell exactly:
+ * - `~date:YYYY-MM-DD` — a local datetime on that day, any time (scenarios
+ *   compute the day relative to the run; the time is left to Layer 2 notes)
+ * - `~notnull` — set to anything
+ */
+function checkSpecialExpectation(id: string, key: string, expected: string, actual: unknown): void {
+  if (expected.startsWith('~date:')) {
+    const day = expected.slice('~date:'.length)
+    if (typeof actual !== 'string' || actual.slice(0, 10) !== day) {
+      throw new Error(`[${id}] Expected ${key} on ${day}, got ${JSON.stringify(actual)}`)
+    }
+    return
+  }
+  if (expected === '~notnull') {
+    if (actual == null) throw new Error(`[${id}] Expected ${key} to be set, got ${actual}`)
+    return
+  }
+  throw new Error(`[${id}] Unknown matcher ${expected} for ${key}`)
+}
+
+/** Task model fields (2026-10-10): deadline_at a datetime or null, horizon an enum or null. */
+function validateTaskModelFields(id: string, output: Record<string, unknown>): void {
+  const deadline = output.deadline_at
+  if (deadline !== null && (typeof deadline !== 'string' || isNaN(Date.parse(deadline)))) {
+    throw new Error(`[${id}] deadline_at must be an ISO 8601 datetime or null, got ${deadline}`)
+  }
+  if (
+    output.horizon !== null &&
+    !['days', 'weeks', 'months', 'eventually'].includes(output.horizon as string)
+  ) {
+    throw new Error(`[${id}] horizon must be days|weeks|months|eventually or null`)
+  }
+}
+
 function validateEnrichmentSchema(id: string, output: Record<string, unknown>): void {
   if (typeof output.title !== 'string' || output.title.length === 0) {
     throw new Error(`[${id}] title must be a non-empty string`)
@@ -916,6 +963,7 @@ function validateEnrichmentSchema(id: string, output: Record<string, unknown>): 
   if (output.due_at !== null && isNaN(Date.parse(output.due_at as string))) {
     throw new Error(`[${id}] due_at is not a valid ISO 8601 date: ${output.due_at}`)
   }
+  validateTaskModelFields(id, output)
   if (output.rrule !== null && typeof output.rrule !== 'string') {
     throw new Error(`[${id}] rrule must be a string or null`)
   }
