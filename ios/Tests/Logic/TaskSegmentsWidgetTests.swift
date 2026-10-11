@@ -37,6 +37,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         )
     }
 
+    /// The fixture at 12:30 has prompts waiting in 07:00 and 09:00, so an
+    /// earlier slot is unfinished and the clock's slot stays natural.
     func testTheClocksSlotIsNaturalEvenWhileASegmentWaits() throws {
         let groups = try Fixtures.reminders()
         let listed = TaskSegmentDTO.listed(segments())
@@ -89,6 +91,86 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         if let override = WidgetStore.slotOverride() {
             XCTAssertEqual(override.naturalSlotKey, naturalKey)
         }
+    }
+
+    // MARK: Segments as slots (2026-10-11): the natural page and auto-advance
+
+    private func slot(_ id: Int, _ start: String, waiting: [Int] = [], considered: Int = 0) -> ReminderGroupDTO {
+        let done = (0..<considered).map { TaskDTO(id: id * 100 + 50 + $0, title: "Done \($0)", isReminder: true) }
+        return ReminderGroupDTO(
+            slot: TimeSlotDTO(id: id, label: "Slot \(id)", startTime: start),
+            reminders: waiting.map { TaskDTO(id: $0, title: "Reminder \($0)", isReminder: true) },
+            considered: done.count, consideredItems: done, prompts: []
+        )
+    }
+
+    /// 07:00 and 12:00 finished, 20:00 still to come (with something in it).
+    private var finishedSoFar: [ReminderGroupDTO] {
+        [slot(1, "07:00", considered: 2), slot(2, "12:00", considered: 1), slot(3, "20:00", waiting: [301])]
+    }
+
+    func testOnceTheDaySoFarIsFinishedTheFirstWaitingSegmentIsNatural() {
+        // Days has nothing waiting (considered only), Weeks does.
+        let listed = TaskSegmentDTO.listed(segments(daysWaiting: false))
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: finishedSoFar, segments: listed, now: noon), -11)
+        let page = RemindersTimeline.displayedPage(groups: finishedSoFar, segments: listed, now: noon)
+        XCTAssertEqual(page.segmentIndex, 1)
+        XCTAssertEqual(page.slotIndex, 1, "the slot-only families keep the clock's slot")
+    }
+
+    func testAnEarlierUnfinishedSlotStillWins() {
+        let groups = [slot(1, "07:00", waiting: [101]), slot(2, "12:00", considered: 1)]
+        let listed = TaskSegmentDTO.listed(segments())
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), 2)
+    }
+
+    func testTheClocksSlotWaitingIsNatural() {
+        let groups = [slot(1, "07:00", considered: 1), slot(2, "12:00", waiting: [201])]
+        let listed = TaskSegmentDTO.listed(segments())
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), 2)
+    }
+
+    func testWithNoSegmentWaitingTheFinishedClocksSlotIsNatural() {
+        let considered = [TaskSegmentDTO(horizon: "days", tasks: [row(1, .considered)])]
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: finishedSoFar, segments: considered, now: noon), 2)
+    }
+
+    func testFinishingTheClocksSlotLandsOnTheWaitingSegment() {
+        // The clock's slot has one reminder left; Days waits.
+        let groups = [slot(1, "07:00", considered: 2), slot(2, "12:00", waiting: [201]), slot(3, "20:00", waiting: [301])]
+        let segs = segments()
+        XCTAssertNil(RemindersTimeline.displayedPage(groups: groups, segments: TaskSegmentDTO.listed(segs), now: noon).segmentIndex)
+
+        WidgetStore.stagePendingCompletion(201, now: noon)
+        RemindersTimeline.autoAdvanceSlot(in: groups, segments: segs, now: noon)
+        let filtered = WidgetStore.filterPending(groups, now: noon)
+        XCTAssertEqual(
+            RemindersTimeline.displayedPageKey(groups: filtered, segments: TaskSegmentDTO.listed(segs), now: noon), -10
+        )
+    }
+
+    func testFinishingALaterSlotOnceTheDayIsDoneSoFarLandsOnTheSegment() {
+        // The day so far is finished, so Days is natural; the user chevrons
+        // ahead to 20:00 and checks off its one reminder there.
+        let segs = segments()
+        let listed = TaskSegmentDTO.listed(segs)
+        WidgetStore.setSlotOverride(slotKey: 3, naturalSlotKey: -10)
+        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: finishedSoFar, segments: listed, now: noon), 3)
+
+        WidgetStore.stagePendingCompletion(301, now: noon)
+        RemindersTimeline.autoAdvanceSlot(in: finishedSoFar, segments: segs, now: noon)
+        let filtered = WidgetStore.filterPending(finishedSoFar, now: noon)
+        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: filtered, segments: listed, now: noon), -10)
+    }
+
+    func testAJumpToATaskBarResolvesToItsPage() {
+        // `JumpToReminderSlotIntent` writes exactly this for a task bar.
+        let groups = [slot(1, "07:00", waiting: [101]), slot(2, "12:00", waiting: [201])]
+        let listed = TaskSegmentDTO.listed(segments())
+        let naturalKey = RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon)!
+        XCTAssertTrue(RemindersTimeline.pageKeys(groups: groups, segments: listed).contains(-11))
+        WidgetStore.setSlotOverride(slotKey: -11, naturalSlotKey: naturalKey)
+        XCTAssertEqual(RemindersTimeline.displayedPage(groups: groups, segments: listed, now: noon).segmentIndex, 1)
     }
 
     // MARK: Optimistic render and cache

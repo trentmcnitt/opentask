@@ -798,6 +798,12 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     var consideredTasks: [SegmentTaskDTO] { tasks.filter { $0.state == .considered } }
     var waitingCount: Int { waitingTasks.count }
     var hasWaiting: Bool { waitingCount > 0 }
+    /// The X of the segment's "X of Y" (docs/TASK-MODEL.md § Task segments,
+    /// 2026-10-11): rows considered OR deferred today. Y is `tasks.count` —
+    /// every row the segment holds today, deferred ones included (a task
+    /// marked done leaves the payload entirely). So a page listing 2 rows can
+    /// read "3 of 5"; that is the web header's count, on purpose.
+    var handledCount: Int { tasks.count - waitingCount }
     /// Whether the segment is a page today: anything listed (waiting, or
     /// considered — so it can go green). All-deferred segments drop out.
     var isListed: Bool { !listedTasks.isEmpty }

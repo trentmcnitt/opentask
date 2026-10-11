@@ -52,11 +52,15 @@ enum RemindersTimeline {
     // per-page index and the chevrons all address a segment page with no
     // new storage.
     //
-    // The NATURAL page is the clock's slot, as before task segments existed;
-    // a segment is a chevron past the last slot (or the natural page when the
-    // day has no slots at all). Segments never enter `groups`, so nothing
-    // slot-shaped — the strip, "N of M", day complete, auto-advance's search —
-    // sees them.
+    // The NATURAL page treats the task segments as periods AFTER the slots
+    // (2026-10-11, "segments as slots"): it is the clock's slot — unless every
+    // slot from the day's first through the clock's own has nothing waiting,
+    // in which case it is the first task segment with a row waiting. An
+    // earlier unfinished slot always wins (auto-advance's "earliest undone"
+    // rule, extended past the last started slot). Segments never enter
+    // `groups`; the strip draws them as their own bars after the slots
+    // (`ReminderDayProgress.stripBars`), and day complete asks them
+    // separately.
 
     /// What is on screen: a slot (`segmentIndex == nil`) or a segment.
     struct DisplayedPage: Equatable {
@@ -72,14 +76,31 @@ enum RemindersTimeline {
         groups.map(\.slotKey) + segments.map(\.pageKey)
     }
 
-    /// The natural page's key — the clock's slot; with no slots, the first
-    /// segment still waiting (else the first) — or nil when there are no
-    /// pages at all.
+    /// The natural page's key, or nil when there are no pages at all:
+    /// - the first task segment with a row waiting, once every slot up to and
+    ///   including the clock's has nothing waiting (2026-10-11 — finishing
+    ///   the day so far carries the widget on to the tasks, as finishing a
+    ///   slot carries it to the earliest undone one);
+    /// - otherwise the clock's slot (an earlier unfinished slot is reached by
+    ///   auto-advance, never skipped for a segment);
+    /// - with no slots, the first segment still waiting, else the first.
+    ///
+    /// Slots AFTER the clock's — not started yet, plus a trailing "Anytime"
+    /// — don't hold the segment back: they aren't "earlier", and
+    /// `naturalSlotIndex` never picks Anytime as the day's current period
+    /// while a timed slot exists.
     static func naturalPageKey(
         groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()
     ) -> Int? {
-        if !groups.isEmpty { return groups[naturalSlotIndex(in: groups, now: now)].slotKey }
-        return (segments.first(where: \.hasWaiting) ?? segments.first)?.pageKey
+        guard !groups.isEmpty else {
+            return (segments.first(where: \.hasWaiting) ?? segments.first)?.pageKey
+        }
+        let natural = naturalSlotIndex(in: groups, now: now)
+        if groups[0...natural].allSatisfy(\.hasNothingWaiting),
+           let waiting = segments.first(where: \.hasWaiting) {
+            return waiting.pageKey
+        }
+        return groups[natural].slotKey
     }
 
     /// The page `key` names, with `naturalSlot` standing in for the slot on
@@ -180,10 +201,7 @@ enum RemindersTimeline {
     /// "Anytime" group has no start time and is always available, so it
     /// counts as started rather than "coming up later".
     static func hasStarted(_ group: ReminderGroupDTO, now: Date = Date()) -> Bool {
-        guard let minutes = group.slot?.startMinutes else { return true }
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: now)
-        let nowMinutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        return nowMinutes >= minutes
+        ReminderDayProgress.hasStarted(group, now: now)
     }
 
     /// After completing an item that leaves the ON-SCREEN slot with nothing
@@ -215,11 +233,13 @@ enum RemindersTimeline {
     /// prompts are not is not finished, and acting on a slot's last prompt
     /// advances just as checking off its last reminder does.
     ///
-    /// Task segments (2026-10-10) take no part in the search — they are not
-    /// slots — but the override is anchored to the natural PAGE, which is a
-    /// segment while one is waiting; anchoring it to the slot would read as
-    /// stale and be dropped at once. A tap on a segment page does nothing
-    /// here: finishing a segment moves the natural page on by itself.
+    /// Task segments come after the slots (2026-10-11, "segments as
+    /// slots"): when nothing from the day's first slot through the clock's
+    /// is waiting, the widget lands on the first task segment with a row
+    /// waiting — the natural page by then (`naturalPageKey`). The override is
+    /// anchored to that natural PAGE. A tap on a segment page does nothing
+    /// here: finishing a segment moves the natural page on by itself (to the
+    /// next waiting segment, else back to the clock's slot).
     static func autoAdvanceSlot(in groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()) {
         let filtered = WidgetStore.filterPending(groups, now: now)
         let listed = TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(segments, now: now))
@@ -237,7 +257,13 @@ enum RemindersTimeline {
               let naturalKey = naturalPageKey(groups: filtered, segments: listed, now: now)
         else { return }
         guard let target = filtered[0...natural].firstIndex(where: { !$0.hasNothingWaiting }) else {
-            return // nothing from the day's first slot through now is waiting either — stay
+            // Nothing from the day's first slot through now is waiting: on to
+            // the first waiting task segment, the natural page by now. With
+            // none waiting either, stay — the slot says it's done.
+            if let segment = listed.first(where: \.hasWaiting) {
+                setSlotOverride(slotKey: segment.pageKey, naturalSlotKey: naturalKey)
+            }
+            return
         }
 
         setSlotOverride(slotKey: filtered[target].slotKey, naturalSlotKey: naturalKey)
