@@ -288,6 +288,10 @@ export const taskUpdateSchema = z
     due_at: dateTimeString.nullable().optional(),
     deadline_at: dateTimeString.nullable().optional(),
     horizon: horizon.optional(),
+    // Process "keep" (2026-10-10): re-affirm the current horizon — restart its
+    // growth clock (`horizon_set_at`) without changing it. Needed because
+    // sending the same horizon is a no-op, and an unset horizon must stay unset.
+    affirm_horizon: z.boolean().optional(),
     deadline_nag_off: z.boolean().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
