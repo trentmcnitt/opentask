@@ -16,6 +16,9 @@ import { useIsMobile } from '@/hooks/useIsMobile'
  *   on any pointer-down outside it, and the toaster lives outside the dialog,
  *   so without this an Undo would close Process. (The toasts also need
  *   `pointer-events: auto` under a modal — see `ui/sonner.tsx`.)
+ *
+ * `data-blocks-page-keys` keeps the dashboard's global shortcuts (Backspace
+ * trashes its selection) from acting behind the modal (`useDashboardKeyboard`).
  */
 export function ProcessShell({
   open,
@@ -44,6 +47,7 @@ export function ProcessShell({
           className="max-h-[92dvh] overflow-y-auto rounded-t-2xl"
           showCloseButton={false}
           onInteractOutside={keepOpenForToasts}
+          data-blocks-page-keys
         >
           <VisuallyHidden>
             <SheetTitle>{title}</SheetTitle>
@@ -61,6 +65,7 @@ export function ProcessShell({
         className="max-h-[90vh] w-[32rem] max-w-[calc(100%-2rem)] overflow-y-auto p-4"
         showCloseButton={false}
         onInteractOutside={keepOpenForToasts}
+        data-blocks-page-keys
       >
         <VisuallyHidden>
           <DialogTitle>{title}</DialogTitle>

@@ -41,6 +41,11 @@ interface UseDashboardKeyboardOptions {
   onBulkDelete: () => void
 }
 
+/** Focus is inside a modal that keeps the page's shortcuts out (`data-blocks-page-keys`). */
+function blocksPageKeys(el: Element | null): boolean {
+  return !!el?.closest('[data-blocks-page-keys]')
+}
+
 /**
  * Global keyboard shortcuts for the dashboard.
  * Extracted from HomeContent to reduce page.tsx line count.
@@ -123,8 +128,11 @@ export function useDashboardKeyboard({
 
       // Undo/redo handled by useUndoRedoShortcuts hook
 
-      // Don't intercept other shortcuts when dialogs/sheets are open
-      if (!keyboardNavEnabled) return
+      // Don't intercept other shortcuts when dialogs/sheets are open — the
+      // dashboard's own, and any modal that marks itself `data-blocks-page-keys`
+      // (Process, opened from the top bar: Backspace there must not trash the
+      // dashboard's selection behind it).
+      if (!keyboardNavEnabled || blocksPageKeys(activeEl)) return
 
       // Backspace/Delete: Delete focused or selected tasks
       if ((e.key === 'Backspace' || e.key === 'Delete') && !isInInput) {
