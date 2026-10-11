@@ -705,8 +705,11 @@ final class APIClient {
     /// time (`UserPreferencesLabelConfigPage`) rather than adding a
     /// label-config-only endpoint server-side.
     func fetchLabelConfig() async throws -> [LabelConfigDTO] {
-        try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
-            .labelConfig
+        let page = try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
+        // The same payload carries the morning time the implied deadline
+        // target is read on — cache it for every target (2026-10-11).
+        TargetContextStore.save(morningTime: page.morningTime)
+        return page.labelConfig
     }
 
     /// The user's time slots (§6.0), for the notification slot-snooze actions

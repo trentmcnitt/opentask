@@ -67,11 +67,15 @@ class WidgetStoreTestCase: XCTestCase {
         super.setUp()
         suiteName = "test.\(UUID().uuidString)"
         WidgetStore.suiteOverride = UserDefaults(suiteName: suiteName)
+        // The implied deadline target's morning time, pinned (never the App
+        // Group's — on macOS that is the installed Mac app's).
+        TargetContextStore.override = .some("09:00")
     }
 
     override func tearDown() {
         WidgetStore.suiteOverride?.removePersistentDomain(forName: suiteName)
         WidgetStore.suiteOverride = nil
+        TargetContextStore.override = nil
         super.tearDown()
     }
 }

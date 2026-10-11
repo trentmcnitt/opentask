@@ -26,25 +26,83 @@ final class TargetAgeTests: XCTestCase {
         )
     }
 
-    // MARK: Implied target
+    // Every test pins the morning time (`TargetContextStore.override`) — on
+    // macOS the App Group is the installed Mac app's.
+    override func setUp() {
+        super.setUp()
+        TargetContextStore.override = .some("09:00")
+    }
 
-    func testDeadlineWithoutTargetImpliesOneFourDaysEarly() {
+    override func tearDown() {
+        TargetContextStore.override = nil
+        super.tearDown()
+    }
+
+    // MARK: Implied target (rulings A2/B2, 2026-10-11)
+
+    /// The user's morning on the local day 4 days before the deadline — not
+    /// deadline − 96h: an end-of-day deadline must not first nag at 23:59.
+    func testImpliedTargetIsTheMorningFourLocalDaysBeforeTheDeadline() {
+        // Deadline Tue 10-13 18:00 Chicago → Fri 10-09 09:00 Chicago (14:00Z).
         let t = task(deadline: "2026-10-13T23:00:00.000Z")
-        XCTAssertEqual(TargetAge.impliedTargetDate(t), DateHelpers.parseISO("2026-10-09T23:00:00.000Z"))
-        XCTAssertEqual(t.effectiveTargetDate, TargetAge.impliedTargetDate(t))
+        XCTAssertEqual(
+            TargetAge.impliedTargetDate(t, morningTime: "09:00", calendar: calendar),
+            DateHelpers.parseISO("2026-10-09T14:00:00.000Z")
+        )
+        XCTAssertEqual(
+            TargetAge.impliedTargetDate(t, morningTime: "07:30", calendar: calendar),
+            DateHelpers.parseISO("2026-10-09T12:30:00.000Z")
+        )
         XCTAssertTrue(t.isOverdue(now: now), "over target although due_at is null")
     }
 
-    func testImpliedTargetIsOffWithAnOwnTargetRemoveTargetOrRecurrence() {
-        XCTAssertNil(TargetAge.impliedTargetDate(task(due: "2026-10-20T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z")))
+    func testWithNoMorningTimeItFallsBackToDeadlineMinusFourDays() {
+        let t = task(deadline: "2026-10-13T23:00:00.000Z")
+        XCTAssertEqual(
+            TargetAge.impliedTargetDate(t, morningTime: nil, calendar: calendar),
+            DateHelpers.parseISO("2026-10-09T23:00:00.000Z")
+        )
+        XCTAssertEqual(
+            TargetAge.impliedTargetDate(t, morningTime: "garbage", calendar: calendar),
+            DateHelpers.parseISO("2026-10-09T23:00:00.000Z")
+        )
+    }
+
+    /// A target AFTER the deadline doesn't hide it: the implied one applies
+    /// and, being earlier, is the effective target.
+    func testATargetAfterTheDeadlineStillGetsTheImpliedOne() {
+        let late = task(due: "2026-10-20T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z")
+        let implied = DateHelpers.parseISO("2026-10-09T14:00:00.000Z")
+        XCTAssertEqual(TargetAge.impliedTargetDate(late, morningTime: "09:00", calendar: calendar), implied)
+        XCTAssertEqual(TargetAge.effectiveTargetDate(late, morningTime: "09:00", calendar: calendar), implied)
+    }
+
+    /// A target on or before the deadline is the target — no implied one.
+    func testATargetBeforeTheDeadlineWins() {
+        let early = task(due: "2026-10-11T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z")
+        XCTAssertNil(TargetAge.impliedTargetDate(early, morningTime: "09:00", calendar: calendar))
+        XCTAssertEqual(
+            TargetAge.effectiveTargetDate(early, morningTime: "09:00", calendar: calendar),
+            DateHelpers.parseISO("2026-10-11T15:00:00.000Z")
+        )
+        let atDeadline = task(due: "2026-10-13T23:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z")
+        XCTAssertNil(TargetAge.impliedTargetDate(atDeadline, morningTime: "09:00", calendar: calendar))
+    }
+
+    func testImpliedTargetIsOffWithRemoveTargetOrRecurrence() {
         XCTAssertNil(TargetAge.impliedTargetDate(task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true)))
         XCTAssertNil(TargetAge.impliedTargetDate(task(deadline: "2026-10-13T23:00:00.000Z", rrule: "FREQ=WEEKLY")))
+        XCTAssertNil(TargetAge.impliedTargetDate(
+            task(due: "2026-10-20T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z", nagOff: true)
+        ))
         XCTAssertFalse(task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true).isOverdue(now: now))
     }
 
     func testTaskListsSeeTheImpliedTarget() {
         let implied = task(deadline: "2026-10-13T23:00:00.000Z")
         XCTAssertEqual(TaskLists.overdue([implied], now: now).map(\.id), [1])
+        let lateTarget = task(due: "2026-10-20T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z")
+        XCTAssertEqual(TaskLists.overdue([lateTarget], now: now).map(\.id), [1], "the earlier, implied target has passed")
         XCTAssertEqual(TaskLists.overdue([task(deadline: "2026-10-13T23:00:00.000Z", nagOff: true)], now: now), [])
     }
 
@@ -71,9 +129,24 @@ final class TargetAgeTests: XCTestCase {
     }
 
     func testImpliedTargetAgesFromItself() {
-        // Deadline Tue 10-13 18:00 Chicago → implied target Fri 10-09: 1 day.
+        // Deadline Tue 10-13 → implied target Fri 10-09 09:00: 1 day.
         let t = task(deadline: "2026-10-13T23:00:00.000Z")
-        XCTAssertEqual(TargetAge.days(t, now: now, calendar: calendar), 1)
+        XCTAssertEqual(TargetAge.days(t, now: now, calendar: calendar, morningTime: "09:00"), 1)
+        // A target after the deadline with an old first target: the implied
+        // target is the effective one, so the age counts from IT, not from
+        // original_due_at.
+        let late = task(
+            due: "2026-10-20T15:00:00.000Z", original: "2026-09-01T15:00:00.000Z", deadline: "2026-10-13T23:00:00.000Z"
+        )
+        XCTAssertEqual(TargetAge.days(late, now: now, calendar: calendar, morningTime: "09:00"), 1)
+    }
+
+    func testOwnTargetAgesFromTheFirstTarget() {
+        // Own target before the deadline is effective: original_due_at counts.
+        let own = task(
+            due: "2026-10-10T14:00:00.000Z", original: "2026-10-05T14:00:00.000Z", deadline: "2026-10-30T23:00:00.000Z"
+        )
+        XCTAssertEqual(TargetAge.days(own, now: now, calendar: calendar, morningTime: "09:00"), 5)
     }
 
     func testToneSteps() {
@@ -99,6 +172,13 @@ final class TargetAgeTests: XCTestCase {
         XCTAssertEqual(TargetAge.futureTargetChip(t, now: now, calendar: calendar), "Nov 1")
         XCTAssertNil(TargetAge.futureTargetChip(task(due: "2026-10-09T14:00:00.000Z"), now: now, calendar: calendar))
         XCTAssertNil(TargetAge.futureTargetChip(task(), now: now, calendar: calendar))
+    }
+
+    /// `GET /api/user/preferences` carries the morning time the rule reads.
+    func testPreferencesCarryTheMorningTime() throws {
+        let page = try Fixtures.decode(UserPreferencesLabelConfigPage.self, "user-preferences")
+        XCTAssertEqual(page.morningTime, "09:00")
+        XCTAssertNotNil(TargetAge.parseHHMM(page.morningTime ?? ""))
     }
 
     func testWordingIsOneConstant() {

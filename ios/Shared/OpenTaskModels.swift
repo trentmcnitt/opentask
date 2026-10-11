@@ -1020,13 +1020,18 @@ struct LabelConfigDTO: Codable, Hashable {
 /// the whole preferences fetch.
 struct UserPreferencesLabelConfigPage: Decodable {
     let labelConfig: [LabelConfigDTO]
+    /// `morning_time` ("HH:MM", 2026-10-11) — the clock the implied deadline
+    /// target is read on (`TargetContextStore`). Nil from an older server.
+    let morningTime: String?
 
     enum CodingKeys: String, CodingKey {
         case labelConfig = "label_config"
+        case morningTime = "morning_time"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         labelConfig = try c.decodeIfPresent([LabelConfigDTO].self, forKey: .labelConfig) ?? []
+        morningTime = try c.decodeIfPresent(String.self, forKey: .morningTime)
     }
 }
