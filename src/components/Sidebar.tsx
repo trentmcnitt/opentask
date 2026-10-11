@@ -96,7 +96,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
                       {taskCounts.today > 0 && (
                         <span
                           className="bg-primary/15 text-primary rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                          aria-label={`${taskCounts.today} due today`}
+                          aria-label={`${taskCounts.today} for today`}
                         >
                           {taskCounts.today}
                         </span>

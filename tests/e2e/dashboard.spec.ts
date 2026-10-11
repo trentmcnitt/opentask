@@ -760,7 +760,7 @@ test.describe('Dashboard filter facets', () => {
         .poll(() => pillCount(workChip, 'data-chip-overdue'))
         .toBe(baselineWorkOverdue + 1)
       // Spelled out for screen readers, not just carried by color.
-      await expect(workChip).toHaveAttribute('aria-label', /due today/)
+      await expect(workChip).toHaveAttribute('aria-label', /for today/)
       await expect(workChip).toHaveAttribute('aria-label', /over target/)
 
       // The Today chip's own total already means "due today" — it gets the

@@ -35,7 +35,7 @@ const redPill = (page: Page) =>
   page.getByRole('button', {
     name: /^\d+ over target — (show only over target tasks|clear the over target filter)$/,
   })
-const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ due today — / })
+const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ for today — / })
 const firstGroup = (page: Page) => page.locator('[data-task-group]').first()
 
 async function post(page: Page, url: string, data: Record<string, unknown>): Promise<number> {

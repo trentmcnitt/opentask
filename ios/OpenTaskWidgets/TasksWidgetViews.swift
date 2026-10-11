@@ -162,7 +162,7 @@ extension TasksSmallView {
     /// Nothing open on this page. The Today page (2026-09-29) keeps the
     /// larger cards' words in its one compact line: "Day complete" once
     /// something was done today (the card also takes the green wash), else
-    /// "Nothing due today", both under the filled seal. No room for
+    /// "Nothing for today", both under the filled seal. No room for
     /// "Congratulations" or the Up next list here. Every other page keeps
     /// its original empty state.
     @ViewBuilder
@@ -170,11 +170,11 @@ extension TasksSmallView {
         if entry.todayCount != nil {
             WidgetEmptyView(
                 symbol: "checkmark.seal.fill",
-                message: entry.isDayComplete ? "Day complete" : "Nothing due today",
+                message: entry.isDayComplete ? "Day complete" : "Nothing for today",
                 compact: true
             )
         } else {
-            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today", compact: true)
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing for today", compact: true)
         }
     }
 }
@@ -692,13 +692,13 @@ private struct TasksListView: View {
     ///    green wash. Only reachable with "show completed" off: with it on,
     ///    the done rows ARE the body (tinted, no seal).
     /// 2. **Nothing due today** — nothing done either: the filled seal and
-    ///    "Nothing due today", no tint, and on systemLarge the next few
+    ///    "Nothing for today", no tint, and on systemLarge the next few
     ///    tasks due after today under an "UP NEXT" rule
     ///    (`TodayNothingDueView`). systemMedium leaves the list out: its
     ///    ~80pt body holds the seal and one line, and a single squeezed row
     ///    would read as a mistake more than a preview.
     ///
-    /// Every other page keeps the original "Nothing due today".
+    /// Every other page keeps the original "Nothing for today".
     @ViewBuilder
     private var emptyBody: some View {
         if entry.todayCount != nil {
@@ -716,7 +716,7 @@ private struct TasksListView: View {
                 TodayNothingDueView(entry: entry, isLarge: isLarge)
             }
         } else {
-            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing for today")
         }
     }
 
@@ -831,7 +831,7 @@ private struct TasksListView: View {
     /// A finished Today (2026-09-29) says "N done today", whether or not
     /// "show completed" is on. With nothing to count at all it is empty and
     /// the header drops the line — it used to read "all clear", which Trent
-    /// didn't like; "Nothing due today" in the body already says it.
+    /// didn't like; "Nothing for today" in the body already says it.
     private var countLabel: String {
         if entry.isDayComplete { return "\(entry.doneTodayCount) done today" }
         let overdue = entry.overdueCount(now: entry.date)
@@ -842,7 +842,7 @@ private struct TasksListView: View {
             } else if overdue == entry.tasks.count {
                 parts.append("\(overdue) \(TaskWording.overTargetLower)")
             } else {
-                parts.append("\(entry.tasks.count) due")
+                parts.append("\(entry.tasks.count) \(taskNoun(entry.tasks.count))")
                 if overdue > 0 { parts.append("\(overdue) \(TaskWording.overTargetLower)") }
             }
         }
@@ -852,7 +852,7 @@ private struct TasksListView: View {
 }
 
 /// The Today page with nothing due and nothing done today (2026-09-29,
-/// mockups t1b + t2): the filled seal and "Nothing due today" (semibold,
+/// mockups t1b + t2): the filled seal and "Nothing for today" (semibold,
 /// primary — the shape of the Reminders widget's finished-period
 /// "Complete"), no tint, and on systemLarge a quiet "Up next" list of the
 /// next few tasks due after today (`TasksEntry.upcoming`), pinned to the
@@ -898,7 +898,7 @@ private struct TodayNothingDueView: View {
             Image(systemName: "checkmark.seal.fill")
                 .font(isLarge ? .title2 : .title3)
                 .foregroundStyle(.green.opacity(0.85))
-            Text("Nothing due today")
+            Text("Nothing for today")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
         }
@@ -909,7 +909,7 @@ private struct TodayNothingDueView: View {
     }
 }
 
-/// "UP NEXT" and the next few tasks under "Nothing due today" — quiet by
+/// "UP NEXT" and the next few tasks under "Nothing for today" — quiet by
 /// design (mockup t2): a hairline rule like the DONE divider's, then one line
 /// per task — its project's dot, the title in footnote/secondary, the due
 /// label ("Tomorrow 9:00 am", `WidgetTheme.dueLabelText` on one line) in
@@ -1363,7 +1363,7 @@ private struct TasksRectangularView: View {
                     }
                 }
                 // Shrinks rather than truncating (2026-09-24).
-                Text(entry.tasks.first?.title ?? "Nothing due today")
+                Text(entry.tasks.first?.title ?? "Nothing for today")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .minimumScaleFactor(WidgetTheme.overflowTitleScale)
