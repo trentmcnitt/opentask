@@ -1,7 +1,7 @@
 /**
  * /api/projects/:id over HTTP: the single-project counts agree with the list,
  * the Inbox can't be renamed, and deleting a shared project sends each
- * member's tasks to their own Inbox.
+ * member's tasks to their own Inbox. A project carries an optional description.
  *
  * Seed (scripts/seed-test.ts): user A owns Inbox (1), Routine (2), Work (3)
  * and the shared Family (5); user B owns Inbox (4).
@@ -87,5 +87,52 @@ describe('Projects API', () => {
     const inbox = await apiFetch(`/api/projects/${A_INBOX}`, { method: 'DELETE' })
     expect(inbox.status).toBe(400)
     expect((await inbox.json()).error).toBe('Cannot delete Inbox project')
+  })
+
+  // 2026-10-10: what belongs in a project, for the AI and the desks.
+  test('description: created, listed, edited, cleared, capped at 280', async () => {
+    const created = await apiFetch('/api/projects', {
+      method: 'POST',
+      body: { name: 'Acme', description: '  Client work: calls, invoices  ' },
+    })
+    expect(created.status).toBe(201)
+    const project = (await created.json()).data as { id: number; description: string | null }
+    expect(project.description).toBe('Client work: calls, invoices')
+
+    const list = (await (await apiFetch('/api/projects')).json()).data.projects as {
+      id: number
+      description: string | null
+    }[]
+    expect(list.find((p) => p.id === project.id)?.description).toBe('Client work: calls, invoices')
+    // Every project carries the field, null when unset.
+    expect(list.find((p) => p.id === A_INBOX)?.description).toBeNull()
+
+    const edited = await apiFetch(`/api/projects/${project.id}`, {
+      method: 'PATCH',
+      body: { description: 'Acme only' },
+    })
+    expect((await edited.json()).data.description).toBe('Acme only')
+
+    const tooLong = await apiFetch(`/api/projects/${project.id}`, {
+      method: 'PATCH',
+      body: { description: 'x'.repeat(281) },
+    })
+    expect(tooLong.status).toBe(400)
+    expect((await (await apiFetch(`/api/projects/${project.id}`)).json()).data.description).toBe(
+      'Acme only',
+    )
+
+    const cleared = await apiFetch(`/api/projects/${project.id}`, {
+      method: 'PATCH',
+      body: { description: null },
+    })
+    expect((await cleared.json()).data.description).toBeNull()
+
+    // A member of a shared project can't describe it — owner only, like every edit.
+    const byMember = await apiFetchB(`/api/projects/${FAMILY}`, {
+      method: 'PATCH',
+      body: { description: 'Mine now' },
+    })
+    expect(byMember.status).toBe(403)
   })
 })

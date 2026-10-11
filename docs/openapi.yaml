@@ -1630,6 +1630,13 @@ paths:
                   type: [string, 'null']
                   enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
                   description: Omitted or null = a random colour not yet used by another of the user's projects.
+                description:
+                  type: [string, 'null']
+                  maxLength: 280
+                  description: |
+                    What belongs in this project, so the AI and API clients
+                    file tasks correctly. Trimmed; at most 280 characters after
+                    trimming (400 over that). `null` or an empty string clears it.
       responses:
         '201':
           description: Created project
@@ -1745,6 +1752,13 @@ paths:
                 color:
                   type: [string, 'null']
                   enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
+                description:
+                  type: [string, 'null']
+                  maxLength: 280
+                  description: |
+                    What belongs in this project, so the AI and API clients
+                    file tasks correctly. Trimmed; at most 280 characters after
+                    trimming (400 over that). `null` or an empty string clears it.
       responses:
         '200':
           description: Updated project
@@ -4365,6 +4379,13 @@ components:
         color:
           type: [string, 'null']
           enum: [red, orange, yellow, green, blue, purple, pink, gray, null]
+        description:
+          type: [string, 'null']
+          maxLength: 280
+          description: >-
+            What belongs in this project (at most 280 characters), set in
+            Settings or over the API; null when unset. Read it to choose a
+            project for a new task.
         active_count:
           type: integer
           description: The caller's own open tasks in the project, quotas excluded
