@@ -94,11 +94,34 @@ private struct ReminderCardView: View {
                             ? card.title
                             : "\(card.title)\(QuotaPromptDTO.countSeparator)\(card.countText ?? "")")
                     }
+                } else if let meta = card.segmentMeta {
+                    // A task segment row (2026-10-10): its small words
+                    // ("Weeks · Nov 1") ride with the title.
+                    FittingTitle(title: "\(card.title) · \(meta)")
                 } else {
                     FittingTitle(title: card.title)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if let taskId = card.segmentTaskId {
+                // ☐ DONE on a task segment row — the prompt card's ☐ column,
+                // bottom-aligned beside the consider button.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Button(intent: CompleteSegmentCardIntent(taskId: taskId)) {
+                        Image(systemName: "square")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(WatchTheme.accent)
+                            .widgetAccentable()
+                            .frame(width: ReminderStackMetrics.didColumn, height: ReminderStackMetrics.buttonColumn)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Done")
+                }
+                .frame(width: ReminderStackMetrics.didColumn)
+            }
 
             if let promptKey = card.promptKey, ReminderStackMetrics.promptCardShowsDidIt {
                 // ☐ DID IT, its own column beside ✓'s, bottom-aligned with
@@ -174,14 +197,19 @@ private struct ReminderCardView: View {
     /// the button means "seen", not "done", as on every other prompt surface.
     /// Same disc, same size.
     private var considerButton: some View {
-        let label = Image(systemName: card.promptKey == nil ? "checkmark" : "circle.dashed")
+        let glyph = card.segmentTaskId != nil ? "circle" : (card.promptKey == nil ? "checkmark" : "circle.dashed")
+        let label = Image(systemName: glyph)
             .font(.system(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: ReminderStackMetrics.buttonColumn, height: ReminderStackMetrics.buttonColumn)
             .background(Circle().fill(WatchTheme.accent).widgetAccentable())
             .contentShape(Circle())
         return Group {
-            if let promptKey = card.promptKey {
+            if let taskId = card.segmentTaskId {
+                // A task segment row: "I saw it" — never a completion.
+                Button(intent: ConsiderSegmentCardIntent(taskId: taskId)) { label }
+                    .accessibilityLabel("Considered")
+            } else if let promptKey = card.promptKey {
                 Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: false)) { label }
                     .accessibilityLabel("Considered")
             } else {

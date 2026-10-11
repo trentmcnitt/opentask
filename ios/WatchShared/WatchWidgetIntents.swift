@@ -117,6 +117,80 @@ struct ActOnPromptCardIntent: AppIntent {
     }
 }
 
+/// The circle on a TASK SEGMENT card (2026-10-10): "I saw it" — `POST
+/// /api/task-segments/consider`, never a completion. Staged under the row's
+/// `s:<id>` key in the prompt map (`ReminderStackTimeline.applyingPending`
+/// reads it), so the card moves to the next row at once; a failure clears
+/// it and the row comes back.
+struct ConsiderSegmentCardIntent: AppIntent {
+    static var title: LocalizedStringResource = "Consider Task"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    init() {}
+
+    init(taskId: Int) {
+        self.taskId = taskId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let key = "s:\(taskId)"
+        guard WatchWidgetState.tryClaim(key) else { return .result() }
+        defer { WatchWidgetState.releaseClaim(key) }
+
+        WatchWidgetState.stagePendingPrompt(key: key, did: false)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        do {
+            try await APIClient.shared.considerSegmentTasks(ids: [taskId])
+            WatchCache.setSegmentRow(taskId: taskId, state: .considered)
+        } catch {
+            WatchWidgetState.clearPendingPrompt(key: key)
+        }
+        if #available(watchOS 11.0, *) {
+            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
+        }
+        return .result()
+    }
+}
+
+/// ☐ on a TASK SEGMENT card (2026-10-10): done — the ordinary completion
+/// (`markDone`), `ConsiderReminderIntent`'s discipline: tombstone, repaint,
+/// server call, write-through, clear on failure.
+struct CompleteSegmentCardIntent: AppIntent {
+    static var title: LocalizedStringResource = "Complete Task"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    init() {}
+
+    init(taskId: Int) {
+        self.taskId = taskId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let claim = "segment-done-\(taskId)"
+        guard WatchWidgetState.tryClaim(claim) else { return .result() }
+        defer { WatchWidgetState.releaseClaim(claim) }
+
+        WatchWidgetState.stagePendingDone(taskId: taskId)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        do {
+            try await APIClient.shared.markDone(taskId: taskId)
+            WatchCache.setSegmentRow(taskId: taskId, state: nil)
+        } catch {
+            WatchWidgetState.clearPendingDone(taskId: taskId)
+        }
+        if #available(watchOS 11.0, *) {
+            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
+        }
+        return .result()
+    }
+}
+
 /// ⏭ — show the slot's next item (reminder or quota prompt) WITHOUT acting
 /// on this one. Pure local state (`WatchWidgetState.skip`), no server call;
 /// resets on its own when the slot or the day changes.

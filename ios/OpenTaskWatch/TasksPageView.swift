@@ -114,6 +114,14 @@ private struct TaskRow: View {
     let task: TaskDTO
     let project: ProjectDTO?
 
+    static func tint(_ tone: TargetAge.Tone) -> Color {
+        switch tone {
+        case .gray: return .secondary
+        case .amber: return .orange
+        case .red: return .red
+        }
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             RoundedRectangle(cornerRadius: 2)
@@ -127,9 +135,31 @@ private struct TaskRow: View {
                     .multilineTextAlignment(.leading)
 
                 if let due = task.effectiveTargetDate {
-                    Text(WatchFormatting.dueLine(for: due))
-                        .font(.caption2)
-                        .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)
+                    HStack(spacing: 4) {
+                        Text(WatchFormatting.dueLine(for: due))
+                            .font(.caption2)
+                            .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)
+                        // The target-age badge (2026-10-10, spec §4): "2d"
+                        // since the FIRST target, toned 1–2 gray, 3–6 amber,
+                        // 7+ red; blank on the target day. Then a red flag
+                        // once the deadline has passed.
+                        if let days = TargetAge.days(task) {
+                            Text(TargetAge.badgeText(days: days))
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(Self.tint(TargetAge.tone(days: days)))
+                                .padding(.horizontal, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3).fill(Self.tint(TargetAge.tone(days: days)).opacity(0.2))
+                                )
+                                .accessibilityLabel(Text("\(days) days \(TaskWording.overTargetLower)"))
+                        }
+                        if TargetAge.isPastDeadline(task) {
+                            Image(systemName: "flag.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .accessibilityLabel(Text(TaskWording.pastDeadline))
+                        }
+                    }
                 }
             }
         }
