@@ -194,6 +194,9 @@ describe('Task model', () => {
       const ids = Array.from({ length: 51 }, () => make().id)
       for (const id of ids) age(id, '2026-10-01T09:00')
       expect(getTaskSegments(TEST_USER_ID, tz)[0].nudge).toBe(true)
+      // Only what still waits counts: considered rows aren't "here" any more.
+      considerTasks(TEST_USER_ID, ids.slice(0, 49))
+      expect(getTaskSegments(TEST_USER_ID, tz)[0].nudge).toBe(false)
     })
   })
 

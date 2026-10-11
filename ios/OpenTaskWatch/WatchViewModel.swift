@@ -290,7 +290,7 @@ final class WatchViewModel: ObservableObject {
     /// Considers whose round trip is still in flight — drawn considered over
     /// every payload, so a fetch that lands mid-flight can't flash the row
     /// back (the `pendingPromptActions` rule).
-    private var pendingSegmentConsiders: Set<Int> = []
+    @Published private var pendingSegmentConsiders: Set<Int> = []
 
     /// Segments with a row on today's list, in screen order, with in-flight
     /// considers drawn. The Reminders page shows each one that still has a
@@ -315,24 +315,34 @@ final class WatchViewModel: ObservableObject {
     }
 
     /// The circle (or a tap on the row): "I saw it" — `POST
-    /// /api/task-segments/consider`, never a completion. Optimistic; the
-    /// toolbar Undo takes a misfire back.
+    /// /api/task-segments/consider`, never a completion.
+    ///
+    /// Instant, for rapid-fire use (Trent, 2026-10-11: "every time I tap it
+    /// makes a jingle sound, waits over a second, and then updates"): the row
+    /// is marked considered in the published state BEFORE the request, so it
+    /// leaves on the tap; the request runs behind it; a failure puts the row
+    /// back and buzzes. One click per tap, no success chime, and no refetch
+    /// after a success — twenty taps used to mean twenty chimes and twenty
+    /// full reloads, each redrawing the list under the finger. The toolbar
+    /// Undo takes a misfire back.
     func considerSegmentTask(_ task: TaskDTO) {
         guard !pendingSegmentConsiders.contains(task.id) else { return }
         pendingSegmentConsiders.insert(task.id)
+        setSegmentRow(task.id, state: .considered)
+        WatchCache.setSegmentRow(taskId: task.id, state: .considered)
+        canUndo = true
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.considerSegmentTasks(ids: [task.id])
-                setSegmentRow(task.id, state: .considered)
-                WatchCache.setSegmentRow(taskId: task.id, state: .considered)
-                canUndo = true
-                WKInterfaceDevice.current().play(.success)
+                pendingSegmentConsiders.remove(task.id)
             } catch {
+                pendingSegmentConsiders.remove(task.id)
+                setSegmentRow(task.id, state: .waiting)
+                WatchCache.setSegmentRow(taskId: task.id, state: .waiting)
                 WKInterfaceDevice.current().play(.failure)
+                await refreshReminders()
             }
-            pendingSegmentConsiders.remove(task.id)
-            await refreshReminders()
             WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
         }
     }
@@ -340,18 +350,20 @@ final class WatchViewModel: ObservableObject {
     /// The checkbox: done — the ordinary completion (`markDone`), the row
     /// leaves its segment.
     func completeSegmentTask(_ task: TaskDTO) {
+        // Instant like a consider: the row leaves on the tap, a failure
+        // reloads it back from the server.
         setSegmentRow(task.id, state: nil)
+        WatchCache.setSegmentRow(taskId: task.id, state: nil)
+        canUndo = true
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.markDone(taskId: task.id)
-                WatchCache.setSegmentRow(taskId: task.id, state: nil)
-                WKInterfaceDevice.current().play(.success)
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 WKInterfaceDevice.current().play(.failure)
+                await load()
             }
-            await load()
         }
     }
 
