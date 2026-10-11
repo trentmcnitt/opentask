@@ -76,6 +76,14 @@ const VALID_TASK_COLUMNS = new Set([
   'quota_day_state',
 ])
 
+/**
+ * Boolean task columns, written back as 0/1. Each one missing here was not
+ * merely "undo does nothing": the bind threw inside `undoEntry`'s transaction,
+ * rolled back the `undone = 1` write, and wedged the stack — `is_tracked` until
+ * 2026-09-08 (§5), `deadline_nag_off` (remove-target) until 2026-10-10.
+ */
+const BOOLEAN_COLUMNS = new Set(['done', 'is_reminder', 'is_tracked', 'deadline_nag_off'])
+
 /** Task columns holding a JSON object; undo writes them back serialized. */
 const JSON_OBJECT_COLUMNS = new Set(['quota_prompt_config', 'quota_day_state'])
 
@@ -116,19 +124,12 @@ export function applyFieldsToTask(
         }
         setClauses.push(`${dbColumn} = ?`)
         values.push(JSON.stringify(labels))
-      } else if (dbColumn === 'done') {
+      } else if (BOOLEAN_COLUMNS.has(dbColumn)) {
+        // SQLite has no boolean type: the snapshot holds the domain value
+        // (`trackField` records `true`/`false` while binding 0/1), and
+        // better-sqlite3 refuses a raw JS boolean.
         setClauses.push(`${dbColumn} = ?`)
-        values.push((state as { done?: boolean }).done ? 1 : 0)
-      } else if (dbColumn === 'is_reminder') {
-        // Same reason as `done`: SQLite has no boolean type (§6).
-        setClauses.push(`${dbColumn} = ?`)
-        values.push((state as { is_reminder?: boolean }).is_reminder ? 1 : 0)
-      } else if (dbColumn === 'is_tracked') {
-        // Same reason again (§5). The snapshot holds the domain value, because
-        // `trackField` records `true`/`false` while binding 0/1 to the column —
-        // so without this branch better-sqlite3 refuses the raw JS boolean.
-        setClauses.push(`${dbColumn} = ?`)
-        values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
+        values.push((state as Record<string, unknown>)[stateKey] ? 1 : 0)
       } else if (JSON_OBJECT_COLUMNS.has(dbColumn)) {
         // The snapshot holds the parsed object (rowToTask's shape);
         // better-sqlite3 cannot bind a plain object.
