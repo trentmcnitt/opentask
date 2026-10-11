@@ -145,6 +145,8 @@ Related source-truth correction: **`anchor_time` IS used in recurrence computati
 
 Not a decision; a distinction the user flagged (verbatim from a task he filed to himself: _"Want vs expires? (Ie report due date, coupon, etc. — missing un-make-up-able)"_). Most timed tasks **want** to happen at a time: a morning walk wants the morning, but nothing is lost when it slips — it doesn't expire just because the notification fired. A minority **expire**: a report deadline, a coupon — miss it and the opportunity is un-make-up-able, no amount of later action recovers it. The current model approximates this through priority (P0–2 due dates are reminders; P3/P4 are deadlines — see TASK-MODEL) but priority is _importance_, and expiry is orthogonal to importance (L3: a low-importance coupon still hard-expires). If this is ever built, the likely shape is an explicit expiry attribute — affecting what happens _after_ the time passes (does it stay current, roll forward, or lapse) — rather than a new priority rung. To consider; nothing in v0.3 depends on it.
 
+> **Superseded by the 2026-10-10 task model.** Built as its own field, `deadline_at` — the "explicit expiry attribute" predicted here, not a priority rung. `due_at` became the **target** (when nagging starts) and a `horizon` field (days / weeks / months / eventually) was added. Priority no longer marks a date as a deadline. What happens after the deadline passes is still open: nagging continues with a past-deadline marker. See `docs/TASK-MODEL.md` § Deadline, target, horizon.
+
 ---
 
 ## 5. Track (quotas)
@@ -165,6 +167,8 @@ Not a decision; a distinction the user flagged (verbatim from a task he filed to
 
 Existing title-encoded quotas ("Eggs (2x/week)") migrate in §9.
 
+> **Extended by the 2026-10-10 task model.** Quotas stay out of the new task segments, and never get a deadline or horizon in the editor. The segments copy the quota-prompt pattern: their own array beside the reminders, their own consider action, and never counted in the headline, the badge or the slot nags. See `docs/TASK-MODEL.md` § Task segments.
+
 ---
 
 ## 6. The Reminders surface
@@ -180,6 +184,8 @@ Existing title-encoded quotas ("Eggs (2x/week)") migrate in §9.
 - Reminders keep due-times ("consider X" belongs near bedtime, not lunch) and rrules. What they lack is _debt_: missing one costs nothing; the next occurrence simply arrives. A recurring reminder's today-ness derives from its schedule (§4.6), so a missed one resets naturally at the next occurrence — no roll-forward job, no accumulated "overdue by N days" state, ever.
 
 **Rationale (why not just tasks-with-a-tag):** these items differ _behaviorally_ — no debt, no badge, bucket-locked, container-notified. Behavior enforced by the surface beats behavior promised by AI/user discipline. But avoid a new first-class DB entity if a flag + surface can carry it: the user is deliberately wary of new primitives. **Representation: a boolean column** (e.g. `is_reminder`) read by the Reminders surface and the notifier — NOT a label. Two reasons: §7.1's resolution of L3 is that kind is never stored as a name, and a behavior-bearing value inside the JSON `labels` array would need `json_each()` at every query site where an indexed boolean is wanted (`overdue-checker.ts`, dashboard queries). Mutually exclusive with Track (§5).
+
+> **Extended by the 2026-10-10 task model.** The Reminders surface now also hosts **task segments**: one-off tasks whose target hasn't arrived, one segment per horizon, shown first, ahead of the first period. They are separate from the time slots (a top-level `task_segments` array in `GET /api/reminders`, never in `groups`), and this section's law extends to them: never counted in overdue, never in the badge, never a notification, never part of a slot's nag. A task's "overdue" is now called **over target** in the UI. See `docs/TASK-MODEL.md` § Task segments.
 
 ### 6.0 Time-slot buckets — schema and assignment (shared infrastructure: §6 AND §7.3 both build on this; it is a Stage 1 item)
 
