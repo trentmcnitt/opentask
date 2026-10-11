@@ -6,16 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { getPriorityOption } from '@/lib/priority'
 import type { GrowthItem } from '@/lib/process-client'
-import type { HorizonValue } from '@/lib/task-segments'
-
-/** Provisional user-facing words (amendment 4) — one place to change them. */
-export const HORIZON_WORD = 'Horizon'
-const HORIZON_NAME: Record<HorizonValue, string> = {
-  days: 'Days',
-  weeks: 'Weeks',
-  months: 'Months',
-  eventually: 'Eventually',
-}
+import { HORIZON_LABELS, HORIZON_UNSET_LABEL, HORIZON_WORD } from '@/lib/task-model-words'
 
 /**
  * Process step 3 — grow horizons that have been sat on a long time (spec §5;
@@ -130,8 +121,10 @@ function GrowthRow({
       <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
         <span className="block text-sm break-words">{item.task.title}</span>
         <span className="text-muted-foreground block text-xs">
-          {item.from ? HORIZON_NAME[item.from] : `${HORIZON_NAME.weeks} (unset)`} →{' '}
-          <span className={cn(checked && 'text-foreground')}>{HORIZON_NAME[item.to]}</span> ·{' '}
+          {item.from
+            ? HORIZON_LABELS[item.from]
+            : `${HORIZON_LABELS.weeks} (${HORIZON_UNSET_LABEL.toLowerCase()})`}{' '}
+          → <span className={cn(checked && 'text-foreground')}>{HORIZON_LABELS[item.to]}</span> ·{' '}
           {item.days_on_horizon} days
           {item.task.priority > 0 && (
             <span className={cn('ml-1', priority.color)}>· {priority.label}</span>

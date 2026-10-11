@@ -1577,6 +1577,65 @@ paths:
                     properties:
                       until: { type: string, format: date-time }
                       affected: { type: integer }
+  /api/process:
+    get:
+      summary: What Process works through
+      operationId: getProcess
+      tags: [Tasks]
+      description: >
+        The in-app Process button's lists, computed by rule (no AI, so it works with AI off). Read-only:
+        Process writes through PATCH, bulk edit (`affirm_horizon`, `target_at: null` with
+        `deadline_nag_off: true`), target-today and DELETE. Only the caller's own open one-off tasks
+        (not reminders, quotas or recurring tasks).
+
+        - `inbox`: tasks still in the Inbox project, oldest first.
+        - `growth`: tasks long past their horizon, longest first. Measured from `horizon_set_at`, else
+          `created_at`; days after 14 days, weeks or unset after 60, months after 180 (eventually never).
+          Asks for the next horizon up. Excludes tasks whose target has arrived (they are in the old-target
+          lists or on the dashboard) and tasks whose deadline is close enough to steer the horizon (90 days
+          or past). `from` is null for an unset horizon. `can_act` (priority 2+) offers "do it" / "raise
+          priority" beside "grow".
+        - `stale_targets`: tasks whose target arrived 7+ days ago (`age_days`, measured from the first
+          target, so snoozing does not reset it), oldest first.
+        - `stale_targets_with_deadline`: the same for tasks with a deadline, listed apart so a client's
+          nag is never stopped by default.
+      responses:
+        '200':
+          description: Process lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      inbox_project_id: { type: [integer, 'null'] }
+                      inbox:
+                        type: array
+                        items: { $ref: '#/components/schemas/Task' }
+                      growth:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task: { $ref: '#/components/schemas/Task' }
+                            from:
+                              type: [string, 'null']
+                              enum: [days, weeks, months, null]
+                            to:
+                              type: string
+                              enum: [weeks, months, eventually]
+                            days_on_horizon: { type: integer }
+                            can_act: { type: boolean }
+                      stale_targets:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProcessStaleTarget' }
+                      stale_targets_with_deadline:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProcessStaleTarget' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/reminders:
     get:
       summary: Today's incomplete reminders grouped by time slot
@@ -4443,6 +4502,13 @@ components:
           type: [integer, 'null']
           description: The undo_log entry for this change (POST /api/undo/batch with through_id undoes exactly it); null for a rename.
 
+    ProcessStaleTarget:
+      type: object
+      properties:
+        task: { $ref: '#/components/schemas/Task' }
+        age_days:
+          type: integer
+          description: Whole days since the first target (7 or more).
     TaskUpdate:
       type: object
       properties:
@@ -4488,6 +4554,10 @@ components:
           type: boolean
           description: >
             Silence the deadline's implied nag on a task with no target (remove-target sends it with `target_at: null`). A new `deadline_at` clears it.
+        affirm_horizon:
+          type: boolean
+          description: >
+            Keep the current horizon and restart its growth clock (`horizon_set_at` = now) without changing it — an unset horizon stays unset. Process's "keep" answer to a growth ask. Ignored when the same request changes `horizon` (that restarts the clock anyway). Also accepted in bulk edit `changes`.
         allow_past_deadline:
           type: boolean
           description: |
