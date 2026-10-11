@@ -302,6 +302,7 @@ describe('Task model', () => {
     test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its age', () => {
       // Deadline Oct 12 18:00 → implied target Oct 8 09:00: nagging since then.
       const t = make({ deadline_at: at('2026-10-12T18:00') })
+      age(t.id, '2026-10-01T09:00')
       // A sweep past the deadline leaves it and reports it.
       const swept = bulkSnooze({
         userId: TEST_USER_ID,
@@ -430,6 +431,7 @@ describe('Task model', () => {
   describe('target age', () => {
     test('TM-040: counts from the first target; a snooze keeps it, a re-target restarts it', () => {
       const t = make({ due_at: at('2026-10-07T09:00') })
+      age(t.id, '2026-10-01T09:00')
       const snoozed = updateTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
@@ -458,6 +460,16 @@ describe('Task model', () => {
       }).task
       expect(r.original_due_at).toBe(at('2026-10-10T09:00'))
       expect(targetAgeDays(r, tz, SAT)).toBeNull()
+    })
+    test('TM-042: the age never counts from before the task existed', () => {
+      // Created today with a deadline in 3 days: the implied target (deadline −
+      // 4 days, morning) is yesterday — the task is over target at once, but its
+      // age is blank today, not "1d".
+      const t = make({ deadline_at: at('2026-10-13T18:00') })
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+      expect(targetAgeDays(t, tz, SAT, { timezone: tz, morningTime: '09:00' })).toBeNull()
+      vi.setSystemTime(new Date(at('2026-10-12T10:00')))
+      expect(targetAgeDays(t, tz, new Date(), { timezone: tz, morningTime: '09:00' })).toBe(2)
     })
   })
 

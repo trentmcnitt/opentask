@@ -18,12 +18,23 @@ final class TargetAgeTests: XCTestCase {
 
     private func task(
         due: String? = nil, original: String? = nil, deadline: String? = nil,
-        nagOff: Bool = false, rrule: String? = nil
+        nagOff: Bool = false, rrule: String? = nil, created: String? = nil
     ) -> TaskDTO {
         TaskDTO(
             id: 1, title: "t", dueAt: due, rrule: rrule, deadlineAt: deadline, originalDueAt: original,
-            deadlineNagOff: nagOff
+            deadlineNagOff: nagOff, createdAt: created
         )
+    }
+
+    /// The age never counts from before the task existed (2026-10-11): a task
+    /// created today with a deadline 3 days out is over target at once (its
+    /// implied target is yesterday's morning), but its badge is blank today.
+    func testAgeNeverCountsFromBeforeTheTaskWasCreated() {
+        let t = task(deadline: "2026-10-13T23:00:00.000Z", created: "2026-10-10T15:00:00.000Z")
+        XCTAssertTrue(t.isOverdue(now: now))
+        XCTAssertNil(TargetAge.days(t, now: now, calendar: calendar, morningTime: "09:00"))
+        let later = DateHelpers.parseISO("2026-10-12T15:00:00.000Z")!
+        XCTAssertEqual(TargetAge.days(t, now: later, calendar: calendar, morningTime: "09:00"), 2)
     }
 
     // Every test pins the morning time (`TargetContextStore.override`) — on

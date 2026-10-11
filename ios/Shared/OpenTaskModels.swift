@@ -93,6 +93,9 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// Remove-target turned off the deadline's implied nag for this task
     /// (`TargetAge.impliedTarget`).
     let deadlineNagOff: Bool
+    /// UTC ISO 8601 — when the task was created. The target age never counts
+    /// from before it (`TargetAge.days`). Optional: an older cache has none.
+    let createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -114,6 +117,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case horizon
         case originalDueAt = "original_due_at"
         case deadlineNagOff = "deadline_nag_off"
+        case createdAt = "created_at"
     }
 
     /// Decode-only: the server's raw `notes`. Deliberately NOT in
@@ -157,6 +161,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         horizon = try c.decodeIfPresent(String.self, forKey: .horizon)
         originalDueAt = try c.decodeIfPresent(String.self, forKey: .originalDueAt)
         deadlineNagOff = try c.decodeIfPresent(Bool.self, forKey: .deadlineNagOff) ?? false
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -184,7 +189,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         deadlineAt: String? = nil,
         horizon: String? = nil,
         originalDueAt: String? = nil,
-        deadlineNagOff: Bool = false
+        deadlineNagOff: Bool = false,
+        createdAt: String? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -205,6 +211,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.horizon = horizon
         self.originalDueAt = originalDueAt
         self.deadlineNagOff = deadlineNagOff
+        self.createdAt = createdAt
     }
 
     var dueDate: Date? {

@@ -36,7 +36,7 @@ The target is when a task starts nagging: the dashboard's over-target list, the 
 
 A no-target → target change always restarts the clock, even if a stale origin is somehow still stored, so a fresh target never shows an age inherited from an old one (`collectDueAtChanges`, `src/core/tasks/helpers/collect-field-changes.ts`).
 
-**Target-age badge.** An over-target row carries a corner tab with just the age ("2d"): whole local days since the first target (`targetAgeDays`). Blank on the target day itself. Colors: 1–2 days gray, 3–6 amber, 7+ red (`TARGET_AGE_AMBER_DAYS = 3`, `TARGET_AGE_RED_DAYS = 7`, placeholders Trent may tune). A deadline-only task's age counts from its implied target.
+**Target-age badge.** An over-target row carries a corner tab with just the age ("2d"): whole local days since the first target (`targetAgeDays`). Blank on the target day itself. Colors: 1–2 days gray, 3–6 amber, 7+ red (`TARGET_AGE_AMBER_DAYS = 3`, `TARGET_AGE_RED_DAYS = 7`, placeholders Trent may tune). A deadline-only task's age counts from its implied target. Never from before the task was created (2026-10-11): the age is how long it has been on the list, so a task created with a deadline 3 days out (implied target yesterday) shows no badge on its first day.
 
 **Remove target** sends the task back to its horizon's segment. On a task with a deadline it also sets `deadline_nag_off`, or removing would do nothing: the deadline's implied target would keep the task over target.
 

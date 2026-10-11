@@ -83,11 +83,17 @@ enum TargetAge {
         guard let target = effectiveTargetDate(task, morningTime: morningTime, calendar: calendar),
               target <= now
         else { return nil }
-        let first: Date
+        var first: Date
         if let due = task.dueDate, target == due {
             first = task.originalDueAt.flatMap(DateHelpers.parseISO) ?? due
         } else {
             first = target
+        }
+        // Never from before the task existed (2026-10-11): a task created with a
+        // deadline 3 days out has an implied target before its creation, and
+        // its age is how long it has been on the list.
+        if let created = task.createdAt.flatMap(DateHelpers.parseISO), created > first {
+            first = created
         }
         let days = calendar.dateComponents(
             [.day], from: calendar.startOfDay(for: first), to: calendar.startOfDay(for: now)
