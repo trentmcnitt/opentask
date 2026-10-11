@@ -112,7 +112,7 @@ export const DEFAULT_PREFS: Prefs = {
   wakeTime: '07:00',
   sleepTime: '22:00',
   defaultGrouping: 'project',
-  defaultSort: 'due_date',
+  defaultSort: 'horizon',
   defaultSortReversed: false,
   filtersExpanded: false,
   projectPreviewCount: PROJECT_PREVIEW_DEFAULT,

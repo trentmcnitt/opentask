@@ -69,24 +69,25 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 
 ### Files
 
-| File                                                 | Purpose                                                                                       |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/core/notifications/overdue-checker.ts`          | Unified overdue checker with consolidation (all priorities)                                   |
-| `src/core/notifications/web-push.ts`                 | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
-| `src/core/notifications/apns.ts`                     | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
-| `src/core/notifications/dismiss.ts`                  | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                   |
-| `src/core/notifications/badge-state.ts`              | Last badge sent per user — the overdue checker's change gate                                  |
-| `src/core/notifications/slot-reminders.ts`           | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
-| `src/core/notifications/slot-nags.ts`                | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
-| `src/core/notifications/enrichment-notify.ts`        | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                   |
-| `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)    |
-| `src/core/notifications/sweep-feedback.ts`           | Quiet bulk snooze feedback push (`planSweepFeedback`, `sendSweepFeedback`)                    |
-| `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                 |
-| `src/app/api/push/subscribe/route.ts`                | Push subscription storage endpoint                                                            |
-| `src/app/api/push/test/route.ts`                     | Quick push test (sends to current user)                                                       |
-| `src/app/api/notifications/actions/route.ts`         | Action callback handler (done, snooze30, snooze, snooze2h)                                    |
-| `src/app/api/notifications/test/route.ts`            | Test notification endpoint (individual, high, bulk, critical)                                 |
-| `src/instrumentation.ts`                             | Cron scheduling                                                                               |
+| File                                                 | Purpose                                                                                                          |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `src/core/notifications/overdue-checker.ts`          | Unified overdue checker with consolidation (all priorities)                                                      |
+| `src/core/notifications/web-push.ts`                 | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                                            |
+| `src/core/notifications/apns.ts`                     | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`)                    |
+| `src/core/notifications/dismiss.ts`                  | Shared dismiss helper (`dismissNotificationsForTasks`) and `syncBadgeCount`                                      |
+| `src/core/notifications/badge-state.ts`              | Last badge sent per user — the overdue checker's change gate                                                     |
+| `src/core/notifications/slot-reminders.ts`           | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)                     |
+| `src/core/notifications/slot-nags.ts`                | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                                               |
+| `src/core/notifications/enrichment-notify.ts`        | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                                      |
+| `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)                       |
+| `src/core/notifications/sweep-feedback.ts`           | Quiet bulk snooze feedback push (`planSweepFeedback`, `sendSweepFeedback`)                                       |
+| `src/core/notifications/deadline-cap-feedback.ts`    | Quiet "Snoozed to deadline 6:00 PM" push when a notification button's snooze stopped at the deadline (ruling A3) |
+| `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                                    |
+| `src/app/api/push/subscribe/route.ts`                | Push subscription storage endpoint                                                                               |
+| `src/app/api/push/test/route.ts`                     | Quick push test (sends to current user)                                                                          |
+| `src/app/api/notifications/actions/route.ts`         | Action callback handler (done, snooze30, snooze, snooze2h)                                                       |
+| `src/app/api/notifications/test/route.ts`            | Test notification endpoint (individual, high, bulk, critical)                                                    |
+| `src/instrumentation.ts`                             | Cron scheduling                                                                                                  |
 
 ## Web Push
 
@@ -343,6 +344,8 @@ The last "Nothing snoozed" row has no "snooze again" hint because another press 
 When the user later clears every overdue task some other way (one at a time, in the app), a lingering result banner is not dismissed by the server. That is deliberate and consistent with the overdue summary push: opening the app sends `dismiss-all`, which clears it on every device.
 
 **Setting.** Settings → Notifications → "Bulk snooze results" (`users.sweep_feedback_notifications_enabled`, default on; `sweep_feedback_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Always shown (it doesn't depend on AI), greyed out while notifications are off. One call can opt out with `notify: false` (documented in `docs/openapi.yaml`).
+
+**Deadline cap (2026-10-11, `deadline-cap-feedback.ts`).** A quick snooze from a notification button (or the content extension's custom time) never carries a task past a deadline still ahead: it stops AT the deadline (ruling A3, docs/TASK-MODEL.md § Deadline). The button runs in the background, so a capped one sends a quiet banner, "Snoozed to deadline 6:00 PM" / "A quick snooze stops at the deadline", under the same "Bulk snooze results" switch and demo/notifications gates. Collapse id `deadline-cap` (a newer one replaces the older), no category, and deliberately no `taskId`: the capped snooze sends that task's `dismiss` push itself, which would clear a banner carrying its id.
 
 ## iOS platform constraints
 

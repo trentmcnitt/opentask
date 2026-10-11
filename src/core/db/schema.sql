@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS users (
   pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat
   pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
   default_grouping TEXT NOT NULL DEFAULT 'project', -- All (by project); 'time' is retired and read as 'project', see src/lib/grouping.ts
-  default_sort TEXT NOT NULL DEFAULT 'due_date',
+  -- 'horizon' (effective horizon → deadline → priority → recency) is the
+  -- default since 2026-10-11 (Trent); a saved sort is never changed.
+  default_sort TEXT NOT NULL DEFAULT 'horizon',
   default_sort_reversed INTEGER NOT NULL DEFAULT 0,
   -- §7.3: dashboard filter-chip section starts collapsed; this remembers the
   -- user's explicit choice to keep it open.

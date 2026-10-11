@@ -111,6 +111,8 @@ export interface EditDescriptionContext {
   userTimezone: string
   /** Project name when project_id changed (looked up by caller) */
   projectName?: string
+  /** A3 (2026-10-11): the snooze stopped AT the deadline — "Snoozed to deadline …". */
+  cappedAtDeadline?: boolean
 }
 
 /**
@@ -209,7 +211,7 @@ function buildFieldFragment(
       return buildPriorityFragment(beforeState, afterState)
     case 'due_at':
       return context.isSnooze
-        ? buildSnoozeFragment(beforeState, afterState, userTimezone)
+        ? buildSnoozeFragment(beforeState, afterState, userTimezone, context.cappedAtDeadline)
         : buildDueDateFragment(afterState)
     case 'rrule':
       return buildRecurrenceFragment(afterState)
@@ -262,11 +264,14 @@ function buildSnoozeFragment(
   beforeState: Partial<Record<string, unknown>>,
   afterState: Partial<Record<string, unknown>>,
   userTimezone: string,
+  cappedAtDeadline = false,
 ): string | null {
   const newDueAt = afterState.due_at
   if (typeof newDueAt !== 'string') return null
 
-  const target = formatSnoozeTarget(newDueAt, userTimezone)
+  // A snooze that stopped at the deadline says so (ruling A3): "Snoozed to
+  // deadline 6:00 PM (+9h)" — the toast, the activity log and the undo entry.
+  const target = `${cappedAtDeadline ? 'deadline ' : ''}${formatSnoozeTarget(newDueAt, userTimezone)}`
   const oldDueAt = beforeState.due_at
 
   if (typeof oldDueAt === 'string') {

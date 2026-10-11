@@ -152,4 +152,43 @@ describe('Task model over HTTP', () => {
     expect(cleared.data.horizon).toBeNull()
     expect(cleared.data.deadline_at).toBeNull()
   })
+
+  test('a quick snooze stops at the deadline and says so (ruling A3)', async () => {
+    const deadline = iso(3 * HOUR)
+    const a = await create({ title: 'tm cap single', due_at: iso(-HOUR), deadline_at: deadline })
+    const patched = await json(
+      await apiFetch(`/api/tasks/${a.id}`, {
+        method: 'PATCH',
+        body: { due_at: iso(24 * HOUR), cap_at_deadline: true },
+      }),
+    )
+    expect(patched.data.due_at).toBe(new Date(deadline).toISOString())
+    expect(patched.data.capped_at_deadline).toBe(true)
+    expect(patched.data.deadline_nag_off).toBe(false)
+
+    // Under a far deadline it is an ordinary snooze, and says so.
+    const far = await create({
+      title: 'tm cap far',
+      due_at: iso(-HOUR),
+      deadline_at: iso(240 * HOUR),
+    })
+    const uncapped = await json(
+      await apiFetch(`/api/tasks/${far.id}`, {
+        method: 'PATCH',
+        body: { due_at: iso(24 * HOUR), cap_at_deadline: true },
+      }),
+    )
+    expect(uncapped.data.capped_at_deadline).toBe(false)
+
+    const b = await create({ title: 'tm cap bulk', due_at: iso(-HOUR), deadline_at: deadline })
+    const bulk = await json(
+      await apiFetch('/api/tasks/bulk/snooze', {
+        method: 'POST',
+        body: { ids: [b.id], until: iso(24 * HOUR), cap_at_deadline_ids: [b.id] },
+      }),
+    )
+    expect(bulk.data.tasks_affected).toBe(1)
+    expect(bulk.data.capped_deadline).toBe(1)
+    expect(bulk.data.skipped_deadline).toBe(0)
+  })
 })

@@ -105,7 +105,7 @@ export function growthAsk(
   now: Date,
   ctx: TargetContext | null = null,
 ): GrowthAsk | null {
-  if (targetIsToday(effectiveTargetAt(task, ctx), timezone, now)) return null
+  if (targetIsToday(effectiveTargetAt(task, ctx, now), timezone, now)) return null
   if (deadlineHorizon(task.deadline_at, now) !== null) return null
   const from = setHorizon(task.horizon)
   const on = from ?? UNSET_HORIZON

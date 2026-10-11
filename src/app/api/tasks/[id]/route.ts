@@ -6,6 +6,7 @@
  * DELETE /api/tasks/:id - Soft delete a task
  */
 
+import { sendDeadlineCapFeedback } from '@/core/notifications/deadline-cap-feedback'
 import { NextRequest } from 'next/server'
 import { getAuthUser } from '@/core/auth'
 import { AppError } from '@/core/errors'
@@ -69,18 +70,24 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
     const body = await request.json()
     const input = validateTaskUpdate(body)
 
-    const { task, fieldsChanged, description } = updateTask({
+    const { task, fieldsChanged, description, cappedAtDeadline } = updateTask({
       userId: user.id,
       userTimezone: user.timezone,
       taskId,
       input,
     })
 
+    // A3 (2026-10-11): a native quick snooze (`cap_at_deadline`, the
+    // notification content extension's custom time) that stopped AT the
+    // deadline says so in a quiet push — that surface shows nothing itself.
+    if (cappedAtDeadline) void sendDeadlineCapFeedback(user.id, task.due_at!, user.timezone)
+
     notifyDemoEngagement(user.name, 'update')
     return success({
       ...formatTaskResponse(task),
       fields_changed: fieldsChanged,
       description,
+      capped_at_deadline: cappedAtDeadline === true,
     })
   } catch (err) {
     if (err instanceof ZodError) {

@@ -304,6 +304,9 @@ export const taskUpdateSchema = z
     // A snooze past `deadline_at` is refused (409 PAST_DEADLINE) unless this
     // says the user confirmed it (2026-10-10).
     allow_past_deadline: z.boolean().optional(),
+    // A3 (2026-10-11): a quick snooze stops AT the deadline instead (see
+    // capSnoozeAtDeadline). What the native one-tap snoozes send.
+    cap_at_deadline: z.boolean().optional(),
     create_label: createLabelFlag,
     progress_target: progressTarget.optional(),
     progress_current: progressCurrent.optional(),
@@ -323,6 +326,7 @@ export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
 export const snoozeSchema = z.object({
   until: dateTimeString,
   allow_past_deadline: z.boolean().optional(),
+  cap_at_deadline: z.boolean().optional(),
 })
 
 export type SnoozeInput = z.infer<typeof snoozeSchema>
@@ -365,6 +369,8 @@ export const bulkSnoozeSchema = z
     include_task_ids: z.array(z.number().int().positive()).max(500).optional(),
     // 2026-10-10: ids the user confirmed snoozing past their deadline.
     allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
+    // A3 (2026-10-11): ids whose snooze stops AT their deadline instead.
+    cap_at_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
   })
   .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
     message: 'Either until or delta_minutes must be provided',
@@ -419,6 +425,7 @@ export const bulkEditSchema = z
       .optional(),
     date_task_ids: z.array(z.number().int().positive()).max(500).optional(),
     allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
+    cap_at_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
   })
   .refine((data) => !(data.delta_minutes !== undefined && data.changes.due_at !== undefined), {
     message: 'Cannot provide both changes.due_at and delta_minutes',

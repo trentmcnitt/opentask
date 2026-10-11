@@ -19,7 +19,8 @@ import { effectiveTargetAt } from '@/lib/task-segments'
 
 /**
  * Which rows MIGHT have a deadline-implied target (2026-10-10): a one-off with a
- * deadline whose implied nag isn't off. SQL can only shortlist them — the
+ * deadline — even one whose nag is off, since it re-arms on the deadline day
+ * (ruling A4). SQL can only shortlist them — the
  * implied target is the morning of the lead day in the USER'S timezone
  * (`impliedTargetAt`), which SQLite cannot compute — so they are fetched as
  * candidates and `withEffectiveTarget` decides in JS, with the same function
@@ -28,7 +29,7 @@ import { effectiveTargetAt } from '@/lib/task-segments'
  * reads an implied target exactly like a set one.
  */
 export function deadlineCandidateSql(alias = 't'): string {
-  return `(${alias}.deadline_at IS NOT NULL AND ${alias}.deadline_nag_off = 0 AND ${alias}.rrule IS NULL)`
+  return `(${alias}.deadline_at IS NOT NULL AND ${alias}.rrule IS NULL)`
 }
 
 /** A candidate row with its `due_at` replaced by its effective target. */

@@ -22,6 +22,8 @@ export interface SnoozeTaskOptions {
   until: string // ISO 8601 datetime
   /** The user confirmed a snooze past the deadline (otherwise 409 PAST_DEADLINE). */
   allowPastDeadline?: boolean
+  /** A3: stop AT the deadline instead (a quick snooze from a native surface). */
+  capAtDeadline?: boolean
 }
 
 export interface SnoozeResult {
@@ -29,6 +31,8 @@ export interface SnoozeResult {
   previousDueAt: string | null
   originalDueAt: string | null
   description: string | null
+  /** A3: the snooze stopped AT the deadline instead of `until`. */
+  cappedAtDeadline: boolean
 }
 
 /**
@@ -39,7 +43,7 @@ export interface SnoozeResult {
  * 2. Delegates to updateTask which handles snooze logic internally
  */
 export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
-  const { userId, userTimezone, taskId, until, allowPastDeadline } = options
+  const { userId, userTimezone, taskId, until, allowPastDeadline, capAtDeadline } = options
 
   // Pre-validation (snooze-specific checks)
   // 'allow': the trashed refusal comes later, after the reminder/quota/done
@@ -87,11 +91,19 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
 
   // Delegate to updateTask - it handles snooze logic internally.
   // Pass pre-fetched task to avoid redundant DB lookup (we already validated access above).
-  const { task: updatedTask, description } = updateTask({
+  const {
+    task: updatedTask,
+    description,
+    cappedAtDeadline,
+  } = updateTask({
     userId,
     userTimezone,
     taskId,
-    input: { due_at: until, allow_past_deadline: allowPastDeadline },
+    input: {
+      due_at: until,
+      allow_past_deadline: allowPastDeadline,
+      cap_at_deadline: capAtDeadline,
+    },
     prefetchedTask: task,
     skipWebhookDispatch: true, // snoozeTask dispatches task.snoozed below
   })
@@ -106,5 +118,6 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     previousDueAt,
     originalDueAt: updatedTask.original_due_at,
     description,
+    cappedAtDeadline: cappedAtDeadline === true,
   }
 }

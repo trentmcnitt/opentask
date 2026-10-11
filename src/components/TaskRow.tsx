@@ -184,11 +184,15 @@ export const SIGNAL_ICONS: Record<
   },
 }
 
-/** Color class for insights score badge */
+/**
+ * Color class for the insights score badge: one neutral gray in three depths,
+ * never red/amber/green (2026-10-11 — red means a passed deadline, nothing
+ * else). A higher score reads a little stronger; the number carries the rest.
+ */
 function getScoreColor(score: number): string {
-  if (score >= 70) return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-  if (score >= 40) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-  return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+  if (score >= 70) return 'bg-foreground/15 text-foreground'
+  if (score >= 40) return 'bg-foreground/10 text-foreground/80'
+  return 'bg-muted text-muted-foreground'
 }
 
 /** One stable empty list, so a row without periods keeps its snooze callback's identity. */

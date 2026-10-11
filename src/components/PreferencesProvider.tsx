@@ -151,7 +151,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   defaultGrouping: 'project',
   setDefaultGrouping: () => {},
   preferencesLoaded: false,
-  defaultSort: 'due_date',
+  defaultSort: 'horizon',
   defaultSortReversed: false,
   setSortPreference: () => {},
   filtersExpanded: false,

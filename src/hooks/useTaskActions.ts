@@ -140,9 +140,11 @@ export function useTaskActions(config: UseTaskActionsConfig) {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ until, allow_past_deadline: true }),
-                }).then((r) => {
+                }).then(async (r) => {
                   if (!r.ok) throw new Error('Failed to snooze')
                   cfg.onRefresh()
+                  const body = await r.json().catch(() => null)
+                  return { description: body?.data?.description as string | undefined }
                 }),
               ),
             )

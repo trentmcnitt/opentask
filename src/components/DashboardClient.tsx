@@ -943,10 +943,10 @@ function HomeContent({
   // Show annotations when AI mode is not off
   const showAnnotations = aiMode !== 'off'
 
-  // Sort fallback: if Insights chip off and sorting by AI score, revert to due_date
+  // Sort fallback: if Insights chip off and sorting by AI score, revert to the default
   useEffect(() => {
     if (!showInsights && sortOption === 'ai_insights') {
-      setSortOption('due_date')
+      setSortOption('horizon')
     }
   }, [showInsights, sortOption, setSortOption])
 
