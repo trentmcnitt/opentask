@@ -529,7 +529,7 @@ private enum ReminderPreviewData {
     }
 
     static var segments: [TaskSegmentDTO] {
-        [
+        PreviewLocalData.taskSegments ?? [
             TaskSegmentDTO(horizon: "days", tasks: [
                 SegmentTaskDTO(task: TaskDTO(id: 9101, title: "Call the insurance office about the renewal letter", priority: 3, horizon: "days"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9102, title: "Fix the squeaky gate hinge", priority: 2, dueAt: iso(daysFromNow: 3), deadlineAt: iso(daysFromNow: 6, hour: 17), horizon: "days"), state: .waiting),
