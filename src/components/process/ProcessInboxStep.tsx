@@ -61,7 +61,7 @@ export function ProcessInboxStep({
   }, [task, projects, onMove, onSkip])
 
   if (!task) {
-    return <p className="text-muted-foreground py-6 text-center text-sm">The Inbox is sorted.</p>
+    return <p className="text-muted-foreground py-6 text-center text-sm">Nothing left to sort.</p>
   }
 
   const priority = getPriorityOption(task.priority)

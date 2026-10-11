@@ -172,6 +172,21 @@ describe('Process: affirm_horizon ("keep")', () => {
     expect(getTaskById(weeks.id)!.horizon_set_at).toBe(daysAgo(90))
   })
 
+  test('PC-011b: single PATCH too — what "Raise" sends with the new priority', () => {
+    const t = onHorizonFor(90, { horizon: 'weeks', priority: 2 })
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      taskId: t.id,
+      input: { priority: 3, affirm_horizon: true },
+    })
+    const after = getTaskById(t.id)!
+    expect(after.priority).toBe(3)
+    expect(after.horizon).toBe('weeks')
+    expect(after.horizon_set_at).toBe(NOW.toISOString())
+    expect(growthOf(t.id)).toBeNull()
+  })
+
   test('PC-011: the request schema accepts it on PATCH and bulk edit', () => {
     const parsed = validateBulkEdit({ ids: [1], changes: { affirm_horizon: true } })
     expect(parsed.changes.affirm_horizon).toBe(true)

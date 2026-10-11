@@ -93,12 +93,20 @@ export async function fetchProcess(): Promise<ProcessData> {
   return cached
 }
 
+const RECOMMEND_MAX = 100
+
 /** The AI's project picks for these Inbox tasks, keyed by task id; empty when AI can't help. */
 export async function fetchRecommendations(ids: number[]): Promise<Map<number, Recommendation>> {
   const map = new Map<number, Recommendation>()
   if (ids.length === 0) return map
   try {
-    const res = await fetch('/api/process/recommend-projects', jsonInit('POST', { ids }))
+    // The endpoint takes up to RECOMMEND_MAX ids per (AI) call. The Inbox is
+    // walked oldest first, so the first ones are the ones shown first; a
+    // longer Inbox gets picks for the rest on the next opening.
+    const res = await fetch(
+      '/api/process/recommend-projects',
+      jsonInit('POST', { ids: ids.slice(0, RECOMMEND_MAX) }),
+    )
     if (!res.ok) return map
     const body = (await res.json()) as {
       data?: { recommendations?: ({ task_id: number } & Recommendation)[] }
