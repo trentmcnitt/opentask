@@ -8,6 +8,10 @@ import SwiftUI
 /// complete, "⏭" for the next period, "+1h". The bulk bar is the widget's
 /// "All over target (N): ⏭ 4:30 PM · +1h".
 struct MenuBarPanel: View {
+    /// Over target (2026-10-11): the calm plum the widgets and the web use
+    /// (`WidgetTheme.overTarget`, `--over-target`) — never red.
+    static let overTarget = Color(red: 0.62, green: 0.27, blue: 0.58)
+
     @ObservedObject var model: MenuBarModel
     @FocusState private var addFocused: Bool
 
@@ -49,7 +53,7 @@ struct MenuBarPanel: View {
                 Text("OpenTask").font(.headline)
                 Text(summary)
                     .font(.caption)
-                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : WidgetTheme.overTarget)
+                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : MenuBarPanel.overTarget)
             }
             Spacer()
             Button {
@@ -151,7 +155,7 @@ struct MenuBarPanel: View {
                     if let due = task.effectiveTargetDate {
                         Text(dueText(due, isOverdue: isOverdue))
                             .font(.caption)
-                            .foregroundStyle(isOverdue ? WidgetTheme.overTarget : Color.secondary)
+                            .foregroundStyle(isOverdue ? MenuBarPanel.overTarget : Color.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
