@@ -4,8 +4,8 @@ import WatchKit
 /// Tasks page: "Up next" (every open, dated, non-reminder, non-tracked task,
 /// soonest first — `WatchSlotLogic.upNextTasks`, the same scope as the phone
 /// Tasks widget's "Up next" page). Tap a row to complete; touch and hold for
-/// per-task snooze ("Next period" / "+1 hour"); a banner button when
-/// anything is overdue opens the bulk-snooze sheet.
+/// per-task snooze ("Next period" / "+1 hour"); a "Snooze all over target"
+/// button when anything is over target opens the bulk-snooze sheet.
 ///
 /// Per-task snooze was a trailing `.swipeActions` until 2026-09-24, when the
 /// root pager turned horizontal (`WatchRootView`): this is the MIDDLE page,
@@ -43,17 +43,25 @@ struct TasksPageView: View {
                     .listRowBackground(Color.clear)
             } else {
                 if overdueCount > 0 {
+                    // An ACTION, and it must read as one (Trent, 2026-10-11:
+                    // "All over target (4)" looked like a section header): a
+                    // verb, and a filled capsule button set apart from the
+                    // rows below, rather than a tinted row.
                     Button {
                         showingBulkSheet = true
                     } label: {
-                        HStack {
-                            Image(systemName: "clock.badge.exclamationmark")
-                            Text("All \(TaskWording.overTargetLower) (\(overdueCount))")
-                            Spacer()
-                        }
-                        .foregroundStyle(WatchTheme.overdue)
+                        Label(
+                            "Snooze all \(TaskWording.overTargetLower) (\(overdueCount))",
+                            systemImage: "moon.zzz.fill"
+                        )
+                        .font(.footnote.weight(.semibold))
+                        .frame(maxWidth: .infinity)
                     }
-                    .listRowBackground(WatchTheme.overdue.opacity(0.15))
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .tint(WatchTheme.overdue)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
                 }
 
                 if upNext.isEmpty {
@@ -76,6 +84,19 @@ struct TasksPageView: View {
             }
         }
         .navigationTitle("Tasks")
+        // Undo on every page (Trent, 2026-10-11): the Reminders and Quotas
+        // pages' toolbar Undo, here too — a tap completes a task, so this page
+        // needs it most.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    model.undo()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                }
+                .disabled(!model.canUndo)
+            }
+        }
         .refreshable {
             await model.load()
         }
@@ -104,7 +125,7 @@ struct TasksPageView: View {
     }
 }
 
-/// One "Up next" row: a project-colored leading edge (the same visual as the
+/// One "Up next" row: a project-colored leading edge (plum while over target) (the same visual as the
 /// phone Tasks widget's row marker, §-doc "outlines in the task's PROJECT
 /// color"), an un-truncated title up to 3 lines (Trent's "never truncate a
 /// reminder" rule extends here to 3 lines rather than unlimited — a task
@@ -125,8 +146,10 @@ private struct TaskRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
+            // The project's color — or plum once the task is over target, the
+            // web row's stripe (2026-10-11), so the edge and the time agree.
             RoundedRectangle(cornerRadius: 2)
-                .fill(WatchTheme.projectColor(project?.color))
+                .fill(task.isOverdue() ? WatchTheme.overdue : WatchTheme.projectColor(project?.color))
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 2) {

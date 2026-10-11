@@ -375,22 +375,30 @@ struct PromptRowView: View {
 }
 
 /// One task segment on the Reminders page (2026-10-10, docs/TASK-MODEL.md
-/// § Task segments): "Tasks · Days · 3 left", its waiting rows in the
-/// server's fixed order, and Defer all. Shown only while something waits —
-/// a considered row leaves the list (the toolbar Undo brings it back).
+/// § Task segments): headed like a time slot ("Tasks · Days" / "3 left"),
+/// its waiting rows in the server's fixed order, and Defer all. Shown only
+/// while something waits — a considered row leaves the list at once (the
+/// toolbar Undo brings it back).
+///
+/// Built for rapid-fire considering (Trent, 2026-10-11: twenty in a row
+/// should take as long as twenty reminders): each row is a plain `Button`
+/// like a reminder row, the checkbox sits inline on the right, and the
+/// model applies a consider locally before the request goes out. No
+/// "try Process" here — that nudge belongs on the phone and the web.
 struct TaskSegmentSection: View {
     let segment: TaskSegmentDTO
     @ObservedObject var model: WatchViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tasks · \(segment.label)")
                     .font(.headline)
-                Text(segment.nudge ? "\(segment.waitingCount) left · try Process" : "\(segment.waitingCount) left")
+                Text("\(segment.waitingCount) left")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(.top, 6)
             ForEach(segment.waitingTasks) { row in
                 SegmentRowView(
                     task: row.task, segmentHorizon: segment.horizon,
@@ -398,26 +406,29 @@ struct TaskSegmentSection: View {
                     done: { model.completeSegmentTask(row.task) }
                 )
             }
+            // An ordinary watch action button (the bulk-snooze sheet's
+            // weight), not a small tinted link.
             Button {
                 model.deferSegment(segment)
             } label: {
                 Label("Defer all", systemImage: "arrow.turn.down.right")
-                    .font(.caption)
+                    .font(.footnote.weight(.semibold))
+                    .frame(maxWidth: .infinity)
             }
-            .tint(WatchTheme.accent)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
             .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
-            Divider()
         }
     }
 }
 
-/// One task segment row — `PromptRowView`'s shape: circle and title on top
-/// (a tap anywhere there considers, "I saw it", never a completion — the web
-/// row's rule), then a line with the small words (horizon when it differs
-/// from the segment's, a future target "Nov 1", the deadline) and the done
-/// checkbox on the right. Horizon change and remove-target are not on the
-/// watch: they live in the app (amendment 16 allows a deep link; the watch
-/// has no web view to link into).
+/// One task segment row, a reminder row's shape: circle, title (and under it
+/// the small words — horizon when it differs from the segment's, a future
+/// target "Nov 1", the deadline), and the done checkbox INLINE on the right,
+/// like a quota prompt's. A tap on the circle or title considers ("I saw
+/// it", never a completion — the web row's rule); the checkbox completes.
+/// Horizon change and remove-target are not on the watch: they live in the
+/// app (amendment 16 allows a deep link; the watch has no web view).
 struct SegmentRowView: View {
     let task: TaskDTO
     let segmentHorizon: String
@@ -432,45 +443,41 @@ struct SegmentRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "circle")
-                    .foregroundStyle(WatchTheme.accent)
-                    .font(.caption)
-                    .padding(.top, 3)
-                    .accessibilityHidden(true)
-                WatchTheme.titleText(Text(task.title), hasNotes: task.hasNotes)
-                    .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 4) {
+            Button(action: consider) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "circle")
+                        .foregroundStyle(WatchTheme.accent)
+                        .font(.caption)
+                        .padding(.top, 3)
+                    VStack(alignment: .leading, spacing: 1) {
+                        WatchTheme.titleText(Text(task.title), hasNotes: task.hasNotes)
+                            .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let meta {
+                            Text(meta)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: consider)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isButton)
+            .buttonStyle(.plain)
             .accessibilityLabel(Text("Considered: \(spoken)"))
 
-            HStack(spacing: 0) {
-                if let meta {
-                    Text(meta)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 20)
-                }
-                Spacer(minLength: 0)
-                Button(action: done) {
-                    Image(systemName: "square")
-                        .font(.body)
-                        .foregroundStyle(WatchTheme.accent)
-                        .frame(width: PromptRowView.didTarget.width, height: PromptRowView.didTarget.height)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("Done: \(spoken)"))
+            Button(action: done) {
+                Image(systemName: "square")
+                    .font(.body)
+                    .foregroundStyle(WatchTheme.accent)
+                    .frame(width: PromptRowView.didTarget.width, height: PromptRowView.didTarget.height)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Done: \(spoken)"))
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
