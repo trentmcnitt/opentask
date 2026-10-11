@@ -304,6 +304,11 @@ function collectTaskModelFields(
       task.horizon_set_at,
       input.horizon ? now.toISOString() : null,
     )
+  } else if (input.affirm_horizon) {
+    // Process "keep": the horizon stays as it is (unset stays unset) and its
+    // growth clock restarts, so Process stops asking until it is long past
+    // again. Undo restores the old stamp like any other field.
+    trackField(data, 'horizon_set_at', task.horizon_set_at, now.toISOString())
   }
 }
 

@@ -56,7 +56,7 @@ export interface TaskSegment {
 }
 
 /** The user's segment-eligible tasks: own, open, one-off, not a reminder or quota. */
-function eligibleTasks(userId: number): Task[] {
+export function eligibleTasks(userId: number): Task[] {
   const rows = getDb()
     .prepare(
       `SELECT ${taskColumns()} FROM tasks
