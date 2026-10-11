@@ -44,5 +44,7 @@ export function buildTaskSummaries(userId: number): TaskSummary[] {
     rrule: t.rrule,
     notes: t.notes,
     recurrence_mode: t.recurrence_mode,
+    deadline_at: t.deadline_at,
+    horizon: t.horizon,
   }))
 }

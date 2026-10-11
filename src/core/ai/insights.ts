@@ -164,13 +164,34 @@ export interface InsightsResult {
 
 const STALE_MIN_AGE_DAYS = 21
 const ACT_SOON_MIN_PRIORITY = 3
+/** A stored deadline this close (or already passed) earns act_soon at any priority. */
+const ACT_SOON_DEADLINE_DAYS = 7
 /** Score ceiling for P4 tasks — they're already visible, don't inflate. */
 const P4_SCORE_CEILING = 25
 
 /**
+ * May this task carry act_soon ("real consequence within 7 days")?
+ *
+ * Task model (2026-10-10): the deadline is its own field now, and a near
+ * deadline is act-soon at ANY priority — a P0 voucher that expires Friday is.
+ * A stored deadline also rules: one more than 7 days out strips act_soon even
+ * from a P4. A task with no stored deadline falls back to the old rule, P3+
+ * only: that is where a deadline written in the notes lives (every task
+ * created before the field existed), and the prompt still asks the model to
+ * read those. Being past a target is never enough on its own.
+ */
+export function actSoonAllowed(task: TaskSummary, now: number = Date.now()): boolean {
+  if (task.deadline_at) {
+    const daysLeft = (Date.parse(task.deadline_at) - now) / (1000 * 60 * 60 * 24)
+    return daysLeft <= ACT_SOON_DEADLINE_DAYS
+  }
+  return task.priority >= ACT_SOON_MIN_PRIORITY
+}
+
+/**
  * Enforce hard rules that the AI sometimes ignores:
  * - P4 score ceiling: clamp P4 task scores to 25 (user already sees these)
- * - act_soon requires P3+ (never P0-2; P3 is allowed despite being bulk-snoozable)
+ * - act_soon needs a real cutoff within 7 days (`actSoonAllowed`)
  * - stale requires 21+ days old
  */
 export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, TaskSummary>): void {
@@ -191,7 +212,7 @@ export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, Task
 
     const original = item.signals.length
     item.signals = item.signals.filter((signal) => {
-      if (signal === 'act_soon' && task.priority < ACT_SOON_MIN_PRIORITY) return false
+      if (signal === 'act_soon' && !actSoonAllowed(task)) return false
       if (signal === 'stale') {
         const ageMs = Date.now() - new Date(task.created_at).getTime()
         const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24))

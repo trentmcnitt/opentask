@@ -38,20 +38,29 @@ export function formatAge(isoUtc: string, now: DateTime): string {
 /**
  * Format a task as a human-readable line for AI prompts.
  * Used by both What's Next and Insights for consistent task representation.
+ *
+ * Task model (2026-10-10): `due_at` is the TARGET, so it is printed as
+ * `target:`; `deadline:` and `horizon:` appear only when set, so a task with
+ * neither reads exactly as before apart from the word. The first-target date
+ * (`original_due_at`) stays P3+ only — the grounding rules let the model say a
+ * P0-3 target was "pushed back" only where it can see the history, and showing
+ * it on every line would invite exactly that narrative about routine sweeps.
  */
 export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime): string {
-  const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'no due date'
+  const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
   const originalDue =
-    t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
-      ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`
+    t.priority >= 3 && t.due_at && t.original_due_at && t.original_due_at !== t.due_at
+      ? ` (first target: ${formatLocalDate(t.original_due_at, timezone)})`
       : ''
+  const deadline = t.deadline_at ? ` | deadline: ${formatLocalDate(t.deadline_at, timezone)}` : ''
+  const horizon = t.horizon ? ` | horizon: ${t.horizon}` : ''
   const created = formatLocalDate(t.created_at, timezone)
   const createdAge = formatAge(t.created_at, now)
   const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
   const recMode = t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
   const notes = t.notes ? ` | notes: ${t.notes}` : ''
   return (
-    `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
+    `- [${t.id}] "${t.title}" | priority: ${t.priority} | target: ${due}${originalDue}${deadline}${horizon} | ` +
     `created: ${created} (${createdAge}) | labels: ${t.labels.join(', ') || 'none'} | ` +
     `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
   )
