@@ -195,9 +195,17 @@ describe('Process: affirm_horizon ("keep")', () => {
 
 describe('Process: stale targets', () => {
   useProcessClock()
+  // Tasks written down a month ago: the target age never counts from before
+  // a task existed (2026-10-11), so a task created "now" with a past target
+  // would read as no age at all.
+  const makeOld = (input: Record<string, unknown>) => {
+    const t = make(input)
+    getDb().prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(daysAgo(30), t.id)
+    return getTaskById(t.id)!
+  }
   test('PC-012: 7 days or more past the first target; 6 days is not', () => {
-    const seven = make({ due_at: daysAgo(7) })
-    const six = make({ due_at: daysAgo(6) })
+    const seven = makeOld({ due_at: daysAgo(7) })
+    const six = makeOld({ due_at: daysAgo(6) })
     const data = getProcessData(TEST_USER_ID, tz)
     expect(data.stale_targets.map((s) => s.task.id)).toEqual([seven.id])
     expect(data.stale_targets[0].age_days).toBe(7)
@@ -205,13 +213,13 @@ describe('Process: stale targets', () => {
   })
 
   test('PC-013: a task with a deadline is listed apart, never with the rest', () => {
-    const plain = make({ due_at: daysAgo(10) })
-    const client = make({
+    const plain = makeOld({ due_at: daysAgo(10) })
+    const client = makeOld({
       due_at: daysAgo(10),
       deadline_at: new Date(NOW.getTime() + 2 * DAY).toISOString(),
     })
     // Deadline, no target: the implied nag started deadline − 4 days ago.
-    const implied = make({ deadline_at: daysAgo(5) })
+    const implied = makeOld({ deadline_at: daysAgo(5) })
     const data = getProcessData(TEST_USER_ID, tz)
     expect(data.stale_targets.map((s) => s.task.id)).toEqual([plain.id])
     expect(data.stale_targets_with_deadline.map((s) => s.task.id).sort()).toEqual(
@@ -220,7 +228,7 @@ describe('Process: stale targets', () => {
   })
 
   test('PC-014: a snooze keeps the age (measured from the first target)', () => {
-    const t = make({ due_at: daysAgo(10) })
+    const t = makeOld({ due_at: daysAgo(10) })
     updateTask({
       userId: TEST_USER_ID,
       userTimezone: tz,
