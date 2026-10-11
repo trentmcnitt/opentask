@@ -108,12 +108,22 @@ describe('Task model', () => {
   })
 
   describe('segments', () => {
-    test('TM-010: an old untargeted task shows in its segment; one created today waits', () => {
+    test("TM-010: a task shows from its segment's first shown day on or after its creation", () => {
       const old = make({ title: 'Squeaky door' })
       age(old.id, '2026-10-01T09:00')
-      const fresh = make({ title: 'Just added' })
       expect(segmentOf(old.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
-      expect(segmentOf(fresh.id)).toBeNull()
+      // Created ON a shown day (Saturday, weeks): it shows today.
+      const fresh = make({ title: 'Just added' })
+      expect(segmentOf(fresh.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
+      // A days task shows the day it is written down.
+      vi.setSystemTime(new Date(at('2026-10-11T12:00'))) // Sunday
+      const today = make({ title: 'Days, new', horizon: 'days' })
+      expect(segmentOf(today.id)).toEqual({ horizon: 'days', state: 'waiting' })
+      // A weeks task created AFTER Saturday waits for the next one.
+      const sunday = make({ title: 'Weeks, Sunday' })
+      expect(segmentOf(sunday.id)).toBeNull()
+      vi.setSystemTime(new Date(at('2026-10-17T09:00'))) // next Saturday
+      expect(segmentOf(sunday.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
     })
 
     test('TM-011: a weeks task not considered on Saturday carries over daily until it is', () => {

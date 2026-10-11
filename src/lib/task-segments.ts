@@ -240,9 +240,10 @@ export function targetIsToday(dueAt: string | null, timezone: string, now: Date)
  *
  * - Considered today → 'considered' (shown ticked, so the segment can go green).
  * - Otherwise it appears when its segment has come round since it was last
- *   seen. "Seen" is the later of its last consider and its creation: writing a
- *   task down is seeing it, so a weeks task added on Tuesday waits for
- *   Saturday instead of appearing the moment it exists.
+ *   last considered. A task created AFTER its segment's latest shown day waits
+ *   for the next one (a weeks task added on Tuesday waits for Saturday); one
+ *   created ON a shown day appears that day — a new days task shows today
+ *   (Trent's rule, 2026-10-11: anything not considered is reshown until it is).
  * - Deferred today (Defer All) → 'deferred': off today's list, back tomorrow.
  */
 export function segmentState(
@@ -258,11 +259,14 @@ export function segmentState(
   if (task.last_considered_at && +localDay(task.last_considered_at, timezone) === +today) {
     return { horizon, state: 'considered' }
   }
-  const seen = [task.last_considered_at, task.created_at]
-    .filter((v): v is string => v !== null)
-    .map((v) => localDay(v, timezone))
-    .reduce((a, b) => (a > b ? a : b))
-  if (latestSegmentDay(horizon, today) <= seen) return null
+  const shownDay = latestSegmentDay(horizon, today)
+  // Considered on or after the segment's latest shown day: done with it.
+  if (task.last_considered_at && shownDay <= localDay(task.last_considered_at, timezone)) {
+    return null
+  }
+  // Created AFTER that day: it waits for the next one. Created on it — a days
+  // task today, a weeks task on a Saturday — it shows today (2026-10-11).
+  if (shownDay < localDay(task.created_at, timezone)) return null
 
   if (task.segment_deferred_at && +localDay(task.segment_deferred_at, timezone) === +today) {
     return { horizon, state: 'deferred' }
