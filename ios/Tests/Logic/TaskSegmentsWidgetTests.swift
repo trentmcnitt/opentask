@@ -178,6 +178,54 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(WidgetStore.pendingSegmentConsiders(now: t0), [3])
     }
 
+    // MARK: Target today (2026-10-11)
+
+    private func tapTargetToday(_ id: Int) {
+        WidgetStore.stagePendingSegmentTarget(id, now: t0)
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .targetSegmentToday(taskId: id), widgetKind: RemindersWidget.kind, createdAt: t0, title: nil
+        ))
+    }
+
+    func testTargetTodayTakesTheRowOutOfTheSegment() {
+        tapTargetToday(3)
+        let drawn = WidgetStore.filterPendingSegments(segments(), now: t0.addingTimeInterval(600))
+        XCTAssertEqual(drawn[1].tasks.map(\.id), [4], "queued = still gone")
+        XCTAssertFalse(drawn[1].hasWaiting)
+        XCTAssertEqual(drawn[0].tasks.map(\.id), [1, 2], "nothing else moves")
+    }
+
+    func testAQueuedTargetTodayIsSentAndTheRowLeavesTheCache() async throws {
+        WidgetStore.saveReminders(try Fixtures.reminders(), taskSegments: segments(), fetchStartedAt: t0)
+        tapTargetToday(3)
+        let transport = StubOutboxTransport()
+        let reports = ReportLog()
+        await WidgetOutboxDrainer(transport: transport, clock: { [t0] in t0 }) { reports.append($0) }.drain()
+        XCTAssertEqual(transport.calls, [.targetToday([3])])
+        XCTAssertTrue(WidgetStore.outboxEntries().isEmpty)
+        XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.map(\.id), [4])
+        XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
+        XCTAssertEqual(reports.all.first?.dependentKinds, [TasksWidget.kind], "the task now has a target today")
+    }
+
+    func testARefusedTargetTodayPutsTheRowBack() async throws {
+        WidgetStore.saveReminders(try Fixtures.reminders(), taskSegments: segments(), fetchStartedAt: t0)
+        tapTargetToday(3)
+        let transport = StubOutboxTransport()
+        transport.targetResults = [.failure(APIError.serverError(statusCode: 404))]
+        await WidgetOutboxDrainer(transport: transport, clock: { [t0] in t0 }) { _ in }.drain()
+        XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
+        let drawn = WidgetStore.filterPendingSegments(WidgetStore.loadReminders()?.value.taskSegments ?? [], now: t0)
+        XCTAssertEqual(drawn[1].tasks.map(\.id), [3, 4])
+    }
+
+    func testUndoClearsTargetTodayTombstones() {
+        WidgetStore.stagePendingSegmentTarget(3, now: t0)
+        XCTAssertTrue(WidgetStore.hasRecentInteraction(now: t0))
+        WidgetStore.clearAllPendingState()
+        XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
+    }
+
     // MARK: Row words
 
     func testSegmentRowWords() {

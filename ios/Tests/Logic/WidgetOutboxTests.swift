@@ -481,6 +481,7 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
         case progress(Int, Int)
         case fetchState(Int)
         case considerSegment([Int])
+        case targetToday([Int])
     }
 
     private let lock = NSLock()
@@ -489,6 +490,7 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     var promptResults: [Result<APIClient.PromptActionResult, Error>] = []
     var progressResults: [Result<TaskDTO?, Error>] = []
     var segmentResults: [Result<Int, Error>] = []
+    var targetResults: [Result<Data, Error>] = []
     var taskStates: [Int: [Result<APIClient.TaskState?, Error>]] = [:]
     /// Suspend inside `markDone`, so concurrent drains really interleave.
     var yieldsInMarkDone = false
@@ -541,6 +543,12 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     func considerSegmentTasks(ids: [Int]) async throws -> Int {
         record(.considerSegment(ids))
         return try pop(&segmentResults, default: ids.count).get()
+    }
+
+    @discardableResult
+    func targetSegmentTasksToday(ids: [Int]) async throws -> Data {
+        record(.targetToday(ids))
+        return try pop(&targetResults, default: Data()).get()
     }
 
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState? {

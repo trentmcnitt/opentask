@@ -222,6 +222,7 @@ enum WidgetStore {
             + Array(pendingMap(pendingPromptRestoresKey).values)
             // Task segment considers (2026-10-10), like a prompt tap.
             + Array(pendingMap(pendingSegmentConsidersKey).values)
+            + Array(pendingMap(pendingSegmentTargetsKey).values)
         return stamps.contains { $0 >= cutoff }
     }
 
@@ -1020,6 +1021,7 @@ enum WidgetStore {
         // Task segment considers (2026-10-10): an undone consider must show
         // the row waiting again.
         defaults?.removeObject(forKey: pendingSegmentConsidersKey)
+        defaults?.removeObject(forKey: pendingSegmentTargetsKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -1160,12 +1162,13 @@ enum WidgetStore {
     /// is hidden; a considered one is drawn considered. Order is never
     /// changed: acting on one row never moves the rest under the finger.
     static func filterPendingSegments(_ segments: [TaskSegmentDTO], now: Date = Date()) -> [TaskSegmentDTO] {
-        let completing = pendingCompletions(now: now)
+        // A done row and a "Target today" row both leave the segment.
+        let leaving = pendingCompletions(now: now).union(pendingSegmentTargets(now: now))
         let considering = pendingSegmentConsiders(now: now)
-        guard !completing.isEmpty || !considering.isEmpty else { return segments }
+        guard !leaving.isEmpty || !considering.isEmpty else { return segments }
         return segments.map { segment in
             segment.replacingTasks(segment.tasks.compactMap { row in
-                if completing.contains(row.id) { return nil }
+                if leaving.contains(row.id) { return nil }
                 if considering.contains(row.id), row.state != .considered { return row.with(state: .considered) }
                 return row
             })
@@ -1187,6 +1190,61 @@ enum WidgetStore {
             )
         }
         clearPendingSegmentConsiderLocked(id)
+    }
+
+    // "Target today" (2026-10-11): the row LEAVES the segment — the task now
+    // has a target today, so it belongs to the over-target channel (spec §3,
+    // "never both"). Its own tombstone, drawn as the row gone, like a done.
+
+    private static let pendingSegmentTargetsKey = "widget.pendingSegmentTargets"
+
+    static func stagePendingSegmentTarget(_ id: Int, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = pendingMap(pendingSegmentTargetsKey)
+        map[String(id)] = now.timeIntervalSince1970
+        defaults?.set(map, forKey: pendingSegmentTargetsKey)
+    }
+
+    static func clearPendingSegmentTarget(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        clearPendingSegmentTargetLocked(id)
+    }
+
+    private static func clearPendingSegmentTargetLocked(_ id: Int) {
+        var map = pendingMap(pendingSegmentTargetsKey)
+        map.removeValue(forKey: String(id))
+        defaults?.set(map, forKey: pendingSegmentTargetsKey)
+    }
+
+    /// Live "Target today" tombstones plus every one still queued.
+    static func pendingSegmentTargets(now: Date = Date()) -> Set<Int> {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var ids = liveIdsLocked(pendingSegmentTargetsKey, now: now)
+        for entry in outboxEntriesLocked() {
+            if case .targetSegmentToday(let taskId) = entry.mutation { ids.insert(taskId) }
+        }
+        return ids
+    }
+
+    /// The server took a "Target today": the row is out of the cached
+    /// segments. The task's new target lives in the Tasks payload, which the
+    /// next pass fetches (`requireTasksFetch` — the server chose the time).
+    static func confirmSegmentTarget(_ id: Int) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if let cached = loadReminders() {
+            let segments = cached.value.taskSegments.map { segment in
+                segment.replacingTasks(segment.tasks.filter { $0.id != id })
+            }
+            save(
+                RemindersCache(groups: cached.value.groups, taskSegments: segments),
+                forKey: remindersKey, at: cached.fetchedAt
+            )
+        }
+        clearPendingSegmentTargetLocked(id)
     }
 
     /// The server took a Defer All: those rows are `deferred` (off today's
@@ -2024,6 +2082,12 @@ enum WidgetStore {
             /// segment row's circle — "I saw it", never a completion.
             /// Idempotent in effect, so a retry is a resend.
             case considerSegment(taskId: Int)
+            /// `POST /api/task-segments/target-today` (2026-10-11): "Target
+            /// today" on a task segment row — a deliberate target today (the
+            /// server also stamps it considered), so the row leaves the
+            /// segment for the over-target channel. Resending re-targets the
+            /// same task to the same slot the same day, so a retry is a resend.
+            case targetSegmentToday(taskId: Int)
         }
 
         let id: UUID
@@ -2165,6 +2229,8 @@ enum WidgetStore {
             clearPendingProgress(taskId, delta: delta)
         case .considerSegment(let taskId):
             clearPendingSegmentConsider(taskId)
+        case .targetSegmentToday(let taskId):
+            clearPendingSegmentTarget(taskId)
         }
         restoreSlotOverrideBeforeAutoAdvance(ifMatches: entry.createdDate)
     }

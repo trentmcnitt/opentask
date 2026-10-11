@@ -563,6 +563,47 @@ struct ConsiderSegmentTaskIntent: AppIntent {
     }
 }
 
+/// "Target today" on a task segment row (2026-10-11, spec §3: just left of
+/// the checkbox): `POST /api/task-segments/target-today` — a deliberate
+/// target today at the time the Snooze-all button would use (the server
+/// picks it), and the server also stamps the task considered. The row LEAVES
+/// the segment: from now on the task is the over-target channel's. Queued
+/// like the consider circle — tombstone (`stagePendingSegmentTarget`, the row
+/// drawn gone), outbox `.targetSegmentToday`, return — so it is instant and
+/// survives being offline; a definite refusal puts the row back. Undo takes
+/// it back like any other action.
+struct TargetSegmentTodayIntent: AppIntent {
+    static var title: LocalizedStringResource = "Target Task Today"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    init() {}
+
+    init(taskId: Int) {
+        self.taskId = taskId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let mutationInstant = Date()
+        // Already targeted or queued: a double tap before the repaint.
+        guard !WidgetStore.pendingSegmentTargets(now: mutationInstant).contains(taskId) else {
+            return .result()
+        }
+        let title = WidgetStore.cachedTaskInfo(taskId).title
+        WidgetStore.stagePendingSegmentTarget(taskId, now: mutationInstant)
+        WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
+            mutation: .targetSegmentToday(taskId: taskId),
+            widgetKind: RemindersWidget.kind, createdAt: mutationInstant, title: title
+        ))
+        WidgetStore.recordLocalMutationForUndoCount()
+        await reloadTappedWidget(kind: RemindersWidget.kind)
+        kickWidgetOutbox()
+        return .result()
+    }
+}
+
 /// "Defer all" on a task segment page: every row still waiting leaves
 /// today's segment and comes back tomorrow (`POST /api/task-segments/defer`)
 /// — the counterpart of considering them all, and NOT a consider, which

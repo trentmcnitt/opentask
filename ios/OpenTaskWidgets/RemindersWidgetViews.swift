@@ -1392,8 +1392,13 @@ enum SegmentRowMetrics {
     /// 36pt finger column, with the reminder row's 10pt gap beside each.
     static let gap: CGFloat = 10
 
+    /// "Target today" (2026-10-11), just left of the checkbox: an icon-only
+    /// button, narrower than the 36pt check columns (the title needs the
+    /// width more) but still a 28pt finger column.
+    static let targetTodayWidth: CGFloat = 28
+
     static func titleWidth(in width: CGFloat) -> CGFloat {
-        width - 2 * WidgetTheme.rowMarkerSize - 2 * gap
+        width - 2 * WidgetTheme.rowMarkerSize - targetTodayWidth - 2 * gap
     }
 }
 
@@ -1727,12 +1732,33 @@ private struct SegmentTaskRow: View {
                     .accessibilityLabel(Text(spoken))
             }
 
-            Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
-                marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.priorityColor(task.priority))
+            // "Target today" just left of the checkbox (spec §3), icon-only
+            // like the web's phone row. Its column is part of the trailing
+            // pair, so the title's measured width is unchanged by state.
+            HStack(alignment: .top, spacing: 0) {
+                Button(intent: TargetSegmentTodayIntent(taskId: task.id)) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .frame(width: SegmentRowMetrics.targetTodayWidth, height: firstLineHeight)
+                        .padding(.top, markerBleed)
+                        .frame(
+                            width: SegmentRowMetrics.targetTodayWidth, height: height + 2 * markerBleed,
+                            alignment: .top
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, -markerBleed)
+                .accessibilityLabel(Text("Target today: \(spoken)"))
+
+                Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
+                    marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.priorityColor(task.priority))
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, -markerBleed)
+                .accessibilityLabel(Text("Done: \(spoken)"))
             }
-            .buttonStyle(.plain)
-            .padding(.vertical, -markerBleed)
-            .accessibilityLabel(Text("Done: \(spoken)"))
         }
     }
 

@@ -137,6 +137,8 @@ actor WidgetOutboxDrainer {
             return await processProgress(entry, taskId: taskId, delta: delta, age: age, into: &report)
         case .considerSegment(let taskId):
             return await processSegmentConsider(entry, taskId: taskId, into: &report)
+        case .targetSegmentToday(let taskId):
+            return await processSegmentTarget(entry, taskId: taskId, into: &report)
         }
     }
 
@@ -251,6 +253,35 @@ actor WidgetOutboxDrainer {
         requireFetch(for: entry.widgetKind)
         report.failedKinds.insert(entry.widgetKind)
         return true
+    }
+
+    /// "Target today" on a task segment row (2026-10-11). A resend sets the
+    /// same task's target to the same time the same day, so a retry is safe;
+    /// a 4xx (gone, done, not this user's) is a definite failure and the row
+    /// comes back. The task's new target changes the Tasks payload too.
+    private func processSegmentTarget(
+        _ entry: WidgetStore.OutboxEntry, taskId: Int, into report: inout OutboxDrainReport
+    ) async -> Bool {
+        guard WidgetStore.beginSendingOutboxEntry(entry.id, now: clock()) != nil else { return true }
+        do {
+            try await transport.targetSegmentTasksToday(ids: [taskId])
+            WidgetStore.confirmSegmentTarget(taskId)
+            WidgetStore.requireTasksFetch()
+            WidgetStore.recordMutation(now: entry.createdDate)
+            WidgetStore.removeOutboxEntry(entry.id)
+            report.confirmedKinds.insert(entry.widgetKind)
+            report.dependentKinds.insert(TasksWidget.kind)
+            return true
+        } catch {
+            let failure = OutboxFailure(error)
+            print("[OpenTaskWidgets] Outbox target-today \(taskId) failed (\(failure)): \(error)")
+            guard failure == .rejected else {
+                WidgetStore.requeueOutboxEntry(entry.id)
+                return false
+            }
+            fail(entry, into: &report)
+            return true
+        }
     }
 
     // MARK: Prompt
@@ -460,6 +491,9 @@ protocol WidgetOutboxTransport: AnyObject {
     /// `POST /api/task-segments/consider`; returns how many were considered.
     @discardableResult
     func considerSegmentTasks(ids: [Int]) async throws -> Int
+    /// `POST /api/task-segments/target-today`.
+    @discardableResult
+    func targetSegmentTasksToday(ids: [Int]) async throws -> Data
     /// `nil` = the task is gone (404).
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState?
 }
