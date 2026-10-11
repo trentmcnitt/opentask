@@ -181,7 +181,7 @@ export function DashboardRemindersPanel({
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
-  const { segments, openSegment } = usePanelSegment(reminders, onUndo, onCompleted)
+  const { segments, panelSegments } = usePanelSegment(reminders, onUndo, onCompleted)
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
   // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
   // No leaving animation here, like the reminder rows (see the docblock).
@@ -224,9 +224,10 @@ export function DashboardRemindersPanel({
   // Nothing anywhere today (no reminders waiting, none considered) — nothing
   // to show, the same way `TrackPanel` returns null with no quotas.
   const hasAnything = groups.some((g) => groupWaiting(g) > 0 || groupConsidered(g) > 0)
-  const segmentCard = openSegment && (
-    <PanelSegment segment={openSegment} actions={segments} timezone={timezone} />
-  )
+  const segmentCard =
+    panelSegments.length > 0 ? (
+      <PanelSegments segments={panelSegments} actions={segments} timezone={timezone} />
+    ) : null
   if (!hasAnything) return segmentCard ? <SegmentOnlyPanel>{segmentCard}</SegmentOnlyPanel> : null
 
   // `new Date()` at the call site, not hoisted to a variable: this keeps the
@@ -382,9 +383,10 @@ export function DashboardRemindersPanel({
 
 /**
  * Task segments sit UNDER the slot pager on the panel (Trent, 10-11: "Tasks
- * should go underneath Reminders"; 10-10 had them first): while anything in
- * one is still waiting, its card shows below the slot and stays until it is
- * considered or deferred. Once nothing is waiting it folds away.
+ * should go underneath Reminders"; 10-10 had them first). Every segment with
+ * a row today shows: one still waiting at full size, a finished one as just
+ * its header ("4 of 4 ✓") and its "Show 4 considered", so a consider can be
+ * put back from the panel too (2026-10-11 — it used to fold away).
  */
 function usePanelSegment(
   reminders: ReturnType<typeof useReminders>,
@@ -397,7 +399,31 @@ function usePanelSegment(
     onUndo,
     onCompleted,
   })
-  return { segments, openSegment: segments.segments.find((s) => s.waiting > 0) }
+  return { segments, panelSegments: segments.segments }
+}
+
+/** Every segment with a row today, in screen order (days → eventually). */
+function PanelSegments({
+  segments,
+  actions,
+  timezone,
+}: {
+  segments: SegmentView[]
+  actions: TaskSegmentActions
+  timezone: string
+}) {
+  return (
+    <>
+      {segments.map((segment) => (
+        <PanelSegment
+          key={segment.horizon}
+          segment={segment}
+          actions={actions}
+          timezone={timezone}
+        />
+      ))}
+    </>
+  )
 }
 
 function PanelSegment(props: {

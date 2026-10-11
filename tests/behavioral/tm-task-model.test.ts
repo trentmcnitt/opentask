@@ -18,6 +18,7 @@ import { executeUndo, executeRedo } from '@/core/undo'
 import {
   considerTasks,
   deferTasks,
+  restoreTasks,
   getTaskSegments,
   targetTasksToday,
   targetTodayTime,
@@ -188,6 +189,24 @@ describe('Task model', () => {
       const t = make()
       markDone({ userId: TEST_USER_ID, userTimezone: tz, taskId: t.id })
       expect(() => considerTasks(TEST_USER_ID, [t.id])).toThrow(ValidationError)
+    })
+
+    test('TM-019: put back undoes a consider or a defer, and the row waits again', () => {
+      const a = make({ title: 'Put back a' })
+      const b = make({ title: 'Put back b' })
+      age(a.id, '2026-10-01T09:00')
+      age(b.id, '2026-10-01T09:00')
+      considerTasks(TEST_USER_ID, [a.id])
+      deferTasks(TEST_USER_ID, [b.id])
+      expect(segmentOf(a.id)?.state).toBe('considered')
+      expect(segmentOf(b.id)?.state).toBe('deferred')
+      restoreTasks(TEST_USER_ID, [a.id, b.id])
+      expect(segmentOf(a.id)?.state).toBe('waiting')
+      expect(segmentOf(b.id)?.state).toBe('waiting')
+      // One undo entry takes the put-back back.
+      executeUndo(TEST_USER_ID)
+      expect(segmentOf(a.id)?.state).toBe('considered')
+      expect(segmentOf(b.id)?.state).toBe('deferred')
     })
 
     test('TM-018: a segment over 50 items asks for help', () => {

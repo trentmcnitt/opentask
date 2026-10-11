@@ -103,7 +103,7 @@ A segment shows only on a day it has items.
 
 **Carry-over.** A task appears once its segment has come round since the task was last **seen**, and keeps appearing, day after day, until it is considered ("anything not considered shows again the next day until it is"). Seen is the later of `last_considered_at` and `created_at`. Writing a task down is seeing it, so a weeks task added on Tuesday waits for Saturday.
 
-**States** (`segment_state` on each row): `waiting`; `considered` (considered today: the row stays, ticked green, so the segment can go green); `deferred` (Defer All today: off today's list, back tomorrow).
+**States** (`segment_state` on each row): `waiting`; `considered` (considered today); `deferred` (Defer All today: off today's list, back tomorrow). The web lists only `waiting` rows; the header counts "X of Y" like a slot (X = considered + deferred today, Y = the segment's rows today — a task marked done leaves it entirely), and "Show N considered" unfolds the rest, each with a put-back (`POST /api/task-segments/restore`, which clears both stamps; 2026-10-11).
 
 **Order.** Priority, then id. Horizon decides **whether** a task shows, never where, so acting on one never reorders the rest under the finger (the 09-05 rule).
 
@@ -111,7 +111,7 @@ A segment shows only on a day it has items.
 
 **Never counted, never notified.** Segments are not in `groups[]`. Their rows never count in the reminders headline, the nav badge, "Considered all so far", the slot notifications or the hourly unfinished-slot nag, and a segment never sends a notification. Anything time-critical has a target, and a task whose target has arrived is on the dashboard, not here.
 
-**Where it shows.** Under the periods on the Reminders screen (Trent, 2026-10-11: "Tasks should go underneath Reminders"; 10-10 had them first). On the dashboard's reminders panel, a segment's card sits at the bottom of the section while anything in it is waiting, then folds away. The native surfaces follow: the Reminders widget's page ring is slots then segments with the clock's slot as the natural page, and the watch shows segments after the period's rows.
+**Where it shows.** Under the periods on the Reminders screen (Trent, 2026-10-11: "Tasks should go underneath Reminders"; 10-10 had them first). On the dashboard's reminders panel, every segment with a row today sits at the bottom of the section, a finished one as just its header and "Show N considered". Rows use the slot rows' exact geometry on each surface (panel: 19px controls, 13.5px title; page: 24px, 16px), so circles and checkboxes line up down the card. The native surfaces follow: the Reminders widget's page ring is slots then segments with the clock's slot as the natural page, and the watch shows segments after the period's rows.
 
 **The row.** Circle on the left = considered (never a completion; a tap anywhere else on the row does the same, as on a reminder). Checkbox on the right = done. "Today" (target today) sits just left of the checkbox. A quiet horizon chip changes the horizon in one tap; it shows its word only when the task's own horizon differs from the segment's (a deadline pulled it in), and a faint dot marks unset. A second line appears only when there is something to say: a future target as a date chip ("Nov 1"), or the deadline. Without either the row is one line, a reminder row's height.
 

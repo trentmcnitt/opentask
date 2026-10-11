@@ -164,6 +164,35 @@ export function deferTasks(userId: number, ids: number[]): number {
 }
 
 /**
+ * Put back: undo a consider or a Defer All from the "Show considered" list
+ * (2026-10-11, the slots' put-back). Clears both stamps, so the row waits in
+ * its segment again today and comes back daily until it is considered — the
+ * meaning of "not considered". One undo entry, logged even when nothing was
+ * stamped (the toast's Undo must never reach an older action).
+ */
+export function restoreTasks(userId: number, ids: number[]): number {
+  const tasks = ownOpenTasks(userId, ids)
+  const now = new Date().toISOString()
+  const fields = ['last_considered_at', 'segment_deferred_at']
+  withTransaction((db) => {
+    const stmt = db.prepare(
+      'UPDATE tasks SET last_considered_at = NULL, segment_deferred_at = NULL, updated_at = ? WHERE id = ?',
+    )
+    const snapshots = tasks.map((task) => {
+      stmt.run(now, task.id)
+      return createTaskSnapshot(
+        task,
+        { ...task, last_considered_at: null, segment_deferred_at: null },
+        fields,
+      )
+    })
+    logAction(userId, 'task_segment', `Put back ${plural(tasks.length)}`, fields, snapshots)
+  })
+  emitSyncEvent(userId)
+  return tasks.length
+}
+
+/**
  * When "Target today" sets the target (spec §4): where the Snooze-all button
  * goes (`bulk_snooze_default` — the next period, or the default snooze
  * option), as long as that is still today; otherwise the top of the next hour.
