@@ -79,27 +79,39 @@ enum TargetAge {
     }
 
     /// A FUTURE target's day, "Nov 1" — the chip a task segment row wears
-    /// (amendment 5). Nil when the task has no effective target or it is not
+    /// (amendment 5): its OWN target (a deadline shows as itself). Nil when none, or not
     /// in the future (a segment row's target is never today: a target today
     /// takes the task out of the segment).
     static func futureTargetChip(_ task: TaskDTO, now: Date = Date(), calendar: Calendar = .current) -> String? {
-        guard let target = effectiveTargetDate(task), target > now else { return nil }
+        guard let target = task.dueDate, target > now else { return nil }
+        return dayText(target, calendar: calendar)
+    }
+
+    /// "Nov 1" in `calendar`'s zone.
+    static func dayText(_ date: Date, calendar: Calendar = .current) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "MMM d"
-        return formatter.string(from: target)
+        return formatter.string(from: date)
     }
 }
 
 extension TaskDTO {
-    /// The small words after a task segment row's title: its SET horizon
-    /// ("Days" — nothing when unset, never "Weeks") and a future target's day
-    /// ("Nov 1"), "Days · Nov 1". Nil when there is neither. Spaces are
-    /// non-breaking so the words wrap as one unit, like a prompt's count.
-    func segmentMeta(now: Date = Date(), calendar: Calendar = .current) -> String? {
-        let parts = [horizonLabel, TargetAge.futureTargetChip(self, now: now, calendar: calendar)]
+    /// The small words after a task segment row's title — the web row's
+    /// rule (docs/TASK-MODEL.md § Task segments, "the row"): the task's SET
+    /// horizon only when it differs from the segment it sits in (a deadline
+    /// pulled it in — "Weeks" on a Days page), never for an unset horizon
+    /// (shown as nothing, never as "Weeks"); a future target's day ("Nov 1");
+    /// and the deadline ("deadline Oct 16"). "Weeks · Nov 1". Nil when there
+    /// is nothing to say. Spaces are non-breaking so the words wrap as one
+    /// unit, like a prompt's count. `segmentHorizon` nil = no segment context
+    /// (the watch's compact rows): the set horizon always shows.
+    func segmentMeta(segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        let horizonWord = (segmentHorizon != nil && horizon == segmentHorizon) ? nil : horizonLabel
+        let deadline = deadlineDate.map { "deadline \(TargetAge.dayText($0, calendar: calendar))" }
+        let parts = [horizonWord, TargetAge.futureTargetChip(self, now: now, calendar: calendar), deadline]
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
         return parts.isEmpty ? nil : parts.joined(separator: "\u{00A0}·\u{00A0}")
     }
@@ -107,8 +119,8 @@ extension TaskDTO {
     /// The whole segment row label as ONE string — title, separator, meta —
     /// the string both the row's `Text` and the pager's measurement build
     /// from (the `QuotaPromptDTO.labelText` rule).
-    func segmentLabelText(now: Date = Date(), calendar: Calendar = .current) -> String {
-        guard let meta = segmentMeta(now: now, calendar: calendar) else { return title }
+    func segmentLabelText(segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current) -> String {
+        guard let meta = segmentMeta(segmentHorizon: segmentHorizon, now: now, calendar: calendar) else { return title }
         return "\(title)\(QuotaPromptDTO.countSeparator)\(meta)"
     }
 }

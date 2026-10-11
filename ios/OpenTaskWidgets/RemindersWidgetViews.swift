@@ -1409,9 +1409,10 @@ enum SegmentRowMetrics {
 /// - Rows are TASKS, never reminders: the circle on the LEFT considers ("I
 ///   saw it", `ConsiderSegmentTaskIntent`), the checkbox on the RIGHT
 ///   completes (`CompleteTaskIntent`, the ordinary completion). The title
-///   carries the task's set horizon and a future target's day in small
-///   secondary words ("Fix the gate · Days · Nov 1"); an unset horizon shows
-///   nothing. The title links to the task on the dashboard, where its
+///   carries small secondary words, the web row's rule (`TaskDTO.
+///   segmentMeta`): the task's set horizon only when it differs from the
+///   page's, a future target's day, the deadline ("Fix the gate · Nov 1 ·
+///   deadline Nov 4"); an unset horizon shows nothing. The title links to the task on the dashboard, where its
 ///   horizon and target can be changed (deep link in place of in-widget
 ///   controls, amendment 16).
 /// - Order is the server's (priority, then id) and fixed: a considered row
@@ -1532,7 +1533,7 @@ private struct TaskSegmentListView: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    private func label(_ task: TaskDTO) -> String { task.segmentLabelText(now: entry.date) }
+    private func label(_ task: TaskDTO) -> String { task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date) }
 
     private func layout(
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
@@ -1562,13 +1563,13 @@ private struct TaskSegmentListView: View {
             DoneDivider(count: count, label: "CONSIDERED")
         case .waiting(let task):
             SegmentTaskRow(
-                task: task, considered: false, now: entry.date, lines: layout.lines, height: layout.height,
+                task: task, segmentHorizon: segment.horizon, considered: false, now: entry.date, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes)
             )
         case .considered(let task):
             SegmentTaskRow(
-                task: task, considered: true, now: entry.date, lines: layout.lines, height: layout.height,
+                task: task, segmentHorizon: segment.horizon, considered: true, now: entry.date, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes)
             )
@@ -1687,6 +1688,8 @@ private struct TaskSegmentListView: View {
 /// checkbox stays live: a considered task is still open, and done is done.
 private struct SegmentTaskRow: View {
     let task: TaskDTO
+    /// The page's horizon — the row names its own only when it differs.
+    let segmentHorizon: String
     let considered: Bool
     let now: Date
     let lines: Int
@@ -1697,7 +1700,7 @@ private struct SegmentTaskRow: View {
     let notesGlyphSize: CGFloat?
 
     private var spoken: String {
-        let meta = task.segmentMeta(now: now).map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
+        let meta = task.segmentMeta(segmentHorizon: segmentHorizon, now: now).map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
         return NotesGlyph.accessibilityLabel("\(task.title)\(meta)", hasNotes: task.hasNotes)
     }
 
@@ -1739,7 +1742,7 @@ private struct SegmentTaskRow: View {
         let title = Text(task.title)
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
             .foregroundStyle(considered ? Color.secondary : Color.primary)
-        guard let meta = task.segmentMeta(now: now) else { return title }
+        guard let meta = task.segmentMeta(segmentHorizon: segmentHorizon, now: now) else { return title }
         return title + Text("\(QuotaPromptDTO.countSeparator)\(meta)").foregroundStyle(.secondary)
     }
 

@@ -184,11 +184,19 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         let now = DateHelpers.parseISO("2026-10-10T19:00:00.000Z")!
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "America/Chicago")!
-        let set = TaskDTO(id: 1, title: "Fix the gate", dueAt: "2026-11-01T14:00:00.000Z", horizon: "days")
-        XCTAssertEqual(set.segmentMeta(now: now, calendar: cal), "Days\u{00A0}·\u{00A0}Nov\u{00A0}1")
-        XCTAssertEqual(set.segmentLabelText(now: now, calendar: cal), "Fix the gate ·\u{00A0}Days\u{00A0}·\u{00A0}Nov\u{00A0}1")
+        let set = TaskDTO(id: 1, title: "Fix the gate", dueAt: "2026-11-01T14:00:00.000Z", horizon: "weeks")
+        XCTAssertEqual(set.segmentMeta(segmentHorizon: "days", now: now, calendar: cal), "Weeks\u{00A0}·\u{00A0}Nov\u{00A0}1")
+        XCTAssertEqual(
+            set.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal),
+            "Fix the gate ·\u{00A0}Weeks\u{00A0}·\u{00A0}Nov\u{00A0}1"
+        )
+        // Its own segment: the horizon goes unsaid.
+        XCTAssertEqual(set.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), "Nov\u{00A0}1")
+        // A deadline shows as itself, not as its implied target.
+        let deadline = TaskDTO(id: 3, title: "Pay", deadlineAt: "2026-10-20T22:00:00.000Z")
+        XCTAssertEqual(deadline.segmentMeta(segmentHorizon: "days", now: now, calendar: cal), "deadline\u{00A0}Oct\u{00A0}20")
         let unset = TaskDTO(id: 2, title: "Plain")
-        XCTAssertNil(unset.segmentMeta(now: now, calendar: cal), "unset horizon shows nothing")
-        XCTAssertEqual(unset.segmentLabelText(now: now, calendar: cal), "Plain")
+        XCTAssertNil(unset.segmentMeta(segmentHorizon: "days", now: now, calendar: cal), "unset horizon shows nothing")
+        XCTAssertEqual(unset.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal), "Plain")
     }
 }
