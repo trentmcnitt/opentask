@@ -113,7 +113,7 @@ A segment shows only on a day it has items.
 
 **Where it shows.** First on the Reminders screen, ahead of the first period ("tasks are an early-day thing"). On the dashboard's reminders panel, a segment's card sits above the slot pager while anything in it is waiting, then folds away.
 
-**The row.** Circle on the left = considered (never a completion; a tap anywhere else on the row does the same, as on a reminder). Checkbox on the right = done. "Today" (target today) sits just left of the checkbox. The meta line shows the horizon as a chip that changes it, a future target as a date chip ("Nov 1"), and the deadline.
+**The row.** Circle on the left = considered (never a completion; a tap anywhere else on the row does the same, as on a reminder). Checkbox on the right = done. "Today" (target today) sits just left of the checkbox. A quiet horizon chip changes the horizon in one tap; it shows its word only when the task's own horizon differs from the segment's (a deadline pulled it in), and a faint dot marks unset. A second line appears only when there is something to say: a future target as a date chip ("Nov 1"), or the deadline. Without either the row is one line, a reminder row's height.
 
 **API.** `GET /api/reminders` returns a top-level `task_segments` array. It is deliberately not inside `groups`: a native build that predates it ignores the key, so its "Complete all" can never reach a real task.
 
