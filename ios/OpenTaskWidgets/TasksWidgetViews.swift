@@ -458,6 +458,9 @@ private struct TasksListView: View {
             let stackedDueHeight = ceil(2 * metrics.caption2LineHeight)
             var column = width - TaskRow.trailingControlWidth(for: mode) - 10
             if isLarge, entry.isUnifiedScope { column -= 3 + 8 }
+            // The target-age badge (2026-10-10) takes its own width from the
+            // title's column — the exact width `TargetAgeBadge` draws.
+            column -= TargetAgeBadge.reservedWidth(for: task, now: entry.date, metrics: metrics)
             let text: (lines: Int, height: CGFloat, dueStacked: Bool, shrinks: Bool)
             if let parts = dueParts(for: task) {
                 if parts.hasTwoParts {
@@ -1078,6 +1081,8 @@ private struct TaskRow: View {
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                 .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
 
+            TargetAgeBadge(task: task, now: now)
+
             if task.effectiveTargetDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
@@ -1169,6 +1174,84 @@ private struct TaskRow: View {
                 }
             }
         )
+    }
+}
+
+/// The target-age badge and past-deadline marker (2026-10-10, spec §4) on an
+/// over-target row, just left of the due label: "2d" — whole local days since
+/// the task's FIRST target (`TargetAge.days`; a snooze keeps the clock, a
+/// deliberate re-target resets it), blank on the target day — in a small
+/// tinted tab, 1–2 days gray, 3–6 amber, 7+ red. A red flag follows when the
+/// deadline has passed (nagging continues past a deadline; the flag is how
+/// the row says so).
+///
+/// One line of caption2, never taller than a title line, so it costs the row
+/// no height — only width, which `reservedWidth` gives the pager exactly
+/// (the "one function" rule: measure what is drawn).
+private struct TargetAgeBadge: View {
+    let task: TaskDTO
+    let now: Date
+
+    static let horizontalPadding: CGFloat = 4
+    static let flagWidth: CGFloat = 11
+    static let innerSpacing: CGFloat = 3
+    /// The `HStack` gap the badge adds beside the title.
+    static let gap: CGFloat = 8
+
+    /// The width the badge takes from the title's column, 0 when it draws
+    /// nothing.
+    static func reservedWidth(for task: TaskDTO, now: Date, metrics: WidgetTextMetrics) -> CGFloat {
+        let days = TargetAge.days(task, now: now)
+        let past = TargetAge.isPastDeadline(task, now: now)
+        guard days != nil || past else { return 0 }
+        var width: CGFloat = 0
+        if let days {
+            width += WidgetTheme.measuredWidth(
+                for: TargetAge.badgeText(days: days), font: metrics.caption2Font
+            ) + 2 * horizontalPadding
+        }
+        if past { width += flagWidth + (days != nil ? innerSpacing : 0) }
+        return ceil(width) + gap
+    }
+
+    private func tint(_ tone: TargetAge.Tone) -> Color {
+        switch tone {
+        case .gray: return .secondary
+        case .amber: return .orange
+        case .red: return .red
+        }
+    }
+
+    var body: some View {
+        let days = TargetAge.days(task, now: now)
+        let past = TargetAge.isPastDeadline(task, now: now)
+        if days != nil || past {
+            HStack(spacing: Self.innerSpacing) {
+                if let days {
+                    let tone = TargetAge.tone(days: days)
+                    Text(TargetAge.badgeText(days: days))
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(tint(tone))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, Self.horizontalPadding)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(tint(tone).opacity(0.15))
+                        )
+                        .accessibilityLabel(Text("\(days) days \(TaskWording.overTargetLower)"))
+                }
+                if past {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: Self.flagWidth)
+                        .accessibilityLabel(Text(TaskWording.pastDeadline))
+                }
+            }
+            .fixedSize()
+        }
     }
 }
 
