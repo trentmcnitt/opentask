@@ -53,7 +53,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
     taskCounts && taskCounts.overdue > 0
       ? { n: taskCounts.overdue, label: `${taskCounts.overdue} overdue`, tone: 'overdue' }
       : taskCounts && taskCounts.today > 0
-        ? { n: taskCounts.today, label: `${taskCounts.today} due today`, tone: 'today' }
+        ? { n: taskCounts.today, label: `${taskCounts.today} for today`, tone: 'today' }
         : null
 
   const tabs = [

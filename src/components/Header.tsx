@@ -508,7 +508,7 @@ function TaskCountBadges({
                 {overdueCount} {OVER_TARGET_LOWER}
               </span>
             )}
-            {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
+            {todayCount > 0 && <span className="text-primary">{todayCount} today</span>}
           </div>
         </PopoverContent>
       </Popover>
@@ -534,12 +534,12 @@ function TaskCountBadges({
       <CountBadge
         count={todayCount}
         variant="today"
-        tooltip={todayActive ? 'Show all tasks' : `${todayCount} due today — show only these`}
+        tooltip={todayActive ? 'Show all tasks' : `${todayCount} for today — show only these`}
         onClick={() => applyFilter('today')}
         ariaLabel={
           todayActive
-            ? `${todayCount} due today — clear the today filter`
-            : `${todayCount} due today — show only tasks due today`
+            ? `${todayCount} for today — clear the today filter`
+            : `${todayCount} for today — show only today's tasks`
         }
         pressed={todayActive}
         className={cn(

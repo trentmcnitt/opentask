@@ -350,7 +350,7 @@ struct TasksWidget: Widget {
                 TasksWidgetView(entry: entry)
             }
             .configurationDisplayName("Today's Tasks")
-            .description("What's due today, with chevrons to page through your projects.")
+            .description("Today's tasks, with chevrons to page through your projects.")
             // systemLarge first: it is the primary layout (§8 — the user pointed
             // at a 4x4 Weather widget), and the gallery leads with the first entry.
             // See RemindersWidget for why this is a closure rather than #if inside
@@ -368,7 +368,7 @@ struct TasksWidget: Widget {
                 TasksWidgetView(entry: entry)
             }
             .configurationDisplayName("Today's Tasks")
-            .description("What's due today, with chevrons to page through your projects.")
+            .description("Today's tasks, with chevrons to page through your projects.")
             .supportedFamilies({
                 var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
                 #if os(iOS)

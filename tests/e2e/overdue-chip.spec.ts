@@ -26,7 +26,7 @@ const redPill = (page: Page) =>
   page.getByRole('button', {
     name: /^\d+ over target — (show only over target tasks|clear the over target filter)$/,
   })
-const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ due today — / })
+const todayPill = (page: Page) => page.getByRole('button', { name: /^\d+ for today — / })
 const banner = (page: Page) => page.getByText(/Showing \d+ of \d+ tasks/)
 
 async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {

@@ -75,8 +75,8 @@ export function describeChipDueBadges({
   dueToday: number
   overdue: number
 }): string {
-  const parts = [totalLabel ? `${total} ${totalLabel}` : `${total} due today`]
-  if (dueToday > 0 && totalLabel) parts.push(`${dueToday} due today`)
+  const parts = [totalLabel ? `${total} ${totalLabel}` : `${total} for today`]
+  if (dueToday > 0 && totalLabel) parts.push(`${dueToday} for today`)
   if (overdue > 0) parts.push(`${overdue} ${OVER_TARGET_LOWER}`)
   return `${name}: ${parts.join(', ')}`
 }
