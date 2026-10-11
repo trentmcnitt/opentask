@@ -4,18 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useProjects } from '@/components/ProjectsProvider'
 import { useProcess } from '@/hooks/useProcess'
 import { showSaveError } from '@/lib/toast'
-import { getPriorityOption } from '@/lib/priority'
+import { getPriorityOption, URGENT_PRIORITY } from '@/lib/priority'
 import {
   bulkEditChunks,
   fetchDuplicates,
   fetchRecommendations,
   fetchTask,
   moveToProject,
+  newTally,
   raisePriority,
   targetToday,
   trashTask,
   type GrowthItem,
-  type ProcessData,
   type ProcessTask,
   type Recommendation,
 } from '@/lib/process-client'
@@ -44,17 +44,6 @@ function writeDismissed(keys: Set<string>): void {
     localStorage.setItem(DISMISSED_KEY, JSON.stringify([...keys].slice(-200)))
   } catch {
     // Storage unavailable: the group returns next time, which is harmless.
-  }
-}
-
-/** Drop tasks by id from every list Process shows. */
-function without(d: ProcessData, ids: Set<number>): ProcessData {
-  return {
-    ...d,
-    inbox: d.inbox.filter((t) => !ids.has(t.id)),
-    growth: d.growth.filter((g) => !ids.has(g.task.id)),
-    stale_targets: d.stale_targets.filter((s) => !ids.has(s.task.id)),
-    stale_targets_with_deadline: d.stale_targets_with_deadline.filter((s) => !ids.has(s.task.id)),
   }
 }
 
@@ -88,7 +77,7 @@ async function loadDuplicateGroups(): Promise<ShownDuplicateGroup[]> {
  * existing endpoint, then offers Undo; a failed write re-reads instead.
  */
 export function useProcessFlow(open: boolean) {
-  const { data, update, error, reload, toastWithUndo } = useProcess(open)
+  const { data, remove, error, reload, toastWithUndo } = useProcess(open)
   const { projects } = useProjects()
   const [skipped, setSkipped] = useState<Set<number>>(() => new Set())
   const [recommendations, setRecommendations] = useState<Map<number, Recommendation>>(
@@ -140,12 +129,13 @@ export function useProcessFlow(open: boolean) {
 
   const move = useCallback(
     (task: ProcessTask, project: Project) => {
-      update((d) => without(d, new Set([task.id])))
+      // Off the Inbox only: its growth or old-target question still stands.
+      remove([task.id], ['inbox'])
       moveToProject(task.id, project.id)
         .then(() => toastWithUndo(`Moved to ${project.name}`))
         .catch(fail)
     },
-    [update, toastWithUndo, fail],
+    [remove, toastWithUndo, fail],
   )
 
   const skip = useCallback((task: ProcessTask) => {
@@ -160,12 +150,12 @@ export function useProcessFlow(open: boolean) {
           .map((g) => ({ ...g, tasks: g.tasks.filter((t) => t.id !== task.id) }))
           .filter((g) => g.tasks.length > 1),
       )
-      update((d) => without(d, new Set([task.id])))
+      remove([task.id], ['inbox', 'growth', 'targets'])
       trashTask(task.id)
         .then(() => toastWithUndo('Moved to Trash', 1, () => setDuplicates(before)))
         .catch(fail)
     },
-    [duplicates, update, toastWithUndo, fail],
+    [duplicates, remove, toastWithUndo, fail],
   )
 
   const dismiss = useCallback((group: ShownDuplicateGroup) => {
@@ -180,7 +170,7 @@ export function useProcessFlow(open: boolean) {
     error,
     busy,
     setBusy,
-    update,
+    remove,
     toastWithUndo,
     fail,
     inboxQueue,
@@ -197,72 +187,86 @@ export function useProcessFlow(open: boolean) {
 
 /** The batch and per-row writes of the growth and target steps. */
 export function useProcessBatchActions(flow: ReturnType<typeof useProcessFlow>) {
-  const { update, toastWithUndo, fail, setBusy } = flow
+  const { remove, toastWithUndo, fail, setBusy } = flow
 
+  /**
+   * Grow the checked rows (one bulk edit per new horizon) and keep the rest
+   * (one bulk edit re-affirming them). If a later request fails, the earlier
+   * ones have landed: the error toast is followed by an Undo for exactly
+   * those, so nothing is left changed without a way back.
+   */
   const applyGrowth = useCallback(
     async (grow: GrowthItem[], keep: GrowthItem[]) => {
       setBusy(true)
+      const tally = newTally()
       try {
-        let entries = 0
         const byTarget = new Map<string, number[]>()
         for (const g of grow) byTarget.set(g.to, [...(byTarget.get(g.to) ?? []), g.task.id])
-        for (const [to, ids] of byTarget) entries += await bulkEditChunks(ids, { horizon: to })
+        for (const [to, ids] of byTarget) await bulkEditChunks(ids, { horizon: to }, tally)
         if (keep.length) {
-          entries += await bulkEditChunks(
+          await bulkEditChunks(
             keep.map((k) => k.task.id),
             { affirm_horizon: true },
+            tally,
           )
         }
-        update((d) => without(d, new Set([...grow, ...keep].map((g) => g.task.id))))
+        remove(
+          [...grow, ...keep].map((g) => g.task.id),
+          ['growth'],
+        )
         const parts = [grow.length && `Grew ${grow.length}`, keep.length && `kept ${keep.length}`]
-        toastWithUndo(parts.filter(Boolean).join(', '), entries)
+        toastWithUndo(parts.filter(Boolean).join(', '), tally.entries)
       } catch (err) {
         fail(err)
+        if (tally.entries > 0) toastWithUndo('Some of it was saved', tally.entries)
       } finally {
         setBusy(false)
       }
     },
-    [update, toastWithUndo, fail, setBusy],
+    [remove, toastWithUndo, fail, setBusy],
   )
 
   const doIt = useCallback(
     (item: GrowthItem) => {
-      update((d) => without(d, new Set([item.task.id])))
+      remove([item.task.id], ['growth'])
       targetToday([item.task.id])
         .then(() => toastWithUndo('Targeted today'))
         .catch(fail)
     },
-    [update, toastWithUndo, fail],
+    [remove, toastWithUndo, fail],
   )
 
   const raise = useCallback(
     (item: GrowthItem) => {
-      update((d) => without(d, new Set([item.task.id])))
+      remove([item.task.id], ['growth'])
       raisePriority(item.task)
         .then(() =>
           toastWithUndo(
-            `Raised to ${getPriorityOption(Math.min(item.task.priority + 1, 4)).label}`,
+            `Raised to ${getPriorityOption(Math.min(item.task.priority + 1, URGENT_PRIORITY)).label}`,
           ),
         )
         .catch(fail)
     },
-    [update, toastWithUndo, fail],
+    [remove, toastWithUndo, fail],
   )
 
   const removeTargets = useCallback(
     async (ids: number[]) => {
       setBusy(true)
+      const tally = newTally()
       try {
-        const entries = await bulkEditChunks(ids, { target_at: null, deadline_nag_off: true })
-        update((d) => without(d, new Set(ids)))
-        toastWithUndo(`Removed ${ids.length} target${ids.length === 1 ? '' : 's'}`, entries)
+        await bulkEditChunks(ids, { target_at: null, deadline_nag_off: true }, tally)
+        remove(ids, ['targets'])
+        const n = tally.affected
+        toastWithUndo(`Removed ${n} target${n === 1 ? '' : 's'}`, tally.entries)
       } catch (err) {
         fail(err)
+        if (tally.entries > 0) toastWithUndo('Some of it was saved', tally.entries)
       } finally {
         setBusy(false)
       }
     },
-    [update, toastWithUndo, fail, setBusy],
+    [remove, toastWithUndo, fail, setBusy],
   )
 
   return { applyGrowth, doIt, raise, removeTargets }

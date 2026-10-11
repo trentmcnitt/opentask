@@ -5,8 +5,8 @@
  * Every write goes through an endpoint that already exists and already logs
  * undo (PATCH, bulk edit, target today, DELETE), so Process adds no mutation
  * path of its own. Each call here is one undo entry, except `bulkEditChunks`,
- * which returns how many it made, so the toast's Undo can take back exactly
- * that many (`undoEntries`).
+ * which counts the ones it made into a `WriteTally`, so the toast's Undo can
+ * take back exactly that many (`undoEntries`).
  *
  * The two AI reads (`/api/process/recommend-projects`, `/api/process/duplicates`)
  * are optional: a 404 (AI off, or not deployed), an error or an empty answer
@@ -15,6 +15,7 @@
 
 import { apiFetch, jsonInit } from '@/lib/api-client'
 import { postUndoRedo } from '@/lib/undo-client'
+import { URGENT_PRIORITY } from '@/lib/priority'
 import type { HorizonValue } from '@/lib/task-segments'
 
 /** The task fields the modal shows. */
@@ -63,12 +64,13 @@ export interface DuplicateGroup {
 
 /** How many things Process has to work through (the menu's count hint). */
 export function processItemCount(data: ProcessData): number {
-  return (
-    data.inbox.length +
-    data.growth.length +
-    data.stale_targets.length +
-    data.stale_targets_with_deadline.length
-  )
+  // A task can be asked about in more than one step; count it once.
+  return new Set([
+    ...data.inbox.map((t) => t.id),
+    ...data.growth.map((g) => g.task.id),
+    ...data.stale_targets.map((s) => s.task.id),
+    ...data.stale_targets_with_deadline.map((s) => s.task.id),
+  ]).size
 }
 
 /**
@@ -155,32 +157,52 @@ export function targetToday(ids: number[]): Promise<unknown> {
 export function raisePriority(task: ProcessTask): Promise<unknown> {
   return apiFetch(
     `/api/tasks/${task.id}`,
-    jsonInit('PATCH', { priority: Math.min(task.priority + 1, 4), affirm_horizon: true }),
+    jsonInit('PATCH', {
+      priority: Math.min(task.priority + 1, URGENT_PRIORITY),
+      affirm_horizon: true,
+    }),
   )
 }
 
 const BULK_MAX = 500
 
+/** What a run of writes has done so far — kept up to date as each request lands. */
+export interface WriteTally {
+  /** Undo entries made (a request that changed nothing makes none). */
+  entries: number
+  /** Tasks changed. */
+  affected: number
+}
+
+export function newTally(): WriteTally {
+  return { entries: 0, affected: 0 }
+}
+
 /**
- * A bulk edit over any number of ids, in chunks the endpoint accepts. Returns
- * how many requests it made — each one undo entry. `include_task_ids` is
- * always the chunk itself: these are explicit picks, so a target removal must
- * not be filtered by the High/Urgent snooze sweep (`planBulkEditDates`).
+ * A bulk edit over any number of ids, in chunks the endpoint accepts, counted
+ * into `tally` as each chunk lands — so if a later chunk fails, the caller
+ * still knows exactly what the earlier ones did and can offer their Undo. A
+ * chunk that changed nothing logs no undo entry and is not counted.
+ * `include_task_ids` is always the chunk itself: these are explicit picks, so
+ * a target removal must not be filtered by the High/Urgent snooze sweep
+ * (`planBulkEditDates`).
  */
 export async function bulkEditChunks(
   ids: number[],
   changes: Record<string, unknown>,
-): Promise<number> {
-  let entries = 0
+  tally: WriteTally,
+): Promise<void> {
   for (let i = 0; i < ids.length; i += BULK_MAX) {
     const chunk = ids.slice(i, i + BULK_MAX)
-    await apiFetch(
+    const result = await apiFetch<{ tasks_affected: number }>(
       '/api/tasks/bulk/edit',
       jsonInit('POST', { ids: chunk, changes, include_task_ids: chunk }),
     )
-    entries++
+    if (result.tasks_affected > 0) {
+      tally.entries++
+      tally.affected += result.tasks_affected
+    }
   }
-  return entries
 }
 
 /**
@@ -196,9 +218,8 @@ export async function undoEntries(count: number): Promise<string | null> {
     const data = await postUndoRedo('undo', null)
     return data?.description ?? null
   }
-  const data = await apiFetch<{ description?: string; count?: number }>(
-    '/api/undo/batch',
-    jsonInit('POST', { count }),
-  )
-  return data?.description ?? `${count} changes`
+  // The batch route answers with counts only (and 400 when nothing is left).
+  const res = await fetch('/api/undo/batch', jsonInit('POST', { count }))
+  if (!res.ok) return null
+  return `${count} changes`
 }

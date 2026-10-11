@@ -57,16 +57,19 @@ export function ProcessModal({
     growth: data?.growth.length ?? 0,
     targets: (data?.stale_targets.length ?? 0) + (data?.stale_targets_with_deadline.length ?? 0),
   }
-  const step: StepId | null = chosen ?? STEP_ORDER.find((s) => counts[s] > 0) ?? null
+  // The step is pinned once there is something to show, so a step that
+  // fills in late (the AI's duplicates) never pulls the user off the one they
+  // are on, and a finished step stays, saying so, until they move on. Set
+  // during render: React's pattern for state derived from a previous render.
+  const firstWithWork = STEP_ORDER.find((s) => counts[s] > 0) ?? null
+  if (chosen === null && firstWithWork !== null) setChosen(firstWithWork)
+  const step: StepId | null = chosen ?? firstWithWork
   const visible = STEP_ORDER.filter((s) => counts[s] > 0 || s === step)
   const next = step
     ? STEP_ORDER.slice(STEP_ORDER.indexOf(step) + 1).find((s) => counts[s] > 0)
     : undefined
 
-  const close = () => {
-    setChosen(null)
-    onOpenChange(false)
-  }
+  const close = () => onOpenChange(false)
 
   return (
     <ProcessShell open={open} onClose={close}>

@@ -17,6 +17,7 @@ import { getInboxId } from '@/core/projects'
 import { planProcess, type GrowthAsk } from '@/lib/process-rules'
 import type { Task } from '@/types'
 import { eligibleTasks } from './task-segments'
+import { getTargetContext } from './target-context'
 
 export interface ProcessData {
   inbox_project_id: number | null
@@ -35,7 +36,7 @@ export function getProcessData(userId: number, timezone: string, now = new Date(
     inboxId === null
       ? []
       : tasks.filter((t) => t.project_id === inboxId).sort((a, b) => a.id - b.id)
-  const plan = planProcess(tasks, timezone, now)
+  const plan = planProcess(tasks, timezone, now, getTargetContext(userId))
   return {
     inbox_project_id: inboxId,
     inbox,

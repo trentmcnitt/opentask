@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { getPriorityOption } from '@/lib/priority'
+import { getPriorityOption, URGENT_PRIORITY } from '@/lib/priority'
 import type { GrowthItem } from '@/lib/process-client'
 import { HORIZON_LABELS, HORIZON_UNSET_LABEL, HORIZON_WORD } from '@/lib/task-model-words'
 
@@ -72,6 +72,7 @@ export function ProcessGrowthStep({
           type="button"
           variant="ghost"
           size="sm"
+          disabled={busy}
           onClick={() =>
             setKept(keep.length === 0 ? new Set(items.map((i) => i.task.id)) : new Set())
           }
@@ -117,7 +118,13 @@ function GrowthRow({
   const priority = getPriorityOption(item.task.priority)
   return (
     <li className="flex items-start gap-3 py-2" data-process-growth-row={item.task.id}>
-      <Checkbox id={id} checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={onToggle}
+        disabled={disabled}
+        className="mt-0.5"
+      />
       <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
         <span className="block text-sm break-words">{item.task.title}</span>
         <span className="text-muted-foreground block text-xs">
@@ -136,7 +143,7 @@ function GrowthRow({
           <Button type="button" variant="outline" size="xs" disabled={disabled} onClick={onDoIt}>
             Do it
           </Button>
-          {item.task.priority < 4 && (
+          {item.task.priority < URGENT_PRIORITY && (
             <Button type="button" variant="outline" size="xs" disabled={disabled} onClick={onRaise}>
               Raise
             </Button>

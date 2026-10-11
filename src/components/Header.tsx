@@ -150,6 +150,8 @@ export function Header({
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
   const [processOpen, setProcessOpen] = useState(false)
+  // Bumped on each opening: the modal remounts, so every Process starts fresh.
+  const [processSession, setProcessSession] = useState(0)
   const [menuOpened, setMenuOpened] = useState(false)
   const aiAvailable = useAiAvailable()
   // The AI Status item's dot: fetched the first time the menu opens, then kept.
@@ -322,7 +324,14 @@ export function Header({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                {timezone && <ProcessMenuItem onSelect={() => setProcessOpen(true)} />}
+                {timezone && (
+                  <ProcessMenuItem
+                    onSelect={() => {
+                      setProcessSession((n) => n + 1)
+                      setProcessOpen(true)
+                    }}
+                  />
+                )}
                 {aiAvailable && (
                   <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                     <Bot className="size-4" />
@@ -399,7 +408,12 @@ export function Header({
         <AIStatusModal open={aiStatusOpen} onOpenChange={setAiStatusOpen} timezone={timezone} />
       )}
       {timezone && (
-        <ProcessModal open={processOpen} onOpenChange={setProcessOpen} timezone={timezone} />
+        <ProcessModal
+          key={processSession}
+          open={processOpen}
+          onOpenChange={setProcessOpen}
+          timezone={timezone}
+        />
       )}
     </TooltipProvider>
   )

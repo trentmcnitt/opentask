@@ -3,9 +3,10 @@
  * opened from the top bar's menu: sort an Inbox task into a project, grow a
  * long-unchanged horizon, and remove an old target, then Undo it.
  *
- * The E2E database is shared by every spec, so this one only ever acts on the
- * tasks it creates: it skips other Inbox tasks, and unchecks other rows before
- * a batch write. With no AI in E2E, the duplicates step is absent and no
+ * The E2E database is shared by every spec, so this one acts as little as it
+ * can on tasks it did not create: it skips other Inbox tasks, and unchecks
+ * other rows before a batch write (an unchecked growth row is a "keep", which
+ * only restarts that task's horizon clock; an unchecked target is untouched). With no AI in E2E, the duplicates step is absent and no
  * project is highlighted — Process must work with AI off.
  */
 import path from 'path'

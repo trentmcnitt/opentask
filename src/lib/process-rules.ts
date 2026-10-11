@@ -35,6 +35,7 @@ import {
   targetAgeDays,
   targetIsToday,
   type HorizonValue,
+  type TargetContext,
 } from '@/lib/task-segments'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -61,9 +62,6 @@ export const GROWTH_ASK_DAYS: Record<Exclude<HorizonValue, 'eventually'>, number
  * raise priority.'").
  */
 export const GROWTH_ACT_MIN_PRIORITY = 2
-
-/** The highest priority (P4 Urgent) — "raise priority" stops here. */
-export const MAX_PRIORITY = 4
 
 /** The fields the Process rules read. */
 export interface ProcessTaskFields {
@@ -101,8 +99,13 @@ function setHorizon(value: string | null): HorizonValue | null {
  * (`deadlineHorizon`, within 90 days or past) is never asked — growing the set
  * horizon would change nothing it shows, and the deadline already decides.
  */
-export function growthAsk(task: ProcessTaskFields, timezone: string, now: Date): GrowthAsk | null {
-  if (targetIsToday(effectiveTargetAt(task), timezone, now)) return null
+export function growthAsk(
+  task: ProcessTaskFields,
+  timezone: string,
+  now: Date,
+  ctx: TargetContext | null = null,
+): GrowthAsk | null {
+  if (targetIsToday(effectiveTargetAt(task, ctx), timezone, now)) return null
   if (deadlineHorizon(task.deadline_at, now) !== null) return null
   const from = setHorizon(task.horizon)
   const on = from ?? UNSET_HORIZON
@@ -123,8 +126,9 @@ export function staleTargetAge(
   task: ProcessTaskFields,
   timezone: string,
   now: Date,
+  ctx: TargetContext | null = null,
 ): number | null {
-  const age = targetAgeDays(task, timezone, now)
+  const age = targetAgeDays(task, timezone, now, ctx)
   return age !== null && age >= STALE_TARGET_DAYS ? age : null
 }
 
@@ -143,15 +147,17 @@ export function planProcess<T extends ProcessTaskFields>(
   tasks: T[],
   timezone: string,
   now: Date,
+  /** The user's target context (`getTargetContext`), so an implied deadline target lands where the dashboard puts it. */
+  ctx: TargetContext | null = null,
 ): ProcessPlan<T> {
   const plan: ProcessPlan<T> = { growth: [], staleTargets: [], staleTargetsWithDeadline: [] }
   for (const task of tasks) {
-    const age = staleTargetAge(task, timezone, now)
+    const age = staleTargetAge(task, timezone, now, ctx)
     if (age !== null) {
       ;(task.deadline_at ? plan.staleTargetsWithDeadline : plan.staleTargets).push({ task, age })
       continue
     }
-    const ask = growthAsk(task, timezone, now)
+    const ask = growthAsk(task, timezone, now, ctx)
     if (ask) plan.growth.push({ task, ask })
   }
   plan.growth.sort((a, b) => b.ask.days_on_horizon - a.ask.days_on_horizon || a.task.id - b.task.id)
