@@ -185,6 +185,22 @@ enum ReminderStackPreviewData {
         snoozeResult: nil, slots: slots, at: at(8, 47)
     )
 
+    /// The Upcoming segment (2026-10-12): "Tasks · Upcoming · 1 left", the
+    /// row's target and the deadline's gap under the title.
+    static let upcomingCard: WatchWidgetEntry = ReminderStackTimeline.entry(
+        groups: groups(considered: [11: 1]), tasks: [], skipped: { _ in [] }, pendingDone: [],
+        segments: [TaskSegmentDTO(horizon: "upcoming", tasks: [
+            SegmentTaskDTO(
+                task: TaskDTO(
+                    id: 9301, title: "Renew the car registration", dueAt: "2026-09-25T14:00:00.000Z",
+                    deadlineAt: "2026-09-29T22:00:00.000Z"
+                ),
+                state: .waiting, recurring: false
+            ),
+        ])],
+        snoozeResult: nil, slots: slots, at: at(8, 47)
+    )
+
     /// The complaint screenshot's state, redone: Early morning, one
     /// considered, "Breakfast ( Oatmeal, Berries, Walnuts )" next.
     static let supplements = entry(groups(considered: [11: 1]), at: at(8, 47))
@@ -245,6 +261,12 @@ enum ReminderStackPreviewData {
     ReminderStackWidget()
 } timeline: {
     ReminderStackPreviewData.segmentCard
+}
+
+#Preview("Upcoming segment card", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.upcomingCard
 }
 
 #Preview("Breakfast (the complaint)", as: .accessoryRectangular) {

@@ -125,12 +125,19 @@ enum WatchPreviewData {
         let day: TimeInterval = 24 * 60 * 60
         let soon = DateHelpers.formatISO(Date().addingTimeInterval(3 * day))
         let deadline = DateHelpers.formatISO(Date().addingTimeInterval(6 * day))
+        let tomorrow = DateHelpers.formatISO(Date().addingTimeInterval(day))
         return [
             TaskSegmentDTO(horizon: "days", tasks: [
                 SegmentTaskDTO(task: TaskDTO(id: 9101, title: "Call the insurance office about the renewal letter", priority: 3, horizon: "days"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9102, title: "Fix the squeaky gate hinge", dueAt: soon, horizon: "days"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9103, title: "Book the dentist for the kids", deadlineAt: deadline, horizon: "weeks"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Return the library books", horizon: "days"), state: .considered),
+            ]),
+            // Upcoming (2026-10-12), after Days: a one-off with a deadline
+            // and a repeating task — target dates, never a horizon word.
+            TaskSegmentDTO(horizon: "upcoming", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Renew the car registration", priority: 2, dueAt: tomorrow, deadlineAt: deadline, horizon: "weeks"), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the balcony plants", dueAt: soon, rrule: "FREQ=DAILY;INTERVAL=3"), state: .waiting, recurring: true),
             ]),
         ]
     }
