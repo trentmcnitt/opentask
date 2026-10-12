@@ -113,6 +113,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   last_considered_at: STR_N,
   segment_deferred_at: STR_N,
   segment_targeted_at: STR_N,
+  target_set_at: STR_N,
   deadline_nag_off: BOOL,
   target_at: STR_N,
   last_notified_at: STR_N,
@@ -195,6 +196,7 @@ const REMINDER_FIXTURES = [
   'reminders-after-did',
   'reminders',
   'reminders-segments',
+  'reminders-upcoming',
 ]
 
 function groups(name: string): Group[] {
@@ -246,8 +248,8 @@ describe('contract fixtures match the TS types', () => {
         }
       }
     }
-    // Two daily rows, weekly, monthly — in each of the four captures.
-    expect(seen).toBe(16)
+    // Two daily rows, weekly, monthly — in each of the five captures.
+    expect(seen).toBe(20)
   })
 
   test('group counts agree with the shared counting helpers', () => {
@@ -289,21 +291,51 @@ describe('contract fixtures match the TS types', () => {
     }
   })
 
-  test('task segments: each row is a FormattedTask plus segment_state', () => {
+  test('task segments: each row is a FormattedTask plus segment_state and recurring', () => {
     // 2026-10-10. A top-level array beside `groups`, never inside it.
+    // 2026-10-12: Upcoming is one more entry, `horizon: "upcoming"`, and every
+    // row says whether it is a repeating task's occurrence (`recurring`).
     const segs = data('reminders-segments').task_segments as Obj[]
     expect(segs.length).toBe(1)
-    for (const seg of segs) {
-      expect(['days', 'weeks', 'months', 'eventually']).toContain(seg.horizon)
+    const upcoming = data('reminders-upcoming').task_segments as Obj[]
+    for (const seg of [...segs, ...upcoming]) {
+      expect(['days', 'upcoming', 'weeks', 'months', 'eventually']).toContain(seg.horizon)
       for (const k of ['waiting', 'considered', 'deferred']) expect(typeof seg[k]).toBe('number')
       expect(typeof seg.nudge).toBe('boolean')
       for (const row of seg.tasks as Obj[]) {
         expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
-        const task = Object.fromEntries(Object.entries(row).filter(([k]) => k !== 'segment_state'))
+        expect(typeof row.recurring).toBe('boolean')
+        const task = Object.fromEntries(
+          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+        )
         expectShape(task, TASK, `segment task ${row.id}`)
       }
     }
     expect(data('task-segments-consider').considered).toBe(1)
+  })
+
+  test('Upcoming: a one-off with a deadline and a repeating row, in target order', () => {
+    const seg = (data('reminders-upcoming').task_segments as Obj[]).find(
+      (s) => s.horizon === 'upcoming',
+    )!
+    const rows = seg.tasks as Obj[]
+    expect(rows.map((r) => r.recurring)).toEqual([false, true])
+    expect(rows[0].deadline_at).not.toBeNull()
+    expect(rows[1].rrule).not.toBeNull()
+    for (const r of rows) expect(r.segment_state).toBe('waiting')
+    expect(seg.waiting).toBe(2)
+  })
+
+  test('target-today reports the repeating tasks it skipped', () => {
+    const d = data('task-segments-target-today-skipped')
+    expect(d.affected).toBe(0)
+    expect(Array.isArray(d.skipped_recurring)).toBe(true)
+    expect((d.skipped_recurring as unknown[]).length).toBe(1)
+    expect(typeof d.until).toBe('string')
+  })
+
+  test('user preferences carry check_in_day, 1 (Monday) … 7 (Sunday)', () => {
+    expect(data('user-preferences').check_in_day).toBe(6)
   })
 
   test('the progress response is a FormattedTask plus met/description', () => {

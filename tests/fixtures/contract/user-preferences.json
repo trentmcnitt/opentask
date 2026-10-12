@@ -24,6 +24,7 @@
     "default_snooze_option": "60",
     "bulk_snooze_default": "next_period",
     "week_start": "sunday",
+    "check_in_day": 6,
     "quota_prompt_slot_id": null,
     "default_reminder_slot_id": null,
     "quota_prompts_enabled": true,

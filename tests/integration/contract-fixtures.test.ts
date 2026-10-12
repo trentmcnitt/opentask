@@ -55,6 +55,13 @@
  *     POST /api/tasks/bulk/snooze               → bulk-snooze.json
  *        ids: [overdue, dateless, urgent, evening reminder], an absolute `until`
  *        (the widgets' per-row and selected-task snooze)
+ * 10. a days task considered from its segment   → task-segments-consider.json,
+ *     GET  /api/reminders                       → reminders-segments.json
+ * 11. Upcoming: a one-off (target + deadline) and a repeating task, both
+ *     targeted 10 days ago (backdated in the DB), due tomorrow
+ *     GET  /api/reminders                       → reminders-upcoming.json
+ *     POST /api/task-segments/target-today [repeating]
+ *                                               → task-segments-target-today-skipped.json
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -90,6 +97,8 @@
 import fs from 'fs'
 import path from 'path'
 import prettier from 'prettier'
+import Database from 'better-sqlite3'
+import { DateTime } from 'luxon'
 import { describe, test, expect, beforeAll } from 'vitest'
 import { apiFetchB, resetTestData } from './helpers'
 
@@ -172,6 +181,7 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
       case 'id':
         return ids.map(idKind(parent), value)
       case 'task_id':
+      case 'skipped_recurring': // target-today's skipped repeating tasks (2026-10-12)
         return ids.map('task', value)
       case 'slot_id':
       case 'quota_prompt_slot_id':
@@ -317,6 +327,18 @@ interface Prompt {
   prompt_key: string
   task_id: number
   number: number | null
+}
+
+/** `target_set_at` can't be set over the API; backdate it in the test DB. */
+function backdateTargetSet(taskIds: number[], days: number) {
+  const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
+  try {
+    const when = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString()
+    const stmt = db.prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
+    for (const id of taskIds) stmt.run(when, id)
+  } finally {
+    db.close()
+  }
 }
 
 function prompts(reminders: Json): Prompt[] {
@@ -469,6 +491,30 @@ describe('contract fixtures (native clients)', () => {
       ids: [created.segment],
     })
     captured['reminders-segments'] = await call('/api/reminders')
+
+    // 11. Upcoming (2026-10-12): a one-off with a target tomorrow and a
+    //     deadline after it, and a repeating task whose next occurrence is
+    //     tomorrow — both targeted 10 days ago, so today is a heads-up day
+    //     (wait 11: T−3 has passed, T−1 is today). `target_set_at` can't be set
+    //     over the API (every write stamps now), so it is backdated in the DB.
+    //     Then Today on the repeating row: skipped, `skipped_recurring`.
+    const tomorrow = DateTime.now().setZone('America/New_York').plus({ days: 1 })
+    const at9 = tomorrow.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toISO()
+    await make('upcomingOneOff', {
+      title: 'Renew the passport',
+      target_at: at9,
+      deadline_at: tomorrow.plus({ days: 4 }).set({ hour: 23, minute: 59 }).toUTC().toISO(),
+    })
+    await make('upcomingRepeating', {
+      title: 'Water the plants',
+      rrule: 'FREQ=DAILY;INTERVAL=3;BYHOUR=9;BYMINUTE=0',
+      target_at: at9,
+    })
+    backdateTargetSet([created.upcomingOneOff, created.upcomingRepeating], 10)
+    captured['reminders-upcoming'] = await call('/api/reminders')
+    captured['task-segments-target-today-skipped'] = await call('/api/task-segments/target-today', {
+      ids: [created.upcomingRepeating],
+    })
   })
 
   const names = [
@@ -485,6 +531,8 @@ describe('contract fixtures (native clients)', () => {
     'undo-status',
     'task-segments-consider',
     'reminders-segments',
+    'reminders-upcoming',
+    'task-segments-target-today-skipped',
     'quota-prompts-restore',
     'task-counts',
     'bulk-snooze',

@@ -9,7 +9,9 @@
  * (the dashboard's Just now card). Body: { ids: [taskId, ...], at? } — `at`
  * (2026-10-12) is the moment the Today button's long-press picker chose, today
  * or later; omitted, the time above. One undo entry (bulk edit). Response:
- * { until, affected }.
+ * { until, affected, skipped_recurring }. Repeating tasks are SKIPPED and listed
+ * in `skipped_recurring` (2026-10-12): re-targeting one resets its occurrence
+ * (the double fire and the deadline drift) — done early is the safe gesture.
  */
 
 import { NextRequest } from 'next/server'
@@ -26,8 +28,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const { ids, at } = validateSegmentTarget(await request.json())
-    const { until, affected } = targetTasksToday(user.id, user.timezone, ids, at)
-    return success({ until, affected })
+    const result = targetTasksToday(user.id, user.timezone, ids, at)
+    return success(result)
   } catch (err) {
     if (err instanceof ZodError) return handleZodError(err)
     if (!(err instanceof AppError))

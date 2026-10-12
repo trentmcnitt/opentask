@@ -1,20 +1,34 @@
 /**
- * Task segments and the target age — the pure rules of the 2026-10-10 task
- * model (docs/TASK-MODEL.md § Deadline, target, horizon). Shared by the server
- * (`src/core/tasks/task-segments.ts`) and the web UI, so both read a task the
- * same way.
+ * THE DATE RULES of the task model — the one module that says, for any task
+ * and any local day, where it shows (docs/TASK-MODEL.md § Deadline, target,
+ * horizon; § Upcoming). Shared by the server (`src/core/tasks/task-segments.ts`,
+ * which `GET /api/reminders` serves to the native apps) and the web UI, so every
+ * surface reads a task the same way. Each constant is named here ONCE; nothing
+ * else restates one.
+ *
+ * In order: the deadline's automatic target (`DEADLINE_LEAD_DAYS`) and its
+ * pull-in (`DEADLINE_PULL_DAYS`); the effective horizon; the check-in day and
+ * the horizon segments' days (`latestSegmentDay`); segment membership and
+ * carry-over (`segmentState`); the target age; the deadline cap; the recurring
+ * deadline; and UPCOMING — the wait, the heads-up days and their carry-over
+ * (`headsUpDays`, `upcomingState`). Batch 2 (attempts, age thresholds, the
+ * target ≤ deadline cap) adds its rules here, beside the ones they extend.
  *
  * THE MODEL IN ONE PARAGRAPH. A task's `due_at` is its TARGET: when nagging
  * starts. `deadline_at` is the real cutoff. `horizon` is how soon it should get
- * done. Before its target arrives (or with no target) a task sits in a TASK
- * SEGMENT on the reminders screen, for awareness; once the target arrives it
+ * done. With no target a one-off sits in a TASK SEGMENT on the reminders
+ * screen, for awareness; with a target it is quiet until the date, apart from
+ * its Upcoming heads-ups (2026-10-12); once the target arrives it
  * leaves the segment and is "over target" — today's overdue under a new name,
  * nagged on the dashboard, in notifications and in the badge. Never both.
  *
  * ONE SEGMENT PER HORIZON, each on its own day (Trent, 10-10): days every day,
- * weeks every Saturday, months the first Saturday of the month, eventually the
- * first Saturday of each quarter (Jan, Apr, Jul, Oct — quarterly per Trent; the
- * month is this build's call). A task the user has not considered since its
+ * weeks every check-in day (`users.check_in_day`, Saturday by default — §3,
+ * 2026-10-12), months the first check-in day of the month, eventually the
+ * first check-in day of each quarter (Jan, Apr, Jul, Oct — quarterly per
+ * Trent; the month is this build's call). Since 2026-10-12 a one-off with a
+ * target of its own is in none of them: it is quiet until its date, apart from
+ * the Upcoming heads-ups (`upcomingState`, below). A task the user has not considered since its
  * segment last came round keeps showing, day after day, until it is — "anything
  * not considered shows again the next day until it is".
  */
@@ -23,6 +37,24 @@ import { DateTime } from 'luxon'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
+
+/**
+ * A task segment's identity: a horizon, or Upcoming (2026-10-12, the heads-up
+ * segment — `upcomingState`, below). In the API, `horizon: "upcoming"`.
+ */
+export type SegmentKind = HorizonValue | 'upcoming'
+
+/**
+ * The order the screens walk the segments: Upcoming directly after Days and
+ * before Weeks, on a check-in day too (spec §2).
+ */
+export const SEGMENT_ORDER: readonly SegmentKind[] = [
+  'days',
+  'upcoming',
+  'weeks',
+  'months',
+  'eventually',
+]
 
 /** Unset reads as weeks — but is never reported as set (`task.horizon` stays null). */
 export const UNSET_HORIZON: HorizonValue = 'weeks'
@@ -175,31 +207,55 @@ export function effectiveHorizon(
   return sooner(set, deadlineHorizon(task.deadline_at, now))
 }
 
-const SATURDAY = 6
+/**
+ * The weekday the horizon segments come round on (2026-10-12, spec §3):
+ * `users.check_in_day`, in Luxon's numbering — 1 = Monday … 7 = Sunday.
+ * Saturday by default, the day the segments always used. Independent of
+ * `week_start` (the quota changeover), and no part of Upcoming.
+ */
+export type CheckInDay = 1 | 2 | 3 | 4 | 5 | 6 | 7
+export const CHECK_IN_DAY_DEFAULT: CheckInDay = 6
 
-function firstSaturdayOf(month: DateTime): DateTime {
+/** A stored/sent value as a CheckInDay — anything else reads as the default. */
+export function coerceCheckInDay(value: unknown): CheckInDay {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7
+    ? (value as CheckInDay)
+    : CHECK_IN_DAY_DEFAULT
+}
+
+function firstCheckInDayOf(month: DateTime, checkInDay: CheckInDay): DateTime {
   const first = month.startOf('month')
-  return first.plus({ days: (SATURDAY - first.weekday + 7) % 7 })
+  return first.plus({ days: (checkInDay - first.weekday + 7) % 7 })
 }
 
 /**
  * The most recent day, on or before `today`, that this horizon's segment comes
- * round. `today` is a local start-of-day DateTime.
+ * round. `today` is a local start-of-day DateTime. Weeks: every check-in day;
+ * months: the first check-in day of the month; eventually: the first check-in
+ * day of January, April, July and October.
  */
-export function latestSegmentDay(horizon: HorizonValue, today: DateTime): DateTime {
+export function latestSegmentDay(
+  horizon: HorizonValue,
+  today: DateTime,
+  checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
+): DateTime {
   switch (horizon) {
     case 'days':
       return today
     case 'weeks':
-      return today.minus({ days: (today.weekday - SATURDAY + 7) % 7 })
+      return today.minus({ days: (today.weekday - checkInDay + 7) % 7 })
     case 'months': {
-      const thisMonth = firstSaturdayOf(today)
-      return thisMonth <= today ? thisMonth : firstSaturdayOf(today.minus({ months: 1 }))
+      const thisMonth = firstCheckInDayOf(today, checkInDay)
+      return thisMonth <= today
+        ? thisMonth
+        : firstCheckInDayOf(today.minus({ months: 1 }), checkInDay)
     }
     case 'eventually': {
       const quarterStart = today.startOf('quarter')
-      const thisQuarter = firstSaturdayOf(quarterStart)
-      return thisQuarter <= today ? thisQuarter : firstSaturdayOf(quarterStart.minus({ months: 3 }))
+      const thisQuarter = firstCheckInDayOf(quarterStart, checkInDay)
+      return thisQuarter <= today
+        ? thisQuarter
+        : firstCheckInDayOf(quarterStart.minus({ months: 3 }), checkInDay)
     }
   }
 }
@@ -217,7 +273,8 @@ export interface SegmentTaskFields {
 
 export type SegmentState = 'waiting' | 'considered' | 'deferred'
 
-function localDay(iso: string, timezone: string): DateTime {
+/** The local start of the day `iso` falls on, in `timezone`. */
+export function localDay(iso: string, timezone: string): DateTime {
   return DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).startOf('day')
 }
 
@@ -245,13 +302,21 @@ export function targetIsToday(dueAt: string | null, timezone: string, now: Date)
  *   created ON a shown day appears that day — a new days task shows today
  *   (Trent's rule, 2026-10-11: anything not considered is reshown until it is).
  * - Deferred today (Defer All) → 'deferred': off today's list, back tomorrow.
+ *
+ * A TARGET MAKES A TASK QUIET UNTIL ITS DATE (2026-10-12, spec §1): a one-off
+ * with a target of its own (`due_at`) is in no horizon segment at all. Before
+ * its target arrives it shows only on its Upcoming heads-up days
+ * (`upcomingState`, below); after, it is over target. A deadline-only task (no
+ * target of its own) stays here, its deadline pulling the horizon in.
  */
 export function segmentState(
   task: SegmentTaskFields,
   timezone: string,
   now: Date,
   ctx: TargetContext | null = clientContext,
+  checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
 ): { horizon: HorizonValue; state: SegmentState } | null {
+  if (task.due_at !== null) return null
   if (targetIsToday(effectiveTargetAt(task, ctx, now), timezone, now)) return null
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const horizon = effectiveHorizon(task, now)
@@ -259,7 +324,7 @@ export function segmentState(
   if (task.last_considered_at && +localDay(task.last_considered_at, timezone) === +today) {
     return { horizon, state: 'considered' }
   }
-  const shownDay = latestSegmentDay(horizon, today)
+  const shownDay = latestSegmentDay(horizon, today, checkInDay)
   // Considered on or after the segment's latest shown day: done with it.
   if (task.last_considered_at && shownDay <= localDay(task.last_considered_at, timezone)) {
     return null
@@ -371,4 +436,170 @@ export function advanceDeadline(
     })
     .toUTC()
     .toISO()!
+}
+
+// ===========================================================================
+// UPCOMING — the heads-up segment
+// ===========================================================================
+
+/**
+ * UPCOMING — the heads-up segment (2026-10-12, spec §2; docs/TASK-MODEL.md
+ * § Upcoming). Read by the server (`src/core/tasks/task-segments.ts`) and the web UI.
+ *
+ * A target makes a task quiet until its date (spec §1). Upcoming is the one
+ * exception: a task whose target hasn't arrived shows on at most two heads-up
+ * days before it. It holds one-off tasks with a target of their OWN (a
+ * deadline-only task stays in its horizon segment, its deadline pulling it in)
+ * and repeating tasks' next occurrences — never reminders or quotas.
+ *
+ * THE RULE. wait = the target's local day − the local day of `target_set_at`
+ * (when the target was last set, by any path). Then:
+ *   1. the day before the target, if wait ≥ 2 — a task made today for
+ *      tomorrow gets none: the day before is the day you made it;
+ *   2. if wait > 7, one earlier heads-up: 3 days before when wait < 16,
+ *      4 days before when it is 16 or more.
+ * LOCAL DAYS throughout (Luxon calendar days in the user's zone) — UTC days or
+ * 24-hour math give the wrong wait across DST and late at night.
+ *
+ * The EFFECTIVE target (`effectiveTargetAt`): a target set after its own
+ * deadline counts to the deadline's automatic target.
+ *
+ * CARRY-OVER. An untapped heads-up shows again the next day — as the same,
+ * single row — until it is considered or the target's day comes: it shows
+ * while the latest heads-up day on or before today is later than the local day
+ * of `last_considered_at`. On the target's day it leaves (it is over target).
+ * Never counted over target, never notified. The check-in day plays no part.
+ */
+
+/** The day-before heads-up needs at least this wait (in local days). */
+export const HEADS_UP_DAY_BEFORE_MIN_WAIT = 2
+/** Over this wait, one earlier heads-up as well. */
+export const HEADS_UP_EARLY_AFTER_WAIT = 7
+/** At or over this wait the earlier heads-up is 4 days out, under it 3. */
+export const HEADS_UP_LONG_WAIT = 16
+export const HEADS_UP_EARLY_LEAD_DAYS = 3
+export const HEADS_UP_LONG_LEAD_DAYS = 4
+
+/** Whole local days from `setDay` to `targetDay` (both local start-of-day). */
+export function waitDays(targetDay: DateTime, setDay: DateTime): number {
+  return Math.round(targetDay.diff(setDay, 'days').days)
+}
+
+/**
+ * The heads-up days for a target set on `setDay`, earliest first (0, 1 or 2
+ * local start-of-day DateTimes). Calendar arithmetic, so a DST change between
+ * them still lands on local midnight.
+ */
+export function headsUpDays(targetDay: DateTime, setDay: DateTime): DateTime[] {
+  const wait = waitDays(targetDay, setDay)
+  const days: DateTime[] = []
+  if (wait > HEADS_UP_EARLY_AFTER_WAIT) {
+    const lead = wait < HEADS_UP_LONG_WAIT ? HEADS_UP_EARLY_LEAD_DAYS : HEADS_UP_LONG_LEAD_DAYS
+    days.push(targetDay.minus({ days: lead }))
+  }
+  if (wait >= HEADS_UP_DAY_BEFORE_MIN_WAIT) days.push(targetDay.minus({ days: 1 }))
+  return days
+}
+
+/** The fields the Upcoming rule reads. */
+export interface UpcomingTaskFields extends TargetFields {
+  target_set_at: string | null
+  created_at: string
+  last_completed_at?: string | null
+  last_considered_at: string | null
+  segment_deferred_at: string | null
+}
+
+/**
+ * When the target was set: `target_set_at`, or — for a row from before the
+ * column existed — `created_at`, and for a repeating task the later of that
+ * and its last completion (the migration's seed, read the same way).
+ */
+export function targetSetAtOf(task: UpcomingTaskFields): string {
+  if (task.target_set_at) return task.target_set_at
+  const done = task.rrule ? (task.last_completed_at ?? null) : null
+  return done && Date.parse(done) > Date.parse(task.created_at) ? done : task.created_at
+}
+
+/**
+ * Whether the task belongs in Upcoming at all (whatever today is): a target
+ * of its own on a one-off, or a repeating task's occurrence. The caller has
+ * already left out reminders, quotas and anything done or deleted.
+ */
+export function upcomingCandidate(task: Pick<TargetFields, 'due_at' | 'rrule'>): boolean {
+  return task.due_at !== null
+}
+
+/**
+ * Where the task stands in today's Upcoming, or null when it is not there:
+ * - its effective target is today or earlier (over target), or there is none;
+ * - no heads-up day has come yet;
+ * - it was considered on or after the latest heads-up day (but not today).
+ * Considered today → 'considered' (listed ticked, so "X of Y" and put-back
+ * work); Defer All today → 'deferred'; otherwise 'waiting'. `target` is the
+ * effective target the row is ordered by.
+ */
+export function upcomingState(
+  task: UpcomingTaskFields,
+  timezone: string,
+  now: Date,
+  ctx: TargetContext | null = null,
+): { state: SegmentState; target: string } | null {
+  if (!upcomingCandidate(task)) return null
+  const target = effectiveTargetAt(task, ctx ?? undefined, now)
+  if (!target) return null
+  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  const targetDay = localDay(target, timezone)
+  if (targetDay <= today) return null
+
+  const heads = headsUpDays(targetDay, localDay(targetSetAtOf(task), timezone))
+  const latest = [...heads].reverse().find((d) => d <= today)
+  if (!latest) return null
+
+  const considered = task.last_considered_at ? localDay(task.last_considered_at, timezone) : null
+  if (considered && +considered === +today) return { state: 'considered', target }
+  if (considered && considered >= latest) return null
+  if (task.segment_deferred_at && +localDay(task.segment_deferred_at, timezone) === +today) {
+    return { state: 'deferred', target }
+  }
+  return { state: 'waiting', target }
+}
+
+/**
+ * The row's gap text (spec §2): "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)".
+ * No deadline: "Target Tue Nov 3". A target of the task's own set AFTER its
+ * deadline — the deadline's automatic target is the one that counts — names
+ * its own target and says so: "Target Mon Oct 26 · deadline Fri Oct 23
+ * (deadline before target)". A deadline the same day as the target: "(same
+ * day)". Returned in parts so the row can make the target a chip.
+ */
+export function upcomingGap(
+  task: Pick<TargetFields, 'due_at' | 'deadline_at'>,
+  timezone: string,
+): { target: string | null; deadline: string | null } {
+  const fmt = (iso: string) =>
+    DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
+  const target = task.due_at ? `Target ${fmt(task.due_at)}` : null
+  if (!task.deadline_at) return { target, deadline: null }
+  const deadline = `deadline ${fmt(task.deadline_at)}`
+  if (!task.due_at) return { target, deadline }
+  const gap = waitDays(localDay(task.deadline_at, timezone), localDay(task.due_at, timezone))
+  if (Date.parse(task.deadline_at) < Date.parse(task.due_at) && gap <= 0) {
+    return { target, deadline: `${deadline} (deadline before target)` }
+  }
+  return { target, deadline: gap === 0 ? `${deadline} (same day)` : `${deadline} (+${gap}d)` }
+}
+
+/**
+ * Whether an Upcoming row offers Today (and its picker) and Remove target
+ * (2026-10-12). Today: one-off rows only — target-today skips a repeating
+ * task (ruling Q1). Remove target: one-off rows with NO deadline — removing a
+ * repeating task's target would take the recurrence with it, and what Remove
+ * target does to a deadline task is being redesigned with Trent.
+ */
+export function upcomingRowActions(row: {
+  recurring: boolean
+  task: { deadline_at: string | null }
+}): { today: boolean; removeTarget: boolean } {
+  return { today: !row.recurring, removeTarget: !row.recurring && row.task.deadline_at === null }
 }

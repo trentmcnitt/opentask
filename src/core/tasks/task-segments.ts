@@ -31,12 +31,15 @@ import { targetTodayTimeFor } from '@/lib/snooze'
 import { DateTime } from 'luxon'
 import type { Task } from '@/types'
 import {
-  HORIZON_ORDER,
   SEGMENT_NUDGE_THRESHOLD,
+  SEGMENT_ORDER,
+  coerceCheckInDay,
   segmentState,
-  type HorizonValue,
+  type CheckInDay,
+  type SegmentKind,
   type SegmentState,
 } from '@/lib/task-segments'
+import { upcomingCandidate, upcomingState } from '@/lib/task-segments'
 import { rowToTask, taskColumns, type TaskRow } from './read'
 import { bulkEdit } from './bulk'
 
@@ -45,8 +48,10 @@ export interface SegmentTask {
   state: SegmentState
 }
 
+export { SEGMENT_ORDER, type SegmentKind }
+
 export interface TaskSegment {
-  horizon: HorizonValue
+  horizon: SegmentKind
   tasks: SegmentTask[]
   waiting: number
   considered: number
@@ -72,34 +77,87 @@ export function eligibleTasks(userId: number): Task[] {
 }
 
 /**
- * Today's task segments, in the order the screen walks them (days, weeks,
- * months, eventually). A segment appears only on a day it has items. Within
- * one: priority, then id — horizon decides WHETHER a task shows, never where,
- * so acting on one never reorders the rest under the finger (the 09-05 rule).
+ * The user's REPEATING tasks for Upcoming (2026-10-12, ruling Q2): own, open,
+ * recurring, with a next occurrence — never a reminder (`is_reminder`) or a
+ * quota (`isTracked`), which have their own rows on the same screen.
+ */
+function repeatingTasks(userId: number): Task[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT ${taskColumns()} FROM tasks
+       WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
+         AND rrule IS NOT NULL AND due_at IS NOT NULL
+         AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1`,
+    )
+    .all(userId) as TaskRow[]
+  return rows.map(rowToTask)
+}
+
+/** The user's check-in day (`users.check_in_day`, §3) — Saturday unless set. */
+export function getCheckInDay(userId: number): CheckInDay {
+  const row = getDb().prepare('SELECT check_in_day FROM users WHERE id = ?').get(userId) as
+    | { check_in_day: number }
+    | undefined
+  return coerceCheckInDay(row?.check_in_day)
+}
+
+function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
+  const count = (s: SegmentState) => tasks.filter((t) => t.state === s).length
+  return {
+    horizon,
+    tasks,
+    waiting: count('waiting'),
+    considered: count('considered'),
+    deferred: count('deferred'),
+    nudge: count('waiting') > SEGMENT_NUDGE_THRESHOLD,
+  }
+}
+
+/**
+ * Today's task segments, in the order the screen walks them (days, upcoming,
+ * weeks, months, eventually). A segment appears only on a day it has items.
+ * Within a horizon segment: priority, then id — horizon decides WHETHER a task
+ * shows, never where, so acting on one never reorders the rest under the
+ * finger (the 09-05 rule). Within Upcoming: the effective target, then id —
+ * the order the dates come in.
+ *
+ * A one-off with a target of its own is in no horizon segment (spec §1): it
+ * shows only in Upcoming, on its heads-up days.
  */
 export function getTaskSegments(userId: number, timezone: string, now = new Date()): TaskSegment[] {
-  const byHorizon = new Map<HorizonValue, SegmentTask[]>()
+  const byKind = new Map<SegmentKind, SegmentTask[]>()
   const ctx = getTargetContext(userId)
-  for (const task of eligibleTasks(userId)) {
-    const placed = segmentState(task, timezone, now, ctx)
-    if (!placed) continue
-    const list = byHorizon.get(placed.horizon) ?? []
-    list.push({ task, state: placed.state })
-    byHorizon.set(placed.horizon, list)
+  const checkInDay = getCheckInDay(userId)
+  const upcoming: (SegmentTask & { target: string })[] = []
+  const addUpcoming = (task: Task) => {
+    const heads = upcomingState(task, timezone, now, ctx)
+    if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
   }
-  return HORIZON_ORDER.filter((h) => byHorizon.has(h)).map((horizon) => {
-    const tasks = byHorizon
-      .get(horizon)!
-      .sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
-    const count = (s: SegmentState) => tasks.filter((t) => t.state === s).length
-    return {
-      horizon,
-      tasks,
-      waiting: count('waiting'),
-      considered: count('considered'),
-      deferred: count('deferred'),
-      nudge: count('waiting') > SEGMENT_NUDGE_THRESHOLD,
+  for (const task of eligibleTasks(userId)) {
+    if (upcomingCandidate(task)) {
+      addUpcoming(task)
+      continue
     }
+    const placed = segmentState(task, timezone, now, ctx, checkInDay)
+    if (!placed) continue
+    const list = byKind.get(placed.horizon) ?? []
+    list.push({ task, state: placed.state })
+    byKind.set(placed.horizon, list)
+  }
+  for (const task of repeatingTasks(userId)) addUpcoming(task)
+  if (upcoming.length > 0) {
+    upcoming.sort((a, b) => Date.parse(a.target) - Date.parse(b.target) || a.task.id - b.task.id)
+    byKind.set(
+      'upcoming',
+      upcoming.map(({ task, state }) => ({ task, state })),
+    )
+  }
+  return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
+    const tasks = byKind.get(kind)!
+    if (kind !== 'upcoming') {
+      tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
+    }
+    return segmentOf(kind, tasks)
   })
 }
 
@@ -254,25 +312,35 @@ export function targetTasksToday(
   timezone: string,
   ids: number[],
   at?: string,
-): { until: string; affected: number } {
-  ownOpenTasks(userId, ids)
+): { until: string; affected: number; skipped_recurring: number[] } {
+  const tasks = ownOpenTasks(userId, ids)
   const now = new Date()
   if (at !== undefined) assertTargetDay(at, timezone, now)
   const until = at ?? targetTodayTime(userId, timezone, now)
+  // REPEATING TASKS ARE SKIPPED (2026-10-12, ruling Q1). Today is a re-target
+  // (`reset_original_due_at`), which on a repeating task resets its occurrence
+  // date: done that day, the next occurrence is the very next day (the double
+  // fire), and `advanceDeadline` measures from the moved origin (the deadline
+  // drifts). Doing it early with done is already safe. Reported, never a 400,
+  // so a mixed batch still targets its one-offs; with nothing left there is
+  // nothing to write and no undo entry.
+  const skipped = tasks.filter((t) => t.rrule !== null).map((t) => t.id)
+  const oneOffs = ids.filter((id) => !skipped.includes(id))
+  if (oneOffs.length === 0) return { until, affected: 0, skipped_recurring: skipped }
   const stamp = now.toISOString()
   // Also "considered" (amendment 11): the row finishes on the tap. One bulk
   // edit, so one Undo puts back the target and the stamps together.
   const result = bulkEdit({
     userId,
     userTimezone: timezone,
-    taskIds: ids,
+    taskIds: oneOffs,
     changes: {
       due_at: until,
       reset_original_due_at: true,
       last_considered_at: stamp,
       segment_targeted_at: stamp,
     },
-    includeTaskIds: ids,
+    includeTaskIds: oneOffs,
   })
-  return { until, affected: result.tasksAffected }
+  return { until, affected: result.tasksAffected, skipped_recurring: skipped }
 }

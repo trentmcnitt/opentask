@@ -528,6 +528,8 @@ describe('round trip: every remaining preference', () => {
     },
     // First day of the week: Sunday unless the user picks Monday.
     { field: 'week_start', initial: 'sunday', next: 'monday', invalid: 'tuesday' },
+    // The horizon segments' weekday (2026-10-12): Saturday unless chosen, 1–7.
+    { field: 'check_in_day', initial: 6, next: 2, invalid: 8 },
     { field: 'morning_time', initial: '09:00', next: '07:45', invalid: '24:00' },
     { field: 'default_snooze_option', initial: '60', next: 'tomorrow', invalid: '0' },
     { field: 'quota_prompts_enabled', initial: true, next: false, invalid: 'off' },

@@ -37,6 +37,7 @@
             "last_considered_at": null,
             "segment_deferred_at": null,
             "segment_targeted_at": null,
+            "target_set_at": "2026-01-15T16:00:00.000Z",
             "deadline_nag_off": false,
             "last_notified_at": null,
             "last_critical_alert_at": null,
@@ -197,6 +198,7 @@
             "last_considered_at": null,
             "segment_deferred_at": null,
             "segment_targeted_at": null,
+            "target_set_at": "2026-01-15T16:00:00.000Z",
             "deadline_nag_off": false,
             "last_notified_at": null,
             "last_critical_alert_at": null,
@@ -291,6 +293,7 @@
             "last_considered_at": "2026-01-15T16:00:00.000Z",
             "segment_deferred_at": null,
             "segment_targeted_at": null,
+            "target_set_at": "2026-01-15T16:00:00.000Z",
             "deadline_nag_off": false,
             "last_notified_at": null,
             "last_critical_alert_at": null,
@@ -316,7 +319,8 @@
             "target_at": null,
             "is_recurring": false,
             "is_snoozed": false,
-            "segment_state": "considered"
+            "segment_state": "considered",
+            "recurring": false
           }
         ],
         "waiting": 0,

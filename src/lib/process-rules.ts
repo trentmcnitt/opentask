@@ -19,11 +19,14 @@
  *    deadline is listed apart and never pre-checked (amendment 7): a client
  *    deadline's nag is not something to stop quietly.
  *
- * ONE PLACE PER TASK. A task whose target has arrived is over target: it is
- * in step 4's territory (and on the dashboard), not step 3's — its horizon
- * decides nothing while it is targeted. So growth asks only about tasks whose
- * target has not arrived (or that have none), and the two steps never show
- * the same task.
+ * ONE PLACE PER TASK. A task with a target of its own decides nothing by its
+ * horizon (2026-10-12, spec §1: a target makes a task quiet until its date;
+ * it is in Upcoming before it, over target after) — so growth never asks
+ * about it. A task whose target has arrived is over target: step 4's
+ * territory (and the dashboard's). Growth asks only about tasks with no
+ * target of their own — a deadline-only task too, unless its deadline is
+ * close enough to steer its horizon — and the two steps never show the same
+ * task.
  */
 
 import {
@@ -105,6 +108,9 @@ export function growthAsk(
   now: Date,
   ctx: TargetContext | null = null,
 ): GrowthAsk | null {
+  // A target of its own: quiet until its date, its horizon shown nowhere
+  // (spec §1, 2026-10-12) — "grow it?" would ask about a hidden setting.
+  if (task.due_at !== null) return null
   if (targetIsToday(effectiveTargetAt(task, ctx, now), timezone, now)) return null
   if (deadlineHorizon(task.deadline_at, now) !== null) return null
   const from = setHorizon(task.horizon)

@@ -97,13 +97,15 @@ describe('Process: horizon growth asks', () => {
     expect(growthOf(t.id)).toBeNull()
   })
 
-  test('PC-006: a task over target is not asked about growth (step 4 owns it)', () => {
+  test('PC-006: a task with a target of its own is never asked about growth (2026-10-12)', () => {
     const overTarget = onHorizonFor(90, { due_at: daysAgo(1) })
     const futureTarget = onHorizonFor(90, {
       due_at: new Date(NOW.getTime() + 3 * DAY).toISOString(),
     })
     expect(growthOf(overTarget.id)).toBeNull()
-    expect(growthOf(futureTarget.id)).not.toBeNull()
+    // Over target: step 4 owns it. A future target: quiet until its date,
+    // its horizon shown nowhere (spec §1), so nothing to grow.
+    expect(growthOf(futureTarget.id)).toBeNull()
   })
 
   test('PC-007: a deadline steering the horizon blocks the ask; a far one does not', () => {
