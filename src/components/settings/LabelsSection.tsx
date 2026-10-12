@@ -105,8 +105,8 @@ function LabelEditor({
         </div>
       ))}
 
-      {/* Add new label row */}
-      <div className="flex items-center gap-2 pt-1">
+      {/* Add new label row — wraps like the projects one (see ProjectsSection). */}
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         <Input
           type="text"
           value={newName}
@@ -115,7 +115,7 @@ function LabelEditor({
             if (e.key === 'Enter') handleAdd()
           }}
           placeholder="New label"
-          className="h-8 w-32 text-sm"
+          className="h-8 w-32 shrink-0 text-sm"
         />
         <div className="flex items-center gap-1">
           {LABEL_COLOR_NAMES.map((c) => (

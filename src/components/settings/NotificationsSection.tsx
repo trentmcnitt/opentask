@@ -86,7 +86,7 @@ export function NotificationsSection() {
         <div>
           <div className="text-sm">Task reminders</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            Send notifications when tasks become overdue
+            {`Send notifications when tasks are ${OVER_TARGET_LOWER}`}
           </div>
         </div>
         <Switch
@@ -103,7 +103,7 @@ export function NotificationsSection() {
           <div>
             <div className="text-sm">Notify when AI finishes a new task</div>
             <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              A notification without sound saying what AI filled in — project, due date, priority
+              A notification without sound saying what AI filled in — project, target, priority
             </div>
           </div>
           <Switch
@@ -121,8 +121,7 @@ export function NotificationsSection() {
         <div>
           <div className="text-sm">Bulk snooze results</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            When a snooze from a notification, the iPhone widget, the Mac menu or a Shortcut leaves
-            High or Urgent tasks overdue
+            {`When a snooze from a notification, the iPhone widget, the Mac menu or a Shortcut leaves High or Urgent tasks ${OVER_TARGET_LOWER}`}
           </div>
         </div>
         <Switch
@@ -133,7 +132,7 @@ export function NotificationsSection() {
         />
       </div>
       <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-        How often to repeat notifications for overdue tasks, by priority tier.
+        {`How often to repeat notifications for ${OVER_TARGET_LOWER} tasks, by priority tier.`}
       </p>
       <AutoSnoozeRows />
 
@@ -218,7 +217,8 @@ function AutoSnoozeRows() {
             setAutoSnoozeMedium,
           )
         }
-        labelColor="text-yellow-600"
+        // yellow-600 measured ~2.9:1 on white; 700 is ~4.9:1 (visual QA 10-11)
+        labelColor="text-yellow-700 dark:text-yellow-500"
       />
       {/* High auto-snooze */}
       <AutoSnoozeRow

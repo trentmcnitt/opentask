@@ -35,7 +35,7 @@ import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
  * across today's segments (Days, Weeks, Months, Eventually), its own strip of
- * teal bars (the current one ringed in its teal, green when finished), the
+ * teal bars (the current one taller, as a slot's is; green when finished), the
  * same header ("TASKS · DAYS · Shown every day", "X of Y" that opens what was
  * considered with put-back, ‹ ›), the same rows, and "Defer all" behind the
  * header tap where a slot has "Considered all".

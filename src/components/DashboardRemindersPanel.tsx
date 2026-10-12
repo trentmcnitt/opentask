@@ -529,7 +529,7 @@ function PanelRow({
       <li
         data-reminder-id={reminder.id}
         className={cn(
-          'hover:bg-foreground/5 cursor-pointer items-start gap-2.5 rounded-xl px-1 py-1.5 transition-colors select-none',
+          'hover:bg-foreground/5 cursor-pointer items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5 transition-colors select-none',
           hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         )}
         onClick={(e) => {
@@ -611,7 +611,7 @@ function ConsideredList({
         <li
           key={reminder.id}
           data-considered-id={reminder.id}
-          className="flex items-start gap-2.5 rounded-xl px-1 py-1.5"
+          className="flex items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5"
         >
           <button
             type="button"

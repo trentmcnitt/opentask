@@ -91,8 +91,8 @@ export interface SlotBarItem {
   total: number
   /** Its time has come. Always true for a task segment. */
   started: boolean
-  /** A task segment's teal (`segmentColor`): its fill while it fills and its
-   *  ring when it is the page on screen. Absent for a slot. */
+  /** A task segment's teal (`segmentColor`): its fill while it fills. The
+   *  page on screen grows like a slot's, with no ring. Absent for a slot. */
   color?: string
 }
 
@@ -192,9 +192,9 @@ export function ReminderSlotBar({
                   // The slot on screen is the taller one — position without a
                   // second colour, which the three states already spend.
                   current ? 'h-2' : 'h-1',
-                  // A task segment's page is ringed in its own teal — Trent's
-                  // mockup — so "you are on Tasks · Weeks" reads as teal.
-                  current && color && 'outline-2 outline-offset-1',
+                  // A task segment's page grows like a slot's and is NOT ringed
+                  // (Trent, 2026-10-11: "The reminder segments don't have an
+                  // outline and neither should this. It should just grow").
                   // Its time has come: a track with real presence, so the
                   // unfilled part reads as "still to do".
                   state === 'behind' && 'bg-foreground/20',
@@ -204,7 +204,6 @@ export function ReminderSlotBar({
                   state === 'upcoming' && 'bg-foreground/[0.06]',
                   'group-hover:brightness-125',
                 )}
-                style={current && color ? { outlineColor: color } : undefined}
               >
                 {fraction > 0 && (
                   <span

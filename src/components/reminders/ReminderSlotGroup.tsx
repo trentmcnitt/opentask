@@ -420,8 +420,11 @@ export function SlotHeaderRow({
       {/* The one part of the header that may give way on a phone: a task
           segment puts its longer hint here ("Shown on Saturdays"), and the
           count beside it must never be overlapped. A slot's time always fits. */}
+      {/* ~#8a8a8a light, ~#8f8f8f dark — see PanelPagerParts' header. */}
       {time && (
-        <span className="text-muted-foreground/50 min-w-0 truncate text-xs">&middot; {time}</span>
+        <span className="text-muted-foreground/80 dark:text-muted-foreground/90 min-w-0 truncate text-xs">
+          &middot; {time}
+        </span>
       )}
       <span className="flex-1" />
       <span
@@ -572,7 +575,7 @@ function ConsideredRow({
   return (
     <li
       data-considered-id={reminder.id}
-      className="flex items-start gap-3 rounded-xl px-2 py-2.5 select-none"
+      className="flex items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none"
       onPointerDown={press.onPointerDown}
       onPointerUp={press.onPointerUp}
       onPointerMove={press.onPointerMove}

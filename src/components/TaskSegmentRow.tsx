@@ -23,6 +23,7 @@ import {
 import { HORIZON_ORDER, SEGMENT_NUDGE_THRESHOLD, type HorizonValue } from '@/lib/task-segments'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
+import { prominenceClasses } from '@/components/reminders/ReminderRow'
 
 /**
  * A TASK SEGMENT's rows (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -176,9 +177,12 @@ export function TaskSegmentRow({
       // checkboxes must line up down the whole column): on the panel the
       // panel's reminder row (`gap-2.5 px-1 py-1.5`, 19px controls, 13.5px
       // title), on /reminders the page's (`gap-3 px-2 py-2.5`, 24px controls,
-      // 16px title) — `QuotaPromptRow`'s two variants, exactly.
+      // 16px title) — `QuotaPromptRow`'s two variants, exactly, including its
+      // 1px transparent border (without it every circle here sat 1px left of
+      // the reminder and prompt rows above it; every row in these lists,
+      // considered ones too, now carries the same border).
       className={cn(
-        'group items-start rounded-xl',
+        'group items-start rounded-xl border border-transparent',
         hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
         considered
@@ -223,8 +227,14 @@ export function TaskSegmentRow({
       <div className="min-w-0 flex-1">
         <p
           className={cn(
-            'text-foreground text-pretty',
-            panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
+            'text-pretty',
+            // The title colour of the reminder row beside it (Trent, 10-11:
+            // "make them the same"): on /reminders, `prominenceClasses` by
+            // priority; on the panel, the panel reminder row's plain text.
+            // The SEGMENT's own title in the header stays teal.
+            panel
+              ? 'text-foreground text-[13.5px] leading-[1.42]'
+              : cn('text-[16px] leading-6', prominenceClasses(task.priority)),
           )}
         >
           {task.title}
@@ -430,7 +440,7 @@ export function ConsideredSegmentRow({
     <li
       data-considered-task-id={task.id}
       className={cn(
-        'flex items-start rounded-xl',
+        'flex items-start rounded-xl border border-transparent',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
       )}
     >

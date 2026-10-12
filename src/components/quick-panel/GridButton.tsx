@@ -33,7 +33,12 @@ export function GridButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center justify-center rounded-lg border px-2 py-2.5 text-center leading-tight font-medium transition-colors',
+        'flex items-center justify-center rounded-lg border py-2.5 text-center leading-tight font-medium whitespace-nowrap transition-colors',
+        // One line always: at 390px a quarter-width button is ~77px, and with
+        // 8px side padding "12:00 PM" broke onto two lines while "9:00 AM"
+        // beside it did not. 4px padding leaves room for any 8-character
+        // label at text-sm, the longest the tiers above keep at that size.
+        span === 2 ? 'px-2' : 'px-1',
         textSize,
         'min-h-[44px]', // Apple HIG touch target
         'active:scale-[0.97]',

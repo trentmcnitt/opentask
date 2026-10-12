@@ -34,7 +34,8 @@ const FILTER_LABELS: Record<DueDateFilter, string> = {
   today: 'Today',
   this_week: 'This Week',
   later: 'Later',
-  no_due_date: 'No Due Date',
+  // The filter key keeps its API name; the label is the task model's word.
+  no_due_date: 'No Target',
 }
 
 const FILTER_ORDER: DueDateFilter[] = [
