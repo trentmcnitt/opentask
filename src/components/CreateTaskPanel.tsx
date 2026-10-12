@@ -291,9 +291,10 @@ export function CreateTaskPanel({
     return (
       <>
         <Sheet open={open} onOpenChange={handleOpenChange}>
+          {/* Bounded and scrollable: see QuickActionPopover's sheet. */}
           <SheetContent
             side="bottom"
-            className="rounded-t-2xl"
+            className="max-h-[92dvh] overflow-y-auto rounded-t-2xl"
             showCloseButton={false}
             draggable={!isPanelDirty}
           >
