@@ -19,6 +19,7 @@ export {
   validateBulkEdit,
   validateBulkDelete,
   validateSegmentIds,
+  validateSegmentTarget,
   validateBulkSnoozeOverdue,
   TRACKED_REMINDER_MESSAGE,
   QUOTA_DUE_DATE_MESSAGE,

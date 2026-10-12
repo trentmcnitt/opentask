@@ -2,7 +2,10 @@
 
 import { Check, CalendarClock, ChevronDown, FolderOpen } from 'lucide-react'
 import { DateTime } from 'luxon'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { DateTimePicker } from '@/components/DateTimePicker'
+import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
 import {
@@ -45,7 +48,8 @@ import { prominenceClasses } from '@/components/reminders/ReminderRow'
  * has the same two verbs a prompt has: the CIRCLE means "considered" (seen,
  * never a completion) and the CHECKBOX means done. A tap anywhere else on the
  * row considers it, as on a reminder, so the rapid-fire flow is unchanged.
- * "Today" (target today) sits just left of the checkbox.
+ * "Today" (target today) sits just left of the checkbox; holding it, or a
+ * right-click, picks the time instead (`TargetTodayButton`).
  *
  * The meta line shows the HORIZON (a chip that changes it — an unset one says
  * so rather than pretending to be "weeks"), a future target as a date chip
@@ -246,6 +250,7 @@ export function TaskSegmentRow({
         <TaskSegmentRowActions
           task={task}
           actions={actions}
+          timezone={timezone}
           panel={panel}
           segmentHorizon={segmentHorizon}
         />
@@ -254,15 +259,109 @@ export function TaskSegmentRow({
   )
 }
 
+/**
+ * "Today": a tap targets the task today at the time Snooze-all would go to
+ * (`targetTodayTime`) — unchanged. A HOLD (touch or mouse, the app's 400ms
+ * long-press, `useSimpleLongPress`) or a RIGHT-CLICK opens the date-time
+ * picker instead, on today at that same time, so "today, but at 3" or "Tuesday
+ * morning" is one gesture (Trent, 2026-10-12). Choosing a time sends the same
+ * request with `at`, so the stamp, the undo entry, the sync and the toast all
+ * come from the one server path.
+ *
+ * The hold never also taps: once it fires, the pointerup and the click are
+ * swallowed. A finger that moves (a scroll or a swipe of the panel pager)
+ * abandons the press — neither fires. Right-click never taps (primary button
+ * only). The affordance is in the words, not a glyph (Trent's rule): the
+ * tooltip and the accessible name say "hold for a time".
+ *
+ * The picker is portalled, but React events still bubble through the tree to
+ * the row, whose click CONSIDERS the task and whose Enter/Space too — so the
+ * wrapper stops clicks and keys from the picker reaching it.
+ */
+function TargetTodayButton({
+  task,
+  actions,
+  timezone,
+}: {
+  task: Task
+  actions: TaskSegmentActions
+  timezone: string
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [anchor, setAnchor] = useState<string | null>(null)
+  const openPicker = () => {
+    setAnchor(actions.targetTodayAnchor())
+    setPickerOpen(true)
+  }
+  const press = useSimpleLongPress({
+    onLongPress: openPicker,
+    onShortPress: () => void actions.targetToday(task),
+    // The tap takes this row off the list; acting on pointerup let the
+    // click that follows land on the next row's Today (see `tapOn`).
+    tapOn: 'click',
+  })
+  return (
+    <span
+      className="contents"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <DateTimePicker
+        value={null}
+        emptyAnchor={anchor}
+        timezone={timezone}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        allowClear={false}
+        submitLabel="Set target"
+        onChange={(at) => {
+          if (at) void actions.targetAt(task, at)
+        }}
+      >
+        <button
+          type="button"
+          data-target-today
+          onClick={(e) => {
+            e.stopPropagation()
+            press.onClick()
+          }}
+          // Not stopped: the panel pager's swipe may start here, and a
+          // swipe's move abandons the hold.
+          onPointerDown={press.onPointerDown}
+          onPointerUp={press.onPointerUp}
+          onPointerLeave={press.onPointerLeave}
+          onPointerMove={press.onPointerMove}
+          onPointerCancel={press.onPointerCancel}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            openPicker()
+          }}
+          title="Target today · hold for a time"
+          aria-label={`Target "${task.title}" today (hold for a time)`}
+          // No text selection or iOS callout under a held finger.
+          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex touch-manipulation items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium select-none [-webkit-touch-callout:none]"
+        >
+          <CalendarClock className="size-3.5" />
+          {/* Icon-only on a phone, so the title keeps the width. */}
+          <span className="sr-only sm:not-sr-only">Today</span>
+        </button>
+      </DateTimePicker>
+    </span>
+  )
+}
+
 /** The row's right side: horizon chip, "Today", and the done square. */
 function TaskSegmentRowActions({
   task,
   actions,
+  timezone,
   panel,
   segmentHorizon,
 }: {
   task: Task
   actions: TaskSegmentActions
+  timezone: string
   panel: boolean
   segmentHorizon: HorizonValue
 }) {
@@ -278,20 +377,7 @@ function TaskSegmentRowActions({
         segmentHorizon={segmentHorizon}
         onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
       />
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          void actions.targetToday(task)
-        }}
-        title="Target today — start nagging at the next period"
-        aria-label={`Target "${task.title}" today`}
-        className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium"
-      >
-        <CalendarClock className="size-3.5" />
-        {/* Icon-only on a phone, so the title keeps the width. */}
-        <span className="sr-only sm:not-sr-only">Today</span>
-      </button>
+      <TargetTodayButton task={task} actions={actions} timezone={timezone} />
       {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
           stock checkbox: same size, radius, border and no shadow. */}
       <button

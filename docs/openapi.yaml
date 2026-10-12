@@ -1610,7 +1610,7 @@ paths:
       operationId: taskSegmentTargetToday
       tags: [Reminders]
       description: >
-        A deliberate target (age restarts) at the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour. Also marks them considered. One undo entry (bulk edit). The caller's own open tasks only; anything else refuses the
+        A deliberate target (age restarts) at the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour; or at `at`, when given. Also marks them considered and stamps `segment_targeted_at`. One undo entry (bulk edit) puts back the target and both stamps. A re-target, not a snooze, so the deadline neither refuses nor caps it. The caller's own open tasks only; anything else refuses the
         whole request (400).
       requestBody:
         required: true
@@ -1623,6 +1623,14 @@ paths:
                 ids:
                   type: array
                   items: { type: integer }
+                at:
+                  type: string
+                  format: date-time
+                  description: >
+                    Optional (2026-10-12): the moment to target instead of the computed one — what the
+                    Today button's long-press / right-click picker sends. Any ISO 8601 datetime, stored as
+                    UTC. Must fall on today or a later day in the user's timezone (an earlier time today is
+                    allowed); a past day, or a string that isn't a date, is a 400.
       responses:
         '200':
           description: Done
@@ -4435,6 +4443,15 @@ components:
           type: [string, 'null']
           format: date-time
           description: A task segment's Defer All — hidden for that local day.
+        segment_targeted_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            When the task was last targeted FROM A TASK SEGMENT — `POST /api/task-segments/target-today`
+            (the row's Today button, its time picker, and Process's "Do it"). The dashboard lists it in
+            the Just now card for 15 minutes. Deliberately not a general "target changed" stamp: a
+            snooze, an edit, a create or a recurrence advance never sets it. Undo restores the previous
+            value.
         deadline_nag_off:
           type: boolean
           description: Silences the deadline's implied nag (set by remove-target).

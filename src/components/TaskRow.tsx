@@ -124,10 +124,13 @@ interface TaskRowProps {
   /** Project color for the project badge dot (used in unified view) */
   projectColor?: LabelColor | null
   /**
-   * Just added (`src/lib/just-added.ts`): the task was created in the last 15
-   * minutes — it is listed in the Just added card — and this is the small tag
-   * ("New") that makes its real row easy to spot where it lives. Neutral on
-   * purpose: new is not a state that needs acting on, just a fact to notice.
+   * Just now (`src/lib/just-added.ts`): the task was created — or targeted
+   * from a task segment — in the last 15 minutes, so it is listed in the Just
+   * now card, and this is the small tag ("New", or "Targeted") that makes its
+   * real row easy to spot where it lives: after a run of Today taps the
+   * targeted rows sit among every other task over target, and this is how the
+   * one to re-target is found. Neutral on purpose: a fact to notice, not a
+   * state that needs acting on.
    */
   justAddedBadge?: string
   /**

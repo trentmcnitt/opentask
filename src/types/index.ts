@@ -109,6 +109,15 @@ export interface Task {
   /** A task segment's Defer All: hidden for that local day. Not a consider. */
   segment_deferred_at: string | null
   /**
+   * When the task was last targeted FROM A TASK SEGMENT — the row's Today
+   * button or its long-press time picker (`POST /api/task-segments/target-today`,
+   * which Process's "Do it" shares). The dashboard's Just now card lists it
+   * for 15 minutes (`src/lib/just-added.ts`). Deliberately NOT a general
+   * "target changed" stamp: snooze, edit, create and a recurrence advance
+   * never set it.
+   */
+  segment_targeted_at: string | null
+  /**
    * Turns off the deadline's implied nag (deadline − DEADLINE_LEAD_DAYS) on a
    * task with no target — what remove-target sets. A new deadline clears it.
    */

@@ -444,6 +444,18 @@ export function validateSegmentIds(input: unknown): { ids: number[] } {
 }
 
 /**
+ * Target today (2026-10-12): the ids, and optionally `at` — the moment the
+ * Today button's time picker chose (any ISO 8601 datetime, stored as UTC).
+ * Omitted, the server picks `targetTodayTime`. "Today or later" is checked in
+ * `targetTasksToday`, which knows the user's timezone.
+ */
+export const segmentTargetSchema = z.object({ ids: bulkIds, at: dateTimeString.optional() })
+
+export function validateSegmentTarget(input: unknown): { ids: number[]; at?: string } {
+  return segmentTargetSchema.parse(input)
+}
+
+/**
  * Bulk delete input schema
  */
 export const bulkDeleteSchema = z.object({

@@ -31,7 +31,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { Header, type HeaderPillFilter } from '@/components/Header'
 import { FOCUS_QUICK_ADD_EVENT, QUICK_ADD_ACTION, QuickAdd } from '@/components/QuickAdd'
 import { JustAddedCard } from '@/components/JustAddedCard'
-import { selectJustAddedTasks } from '@/lib/just-added'
+import { justAddedEntryKey, selectJustAddedEntries } from '@/lib/just-added'
 import { DemoTour } from '@/components/DemoTour'
 import { QuickTakeBanner } from '@/components/QuickTakeBanner'
 import { FilterBar } from '@/components/FilterBar'
@@ -1141,9 +1141,9 @@ function HomeContent({
     clearListNarrowing,
   ])
 
-  // Just added (`src/lib/just-added.ts`): each task created in the last 15
-  // minutes is listed in the Just added card under the add field, and its
-  // real row wears a "New" tag. Drawn from `visibleTasks` — unfiltered on
+  // Just now (`src/lib/just-added.ts`): each task created — or targeted from
+  // a task segment — in the last 15 minutes is listed in the Just now card
+  // under the add field, and its real row wears a "New" (or "Targeted") tag. Drawn from `visibleTasks` — unfiltered on
   // purpose — and off while searching. The clock advances itself at each
   // minute and age-out, so entries count up and leave without a reload. The
   // card is not part of the list: nothing here (keyboard order, counts,
@@ -2156,12 +2156,15 @@ function DashboardView({
   // search runs, so typing cannot re-centre the page under the user.
   const twoColumn = quotaSource.some(isTracked)
 
-  // The Just added card: its entries, what "Clear" has hidden (in-memory —
-  // a task added after a Clear shows again), and the list's reveal function
-  // for a tap (`TaskList`'s `revealRef`).
-  const [clearedJustAdded, setClearedJustAdded] = useState<Set<number>>(new Set())
-  const justAddedTasks = justAddedSource
-    ? selectJustAddedTasks(justAddedSource, justAddedNow).filter((t) => !clearedJustAdded.has(t.id))
+  // The Just now card: its entries, what "Clear" has hidden (in-memory, keyed
+  // by task AND event time — a task added, or re-targeted, after a Clear is a
+  // new event and shows again), and the list's reveal function for a tap
+  // (`TaskList`'s `revealRef`).
+  const [clearedJustAdded, setClearedJustAdded] = useState<Set<string>>(new Set())
+  const justAddedEntries = justAddedSource
+    ? selectJustAddedEntries(justAddedSource, justAddedNow).filter(
+        (e) => !clearedJustAdded.has(justAddedEntryKey(e)),
+      )
     : []
   const revealTaskRef = useRef<((task: Task) => void) | null>(null)
 
@@ -2241,13 +2244,15 @@ function DashboardView({
           </div>
 
           <JustAddedCard
-            tasks={justAddedTasks}
+            entries={justAddedEntries}
             projects={projects}
             now={justAddedNow}
             timezone={timezone}
             onShow={(task) => revealTaskRef.current?.(task)}
             onClear={() =>
-              setClearedJustAdded((prev) => new Set([...prev, ...justAddedTasks.map((t) => t.id)]))
+              setClearedJustAdded(
+                (prev) => new Set([...prev, ...justAddedEntries.map(justAddedEntryKey)]),
+              )
             }
           />
 

@@ -136,17 +136,38 @@ interface UseSimpleLongPressOptions {
   onShortPress: () => void
   /** Long-press delay in ms (default 400) */
   delay?: number
+  /**
+   * Where the short press fires. `'pointerup'` (the default) acts before the
+   * browser's click — needed where the press is a Radix menu trigger, whose
+   * pointerdown opens the menu and swallows the click (the snooze buttons).
+   * `'click'` waits for the click, for a press whose action REMOVES its own
+   * row: acting on pointerup re-rendered the list first, and on touch the
+   * click then landed on the row that slid up under the finger and acted on
+   * that task too (a task segment's Today, 2026-10-12).
+   */
+  tapOn?: 'pointerup' | 'click'
 }
 
-/** The one field the simple handlers read; a React pointer event has it. */
+/** The fields the simple handlers read; a React pointer event has them. */
 interface PressButton {
   button: number
+  clientX?: number
+  clientY?: number
 }
 
 interface UseSimpleLongPressReturn {
   onPointerDown: (e?: PressButton) => void
   onPointerUp: (e?: PressButton) => void
   onPointerLeave: () => void
+  /**
+   * Optional: wire these where the press sits in something that scrolls or
+   * swipes (a task-segment row's Today button, 2026-10-12). A move past 10px,
+   * or the browser taking the pointer for a scroll (`pointercancel`), ends the
+   * press — neither the hold nor the tap fires — so a scroll that starts on
+   * the button never acts. The next press starts clean.
+   */
+  onPointerMove: (e: PressButton) => void
+  onPointerCancel: () => void
   /** Keyboard fallback — calls onShortPress if pointer didn't fire */
   onClick: () => void
 }
@@ -165,9 +186,10 @@ interface UseSimpleLongPressReturn {
  * one on a row's snooze button snoozed that task.
  */
 export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpleLongPressReturn {
-  const { onLongPress, onShortPress, delay = 400 } = options
+  const { onLongPress, onShortPress, delay = 400, tapOn = 'pointerup' } = options
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fired = useRef(false)
+  const origin = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     return () => {
@@ -179,6 +201,8 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     (e?: PressButton) => {
       if (e && e.button !== 0) return
       fired.current = false
+      origin.current =
+        e?.clientX !== undefined && e.clientY !== undefined ? { x: e.clientX, y: e.clientY } : null
       timer.current = setTimeout(() => {
         fired.current = true
         onLongPress()
@@ -194,12 +218,12 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
         clearTimeout(timer.current)
         timer.current = null
       }
-      if (!fired.current) {
+      if (tapOn === 'pointerup' && !fired.current) {
         fired.current = true
         onShortPress()
       }
     },
-    [onShortPress],
+    [onShortPress, tapOn],
   )
 
   const onPointerLeave = useCallback(() => {
@@ -209,6 +233,27 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     }
   }, [])
 
+  // Ends the press without acting: `fired` swallows the pointerup and click.
+  const abandon = useCallback(() => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+    origin.current = null
+    fired.current = true
+  }, [])
+
+  const onPointerMove = useCallback(
+    (e: PressButton) => {
+      if (!timer.current || !origin.current || e.clientX === undefined || e.clientY === undefined)
+        return
+      const dx = e.clientX - origin.current.x
+      const dy = e.clientY - origin.current.y
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) abandon()
+    },
+    [abandon],
+  )
+
   const onClick = useCallback(() => {
     if (fired.current) {
       fired.current = false
@@ -217,5 +262,12 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     onShortPress()
   }, [onShortPress])
 
-  return { onPointerDown, onPointerUp, onPointerLeave, onClick }
+  return {
+    onPointerDown,
+    onPointerUp,
+    onPointerLeave,
+    onPointerMove,
+    onPointerCancel: abandon,
+    onClick,
+  }
 }

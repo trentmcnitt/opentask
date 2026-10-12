@@ -241,6 +241,80 @@ describe('Task model', () => {
       vi.setSystemTime(new Date(at('2026-10-10T22:10')))
       expect(targetTodayTime(TEST_USER_ID, tz)).toBe(at('2026-10-10T23:00'))
     })
+
+    test('TM-022: stamps segment_targeted_at in the same undo entry; Undo puts the old stamp back', () => {
+      const t = make()
+      age(t.id, '2026-10-01T09:00')
+      targetTasksToday(TEST_USER_ID, tz, [t.id])
+      const first = getTaskById(t.id)!.segment_targeted_at
+      expect(first).toBe(SAT.toISOString())
+      // Re-targeted later: a new stamp; Undo restores the FIRST one, not null.
+      vi.setSystemTime(new Date(at('2026-10-10T10:05')))
+      targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-10T14:00'))
+      expect(getTaskById(t.id)!.segment_targeted_at).toBe(
+        new Date(at('2026-10-10T10:05')).toISOString(),
+      )
+      executeUndo(TEST_USER_ID)
+      expect(getTaskById(t.id)!.segment_targeted_at).toBe(first)
+      executeUndo(TEST_USER_ID)
+      expect(getTaskById(t.id)!.segment_targeted_at).toBeNull()
+      expect(getTaskById(t.id)!.due_at).toBeNull()
+      // Redo brings it back with the target.
+      executeRedo(TEST_USER_ID)
+      expect(getTaskById(t.id)!.segment_targeted_at).toBe(first)
+      expect(formatTaskResponse(getTaskById(t.id)!).segment_targeted_at).toBe(first)
+    })
+
+    test('TM-023: only the segment action stamps it — not a snooze, an edit or a create', () => {
+      const t = make({ due_at: at('2026-10-10T09:00') })
+      expect(t.segment_targeted_at).toBeNull()
+      snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        until: at('2026-10-10T12:00'),
+      })
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: t.id,
+        input: { due_at: at('2026-10-11T09:00'), priority: 2 },
+      })
+      bulkSnooze({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskIds: [t.id],
+        until: at('2026-10-12T09:00'),
+      })
+      expect(getTaskById(t.id)!.segment_targeted_at).toBeNull()
+    })
+
+    test('TM-024: `at` targets at that moment — today, or a later day; a past day is refused', () => {
+      const t = make()
+      age(t.id, '2026-10-01T09:00')
+      // Earlier today is a commitment for today: allowed (over target at once).
+      const { until } = targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-10T07:15'))
+      expect(until).toBe(at('2026-10-10T07:15'))
+      expect(getTaskById(t.id)!.due_at).toBe(until)
+      expect(getTaskById(t.id)!.original_due_at).toBe(until)
+      // A later day: targeted then, considered today (ticked in its segment).
+      targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-13T15:00'))
+      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T15:00'))
+      expect(segmentOf(t.id)?.state).toBe('considered')
+      // Yesterday: refused, nothing written.
+      expect(() => targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-09T23:30'))).toThrow(
+        ValidationError,
+      )
+      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T15:00'))
+    })
+
+    test('TM-025: like the plain Today, a picked time is a re-target — the deadline does not cap it', () => {
+      const t = make({ deadline_at: at('2026-10-12T12:00') })
+      age(t.id, '2026-10-01T09:00')
+      targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-13T09:00'))
+      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T09:00'))
+      expect(getTaskById(t.id)!.deadline_at).toBe(at('2026-10-12T12:00'))
+    })
   })
 
   describe('deadline', () => {

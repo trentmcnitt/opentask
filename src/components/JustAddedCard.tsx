@@ -5,12 +5,12 @@ import { cn } from '@/lib/utils'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { getPriorityOption } from '@/lib/priority'
-import { formatJustAddedAge } from '@/lib/just-added'
+import { formatJustAddedLabel, justAddedEntryKey, type JustAddedEntry } from '@/lib/just-added'
 import type { Project, Task } from '@/types'
 
 interface JustAddedCardProps {
-  /** Tasks inside the 15-minute window, newest first (`selectJustAddedTasks`). */
-  tasks: Task[]
+  /** Tasks added or targeted in the last 15 minutes, newest first (`selectJustAddedEntries`). */
+  entries: JustAddedEntry[]
   projects: Project[]
   /** The just-added clock (`useJustAddedClock`). */
   now: number
@@ -22,41 +22,43 @@ interface JustAddedCardProps {
 }
 
 /**
- * "Just added" — the tasks created in the last 15 minutes, in a card of their
- * own under the add field (Trent, 2026-09-28, mockup A of three).
+ * "Just now" — the tasks created, or targeted from a task segment, in the last
+ * 15 minutes, in a card of their own under the add field (Trent, 2026-09-28,
+ * mockup A of three; targeted entries 2026-10-12 — see `src/lib/just-added.ts`).
  *
  * The question right after adding is "did it land, where, and what did the AI
  * make of it?", and it has to be answerable WITHOUT scrolling and WITHOUT
  * moving the real row out of its place ("the real row at the top means it's
  * not in the actual place it's supposed to be"). So each entry says which
  * project the task landed in, what the AI filled in (due, priority) or that
- * it is still working, and how long ago it was added; tapping one scrolls to
+ * it is still working, and how long ago it was added ("Added 2m ago") or targeted ("Targeted 2m
+ * ago" — the line above it already shows the new target); tapping one scrolls to
  * the real row in its real group and flashes it. It replaced a dashed "ghost"
  * copy at the top of the Inbox (#121), which Trent found cheap-looking and
  * confusing next to the real row.
  *
  * Entries are not check-offs (a project-coloured dot, not a checkbox): the
  * card only points at tasks. "Clear" hides what is listed now; a task added
- * after that shows again.
+ * (or re-targeted) after that shows again.
  */
 export function JustAddedCard({
-  tasks,
+  entries,
   projects,
   now,
   timezone,
   onShow,
   onClear,
 }: JustAddedCardProps) {
-  if (tasks.length === 0) return null
+  if (entries.length === 0) return null
   return (
     <section
-      aria-label="Just added"
+      aria-label="Just now"
       data-just-added-card
       className="bg-muted/40 border-border/60 mb-4 rounded-xl border px-3 py-2.5 sm:px-4"
     >
       <div className="mb-1 flex items-center justify-between">
         <h2 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
-          Just added
+          Just now
         </h2>
         <button
           type="button"
@@ -67,14 +69,14 @@ export function JustAddedCard({
         </button>
       </div>
       <ul className="space-y-0.5">
-        {tasks.map((task) => (
-          <li key={task.id}>
-            <JustAddedEntry
-              task={task}
-              project={projects.find((p) => p.id === task.project_id)}
+        {entries.map((entry) => (
+          <li key={justAddedEntryKey(entry)}>
+            <JustAddedRow
+              entry={entry}
+              project={projects.find((p) => p.id === entry.task.project_id)}
               now={now}
               timezone={timezone}
-              onShow={() => onShow(task)}
+              onShow={() => onShow(entry.task)}
             />
           </li>
         ))}
@@ -83,23 +85,25 @@ export function JustAddedCard({
   )
 }
 
-function JustAddedEntry({
-  task,
+function JustAddedRow({
+  entry,
   project,
   now,
   timezone,
   onShow,
 }: {
-  task: Task
+  entry: JustAddedEntry
   project: Project | undefined
   now: number
   timezone: string
   onShow: () => void
 }) {
+  const { task } = entry
   const color = project?.color ? LABEL_COLORS[project.color] : null
   const enriching = task.labels.includes('ai-to-process')
   const details = entryDetails(task, timezone)
-  const age = formatJustAddedAge(task, now)
+  // "Added 2m ago" / "Targeted 2m ago": which event put it here, and when.
+  const age = formatJustAddedLabel(entry, now)
   const projectName = project?.name ?? 'Inbox'
 
   return (
@@ -107,7 +111,8 @@ function JustAddedEntry({
       type="button"
       onClick={onShow}
       data-just-added-entry={task.id}
-      aria-label={`${task.title} — added ${age} to ${projectName}. Show it in the list.`}
+      data-just-added-kind={entry.kind}
+      aria-label={`${task.title} — ${age.toLowerCase()}, in ${projectName}. Show it in the list.`}
       className="hover:bg-background flex w-full items-start gap-3 rounded-lg px-1.5 py-2 text-left transition-colors sm:items-center sm:px-2"
     >
       <span
@@ -147,7 +152,8 @@ function JustAddedEntry({
         <Folder className="size-3" aria-hidden />
         {projectName}
       </span>
-      <span className="text-muted-foreground hidden w-16 shrink-0 text-right text-xs sm:inline">
+      {/* Wide enough for "Targeted 14m ago", so the column lines up. */}
+      <span className="text-muted-foreground hidden w-28 shrink-0 text-right text-xs sm:inline">
         {age}
       </span>
     </button>

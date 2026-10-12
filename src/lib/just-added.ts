@@ -1,7 +1,8 @@
 /**
- * Just added: for 15 minutes after a task is created it is listed in the
- * dashboard's "Just added" card, under the add field (`JustAddedCard`), while
- * its real row stays exactly where it belongs and wears a small "New" tag.
+ * Just now: for 15 minutes after a task is created — or targeted from a task
+ * segment — it is listed in the dashboard's "Just now" card, under the add
+ * field (`JustAddedCard`), while its real row stays exactly where it belongs
+ * and wears a small tag ("New", or "Targeted").
  *
  * Why (Trent, 2026-09-27, restated 2026-09-28): a task added by quick add, by
  * the Mac menu bar, or by an iOS Shortcut POSTing to the API from another
@@ -16,6 +17,21 @@
  * long ago it was added; a tap scrolls to the real row and flashes it (or,
  * when the current view has no row for it, opens the task).
  *
+ * TARGETED TOO (Trent, 2026-10-12). Many tasks get their target with one tap
+ * of the Today button on a task-segment row (or a time from its long-press
+ * picker), and right after, he wants to see them and re-target the odd one —
+ * same card, same 15 minutes, each entry saying which happened ("Added 2m
+ * ago" / "Targeted 2m ago"). The targeted event is `segment_targeted_at`,
+ * which ONLY that segment action stamps — an ordinary snooze or edit never
+ * does, or every snooze would flood the card. The card was "Just added"
+ * until then; with two kinds of entry it is "Just now".
+ *
+ * ONE ENTRY PER TASK, under its LATEST event: a task added and then targeted
+ * inside the window is listed once, as targeted, timed from the targeting.
+ * The window, the order, the age text and the clock's ticks all read that
+ * latest event, and "Clear" hides an entry by id AND event time — a task
+ * re-targeted after a Clear has a new event, so it shows again.
+ *
  * History: #115 was a separate "Recent" view; #121 replaced it with a dashed
  * read-only copy of the row at the top of the Inbox, which Trent found cheap-
  * looking next to the real row; the card (mockup A of three, 2026-09-28)
@@ -27,9 +43,9 @@
  * the "did it land?" case. Hidden while searching (the results are the
  * question then).
  *
- * The window is measured from `created_at` (server clock). A `created_at` a
- * moment ahead of this device's clock is still in, and still ages out fifteen
- * minutes after it. Entries leave without a reload — see `useJustAddedClock`.
+ * Event times are server clock. One a moment ahead of this device's clock is
+ * still in, and still ages out fifteen minutes after it. Entries leave without
+ * a reload — see `useJustAddedClock`.
  */
 import type { Task } from '@/types'
 
@@ -38,25 +54,66 @@ import type { Task } from '@/types'
 export const JUST_ADDED_WINDOW_MINUTES = 15
 export const JUST_ADDED_WINDOW_MS = JUST_ADDED_WINDOW_MINUTES * 60 * 1000
 
-function createdMs(task: Task): number {
-  return Date.parse(task.created_at)
+/** Which event put the task in the card. */
+export type JustAddedKind = 'added' | 'targeted'
+
+export interface JustAddedEvent {
+  kind: JustAddedKind
+  /** Epoch ms of the event (server clock). */
+  at: number
 }
 
-/** True while the task is inside the 15-minute window. Exactly 15 minutes old is out. */
-export function isJustAdded(task: Task, now: number): boolean {
-  const created = createdMs(task)
-  return !Number.isNaN(created) && created > now - JUST_ADDED_WINDOW_MS
+/** A card entry: the task under its latest event. */
+export interface JustAddedEntry extends JustAddedEvent {
+  task: Task
 }
 
 /**
- * Tasks inside the window, newest first. Ties (two adds in the same instant, or
- * rows written with the schema's whole-second default) break by id, higher
+ * The task's latest event — created, or targeted from a task segment —
+ * whether or not it is still inside the window. Null when neither time parses.
+ * A tie (targeted in the same instant it was created) reads as added.
+ */
+function latestEvent(task: Task): JustAddedEvent | null {
+  const created = Date.parse(task.created_at)
+  const targeted = task.segment_targeted_at ? Date.parse(task.segment_targeted_at) : NaN
+  if (!Number.isNaN(targeted) && (Number.isNaN(created) || targeted > created)) {
+    return { kind: 'targeted', at: targeted }
+  }
+  return Number.isNaN(created) ? null : { kind: 'added', at: created }
+}
+
+/**
+ * The event that puts the task in the card right now, or null when its latest
+ * event is 15 minutes old or more (exactly 15 minutes is out). Only the LATEST
+ * event counts: once it ages out, an older one is older still.
+ */
+export function justAddedEvent(task: Task, now: number): JustAddedEvent | null {
+  const event = latestEvent(task)
+  return event && event.at > now - JUST_ADDED_WINDOW_MS ? event : null
+}
+
+/** True while the task is in the card (added or targeted inside the window). */
+export function isJustAdded(task: Task, now: number): boolean {
+  return justAddedEvent(task, now) !== null
+}
+
+/**
+ * The card's entries, newest event first. Ties (two adds in the same instant,
+ * or rows written with the schema's whole-second default) break by id, higher
  * first, since ids are assigned in insert order.
  */
-export function selectJustAddedTasks(tasks: Task[], now: number): Task[] {
-  return tasks
-    .filter((t) => isJustAdded(t, now))
-    .sort((a, b) => createdMs(b) - createdMs(a) || b.id - a.id)
+export function selectJustAddedEntries(tasks: Task[], now: number): JustAddedEntry[] {
+  const entries: JustAddedEntry[] = []
+  for (const task of tasks) {
+    const event = justAddedEvent(task, now)
+    if (event) entries.push({ task, ...event })
+  }
+  return entries.sort((a, b) => b.at - a.at || b.task.id - a.task.id)
+}
+
+/** What "Clear" remembers an entry by: a new event for the same task is a new key. */
+export function justAddedEntryKey(entry: { task: Task; at: number }): string {
+  return `${entry.task.id}:${entry.at}`
 }
 
 /**
@@ -67,41 +124,55 @@ export function selectJustAddedTasks(tasks: Task[], now: number): Task[] {
 export function nextJustAddedExpiry(tasks: Task[], now: number): number | null {
   let next: number | null = null
   for (const t of tasks) {
-    const created = createdMs(t)
-    if (Number.isNaN(created)) continue
-    const expiry = created + JUST_ADDED_WINDOW_MS
+    const event = latestEvent(t)
+    if (!event) continue
+    const expiry = event.at + JUST_ADDED_WINDOW_MS
     if (expiry > now && (next === null || expiry < next)) next = expiry
   }
   return next
 }
 
 /**
- * The next moment anything just-added changes on screen: an entry's age
- * turning over ("2m ago" → "3m ago", every whole minute after
- * `created_at`) or, at the fifteenth, the task aging out. Null when nothing is in
+ * The next moment anything in the card changes on screen: an entry's age
+ * turning over ("2m ago" → "3m ago", every whole minute after its latest
+ * event) or, at the fifteenth, the task aging out. Null when nothing is in
  * the window. `useJustAddedClock` schedules ONE timeout for this — the next
  * visible change — rather than ticking on an interval.
  */
 export function nextJustAddedTick(tasks: Task[], now: number): number | null {
   let next: number | null = null
   for (const t of tasks) {
-    const created = createdMs(t)
-    if (Number.isNaN(created) || created + JUST_ADDED_WINDOW_MS <= now) continue
-    // The first whole minute after `created_at` that is still ahead of now.
-    const minutes = Math.max(1, Math.floor((now - created) / 60_000) + 1)
-    const tick = created + minutes * 60_000
+    const event = latestEvent(t)
+    if (!event || event.at + JUST_ADDED_WINDOW_MS <= now) continue
+    // The first whole minute after the event that is still ahead of now.
+    const minutes = Math.max(1, Math.floor((now - event.at) / 60_000) + 1)
+    const tick = event.at + minutes * 60_000
     if (next === null || tick < next) next = tick
   }
   return next
 }
 
 /**
- * How long ago, for the Just added card: "just now" under a minute, then
+ * How long ago the task's latest event was: "just now" under a minute, then
  * "2m ago". Minutes, floored — inside a 15-minute window nothing coarser is
  * useful. `now` is the dashboard's just-added clock, which advances on each
  * minute boundary (`nextJustAddedTick`), so the age counts up without polling.
  */
 export function formatJustAddedAge(task: Task, now: number): string {
-  const minutes = Math.floor((now - createdMs(task)) / 60_000)
+  const event = latestEvent(task)
+  const minutes = event ? Math.floor((now - event.at) / 60_000) : 0
   return minutes < 1 ? 'just now' : `${minutes}m ago`
+}
+
+/** The entry's age line: "Added 2m ago", "Targeted just now". */
+export function formatJustAddedLabel(entry: JustAddedEntry, now: number): string {
+  const verb = entry.kind === 'targeted' ? 'Targeted' : 'Added'
+  return `${verb} ${formatJustAddedAge(entry.task, now)}`
+}
+
+/** The tag on the task's real row: "New" for an add, "Targeted" for a targeting. */
+export function justAddedTag(task: Task, now: number): string | undefined {
+  const event = justAddedEvent(task, now)
+  if (!event) return undefined
+  return event.kind === 'targeted' ? 'Targeted' : 'New'
 }

@@ -143,7 +143,14 @@ export function RemindersView({
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   // Task segments (2026-10-10): tasks whose target hasn't arrived, as sections
   // after the slots (2026-10-11). Never counted in the headline or the badge.
-  const segments = useTaskSegments({ segments: taskSegments, refresh, onUndo, onCompleted })
+  const segments = useTaskSegments({
+    segments: taskSegments,
+    timeSlots,
+    timezone,
+    refresh,
+    onUndo,
+    onCompleted,
+  })
   const router = useRouter()
   // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
   const selection = useSelectionMode<number | string>()

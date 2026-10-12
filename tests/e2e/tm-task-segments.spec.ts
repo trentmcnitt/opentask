@@ -71,7 +71,7 @@ test.describe('Task segments', () => {
 
       // Today → a target today; the row leaves the segment.
       await segmentRow(page, ids[1])
-        .getByRole('button', { name: /^Target .* today$/ })
+        .getByRole('button', { name: /^Target .* today/ })
         .click()
       await expect(segmentRow(page, ids[1])).toHaveCount(0)
       await expect.poll(async () => (await stateOf(page, ids[1])).target_at).not.toBeNull()

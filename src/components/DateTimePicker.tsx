@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { CalendarDays } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,6 +40,27 @@ interface DateTimePickerProps {
    * (Trent, 2026-10-12). Opening on it sets nothing until the user picks.
    */
   emptyAnchor?: string | null
+  /**
+   * Controlled mode (2026-10-12): the parent opens the picker itself, and
+   * `children` is only where it anchors — NOT a trigger, so a plain tap on it
+   * does whatever the parent wired (a task segment's Today button targets on
+   * a tap and opens this on a hold or right-click; a Radix trigger would open
+   * it on the tap too). Leave both unset for the usual tap-to-open.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** The confirm button's text (default "Set Date"). */
+  submitLabel?: string
+}
+
+/** The empty default: tomorrow at 9:00 AM in the user's timezone (UTC ISO). */
+function tomorrowAtNine(timezone: string): string {
+  return DateTime.now()
+    .setZone(timezone)
+    .plus({ days: 1 })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()!
 }
 
 /**
@@ -57,40 +78,65 @@ export function DateTimePicker({
   allowClear = true,
   emptyDefault = 'tomorrow',
   emptyAnchor = null,
+  open: controlledOpen,
+  onOpenChange,
+  submitLabel = 'Set Date',
 }: DateTimePickerProps) {
-  const [open, setOpen] = useState(false)
+  const controlled = controlledOpen !== undefined
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlled ? controlledOpen : uncontrolledOpen
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [hour12, setHour12] = useState(9)
   const [minute, setMinute] = useState(0)
   const [period, setPeriod] = useState<'AM' | 'PM'>('AM')
 
   // Initialize internal state from external value when popover opens
+  const initialize = useCallback(() => {
+    const initial =
+      value ??
+      emptyAnchor ??
+      (emptyDefault === 'now' ? snapToNearestFiveMinutes() : tomorrowAtNine(timezone))
+    const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
+    setSelectedDate(dt.toJSDate())
+    setHour12(to12Hour(dt.hour))
+    setMinute(dt.minute)
+    setPeriod(dt.hour >= 12 ? 'PM' : 'AM')
+  }, [value, timezone, emptyDefault, emptyAnchor])
+
+  const setOpen = useCallback(
+    (newOpen: boolean) => {
+      if (controlled) onOpenChange?.(newOpen)
+      else setUncontrolledOpen(newOpen)
+    },
+    [controlled, onOpenChange],
+  )
+
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
-      if (newOpen) {
-        const initial =
-          value ?? emptyAnchor ?? (emptyDefault === 'now' ? snapToNearestFiveMinutes() : null)
-        if (initial) {
-          const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
-          setSelectedDate(dt.toJSDate())
-          setHour12(to12Hour(dt.hour))
-          setMinute(dt.minute)
-          setPeriod(dt.hour >= 12 ? 'PM' : 'AM')
-        } else {
-          const tomorrow = DateTime.now()
-            .setZone(timezone)
-            .plus({ days: 1 })
-            .set({ hour: 9, minute: 0 })
-          setSelectedDate(tomorrow.toJSDate())
-          setHour12(9)
-          setMinute(0)
-          setPeriod('AM')
-        }
-      }
+      if (newOpen) initialize()
       setOpen(newOpen)
     },
-    [value, timezone, emptyDefault, emptyAnchor],
+    [initialize, setOpen],
   )
+
+  // Controlled: the parent opened it, so no `onOpenChange(true)` came through
+  // here — initialise on the closed → open edge, during render (React's
+  // "adjust state when a prop changes" pattern, no effect).
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const [seenOpen, setSeenOpen] = useState(open)
+  if (controlled && open !== seenOpen) {
+    setSeenOpen(open)
+    if (open) initialize()
+  }
+
+  // Controlled: the anchor is the very button that opened it, so the tail of
+  // that press — the focus or click a touch long-press leaves behind on
+  // release — is not "outside" and must not close it (it did: the picker shut
+  // a moment after the finger lifted). A Radix trigger gets this exemption
+  // built in; an anchor doesn't.
+  const keepOpenOnAnchor = (e: Event) => {
+    if (controlled && anchorRef.current?.contains(e.target as Node)) e.preventDefault()
+  }
 
   const handleSetDate = () => {
     if (!selectedDate) return
@@ -114,8 +160,19 @@ export function DateTimePicker({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start" sideOffset={4}>
+      {controlled ? (
+        <PopoverAnchor asChild ref={anchorRef}>
+          {children}
+        </PopoverAnchor>
+      ) : (
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+      )}
+      <PopoverContent
+        className="w-auto p-0"
+        align="start"
+        sideOffset={4}
+        onInteractOutside={keepOpenOnAnchor}
+      >
         <Calendar
           mode="single"
           selected={selectedDate}
@@ -162,7 +219,7 @@ export function DateTimePicker({
           <div className="mt-2 flex gap-2">
             <Button size="sm" onClick={handleSetDate} disabled={!selectedDate} className="flex-1">
               <CalendarDays className="mr-1 size-3.5" />
-              Set Date
+              {submitLabel}
             </Button>
             {allowClear && (
               <Button size="sm" variant="outline" onClick={handleClear} className="flex-1">

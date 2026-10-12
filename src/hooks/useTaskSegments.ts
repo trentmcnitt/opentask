@@ -1,7 +1,11 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
+import { targetTodayTimeFor } from '@/lib/snooze'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { effectiveHorizon, type HorizonValue, type SegmentState } from '@/lib/task-segments'
 import { HORIZON_LABELS } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
@@ -19,6 +23,9 @@ import type { Task } from '@/types'
  * - circle → consider: "I saw it", never a completion
  * - checkbox → done (`POST /api/tasks/{id}/done`, the same as a dashboard tick)
  * - Target today → a deliberate target today; the row leaves the segment
+ * - Target at… (hold or right-click on Today, 2026-10-12) → the same request
+ *   with the picked moment (`at`). Today: the row leaves. A later day: the row
+ *   stays, ticked (it is considered today, and its target hasn't arrived)
  * - Defer All → everything still waiting in that segment, back tomorrow
  * - horizon chip → a new horizon (the row may change segment on refresh; the
  *   toast then says "Moved to Tasks · <Horizon>")
@@ -42,6 +49,9 @@ export interface SegmentView {
 
 interface UseTaskSegmentsOptions {
   segments: TaskSegmentPayload[]
+  /** The user's periods and timezone — where the Today picker opens (`targetTodayTimeFor`). */
+  timeSlots: TimeSlot[]
+  timezone: string
   refresh: () => Promise<void>
   onUndo: () => void
   onCompleted?: () => void
@@ -60,6 +70,8 @@ async function post(url: string, body: unknown): Promise<unknown> {
 
 export function useTaskSegments({
   segments,
+  timeSlots,
+  timezone,
   refresh,
   onUndo,
   onCompleted,
@@ -151,6 +163,7 @@ export function useTaskSegments({
       ),
     [run],
   )
+  const picker = useTargetPicker(run, timeSlots, timezone)
   const deferAll = useCallback(
     (segment: SegmentView) => {
       const ids = segment.rows.filter((r) => r.state === 'waiting').map((r) => r.task.id)
@@ -205,7 +218,57 @@ export function useTaskSegments({
     [run],
   )
 
-  return { segments: view, consider, done, targetToday, deferAll, setHorizon, restore }
+  const actions = { consider, done, targetToday, deferAll, setHorizon, restore }
+  return { segments: view, ...actions, ...picker }
+}
+
+type RunSegmentAction = (
+  ids: number[],
+  to: Overlay,
+  send: () => Promise<unknown>,
+  message: string,
+) => Promise<void>
+
+/**
+ * The Today button's picker (2026-10-12): where it opens — the moment a plain
+ * tap would target, computed at the hold so "now" is the moment of it — and
+ * the targeting it sends (`at`), through the same optimistic `run`.
+ */
+function useTargetPicker(run: RunSegmentAction, timeSlots: TimeSlot[], timezone: string) {
+  const { bulkSnoozeDefault, defaultSnoozeOption, morningTime } = useSnoozePreferences()
+  const targetTodayAnchor = useCallback(
+    () =>
+      targetTodayTimeFor(
+        { bulkSnoozeDefault, defaultSnoozeOption, morningTime },
+        timeSlots,
+        timezone,
+      ),
+    [bulkSnoozeDefault, defaultSnoozeOption, morningTime, timeSlots, timezone],
+  )
+  const targetAt = useCallback(
+    (task: Task, at: string) => {
+      const when = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone)
+      const today = DateTime.now().setZone(timezone)
+      return run(
+        [task.id],
+        // A later day: considered today, and its target hasn't arrived, so it
+        // stays in the segment, ticked — what the refresh will show anyway.
+        when.hasSame(today, 'day') || when < today ? 'gone' : 'considered',
+        () => post('/api/task-segments/target-today', { ids: [task.id], at }),
+        `Targeted ${targetWhen(when, today)}: “${task.title}”`,
+      )
+    },
+    [run, timezone],
+  )
+  return { targetTodayAnchor, targetAt }
+}
+
+/** "today 3:00 PM", "tomorrow 9:00 AM", "Tue, Oct 13 3:00 PM" — the picker's toast. */
+function targetWhen(when: DateTime, today: DateTime): string {
+  const time = when.toFormat('h:mm a')
+  if (when.hasSame(today, 'day')) return `today ${time}`
+  if (when.hasSame(today.plus({ days: 1 }), 'day')) return `tomorrow ${time}`
+  return `${when.toFormat('ccc, LLL d')} ${time}`
 }
 
 /**

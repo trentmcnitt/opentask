@@ -191,6 +191,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- A task segment's "Defer All": hidden for the rest of that local day,
   -- back tomorrow. Not a consider.
   segment_deferred_at TEXT DEFAULT NULL,
+  -- When the task was last targeted FROM A TASK SEGMENT: the segment row's
+  -- Today button or its long-press time picker (POST
+  -- /api/task-segments/target-today, which Process's "Do it" also calls).
+  -- Feeds the dashboard's Just now card for 15 minutes (src/lib/just-added.ts).
+  -- Deliberately NOT a general "target changed" stamp: snooze, edit, create
+  -- and a recurrence advance never set it. Undo restores the previous value.
+  segment_targeted_at TEXT DEFAULT NULL,
   -- A task with a deadline and no target nags from DEADLINE_LEAD_DAYS before
   -- the deadline (computed, never stored). Remove-target sets this to turn
   -- that off for the task; a new deadline turns it back on.
