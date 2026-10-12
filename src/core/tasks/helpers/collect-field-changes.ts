@@ -30,6 +30,12 @@ export type FieldChangesInput = TaskUpdateInput & {
    * considered in the same write, so one undo entry covers both.
    */
   last_considered_at?: string
+  /**
+   * Server-internal too: targeting from a task segment (Today, or its time
+   * picker) stamps `segment_targeted_at` in the same write, so the Undo of the
+   * targeting puts the previous stamp back with the target.
+   */
+  segment_targeted_at?: string
 }
 
 export interface FieldChangeData {
@@ -315,6 +321,9 @@ function collectTaskModelFields(
   }
   if (input.last_considered_at !== undefined) {
     trackField(data, 'last_considered_at', task.last_considered_at, input.last_considered_at)
+  }
+  if (input.segment_targeted_at !== undefined) {
+    trackField(data, 'segment_targeted_at', task.segment_targeted_at, input.segment_targeted_at)
   }
   if (input.horizon !== undefined && input.horizon !== task.horizon) {
     trackField(data, 'horizon', task.horizon, input.horizon)

@@ -112,6 +112,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   horizon_set_at: STR_N,
   last_considered_at: STR_N,
   segment_deferred_at: STR_N,
+  segment_targeted_at: STR_N,
   deadline_nag_off: BOOL,
   target_at: STR_N,
   last_notified_at: STR_N,

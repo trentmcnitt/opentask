@@ -145,6 +145,53 @@ describe('Task model over HTTP', () => {
     expect(refused.status).toBe(400)
   })
 
+  test('target-today stamps segment_targeted_at; `at` picks the moment; a bad `at` is a 400', async () => {
+    const t = await create({ title: 'tm seg at', horizon: 'days' })
+    expect(t.segment_targeted_at).toBeNull()
+    // Plain Today stamps it, and every task read carries it.
+    await apiFetch('/api/task-segments/target-today', { method: 'POST', body: { ids: [t.id] } })
+    const first = (await json(await apiFetch(`/api/tasks/${t.id}`))).data
+    expect(typeof first.segment_targeted_at).toBe('string')
+    const listed = (await json(await apiFetch('/api/tasks?done=false&limit=1000'))).data
+      .tasks as Array<Record<string, unknown>>
+    expect(listed.find((x) => x.id === t.id)?.segment_targeted_at).toBe(first.segment_targeted_at)
+
+    // `at`: the picked moment, normalised to UTC — two days out here.
+    const at = iso(48 * HOUR)
+    const res = await apiFetch('/api/task-segments/target-today', {
+      method: 'POST',
+      body: { ids: [t.id], at },
+    })
+    expect(res.status).toBe(200)
+    const body = (await json(res)).data
+    expect(body.until).toBe(new Date(at).toISOString())
+    const after = (await json(await apiFetch(`/api/tasks/${t.id}`))).data
+    expect(after.target_at).toBe(body.until)
+    expect(after.original_due_at).toBe(body.until)
+
+    // Undo takes back the second targeting: the first target and stamp return.
+    await apiFetch('/api/undo', { method: 'POST' })
+    const undone = (await json(await apiFetch(`/api/tasks/${t.id}`))).data
+    expect(undone.target_at).toBe(first.target_at)
+    expect(undone.segment_targeted_at).toBe(first.segment_targeted_at)
+
+    // A past day, or a string that isn't a date: refused, nothing written.
+    for (const bad of [iso(-72 * HOUR), 'not a date']) {
+      const r = await apiFetch('/api/task-segments/target-today', {
+        method: 'POST',
+        body: { ids: [t.id], at: bad },
+      })
+      expect(r.status).toBe(400)
+    }
+    expect((await json(await apiFetch(`/api/tasks/${t.id}`))).data.target_at).toBe(first.target_at)
+
+    // Not a general "target changed" stamp: a PATCH of the target leaves it.
+    const patched = await json(
+      await apiFetch(`/api/tasks/${t.id}`, { method: 'PATCH', body: { due_at: iso(5 * HOUR) } }),
+    )
+    expect(patched.data.segment_targeted_at).toBe(first.segment_targeted_at)
+  })
+
   test('horizon and deadline are create/update fields; a bad horizon is refused', async () => {
     const t = await create({ title: 'tm fields', horizon: 'months', deadline_at: iso(48 * HOUR) })
     expect(t.horizon).toBe('months')

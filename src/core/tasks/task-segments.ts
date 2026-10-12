@@ -27,8 +27,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { listTimeSlots } from '@/core/time-slots'
-import { nextPeriodStart } from '@/lib/time-slot-assign'
-import { computeSnoozeTime } from '@/lib/snooze'
+import { targetTodayTimeFor } from '@/lib/snooze'
 import { DateTime } from 'luxon'
 import type { Task } from '@/types'
 import {
@@ -196,6 +195,8 @@ export function restoreTasks(userId: number, ids: number[]): number {
  * When "Target today" sets the target (spec §4): where the Snooze-all button
  * goes (`bulk_snooze_default` — the next period, or the default snooze
  * option), as long as that is still today; otherwise the top of the next hour.
+ * The rule itself is `targetTodayTimeFor` (`src/lib/snooze.ts`), which the
+ * Today button's time picker also opens on.
  */
 export function targetTodayTime(userId: number, timezone: string, now = new Date()): string {
   const prefs = getDb()
@@ -205,20 +206,30 @@ export function targetTodayTime(userId: number, timezone: string, now = new Date
     .get(userId) as
     | { bulk_snooze_default: string; default_snooze_option: string; morning_time: string }
     | undefined
-  const local = DateTime.fromJSDate(now).setZone(timezone)
-  let candidate: string | null = null
-  if (prefs?.bulk_snooze_default === 'default_option') {
-    const option = prefs.default_snooze_option
-    if (option !== 'tomorrow') {
-      candidate = computeSnoozeTime(option, timezone, prefs.morning_time, listTimeSlots(userId))
-    }
-  } else {
-    candidate = nextPeriodStart(listTimeSlots(userId), timezone, now)
+  return targetTodayTimeFor(
+    {
+      bulkSnoozeDefault: prefs?.bulk_snooze_default ?? 'next_period',
+      // No row: no default option to read, so the next period (or next hour).
+      defaultSnoozeOption: prefs?.default_snooze_option ?? 'tomorrow',
+      morningTime: prefs?.morning_time ?? '09:00',
+    },
+    listTimeSlots(userId),
+    timezone,
+    now,
+  )
+}
+
+/**
+ * Whether `at` may be a segment target: today or later in the user's day. An
+ * earlier time TODAY is allowed — it is a commitment for today, over target
+ * at once, like Today late in the evening. A past day is refused.
+ */
+function assertTargetDay(at: string, timezone: string, now: Date): void {
+  const day = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone).startOf('day')
+  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  if (!day.isValid || day < today) {
+    throw new ValidationError('The target must be today or later')
   }
-  if (candidate && DateTime.fromISO(candidate).setZone(timezone).hasSame(local, 'day')) {
-    return candidate
-  }
-  return local.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!
 }
 
 /**
@@ -226,16 +237,31 @@ export function targetTodayTime(userId: number, timezone: string, now = new Date
  * (`reset_original_due_at`). Goes through bulk edit for one undo entry, the
  * notification dismissal and the sync — and lists every id as an explicit
  * pick, so the High/Urgent sweep filter never drops one the user tapped.
+ *
+ * `at` (2026-10-12): the Today button's long-press / right-click picker sends
+ * the chosen moment instead of `targetTodayTime`. Same path, same stamps.
+ *
+ * The deadline: a deliberate re-target is not a snooze, so — like the plain
+ * Today — it is neither refused nor capped by `deadline_at` (bulk edit skips
+ * the deadline rule when `reset_original_due_at` rides along).
+ *
+ * Stamps `segment_targeted_at` (the dashboard's Just now card, see
+ * `src/lib/just-added.ts`) in the same bulk edit, so the one Undo puts the
+ * target, the considered stamp and the targeted stamp back together.
  */
 export function targetTasksToday(
   userId: number,
   timezone: string,
   ids: number[],
+  at?: string,
 ): { until: string; affected: number } {
   ownOpenTasks(userId, ids)
-  const until = targetTodayTime(userId, timezone)
+  const now = new Date()
+  if (at !== undefined) assertTargetDay(at, timezone, now)
+  const until = at ?? targetTodayTime(userId, timezone, now)
+  const stamp = now.toISOString()
   // Also "considered" (amendment 11): the row finishes on the tap. One bulk
-  // edit, so one Undo puts back the target and the stamp together.
+  // edit, so one Undo puts back the target and the stamps together.
   const result = bulkEdit({
     userId,
     userTimezone: timezone,
@@ -243,7 +269,8 @@ export function targetTasksToday(
     changes: {
       due_at: until,
       reset_original_due_at: true,
-      last_considered_at: new Date().toISOString(),
+      last_considered_at: stamp,
+      segment_targeted_at: stamp,
     },
     includeTaskIds: ids,
   })

@@ -322,6 +322,8 @@ function runMigrations(database: Database.Database): void {
     'horizon_set_at',
     'last_considered_at',
     'segment_deferred_at',
+    // 2026-10-12: targeted from a task segment (Today / its time picker).
+    'segment_targeted_at',
   ]) {
     if (!hasColumn(database, 'tasks', col)) {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)

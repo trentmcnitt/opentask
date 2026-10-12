@@ -62,6 +62,39 @@ export function computeSnoozeTime(
   return new Date(Date.now() + minutes * 60 * 1000).toISOString()
 }
 
+/**
+ * When a task segment's "Target today" sets the target (spec §4) — the pure
+ * half of `targetTodayTime` (`src/core/tasks/task-segments.ts`), here so the
+ * client can open the Today button's time picker on the very moment a tap
+ * would use (2026-10-12). Where the Snooze-all button goes
+ * (`bulk_snooze_default` — the next period, or the default snooze option), as
+ * long as that is still today; otherwise the top of the next hour.
+ */
+export function targetTodayTimeFor(
+  prefs: {
+    bulkSnoozeDefault: BulkSnoozeDefault | string
+    defaultSnoozeOption: string
+    morningTime: string
+  },
+  slots: { start_time: string }[],
+  timezone: string,
+  now: Date = new Date(),
+): string {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  let candidate: string | null = null
+  if (prefs.bulkSnoozeDefault === 'default_option') {
+    if (prefs.defaultSnoozeOption !== 'tomorrow') {
+      candidate = computeSnoozeTime(prefs.defaultSnoozeOption, timezone, prefs.morningTime, slots)
+    }
+  } else {
+    candidate = nextPeriodStart(slots, timezone, now)
+  }
+  if (candidate && DateTime.fromISO(candidate).setZone(timezone).hasSame(local, 'day')) {
+    return candidate
+  }
+  return local.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!
+}
+
 /** The `default_snooze_option` value meaning "the next period" (2026-10-10). */
 export const NEXT_PERIOD_OPTION = 'next_period'
 
