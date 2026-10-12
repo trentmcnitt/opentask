@@ -39,19 +39,13 @@ enum QuotaPeriodKey: String {
     /// weekly one does — §5's four sections don't distinguish the two).
     static func from(rrule: String?) -> QuotaPeriodKey {
         guard let rrule, !rrule.isEmpty else { return .none }
-        let body = rrule.uppercased()
-        for part in body.split(separator: ";") {
-            let pair = part.split(separator: "=", maxSplits: 1)
-            guard pair.count == 2, pair[0].trimmingCharacters(in: .whitespaces) == "FREQ" else { continue }
-            switch pair[1] {
-            case "DAILY": return .daily
-            case "WEEKLY": return .weekly
-            case "MONTHLY": return .monthly
-            case "YEARLY": return .yearly
-            default: return .none
-            }
+        switch RRuleParts.parse(rrule)["FREQ"]?.uppercased() {
+        case "DAILY": return .daily
+        case "WEEKLY": return .weekly
+        case "MONTHLY": return .monthly
+        case "YEARLY": return .yearly
+        default: return .none
         }
-        return .none
     }
 }
 

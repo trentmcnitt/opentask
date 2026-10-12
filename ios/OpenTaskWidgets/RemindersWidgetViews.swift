@@ -244,6 +244,10 @@ private struct ReminderRowLayout {
     /// The title is longer than the whole card: the row is one page tall and
     /// the title shrinks to fit it (see `WidgetTextMetrics.titleLines`).
     var shrinks = false
+    /// Where a task segment row's small words go (2026-10-12): after the
+    /// title, on their own line, or one part per line — whichever leaves no
+    /// "·" at either end of a line (`SegmentMetaPlacement`).
+    var metaPlacement: SegmentMetaPlacement = .inline
 }
 
 /// The Home Screen list.
@@ -1466,10 +1470,10 @@ enum SegmentRowMetrics {
 ///   controls, amendment 16).
 /// - Order is the server's (priority, then id) and fixed: a considered row
 ///   leaves the open list but nothing else moves.
-/// - The bottom row's leading control is "Defer all" (`DeferSegmentIntent`)
-///   while anything waits: the whole segment's rest goes to tomorrow. The
-///   segment's "X of Y" follows it — the Tasks widget's "Select" then
-///   "N of M" arrangement.
+/// - The bottom row reads the segment's "X of Y" in the leading spot (a
+///   period's "N of M" spot), then "Defer all" (`DeferSegmentIntent`) while
+///   anything waits: the whole segment's rest goes to tomorrow (2026-10-12;
+///   it was "Defer all" first).
 ///
 /// What reads like a period (2026-10-11, "segments as slots"): the strip
 /// draws this segment's own bar (grown, as the on-screen period's is — no ring), the
@@ -1596,8 +1600,24 @@ private struct TaskSegmentListView: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    private func label(_ task: TaskDTO) -> String { task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date) }
+    private func label(_ task: TaskDTO, placement: SegmentMetaPlacement) -> String {
+        task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date, placement: placement)
+    }
 
+    /// WHERE THE SMALL WORDS GO (2026-10-12, "· Target Wed Oct 14 · repeats"
+    /// on Trent's phone): a `Text` can't say where it wrapped, so the row
+    /// measures instead. If the title alone takes k lines and title + words
+    /// still takes k, the words fit on the title's last line and follow it
+    /// after " · ". Otherwise they start their own line, with no separator;
+    /// and if even alone they'd take more than one line, each part gets a
+    /// line of its own and no dot is drawn at all. The chosen string is the
+    /// one measured ("title\nwords", "title\npart\npart"), so the row's
+    /// height is still exactly what it draws. The title and the words alone
+    /// are measured without the notes glyph, which is drawn after the words.
+    /// The measuring font is the title's weight for the whole string, a
+    /// little wider than the regular-weight words: any error leans toward
+    /// more lines, never toward a wrap mid-line (and `TaskDTO.metaJoiner`
+    /// can only break AFTER a dot, so even then no line starts with one).
     private func layout(
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
@@ -1608,14 +1628,24 @@ private struct TaskSegmentListView: View {
             let task = row.task
             let isWaiting: Bool
             if case .waiting = item { isWaiting = true } else { isWaiting = false }
-            let fit = metrics.titleLines(
-                label(task), width: SegmentRowMetrics.titleWidth(in: width, showsTargetToday: row.offersTargetToday),
-                weight: isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular,
-                maxHeight: budget, hasNotes: task.hasNotes
-            )
-            if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
+            let titleWidth = SegmentRowMetrics.titleWidth(in: width, showsTargetToday: row.offersTargetToday)
+            let weight = isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular
+            func lines(_ text: String, hasNotes: Bool) -> (lines: Int, shrinks: Bool) {
+                metrics.titleLines(text, width: titleWidth, weight: weight, maxHeight: budget, hasNotes: hasNotes)
+            }
+            var placement = SegmentMetaPlacement.inline
+            var fit = lines(label(task, placement: .inline), hasNotes: task.hasNotes)
+            if let meta = task.segmentMeta(segmentHorizon: segment.horizon, now: entry.date),
+               fit.lines > lines(task.title, hasNotes: false).lines {
+                placement = lines(meta, hasNotes: false).lines > 1 ? .partsOnOwnLines : .ownLine
+                fit = lines(label(task, placement: placement), hasNotes: task.hasNotes)
+            }
+            if fit.shrinks {
+                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true, metaPlacement: placement)
+            }
             return ReminderRowLayout(
-                lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), isWaiting ? rowFloor : 0)
+                lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), isWaiting ? rowFloor : 0),
+                metaPlacement: placement
             )
         }
     }
@@ -1628,14 +1658,14 @@ private struct TaskSegmentListView: View {
         case .waiting(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                considered: false, now: entry.date, lines: layout.lines, height: layout.height,
+                considered: false, now: entry.date, metaPlacement: layout.metaPlacement, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
         case .considered(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                considered: true, now: entry.date, lines: layout.lines, height: layout.height,
+                considered: true, now: entry.date, metaPlacement: layout.metaPlacement, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
@@ -1656,13 +1686,17 @@ private struct TaskSegmentListView: View {
         }
     }
 
-    /// Left of the pager: "Defer all" while anything waits, then the
-    /// segment's "X of Y" (2026-10-11) — the slot page's "4 of 7", in its
-    /// font and color. The Tasks widget's resting row is the sibling: the
-    /// action first (it never moves as the count's width changes), then the
-    /// count, measured together and the count left out while it wouldn't
-    /// clear the pager — never truncated, never at the cost of the action.
-    /// "Defer all" itself is left out only when it alone wouldn't fit.
+    /// Left of the pager: the segment's "X of Y" FIRST — in the leading spot
+    /// where a period page's "4 of 7" sits, in its font and color — then
+    /// "Defer all" while anything waits (2026-10-12, Trent: "'1 of 3' needs
+    /// to swap with 'Defer all'"; it was the Tasks widget's "Select" then
+    /// "N of M" order). Same order on every task segment page (Days … Upcoming),
+    /// so the count reads in one place across the whole ring. Measured
+    /// together; the action still outranks the count: the count is left out
+    /// while both wouldn't clear the pager — never truncated, never at the
+    /// cost of the action — and "Defer all" only when it alone wouldn't fit.
+    /// The count is `monospacedDigit`, so "Defer all" moves only when the
+    /// count gains a digit ("9 of 12" → "10 of 12").
     @ViewBuilder
     private func bottomLeading(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
         let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
@@ -1677,9 +1711,6 @@ private struct TaskSegmentListView: View {
             cardWidth: width, pagerText: pagerText, metrics: metrics
         )
         HStack(spacing: Self.bottomGap) {
-            if showsDefer {
-                deferAllButton(metrics: metrics)
-            }
             if showsCount {
                 Text(count.text)
                     .font(.caption2)
@@ -1688,6 +1719,9 @@ private struct TaskSegmentListView: View {
                     .lineLimit(1)
                     .fixedSize()
                     .accessibilityLabel(Text("\(count.handled) of \(count.total) considered in \(segment.label)"))
+            }
+            if showsDefer {
+                deferAllButton(metrics: metrics)
             }
         }
     }
@@ -1811,6 +1845,9 @@ private struct SegmentTaskRow: View {
     let segmentHorizon: String
     let considered: Bool
     let now: Date
+    /// Where the small words go (`ReminderRowLayout.metaPlacement`, measured
+    /// by the list) — never a "·" at either end of a line.
+    let metaPlacement: SegmentMetaPlacement
     let lines: Int
     let height: CGFloat
     let shrinks: Bool
@@ -1895,7 +1932,7 @@ private struct SegmentTaskRow: View {
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
             .foregroundStyle(considered ? Color.secondary : Color.primary)
         guard let meta = task.segmentMeta(segmentHorizon: segmentHorizon, now: now) else { return title }
-        return title + Text("\(QuotaPromptDTO.countSeparator)\(meta)").foregroundStyle(.secondary)
+        return title + Text(metaPlacement.joined(meta: meta)).foregroundStyle(.secondary)
     }
 
     /// `ReminderRow`'s two frames: centred on line 1, target the row's full

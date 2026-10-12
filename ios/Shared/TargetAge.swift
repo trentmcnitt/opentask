@@ -176,9 +176,11 @@ extension TaskDTO {
     /// pulled it in — "Weeks" on a Days page), never for an unset horizon
     /// (shown as nothing, never as "Weeks"); a future target's day ("Nov 1");
     /// and the deadline ("deadline Oct 16"). "Weeks · Nov 1". Nil when there
-    /// is nothing to say. Spaces are non-breaking so the words wrap as one
-    /// unit, like a prompt's count. `segmentHorizon` nil = no segment context
-    /// (the watch's compact rows): the set horizon always shows.
+    /// is nothing to say. Spaces inside each part are non-breaking, so a part
+    /// ("deadline Oct 16") never splits; parts are joined by `metaJoiner`,
+    /// which lets a long meta wrap only AFTER a dot, never before one.
+    /// `segmentHorizon` nil = no segment context (the watch's compact rows):
+    /// the set horizon always shows.
     func segmentMeta(segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current) -> String? {
         if segmentHorizon == SegmentKind.upcomingRaw {
             return upcomingMeta(calendar: calendar)
@@ -187,15 +189,17 @@ extension TaskDTO {
         let deadline = deadlineDate.map { "deadline \(TargetAge.dayText($0, calendar: calendar))" }
         let parts = [horizonWord, TargetAge.futureTargetChip(self, now: now, calendar: calendar), deadline]
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
-        return parts.isEmpty ? nil : parts.joined(separator: "\u{00A0}·\u{00A0}")
+        return parts.isEmpty ? nil : parts.joined(separator: Self.metaJoiner)
     }
 
     /// An UPCOMING row's small words (2026-10-12) — the Swift port of the
     /// web's `upcomingGap` (`src/lib/task-segments.ts`): "Target Tue Oct 13",
     /// then the deadline and how far past the target it falls, "· deadline
     /// Sat Oct 17 (+4d)", "(same day)", or "(deadline before target)" for a
-    /// target set past its own deadline. A repeating row adds "· repeats" (the
-    /// web's target chip). No horizon word: a targeted task's horizon decides
+    /// target set past its own deadline. A repeating row adds its schedule
+    /// after the target (`RecurrenceSummary`: "· every Wed", "· daily at 9 AM";
+    /// the web's target chip still says "repeats", which is also the
+    /// fallback for a rule it can't read). No horizon word: a targeted task's horizon decides
     /// nothing until the target is removed (spec §1). Days are local calendar
     /// days in `calendar`'s zone; spaces non-breaking, like `segmentMeta`.
     func upcomingMeta(calendar: Calendar = .current) -> String? {
@@ -216,17 +220,52 @@ extension TaskDTO {
                 deadline = text
             }
         }
-        let repeats = rrule != nil && target != nil ? "repeats" : nil
+        let repeats = rrule != nil && target != nil ? RecurrenceSummary.text(rrule: rrule, anchorTime: anchorTime) : nil
         let parts = [target, repeats, deadline].compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
-        return parts.isEmpty ? nil : parts.joined(separator: "\u{00A0}·\u{00A0}")
+        return parts.isEmpty ? nil : parts.joined(separator: Self.metaJoiner)
     }
 
-    /// The whole segment row label as ONE string — title, separator, meta —
-    /// the string both the row's `Text` and the pager's measurement build
-    /// from (the `QuotaPromptDTO.labelText` rule).
-    func segmentLabelText(segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current) -> String {
+    /// Between two parts of a segment row's small words, and between the
+    /// title and them when they share a line: " · " with the space BEFORE
+    /// the dot non-breaking, so a line can break only after the dot. A wrap
+    /// then leaves the dot trailing the line before ("… for the car ·"),
+    /// never leading the next ("· Target Wed Oct 14", 2026-10-12, Trent's
+    /// phone) — and the widget row avoids even that, measuring and picking a
+    /// `SegmentMetaPlacement` so no dot is left at either end of a line.
+    static let metaJoiner = "\u{00A0}· "
+
+    /// The whole segment row label as ONE string — title, then the small
+    /// words — the string both the row's `Text` and the pager's measurement
+    /// build from (the `QuotaPromptDTO.labelText` rule), laid out per
+    /// `placement` (2026-10-12; `TaskSegmentListView` measures and picks).
+    func segmentLabelText(
+        segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
+        placement: SegmentMetaPlacement = .inline
+    ) -> String {
         guard let meta = segmentMeta(segmentHorizon: segmentHorizon, now: now, calendar: calendar) else { return title }
-        return "\(title)\(QuotaPromptDTO.countSeparator)\(meta)"
+        return title + placement.joined(meta: meta)
+    }
+}
+
+/// Where a segment row's small words go relative to its title (2026-10-12,
+/// "· Target Wed Oct 14 · repeats" on Trent's phone: a wrap left a dot at
+/// the start of a line). The widget row measures and picks the first that
+/// keeps every dot mid-line:
+/// - `inline`: the words fit on the title's last line — "Title · words".
+/// - `ownLine`: they don't, but fit on one line of their own — "Title" /
+///   "Target Wed Oct 14 · every Wed", no separator before them.
+/// - `partsOnOwnLines`: even alone they wrap — one part per line, no dots at
+///   all ("Target Wed Oct 14" / "deadline Sat Oct 17 (+3d)").
+enum SegmentMetaPlacement: Equatable {
+    case inline, ownLine, partsOnOwnLines
+
+    /// What follows the title: the separator or line break, then the words.
+    func joined(meta: String) -> String {
+        switch self {
+        case .inline: return TaskDTO.metaJoiner + meta
+        case .ownLine: return "\n" + meta
+        case .partsOnOwnLines: return "\n" + meta.components(separatedBy: TaskDTO.metaJoiner).joined(separator: "\n")
+        }
     }
 }
 

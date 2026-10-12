@@ -97,7 +97,8 @@ private struct ReminderCardView: View {
                 } else if let meta = card.segmentMeta {
                     // A task segment row (2026-10-10): its small words
                     // ("Weeks · Nov 1") ride with the title.
-                    FittingTitle(title: "\(card.title) · \(meta)")
+                    // Joined so a wrap can't start a line with "·".
+                    FittingTitle(title: "\(card.title)\(TaskDTO.metaJoiner)\(meta)")
                 } else {
                     FittingTitle(title: card.title)
                 }
