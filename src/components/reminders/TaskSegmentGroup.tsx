@@ -187,8 +187,8 @@ function SegmentConsideredDisclosure({
 
 /**
  * Every task segment with a row today, AFTER the slots (Trent, 10-11: "Tasks
- * should go underneath Reminders"), in screen order (days, weeks, months,
- * eventually), with the slots' spacing. Open/folded comes from the slots' own
+ * should go underneath Reminders"), in screen order (days, upcoming,
+ * weeks, months, eventually), with the slots' spacing. Open/folded comes from the slots' own
  * `useSlotDisclosure`, under a "tasks:<horizon>" key that is never a slot id.
  */
 export function TaskSegmentSections({

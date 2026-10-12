@@ -552,6 +552,11 @@ function UpcomingMeta({
             {row.recurring && <span className="text-muted-foreground"> · repeats</span>}
           </span>
         ))}
+      {gap.target && gap.deadline && (
+        <span aria-hidden className="-mx-1">
+          ·
+        </span>
+      )}
       {gap.deadline && (
         <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
           {gap.deadline}
