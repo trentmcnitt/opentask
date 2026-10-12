@@ -135,11 +135,11 @@ function SlotRowCountToggle({
  * An effect, so it runs after the commit that opened and expanded the slot and
  * the section is at its full height when it is scrolled to.
  */
-function useSlotScroll(
+export function useSlotScroll<T extends HTMLElement = HTMLDivElement>(
   scrollRequest: number | undefined,
   onScrollServed: ((seq: number) => void) | undefined,
 ) {
-  const sectionRef = useRef<HTMLDivElement>(null)
+  const sectionRef = useRef<T>(null)
   useEffect(() => {
     if (scrollRequest === undefined) return
     scrollSectionIntoView(sectionRef.current)
@@ -362,6 +362,7 @@ export function SlotHeaderRow({
   considered,
   open,
   started,
+  accent,
 }: {
   label: string
   time: string | null
@@ -369,6 +370,8 @@ export function SlotHeaderRow({
   considered: number
   open: boolean
   started: boolean
+  /** A colour for the label — a task segment's teal. */
+  accent?: string
 }) {
   const total = count + considered
   const finished = count === 0 && considered > 0
@@ -407,7 +410,11 @@ export function SlotHeaderRow({
           )}
         />
       </span>
-      <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
+      <span
+        className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase"
+        // A task segment's title wears its horizon's teal (2026-10-11).
+        style={accent ? { color: accent } : undefined}
+      >
         {label}
       </span>
       {/* The one part of the header that may give way on a phone: a task
@@ -435,10 +442,14 @@ export function SlotHairline({
   label,
   considered,
   total,
+  color,
 }: {
   label: string
   considered: number
   total: number
+  /** A task segment's teal (2026-10-11) in place of the slots' indigo while
+   *  it fills. Finished is green either way, like a slot. */
+  color?: string
 }) {
   const fraction = total > 0 ? considered / total : 0
   return (
@@ -457,7 +468,10 @@ export function SlotHairline({
           // the dashboard's `ReminderSlotBar` (2026-09-22).
           fraction >= 1 ? 'bg-green-600' : 'bg-indigo-600',
         )}
-        style={{ width: `${Math.min(1, fraction) * 100}%` }}
+        style={{
+          width: `${Math.min(1, fraction) * 100}%`,
+          ...(color && fraction < 1 ? { backgroundColor: color } : {}),
+        }}
       />
     </div>
   )

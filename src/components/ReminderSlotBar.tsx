@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -90,6 +91,21 @@ export interface SlotBarItem {
   total: number
   /** Its time has come. Always true for a task segment. */
   started: boolean
+  /** A task segment's teal (`segmentColor`): its fill while it fills and its
+   *  ring when it is the page on screen. Absent for a slot. */
+  color?: string
+}
+
+/**
+ * The faint divider between the last slot's bar and the first task segment's
+ * (2026-10-11, Trent's pick of the mockups: "a thin divider between slots and
+ * tasks"). Only when the strip has both. Shared with the Reminders page's day
+ * bar.
+ */
+export function SegmentDivider() {
+  return (
+    <span aria-hidden data-segment-divider className="bg-foreground/20 mx-1 h-3 w-px shrink-0" />
+  )
 }
 
 /** What a segment is saying. */
@@ -106,12 +122,15 @@ export function ReminderSlotBar({
   items,
   currentIndex,
   onJump,
+  ariaLabel = "Today's reminder slots",
 }: {
   /** Every page, in pager order: the slots, then the task segments. */
   items: SlotBarItem[]
   /** The page on screen, so it can be marked "you are here". */
   currentIndex: number
   onJump: (index: number) => void
+  /** The group's name: the slots' strip, or the Tasks card's. */
+  ariaLabel?: string
 }) {
   // AN EMPTY SECTION GETS NO SEGMENT. Trent, 2026-09-21: "for the 'anytime' if
   // a section does not have anything in it, it doesn't need a segment." It
@@ -127,13 +146,11 @@ export function ReminderSlotBar({
   if (shown.length < 2) return null
 
   return (
-    <div
-      className="flex items-center gap-1 px-3 pb-2"
-      role="group"
-      aria-label="Today's reminder slots"
-    >
-      {shown.map(({ item, index: i }) => {
-        const { considered, total, label } = item
+    <div className="flex items-center gap-1 px-3 pb-2" role="group" aria-label={ariaLabel}>
+      {shown.map(({ item, index: i }, n) => {
+        const { considered, total, label, color } = item
+        // The divider goes before the first task segment, after a slot.
+        const divider = color !== undefined && n > 0 && shown[n - 1].item.color === undefined
         const state = slotState(item)
         const fraction = considered / total
         // Gated on the numbers, not on `state`: `state` only calls a slot
@@ -144,60 +161,70 @@ export function ReminderSlotBar({
         const current = i === currentIndex
 
         return (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => onJump(i)}
-            data-slot-segment={item.key}
-            data-slot-state={state}
-            aria-current={current ? 'true' : undefined}
-            // The name carries what the colour cannot: which slot, and how far
-            // through it is. A bar of five unlabelled segments is meaningless
-            // to a screen reader otherwise.
-            aria-label={`${label}, ${considered} of ${total} considered${
-              state === 'upcoming' ? ', not started yet' : ''
-            }`}
-            title={`${label} — ${considered}/${total}`}
-            className="group flex items-center py-1"
-            style={{
-              // Weight by size, but never below a thumb. `flexBasis: 0` makes
-              // grow the only thing deciding width, and every segment here
-              // holds at least one thought, so the weight is never zero.
-              flexGrow: total,
-              flexBasis: 0,
-              minWidth: MIN_SEGMENT_PX,
-            }}
-          >
-            <span
-              className={cn(
-                'w-full overflow-hidden rounded-full transition-all',
-                // The slot on screen is the taller one — position without a
-                // second colour, which the three states already spend.
-                current ? 'h-2' : 'h-1',
-                // Its time has come: a track with real presence, so the
-                // unfilled part reads as "still to do".
-                state === 'behind' && 'bg-foreground/20',
-                state === 'done' && 'bg-green-600/20',
-                // Nothing has happened here yet, and that is not a problem —
-                // barely there, so it never competes for attention.
-                state === 'upcoming' && 'bg-foreground/[0.06]',
-                'group-hover:brightness-125',
-              )}
+          <Fragment key={item.key}>
+            {divider && <SegmentDivider />}
+            <button
+              type="button"
+              onClick={() => onJump(i)}
+              data-slot-segment={item.key}
+              data-slot-state={state}
+              aria-current={current ? 'true' : undefined}
+              // The name carries what the colour cannot: which slot, and how far
+              // through it is. A bar of five unlabelled segments is meaningless
+              // to a screen reader otherwise.
+              aria-label={`${label}, ${considered} of ${total} considered${
+                state === 'upcoming' ? ', not started yet' : ''
+              }`}
+              title={`${label} — ${considered}/${total}`}
+              className="group flex items-center py-1"
+              style={{
+                // Weight by size, but never below a thumb. `flexBasis: 0` makes
+                // grow the only thing deciding width, and every segment here
+                // holds at least one thought, so the weight is never zero.
+                flexGrow: total,
+                flexBasis: 0,
+                minWidth: MIN_SEGMENT_PX,
+              }}
             >
-              {fraction > 0 && (
-                <span
-                  className={cn(
-                    // Blue while there's still something waiting; green the
-                    // moment there isn't. A step change in colour, not an
-                    // increment in length — see the header comment.
-                    'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
-                    complete ? 'bg-green-600' : 'bg-indigo-600',
-                  )}
-                  style={{ width: `${Math.min(1, fraction) * 100}%` }}
-                />
-              )}
-            </span>
-          </button>
+              <span
+                className={cn(
+                  'w-full overflow-hidden rounded-full transition-all',
+                  // The slot on screen is the taller one — position without a
+                  // second colour, which the three states already spend.
+                  current ? 'h-2' : 'h-1',
+                  // A task segment's page is ringed in its own teal — Trent's
+                  // mockup — so "you are on Tasks · Weeks" reads as teal.
+                  current && color && 'outline-2 outline-offset-1',
+                  // Its time has come: a track with real presence, so the
+                  // unfilled part reads as "still to do".
+                  state === 'behind' && 'bg-foreground/20',
+                  state === 'done' && 'bg-green-600/20',
+                  // Nothing has happened here yet, and that is not a problem —
+                  // barely there, so it never competes for attention.
+                  state === 'upcoming' && 'bg-foreground/[0.06]',
+                  'group-hover:brightness-125',
+                )}
+                style={current && color ? { outlineColor: color } : undefined}
+              >
+                {fraction > 0 && (
+                  <span
+                    className={cn(
+                      // Blue while there's still something waiting; green the
+                      // moment there isn't. A step change in colour, not an
+                      // increment in length — see the header comment.
+                      'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
+                      complete ? 'bg-green-600' : 'bg-indigo-600',
+                    )}
+                    style={{
+                      width: `${Math.min(1, fraction) * 100}%`,
+                      // Teal for a task segment while it fills; green when done.
+                      ...(color && !complete ? { backgroundColor: color } : {}),
+                    }}
+                  />
+                )}
+              </span>
+            </button>
+          </Fragment>
         )
       })}
     </div>
