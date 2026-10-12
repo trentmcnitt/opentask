@@ -104,10 +104,12 @@ export function backdateCreated(ids: number[], opts: { inSegments?: boolean } = 
     // A task created before today shows in its horizon's task segment
     // (2026-10-10) — a second copy of its title on the dashboard. Unless a
     // spec wants exactly that (`inSegments`), keep it out: an "eventually"
-    // horizon (first Saturday of a quarter) and considered now.
+    // horizon (first Saturday of a quarter) and considered a day ahead — not
+    // now, which would keep it in today's segment as a considered row (and a
+    // page of the dashboard panel's pager); see globalSetup.ts.
     const hide = db.prepare(
       `UPDATE tasks SET horizon = COALESCE(horizon, 'eventually'),
-         last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
+         last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day') WHERE id = ?`,
     )
     for (const id of ids) {
       stmt.run(id)

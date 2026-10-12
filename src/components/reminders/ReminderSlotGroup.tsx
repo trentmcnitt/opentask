@@ -13,6 +13,14 @@ import { ConsideredPromptRow } from '@/components/QuotaPromptRow'
 import { ReminderRow, type ReminderRowHandlers } from '@/components/reminders/ReminderRow'
 import type { Task } from '@/types'
 
+/** A section's header sweep: a slot's "Considered all", a task segment's "Defer all". */
+export const SLOT_SWEEP_CLASS =
+  'text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors'
+
+/** The toggle under a section's rows ("Show all N", "Show N considered"). */
+export const SLOT_FOOTER_TOGGLE_CLASS =
+  'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors'
+
 /** How many rows a not-yet-started slot shows before "Show all" (§7.3). */
 export const SLOT_PREVIEW_COUNT = 5
 
@@ -102,8 +110,7 @@ function SlotRowCountToggle({
   canShowLess: boolean
   onExpand: (expanded: boolean) => void
 }) {
-  const className =
-    'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors'
+  const className = SLOT_FOOTER_TOGGLE_CLASS
   if (hiddenCount > 0) {
     return (
       <button type="button" onClick={() => onExpand(true)} className={className}>
@@ -247,7 +254,7 @@ export function ReminderSlotGroup({
             type="button"
             onClick={() => onCompleteGroup(group)}
             aria-label={`Mark all ${count} in ${label} as considered`}
-            className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+            className={SLOT_SWEEP_CLASS}
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />
             <span className="hidden sm:inline">Considered all</span>
@@ -348,7 +355,7 @@ function SlotPromptList({
  * (2026-09-22) — never a greyed-out one for a slot that isn't finished yet.
  * Never a pill that changes colour when the section folds.
  */
-function SlotHeaderRow({
+export function SlotHeaderRow({
   label,
   time,
   count,
@@ -403,8 +410,11 @@ function SlotHeaderRow({
       <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
         {label}
       </span>
+      {/* The one part of the header that may give way on a phone: a task
+          segment puts its longer hint here ("Shown on Saturdays"), and the
+          count beside it must never be overlapped. A slot's time always fits. */}
       {time && (
-        <span className="text-muted-foreground/50 text-xs whitespace-nowrap">&middot; {time}</span>
+        <span className="text-muted-foreground/50 min-w-0 truncate text-xs">&middot; {time}</span>
       )}
       <span className="flex-1" />
       <span
@@ -421,7 +431,7 @@ function SlotHeaderRow({
 }
 
 /** Full-width hairline under a slot header: considered over what the slot held today. Long enough that one thought visibly moves it. */
-function SlotHairline({
+export function SlotHairline({
   label,
   considered,
   total,
@@ -494,7 +504,7 @@ function ConsideredDisclosure({
         type="button"
         onClick={() => setShown((s) => !s)}
         aria-expanded={shown}
-        className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
+        className={SLOT_FOOTER_TOGGLE_CLASS}
       >
         {shown ? 'Hide' : 'Show'} {items.length + prompts.length} considered
       </button>

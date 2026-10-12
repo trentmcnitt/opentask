@@ -1,10 +1,6 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { slotHasStarted } from '@/lib/reminders-summary'
-import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
-import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
-import type { ReminderGroup } from '@/hooks/useReminders'
 
 /**
  * The whole day's slots as one thin bar, under the pager.
@@ -69,36 +65,52 @@ import type { ReminderGroup } from '@/hooks/useReminders'
  * had 1 reminder out of 50 wouldn't be able to tap something that small."
  * Flexbox honours the minimum first and shares what is left by weight, so a
  * tiny slot stays hittable and only the surplus is distributed.
+ *
+ * TASK SEGMENTS ARE SEGMENTS TOO (2026-10-11). The panel pages through each
+ * task segment after the slots (Trent: "days, weeks, etc. should be individual
+ * segments and behave similarly to the segments for reminders"), so each gets
+ * a bar here, after the slots' — same states, same proportions, same tap. The
+ * bar takes plain items rather than `ReminderGroup`s for that reason. A task
+ * segment has no start time: it is today's all day, so it is "started" and
+ * reads blue while anything in it waits, green once it is all handled.
  */
 
 /** Small enough to stay roughly proportional, wide enough to hit. Shared with
  *  the Reminders page's day bar, whose segments are tap targets too. */
 export const MIN_SEGMENT_PX = 28
 
+/** One page of the panel's pager, as the bar sees it. */
+export interface SlotBarItem {
+  /** `slotGroupKey` for a slot, "tasks:<horizon>" for a task segment. */
+  key: string
+  label: string
+  /** Handled today: considered (and, for a task segment, deferred). */
+  considered: number
+  /** Its size today: waiting + handled. Fixed for the day, so widths hold. */
+  total: number
+  /** Its time has come. Always true for a task segment. */
+  started: boolean
+}
+
 /** What a segment is saying. */
 type SlotState = 'done' | 'behind' | 'upcoming'
 
-function slotState(group: ReminderGroup, startedAlready: boolean): SlotState {
-  const waiting = groupWaiting(group)
-  if (startedAlready && waiting === 0 && groupConsidered(group) > 0) return 'done'
-  if (startedAlready && waiting > 0) return 'behind'
+function slotState(item: SlotBarItem): SlotState {
+  const waiting = item.total - item.considered
+  if (item.started && waiting === 0 && item.considered > 0) return 'done'
+  if (item.started && waiting > 0) return 'behind'
   return 'upcoming'
 }
 
 export function ReminderSlotBar({
-  groups,
+  items,
   currentIndex,
-  timezone,
-  now,
   onJump,
 }: {
-  groups: ReminderGroup[]
-  /** The slot on screen, so it can be marked "you are here". */
+  /** Every page, in pager order: the slots, then the task segments. */
+  items: SlotBarItem[]
+  /** The page on screen, so it can be marked "you are here". */
   currentIndex: number
-  timezone: string
-  /** Passed in rather than read here, so the panel's one clock drives both
-   *  this and its own natural-slot maths. */
-  now: Date
   onJump: (index: number) => void
 }) {
   // AN EMPTY SECTION GETS NO SEGMENT. Trent, 2026-09-21: "for the 'anytime' if
@@ -107,15 +119,8 @@ export function ReminderSlotBar({
   // is general: a segment is a claim that there is something there, and a
   // slot holding nothing has nothing to report, nothing to finish and nothing
   // worth paging to. The original index rides along so a tap still lands on
-  // the right slot after the empty ones are dropped.
-  const shown = groups
-    .map((group, index) => ({
-      group,
-      index,
-      considered: groupConsidered(group),
-      total: groupWaiting(group) + groupConsidered(group),
-    }))
-    .filter((s) => s.total > 0)
+  // the right page after the empty ones are dropped.
+  const shown = items.map((item, index) => ({ item, index })).filter((s) => s.item.total > 0)
 
   // One segment is not a bar — it would say only "everything is here", which
   // the header already says better.
@@ -127,24 +132,23 @@ export function ReminderSlotBar({
       role="group"
       aria-label="Today's reminder slots"
     >
-      {shown.map(({ group, index: i, considered, total }) => {
-        const started = slotHasStarted(group.slot, timezone, now)
-        const state = slotState(group, started)
+      {shown.map(({ item, index: i }) => {
+        const { considered, total, label } = item
+        const state = slotState(item)
         const fraction = considered / total
         // Gated on the numbers, not on `state`: `state` only calls a slot
         // 'done' once it has STARTED, but a slot can be fully considered
         // ahead of its own start time (still 'upcoming') and the fill must
         // not call that "still filling" — see the header comment.
         const complete = considered >= total
-        const label = slotLabel(group)
         const current = i === currentIndex
 
         return (
           <button
-            key={slotGroupKey(group)}
+            key={item.key}
             type="button"
             onClick={() => onJump(i)}
-            data-slot-segment={slotGroupKey(group)}
+            data-slot-segment={item.key}
             data-slot-state={state}
             aria-current={current ? 'true' : undefined}
             // The name carries what the colour cannot: which slot, and how far

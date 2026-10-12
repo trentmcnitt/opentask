@@ -19,7 +19,7 @@ import { useSyncStream } from '@/hooks/useSyncStream'
 import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
 import { usePromptDeepLink } from '@/hooks/useRemindersDeepLinks'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
-import { TaskSegmentCard } from '@/components/TaskSegmentCard'
+import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
 import { useTaskSegments } from '@/hooks/useTaskSegments'
 import { usePromptRows } from '@/components/QuotaPromptRow'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
@@ -141,8 +141,8 @@ export function RemindersView({
     taskSegments,
     create,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
-  // Task segments (2026-10-10): tasks whose target hasn't arrived, shown FIRST
-  // — "tasks are an early-day thing". Separate from the slots, never counted.
+  // Task segments (2026-10-10): tasks whose target hasn't arrived, as sections
+  // after the slots (2026-10-11). Never counted in the headline or the badge.
   const segments = useTaskSegments({ segments: taskSegments, refresh, onUndo, onCompleted })
   const router = useRouter()
   // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
@@ -620,22 +620,17 @@ export function RemindersView({
     ],
   )
 
-  // The task segments, UNDER the slots (Trent, 10-11: "Tasks should go
-  // underneath Reminders"), in screen order (days, weeks, months,
-  // eventually). Not shown while searching — search covers reminders only.
-  const segmentCards =
-    segments.segments.length > 0 ? (
-      <div className="mt-3 space-y-3" data-task-segments>
-        {segments.segments.map((segment) => (
-          <TaskSegmentCard
-            key={segment.horizon}
-            segment={segment}
-            actions={segments}
-            timezone={timezone}
-          />
-        ))}
-      </div>
-    ) : null
+  // The task segments, AFTER the slots, each a section shaped like a slot's
+  // (2026-10-11). Their open/folded state lives in the slots' own
+  // `useSlotDisclosure`. Not shown while searching — search covers reminders.
+  const segmentCards = (
+    <TaskSegmentSections
+      actions={segments}
+      timezone={timezone}
+      isOpen={isOpen}
+      onToggle={toggleOpen}
+    />
+  )
 
   return (
     // Clearance below the last row for the floating selection bar, so the
