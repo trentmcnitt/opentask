@@ -147,7 +147,7 @@ export async function register() {
       }
     })
     log.info('cron', 'Notification cron started (every 1 min)')
-    await startAttemptsCron(cron.schedule, notifyError)
+    await startAttemptsCron((expr, fn) => cron.schedule(expr, fn), notifyError)
 
     // --- WidgetKit push sync (event-driven, not a cron) ---
     initWidgetPushSync()
