@@ -175,7 +175,9 @@ export function useTaskSegments({
         [task.id],
         'gone',
         () => post('/api/task-segments/target-today', { ids: [task.id] }),
-        `Targeted today: “${task.title}”`,
+        // Says what did NOT happen: Today sits beside Done, and a mis-tap
+        // read as a check-off until the toast (2026-10-12).
+        `Targeted for today, not done: “${task.title}”`,
       ),
     [run],
   )
