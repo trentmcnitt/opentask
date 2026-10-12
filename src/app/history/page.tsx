@@ -34,6 +34,8 @@ interface CompletionEntry {
   task_title: string
   completed_at: string
   due_at_was: string | null
+  /** Local days over target when completed (spec §7); null on older rows. */
+  attempts: number | null
 }
 
 interface UndoSnapshot {
@@ -277,6 +279,16 @@ function CompletionsTab({
                     minute: '2-digit',
                     hour12: true,
                   })}
+                  {/* A late completion says how many days it was over target. */}
+                  {c.attempts !== null && c.attempts > 0 && (
+                    <span
+                      data-completion-attempts={c.attempts}
+                      className="text-over-target ml-1.5 font-semibold tabular-nums"
+                      title={`Over target on ${c.attempts} day${c.attempts === 1 ? '' : 's'}`}
+                    >
+                      · {c.attempts}×
+                    </span>
+                  )}
                 </p>
               </div>
             </div>

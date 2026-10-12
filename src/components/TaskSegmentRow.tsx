@@ -34,7 +34,7 @@ import {
   type HorizonValue,
   type SegmentKind,
 } from '@/lib/task-segments'
-import { upcomingGap, upcomingRowActions } from '@/lib/task-segments'
+import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { useCheckInDay, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
@@ -498,7 +498,38 @@ function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
           deadline {deadline.toFormat('LLL d')}
         </span>
       )}
+      <BadgeChips task={task} timezone={timezone} />
     </div>
+  )
+}
+
+/**
+ * The two badges (spec §7), as quiet chips at the end of a segment row's
+ * second line: the attempts ("2×", a task with a target that has been over
+ * it — e.g. moved ahead after missing it) and the age (">1 mo", an undated
+ * task past its horizon's threshold). Never both: age is undated only.
+ */
+function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
+  const now = new Date()
+  const attempts = effectiveAttempts(task, timezone, now).attempts
+  const age = ageLabel(task, now, timezone)
+  return (
+    <>
+      {task.due_at !== null && attempts >= 1 && (
+        <span
+          data-attempts={attempts}
+          title={`Over target on ${attempts} day${attempts === 1 ? '' : 's'}`}
+          className="text-over-target font-semibold tabular-nums"
+        >
+          {attempts}×
+        </span>
+      )}
+      {age && (
+        <span data-age-label={age} className="text-muted-foreground/80">
+          {age}
+        </span>
+      )}
+    </>
   )
 }
 
@@ -581,6 +612,7 @@ function UpcomingMeta({
           {gap.deadline}
         </span>
       )}
+      <BadgeChips task={task} timezone={timezone} />
     </div>
   )
 }
