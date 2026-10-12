@@ -121,7 +121,7 @@ enum WidgetTheme {
 
     /// A task segment's teal (2026-10-11, Trent's pick: mockup
     /// task-segment-colors-2 option 3) — its strip bar's fill while a row
-    /// waits, the ring on its page, and its page title. One shade per
+    /// waits (grown while its page is on screen) and its page title. One shade per
     /// horizon, the exact values the web uses (`TaskHorizon.segmentColorHex`);
     /// Upcoming (2026-10-12) its own blue-teal (`SegmentKind.colorHex`).
     /// A finished segment's bar is green like a period's, and its track the

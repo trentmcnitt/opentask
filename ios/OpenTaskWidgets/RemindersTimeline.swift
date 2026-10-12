@@ -47,7 +47,7 @@ enum RemindersTimeline {
     // screen (Trent, 10-11: "Tasks should go underneath Reminders" — it
     // replaced 10-10's segments-first).
     // Every page has an Int key in ONE space — a slot's `slotKey` (its id,
-    // or -1 for Anytime) and a segment's `pageKey` (-10…-13) — so the
+    // or -1 for Anytime) and a segment's `pageKey` (-10…-13, -14 Upcoming) — so the
     // existing slot override, its natural-page anchor, the bottom pager's
     // per-page index and the chevrons all address a segment page with no
     // new storage.
