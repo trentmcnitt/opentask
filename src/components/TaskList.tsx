@@ -25,7 +25,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProjectPreviewCount, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
-import { isJustAdded } from '@/lib/just-added'
+import { justAddedTag } from '@/lib/just-added'
 
 /**
  * §7.3: items with no time of day (most Track items) get their own group after
@@ -148,8 +148,8 @@ interface TaskListProps {
   /** The deep link's flash has played; it must not play again on a remount. */
   onHighlightDone?: () => void
   /**
-   * Just added (`src/lib/just-added.ts`): the dashboard's unfiltered open
-   * tasks, which decide which real rows wear the "New" tag. Null or omitted
+   * Just now (`src/lib/just-added.ts`): the dashboard's unfiltered open
+   * tasks, which decide which real rows wear the "New" / "Targeted" tag. Null or omitted
    * turns the tag off; the dashboard passes null while searching.
    */
   justAddedSource?: Task[] | null
@@ -157,7 +157,7 @@ interface TaskListProps {
   justAddedNow?: number
   /**
    * Filled in by this list with a function that brings a task's real row on
-   * screen and flashes it — what the Just added card (`JustAddedCard`, rendered
+   * screen and flashes it — what the Just now card (`JustAddedCard`, rendered
    * outside the list) calls on a tap.
    */
   revealRef?: React.MutableRefObject<((task: Task) => void) | null>
@@ -393,8 +393,7 @@ export function TaskList({
   const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
   const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
-  const newBadge = (task: Task) =>
-    justAddedSource && isJustAdded(task, justAddedNow) ? 'New' : undefined
+  const newBadge = (task: Task) => (justAddedSource ? justAddedTag(task, justAddedNow) : undefined)
 
   const renderTaskRow = (task: Task) => {
     const cancelRef = { current: null as (() => void) | null }

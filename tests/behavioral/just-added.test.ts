@@ -1,16 +1,21 @@
 /**
- * Just added (`src/lib/just-added.ts`): for 15 minutes after a task is
- * created it is listed in the dashboard's Just added card, newest first, with
- * how long ago it was added. Pure selection logic, frozen clock.
+ * Just now (`src/lib/just-added.ts`): for 15 minutes after a task is created
+ * — or targeted from a task segment (`segment_targeted_at`) — it is listed in
+ * the dashboard's Just now card, newest event first, with which event and how
+ * long ago. Pure selection logic, frozen clock.
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   JUST_ADDED_WINDOW_MS,
   formatJustAddedAge,
+  formatJustAddedLabel,
   isJustAdded,
+  justAddedEntryKey,
+  justAddedEvent,
+  justAddedTag,
   nextJustAddedExpiry,
   nextJustAddedTick,
-  selectJustAddedTasks,
+  selectJustAddedEntries,
 } from '@/lib/just-added'
 import type { Task } from '@/types'
 
@@ -53,6 +58,7 @@ function makeTask(overrides: Partial<Task> & { id: number; created_at: string })
     horizon_set_at: null,
     last_considered_at: null,
     segment_deferred_at: null,
+    segment_targeted_at: null,
     deadline_nag_off: false,
     last_notified_at: null,
     last_critical_alert_at: null,
@@ -171,7 +177,7 @@ describe('nextJustAddedTick', () => {
   })
 })
 
-describe('selectJustAddedTasks', () => {
+describe('selectJustAddedEntries', () => {
   test('only the window, newest first; a same-second tie goes to the higher id', () => {
     const tasks = [
       makeTask({ id: 1, created_at: ago(HOUR) }),
@@ -180,7 +186,71 @@ describe('selectJustAddedTasks', () => {
       makeTask({ id: 4, created_at: ago(MIN) }),
       makeTask({ id: 5, created_at: ago(16 * MIN) }),
     ]
-    expect(selectJustAddedTasks(tasks, NOW).map((t) => t.id)).toEqual([4, 3, 2])
+    expect(selectJustAddedEntries(tasks, NOW).map((e) => e.task.id)).toEqual([4, 3, 2])
+  })
+
+  test('a task targeted in the window is in, ordered by the targeting, labelled targeted', () => {
+    const tasks = [
+      makeTask({ id: 1, created_at: ago(HOUR), segment_targeted_at: ago(2 * MIN) }),
+      makeTask({ id: 2, created_at: ago(5 * MIN) }),
+      makeTask({ id: 3, created_at: ago(HOUR), segment_targeted_at: ago(20 * MIN) }), // aged out
+      makeTask({ id: 4, created_at: ago(30_000) }),
+    ]
+    const entries = selectJustAddedEntries(tasks, NOW)
+    expect(entries.map((e) => [e.task.id, e.kind])).toEqual([
+      [4, 'added'],
+      [1, 'targeted'],
+      [2, 'added'],
+    ])
+    expect(entries[1].at).toBe(NOW - 2 * MIN)
+  })
+
+  test('added AND targeted in the window: listed once, under the later event', () => {
+    const task = makeTask({ id: 1, created_at: ago(10 * MIN), segment_targeted_at: ago(MIN) })
+    const entries = selectJustAddedEntries([task], NOW)
+    expect(entries).toHaveLength(1)
+    expect(entries[0].kind).toBe('targeted')
+    expect(formatJustAddedLabel(entries[0], NOW)).toBe('Targeted 1m ago')
+    // The window runs from the targeting: in at 14m after it, out at 15m —
+    // though the add itself left the window long before.
+    expect(isJustAdded(task, NOW + 13 * MIN)).toBe(true)
+    expect(isJustAdded(task, NOW + 14 * MIN)).toBe(false)
+  })
+
+  test('an old targeting never revives an add: only the latest event counts', () => {
+    const task = makeTask({ id: 1, created_at: ago(2 * MIN), segment_targeted_at: ago(HOUR) })
+    expect(justAddedEvent(task, NOW)).toEqual({ kind: 'added', at: NOW - 2 * MIN })
+  })
+})
+
+describe('the targeted event drives the clock, the tag and Clear', () => {
+  test('expiry and ticks run from the latest event', () => {
+    const task = makeTask({
+      id: 1,
+      created_at: ago(14 * MIN + 30_000),
+      segment_targeted_at: ago(40_000),
+    })
+    expect(nextJustAddedExpiry([task], NOW)).toBe(NOW - 40_000 + JUST_ADDED_WINDOW_MS)
+    expect(nextJustAddedTick([task], NOW)).toBe(NOW + 20_000)
+  })
+
+  test('the real row is tagged "New" for an add and "Targeted" for a targeting', () => {
+    expect(justAddedTag(makeTask({ id: 1, created_at: ago(MIN) }), NOW)).toBe('New')
+    expect(
+      justAddedTag(makeTask({ id: 2, created_at: ago(HOUR), segment_targeted_at: ago(MIN) }), NOW),
+    ).toBe('Targeted')
+    expect(justAddedTag(makeTask({ id: 3, created_at: ago(HOUR) }), NOW)).toBeUndefined()
+  })
+
+  test('a Clear key is per event: re-targeting after a Clear makes a new key', () => {
+    const before = selectJustAddedEntries([makeTask({ id: 7, created_at: ago(5 * MIN) })], NOW)[0]
+    const after = selectJustAddedEntries(
+      [makeTask({ id: 7, created_at: ago(5 * MIN), segment_targeted_at: ago(0) })],
+      NOW,
+    )[0]
+    expect(justAddedEntryKey(before)).not.toBe(justAddedEntryKey(after))
+    expect(formatJustAddedLabel(before, NOW)).toBe('Added 5m ago')
+    expect(formatJustAddedLabel(after, NOW)).toBe('Targeted just now')
   })
 })
 

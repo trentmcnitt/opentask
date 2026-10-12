@@ -138,15 +138,26 @@ interface UseSimpleLongPressOptions {
   delay?: number
 }
 
-/** The one field the simple handlers read; a React pointer event has it. */
+/** The fields the simple handlers read; a React pointer event has them. */
 interface PressButton {
   button: number
+  clientX?: number
+  clientY?: number
 }
 
 interface UseSimpleLongPressReturn {
   onPointerDown: (e?: PressButton) => void
   onPointerUp: (e?: PressButton) => void
   onPointerLeave: () => void
+  /**
+   * Optional: wire these where the press sits in something that scrolls or
+   * swipes (a task-segment row's Today button, 2026-10-12). A move past 10px,
+   * or the browser taking the pointer for a scroll (`pointercancel`), ends the
+   * press — neither the hold nor the tap fires — so a scroll that starts on
+   * the button never acts. The next press starts clean.
+   */
+  onPointerMove: (e: PressButton) => void
+  onPointerCancel: () => void
   /** Keyboard fallback — calls onShortPress if pointer didn't fire */
   onClick: () => void
 }
@@ -168,6 +179,7 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
   const { onLongPress, onShortPress, delay = 400 } = options
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fired = useRef(false)
+  const origin = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     return () => {
@@ -179,6 +191,8 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     (e?: PressButton) => {
       if (e && e.button !== 0) return
       fired.current = false
+      origin.current =
+        e?.clientX !== undefined && e.clientY !== undefined ? { x: e.clientX, y: e.clientY } : null
       timer.current = setTimeout(() => {
         fired.current = true
         onLongPress()
@@ -209,6 +223,27 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     }
   }, [])
 
+  // Ends the press without acting: `fired` swallows the pointerup and click.
+  const abandon = useCallback(() => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+    origin.current = null
+    fired.current = true
+  }, [])
+
+  const onPointerMove = useCallback(
+    (e: PressButton) => {
+      if (!timer.current || !origin.current || e.clientX === undefined || e.clientY === undefined)
+        return
+      const dx = e.clientX - origin.current.x
+      const dy = e.clientY - origin.current.y
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) abandon()
+    },
+    [abandon],
+  )
+
   const onClick = useCallback(() => {
     if (fired.current) {
       fired.current = false
@@ -217,5 +252,12 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     onShortPress()
   }, [onShortPress])
 
-  return { onPointerDown, onPointerUp, onPointerLeave, onClick }
+  return {
+    onPointerDown,
+    onPointerUp,
+    onPointerLeave,
+    onPointerMove,
+    onPointerCancel: abandon,
+    onClick,
+  }
 }

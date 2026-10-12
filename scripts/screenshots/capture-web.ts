@@ -233,9 +233,9 @@ function downscales(
 
 const dashboardReady = (page: Page) => page.locator('[id^="task-row-"]')
 
-/** The Just added card pushes the list down; clear it for the hero shots. */
+/** The Just now card pushes the list down; clear it for the hero shots. */
 async function clearJustAdded(page: Page): Promise<void> {
-  const card = page.getByRole('region', { name: 'Just added' })
+  const card = page.getByRole('region', { name: 'Just now' })
   // Pressed with the keyboard: a click would leave the pointer over whatever
   // row moves up into the card's place.
   if (await card.isVisible()) await card.getByRole('button', { name: 'Clear' }).press('Enter')
@@ -307,13 +307,13 @@ async function desktopDashboards(browser: Browser, theme: Exclude<Theme, 'n/a'>)
 async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Promise<void> {
   const page = await openPage(browser, { theme, width: 1280, height: 860, scale: 2 })
 
-  // Just added card (created minutes before the frozen now).
-  const justAdded = page.getByRole('region', { name: 'Just added' })
+  // Just now card (created minutes before the frozen now).
+  const justAdded = page.getByRole('region', { name: 'Just now' })
   await justAdded.waitFor()
   await settle(page)
   const jaFile = outPath(`web-just-added-${theme}.png`)
   await shootWithPadding(page, justAdded, jaFile, 12)
-  record(jaFile, 'The dashboard "Just added" card', theme, [
+  record(jaFile, 'The dashboard "Just now" card', theme, [
     `docs:public/images/dashboard/web-just-added-${theme}.png`,
   ])
   // The AI add input, with a natural-language task typed (not submitted).
