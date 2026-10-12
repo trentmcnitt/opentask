@@ -23,7 +23,7 @@ export const EnrichmentResultSchema = z.object({
     .string()
     .nullable()
     .describe(
-      'The TARGET: when the user said to do it or be reminded. ISO 8601 local datetime (no Z, no offset), or null',
+      'The TARGET: when the user said to do it or be reminded. ISO 8601 local datetime (no Z, no offset); the date alone (YYYY-MM-DD) only when the user says \"today\" with no time; null when no day is mentioned',
     )
     .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
       message: 'due_at must be a valid ISO 8601 datetime',
