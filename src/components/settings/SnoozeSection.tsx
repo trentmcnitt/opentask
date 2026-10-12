@@ -180,7 +180,7 @@ function DefaultSnoozeRow() {
   return (
     <SettingRow
       label="Default snooze"
-      description="Where a single tap or swipe snoozes an overdue task"
+      description={`Where a single tap or swipe snoozes an ${OVER_TARGET_LOWER} task`}
     >
       {showCustom ? (
         <div className="flex items-center gap-2">
