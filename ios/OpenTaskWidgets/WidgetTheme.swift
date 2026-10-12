@@ -132,6 +132,14 @@ enum WidgetTheme {
         return rgb(scheme == .dark ? hex.dark : hex.light)
     }
 
+    /// A task page's title color: one deeper teal (#0b7a6f) for every horizon
+    /// in light mode, for legibility (Trent, 2026-10-11); the horizon's own
+    /// fill in dark mode (`TaskHorizon.segmentTitleHex`).
+    static func taskSegmentTitleColor(_ horizon: TaskHorizon?, scheme: ColorScheme) -> Color {
+        let hex = (horizon ?? .weeks).segmentTitleHex
+        return rgb(scheme == .dark ? hex.dark : hex.light)
+    }
+
     /// The faint divider between the last period bar and the first task bar
     /// (option 3's "faint separator"): the mockup's #c9c9cf / #55555b.
     static func stripSeparator(scheme: ColorScheme) -> Color {

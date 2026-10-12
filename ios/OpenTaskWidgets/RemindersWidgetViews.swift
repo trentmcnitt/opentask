@@ -1750,7 +1750,7 @@ private struct TaskSegmentListView: View {
             .font(.headline)
             // Its horizon's teal (2026-10-11): the page's accent, matching
             // its strip bar and ring.
-            .foregroundStyle(WidgetTheme.taskSegmentColor(segment.horizonValue, scheme: colorScheme))
+            .foregroundStyle(WidgetTheme.taskSegmentTitleColor(segment.horizonValue, scheme: colorScheme))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }

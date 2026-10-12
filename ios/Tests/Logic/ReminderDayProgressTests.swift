@@ -230,8 +230,10 @@ final class ReminderDayProgressTests: XCTestCase {
     func testTaskSegmentTealsAreTheWebsValues() {
         let light = TaskHorizon.allCases.map { $0.segmentColorHex.light }
         let dark = TaskHorizon.allCases.map { $0.segmentColorHex.dark }
-        XCTAssertEqual(light, [0x0F9D8F, 0x2BB5A6, 0x7FD3C9, 0xB9E6E0])
+        XCTAssertEqual(light, [0x0F9D8F, 0x2BB5A6, 0x4FB8AB, 0x8CCFC6])
         XCTAssertEqual(dark, [0x2BB5A6, 0x4FC8BB, 0x8FDCD2, 0xC3ECE6])
+        XCTAssertEqual(Set(TaskHorizon.allCases.map { $0.segmentTitleHex.light }), [0x0B7A6F], "one light title teal")
+        XCTAssertEqual(TaskHorizon.allCases.map { $0.segmentTitleHex.dark }, dark, "dark titles equal their fills")
         let bars = ReminderDayProgress.stripBars(
             groups: [], segments: [TaskSegmentDTO(horizon: "months", tasks: [row(1, .waiting)])], now: noon
         )

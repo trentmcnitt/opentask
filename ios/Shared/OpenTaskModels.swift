@@ -320,9 +320,16 @@ enum TaskHorizon: String, CaseIterable, Codable {
         switch self {
         case .days: return (0x0F9D8F, 0x2BB5A6)
         case .weeks: return (0x2BB5A6, 0x4FC8BB)
-        case .months: return (0x7FD3C9, 0x8FDCD2)
-        case .eventually: return (0xB9E6E0, 0xC3ECE6)
+        case .months: return (0x4FB8AB, 0x8FDCD2)
+        case .eventually: return (0x8CCFC6, 0xC3ECE6)
         }
+    }
+
+    /// A task page's TITLE ("Tasks · Days"). Light mode uses one deeper teal
+    /// for every horizon, for legibility on the light card (Trent,
+    /// 2026-10-11); dark mode's title is the horizon's own fill.
+    var segmentTitleHex: (light: UInt32, dark: UInt32) {
+        (0x0B7A6F, segmentColorHex.dark)
     }
 }
 
