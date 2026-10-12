@@ -275,7 +275,7 @@ describe('Process: stale targets', () => {
 
 describe('Process: inbox', () => {
   useProcessClock()
-  test('PC-016: open one-off tasks in the Inbox, oldest first; not other projects or reminders', () => {
+  test('PC-016: open tasks in the Inbox, oldest first, recurring included; not other projects or reminders', () => {
     getDb()
       .prepare(
         "INSERT INTO projects (id, name, owner_id, shared, sort_order) VALUES (2, 'Home', ?, 0, 1)",
@@ -285,8 +285,11 @@ describe('Process: inbox', () => {
     const second = make({ project_id: 1 })
     make({ project_id: 2 })
     make({ project_id: 1, is_reminder: true, rrule: 'FREQ=DAILY' })
+    // A recurring task counts: the dashboard's Inbox group shows it, and
+    // Process must agree with that header (visual QA 2026-10-11).
+    const recurring = make({ project_id: 1, rrule: 'FREQ=WEEKLY', due_at: daysAgo(1) })
     const data = getProcessData(TEST_USER_ID, tz)
     expect(data.inbox_project_id).toBe(1)
-    expect(data.inbox.map((t) => t.id)).toEqual([first.id, second.id])
+    expect(data.inbox.map((t) => t.id)).toEqual([first.id, second.id, recurring.id])
   })
 })

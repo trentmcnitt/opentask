@@ -1644,10 +1644,11 @@ paths:
       description: >
         The in-app Process button's lists, computed by rule (no AI, so it works with AI off). Read-only:
         Process writes through PATCH, bulk edit (`affirm_horizon`, `target_at: null` with
-        `deadline_nag_off: true`), target-today and DELETE. Only the caller's own open one-off tasks
-        (not reminders, quotas or recurring tasks).
+        `deadline_nag_off: true`), target-today and DELETE. Only the caller's own open tasks, never
+        reminders or quotas; `growth` and the stale-target lists also leave out recurring tasks.
 
-        - `inbox`: tasks still in the Inbox project, oldest first.
+        - `inbox`: tasks still in the Inbox project, oldest first, recurring ones included (the
+          dashboard's Inbox group, so the two counts agree).
         - `growth`: tasks long past their horizon, longest first. Measured from `horizon_set_at`, else
           `created_at`; days after 14 days, weeks or unset after 60, months after 180 (eventually never).
           Asks for the next horizon up. Excludes tasks whose target has arrived (they are in the old-target

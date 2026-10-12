@@ -23,6 +23,7 @@ import {
 import { HORIZON_ORDER, SEGMENT_NUDGE_THRESHOLD, type HorizonValue } from '@/lib/task-segments'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
+import { prominenceClasses } from '@/components/reminders/ReminderRow'
 
 /**
  * A TASK SEGMENT's rows (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -226,8 +227,14 @@ export function TaskSegmentRow({
       <div className="min-w-0 flex-1">
         <p
           className={cn(
-            'text-foreground text-pretty',
-            panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
+            'text-pretty',
+            // The title colour of the reminder row beside it (Trent, 10-11:
+            // "make them the same"): on /reminders, `prominenceClasses` by
+            // priority; on the panel, the panel reminder row's plain text.
+            // The SEGMENT's own title in the header stays teal.
+            panel
+              ? 'text-foreground text-[13.5px] leading-[1.42]'
+              : cn('text-[16px] leading-6', prominenceClasses(task.priority)),
           )}
         >
           {task.title}

@@ -118,8 +118,10 @@ export function SlotPagerHeader({
           >
             {label}
           </span>
+          {/* The slot's time / segment's hint: ~#8a8a8a light, ~#8f8f8f dark
+              (2026-10-11 visual QA; /50 measured 1.9:1 and 2.9:1). */}
           {time && (
-            <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/80 dark:text-muted-foreground/90 text-xs whitespace-nowrap">
               {' '}
               &middot; {time}
             </span>

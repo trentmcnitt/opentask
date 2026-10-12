@@ -37,7 +37,7 @@ export const DEMO_TOUR_STEPS: DemoTourStep[] = [
   {
     selector: '[data-tour="quick-add"]',
     title: "Type it like you'd say it",
-    body: 'Add a task in plain English — recurrence, due dates, and priority are figured out automatically. Try "walk the dog every day except Saturday at 9am".',
+    body: 'Add a task in plain English — recurrence, targets, and priority are figured out automatically. Try "walk the dog every day except Saturday at 9am".',
   },
   {
     selector: '[data-tour="task-score"]',

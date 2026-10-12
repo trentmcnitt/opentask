@@ -426,8 +426,10 @@ export function ReminderRow({
  *
  * The scale is deliberately shallow — three steps across five priorities — so
  * the top of a slot reads as "start here", not as "this one is shouting".
+ * A task segment's row on /reminders uses it too, so a task title and a
+ * reminder title of the same priority are the same colour (Trent, 10-11).
  */
-function prominenceClasses(priority: number): string {
+export function prominenceClasses(priority: number): string {
   if (priority >= 3) return 'text-foreground font-medium'
   if (priority === 2) return 'text-foreground'
   return 'text-foreground/70'

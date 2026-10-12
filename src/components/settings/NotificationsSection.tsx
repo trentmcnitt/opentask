@@ -217,7 +217,8 @@ function AutoSnoozeRows() {
             setAutoSnoozeMedium,
           )
         }
-        labelColor="text-yellow-600"
+        // yellow-600 measured ~2.9:1 on white; 700 is ~4.9:1 (visual QA 10-11)
+        labelColor="text-yellow-700 dark:text-yellow-500"
       />
       {/* High auto-snooze */}
       <AutoSnoozeRow
