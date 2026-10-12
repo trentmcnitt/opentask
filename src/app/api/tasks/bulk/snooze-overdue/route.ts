@@ -135,6 +135,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         highAffected: result.highSnoozed,
         high: result.highSkipped,
         urgent: result.urgentSkipped - result.highSkipped,
+        deadline: result.deadlineSkipped,
       },
       until,
       timezone: user.timezone,
@@ -157,10 +158,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
-      // Left where they were: their deadline has passed, and a target never
-      // goes past its deadline (§8.2, 2026-10-12).
+      // Held back like High (Trent's ruling, 2026-10-12): below High by
+      // priority, but the deadline has passed, so swept only once nothing
+      // lower is left. Not in `skipped_urgent`.
       skipped_deadline: result.deadlineSkipped,
-      // Snoozed only as far as their deadline (§8.2).
+      // Snoozed only as far as a deadline still ahead (§8.2).
       capped_deadline: result.deadlineCapped,
       // The resolved target (ISO), so a client can say where things went.
       until,

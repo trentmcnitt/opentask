@@ -265,9 +265,11 @@ function useBulkActions(
       const result = await saveQuickPanelChanges(allIds, changes, dateTaskIds)
       bumpUndoCount()
       fetchTasks()
-      // A deadline-capped task is never moved silently: the toast says it stayed.
+      // A task held back by a passed deadline (the High tier, 2026-10-12) is
+      // never skipped silently. Explicit picks (`include_task_ids`) are not
+      // held, so this is rare here; the wording matches the sweep toast.
       const kept = result.skippedDeadline
-        ? ` · ${result.skippedDeadline} kept before ${result.skippedDeadline === 1 ? 'its' : 'their'} deadline`
+        ? ` · ${result.skippedDeadline} past deadline skipped`
         : ''
       showToast({
         message:

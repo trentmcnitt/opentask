@@ -113,7 +113,8 @@ export function deadlineDayPick(
   ctx: TargetContext,
   now: Date = new Date(),
 ): { label: string; at: string } | null {
-  if (!deadlineAt) return null
+  // Never once the deadline has passed (Trent's ruling, 2026-10-12).
+  if (!deadlineAt || Date.parse(deadlineAt) <= now.getTime()) return null
   const at = deadlineDayTarget(deadlineAt, ctx)
   if (Date.parse(at) <= now.getTime()) return null
   const when = DateTime.fromISO(at, { zone: 'utc' }).setZone(ctx.timezone).toFormat('ccc h:mm a')

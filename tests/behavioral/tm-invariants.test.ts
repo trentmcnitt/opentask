@@ -8,7 +8,8 @@
  * endpoint, bulk snooze, bulk edit, Today, done) and then checks, after every
  * write and on every local day of the following month:
  *
- *  - target ≤ deadline, always;
+ *  - target ≤ deadline while the deadline is ahead (once it has passed, any
+ *    target can be picked — Trent's ruling, 2026-10-12);
  *  - a one-off with a deadline always has a target, and an automatic target
  *    always has a deadline;
  *  - a picked target always means quiet (no horizon segment);
@@ -18,6 +19,10 @@
  *
  * And for repeating tasks: done always lands on a scheduled occurrence after
  * now (no double fire, no catch-up), and a move never changes the occurrence.
+ *
+ * And for bulk snooze (TM-INV-03): a passed deadline puts a task in the High
+ * tier — swept only once no P0–P2 task without a passed deadline is left in
+ * the batch; a P4 is never swept, deadline or not.
  */
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
@@ -60,7 +65,8 @@ function checkDay(task: Task, now: Date, label: string): void {
 }
 
 function checkStored(task: Task, label: string): void {
-  if (task.due_at && task.deadline_at) {
+  // Only a deadline still ahead caps the target (2026-10-12 ruling).
+  if (task.due_at && task.deadline_at && Date.parse(task.deadline_at) > Date.now()) {
     expect(Date.parse(task.due_at), `${label}: target after deadline`).toBeLessThanOrEqual(
       Date.parse(task.deadline_at),
     )
@@ -181,6 +187,71 @@ describe('TM-INV: target-model invariants (seeded random)', () => {
           )
         }
         checkDay(getTaskById(t.id)!, clock.toJSDate(), label(`step ${s}`))
+      }
+    }
+  })
+})
+
+describe('TM-INV: the bulk tier (seeded random)', () => {
+  beforeAll(() => setupTestDb())
+  afterAll(() => teardownTestDb())
+  afterEach(() => vi.useRealTimers())
+
+  test('TM-INV-03: bulk snooze — a passed deadline is the High tier; P4 never moves', () => {
+    const r = rng(SEED + 2)
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    for (let c = 0; c < 80; c++) {
+      const clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
+        minutes: Math.floor(r() * 20 * 24 * 60),
+      })
+      vi.setSystemTime(clock.toJSDate())
+      const label = `seed ${SEED + 2} case ${c}`
+      const size = 1 + Math.floor(r() * 5)
+      const tasks: Task[] = []
+      for (let i = 0; i < size; i++) {
+        const deadline = pick(['passed', 'ahead', 'none'] as const)
+        const deadlineAt =
+          deadline === 'none'
+            ? undefined
+            : clock
+                .plus({ hours: deadline === 'passed' ? -(1 + r() * 200) : 1 + r() * 200 })
+                .toUTC()
+                .toISO()!
+        tasks.push(
+          createTask({
+            ...u,
+            input: {
+              title: `bulk ${c}.${i}`,
+              priority: Math.floor(r() * 5),
+              // Already over target, so every eligible task moves.
+              due_at: clock
+                .minus({ hours: 1 + r() * 5 })
+                .toUTC()
+                .toISO()!,
+              deadline_at: deadlineAt,
+            },
+          }),
+        )
+      }
+      const passed = (t: Task) => t.deadline_at !== null && Date.parse(t.deadline_at) <= Date.now()
+      const tier = (t: Task) => (passed(t) ? Math.max(t.priority ?? 0, 3) : (t.priority ?? 0))
+      const anyLower = tasks.some((t) => tier(t) < 3)
+      const expected = tasks.filter((t) => tier(t) <= (anyLower ? 2 : 3)).map((t) => t.id)
+      const heldByDeadline = tasks.filter(
+        (t) => !expected.includes(t.id) && (t.priority ?? 0) < 3,
+      ).length
+
+      const until = clock
+        .plus({ days: 1 + Math.floor(r() * 10) })
+        .toUTC()
+        .toISO()!
+      const res = bulkSnooze({ ...u, taskIds: tasks.map((t) => t.id), until })
+      expect([...res.snoozedIds].sort(), `${label}: moved`).toEqual([...expected].sort())
+      expect(res.deadlineSkipped, `${label}: deadlineSkipped`).toBe(heldByDeadline)
+      for (const t of tasks) {
+        const after = getTaskById(t.id)!
+        if (t.priority === 4) expect(after.due_at, `${label}: P4 moved`).toBe(t.due_at)
+        checkStored(after, `${label} task ${t.id}`)
       }
     }
   })

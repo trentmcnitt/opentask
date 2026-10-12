@@ -15,7 +15,6 @@ import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getTaskSegments, targetTasksToday } from '@/core/tasks/task-segments'
 import { getProcessData } from '@/core/tasks/process'
 import { formatTaskResponse } from '@/lib/format-task'
-import { DEADLINE_PASSED_HOLDS } from '@/lib/task-model-words'
 import {
   autoTargetAt,
   capAtDeadline,
@@ -184,14 +183,35 @@ describe("TM8: the deadline's automatic target", () => {
       expect(getTaskById(c.id)!.due_at).toBe(at(DL))
     })
 
-    test('TM8-013: once the deadline has passed a move past it changes nothing', () => {
+    test('TM8-013: once the deadline has passed, a single snooze or re-target goes anywhere', () => {
+      // Trent's ruling, 2026-10-12: the cap holds only while the deadline is ahead.
       const t = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-10T17:00') })
       const r = patch(t.id, { due_at: at('2026-10-13T09:00') })
-      expect(r.fieldsChanged).toEqual([])
-      expect(r.description).toBe(DEADLINE_PASSED_HOLDS)
-      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-09T09:00'))
-      const s = bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-13T09:00') })
-      expect(s).toMatchObject({ tasksAffected: 0, deadlineSkipped: 1, deadlineCapped: 0 })
+      expect(r.fieldsChanged).toContain('due_at')
+      expect(r.cappedAtDeadline).toBe(false)
+      expect(r.description).toMatch(/^Snoozed/)
+      expect(getTaskById(t.id)!).toMatchObject({
+        due_at: at('2026-10-13T09:00'),
+        deadline_at: at('2026-10-10T17:00'),
+        target_auto: false,
+      })
+      // The snooze action (notifications, the content extension) too.
+      const s = snoozeTask({ ...u, taskId: t.id, until: at('2026-10-20T09:00') })
+      expect(s.task.due_at).toBe(at('2026-10-20T09:00'))
+      // And a re-target (the picker) — no cap either.
+      const rt = patch(t.id, { due_at: at('2026-10-25T09:00'), reset_original_due_at: true })
+      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-25T09:00'))
+      expect(rt.cappedAtDeadline).toBe(false)
+      // Any time at all, earlier too.
+      patch(t.id, { due_at: at('2026-10-12T15:00') })
+      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-12T15:00'))
+      // Shipped native builds read `deadline_nag_off: true` for a target past
+      // a passed deadline, which makes their own implied-target rule honor it.
+      expect(formatTaskResponse(getTaskById(t.id)!).deadline_nag_off).toBe(true)
+      patch(t.id, { due_at: at('2026-10-10T09:00') })
+      expect(formatTaskResponse(getTaskById(t.id)!).deadline_nag_off).toBe(false)
+      const ahead = make({ deadline_at: at('2026-10-20T17:00') })
+      expect(formatTaskResponse(ahead).deadline_nag_off).toBe(false)
     })
 
     test('TM8-014: Today with a time after the deadline (the picker) stops at it', () => {
@@ -212,6 +232,9 @@ describe("TM8: the deadline's automatic target", () => {
       })
       // Its morning already gone: nothing to offer.
       expect(deadlineDayPick(at('2026-10-12T17:00'), ctx)).toBeNull()
+      // The deadline passed: never offered (Trent's ruling, 2026-10-12).
+      expect(deadlineDayPick(at('2026-10-12T11:00'), ctx)).toBeNull()
+      expect(deadlineDayPick(at('2026-10-10T17:00'), ctx)).toBeNull()
       expect(deadlineDayPick(null, ctx)).toBeNull()
     })
 
@@ -219,6 +242,96 @@ describe("TM8: the deadline's automatic target", () => {
       expect(capAtDeadline(at(DL), null)).toBe(at(DL))
       expect(capAtDeadline(at('2026-10-20T09:00'), at(DL))).toBe(at(DL))
       expect(capAtDeadline(at('2026-10-13T09:00'), at(DL))).toBe(at('2026-10-13T09:00'))
+    })
+  })
+
+  describe('a passed deadline joins the High tier in bulk (ruling 2026-10-12)', () => {
+    const PASSED = '2026-10-11T23:59'
+    const until = () => at('2026-10-13T09:00')
+
+    test('TM8-040: P1 + a past-deadline P2 → only the P1 moves; the other is named', () => {
+      const p1 = make({ priority: 1, due_at: at('2026-10-12T09:00') })
+      const p2 = make({ priority: 2, due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const r = bulkSnooze({ ...u, taskIds: [p1.id, p2.id], until: until() })
+      expect(r).toMatchObject({
+        tasksAffected: 1,
+        tasksSkipped: 1,
+        deadlineSkipped: 1,
+        highSkipped: 0,
+        urgentSkipped: 0,
+        deadlineCapped: 0,
+      })
+      expect(r.snoozedIds).toEqual([p1.id])
+      expect(getTaskById(p2.id)!.due_at).toBe(at('2026-10-11T09:00'))
+      // The second press: nothing lower left, so it moves — past its deadline.
+      const r2 = bulkSnooze({ ...u, taskIds: [p2.id], until: until() })
+      expect(r2).toMatchObject({ tasksAffected: 1, deadlineSkipped: 0, deadlineCapped: 0 })
+      expect(getTaskById(p2.id)!.due_at).toBe(until())
+    })
+
+    test('TM8-041: a past-deadline task alone moves', () => {
+      const t = make({ due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const r = bulkSnooze({ ...u, taskIds: [t.id], until: until() })
+      expect(r).toMatchObject({ tasksAffected: 1, tasksSkipped: 0, deadlineSkipped: 0 })
+      expect(getTaskById(t.id)!.due_at).toBe(until())
+    })
+
+    test('TM8-042: a P4 with a passed deadline is never swept; a P3 stays High', () => {
+      const p4 = make({ priority: 4, due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const alone = bulkSnooze({ ...u, taskIds: [p4.id], until: until() })
+      expect(alone).toMatchObject({ tasksAffected: 0, urgentSkipped: 1, highSkipped: 0 })
+      expect(alone.deadlineSkipped).toBe(0)
+      const p3 = make({ priority: 3, due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const p0 = make({ due_at: at('2026-10-12T09:00') })
+      const mixed = bulkSnooze({ ...u, taskIds: [p3.id, p0.id, p4.id], until: until() })
+      expect(mixed).toMatchObject({
+        tasksAffected: 1,
+        highSkipped: 1,
+        urgentSkipped: 2,
+        deadlineSkipped: 0,
+      })
+      // P3 + P4 left: the P3 goes, the P4 never.
+      const second = bulkSnooze({ ...u, taskIds: [p3.id, p4.id], until: until() })
+      expect(second.snoozedIds).toEqual([p3.id])
+      expect(getTaskById(p4.id)!.due_at).toBe(at('2026-10-11T09:00'))
+    })
+
+    test('TM8-043: a past-deadline P2 waits for P0–P2, not for a P3 or a P4', () => {
+      const p2 = make({ priority: 2, due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const p3 = make({ priority: 3, due_at: at('2026-10-11T09:00') })
+      const p4 = make({ priority: 4, due_at: at('2026-10-11T09:00') })
+      const r = bulkSnooze({ ...u, taskIds: [p2.id, p3.id, p4.id], until: until() })
+      expect(r.snoozedIds.sort()).toEqual([p2.id, p3.id].sort())
+      expect(r).toMatchObject({ deadlineSkipped: 0, urgentSkipped: 1, highSkipped: 0 })
+    })
+
+    test('TM8-044: an explicit pick moves a past-deadline task even beside a P1', () => {
+      const p1 = make({ priority: 1, due_at: at('2026-10-12T09:00') })
+      const p2 = make({ priority: 2, due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const r = bulkSnooze({
+        ...u,
+        taskIds: [p1.id, p2.id],
+        until: until(),
+        includeTaskIds: [p2.id],
+      })
+      expect(r).toMatchObject({ tasksAffected: 2, deadlineSkipped: 0 })
+      expect(getTaskById(p2.id)!.due_at).toBe(until())
+    })
+
+    test('TM8-045: a bulk date edit withholds the date the same way, and reports it', () => {
+      const p1 = make({ priority: 1, due_at: at('2026-10-12T09:00') })
+      const p2 = make({ priority: 2, due_at: at('2026-10-11T09:00'), deadline_at: at(PASSED) })
+      const e = bulkEdit({ ...u, taskIds: [p1.id, p2.id], changes: { due_at: until() } })
+      expect(e).toMatchObject({ tasksAffected: 1, deadlineSkipped: 1, deadlineCapped: 0 })
+      expect(getTaskById(p2.id)!.due_at).toBe(at('2026-10-11T09:00'))
+    })
+
+    test('TM8-046: a future deadline is not the High tier — it caps instead', () => {
+      const p1 = make({ priority: 1, due_at: at('2026-10-12T09:00') })
+      const soon = make({ due_at: at('2026-10-12T09:00'), deadline_at: at('2026-10-12T18:00') })
+      const r = bulkSnooze({ ...u, taskIds: [p1.id, soon.id], until: until() })
+      expect(r).toMatchObject({ tasksAffected: 2, deadlineSkipped: 0, deadlineCapped: 1 })
+      expect(getTaskById(soon.id)!.due_at).toBe(at('2026-10-12T18:00'))
     })
   })
 

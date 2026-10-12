@@ -165,18 +165,35 @@ export function autoTargetAt(
 }
 
 /**
- * TARGET ≤ DEADLINE, ALWAYS (§8.2). Every move — a single PATCH, a snooze, a
- * quick snooze, a bulk snooze or edit, snooze-overdue, the picker, Today — is
- * capped here. There is no "past the deadline anyway": to go later, change or
- * remove the deadline.
+ * TARGET ≤ DEADLINE WHILE THE DEADLINE IS AHEAD (§8.2; Trent's ruling,
+ * 2026-10-12). Every move — a single PATCH, a snooze, a quick snooze, a bulk
+ * snooze or edit, snooze-overdue, the picker, Today — is capped here while the
+ * deadline is still in the future. There is no "past the deadline anyway"
+ * while it is ahead: to go later, change or remove the deadline.
+ *
+ * ONCE THE DEADLINE HAS PASSED the cap is off: any target can be picked, and
+ * the row keeps its red "past deadline" marker. A bulk sweep treats such a
+ * task like High (`bulkSnoozeTier` in src/core/tasks/bulk.ts), so it is moved
+ * only once nothing lower is left in the batch.
  */
-export function capAtDeadline(dueAt: string, deadlineAt: string | null): string {
-  return pastDeadline(dueAt, deadlineAt) ? deadlineAt! : dueAt
+export function capAtDeadline(
+  dueAt: string,
+  deadlineAt: string | null,
+  now: Date = new Date(),
+): string {
+  return capsAt(dueAt, deadlineAt, now) ? deadlineAt! : dueAt
 }
 
-/** Whether `dueAt` lies after the deadline — what `capAtDeadline` pulls back. */
-export function pastDeadline(dueAt: string, deadlineAt: string | null): boolean {
-  return deadlineAt !== null && Date.parse(dueAt) > Date.parse(deadlineAt)
+/**
+ * Whether the cap pulls `dueAt` back: it lies after a deadline that is still
+ * ahead of `now`.
+ */
+export function capsAt(dueAt: string, deadlineAt: string | null, now: Date = new Date()): boolean {
+  return (
+    deadlineAt !== null &&
+    Date.parse(deadlineAt) > now.getTime() &&
+    Date.parse(dueAt) > Date.parse(deadlineAt)
+  )
 }
 
 /** What a write would leave on a task, for `resolveTarget`. */
@@ -185,8 +202,6 @@ export interface TargetWrite {
   dueAt: string | null
   /** The write sets the target itself: a move, a clear, a schedule change. */
   dueWritten: boolean
-  /** The row's target before the write. */
-  currentDueAt: string | null
   /** The row's current `target_auto`. */
   wasAuto: boolean
   /** The deadline the write leaves. */
@@ -219,7 +234,8 @@ export interface ResolvedTarget {
  *    the deadline's automatic one (`autoTargetAt`, `auto: true`). So clearing
  *    the target of a deadline task — "Back to auto", or an old client's
  *    Remove target — puts the automatic target back (§8.3).
- *  - The target is never after the deadline (§8.2): `capAtDeadline`.
+ *  - The target is never after a deadline that is still ahead (§8.2):
+ *    `capAtDeadline`. Once the deadline has passed, any target goes.
  *
  * And the automatic target follows its deadline (§8.4): a deadline change
  * re-derives it, removing the deadline removes it. A target the user picked
@@ -227,11 +243,8 @@ export interface ResolvedTarget {
  * and survives the deadline's removal. Any target the write sets itself is a
  * picked one (`auto: false`).
  *
- * Once the deadline has PASSED, a move past it changes nothing: the target
- * stays where it was (still at or before the deadline), `capped` says why.
- * Pulling it forward to a deadline already behind us would only restart its
- * clock. The task nags until done, or the deadline is changed or removed
- * (Trent 10-12: "to go later, change or remove the deadline").
+ * Once the deadline has PASSED there is no cap (Trent's ruling, 2026-10-12):
+ * the target goes where it is sent.
  */
 export function resolveTarget(
   w: TargetWrite,
@@ -247,12 +260,7 @@ export function resolveTarget(
   if (w.autoEligible && w.deadlineAt !== null && dueAt === null) {
     return { dueAt: autoTargetAt(w.deadlineAt, ctx, now), auto: true, capped: false }
   }
-  if (dueAt !== null && w.deadlineAt !== null && pastDeadline(dueAt, w.deadlineAt)) {
-    const keep =
-      Date.parse(w.deadlineAt) <= now.getTime() &&
-      w.currentDueAt !== null &&
-      !pastDeadline(w.currentDueAt, w.deadlineAt)
-    if (keep) return { dueAt: w.currentDueAt, auto: w.wasAuto && w.autoEligible, capped: true }
+  if (dueAt !== null && capsAt(dueAt, w.deadlineAt, now)) {
     return { dueAt: w.deadlineAt, auto, capped: true }
   }
   return { dueAt, auto, capped: false }

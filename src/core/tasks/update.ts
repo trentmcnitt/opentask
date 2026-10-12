@@ -17,7 +17,6 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
-import { DEADLINE_PASSED_HOLDS } from '@/lib/task-model-words'
 import { getTaskById } from './read'
 import { canUserAccessTask } from './access'
 import { applyFieldChanges, collectFieldChanges } from './helpers'
@@ -113,14 +112,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   })
 
   if (data.setClauses.length === 0) {
-    // A move capped at a deadline that has already passed changes nothing:
-    // say why instead of looking like nothing happened.
-    return {
-      task,
-      fieldsChanged: [],
-      description: deadlinePassedCap(task, data.cappedAtDeadline) ? DEADLINE_PASSED_HOLDS : '',
-      cappedAtDeadline: data.cappedAtDeadline === true,
-    }
+    return { task, fieldsChanged: [], description: '', cappedAtDeadline: data.cappedAtDeadline }
   }
 
   // Look up project name if project_id changed
@@ -163,13 +155,10 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     const updatedTask = getTaskById(taskId)
     if (!updatedTask) throw new Error('Failed to retrieve updated task')
 
-    // A move capped at a deadline already passed leaves the task over target:
-    // say why (the undo log keeps the plain description).
-    const holds = deadlinePassedCap(updatedTask, data.cappedAtDeadline)
     return {
       task: updatedTask,
       fieldsChanged: data.fieldsChanged,
-      description: holds ? DEADLINE_PASSED_HOLDS : description,
+      description,
       cappedAtDeadline: data.cappedAtDeadline === true,
     }
   })
@@ -205,13 +194,4 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   }
 
   return result
-}
-
-/**
- * Whether a move was capped at a deadline that has already passed (§8.2): the
- * target can go no later than the deadline, so the task stays over target
- * until it is done, or the deadline is changed or removed.
- */
-function deadlinePassedCap(task: Task, capped: boolean | undefined): boolean {
-  return capped === true && task.deadline_at !== null && Date.parse(task.deadline_at) <= Date.now()
 }

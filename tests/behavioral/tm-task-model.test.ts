@@ -34,7 +34,6 @@ import {
 import { countTasks } from '@/lib/task-counts'
 import { normalizeTargetAliases } from '@/core/validation/task'
 import { formatTaskResponse } from '@/lib/format-task'
-import { DEADLINE_PASSED_HOLDS } from '@/lib/task-model-words'
 import { ValidationError } from '@/core/errors'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -341,7 +340,7 @@ describe('Task model', () => {
       expect(getTaskById(t.id)!.deadline_at).toBe(at('2026-10-10T18:00'))
     })
 
-    test('TM-031: once the deadline has passed, a move past it leaves the target where it is', () => {
+    test('TM-031: once the deadline has passed, a snooze past it is allowed (2026-10-12 ruling)', () => {
       const t = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
       const r = updateTask({
         userId: TEST_USER_ID,
@@ -349,10 +348,11 @@ describe('Task model', () => {
         taskId: t.id,
         input: { due_at: at('2026-10-11T09:00') },
       })
-      expect(r.task.due_at).toBe(at('2026-10-09T09:00'))
-      expect(r.cappedAtDeadline).toBe(true)
-      expect(r.description).toBe(DEADLINE_PASSED_HOLDS)
-      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+      expect(r.task.due_at).toBe(at('2026-10-11T09:00'))
+      expect(r.cappedAtDeadline).toBe(false)
+      expect(r.description).toMatch(/^Snoozed/)
+      expect(r.task.deadline_at).toBe(at('2026-10-09T18:00'))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
     })
 
     test('TM-032: a re-target past the deadline is a move like any other: capped', () => {
@@ -367,7 +367,7 @@ describe('Task model', () => {
       expect(r.task.original_due_at).toBe(at('2026-10-10T09:00'))
     })
 
-    test('TM-033: bulk snooze stops at a future deadline, and leaves a passed one where it is', () => {
+    test('TM-033: bulk snooze stops at a future deadline; a passed one waits like High (2026-10-12)', () => {
       const capped = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
       const passed = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
       const free = make({ due_at: at('2026-10-10T09:00') })
@@ -648,7 +648,8 @@ describe('Task model', () => {
       })
       expect(r2.task.due_at).toBe(at('2026-10-11T09:00'))
       expect(r2.cappedAtDeadline).toBe(false)
-      // A passed deadline holds the target where it is (no later than it).
+      // A passed deadline caps nothing: the snooze goes where it was sent
+      // (Trent's ruling, 2026-10-12).
       const late = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
       const r3 = snoozeTask({
         userId: TEST_USER_ID,
@@ -656,8 +657,8 @@ describe('Task model', () => {
         taskId: late.id,
         until: at('2026-10-11T09:00'),
       })
-      expect(r3.task.due_at).toBe(at('2026-10-09T09:00'))
-      expect(r3.cappedAtDeadline).toBe(true)
+      expect(r3.task.due_at).toBe(at('2026-10-11T09:00'))
+      expect(r3.cappedAtDeadline).toBe(false)
     })
 
     test('TM-061: bulk snooze and bulk edit cap every task and count them (A3)', () => {
@@ -737,19 +738,20 @@ describe('Task model', () => {
       expect(getTaskById(auto.id)!).toMatchObject({ due_at: null, target_auto: false })
     })
 
-    test('TM-065: a snooze on the deadline day stops at the deadline; after it, the target holds and says why', () => {
+    test('TM-065: a snooze on the deadline day stops at the deadline; after it, any target can be picked', () => {
       vi.setSystemTime(new Date(at('2026-10-13T10:00')))
       const t = make({ deadline_at: at('2026-10-13T18:00') })
       const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
       const r = updateTask({ ...u, input: { due_at: at('2026-10-14T09:00') } })
       expect(r.task.due_at).toBe(at('2026-10-13T18:00'))
       expect(r.description).toMatch(/^Snoozed to deadline/)
-      // The deadline passes: a move past it changes nothing, and says why.
+      // The deadline passes: the cap no longer applies, the snooze moves it.
       vi.setSystemTime(new Date(at('2026-10-13T19:00')))
-      const held = updateTask({ ...u, input: { due_at: at('2026-10-14T09:00') } })
-      expect(held.task.due_at).toBe(at('2026-10-13T18:00'))
-      expect(held.description).toBe(DEADLINE_PASSED_HOLDS)
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
+      const moved = updateTask({ ...u, input: { due_at: at('2026-10-14T09:00') } })
+      expect(moved.task.due_at).toBe(at('2026-10-14T09:00'))
+      expect(moved.cappedAtDeadline).toBe(false)
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
       // An ordinary snooze before a deadline says what it did.
       vi.setSystemTime(new Date(at('2026-10-14T08:00')))
       const v = make({ due_at: at('2026-10-14T09:00'), deadline_at: at('2026-10-14T18:00') })
@@ -759,7 +761,6 @@ describe('Task model', () => {
         taskId: v.id,
         input: { due_at: at('2026-10-14T15:00') },
       })
-      expect(r2.description).not.toBe(DEADLINE_PASSED_HOLDS)
       expect(r2.description).not.toMatch(/deadline/)
     })
 

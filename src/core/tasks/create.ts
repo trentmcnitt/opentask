@@ -144,7 +144,6 @@ export function createTask(options: CreateTaskOptions): Task {
     {
       dueAt,
       dueWritten: true,
-      currentDueAt: null,
       wasAuto: false,
       deadlineAt: tracked ? null : (input.deadline_at ?? null),
       deadlineChanged: false,

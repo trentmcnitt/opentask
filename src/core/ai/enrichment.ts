@@ -1377,7 +1377,6 @@ function collectEnrichmentTarget(
     {
       dueAt: opts.proposedDue ?? task.due_at,
       dueWritten: opts.proposedDue !== undefined,
-      currentDueAt: task.due_at,
       wasAuto: task.target_auto,
       deadlineAt,
       deadlineChanged: deadlineAt !== task.deadline_at,

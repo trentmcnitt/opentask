@@ -37,13 +37,31 @@ export interface FormattedTask extends Task {
    */
   target_at: string | null
   /**
-   * RETIRED (2026-10-12, §8): always false. Shipped native builds decode it
-   * (`TaskDTO.deadlineNagOff`, `TargetAge.swift`); with every deadline task now
-   * carrying a stored target at or before its deadline, false makes their
-   * client-side implied-target rule return nothing, so they read `due_at` as
-   * the target — the server's own answer.
+   * RETIRED (2026-10-12, §8): no longer stored; a compatibility signal for
+   * shipped native builds, which decode it (`TaskDTO.deadlineNagOff`) and
+   * still run their own implied-target rule (`TargetAge.swift`). See
+   * `nativeNagOff`.
    */
-  deadline_nag_off: false
+  deadline_nag_off: boolean
+}
+
+/**
+ * What shipped native builds must read as `deadline_nag_off` so that their
+ * implied-target rule (`TargetAge.impliedTarget`) returns nothing and they
+ * read `due_at` as the target — the server's own answer:
+ *
+ * - false for nearly every task: a deadline task's stored target is at or
+ *   before its deadline, which their rule honors as set;
+ * - TRUE for a one-off whose deadline has PASSED and whose target is after it
+ *   (Trent's ruling, 2026-10-12: once the deadline has passed any target can
+ *   be picked). Their rule implies a target 4 days before the deadline for a
+ *   target past it — over target at once — unless the nag is off and the
+ *   deadline has passed, in which case it leaves the task to its own target.
+ */
+function nativeNagOff(task: Task, now: Date): boolean {
+  if (task.rrule !== null || task.deadline_at === null || task.due_at === null) return false
+  const deadline = Date.parse(task.deadline_at)
+  return deadline <= now.getTime() && Date.parse(task.due_at) > deadline
 }
 
 /**
@@ -56,7 +74,7 @@ export function formatTaskResponse(task: Task): FormattedTask {
     ...task,
     target_at: task.due_at,
     is_recurring: task.rrule !== null,
-    deadline_nag_off: false,
+    deadline_nag_off: nativeNagOff(task, new Date()),
   }
 }
 

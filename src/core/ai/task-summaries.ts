@@ -84,7 +84,7 @@ export function withEffectiveSummaryTarget(
   if (summary.due_at === null) {
     return { ...summary, due_at: autoTargetAt(deadline, ctx, now), target_implied: true }
   }
-  const capped = capAtDeadline(summary.due_at, deadline)
+  const capped = capAtDeadline(summary.due_at, deadline, now)
   return capped === summary.due_at ? summary : { ...summary, due_at: capped }
 }
 

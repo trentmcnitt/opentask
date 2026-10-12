@@ -45,8 +45,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_no_due_date: result.noDueDateSkipped,
-      // §8.2 (2026-10-12): dates kept (the deadline has passed) / stopped at
-      // the deadline. Other fields applied either way.
+      // Dates withheld because a passed deadline holds the task to the High
+      // tier (2026-10-12) / stopped at a deadline still ahead (§8.2). Other
+      // fields applied either way.
       skipped_deadline: result.deadlineSkipped,
       capped_deadline: result.deadlineCapped,
     })

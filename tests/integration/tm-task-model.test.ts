@@ -70,6 +70,27 @@ describe('Task model over HTTP', () => {
     )
   })
 
+  test('once the deadline has passed, a single snooze or PATCH goes past it (ruling 2026-10-12)', async () => {
+    const deadline = iso(-2 * HOUR)
+    const t = await create({ title: 'tm passed', due_at: iso(-3 * HOUR), deadline_at: deadline })
+    const until = iso(24 * HOUR)
+    const snoozed = await apiFetch(`/api/tasks/${t.id}/snooze`, { method: 'POST', body: { until } })
+    expect(snoozed.status).toBe(200)
+    const body = (await json(snoozed)).data as {
+      task: { due_at: string; deadline_at: string }
+      capped_at_deadline: boolean
+    }
+    expect(body.capped_at_deadline).toBe(false)
+    expect(Date.parse(body.task.due_at)).toBe(Date.parse(until))
+    expect(Date.parse(body.task.deadline_at)).toBe(Date.parse(deadline))
+    const later = iso(48 * HOUR)
+    const patched = await json(
+      await apiFetch(`/api/tasks/${t.id}`, { method: 'PATCH', body: { target_at: later } }),
+    )
+    expect(Date.parse(String(patched.data.target_at))).toBe(Date.parse(later))
+    expect(patched.data.deadline_nag_off).toBe(true)
+  })
+
   test('a deadline with no target stores the automatic one; clearing a picked target is Back to auto (§8)', async () => {
     const deadline = iso(10 * 24 * HOUR)
     const t = await create({ title: 'tm auto', deadline_at: deadline })
@@ -90,7 +111,8 @@ describe('Task model over HTTP', () => {
 
   test('snooze-overdue keeps every field old clients read, and reports the deadline cap', async () => {
     await create({ title: 'tm overdue', due_at: iso(-2 * HOUR) })
-    // Its deadline has passed: a snooze cannot move it.
+    // Its deadline has passed: the High tier, so it waits while the ordinary
+    // task above is in the batch (ruling 2026-10-12), and is named.
     await create({
       title: 'tm overdue capped',
       due_at: iso(-3 * HOUR),
@@ -117,7 +139,8 @@ describe('Task model over HTTP', () => {
     }
     expect(data).toHaveProperty('capped_deadline')
     expect(data.skipped_deadline).toBeGreaterThanOrEqual(1)
-    expect(String(data.message)).toContain('past its deadline')
+    expect(String(data.message)).toMatch(/\d+ past deadline/)
+    expect(String(data.message)).toContain('skipped')
   })
 
   test('reminders: groups unchanged in shape, task rows only in task_segments', async () => {

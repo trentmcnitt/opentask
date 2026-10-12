@@ -102,7 +102,9 @@ export function computeMarkDone(
     const nextOccurrenceAt = nextOccurrence?.toISOString() ?? null
     const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, userTimezone)
     // The new target is the occurrence, never past its deadline (§8.2).
-    const nextDueAt = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
+    const nextDueAt = nextOccurrenceAt
+      ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt, completedAt)
+      : null
     return {
       type: 'recurring',
       nextDueAt,

@@ -109,6 +109,37 @@ test.describe('Deadline: the snooze menu', () => {
       await remove(page, [id])
     }
   })
+
+  test('once the deadline has passed a snooze moves past it, and the row still says so in red', async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent's ruling, 2026-10-12: a passed deadline caps nothing.
+    const title = uniqueTitle('TM8 passed')
+    const deadline = new Date(Date.now() - 30 * MIN).toISOString()
+    const id = await create(page, {
+      title,
+      target_at: new Date(Date.now() - 60 * MIN).toISOString(),
+      deadline_at: deadline,
+    })
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        await page.goto('/')
+        const btn = await snoozeButton(page, id, title)
+        const menu = page.getByRole('menu', { name: 'Snooze options' })
+        await holdUntil(btn, () => expect(menu).toBeVisible())
+        await menu.getByRole('menuitem', { name: '1 hour', exact: true }).click()
+        const toast = page.locator('[data-sonner-toast]').first()
+        await expect(toast).toContainText('Snoozed')
+        await expect(toast).not.toContainText('deadline')
+        await expect
+          .poll(async () => Date.parse(String((await stateOf(page, id)).target_at)))
+          .toBeGreaterThan(Date.now() + 30 * MIN)
+        await expect(page.locator(`#task-row-${id}`)).toContainText('past deadline')
+      })
+    } finally {
+      await remove(page, [id])
+    }
+  })
 })
 
 test.describe('Deadline: the editor', () => {

@@ -248,7 +248,6 @@ function resolveTargetInput(
     {
       dueAt: left,
       dueWritten,
-      currentDueAt: task.due_at,
       wasAuto: task.target_auto,
       deadlineAt,
       deadlineChanged: deadlineAt !== task.deadline_at,
@@ -755,7 +754,7 @@ function collectRruleChanges(
       // schedule (`collectOccurrence`).
       const deadline =
         data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
-      const nextDueAt = capAtDeadline(scheduled, deadline ?? null)
+      const nextDueAt = capAtDeadline(scheduled, deadline ?? null, now)
 
       data.setClauses.push('due_at = ?')
       data.values.push(nextDueAt)

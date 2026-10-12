@@ -796,8 +796,10 @@ paths:
       description: |
         Moves a task's target (`due_at`) — the same move as `PATCH { target_at }`
         (2026-10-12, spec §6: there is no snooze state). It stops at the task's
-        deadline (spec §8.2): the response's `capped_at_deadline` is true when
-        it did. `allow_past_deadline` and `cap_at_deadline` are accepted from
+        deadline while that deadline is still ahead (spec §8.2): the response's
+        `capped_at_deadline` is true when it did. Once the deadline has passed
+        the cap is off and any target can be picked (2026-10-12).
+        `allow_past_deadline` and `cap_at_deadline` are accepted from
         old clients and change nothing. Two populations refuse it with a 400,
         because neither has a due date to move: reminders (§6), which stay in
         their time slot until completed, and quotas (§5), which are counted
@@ -949,6 +951,12 @@ paths:
           the batch does not hold this back, since a P4 is never swept.
         - P4 (Urgent) is never snoozed by a sweep — its due date is a hard
           deadline and every change to one has to be deliberate.
+        - A task whose DEADLINE HAS PASSED is read as at least P3 (2026-10-12):
+          it waits while any P0-P2 task without a passed deadline is still
+          eligible, and goes with the High tier after. A P3 with a passed
+          deadline is still P3; a P4 is still never swept. Those held back
+          only by the deadline are counted in `skipped_deadline` (not in
+          `skipped_urgent`).
 
         Callers that represent an explicit user selection (e.g., the mobile
         selection sheet's quick panel) should pass `include_task_ids` so the
@@ -960,8 +968,8 @@ paths:
 
         Each eligible task is changed exactly as `PATCH /api/tasks/{id}` with
         `{ due_at }` would change it: a dated task's target moves (its
-        first-target date kept), stopping at its deadline (`capped_deadline`;
-        kept where it is if the deadline has passed, `skipped_deadline`); a
+        first-target date kept), stopping at a deadline still ahead
+        (`capped_deadline`; a passed deadline caps nothing); a
         task with no date (absolute mode only) gets its
         first date, which is not counted as a snooze; a task already due at
         the target is left alone. `tasks_affected` counts only the tasks whose
@@ -1111,7 +1119,7 @@ paths:
                         description: Reminders left in place (reminders are period-locked).
                       skipped_deadline:
                         type: integer
-                        description: Left where they were — the move went past a deadline that has already passed, and a target never goes past its deadline (2026-10-12, spec §8.2).
+                        description: Held back like High because their deadline has passed (2026-10-12) — below P3 by priority, swept once nothing lower is left. Not in `skipped_urgent`.
                       capped_deadline:
                         type: integer
                         description: Moved only as far as their deadline (2026-10-12, spec §8.2). Also counted in `tasks_affected`.
@@ -1172,7 +1180,9 @@ paths:
                         The new target for every task (`due_at` is the deprecated alias;
                         `null` removes the target — on a one-off with a deadline it puts
                         the deadline's automatic target back). Every move stops at each
-                        task's deadline (counted in `capped_deadline`).
+                        task's deadline while it is ahead (counted in `capped_deadline`).
+                        As a snooze, a passed deadline holds a task to the High tier
+                        (`skipped_deadline`).
                     deadline_at:
                       type: [string, 'null']
                       format: date-time
@@ -4469,8 +4479,10 @@ components:
           type: [string, 'null']
           format: date-time
           description: >
-            The real cutoff. Never moved by a snooze, and the target is never
-            after it: every move stops at it (2026-10-12, spec §8.2). A one-off
+            The real cutoff. Never moved by a snooze. While it is ahead the
+            target is never after it: every move stops at it (2026-10-12, spec
+            §8.2). Once it has passed, any target can be picked, and a bulk
+            snooze treats the task as High. A one-off
             with a deadline always has a target — with none picked, the stored
             automatic one (`target_auto`). On a recurring task it moves with
             each occurrence, measured from `occurrence_at`.
@@ -4529,8 +4541,10 @@ components:
           type: boolean
           deprecated: true
           description: >
-            Always false since 2026-10-12 (spec §8: a deadline's target is stored). Kept for shipped
-            native builds, which decode it.
+            No longer stored since 2026-10-12 (spec §8: a deadline's target is stored). Kept for
+            shipped native builds, which decode it and run their own implied-target rule: true only
+            for a one-off whose deadline has passed and whose target is after it, which makes that
+            rule honor the target; false otherwise.
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -4839,8 +4853,8 @@ components:
             spec §6 — "Snooze" in the UI; there is no snooze state): the
             first-target date (`original_due_at`) is kept, a repeating task's
             `occurrence_at` is untouched, and the move stops at the deadline
-            (`capped_at_deadline: true` in the response; once the deadline has
-            passed, a move past it changes nothing). `null` removes the target —
+            (`capped_at_deadline: true` in the response) while the deadline is
+            ahead; once it has passed, any target can be picked. `null` removes the target —
             on a one-off with a deadline it puts the deadline's automatic target
             back ("Back to auto").
 
@@ -4877,8 +4891,9 @@ components:
           deprecated: true
           description: |
             Accepted from old clients and ignored since 2026-10-12: every move
-            stops at the deadline (spec §8.2); there is no "past the deadline
-            anyway". To go later, change or remove the deadline.
+            stops at a deadline still ahead (spec §8.2); there is no "past the
+            deadline anyway" while it is ahead. Once it has passed the cap is
+            off on its own.
         cap_at_deadline:
           type: boolean
           description: |
@@ -5329,7 +5344,7 @@ components:
           description: Reminders skipped — they are bucket-locked and never snoozed
         skipped_deadline:
           type: integer
-          description: Left where they were — the move went past a deadline that has already passed, and a target never goes past its deadline (2026-10-12, spec §8.2).
+          description: Held back like High because their deadline has passed (2026-10-12) — below P3 by priority, swept once nothing lower is left in the batch. Not in `skipped_urgent`. In bulk edit, the tasks whose date part was withheld for that reason.
         capped_deadline:
           type: integer
           description: Moved only as far as their deadline (2026-10-12, spec §8.2) — every move stops at it. Also counted in `tasks_affected`.

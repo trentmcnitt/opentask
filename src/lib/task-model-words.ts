@@ -10,13 +10,6 @@ import type { CheckInDay, HorizonValue } from '@/lib/task-segments'
 /** What "overdue" used to say: a task whose target has arrived. PROVISIONAL. */
 export const OVER_TARGET = 'Over target'
 
-/**
- * Said when a snooze can't move a task because its deadline has passed (§8.2,
- * 2026-10-12): the target never goes past the deadline, so the task stays
- * over target until it is done, or the deadline is changed or removed.
- */
-export const DEADLINE_PASSED_HOLDS = 'Deadline passed: change or remove it to snooze this'
-
 /** The editor's word for the deadline's stored automatic target (§8.1). */
 export const AUTO_TARGET_WORD = 'auto'
 /** The action that puts a picked target back to the automatic one (§8.3). */
