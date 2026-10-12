@@ -96,6 +96,11 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// UTC ISO 8601 — when the task was created. The target age never counts
     /// from before it (`TargetAge.days`). Optional: an older cache has none.
     let createdAt: String?
+    /// UTC ISO 8601 — when the target was last set, by any path (2026-10-12,
+    /// docs/TASK-MODEL.md § Upcoming): the day Upcoming's heads-up days count
+    /// from. Nil for a task with no target, and from an older server or cache.
+    /// The server decides who is in Upcoming; nothing native reads it yet.
+    let targetSetAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -118,6 +123,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case originalDueAt = "original_due_at"
         case deadlineNagOff = "deadline_nag_off"
         case createdAt = "created_at"
+        case targetSetAt = "target_set_at"
     }
 
     /// Decode-only: the server's raw `notes`. Deliberately NOT in
@@ -162,6 +168,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         originalDueAt = try c.decodeIfPresent(String.self, forKey: .originalDueAt)
         deadlineNagOff = try c.decodeIfPresent(Bool.self, forKey: .deadlineNagOff) ?? false
         createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        targetSetAt = try c.decodeIfPresent(String.self, forKey: .targetSetAt)
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -190,7 +197,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         horizon: String? = nil,
         originalDueAt: String? = nil,
         deadlineNagOff: Bool = false,
-        createdAt: String? = nil
+        createdAt: String? = nil,
+        targetSetAt: String? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -212,6 +220,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.originalDueAt = originalDueAt
         self.deadlineNagOff = deadlineNagOff
         self.createdAt = createdAt
+        self.targetSetAt = targetSetAt
     }
 
     var dueDate: Date? {
@@ -330,6 +339,69 @@ enum TaskHorizon: String, CaseIterable, Codable {
     /// 2026-10-11); dark mode's title is the horizon's own fill.
     var segmentTitleHex: (light: UInt32, dark: UInt32) {
         (0x0B7A6F, segmentColorHex.dark)
+    }
+}
+
+/// A task segment's identity (2026-10-12): a horizon, or Upcoming — the web's
+/// `SegmentKind = HorizonValue | 'upcoming'` (`src/lib/task-segments.ts`). On
+/// the wire it is the segment's `horizon` string, `"upcoming"` for Upcoming.
+///
+/// Upcoming is NOT a `TaskHorizon`: that enum is a task's own field, and a
+/// task never has the horizon "upcoming". Upcoming holds one-off and
+/// repeating tasks whose target is still ahead, on their heads-up days
+/// (docs/TASK-MODEL.md § Upcoming); the server sends it after Days.
+enum SegmentKind: Hashable {
+    case horizon(TaskHorizon)
+    case upcoming
+
+    static let upcomingRaw = "upcoming"
+
+    /// Nil for a string this build doesn't know (a future segment).
+    init?(raw: String) {
+        if raw == Self.upcomingRaw {
+            self = .upcoming
+        } else if let horizon = TaskHorizon(rawValue: raw) {
+            self = .horizon(horizon)
+        } else {
+            return nil
+        }
+    }
+
+    /// "Days", "Upcoming" — the web's `segmentWord`.
+    var label: String {
+        switch self {
+        case .horizon(let horizon): return horizon.label
+        case .upcoming: return "Upcoming"
+        }
+    }
+
+    /// The segment's page key in the widget's and the watch's page ring (the
+    /// slot-key Int space): -10…-13 the horizons, as before, and -14 Upcoming
+    /// — a key of its own, so a stored override never lands on another page.
+    var pageKey: Int {
+        switch self {
+        case .horizon(let horizon): return -(10 + horizon.order)
+        case .upcoming: return -14
+        }
+    }
+
+    /// The segment's fill, as 0xRRGGBB. Upcoming is the web's
+    /// `--segment-upcoming` (2026-10-12): a blue-teal, apart from the
+    /// horizons' teals. EXACT values shared with the web — change together.
+    var colorHex: (light: UInt32, dark: UInt32) {
+        switch self {
+        case .horizon(let horizon): return horizon.segmentColorHex
+        case .upcoming: return (0x1A8FB0, 0x4CB8D9)
+        }
+    }
+
+    /// The page title's colour: one deeper shade in light mode for
+    /// legibility, the fill in dark (`--segment-title-upcoming`).
+    var titleHex: (light: UInt32, dark: UInt32) {
+        switch self {
+        case .horizon(let horizon): return horizon.segmentTitleHex
+        case .upcoming: return (0x136F8A, 0x4CB8D9)
+        }
     }
 }
 
@@ -802,17 +874,28 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
         nudge = try c.decodeIfPresent(Bool.self, forKey: .nudge) ?? false
     }
 
+    /// The horizon, or nil for Upcoming (and an unknown segment).
     var horizonValue: TaskHorizon? { TaskHorizon(rawValue: horizon) }
 
-    /// "Days", "Weeks", … — the segment's page title.
-    var label: String { horizonValue?.label ?? horizon.capitalized }
+    /// A horizon or Upcoming (2026-10-12); nil only for a segment this build
+    /// doesn't know. Read colours through this, never `horizonValue`, or
+    /// Upcoming would draw as a horizon.
+    var kind: SegmentKind? { SegmentKind(raw: horizon) }
+
+    /// The Upcoming segment (2026-10-12): targeted tasks on their heads-up
+    /// days. Its rows show the target date, and a repeating row has no Today.
+    var isUpcoming: Bool { kind == .upcoming }
+
+    /// "Days", "Weeks", "Upcoming", … — the segment's page title.
+    var label: String { kind?.label ?? horizon.capitalized }
 
     /// Stable page key for the widget's and the watch's page ring, in the
     /// same Int space as `ReminderGroupDTO.slotKey` (real slot ids are
     /// positive, -1 is Anytime): -10 days, -11 weeks, -12 months, -13
-    /// eventually. So the existing slot-override storage, page index and
-    /// chevrons address a segment page with no new storage.
-    var pageKey: Int { -(10 + (horizonValue?.order ?? 4)) }
+    /// eventually, -14 upcoming (`SegmentKind.pageKey`), -15 a segment this
+    /// build doesn't know. So the existing slot-override storage, page index
+    /// and chevrons address a segment page with no new storage.
+    var pageKey: Int { kind?.pageKey ?? -15 }
 
     /// Rows on today's list: deferred ones are gone until tomorrow.
     var listedTasks: [SegmentTaskDTO] { tasks.filter { $0.state != .deferred } }
@@ -850,16 +933,24 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
 
     let task: TaskDTO
     let state: State
+    /// A repeating task (2026-10-12, the server's `recurring`). Only Upcoming
+    /// holds them, and their row has no "Target today": the server skips a
+    /// repeating task there (`skipped_recurring`, ruling Q1), so it keeps the
+    /// circle and done only. Falls back to the task's `rrule` when absent (an
+    /// older server or cache).
+    let recurring: Bool
 
     var id: Int { task.id }
 
     private enum CodingKeys: String, CodingKey {
         case state = "segment_state"
+        case recurring
     }
 
-    init(task: TaskDTO, state: State) {
+    init(task: TaskDTO, state: State, recurring: Bool? = nil) {
         self.task = task
         self.state = state
+        self.recurring = recurring ?? (task.rrule != nil)
     }
 
     init(from decoder: Decoder) throws {
@@ -869,17 +960,23 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         // rather than the whole segment failing to decode.
         let raw = try c.decodeIfPresent(String.self, forKey: .state) ?? State.waiting.rawValue
         state = State(rawValue: raw) ?? .waiting
+        recurring = try c.decodeIfPresent(Bool.self, forKey: .recurring) ?? (task.rrule != nil)
     }
 
     func encode(to encoder: Encoder) throws {
         try task.encode(to: encoder)
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(state, forKey: .state)
+        try c.encode(recurring, forKey: .recurring)
     }
 
     func with(state: State) -> SegmentTaskDTO {
-        SegmentTaskDTO(task: task, state: state)
+        SegmentTaskDTO(task: task, state: state, recurring: recurring)
     }
+
+    /// Whether the row offers "Target today" — the web's
+    /// `upcomingRowActions(row).today`: every row but a repeating one.
+    var offersTargetToday: Bool { !recurring }
 }
 
 // MARK: - Completions
@@ -1058,15 +1155,23 @@ struct UserPreferencesLabelConfigPage: Decodable {
     /// `morning_time` ("HH:MM", 2026-10-11) — the clock the implied deadline
     /// target is read on (`TargetContextStore`). Nil from an older server.
     let morningTime: String?
+    /// `check_in_day` (2026-10-12): the weekday the Weeks and Months segments
+    /// come round on, Luxon numbering (1 = Monday … 7 = Sunday; default 6,
+    /// Saturday). Nil from an older server. Decoded for the contract; no
+    /// native surface shows the segments' "Saturdays" hints, so nothing reads
+    /// it yet — if one ever does, derive the words from this, never hardcode.
+    let checkInDay: Int?
 
     enum CodingKeys: String, CodingKey {
         case labelConfig = "label_config"
         case morningTime = "morning_time"
+        case checkInDay = "check_in_day"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         labelConfig = try c.decodeIfPresent([LabelConfigDTO].self, forKey: .labelConfig) ?? []
         morningTime = try c.decodeIfPresent(String.self, forKey: .morningTime)
+        checkInDay = try c.decodeIfPresent(Int.self, forKey: .checkInDay)
     }
 }

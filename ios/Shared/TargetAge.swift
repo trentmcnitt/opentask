@@ -156,6 +156,17 @@ enum TargetAge {
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
     }
+
+    /// "Tue Oct 13" in `calendar`'s zone — the web's `ccc LLL d`, Upcoming's
+    /// target and deadline words.
+    static func weekdayDayText(_ date: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE MMM d"
+        return formatter.string(from: date)
+    }
 }
 
 extension TaskDTO {
@@ -169,10 +180,44 @@ extension TaskDTO {
     /// unit, like a prompt's count. `segmentHorizon` nil = no segment context
     /// (the watch's compact rows): the set horizon always shows.
     func segmentMeta(segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        if segmentHorizon == SegmentKind.upcomingRaw {
+            return upcomingMeta(calendar: calendar)
+        }
         let horizonWord = (segmentHorizon != nil && horizon == segmentHorizon) ? nil : horizonLabel
         let deadline = deadlineDate.map { "deadline \(TargetAge.dayText($0, calendar: calendar))" }
         let parts = [horizonWord, TargetAge.futureTargetChip(self, now: now, calendar: calendar), deadline]
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{00A0}·\u{00A0}")
+    }
+
+    /// An UPCOMING row's small words (2026-10-12) — the Swift port of the
+    /// web's `upcomingGap` (`src/lib/task-segments.ts`): "Target Tue Oct 13",
+    /// then the deadline and how far past the target it falls, "· deadline
+    /// Sat Oct 17 (+4d)", "(same day)", or "(deadline before target)" for a
+    /// target set past its own deadline. A repeating row adds "· repeats" (the
+    /// web's target chip). No horizon word: a targeted task's horizon decides
+    /// nothing until the target is removed (spec §1). Days are local calendar
+    /// days in `calendar`'s zone; spaces non-breaking, like `segmentMeta`.
+    func upcomingMeta(calendar: Calendar = .current) -> String? {
+        let target = dueDate.map { "Target \(TargetAge.weekdayDayText($0, calendar: calendar))" }
+        var deadline: String?
+        if let deadlineDate {
+            let text = "deadline \(TargetAge.weekdayDayText(deadlineDate, calendar: calendar))"
+            if let due = dueDate {
+                let gap = calendar.dateComponents(
+                    [.day], from: calendar.startOfDay(for: due), to: calendar.startOfDay(for: deadlineDate)
+                ).day ?? 0
+                if deadlineDate < due, gap <= 0 {
+                    deadline = "\(text) (deadline before target)"
+                } else {
+                    deadline = gap == 0 ? "\(text) (same day)" : "\(text) (+\(gap)d)"
+                }
+            } else {
+                deadline = text
+            }
+        }
+        let repeats = rrule != nil && target != nil ? "repeats" : nil
+        let parts = [target, repeats, deadline].compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
         return parts.isEmpty ? nil : parts.joined(separator: "\u{00A0}·\u{00A0}")
     }
 

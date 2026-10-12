@@ -440,12 +440,40 @@ final class APIClient {
         return try await post(path: "/api/task-segments/defer", body: ["ids": ids])
     }
 
+    /// `POST /api/task-segments/target-today` → `{ until, affected,
+    /// skipped_recurring? }`. `skippedRecurring` (2026-10-12): ids the server
+    /// left alone because they repeat (ruling Q1) — their target is the
+    /// recurrence's, so "Target today" doesn't apply.
+    struct SegmentTargetResult: Decodable, Equatable {
+        let affected: Int
+        let skippedRecurring: [Int]
+
+        enum CodingKeys: String, CodingKey {
+            case affected
+            case skippedRecurring = "skipped_recurring"
+        }
+
+        init(affected: Int, skippedRecurring: [Int] = []) {
+            self.affected = affected
+            self.skippedRecurring = skippedRecurring
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            affected = try c.decodeIfPresent(Int.self, forKey: .affected) ?? 0
+            skippedRecurring = try c.decodeIfPresent([Int].self, forKey: .skippedRecurring) ?? []
+        }
+    }
+
     /// "Target today": a deliberate target today (the age clock starts
-    /// there), also marking the rows considered. Response `{ until, affected }`.
+    /// there), also marking the rows considered. A body that doesn't decode
+    /// after a 2xx still means the server acted: it reads as nothing skipped.
     @discardableResult
-    func targetSegmentTasksToday(ids: [Int]) async throws -> Data {
-        guard !ids.isEmpty else { return Data() }
-        return try await post(path: "/api/task-segments/target-today", body: ["ids": ids])
+    func targetSegmentTasksToday(ids: [Int]) async throws -> SegmentTargetResult {
+        guard !ids.isEmpty else { return SegmentTargetResult(affected: 0) }
+        let data = try await post(path: "/api/task-segments/target-today", body: ["ids": ids])
+        return (try? JSONDecoder().decode(APIEnvelope<SegmentTargetResult>.self, from: data).data)
+            ?? SegmentTargetResult(affected: ids.count)
     }
 
     /// Snooze SPECIFIC tasks by id — `POST /api/tasks/bulk/snooze`

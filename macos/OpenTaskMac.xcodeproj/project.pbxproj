@@ -84,6 +84,7 @@
 		4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124940586D73E6C268F9E443 /* AppConfig.swift */; };
 		51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */ = {isa = PBXBuildFile; fileRef = 37C29187973C3150F91CA3B7 /* reminders-initial.json */; };
 		52209900BB7B38B4D5C46CBE /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
+		53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */ = {isa = PBXBuildFile; fileRef = 856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */; };
 		555E58F6C1F1328E6D692AED /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8191D69C950AB5453FA795F7 /* WidgetTheme.swift */; };
 		57441E318F2FA30179E3BC29 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */; };
 		58A1CB55EF9E06BD0CD0FEB4 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
@@ -116,6 +117,7 @@
 		76D29E684F7D200FE06336B4 /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */; };
 		770EF3B5D76EE47517B10CFF /* QuotaRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EBB1F0D8B23725D4EB9DC21 /* QuotaRulesTests.swift */; };
 		78931D4AFF9A62A3E49A51AA /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
+		7D12D524F9772F7F9A1F1764 /* task-segments-target-today-skipped.json in Resources */ = {isa = PBXBuildFile; fileRef = F9A62D72E73C322DC78AAC47 /* task-segments-target-today-skipped.json */; };
 		7F1C5CD3DCB9525D70CCCBA4 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF69531FE48B319A9AD5A85 /* ServerURL.swift */; };
 		7F708353B1540BED9E328245 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BEA167B70531B2904292843 /* SweepDismissal.swift */; };
 		818379AA1A07C71D74720E37 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
@@ -318,6 +320,7 @@
 		828B6B306B2D686ED20A8EA2 /* MenuBarRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarRenderTests.swift; sourceTree = "<group>"; };
 		8356E1C2B16B9BF80616B20E /* OpenTaskScreenshotRenders.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenTaskScreenshotRenders.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-snooze.json"; sourceTree = "<group>"; };
+		856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-upcoming.json"; sourceTree = "<group>"; };
 		86C87419D6853F3A661B2252 /* TaskFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFeed.swift; sourceTree = "<group>"; };
 		880F73DD5EB836E40BCA134A /* reminders.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = reminders.json; sourceTree = "<group>"; };
 		8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskMacApp.swift; sourceTree = "<group>"; };
@@ -366,6 +369,7 @@
 		F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidgetViews.swift; sourceTree = "<group>"; };
 		F781F8F4FFD0805CBC5D5068 /* completions.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = completions.json; sourceTree = "<group>"; };
 		F7BE26DEC5BFD175EB325C40 /* ReminderDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderDayProgress.swift; sourceTree = "<group>"; };
+		F9A62D72E73C322DC78AAC47 /* task-segments-target-today-skipped.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-segments-target-today-skipped.json"; sourceTree = "<group>"; };
 		FE74638B34B5131EFCBDEF6A /* NotificationActionRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationActionRunner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -402,10 +406,12 @@
 				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
 				37C29187973C3150F91CA3B7 /* reminders-initial.json */,
 				20094FA70C6D6907002B24FA /* reminders-segments.json */,
+				856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
 				F18E00062C7779D38C364472 /* task-counts.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
 				0FB8808D7E3324C55F3E06A1 /* task-segments-consider.json */,
+				F9A62D72E73C322DC78AAC47 /* task-segments-target-today-skipped.json */,
 				6676B0D8909B96B0AAA98C71 /* tasks.json */,
 				B7DD47E083E073FE32FA2C34 /* time-slots.json */,
 				8F19FED31D51A4F31E33C37B /* undo-status.json */,
@@ -762,10 +768,12 @@
 				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,
 				51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */,
 				A7A7013390BB2D8ED7765AAB /* reminders-segments.json in Resources */,
+				53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
 				04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
 				DFD0535376C465799D675624 /* task-segments-consider.json in Resources */,
+				7D12D524F9772F7F9A1F1764 /* task-segments-target-today-skipped.json in Resources */,
 				DBCA794BCC63F980AE658F47 /* tasks.json in Resources */,
 				EE5A06EF55B46C3132933303 /* time-slots.json in Resources */,
 				D69FFE9776386998102E6583 /* undo-status.json in Resources */,

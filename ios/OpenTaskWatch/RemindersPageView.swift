@@ -287,7 +287,7 @@ private struct SlotProgressStrip: View {
             // (which have no partial fill either).
             ForEach(segments) { segment in
                 Capsule()
-                    .fill(segment.hasWaiting ? WatchTheme.taskSegment(segment.horizonValue) : WatchTheme.done)
+                    .fill(segment.hasWaiting ? WatchTheme.taskSegment(segment.kind) : WatchTheme.done)
                     .frame(height: 3)
                     .accessibilityLabel(Text("Tasks · \(segment.label)"))
             }
@@ -423,7 +423,7 @@ struct TaskSegmentSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tasks · \(segment.label)")
                     .font(.headline)
-                    .foregroundStyle(WatchTheme.taskSegment(segment.horizonValue))
+                    .foregroundStyle(WatchTheme.taskSegment(segment.kind))
                 Text("\(segment.waitingCount) left")
                     .font(.caption)
                     .foregroundStyle(.secondary)

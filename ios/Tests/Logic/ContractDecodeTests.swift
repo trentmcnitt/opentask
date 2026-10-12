@@ -344,11 +344,91 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(result.considered, 1)
     }
 
+    // MARK: Upcoming (2026-10-12, docs/TASK-MODEL.md § Upcoming)
+
+    /// `GET /api/reminders` with an Upcoming segment, after Days: a one-off
+    /// with a target and deadline, and a repeating task (no Today on its row).
+    func testRemindersUpcomingSegment() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-upcoming")
+        XCTAssertEqual(payload.taskSegments.map(\.horizon), ["days", "upcoming"], "Upcoming comes after Days")
+        let upcoming = try XCTUnwrap(payload.taskSegments.last)
+        XCTAssertEqual(upcoming.kind, .upcoming)
+        XCTAssertNil(upcoming.horizonValue)
+        XCTAssertEqual(upcoming.label, "Upcoming")
+        XCTAssertEqual(upcoming.pageKey, -14)
+        XCTAssertFalse(upcoming.nudge)
+        XCTAssertEqual(upcoming.tasks.map(\.id), [Fixtures.passport, Fixtures.plantsRecurring])
+        XCTAssertEqual(upcoming.tasks.map(\.state), [.waiting, .waiting])
+        XCTAssertEqual(upcoming.tasks.map(\.recurring), [false, true])
+        XCTAssertEqual(upcoming.tasks.map(\.offersTargetToday), [true, false])
+        XCTAssertEqual(upcoming.waitingCount, 2)
+        XCTAssertTrue(upcoming.isListed)
+
+        let passport = upcoming.tasks[0].task
+        XCTAssertEqual(passport.title, "Renew the passport")
+        XCTAssertEqual(passport.dueAt, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(passport.deadlineAt, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(passport.targetSetAt, Fixtures.pinnedTimestamp)
+        XCTAssertNil(passport.rrule)
+        XCTAssertNil(passport.horizon)
+        let plants = upcoming.tasks[1].task
+        XCTAssertEqual(plants.title, "Water the plants")
+        XCTAssertEqual(plants.rrule, "FREQ=DAILY;INTERVAL=3;BYHOUR=9;BYMINUTE=0")
+        XCTAssertEqual(plants.targetSetAt, Fixtures.pinnedTimestamp)
+        XCTAssertNil(plants.deadlineAt)
+
+        // The Days row carries the new fields too.
+        let days = try XCTUnwrap(payload.taskSegments.first)
+        XCTAssertEqual(days.tasks.map(\.id), [Fixtures.squeakyDoor])
+        XCTAssertEqual(days.tasks.map(\.recurring), [false])
+
+        // Field by field against the raw JSON — a renamed key would otherwise
+        // decode silently through the rrule fallback / nil.
+        let raw = try Fixtures.object("reminders-upcoming")
+        let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
+        XCTAssertEqual(rawSegments.map { $0["horizon"] as? String }, ["days", "upcoming"])
+        let rawUpcoming = try XCTUnwrap(rawSegments.last)
+        XCTAssertEqual(rawUpcoming["waiting"] as? Int, upcoming.waitingCount)
+        XCTAssertEqual(rawUpcoming["considered"] as? Int, upcoming.consideredTasks.count)
+        let rawRows = try XCTUnwrap(rawUpcoming["tasks"] as? [[String: Any]])
+        XCTAssertEqual(rawRows.map { $0["recurring"] as? Bool }, [false, true])
+        XCTAssertEqual(rawRows.map { $0["target_set_at"] as? String }, [Fixtures.pinnedTimestamp, Fixtures.pinnedTimestamp])
+        XCTAssertEqual(rawRows.map { $0["segment_state"] as? String }, ["waiting", "waiting"])
+
+        // Upcoming rows stay out of every group, like every segment's.
+        let groupIds = Set(payload.groups.flatMap { $0.reminders + $0.consideredItems }.map(\.id))
+        XCTAssertTrue(groupIds.isDisjoint(with: [Fixtures.passport, Fixtures.plantsRecurring]))
+
+        // And it survives the cache round trip, `recurring` included.
+        let back = try JSONDecoder().decode(RemindersPayload.self, from: JSONEncoder().encode(payload))
+        XCTAssertEqual(back.taskSegments, payload.taskSegments)
+        XCTAssertEqual(back.taskSegments.last?.tasks.map(\.recurring), [false, true])
+    }
+
+    /// `POST /api/task-segments/target-today` on a repeating task: nothing
+    /// targeted, the id named in `skipped_recurring`.
+    func testTargetTodaySkippedRecurringResponse() throws {
+        let result = try Fixtures.decode(APIClient.SegmentTargetResult.self, "task-segments-target-today-skipped")
+        XCTAssertEqual(result.affected, 0)
+        XCTAssertEqual(result.skippedRecurring, [Fixtures.plantsRecurring])
+        let raw = try Fixtures.object("task-segments-target-today-skipped")
+        XCTAssertEqual(raw["skipped_recurring"] as? [Int], [Fixtures.plantsRecurring])
+    }
+
+    /// `GET /api/user/preferences` carries the check-in day (Luxon: 6 = Saturday).
+    func testPreferencesCheckInDay() throws {
+        let page = try Fixtures.decode(UserPreferencesLabelConfigPage.self, "user-preferences")
+        XCTAssertEqual(page.checkInDay, 6)
+        XCTAssertEqual(try Fixtures.object("user-preferences")["check_in_day"] as? Int, 6)
+    }
+
     /// Every task in every fixture carries the task-model fields now.
     func testOpenTasksCarryTheTaskModelFields() throws {
         let raw = try XCTUnwrap(try Fixtures.object("tasks")["tasks"] as? [[String: Any]])
         for task in raw {
-            for key in ["target_at", "deadline_at", "horizon", "original_due_at", "deadline_nag_off"] {
+            for key in [
+                "target_at", "deadline_at", "horizon", "original_due_at", "deadline_nag_off", "target_set_at",
+            ] {
                 XCTAssertTrue(task.keys.contains(key), "task \(task["id"] ?? "?") lacks \(key)")
             }
             XCTAssertEqual(task["target_at"] as? String, task["due_at"] as? String, "target_at == due_at")
@@ -356,6 +436,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let tasks = try Fixtures.decode(TasksPage.self, "tasks").tasks
         let dated = try XCTUnwrap(tasks.first { $0.id == Fixtures.stretch })
         XCTAssertEqual(dated.originalDueAt, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(dated.targetSetAt, Fixtures.pinnedTimestamp)
         XCTAssertNil(dated.horizon)
         XCTAssertNil(dated.horizonLabel, "unset shows as nothing, never as Weeks")
     }

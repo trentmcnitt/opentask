@@ -53,6 +53,10 @@ enum Fixtures {
     /// The task-segment row in `reminders-segments.json` (2026-10-10): a
     /// one-off "days" task with a deadline and no target, considered today.
     static let squeakyDoor = 110
+    /// The Upcoming rows in `reminders-upcoming.json` (2026-10-12): a one-off
+    /// with a target and a deadline, and a repeating task (every 3 days) —
+    /// distinct from 106, the one-off "Water the plants".
+    static let passport = 111, plantsRecurring = 112
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }
