@@ -119,6 +119,33 @@ enum WidgetTheme {
     /// never red, which is kept for a passed deadline only (Trent).
     static let overTarget = Color(red: 0.62, green: 0.27, blue: 0.58)
 
+    /// A task segment's teal (2026-10-11, Trent's pick: mockup
+    /// task-segment-colors-2 option 3) — its strip bar's fill while a row
+    /// waits, the ring on its page, and its page title. One shade per
+    /// horizon, the exact values the web uses (`TaskHorizon.segmentColorHex`).
+    /// A finished segment's bar is green like a period's, and its track the
+    /// same gray. Resolved from the view's `colorScheme`, not a dynamic
+    /// platform color, so the macOS image renders (`ios/Tests/Renders`) draw
+    /// the dark values when told to.
+    static func taskSegmentColor(_ horizon: TaskHorizon?, scheme: ColorScheme) -> Color {
+        let hex = (horizon ?? .weeks).segmentColorHex
+        return rgb(scheme == .dark ? hex.dark : hex.light)
+    }
+
+    /// The faint divider between the last period bar and the first task bar
+    /// (option 3's "faint separator"): the mockup's #c9c9cf / #55555b.
+    static func stripSeparator(scheme: ColorScheme) -> Color {
+        rgb(scheme == .dark ? 0x55555B : 0xC9C9CF)
+    }
+
+    private static func rgb(_ hex: UInt32) -> Color {
+        Color(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+
     // MARK: - Metrics
 
     static let rowSpacing: CGFloat = 10

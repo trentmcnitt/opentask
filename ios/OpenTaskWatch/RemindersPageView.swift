@@ -253,7 +253,7 @@ struct RemindersPageView: View {
 /// adds a matching outline for the same reason, at a smaller scale).
 ///
 /// Then one bar per task segment shown today (2026-10-11, "segments as
-/// slots", the phone widget's strip): indigo while a row waits, green once
+/// slots", the phone widget's strip): its horizon's teal while a row waits (option 3, 2026-10-11), green once
 /// none does, never the faint "not started" look — a segment is shown today.
 /// Never ringed: the page doesn't page to a segment, it lists every waiting
 /// segment's rows under whichever period is on screen, so the bar's job is
@@ -276,9 +276,21 @@ private struct SlotProgressStrip: View {
                             .padding(-1.5)
                     )
             }
+            // The faint divider between periods and tasks (2026-10-11,
+            // option 3), only when both are there.
+            if !groups.isEmpty, !segments.isEmpty {
+                Rectangle()
+                    .fill(WatchTheme.stripSeparator)
+                    .frame(width: 1, height: 8)
+                    .padding(.horizontal, 2)
+                    .accessibilityHidden(true)
+            }
+            // Teal per horizon while a row waits, green once none does —
+            // option 3's colors. Whole-bar fills, like the watch's slot bars
+            // (which have no partial fill either).
             ForEach(segments) { segment in
                 Capsule()
-                    .fill(segment.hasWaiting ? WatchTheme.accent : WatchTheme.done)
+                    .fill(segment.hasWaiting ? WatchTheme.taskSegment(segment.horizonValue) : WatchTheme.done)
                     .frame(height: 3)
                     .accessibilityLabel(Text("Tasks · \(segment.label)"))
             }
@@ -414,6 +426,7 @@ struct TaskSegmentSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tasks · \(segment.label)")
                     .font(.headline)
+                    .foregroundStyle(WatchTheme.taskSegment(segment.horizonValue))
                 Text("\(segment.waitingCount) left")
                     .font(.caption)
                     .foregroundStyle(.secondary)

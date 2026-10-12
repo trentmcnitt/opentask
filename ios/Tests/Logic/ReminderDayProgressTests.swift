@@ -225,6 +225,19 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(bars.map(\.state), [.upcoming, .behind])
     }
 
+    /// Trent's picked teals (2026-10-11, option 3) — shared with the web, so
+    /// pinned exactly.
+    func testTaskSegmentTealsAreTheWebsValues() {
+        let light = TaskHorizon.allCases.map { $0.segmentColorHex.light }
+        let dark = TaskHorizon.allCases.map { $0.segmentColorHex.dark }
+        XCTAssertEqual(light, [0x0F9D8F, 0x2BB5A6, 0x7FD3C9, 0xB9E6E0])
+        XCTAssertEqual(dark, [0x2BB5A6, 0x4FC8BB, 0x8FDCD2, 0xC3ECE6])
+        let bars = ReminderDayProgress.stripBars(
+            groups: [], segments: [TaskSegmentDTO(horizon: "months", tasks: [row(1, .waiting)])], now: noon
+        )
+        XCTAssertEqual(bars.first?.horizon, .months, "a task bar carries its horizon for its teal")
+    }
+
     func testAnytimeCountsAsStarted() {
         let early = Calendar.current.date(bySettingHour: 5, minute: 0, second: 0, of: Date())!
         XCTAssertTrue(ReminderDayProgress.hasStarted(period(-1, start: nil, waiting: 1), now: early))

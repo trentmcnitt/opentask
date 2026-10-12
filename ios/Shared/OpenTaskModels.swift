@@ -309,6 +309,21 @@ enum TaskHorizon: String, CaseIterable, Codable {
 
     /// Position in screen order (days first).
     var order: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+
+    /// The task segment's color (Trent, 2026-10-11, mockup
+    /// task-segment-colors-2 option 3): one teal per horizon, nearest
+    /// first, EXACT values shared with the web — change them together.
+    /// Teal is clear of every other strip/row color: indigo (a period's
+    /// fill), green (done), the plum of over target, red, and the priority
+    /// colors. As 0xRRGGBB; `WidgetTheme`/`WatchTheme` make the `Color`.
+    var segmentColorHex: (light: UInt32, dark: UInt32) {
+        switch self {
+        case .days: return (0x0F9D8F, 0x2BB5A6)
+        case .weeks: return (0x2BB5A6, 0x4FC8BB)
+        case .months: return (0x7FD3C9, 0x8FDCD2)
+        case .eventually: return (0xB9E6E0, 0xC3ECE6)
+        }
+    }
 }
 
 // MARK: - Notes mark (2026-09-25)

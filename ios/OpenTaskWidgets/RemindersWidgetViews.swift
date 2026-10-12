@@ -937,6 +937,21 @@ private struct ReminderSlotStrip: View {
 
     private let segmentSpacing: CGFloat = 3
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The faint divider between the period bars and the task bars
+    /// (2026-10-11, option 3): 1pt wide, 12pt tall, with 6pt of air each side
+    /// — the `HStack`'s 3pt spacing plus 3pt of its own padding.
+    private static let separatorWidth: CGFloat = 1
+    private static let separatorHeight: CGFloat = 12
+    private static let separatorPadding: CGFloat = 3
+
+    /// Where the divider goes: before the first task bar, only when a period
+    /// bar comes before it (task segments exist today AND periods do).
+    private func separatorBefore(_ position: Int, in shown: [ReminderDayProgress.StripBar]) -> Bool {
+        position > 0 && shown[position].kind == .taskSegment && shown[position - 1].kind == .period
+    }
+
     var body: some View {
         // One bar is not a strip — same rule as the web's ReminderSlotBar
         // ("it would say only 'everything is here', which the header already
@@ -946,7 +961,12 @@ private struct ReminderSlotStrip: View {
         let shown = bars
         if shown.count >= 2 {
             GeometryReader { geo in
-                let gaps = segmentSpacing * CGFloat(shown.count - 1)
+                let hasSeparator = shown.indices.contains { separatorBefore($0, in: shown) }
+                // The divider is one more `HStack` child: its width, its own
+                // padding, and one more spacing.
+                let separatorCost = hasSeparator
+                    ? Self.separatorWidth + 2 * Self.separatorPadding + segmentSpacing : 0
+                let gaps = segmentSpacing * CGFloat(shown.count - 1) + separatorCost
                 let widths = SegmentWidths.widths(
                     weights: shown.map { Double($0.total) },
                     available: Double(max(geo.size.width - gaps, 0)),
@@ -954,6 +974,17 @@ private struct ReminderSlotStrip: View {
                 )
                 HStack(spacing: segmentSpacing) {
                     ForEach(Array(shown.enumerated()), id: \.element.key) { position, bar in
+                        if separatorBefore(position, in: shown) {
+                            Rectangle()
+                                .fill(WidgetTheme.stripSeparator(scheme: colorScheme))
+                                .frame(width: Self.separatorWidth, height: Self.separatorHeight)
+                                // Taller than the strip's 8pt row on purpose
+                                // (the mockup's 12px); drawn centred over it,
+                                // inside the card, so nothing clips.
+                                .frame(height: maxSegmentHeight)
+                                .padding(.horizontal, Self.separatorPadding)
+                                .accessibilityHidden(true)
+                        }
                         // A task segment's bar jumps to its page exactly as a
                         // period's does: the intent takes any page key.
                         Button(intent: JumpToReminderSlotIntent(slotKey: bar.key)) {
@@ -994,7 +1025,28 @@ private struct ReminderSlotStrip: View {
     /// same whatever the fill. Both replaced a 1pt white ring he found hard to
     /// look at, which the widget also clipped at both rounded ends. Nothing is
     /// drawn outside the bar's own frame, so nothing can be clipped.
+    ///
+    /// TASK SEGMENT BARS (2026-10-11, option 3): filled in their horizon's
+    /// teal while a row waits, green once none does (like a period), on the
+    /// same gray track. The task page's own bar wears a ring in its teal —
+    /// drawn as a border INSIDE the 8pt frame, the bar inset within it, so
+    /// nothing paints outside the frame here either.
+    @ViewBuilder
     private func segmentBar(for bar: ReminderDayProgress.StripBar) -> some View {
+        if bar.kind == .taskSegment, bar.key == currentKey {
+            let teal = WidgetTheme.taskSegmentColor(bar.horizon, scheme: colorScheme)
+            ZStack {
+                Capsule().strokeBorder(teal, lineWidth: 1.5)
+                barBody(for: bar).padding(2.5)
+            }
+            .frame(height: 8)
+        } else {
+            barBody(for: bar)
+                .frame(height: bar.key == currentKey ? 8 : 4)
+        }
+    }
+
+    private func barBody(for bar: ReminderDayProgress.StripBar) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 // Fainter for a period whose time hasn't come — which is
@@ -1005,16 +1057,18 @@ private struct ReminderSlotStrip: View {
                 // waits, green once nothing does (`color(for:)`), as on the web.
                 if bar.fraction > 0 {
                     Capsule()
-                        .fill(color(for: bar.state))
+                        .fill(color(for: bar))
                         .frame(width: max(geo.size.height, geo.size.width * bar.fraction))
                 }
             }
         }
-        .frame(height: bar.key == currentKey ? 8 : 4)
     }
 
-    private func color(for state: ReminderDayProgress.StripBar.State) -> Color {
-        switch state {
+    private func color(for bar: ReminderDayProgress.StripBar) -> Color {
+        if bar.kind == .taskSegment, bar.state != .done {
+            return WidgetTheme.taskSegmentColor(bar.horizon, scheme: colorScheme)
+        }
+        switch bar.state {
         case .done: return WidgetTheme.trackMetTint.opacity(0.85)
         // `WidgetTheme.indigoAccent` (2026-09-23) — the same named constant
         // the "show completed" dot's ON state now uses, so this
@@ -1427,6 +1481,8 @@ enum SegmentRowMetrics {
 /// — `ReminderDayProgress.emptyBody(segment:…)`). Its rows still count
 /// toward no PERIOD's number (amendment 8).
 private struct TaskSegmentListView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let entry: RemindersEntry
     let segment: TaskSegmentDTO
     let isLarge: Bool
@@ -1692,7 +1748,9 @@ private struct TaskSegmentListView: View {
     private var title: some View {
         Text("Tasks · \(segment.label)")
             .font(.headline)
-            .foregroundStyle(.primary)
+            // Its horizon's teal (2026-10-11): the page's accent, matching
+            // its strip bar and ring.
+            .foregroundStyle(WidgetTheme.taskSegmentColor(segment.horizonValue, scheme: colorScheme))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }

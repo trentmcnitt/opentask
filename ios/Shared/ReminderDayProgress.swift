@@ -162,6 +162,9 @@ enum ReminderDayProgress {
         /// The bar's width weight: the period's (or segment's) day total, so
         /// checking things off moves the fill but never resizes a bar.
         let total: Int
+        /// A task segment's horizon (its teal, `TaskHorizon.segmentColorHex`);
+        /// nil for a period.
+        var horizon: TaskHorizon? = nil
 
         /// How far it has filled.
         var fraction: Double { total > 0 ? Double(handled) / Double(total) : 0 }
@@ -201,7 +204,8 @@ enum ReminderDayProgress {
             guard segment.isListed, count.total > 0 else { return nil }
             return StripBar(
                 key: segment.pageKey, kind: .taskSegment, label: "Tasks · \(segment.label)",
-                state: segment.hasWaiting ? .behind : .done, handled: count.handled, total: count.total
+                state: segment.hasWaiting ? .behind : .done, handled: count.handled, total: count.total,
+                horizon: segment.horizonValue
             )
         }
         return periods + tasks

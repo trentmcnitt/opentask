@@ -18,6 +18,25 @@ enum WatchTheme {
     /// meaning on this surface.
     static let done = Color.green
 
+    /// A task segment's teal (2026-10-11, mockup task-segment-colors-2
+    /// option 3; the web's and the phone widget's exact values,
+    /// `TaskHorizon.segmentColorHex`). The watch is always dark, so the dark
+    /// shades: the strip bar's fill while a row waits and the section title.
+    static func taskSegment(_ horizon: TaskHorizon?) -> Color {
+        rgb((horizon ?? .weeks).segmentColorHex.dark)
+    }
+
+    /// The faint divider between the period bars and the task bars (#55555b).
+    static let stripSeparator = rgb(0x55555B)
+
+    private static func rgb(_ hex: UInt32) -> Color {
+        Color(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+
     /// Overdue. Matches the web app's `text-destructive` (red) used for every
     /// overdue indicator there — `TaskRow`'s left border, `Header`'s overdue
     /// pill, project/due-date chip badges (`src/components/TaskRow.tsx`,
