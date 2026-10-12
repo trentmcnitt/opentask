@@ -32,6 +32,7 @@ import { getTaskById } from '@/core/tasks/read'
 import { targetTasksToday } from '@/core/tasks/task-segments'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
 import { segmentState, upcomingState, hasPickedTarget } from '@/lib/task-segments'
+import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -252,6 +253,191 @@ describe('TM-INV: the bulk tier (seeded random)', () => {
         const after = getTaskById(t.id)!
         if (t.priority === 4) expect(after.due_at, `${label}: P4 moved`).toBe(t.due_at)
         checkStored(after, `${label} task ${t.id}`)
+      }
+    }
+  })
+})
+
+/**
+ * TM-INV-04/05 (spec §7 + "Testing and evaluation", 2026-10-12): a random task
+ * list stepped day by day through the DAY SIMULATOR — the real screen reads —
+ * and checked on every local day:
+ *
+ *  - never two Upcoming rows for one task, never two segments at once;
+ *  - never in a horizon segment and Upcoming, nor Upcoming and over target;
+ *  - a picked target never in a horizon segment; an automatic one never in
+ *    Upcoming;
+ *  - never told, then silent before the target: untapped (policy never), a
+ *    task once in Upcoming is in Upcoming every day until its target's day;
+ *  - attempts increase by at most 1 per local day, never on a day the task
+ *    was not over target (no moves: once over, it stays over), and are 0 for
+ *    a task whose target has never arrived;
+ *  - target ≤ deadline while the deadline is ahead.
+ * TM-INV-05 adds random moves (any day, any direction): attempts still rise
+ * by at most 1 per local day and only once a target has arrived.
+ */
+
+function randomList(seed: number, start: DateTime) {
+  const r = rng(seed)
+  const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+  const events: SimEvent[] = []
+  for (let c = 0; c < 40; c++) {
+    const created = start.plus({ minutes: Math.floor(r() * 10 * 24 * 60) })
+    const rel = (maxDays: number) =>
+      created
+        .plus({ minutes: Math.floor(r() * maxDays * 24 * 60) })
+        .toUTC()
+        .toISO()!
+    const kind = pick(['picked', 'deadline', 'both', 'undated', 'weekly', 'daily'] as const)
+    const input: Record<string, unknown> = { title: `sim ${c}` }
+    if (kind === 'picked' || kind === 'both') input.due_at = rel(25)
+    if (kind === 'deadline' || kind === 'both') input.deadline_at = rel(30)
+    if (kind === 'weekly') {
+      input.rrule = `FREQ=WEEKLY;BYDAY=${pick(['MO', 'WE', 'FR', 'SU'])};BYHOUR=${7 + Math.floor(r() * 12)};BYMINUTE=0`
+    }
+    if (kind === 'daily') input.rrule = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0'
+    input.horizon = pick(['days', 'weeks', 'months', 'eventually', undefined])
+    events.push({
+      at: created.toFormat("yyyy-MM-dd'T'HH:mm"),
+      run: (ctx) => {
+        ctx.ids[`t${c}`] = createTask({
+          userId: ctx.userId,
+          userTimezone: ctx.timezone,
+          input: input as Parameters<typeof createTask>[0]['input'],
+        }).id
+      },
+    })
+  }
+  return { events, r }
+}
+
+function simulate(seed: number, moves: boolean) {
+  setupTestDb()
+  const start = DateTime.fromISO('2026-10-20T00:00', { zone: tz }) // across Nov 1
+  const { events, r } = randomList(seed, start)
+  if (moves) {
+    for (let m = 0; m < 60; m++) {
+      const at = start.plus({ minutes: Math.floor(r() * 40 * 24 * 60) })
+      const which = Math.floor(r() * 40)
+      const shift = Math.round((r() * 2 - 0.7) * 6 * 24 * 60)
+      events.push({
+        at: at.toFormat("yyyy-MM-dd'T'HH:mm"),
+        run: (ctx) => {
+          const id = ctx.ids[`t${which}`]
+          const task = id ? getTaskById(id) : null
+          if (!task || task.done) return
+          updateTask({
+            ...u,
+            taskId: id,
+            input: { due_at: at.plus({ minutes: shift }).toUTC().toISO()! },
+          })
+        },
+      })
+    }
+  }
+  let ids: Record<string, number> = {}
+  const days = simulateDays({
+    userId: TEST_USER_ID,
+    timezone: tz,
+    from: start.toISODate()!,
+    days: 45,
+    // The day's last minute: each record then covers exactly one local day,
+    // so "at most 1 a day" is a per-tick check.
+    at: '23:59',
+    policy: ['never'],
+    events: events.map((e) => ({
+      ...e,
+      run: (ctx) => {
+        ids = ctx.ids
+        e.run(ctx)
+      },
+    })),
+    taskIds: () => Object.values(ids),
+    setClock: (d) => vi.setSystemTime(d),
+  })
+  return days
+}
+
+/** Where a task is on a simulated day: one segment at most, never two places that exclude each other. */
+function checkPlaces(t: SimTaskDay, task: Task, label: string) {
+  const segs = t.places.filter((p) => p !== 'over' && p !== 'done' && p !== 'quiet')
+  expect(segs.length, `${label}: two segments`).toBeLessThanOrEqual(1)
+  expect(t.places.includes('upcoming') && t.places.includes('over'), label).toBe(false)
+  if (hasPickedTarget(task) && !task.rrule) {
+    expect(
+      segs.filter((p) => p !== 'upcoming'),
+      `${label}: picked in a segment`,
+    ).toEqual([])
+  }
+  if (task.target_auto) expect(segs, `${label}: auto in Upcoming`).not.toContain('upcoming')
+  checkStored(task, label)
+}
+
+describe('TM-INV: the day simulator over a random list', () => {
+  beforeAll(() => setupTestDb())
+  afterAll(() => teardownTestDb())
+  afterEach(() => vi.useRealTimers())
+
+  test('TM-INV-04: placement, carry-over and attempts, day by day (no moves)', () => {
+    const SEED4 = SEED + 4
+    const days = simulate(SEED4, false)
+    const seenUpcoming = new Set<number>()
+    const prev = new Map<number, number>()
+    for (const day of days) {
+      vi.setSystemTime(DateTime.fromISO(`${day.date}T23:59`, { zone: tz }).toJSDate())
+      for (const t of day.tasks) {
+        const label = `seed ${SEED4} ${day.date} task ${t.id}`
+        const task = getTaskById(t.id)!
+        checkPlaces(t, task, label)
+        // Told, then silent before the target: never.
+        const targetDay = task.due_at
+          ? DateTime.fromISO(task.due_at).setZone(tz).toISODate()!
+          : null
+        if (seenUpcoming.has(t.id) && targetDay && day.date < targetDay && !task.done) {
+          expect(t.place, `${label}: told then silent`).toBe('upcoming')
+        }
+        if (t.place === 'upcoming') seenUpcoming.add(t.id)
+        // Attempts: +1 at most a day, and only on a day it is over target.
+        const before = prev.get(t.id) ?? 0
+        const delta = t.attempts - before
+        if (t.place !== 'done' && !(task.rrule && delta < 0)) {
+          expect(delta, `${label}: attempts delta`).toBeGreaterThanOrEqual(0)
+          expect(delta, `${label}: attempts delta`).toBeLessThanOrEqual(1)
+          if (delta === 1) expect(t.places, `${label}: attempt while not over`).toContain('over')
+        }
+        if (targetDay && targetDay > day.date && !task.rrule) {
+          expect(t.attempts, `${label}: attempts before the target`).toBe(0)
+        }
+        prev.set(t.id, t.attempts)
+      }
+    }
+    // The list really exercised the rules.
+    const places = new Set(days.flatMap((d) => d.tasks.flatMap((t) => t.places)))
+    for (const p of ['upcoming', 'over', 'days']) expect(places).toContain(p)
+    expect(Math.max(...days.flatMap((d) => d.tasks.map((t) => t.attempts)))).toBeGreaterThan(3)
+  })
+
+  test('TM-INV-05: with random moves, attempts rise at most 1 a local day, only after a target arrived', () => {
+    const SEED5 = SEED + 5
+    const days = simulate(SEED5, true)
+    const prev = new Map<number, number>()
+    const everArrived = new Set<number>()
+    for (const day of days) {
+      for (const t of day.tasks) {
+        const label = `seed ${SEED5} ${day.date} task ${t.id}`
+        if (t.places.includes('over')) everArrived.add(t.id)
+        const delta = t.attempts - (prev.get(t.id) ?? 0)
+        if (t.place !== 'done' && delta > 0) {
+          expect(delta, `${label}: more than 1 in a day`).toBe(1)
+        }
+        // A count can only exist once some target arrived (at a tick, or
+        // between ticks before a move away — then the move's checkpoint kept it).
+        if (t.attempts > 0 && !everArrived.has(t.id)) {
+          const task = getTaskById(t.id)!
+          expect(task.original_due_at, `${label}: attempts with no target ever`).not.toBeNull()
+        }
+        expect(t.places.includes('upcoming') && t.places.includes('over'), label).toBe(false)
+        prev.set(t.id, t.attempts)
       }
     }
   })

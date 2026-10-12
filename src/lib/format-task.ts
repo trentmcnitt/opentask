@@ -93,7 +93,7 @@ export function formatTaskResponse(task: Task): FormattedTask {
     is_recurring: task.rrule !== null,
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),
-    attempts_offer: attemptsOffer(task),
+    attempts_offer: attemptsOffer(task, now),
     age_label: ageLabel(task, now),
   }
 }

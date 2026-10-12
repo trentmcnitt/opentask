@@ -656,16 +656,23 @@ export function attemptsTone(attempts: number): AttemptsTone {
  * — never automatically: "Remove target?" on a one-off with no deadline,
  * "Back to auto?" on a deadline task whose target the user picked. An
  * automatic target offers nothing (ruling Q9), and a repeating task's target
- * goes only with its recurrence (`targetReset` decides all three).
+ * goes only with its recurrence (`targetReset` decides all three). Nor once
+ * the deadline has passed: "back to auto" would be the passed deadline, still
+ * over target — the deadline itself is what to change.
  */
-export function attemptsOffer(task: {
-  due_at: string | null
-  deadline_at: string | null
-  target_auto?: boolean
-  rrule?: string | null
-  attempts?: number
-}): 'auto' | 'remove' | null {
-  return (task.attempts ?? 0) >= ATTEMPTS_OFFER_REMOVE ? targetReset(task) : null
+export function attemptsOffer(
+  task: {
+    due_at: string | null
+    deadline_at: string | null
+    target_auto?: boolean
+    rrule?: string | null
+    attempts?: number
+  },
+  now: Date = new Date(),
+): 'auto' | 'remove' | null {
+  if ((task.attempts ?? 0) < ATTEMPTS_OFFER_REMOVE) return null
+  const reset = targetReset(task)
+  return reset === 'auto' && isPastDeadline(task.deadline_at, now) ? null : reset
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */
