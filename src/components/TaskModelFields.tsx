@@ -36,6 +36,7 @@ export function TaskModelFields({
   onHorizon,
   repeatLabel = null,
   showHorizon = true,
+  emptyAnchor = null,
 }: {
   deadline: string | null
   horizon: HorizonValue | null
@@ -48,6 +49,8 @@ export function TaskModelFields({
   repeatLabel?: string | null
   /** False on a recurring task: it never enters a segment, so a horizon means nothing. */
   showHorizon?: boolean
+  /** Where an empty deadline picker opens: a recurring task's occurrence target. */
+  emptyAnchor?: string | null
 }) {
   const when = deadline ? DateTime.fromISO(deadline).setZone(timezone) : null
   const past = deadline ? isPastDeadline(deadline, new Date()) : false
@@ -61,6 +64,7 @@ export function TaskModelFields({
         timezone={timezone}
         onChange={onDeadline}
         emptyDefault="tomorrow"
+        emptyAnchor={emptyAnchor}
       >
         <p data-quick-panel-deadline className="inline-flex cursor-pointer items-center gap-1">
           <Flag className="text-muted-foreground/50 size-3 shrink-0" />

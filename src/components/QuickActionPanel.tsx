@@ -1290,6 +1290,9 @@ export function QuickActionPanel({
                 original_due_at: effectiveTask?.original_due_at ?? null,
               })}
               showHorizon={!displayRrule}
+              emptyAnchor={
+                displayRrule ? (pendingDueAt ?? effectiveTask?.due_at ?? workingDate) : null
+              }
             />
           )}
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}

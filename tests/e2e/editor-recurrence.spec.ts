@@ -133,6 +133,34 @@ test.describe('Task editor sheet on a phone', () => {
     }
   })
 
+  test("a recurring task's empty deadline picker opens on the occurrence, not tomorrow", async ({
+    authenticatedPage: page,
+  }) => {
+    // The noon target is the occurrence; a deadline "before bed that night" is
+    // then just a time change, with no hunting through the calendar for Sunday.
+    const id = await createTask(page, {
+      title: uniqueTitle('Timesheet'),
+      rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0',
+      priority: 2,
+    })
+    const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        const sheet = await openEditor(page, id)
+        await sheet.locator('[data-quick-panel-deadline]').tap()
+        // The picker selects its day as a browser-local Date, so ask the browser.
+        const day = await page.evaluate((iso) => new Date(iso).getDate(), task.due_at as string)
+        const selected = page.locator('[data-selected-single="true"]')
+        await expect(selected).toHaveText(String(day))
+        await expect(page.getByLabel('Hour')).toHaveValue('12')
+        // Opening it stages nothing.
+        await expect(sheet.locator('[data-quick-panel-deadline]')).toContainText('None')
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
   test('a deadline-only task names its auto target', async ({ authenticatedPage: page }) => {
     // Deadline two days out: its implied target (4 days before) has arrived.
     const id = await createTask(page, {
