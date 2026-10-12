@@ -21,6 +21,7 @@ import { loadTaskForMutation } from './access'
 import { computeMarkDone, executeMarkDone } from './helpers'
 import { isTracked } from '@/lib/track'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
+import { TARGET_SET_FIELD } from './target-set'
 
 export interface MarkDoneOptions {
   userId: number
@@ -295,12 +296,15 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     'completion_count',
     'first_completed_at',
     'last_completed_at',
+    // Upcoming (2026-10-12): the put-back sets the target again (normally an
+    // occurrence already arrived, so over target, never Upcoming).
+    TARGET_SET_FIELD,
   ]
 
   const updatedTask = withTransaction((tx) => {
     tx.prepare(
       `UPDATE tasks
-        SET due_at = ?, original_due_at = ?, deadline_at = ?,
+        SET due_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
             updated_at = ?
         WHERE id = ?`,
@@ -308,6 +312,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
       latest.due_at_was,
       latest.due_at_was,
       restoredDeadline,
+      nowStr,
       restoredCount,
       restoredFirstCompleted,
       restoredLastCompleted,
@@ -326,6 +331,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         due_at: task.due_at,
         original_due_at: task.original_due_at,
         deadline_at: task.deadline_at,
+        target_set_at: task.target_set_at,
         completion_count: task.completion_count,
         first_completed_at: task.first_completed_at,
         last_completed_at: task.last_completed_at,
@@ -336,6 +342,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         due_at: latest.due_at_was,
         original_due_at: latest.due_at_was,
         deadline_at: restoredDeadline,
+        target_set_at: nowStr,
         completion_count: restoredCount,
         first_completed_at: restoredFirstCompleted,
         last_completed_at: restoredLastCompleted,

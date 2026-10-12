@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- First day of the user's week: 'sunday' (default) or 'monday'. Sets where a
   -- weekly quota's period begins and ends (src/lib/week-start.ts).
   week_start TEXT NOT NULL DEFAULT 'sunday',
+  -- The weekday the horizon segments come round on (2026-10-12): Luxon
+  -- numbering, 1 = Monday … 7 = Sunday; default 6 = Saturday. Weeks shows on
+  -- it, Months on the first one of the month, Eventually on the first one of
+  -- Jan/Apr/Jul/Oct (src/lib/task-segments.ts). Independent of week_start, and
+  -- no part of Upcoming.
+  check_in_day INTEGER NOT NULL DEFAULT 6,
   morning_time  TEXT NOT NULL DEFAULT '09:00',
   wake_time     TEXT NOT NULL DEFAULT '07:00',
   sleep_time    TEXT NOT NULL DEFAULT '22:00',
@@ -198,6 +204,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Deliberately NOT a general "target changed" stamp: snooze, edit, create
   -- and a recurrence advance never set it. Undo restores the previous value.
   segment_targeted_at TEXT DEFAULT NULL,
+  -- When the task's target was last SET by any path (2026-10-12): create, a
+  -- move, Today, a completion advance, skip, enrichment, and any deadline
+  -- change (it moves the effective target). The anchor for Upcoming's wait
+  -- (src/lib/task-segments.ts). Stamped only through src/core/tasks/target-set.ts;
+  -- undo restores it. NULL reads as created_at (a repeating task:
+  -- max(created_at, last_completed_at)). Distinct from segment_targeted_at.
+  target_set_at TEXT DEFAULT NULL,
   -- A task with a deadline and no target nags from DEADLINE_LEAD_DAYS before
   -- the deadline (computed, never stored). Remove-target sets this to turn
   -- that off for the task; a new deadline turns it back on.

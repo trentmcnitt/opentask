@@ -40,6 +40,9 @@
   --segment-weeks: #2bb5a6;
   --segment-months: #4fb8ab;
   --segment-eventually: #8ccfc6;
+  /* Upcoming (2026-10-12, proposed): a BLUER teal, so its bar reads apart from
+     Days beside it in the strip — same family, a step toward cyan. */
+  --segment-upcoming: #1a8fb0;
   /* Titles: one darker teal in light mode, so the small uppercase label
      stays readable on the near-white card (the lighter fills read at ~1.3–2.5:1).
      In dark mode each title is its fill. */
@@ -47,6 +50,7 @@
   --segment-title-weeks: #0b7a6f;
   --segment-title-months: #0b7a6f;
   --segment-title-eventually: #0b7a6f;
+  --segment-title-upcoming: #136f8a;
   --badge-neutral: oklch(0.368 0 0);
   /* Reminders get their own hue rather than the neutral grey: §6 says a waiting
      thought is never overdue, so it must not be red, but grey read as disabled
@@ -92,10 +96,12 @@
   --segment-weeks: #4fc8bb;
   --segment-months: #8fdcd2;
   --segment-eventually: #c3ece6;
+  --segment-upcoming: #4cb8d9;
   --segment-title-days: var(--segment-days);
   --segment-title-weeks: var(--segment-weeks);
   --segment-title-months: var(--segment-months);
   --segment-title-eventually: var(--segment-eventually);
+  --segment-title-upcoming: var(--segment-upcoming);
   --badge-neutral: oklch(0.803 0 0);
   --badge-reminders: oklch(0.62 0.19 295);
   --ai-glow: oklch(0.6 0.18 270);
@@ -143,6 +149,7 @@
   --color-segment-weeks: var(--segment-weeks);
   --color-segment-months: var(--segment-months);
   --color-segment-eventually: var(--segment-eventually);
+  --color-segment-upcoming: var(--segment-upcoming);
   --color-badge-neutral: var(--badge-neutral);
   --color-badge-reminders: var(--badge-reminders);
   --color-border: var(--border);

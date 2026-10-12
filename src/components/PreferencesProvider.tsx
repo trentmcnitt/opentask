@@ -11,6 +11,7 @@ import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo } from '@/core/ai/models'
 import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
+import { CHECK_IN_DAY_DEFAULT, type CheckInDay } from '@/lib/task-segments'
 import {
   DEFAULT_PREFS,
   DEFAULT_PRIORITY_DISPLAY,
@@ -50,6 +51,9 @@ interface PreferencesContextValue {
   /** First day of the week (Settings) — the Quotas panel's week boundary. */
   weekStart: WeekStart
   setWeekStart: (value: WeekStart) => void
+  /** The horizon segments' weekday (Settings → "Check-in day", 2026-10-12). */
+  checkInDay: CheckInDay
+  setCheckInDay: (value: CheckInDay) => void
   /** All's per-project cap before "Show all" (Settings → Projects). */
   projectPreviewCount: number
   setProjectPreviewCount: (value: number) => void
@@ -140,6 +144,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setBulkSnoozeDefault: () => {},
   weekStart: WEEK_START_DEFAULT,
   setWeekStart: () => {},
+  checkInDay: CHECK_IN_DAY_DEFAULT,
+  setCheckInDay: () => {},
   projectPreviewCount: PROJECT_PREVIEW_DEFAULT,
   setProjectPreviewCount: () => {},
   morningTime: '09:00',
@@ -286,6 +292,7 @@ function makeFieldSetters(set: FieldSet) {
     setDefaultSnoozeOption: field('defaultSnoozeOption'),
     setBulkSnoozeDefault: field('bulkSnoozeDefault'),
     setWeekStart: field('weekStart'),
+    setCheckInDay: field('checkInDay'),
     setProjectPreviewCount: field('projectPreviewCount'),
     setMorningTime: field('morningTime'),
     setWakeTime: field('wakeTime'),
@@ -510,6 +517,16 @@ export function useSnoozePreferences() {
 export function useWeekStart() {
   const { weekStart, setWeekStart } = useContext(PreferencesContext)
   return { weekStart, setWeekStart }
+}
+
+/**
+ * The user's check-in day (2026-10-12, spec §3): the weekday the Weeks,
+ * Months and Eventually task segments come round on — the segment headers'
+ * hints say it ("Tuesdays"). Settings PATCHes `check_in_day` itself.
+ */
+export function useCheckInDay() {
+  const { checkInDay, setCheckInDay } = useContext(PreferencesContext)
+  return { checkInDay, setCheckInDay }
 }
 
 /**

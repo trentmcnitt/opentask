@@ -274,6 +274,27 @@ describe('enrichment success path', () => {
     expect(after.labels).not.toContain('ai-to-process')
   })
 
+  test('a target the AI sets stamps target_set_at (Upcoming, 2026-10-12)', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'renew the passport by friday' },
+    })
+    getDb()
+      .prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
+      .run('2026-01-01T00:00:00.000Z', task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({ title: 'Renew the passport', due_at: '2026-02-20T08:00:00', labels: [] }),
+    )
+    await processEnrichmentQueue()
+    const after = getTaskById(task.id)!
+    expect(after.due_at).toBe('2026-02-20T14:00:00.000Z')
+    expect(after.target_set_at).not.toBe('2026-01-01T00:00:00.000Z')
+    expect(Date.now() - Date.parse(after.target_set_at!)).toBeLessThan(60_000)
+    // (A first enrichment is not an undo entry of its own: the create's undo
+    // removes the task. Undo of a later write restores the stamp — UP-tests.)
+  })
+
   test('applies rrule and derives anchor fields', async () => {
     const task = createTask({
       userId: TEST_USER_ID,

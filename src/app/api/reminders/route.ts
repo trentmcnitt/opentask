@@ -63,8 +63,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       prompts_total: promptsTotal,
       prompts_considered_total: promptsConsideredTotal,
       // Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments): one-off
-      // tasks whose target hasn't arrived, one segment per horizon, shown
-      // FIRST on the screen. A TOP-LEVEL array, deliberately not inside
+      // tasks with no target, one segment per horizon, plus Upcoming
+      // (`horizon: "upcoming"`, 2026-10-12): targeted tasks on their heads-up
+      // days, repeating ones included. A TOP-LEVEL array, deliberately not inside
       // `groups` — a native build that predates it ignores the key, and its
       // "Complete all" can never reach a real task. None of these counts
       // include task rows: segments never feed the headline count, the nav
@@ -74,6 +75,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         tasks: seg.tasks.map(({ task, state }) => ({
           ...formatTaskResponse(task),
           segment_state: state,
+          // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
+          // hide Today, its picker and Remove target on these rows: target-today
+          // skips them (`skipped_recurring`), and removing the target would
+          // take the recurrence with it.
+          recurring: task.rrule !== null,
         })),
         waiting: seg.waiting,
         considered: seg.considered,

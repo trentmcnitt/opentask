@@ -329,6 +329,25 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // Upcoming (2026-10-12): when the target was last set by any path. Seeded
+  // ONCE, as the column arrives, with what a null reads as (created_at; a
+  // repeating task's latest completion if later) — see targetSetAtOf in
+  // src/lib/task-segments.ts. Rows written later without it read the same way.
+  if (!hasColumn(database, 'tasks', 'target_set_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_set_at TEXT DEFAULT NULL')
+    database.exec(
+      `UPDATE tasks SET target_set_at = CASE
+         WHEN rrule IS NOT NULL AND last_completed_at IS NOT NULL AND last_completed_at > created_at
+           THEN last_completed_at
+         ELSE created_at END
+       WHERE target_set_at IS NULL`,
+    )
+  }
+  // The horizon segments' weekday (2026-10-12), 1 = Monday … 7 = Sunday.
+  // Existing users keep Saturday, the day the segments have always used.
+  if (!hasColumn(database, 'users', 'check_in_day')) {
+    database.exec('ALTER TABLE users ADD COLUMN check_in_day INTEGER NOT NULL DEFAULT 6')
+  }
   if (!hasColumn(database, 'tasks', 'deadline_nag_off')) {
     database.exec('ALTER TABLE tasks ADD COLUMN deadline_nag_off INTEGER NOT NULL DEFAULT 0')
   }

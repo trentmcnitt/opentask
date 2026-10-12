@@ -45,6 +45,7 @@ import {
   getDayOfWeek,
 } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { stampTargetSet } from '@/core/tasks/target-set'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
@@ -1347,7 +1348,12 @@ function collectEnrichmentChanges(
     fieldsChanged.push('project_id')
   }
 
-  return { setClauses, values, fieldsChanged }
+  // Upcoming (2026-10-12): a target or deadline the AI set restarts the wait
+  // its heads-ups count over, like any other target write. The snapshot is
+  // taken from the re-read row, so it carries the stamp.
+  const write = { setClauses, values, fieldsChanged }
+  stampTargetSet(write, task, nowUtc())
+  return write
 }
 
 /**
@@ -1422,7 +1428,13 @@ function resolveProjectChange(
 }
 
 /** Bookkeeping columns that ride along with a change but are not news to the user. */
-const INTERNAL_FIELDS = ['anchor_time', 'anchor_dow', 'anchor_dom', 'horizon_set_at']
+const INTERNAL_FIELDS = [
+  'anchor_time',
+  'anchor_dow',
+  'anchor_dom',
+  'horizon_set_at',
+  'target_set_at',
+]
 
 /**
  * Apply enrichment results to a task.

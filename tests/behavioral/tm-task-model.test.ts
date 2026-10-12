@@ -140,13 +140,14 @@ describe('Task model', () => {
       expect(segmentOf(t.id)?.state).toBe('waiting')
     })
 
-    test('TM-012: a target today or earlier takes it out of the segment; a future target leaves it in', () => {
+    test('TM-012: a target of its own takes a one-off out of the horizon segments, today or later (2026-10-12)', () => {
       const today = make({ due_at: at('2026-10-10T20:00') })
       const later = make({ due_at: at('2026-11-01T09:00') })
       age(today.id, '2026-10-01T09:00')
       age(later.id, '2026-10-01T09:00')
       expect(segmentOf(today.id)).toBeNull()
-      expect(segmentOf(later.id)?.state).toBe('waiting')
+      // Spec §1: a target makes it quiet until its date (Upcoming aside).
+      expect(segmentOf(later.id)).toBeNull()
     })
 
     test('TM-013: reminders, quotas and recurring tasks never appear', () => {
@@ -297,10 +298,11 @@ describe('Task model', () => {
       expect(until).toBe(at('2026-10-10T07:15'))
       expect(getTaskById(t.id)!.due_at).toBe(until)
       expect(getTaskById(t.id)!.original_due_at).toBe(until)
-      // A later day: targeted then, considered today (ticked in its segment).
+      // A later day: targeted then. It leaves the horizon segment (spec §1) and,
+      // set today, has no heads-up today either.
       targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-13T15:00'))
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T15:00'))
-      expect(segmentOf(t.id)?.state).toBe('considered')
+      expect(segmentOf(t.id)).toBeNull()
       // Yesterday: refused, nothing written.
       expect(() => targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-09T23:30'))).toThrow(
         ValidationError,

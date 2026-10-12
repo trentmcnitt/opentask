@@ -1290,6 +1290,14 @@ export function QuickActionPanel({
                 original_due_at: effectiveTask?.original_due_at ?? null,
               })}
               showHorizon={!displayRrule}
+              // A one-off with a target of its own is quiet until its date
+              // (spec §1, 2026-10-12): its horizon decides nothing until the
+              // target is removed, so the row is greyed and says so. Read from
+              // the target line's own (staged) value, so Remove target staged
+              // brings the horizon back at once.
+              quietUntil={
+                displayRrule ? null : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
+              }
               emptyAnchor={
                 displayRrule ? (pendingDueAt ?? effectiveTask?.due_at ?? workingDate) : null
               }

@@ -18,7 +18,7 @@ import {
   handledRows,
   segmentColor,
   segmentCounts,
-  segmentHint,
+  useSegmentHint,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -34,7 +34,7 @@ import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
  * in the dashboard … now the segments are all in a line. i liked the reminders
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
- * across today's segments (Days, Weeks, Months, Eventually), its own strip of
+ * across today's segments (Days, Upcoming, Weeks, Months, Eventually), its own strip of
  * teal bars (the current one taller, as a slot's is; green when finished), the
  * same header ("TASKS · DAYS · Daily", "X of Y" that opens what was
  * considered with put-back, ‹ ›), the same rows, and "Defer all" behind the
@@ -72,6 +72,7 @@ export function DashboardTasksPanel({
   })
   // No page is a slot: the natural page is the first segment still waiting.
   const pager = usePanelPager(pages, 0, 0)
+  const hint = useSegmentHint()
   if (!pager) return null
   if (pages.every((p) => p.waiting === 0)) {
     return <TasksDoneLine segments={actions.segments} actions={actions} />
@@ -89,7 +90,7 @@ export function DashboardTasksPanel({
       <SlotPagerHeader
         label={page.label}
         accent={segmentTitleColor(segment.horizon)}
-        time={segmentHint(segment)}
+        time={hint(segment)}
         stackTime
         considered={page.considered}
         total={page.total}

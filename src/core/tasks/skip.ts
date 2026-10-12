@@ -32,6 +32,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { isTracked } from '@/lib/track'
 import { loadTaskForMutation } from './access'
 import type { Task } from '@/types'
+import { TARGET_SET_FIELD } from './target-set'
 
 export interface SkipOccurrenceOptions {
   userId: number
@@ -105,9 +106,9 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       tx.prepare(
         `UPDATE tasks
             SET due_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
-                progress_current = 0, updated_at = ?
+                progress_current = 0, ${TARGET_SET_FIELD} = ?, updated_at = ?
           WHERE id = ?`,
-      ).run(nextDueAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, taskId)
+      ).run(nextDueAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, nowStr, taskId)
 
       after = {
         ...task,
@@ -116,8 +117,17 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         deadline_at: nextDeadlineAt,
         skip_count: skipCount,
         progress_current: 0,
+        // Upcoming (2026-10-12): the next occurrence's wait counts from the skip.
+        target_set_at: nowStr,
       }
-      fieldsChanged = ['due_at', 'original_due_at', 'deadline_at', 'skip_count', 'progress_current']
+      fieldsChanged = [
+        'due_at',
+        'original_due_at',
+        'deadline_at',
+        'skip_count',
+        'progress_current',
+        TARGET_SET_FIELD,
+      ]
     } else {
       // Archived, never completed. done stays 0 — that is the entire point.
       tx.prepare(

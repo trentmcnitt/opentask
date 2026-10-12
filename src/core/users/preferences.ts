@@ -41,6 +41,8 @@ export interface PreferencesRow {
   default_snooze_option: string
   bulk_snooze_default: 'next_period' | 'default_option'
   week_start: string
+  /** The horizon segments' weekday, 1 = Monday … 7 = Sunday (2026-10-12). */
+  check_in_day: number
   quota_prompt_slot_id: number | null
   quota_prompts_enabled: number
   morning_time: string
@@ -102,6 +104,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   default_snooze_option: '60',
   bulk_snooze_default: 'next_period',
   week_start: 'sunday',
+  check_in_day: 6,
   quota_prompt_slot_id: null,
   quota_prompts_enabled: 1,
   morning_time: '09:00',

@@ -8,6 +8,7 @@
 import type { Database } from 'better-sqlite3'
 import type { Task, UndoSnapshot } from '@/types'
 import type { MarkDoneComputation } from './compute-mark-done'
+import { TARGET_SET_FIELD } from '../target-set'
 
 export interface ExecuteMarkDoneResult {
   snapshot: UndoSnapshot
@@ -73,7 +74,7 @@ function executeRecurringMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET due_at = ?, original_due_at = ?, deadline_at = ?,
+    SET due_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         progress_current = 0,
         updated_at = ?
@@ -83,6 +84,7 @@ function executeRecurringMarkDone(
     nextDueAt,
     nextDueAt, // original_due_at tracks the new occurrence's origin timestamp
     nextDeadlineAt, // the deadline moves with the occurrence (advanceDeadline)
+    nowStr, // target_set_at: the next occurrence's wait counts from now
     stats.completionCount,
     stats.firstCompletedAt,
     stats.lastCompletedAt,
@@ -96,6 +98,7 @@ function executeRecurringMarkDone(
     due_at: nextDueAt,
     original_due_at: nextDueAt,
     deadline_at: nextDeadlineAt,
+    target_set_at: nowStr,
     progress_current: 0,
     completion_count: stats.completionCount,
     first_completed_at: stats.firstCompletedAt,
@@ -116,6 +119,7 @@ function executeRecurringMarkDone(
       due_at: task.due_at,
       original_due_at: task.original_due_at,
       deadline_at: task.deadline_at,
+      target_set_at: task.target_set_at,
       progress_current: task.progress_current,
       completion_count: task.completion_count,
       first_completed_at: task.first_completed_at,

@@ -82,6 +82,8 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "right now" / "immediately" / "tonight" name a time).
 
+   **A target makes the task quiet until its date.** The app hides a task with a target from the user's lists until that day, apart from a heads-up shortly before, so a wrong target buries the task. Set due_at ONLY from a day or time the user's words state. Never infer one — not from the topic, a deadline, urgency or priority, a pace ("this week", "next month"), or what would be sensible. When unsure, leave due_at null: a task with no target stays in view.
+
    Return the date and time in the user's local timezone. Do NOT convert to UTC or append a Z suffix — the application handles timezone conversion. Example: if the user says "3pm tomorrow" in America/Chicago, return \`2026-03-05T15:00:00\` (not \`2026-03-05T21:00:00Z\`).
 
    Use the current **local** time (not UTC) to determine today's date and day of week. When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date. A month and day with no year ("February 28th", "Oct 13") means the NEXT time that date comes round: if it has already passed this year, use next year. This applies to due_at and deadline_at alike.

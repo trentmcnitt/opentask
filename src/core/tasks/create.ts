@@ -2,6 +2,7 @@
  * Task creation
  */
 
+import { TARGET_SET_FIELD } from './target-set'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -191,8 +192,9 @@ export function createTask(options: CreateTaskOptions): Task {
         user_id, project_id, title, original_title, short_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
-        quota_prompt_config, deadline_at, horizon, horizon_set_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -223,6 +225,10 @@ export function createTask(options: CreateTaskOptions): Task {
         input.deadline_at ?? null,
         input.horizon ?? null,
         input.horizon ? now : null,
+        // Upcoming (2026-10-12): a new task's target, if any, was set as it
+        // was made — every task gets the stamp, so a later first target is
+        // the only thing that moves it (src/core/tasks/target-set.ts).
+        now,
         now,
         now,
       )

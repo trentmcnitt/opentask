@@ -118,6 +118,13 @@ export interface Task {
    */
   segment_targeted_at: string | null
   /**
+   * When the target was last set by ANY path (2026-10-12) — create, a move,
+   * Today, a completion advance, skip, enrichment, a deadline change. The
+   * anchor of Upcoming's wait (`src/lib/task-segments.ts`); null reads as
+   * created_at (`targetSetAtOf`). Distinct from `segment_targeted_at`.
+   */
+  target_set_at: string | null
+  /**
    * Turns off the deadline's implied nag (deadline − DEADLINE_LEAD_DAYS) on a
    * task with no target — what remove-target sets. A new deadline clears it.
    */

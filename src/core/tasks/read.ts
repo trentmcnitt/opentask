@@ -39,6 +39,7 @@ const TASK_COLUMNS = [
   'last_considered_at',
   'segment_deferred_at',
   'segment_targeted_at',
+  'target_set_at',
   'deadline_nag_off',
   'last_notified_at',
   'last_critical_alert_at',
@@ -262,6 +263,7 @@ export interface TaskRow {
   last_considered_at: string | null
   segment_deferred_at: string | null
   segment_targeted_at: string | null
+  target_set_at: string | null
   deadline_nag_off: number
   last_notified_at: string | null
   last_critical_alert_at: string | null
@@ -325,6 +327,7 @@ export function rowToTask(row: TaskRow): Task {
     last_considered_at: row.last_considered_at ?? null,
     segment_deferred_at: row.segment_deferred_at ?? null,
     segment_targeted_at: row.segment_targeted_at ?? null,
+    target_set_at: row.target_set_at ?? null,
     deadline_nag_off: (row.deadline_nag_off ?? 0) === 1,
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,

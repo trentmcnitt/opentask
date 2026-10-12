@@ -6,7 +6,12 @@ import { showToast } from '@/lib/toast'
 import { targetTodayTimeFor } from '@/lib/snooze'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import type { TimeSlot } from '@/lib/time-slot-assign'
-import { effectiveHorizon, type HorizonValue, type SegmentState } from '@/lib/task-segments'
+import {
+  effectiveHorizon,
+  type HorizonValue,
+  type SegmentKind,
+  type SegmentState,
+} from '@/lib/task-segments'
 import { HORIZON_LABELS } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import type { Task } from '@/types'
@@ -24,8 +29,14 @@ import type { Task } from '@/types'
  * - checkbox → done (`POST /api/tasks/{id}/done`, the same as a dashboard tick)
  * - Target today → a deliberate target today; the row leaves the segment
  * - Target at… (hold or right-click on Today, 2026-10-12) → the same request
- *   with the picked moment (`at`). Today: the row leaves. A later day: the row
- *   stays, ticked (it is considered today, and its target hasn't arrived)
+ *   with the picked moment (`at`). The row leaves, whatever the day: today it
+ *   is over target, a later day makes it quiet until then (spec §1 — a
+ *   targeted one-off is in no horizon segment, and set today it has no
+ *   heads-up today)
+ * - Remove target (Upcoming's one-off rows with no deadline, 2026-10-12) →
+ *   `PATCH { target_at: null }`; the task goes back to its horizon segment
+ * - Repeating Upcoming rows have neither: target-today skips them
+ *   (`skipped_recurring`, toast "Repeating tasks: mark done early instead")
  * - Defer All → everything still waiting in that segment, back tomorrow
  * - horizon chip → a new horizon (the row may change segment on refresh; the
  *   toast then says "Moved to Tasks · <Horizon>")
@@ -36,10 +47,12 @@ type Overlay = SegmentState | 'gone'
 export interface SegmentRow {
   task: Task
   state: SegmentState
+  /** A repeating task's occurrence (Upcoming): circle and done only. */
+  recurring: boolean
 }
 
 export interface SegmentView {
-  horizon: HorizonValue
+  horizon: SegmentKind
   rows: SegmentRow[]
   waiting: number
   considered: number
@@ -92,7 +105,11 @@ export function useTaskSegments({
       segments
         .map((seg) => {
           const rows = seg.tasks
-            .map((t) => ({ task: t as Task, state: overlay.get(t.id) ?? t.segment_state }))
+            .map((t) => ({
+              task: t as Task,
+              state: overlay.get(t.id) ?? t.segment_state,
+              recurring: t.recurring ?? t.rrule !== null,
+            }))
             .filter((r): r is SegmentRow => r.state !== 'gone')
           const count = (s: SegmentState) => rows.filter((r) => r.state === s).length
           return {
@@ -117,8 +134,7 @@ export function useTaskSegments({
       })
       inFlight.current++
       try {
-        await send()
-        showToast({ message, type: 'success', action: { label: 'Undo', onClick: onUndo } })
+        toastResult(await send(), ids.length, message, onUndo)
         onCompleted?.()
       } catch (err) {
         setOverlay((prev) => {
@@ -180,7 +196,7 @@ export function useTaskSegments({
     [run],
   )
   const setHorizon = useCallback(
-    async (task: Task, horizon: HorizonValue | null, segment?: HorizonValue) => {
+    async (task: Task, horizon: HorizonValue | null, segment?: SegmentKind) => {
       inFlight.current++
       try {
         const res = await fetch(`/api/tasks/${task.id}`, {
@@ -218,7 +234,8 @@ export function useTaskSegments({
     [run],
   )
 
-  const actions = { consider, done, targetToday, deferAll, setHorizon, restore }
+  const removeTarget = useRemoveTarget(run)
+  const actions = { consider, done, targetToday, deferAll, setHorizon, restore, removeTarget }
   return { segments: view, ...actions, ...picker }
 }
 
@@ -228,6 +245,67 @@ type RunSegmentAction = (
   send: () => Promise<unknown>,
   message: string,
 ) => Promise<void>
+
+/**
+ * Remove target (2026-10-12): Upcoming's one-off rows WITHOUT a deadline only
+ * (`upcomingRowActions`) — what it should do to a deadline task is still being
+ * decided with Trent, so those rows don't offer it. The same PATCH the
+ * dashboard's remove-target sends for a no-deadline task. The task goes back
+ * to its horizon segment; Undo restores the target and `target_set_at`.
+ */
+function useRemoveTarget(run: RunSegmentAction) {
+  return useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        'gone',
+        () => patchTask(task.id, { target_at: null }),
+        `Target removed: “${task.title}”`,
+      ),
+    [run],
+  )
+}
+
+/**
+ * A write's toast, with Undo. When target-today skipped repeating tasks
+ * (`skipped_recurring`, ruling Q1) it says so; when it skipped every one,
+ * nothing was written and there is no Undo to offer.
+ */
+function toastResult(data: unknown, count: number, message: string, onUndo: () => void): void {
+  const skipped = skippedRecurring(data)
+  if (skipped > 0 && skipped === count) {
+    showToast({ message: REPEATING_TODAY_MESSAGE, type: 'success' })
+    return
+  }
+  showToast({
+    message: skipped > 0 ? `${message} · ${REPEATING_TODAY_MESSAGE}` : message,
+    type: 'success',
+    action: { label: 'Undo', onClick: onUndo },
+  })
+}
+
+/**
+ * The toast when Today skips a repeating task (ruling Q1, 2026-10-12): the web
+ * offers no Today on those rows, so this is for a stale screen or a mixed
+ * batch. Done early is the safe gesture for a repeating task.
+ */
+export const REPEATING_TODAY_MESSAGE = 'Repeating tasks: mark done early instead'
+
+function skippedRecurring(data: unknown): number {
+  const skipped = (data as { skipped_recurring?: unknown } | null)?.skipped_recurring
+  return Array.isArray(skipped) ? skipped.length : 0
+}
+
+async function patchTask(id: number, body: unknown): Promise<unknown> {
+  const res = await fetch(`/api/tasks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const json = (await res.json().catch(() => null)) as { error?: string; data?: unknown } | null
+  if (!res.ok) throw new Error(json?.error || 'Request failed')
+  return json?.data
+}
 
 /**
  * The Today button's picker (2026-10-12): where it opens — the moment a plain
@@ -251,9 +329,10 @@ function useTargetPicker(run: RunSegmentAction, timeSlots: TimeSlot[], timezone:
       const today = DateTime.now().setZone(timezone)
       return run(
         [task.id],
-        // A later day: considered today, and its target hasn't arrived, so it
-        // stays in the segment, ticked — what the refresh will show anyway.
-        when.hasSame(today, 'day') || when < today ? 'gone' : 'considered',
+        // Any day: the row leaves. A targeted one-off is in no horizon
+        // segment (spec §1, 2026-10-12), and one targeted today has no
+        // heads-up today — the refresh shows the same.
+        'gone',
         () => post('/api/task-segments/target-today', { ids: [task.id], at }),
         `Targeted ${targetWhen(when, today)}: “${task.title}”`,
       )
@@ -278,7 +357,7 @@ function targetWhen(when: DateTime, today: DateTime): string {
  * the EFFECTIVE horizon (a deadline can pull a task in, so a new set horizon
  * may leave it where it is); unchanged, it keeps the plain "Horizon: X".
  */
-function horizonToast(task: Task, horizon: HorizonValue | null, segment?: HorizonValue): string {
+function horizonToast(task: Task, horizon: HorizonValue | null, segment?: SegmentKind): string {
   if (segment) {
     const next = effectiveHorizon({ horizon, deadline_at: task.deadline_at }, new Date())
     if (next !== segment) return `Moved to Tasks · ${HORIZON_LABELS[next]}`

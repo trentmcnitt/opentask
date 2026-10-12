@@ -5,7 +5,7 @@ import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
 import { HorizonChip } from '@/components/TaskSegmentRow'
-import { DEADLINE_WORD, HORIZON_WORD } from '@/lib/task-model-words'
+import { DEADLINE_WORD, HORIZON_WORD, targetQuietUntil } from '@/lib/task-model-words'
 import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
 
 /**
@@ -25,6 +25,12 @@ import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
  * it to every next occurrence, the same distance after it — and the horizon is
  * hidden (`showHorizon`), because a recurring task never enters a task segment,
  * so its horizon does nothing; "Horizon: Unset" there read as broken.
+ *
+ * A one-off with a target of its own (2026-10-12, spec §1 — a target makes a
+ * task quiet until its date): the horizon row is GREYED, not hidden, and says
+ * why — "Target set: quiet until Nov 1" (`quietUntil`). Hidden read as a bug;
+ * greyed says the horizon is still there and comes back when the target goes.
+ * The chip is not offered meanwhile: changing it would do nothing visible.
  */
 export function TaskModelFields({
   deadline,
@@ -37,6 +43,7 @@ export function TaskModelFields({
   repeatLabel = null,
   showHorizon = true,
   emptyAnchor = null,
+  quietUntil = null,
 }: {
   deadline: string | null
   horizon: HorizonValue | null
@@ -51,6 +58,8 @@ export function TaskModelFields({
   showHorizon?: boolean
   /** Where an empty deadline picker opens: a recurring task's occurrence target. */
   emptyAnchor?: string | null
+  /** A one-off's own target: the horizon is greyed, "Target set: quiet until …". */
+  quietUntil?: string | null
 }) {
   const when = deadline ? DateTime.fromISO(deadline).setZone(timezone) : null
   const past = deadline ? isPastDeadline(deadline, new Date()) : false
@@ -92,7 +101,17 @@ export function TaskModelFields({
           )}
         </p>
       </DateTimePicker>
-      {showHorizon && (
+      {showHorizon && quietUntil && (
+        <span
+          data-quick-panel-horizon-quiet
+          className="text-muted-foreground/60 inline-flex items-center gap-1"
+          title="A target makes a task quiet until its date. Remove the target to use its horizon."
+        >
+          <span className="text-muted-foreground/50">{HORIZON_WORD}</span>
+          {targetQuietUntil(DateTime.fromISO(quietUntil).setZone(timezone).toFormat('LLL d'))}
+        </span>
+      )}
+      {showHorizon && !quietUntil && (
         <span className={cn('inline-flex items-center gap-1', horizonDirty && 'text-blue-500')}>
           <span className="text-muted-foreground/70">{HORIZON_WORD}</span>
           <HorizonChip task={{ horizon, title: '' }} onChange={onHorizon} />

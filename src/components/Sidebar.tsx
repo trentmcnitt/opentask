@@ -13,6 +13,7 @@ import {
   Lightbulb,
   Gauge,
   BookOpen,
+  ListChecks,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DOCS_URL } from '@/lib/docs-url'
@@ -117,6 +118,13 @@ export function Sidebar({ onAddClick }: SidebarProps) {
           })}
         </div>
 
+        {/* Process (2026-10-12, spec §1): Trent never found it in the ☰ menu —
+            "I think a process belongs somewhere on the dashboard… a button on
+            the left-hand panel". The same Process the menu opens: the top
+            bar's `open-process` listener (Header), so one modal, one flow.
+            Dashboard only; its mobile place is the dashboard redesign's. */}
+        {pathname === '/' && <SidebarProcessButton />}
+
         {/* Build info - at bottom of scrollable nav area */}
         <div className="mt-auto pt-4 text-center">
           <span className="text-muted-foreground/60 text-[11px]">
@@ -182,5 +190,22 @@ export function Sidebar({ onAddClick }: SidebarProps) {
         </a>
       </div>
     </aside>
+  )
+}
+
+/** The dashboard's Process button — opens the one Process modal (Header's `open-process`). */
+function SidebarProcessButton() {
+  return (
+    <div className="mt-3 border-t pt-3">
+      <button
+        type="button"
+        data-sidebar-process
+        onClick={() => window.dispatchEvent(new CustomEvent('open-process'))}
+        className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
+      >
+        <ListChecks className="size-4" />
+        Process
+      </button>
+    </div>
   )
 }

@@ -16,6 +16,7 @@ import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { coerceWeekStart, WEEK_STARTS, type WeekStart } from '@/lib/week-start'
+import { coerceCheckInDay } from '@/lib/task-segments'
 import {
   ACCEPTED_GROUPING_INPUTS,
   coerceGrouping,
@@ -510,6 +511,14 @@ function validateQuotaPromptFields(
       return `week_start must be one of: ${WEEK_STARTS.join(', ')}`
     changes.week_start = body.week_start
   }
+  // The horizon segments' weekday (2026-10-12, src/lib/task-segments.ts):
+  // Luxon numbering, 1 = Monday … 7 = Sunday. Not the quota week (week_start).
+  if (body.check_in_day !== undefined) {
+    const day = body.check_in_day
+    if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 7)
+      return 'check_in_day must be an integer from 1 (Monday) to 7 (Sunday)'
+    changes.check_in_day = day
+  }
   return null
 }
 
@@ -562,6 +571,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     default_snooze_option: row.default_snooze_option,
     bulk_snooze_default: row.bulk_snooze_default,
     week_start: coerceWeekStart(row.week_start),
+    check_in_day: coerceCheckInDay(row.check_in_day),
     quota_prompt_slot_id: row.quota_prompt_slot_id,
     // Alias: the same column, under the name it has meant since 2026-09-28.
     default_reminder_slot_id: row.quota_prompt_slot_id,

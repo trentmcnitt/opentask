@@ -19,6 +19,7 @@ import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { crossesDeadline, impliedTargetAt } from '@/lib/task-segments'
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
+import { stampTargetSet } from '../target-set'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -183,6 +184,11 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
       `${REMINDER_SNOOZE_MESSAGE}. To move one to a new time, send reset_original_due_at: true with the due_at.`,
     )
   }
+
+  // Upcoming (2026-10-12): any change to the target or the deadline restarts
+  // the wait its heads-ups are counted over (`src/core/tasks/target-set.ts`).
+  // Last, once everything above has decided `due_at` and `deadline_at`.
+  stampTargetSet(data, task, now.toISOString())
 
   return data
 }

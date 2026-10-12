@@ -301,6 +301,7 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     last_considered_at: null,
     segment_deferred_at: null,
     segment_targeted_at: null,
+    target_set_at: null,
     deadline_nag_off: false,
     last_notified_at: null,
     last_critical_alert_at: null,
