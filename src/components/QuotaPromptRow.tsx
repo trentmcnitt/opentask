@@ -293,7 +293,7 @@ export function ConsideredPromptRow({
     <li
       data-considered-prompt={prompt.prompt_key}
       className={cn(
-        'relative flex items-start rounded-xl',
+        'relative flex items-start rounded-xl border border-transparent',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
       )}
     >

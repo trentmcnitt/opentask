@@ -364,6 +364,7 @@ export function TaskRow({
     !isTracked(task) && task.original_due_at !== null && task.original_due_at !== task.due_at
   const isAiProcessing = task.labels.includes('ai-to-process')
   const tracked = isTracked(task)
+  const pastDeadline = !tracked && isPastDeadline(task.deadline_at, new Date())
   // §5: a quota's row states its count where a task states its due time; the
   // controls live in the Track panel on the Tasks page, not on every row.
   const metaSegments = tracked
@@ -416,10 +417,26 @@ export function TaskRow({
         'bg-card min-h-[62px] border',
         'hover:border-border/80 transition-colors',
         isAiHighlighted && !isSelected && 'bg-blue-50/50 dark:bg-blue-950/20',
-        isOverdue && 'border-l-over-target border-l-4',
-        !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
-        // Right border for priority (user preference)
-        priorityDisplay.rightBorder && priorityColors && 'border-r-4',
+        // A 4px state border is 3px wider than the plain 1px one, so the
+        // padding on that side gives the 3px back (12px - 3px = 9px). Without
+        // it the circle and title of an over-target or snoozed row sat 3px to
+        // the right of a plain row's, a visible zigzag down the list.
+        // The hover:border-l-* repeats keep the state colour on hover: the
+        // row's `hover:border-border/80` sets all four sides and would
+        // otherwise turn the plum (or blue) left edge grey under the pointer.
+        // A passed deadline outranks both (red = a passed deadline, and only
+        // that): the stripe goes red beside the red "past deadline" line
+        // rather than plum or blue (2026-10-11 visual QA).
+        pastDeadline && 'border-l-destructive hover:border-l-destructive border-l-4 pl-[9px]',
+        !pastDeadline &&
+          isOverdue &&
+          'border-l-over-target hover:border-l-over-target border-l-4 pl-[9px]',
+        !pastDeadline &&
+          !isOverdue &&
+          isSnoozed &&
+          'border-l-4 border-l-blue-400 pl-[9px] hover:border-l-blue-400',
+        // Right border for priority (user preference), with the same give-back
+        priorityDisplay.rightBorder && priorityColors && 'border-r-4 pr-[9px]',
         priorityDisplay.rightBorder && priorityColors?.border,
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
@@ -486,7 +503,6 @@ export function TaskRow({
             <span
               className={cn(
                 'line-clamp-3 font-medium',
-                getTitleSizeClass(task.title),
                 priorityDisplay.colorTitle && priorityColors?.text,
               )}
             >
@@ -497,7 +513,6 @@ export function TaskRow({
               href={`/tasks/${task.id}`}
               className={cn(
                 'line-clamp-3 font-medium hover:underline',
-                getTitleSizeClass(task.title),
                 priorityDisplay.colorTitle && priorityColors?.text,
               )}
               onClick={(e) => {
@@ -510,13 +525,11 @@ export function TaskRow({
             </Link>
           )}
           {justAddedBadge && (
-            // A box exactly one title line tall (`1lh` at the title's own
-            // size class), with the tag centred in it — so the tag sits on
+            // A box exactly one title line tall (`1lh` at the title's size),
+            // with the tag centred in it — so the tag sits on
             // the title's first line whatever its size. It used to be pinned
             // to the top with a margin and sat visibly high (Trent, 09-28).
-            <span
-              className={cn('flex h-[1lh] shrink-0 items-center', getTitleSizeClass(task.title))}
-            >
+            <span className="flex h-[1lh] shrink-0 items-center">
               <span
                 data-just-added-badge
                 className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] leading-none font-semibold whitespace-nowrap text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"
@@ -892,18 +905,6 @@ function TargetAgeTab({ task, timezone }: { task: Task; timezone: string }) {
       {days}d
     </span>
   )
-}
-
-/**
- * Tiered text sizing for task titles on the dashboard.
- * Short titles use the default size, medium titles shrink to text-sm,
- * and long titles shrink to text-xs to fit more content in 3 lines.
- */
-function getTitleSizeClass(title: string): string {
-  const len = title.length
-  if (len <= 80) return ''
-  if (len <= 160) return 'text-sm'
-  return 'text-xs'
 }
 
 /**

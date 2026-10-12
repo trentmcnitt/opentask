@@ -176,9 +176,12 @@ export function TaskSegmentRow({
       // checkboxes must line up down the whole column): on the panel the
       // panel's reminder row (`gap-2.5 px-1 py-1.5`, 19px controls, 13.5px
       // title), on /reminders the page's (`gap-3 px-2 py-2.5`, 24px controls,
-      // 16px title) — `QuotaPromptRow`'s two variants, exactly.
+      // 16px title) — `QuotaPromptRow`'s two variants, exactly, including its
+      // 1px transparent border (without it every circle here sat 1px left of
+      // the reminder and prompt rows above it; every row in these lists,
+      // considered ones too, now carries the same border).
       className={cn(
-        'group items-start rounded-xl',
+        'group items-start rounded-xl border border-transparent',
         hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
         considered
@@ -430,7 +433,7 @@ export function ConsideredSegmentRow({
     <li
       data-considered-task-id={task.id}
       className={cn(
-        'flex items-start rounded-xl',
+        'flex items-start rounded-xl border border-transparent',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
       )}
     >

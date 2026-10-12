@@ -572,7 +572,7 @@ function ConsideredRow({
   return (
     <li
       data-considered-id={reminder.id}
-      className="flex items-start gap-3 rounded-xl px-2 py-2.5 select-none"
+      className="flex items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none"
       onPointerDown={press.onPointerDown}
       onPointerUp={press.onPointerUp}
       onPointerMove={press.onPointerMove}

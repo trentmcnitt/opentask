@@ -122,8 +122,9 @@ export function ProjectsSection() {
           />
         )}
 
-        {/* Add new project row */}
-        <div className="flex items-center gap-2 pt-2">
+        {/* Add new project row. Wraps rather than squeezing the name field
+            down to "New p" when the colours don't fit beside it (390px). */}
+        <div className="flex flex-wrap items-center gap-2 pt-2">
           <Input
             type="text"
             value={newProjectName}
@@ -134,7 +135,7 @@ export function ProjectsSection() {
             placeholder="New project"
             maxLength={200}
             disabled={creatingProject}
-            className="h-8 w-32 text-sm"
+            className="h-8 w-32 shrink-0 text-sm"
           />
           <div className="flex items-center gap-1">
             {LABEL_COLOR_NAMES.map((c) => (
@@ -286,6 +287,9 @@ function ProjectRow({
             <Trash2 className="size-3.5" />
           </button>
         )}
+        {/* A row with no delete (the Inbox) keeps the trash's 14px so its
+            count lines up with the counts below it. */}
+        {!(canDelete && full) && <span aria-hidden className="w-3.5 shrink-0" />}
       </div>
       {full && (
         <ProjectDescription
