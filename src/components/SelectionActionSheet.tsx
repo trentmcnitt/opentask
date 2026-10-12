@@ -440,9 +440,10 @@ export function SelectionActionSheet({
       {/* Mobile: bottom sheet */}
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={handleOpenChange}>
+          {/* Bounded and scrollable: see QuickActionPopover's sheet. */}
           <SheetContent
             side="bottom"
-            className="rounded-t-2xl"
+            className="max-h-[92dvh] overflow-y-auto rounded-t-2xl"
             showCloseButton
             draggable={!isPanelDirty}
           >

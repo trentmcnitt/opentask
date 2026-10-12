@@ -61,6 +61,20 @@ There is no automatic target lapse. Over-target items are cleared by done, remov
 
 **A recurring deadline moves with the occurrence** (the weekly Upwork lock). On done, skip and put-back, `advanceDeadline` keeps the deadline the same number of calendar days after the new occurrence, at the same LOCAL time of day, so a DST change doesn't shift it by an hour. It measures from the occurrence origin (`original_due_at`), so a snoozed occurrence never shifts it. Left alone, a stale deadline would cap every later snooze.
 
+### In the editor
+
+The task editor (`QuickActionPanel`) shows the three fields as separate lines, and says what the model computes rather than only what is stored (2026-10-12, `src/lib/editor-target-labels.ts`):
+
+| Task                           | What the editor says                                                                                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deadline, no target (one-off)  | Target line: "auto · Fri, Oct 16, 9:00 AM (4 days before deadline)" — the implied target, in the over-target colour once it has arrived. Under A4 (`deadline_nag_off`) it reads "(deadline day)". The lead is derived from `impliedTargetAt`, never restated. Never "No target" |
+| Deadline, Remove target staged | The same line in blue, showing what Save produces: Remove target sets `deadline_nag_off`, so "auto … (deadline day)"                                                                                                                                                            |
+| Recurring                      | The recurrence line is labelled as the target ("Target Sundays at 12:00 PM"), and the picker's time is "Target"; "Schedule from" offers "Target" / "Completion" (the code mode stays `from_due`)                                                                                |
+| Recurring, with a deadline     | Deadline line: "Sun Oct 18, 11:00 PM · moves with each week" ("each day/month/year", or "each occurrence" for an every-N rule) — said only when `advanceDeadline` would move it                                                                                                 |
+| Recurring                      | No Horizon row: a recurring task never enters a task segment, so its horizon does nothing                                                                                                                                                                                       |
+
+The recurrence line itself opens the recurrence editor (it sits in a soft box that darkens while the editor is open); the Repeat button beside the other actions does the same and is labelled by what a tap does ("Edit recurrence" / "Close recurrence editor"). Neither removes a recurrence — that is the editor's "None", or "Remove target & recurrence" in the … menu.
+
 ### Horizon
 
 How soon the task should get done. It decides which [task segment](#task-segments) the task appears in, and nothing else. `null` is unset: treated as `weeks`, but never reported as set (`task.horizon` stays null, and the UI says "Unset"). Enrichment sets it only from explicit pace wording ("sometime this month"). Changing it restarts `horizon_set_at`, the clock Process reads to ask whether a horizon should grow; re-sending the same value is not a change.

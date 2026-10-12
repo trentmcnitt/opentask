@@ -157,9 +157,14 @@ export function QuickActionPopover({
     return (
       <>
         <Sheet open={open} onOpenChange={handleOpenChange}>
+          {/* Bounded and scrollable, like DetailModalShell's sheet. Without
+              max-h the sheet is `fixed bottom-0 h-auto`: once the recurrence
+              editor makes it taller than the viewport its top is pushed above
+              the screen, and with the body scroll-locked by Radix and the sheet
+              not a scroll container, nothing can bring it back (2026-10-12). */}
           <SheetContent
             side="bottom"
-            className="rounded-t-2xl"
+            className="max-h-[92dvh] overflow-y-auto rounded-t-2xl"
             showCloseButton={false}
             draggable={!isPanelDirty}
           >

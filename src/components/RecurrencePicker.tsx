@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { formatTime, parseRRuleParts } from '@/lib/format-rrule'
+import { TARGET_WORD } from '@/lib/task-model-words'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -233,7 +234,10 @@ function TimePicker({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-muted-foreground text-sm">At</span>
+      {/* The rule's time of day IS each occurrence's target (2026-10-12): a
+          recurring task's deadline is its own line in the editor, and moves
+          with the occurrence (advanceDeadline). */}
+      <span className="text-muted-foreground text-sm whitespace-nowrap">{TARGET_WORD}</span>
       <Select value={displayHour.toString()} onValueChange={(v) => handleHourChange(parseInt(v))}>
         <SelectTrigger className="w-[72px]">
           <SelectValue />
@@ -292,7 +296,8 @@ function RecurrenceModePicker({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="from_due">Due date</SelectItem>
+          {/* UI word only: the code mode stays `from_due` (2026-10-12, Trent). */}
+          <SelectItem value="from_due">{TARGET_WORD}</SelectItem>
           <SelectItem value="from_completion">Completion</SelectItem>
         </SelectContent>
       </Select>
@@ -513,7 +518,7 @@ export function RecurrencePicker({
           <span className="mt-1 block text-xs opacity-75">
             {recurrenceMode === 'from_completion'
               ? 'Next occurrence schedules from when you complete this task'
-              : 'Next occurrence schedules from the due date (fixed schedule)'}
+              : 'Next occurrence schedules from the target (fixed schedule)'}
           </span>
         )}
       </div>
