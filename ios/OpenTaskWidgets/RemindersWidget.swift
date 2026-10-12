@@ -540,6 +540,14 @@ private enum ReminderPreviewData {
                 SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Book the dentist for the kids — ask about the Saturday morning slots before the school term starts again", hasNotes: true, horizon: "weeks"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9105, title: "Return the library books", dueAt: iso(daysFromNow: 22), horizon: "days"), state: .considered),
             ]),
+            // Upcoming (2026-10-12), after Days as the server sends it: a
+            // one-off with a deadline (Target today offered), a repeating
+            // task (no Target today), and a one-off with only a target.
+            TaskSegmentDTO(horizon: "upcoming", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Renew the car registration before the reminder letter's date", priority: 2, dueAt: iso(daysFromNow: 1), deadlineAt: iso(daysFromNow: 5, hour: 17), horizon: "weeks"), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the balcony plants", dueAt: iso(daysFromNow: 2), rrule: "FREQ=DAILY;INTERVAL=3"), state: .waiting, recurring: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9303, title: "Pick up the framed print from the shop", dueAt: iso(daysFromNow: 2, hour: 15)), state: .waiting, recurring: false),
+            ]),
             TaskSegmentDTO(horizon: "weeks", tasks: [
                 SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9202, title: "Research a new laptop bag", dueAt: iso(daysFromNow: 12), horizon: "months"), state: .waiting),
@@ -615,6 +623,22 @@ private enum ReminderPreviewData {
     let _ = WidgetStore.clearSlotOverride()
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: true, slotKey: -10)
     ReminderPreviewData.segmentEntry()
+}
+
+#Preview("Reminders Large — task segment (Upcoming)", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14)
+    ReminderPreviewData.segmentEntry(key: -14)
+}
+
+#Preview("Reminders Medium — task segment (Upcoming)", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14)
+    ReminderPreviewData.segmentEntry(key: -14)
 }
 
 #Preview("Reminders Medium — task segment (Days)", as: .systemMedium) {

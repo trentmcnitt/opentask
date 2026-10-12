@@ -121,22 +121,24 @@ enum WidgetTheme {
 
     /// A task segment's teal (2026-10-11, Trent's pick: mockup
     /// task-segment-colors-2 option 3) — its strip bar's fill while a row
-    /// waits, the ring on its page, and its page title. One shade per
-    /// horizon, the exact values the web uses (`TaskHorizon.segmentColorHex`).
+    /// waits (grown while its page is on screen) and its page title. One shade per
+    /// horizon, the exact values the web uses (`TaskHorizon.segmentColorHex`);
+    /// Upcoming (2026-10-12) its own blue-teal (`SegmentKind.colorHex`).
     /// A finished segment's bar is green like a period's, and its track the
     /// same gray. Resolved from the view's `colorScheme`, not a dynamic
     /// platform color, so the macOS image renders (`ios/Tests/Renders`) draw
     /// the dark values when told to.
-    static func taskSegmentColor(_ horizon: TaskHorizon?, scheme: ColorScheme) -> Color {
-        let hex = (horizon ?? .weeks).segmentColorHex
+    static func taskSegmentColor(_ kind: SegmentKind?, scheme: ColorScheme) -> Color {
+        // Only a segment this build doesn't know falls back to Weeks' teal.
+        let hex = (kind ?? .horizon(.weeks)).colorHex
         return rgb(scheme == .dark ? hex.dark : hex.light)
     }
 
     /// A task page's title color: one deeper teal (#0b7a6f) for every horizon
     /// in light mode, for legibility (Trent, 2026-10-11); the horizon's own
     /// fill in dark mode (`TaskHorizon.segmentTitleHex`).
-    static func taskSegmentTitleColor(_ horizon: TaskHorizon?, scheme: ColorScheme) -> Color {
-        let hex = (horizon ?? .weeks).segmentTitleHex
+    static func taskSegmentTitleColor(_ kind: SegmentKind?, scheme: ColorScheme) -> Color {
+        let hex = (kind ?? .horizon(.weeks)).titleHex
         return rgb(scheme == .dark ? hex.dark : hex.light)
     }
 

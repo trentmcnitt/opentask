@@ -490,7 +490,7 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     var promptResults: [Result<APIClient.PromptActionResult, Error>] = []
     var progressResults: [Result<TaskDTO?, Error>] = []
     var segmentResults: [Result<Int, Error>] = []
-    var targetResults: [Result<Data, Error>] = []
+    var targetResults: [Result<APIClient.SegmentTargetResult, Error>] = []
     var taskStates: [Int: [Result<APIClient.TaskState?, Error>]] = [:]
     /// Suspend inside `markDone`, so concurrent drains really interleave.
     var yieldsInMarkDone = false
@@ -546,9 +546,9 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     }
 
     @discardableResult
-    func targetSegmentTasksToday(ids: [Int]) async throws -> Data {
+    func targetSegmentTasksToday(ids: [Int]) async throws -> APIClient.SegmentTargetResult {
         record(.targetToday(ids))
-        return try pop(&targetResults, default: Data()).get()
+        return try pop(&targetResults, default: APIClient.SegmentTargetResult(affected: ids.count)).get()
     }
 
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState? {

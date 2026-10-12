@@ -1058,7 +1058,7 @@ private struct ReminderSlotStrip: View {
 
     private func color(for bar: ReminderDayProgress.StripBar) -> Color {
         if bar.kind == .taskSegment, bar.state != .done {
-            return WidgetTheme.taskSegmentColor(bar.horizon, scheme: colorScheme)
+            return WidgetTheme.taskSegmentColor(bar.segment, scheme: colorScheme)
         }
         switch bar.state {
         case .done: return WidgetTheme.trackMetTint.opacity(0.85)
@@ -1409,15 +1409,15 @@ private struct DonePromptRow: View {
 /// One row of a task segment page: a waiting task, the "CONSIDERED · N"
 /// divider, or a task considered today (shown only with the "done" dot on).
 private enum SegmentListItem {
-    case waiting(TaskDTO)
+    case waiting(SegmentTaskDTO)
     case divider(count: Int)
-    case considered(TaskDTO)
+    case considered(SegmentTaskDTO)
 
     var id: String {
         switch self {
-        case .waiting(let task): return "seg-\(task.id)"
+        case .waiting(let row): return "seg-\(row.id)"
         case .divider: return "seg-divider"
-        case .considered(let task): return "seg-considered-\(task.id)"
+        case .considered(let row): return "seg-considered-\(row.id)"
         }
     }
 }
@@ -1438,9 +1438,11 @@ enum SegmentRowMetrics {
     /// the Reminders have it"): title from the card's leading edge, then the
     /// 10pt gap, then the controls flush right — Target today, the done
     /// checkbox, and the consider circle in the reminder circle's own
-    /// trailing 36pt column.
-    static func titleWidth(in width: CGFloat) -> CGFloat {
-        width - 2 * WidgetTheme.rowMarkerSize - targetTodayWidth - gap
+    /// trailing 36pt column. A row with no Target today (a repeating task on
+    /// Upcoming, 2026-10-12) gives that column to its title — the row and
+    /// the pager pass the same `showsTargetToday`.
+    static func titleWidth(in width: CGFloat, showsTargetToday: Bool = true) -> CGFloat {
+        width - 2 * WidgetTheme.rowMarkerSize - (showsTargetToday ? targetTodayWidth : 0) - gap
     }
 }
 
@@ -1470,7 +1472,7 @@ enum SegmentRowMetrics {
 ///   "N of M" arrangement.
 ///
 /// What reads like a period (2026-10-11, "segments as slots"): the strip
-/// draws this segment's own bar (ringed, as the on-screen period's is), the
+/// draws this segment's own bar (grown, as the on-screen period's is — no ring), the
 /// header subtitle is "N left" in the period's place and style, the bottom
 /// row carries "X of Y" (considered + deferred of today's rows, the web
 /// header's count), and a finished segment shows the period's seal and
@@ -1489,10 +1491,10 @@ private struct TaskSegmentListView: View {
     }
 
     private var items: [SegmentListItem] {
-        let open = segment.waitingTasks.map { SegmentListItem.waiting($0.task) }
+        let open = segment.waitingTasks.map { SegmentListItem.waiting($0) }
         let considered = segment.consideredTasks
         guard showCompleted, !considered.isEmpty else { return open }
-        return open + [.divider(count: considered.count)] + considered.map { .considered($0.task) }
+        return open + [.divider(count: considered.count)] + considered.map { .considered($0) }
     }
 
     private var rowSpacing: CGFloat {
@@ -1602,11 +1604,12 @@ private struct TaskSegmentListView: View {
         switch item {
         case .divider:
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
-        case .waiting(let task), .considered(let task):
+        case .waiting(let row), .considered(let row):
+            let task = row.task
             let isWaiting: Bool
             if case .waiting = item { isWaiting = true } else { isWaiting = false }
             let fit = metrics.titleLines(
-                label(task), width: SegmentRowMetrics.titleWidth(in: width),
+                label(task), width: SegmentRowMetrics.titleWidth(in: width, showsTargetToday: row.offersTargetToday),
                 weight: isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular,
                 maxHeight: budget, hasNotes: task.hasNotes
             )
@@ -1622,17 +1625,19 @@ private struct TaskSegmentListView: View {
         switch item {
         case .divider(let count):
             DoneDivider(count: count, label: "CONSIDERED")
-        case .waiting(let task):
+        case .waiting(let row):
             SegmentTaskRow(
-                task: task, segmentHorizon: segment.horizon, considered: false, now: entry.date, lines: layout.lines, height: layout.height,
+                task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
+                considered: false, now: entry.date, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
-                notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes)
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
-        case .considered(let task):
+        case .considered(let row):
             SegmentTaskRow(
-                task: task, segmentHorizon: segment.horizon, considered: true, now: entry.date, lines: layout.lines, height: layout.height,
+                task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
+                considered: true, now: entry.date, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
-                notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes)
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
         }
     }
@@ -1747,7 +1752,7 @@ private struct TaskSegmentListView: View {
             .font(.headline)
             // Its horizon's teal (2026-10-11): the page's accent, matching
             // its strip bar and ring.
-            .foregroundStyle(WidgetTheme.taskSegmentTitleColor(segment.horizonValue, scheme: colorScheme))
+            .foregroundStyle(WidgetTheme.taskSegmentTitleColor(segment.kind, scheme: colorScheme))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }
@@ -1798,6 +1803,10 @@ private struct TaskSegmentListView: View {
 /// checkbox stays live: a considered task is still open, and done is done.
 private struct SegmentTaskRow: View {
     let task: TaskDTO
+    /// False on a repeating Upcoming row (2026-10-12, `SegmentTaskDTO.
+    /// offersTargetToday`): the server would skip it, so the row has the
+    /// circle and done only, and its title takes the column.
+    let showsTargetToday: Bool
     /// The page's horizon — the row names its own only when it differs.
     let segmentHorizon: String
     let considered: Bool
@@ -1831,21 +1840,9 @@ private struct SegmentTaskRow: View {
             }
 
             HStack(alignment: .top, spacing: 0) {
-                Button(intent: TargetSegmentTodayIntent(taskId: task.id)) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .frame(width: SegmentRowMetrics.targetTodayWidth, height: firstLineHeight)
-                        .padding(.top, markerBleed)
-                        .frame(
-                            width: SegmentRowMetrics.targetTodayWidth, height: height + 2 * markerBleed,
-                            alignment: .top
-                        )
-                        .contentShape(Rectangle())
+                if showsTargetToday {
+                    targetTodayButton
                 }
-                .buttonStyle(.plain)
-                .padding(.vertical, -markerBleed)
-                .accessibilityLabel(Text("Target today: \(spoken)"))
 
                 Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
                     marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.priorityColor(task.priority))
@@ -1869,8 +1866,30 @@ private struct SegmentTaskRow: View {
         }
     }
 
+    /// "Target today": an icon-only 28pt column (`SegmentRowMetrics.
+    /// targetTodayWidth`), left of the done checkbox.
+    private var targetTodayButton: some View {
+        Button(intent: TargetSegmentTodayIntent(taskId: task.id)) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: SegmentRowMetrics.targetTodayWidth, height: firstLineHeight)
+                .padding(.top, markerBleed)
+                .frame(
+                    width: SegmentRowMetrics.targetTodayWidth, height: height + 2 * markerBleed,
+                    alignment: .top
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -markerBleed)
+        .accessibilityLabel(Text("Target today: \(spoken)"))
+    }
+
     /// Title in the row's weight, then the horizon / target words small and
-    /// secondary — the exact string `segmentLabelText` measured.
+    /// secondary — the exact string `segmentLabelText` measured. On Upcoming
+    /// (2026-10-12) the words are the target date and the deadline's gap
+    /// (`TaskDTO.upcomingMeta`).
     private var titleText: Text {
         let title = Text(task.title)
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))

@@ -237,7 +237,7 @@ final class ReminderDayProgressTests: XCTestCase {
         let bars = ReminderDayProgress.stripBars(
             groups: [], segments: [TaskSegmentDTO(horizon: "months", tasks: [row(1, .waiting)])], now: noon
         )
-        XCTAssertEqual(bars.first?.horizon, .months, "a task bar carries its horizon for its teal")
+        XCTAssertEqual(bars.first?.segment, .horizon(.months), "a task bar carries its kind for its teal")
     }
 
     func testAnytimeCountsAsStarted() {

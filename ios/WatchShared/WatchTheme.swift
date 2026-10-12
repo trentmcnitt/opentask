@@ -22,8 +22,10 @@ enum WatchTheme {
     /// option 3; the web's and the phone widget's exact values,
     /// `TaskHorizon.segmentColorHex`). The watch is always dark, so the dark
     /// shades: the strip bar's fill while a row waits and the section title.
-    static func taskSegment(_ horizon: TaskHorizon?) -> Color {
-        rgb((horizon ?? .weeks).segmentColorHex.dark)
+    /// Upcoming (2026-10-12) is its own blue-teal (`SegmentKind.colorHex`);
+    /// only a segment this build doesn't know falls back to Weeks'.
+    static func taskSegment(_ kind: SegmentKind?) -> Color {
+        rgb((kind ?? .horizon(.weeks)).colorHex.dark)
     }
 
     /// The faint divider between the period bars and the task bars (#55555b).

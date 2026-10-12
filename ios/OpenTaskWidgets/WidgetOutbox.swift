@@ -264,8 +264,16 @@ actor WidgetOutboxDrainer {
     ) async -> Bool {
         guard WidgetStore.beginSendingOutboxEntry(entry.id, now: clock()) != nil else { return true }
         do {
-            try await transport.targetSegmentTasksToday(ids: [taskId])
-            WidgetStore.confirmSegmentTarget(taskId)
+            let result = try await transport.targetSegmentTasksToday(ids: [taskId])
+            if result.skippedRecurring.contains(taskId) {
+                // A repeating task (2026-10-12): the server left its target
+                // alone (ruling Q1). The row never offers Today then, so only
+                // a stale cache gets here — put the row back and refetch.
+                WidgetStore.clearPendingSegmentTarget(taskId)
+                WidgetStore.requireRemindersFetch()
+            } else {
+                WidgetStore.confirmSegmentTarget(taskId)
+            }
             WidgetStore.requireTasksFetch()
             WidgetStore.recordMutation(now: entry.createdDate)
             WidgetStore.removeOutboxEntry(entry.id)
@@ -493,7 +501,7 @@ protocol WidgetOutboxTransport: AnyObject {
     func considerSegmentTasks(ids: [Int]) async throws -> Int
     /// `POST /api/task-segments/target-today`.
     @discardableResult
-    func targetSegmentTasksToday(ids: [Int]) async throws -> Data
+    func targetSegmentTasksToday(ids: [Int]) async throws -> APIClient.SegmentTargetResult
     /// `nil` = the task is gone (404).
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState?
 }

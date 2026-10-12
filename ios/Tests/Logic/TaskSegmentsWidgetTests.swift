@@ -322,4 +322,108 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertNil(unset.segmentMeta(segmentHorizon: "days", now: now, calendar: cal), "unset horizon shows nothing")
         XCTAssertEqual(unset.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal), "Plain")
     }
+
+    // MARK: Upcoming (2026-10-12)
+
+    /// Upcoming's words: the target date always (it is the whole point of the
+    /// segment), the deadline's gap, "repeats" — never the task's horizon.
+    func testUpcomingRowWords() {
+        let now = DateHelpers.parseISO("2026-10-12T15:00:00.000Z")!
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Chicago")!
+        let nb = "\u{00A0}"
+        let dot = "\(nb)·\(nb)"
+        func words(_ s: String) -> String { s.replacingOccurrences(of: " ", with: nb) }
+
+        let plain = TaskDTO(id: 1, title: "Renew", dueAt: "2026-10-13T14:00:00.000Z", horizon: "weeks")
+        XCTAssertEqual(plain.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal), words("Target Tue Oct 13"))
+
+        let gap = TaskDTO(
+            id: 2, title: "Passport", dueAt: "2026-10-13T14:00:00.000Z", deadlineAt: "2026-10-17T22:00:00.000Z"
+        )
+        XCTAssertEqual(
+            gap.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal),
+            words("Target Tue Oct 13") + dot + words("deadline Sat Oct 17 (+4d)")
+        )
+        XCTAssertEqual(
+            gap.segmentLabelText(segmentHorizon: "upcoming", now: now, calendar: cal),
+            "Passport ·\(nb)" + words("Target Tue Oct 13") + dot + words("deadline Sat Oct 17 (+4d)")
+        )
+
+        let sameDay = TaskDTO(
+            id: 3, title: "Same", dueAt: "2026-10-13T14:00:00.000Z", deadlineAt: "2026-10-13T22:00:00.000Z"
+        )
+        XCTAssertEqual(
+            sameDay.upcomingMeta(calendar: cal),
+            words("Target Tue Oct 13") + dot + words("deadline Tue Oct 13 (same day)")
+        )
+
+        let before = TaskDTO(
+            id: 4, title: "Late", dueAt: "2026-10-26T14:00:00.000Z", deadlineAt: "2026-10-23T22:00:00.000Z"
+        )
+        XCTAssertEqual(
+            before.upcomingMeta(calendar: cal),
+            words("Target Mon Oct 26") + dot + words("deadline Fri Oct 23 (deadline before target)")
+        )
+
+        let repeating = TaskDTO(id: 5, title: "Plants", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=DAILY;INTERVAL=3")
+        XCTAssertEqual(repeating.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + "repeats")
+    }
+
+    /// Upcoming is its own kind: its own page key, label and colour — never a
+    /// horizon's, so the `.weeks` fallback can't catch it.
+    func testUpcomingIsItsOwnSegmentKind() {
+        let upcoming = TaskSegmentDTO(horizon: "upcoming", tasks: [row(7)])
+        XCTAssertEqual(upcoming.kind, .upcoming)
+        XCTAssertTrue(upcoming.isUpcoming)
+        XCTAssertNil(upcoming.horizonValue, "Upcoming is not a task horizon")
+        XCTAssertEqual(upcoming.label, "Upcoming")
+        XCTAssertEqual(upcoming.pageKey, -14)
+        XCTAssertEqual(SegmentKind.upcoming.colorHex.light, 0x1A8FB0)
+        XCTAssertEqual(SegmentKind.upcoming.colorHex.dark, 0x4CB8D9)
+        XCTAssertEqual(SegmentKind.upcoming.titleHex.light, 0x136F8A)
+        XCTAssertEqual(SegmentKind.upcoming.titleHex.dark, 0x4CB8D9)
+        // The horizons keep their keys (a stored override still lands).
+        XCTAssertEqual(
+            ["days", "weeks", "months", "eventually"].map { TaskSegmentDTO(horizon: $0, tasks: []).pageKey },
+            [-10, -11, -12, -13]
+        )
+        XCTAssertNil(TaskSegmentDTO(horizon: "someday", tasks: []).kind)
+        XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).pageKey, -15)
+
+        let bars = ReminderDayProgress.stripBars(
+            groups: [], segments: [TaskSegmentDTO(horizon: "days", tasks: [row(1)]), upcoming], now: t0
+        )
+        XCTAssertEqual(bars.map(\.segment), [.horizon(.days), .upcoming])
+        XCTAssertEqual(bars.map(\.label), ["Tasks · Days", "Tasks · Upcoming"])
+    }
+
+    /// A repeating row has no Today: `recurring` from the wire, else its rrule.
+    func testARepeatingRowOffersNoTargetToday() throws {
+        let oneOff = SegmentTaskDTO(task: TaskDTO(id: 1, title: "A"), state: .waiting)
+        XCTAssertTrue(oneOff.offersTargetToday)
+        let repeating = SegmentTaskDTO(task: TaskDTO(id: 2, title: "B", rrule: "FREQ=DAILY"), state: .waiting)
+        XCTAssertFalse(repeating.offersTargetToday)
+        XCTAssertFalse(repeating.with(state: .considered).offersTargetToday, "with(state:) keeps it")
+        // An older cache with no `recurring` key falls back to the rrule.
+        let json = #"{"id": 3, "title": "C", "rrule": "FREQ=WEEKLY", "segment_state": "waiting"}"#
+        XCTAssertTrue(try JSONDecoder().decode(SegmentTaskDTO.self, from: Data(json.utf8)).recurring)
+        // The wire's own flag wins.
+        let flagged = #"{"id": 4, "title": "D", "recurring": true, "segment_state": "waiting"}"#
+        XCTAssertTrue(try JSONDecoder().decode(SegmentTaskDTO.self, from: Data(flagged.utf8)).recurring)
+    }
+
+    /// `skipped_recurring` (2026-10-12): the server left the task alone, so the
+    /// row comes back rather than being dropped from the cache.
+    func testASkippedRecurringTargetTodayPutsTheRowBack() async throws {
+        WidgetStore.saveReminders(try Fixtures.reminders(), taskSegments: segments(), fetchStartedAt: t0)
+        tapTargetToday(3)
+        let transport = StubOutboxTransport()
+        transport.targetResults = [.success(APIClient.SegmentTargetResult(affected: 0, skippedRecurring: [3]))]
+        await WidgetOutboxDrainer(transport: transport, clock: { [t0] in t0 }) { _ in }.drain()
+        XCTAssertEqual(transport.calls, [.targetToday([3])])
+        XCTAssertTrue(WidgetStore.outboxEntries().isEmpty, "sent, not retried")
+        XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
+        XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.map(\.id), [3, 4], "still in the cache")
+    }
 }
