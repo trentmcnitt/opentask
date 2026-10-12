@@ -1611,7 +1611,7 @@ paths:
       tags: [Reminders]
       description: >
         A deliberate target (age restarts) at the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour; or at `at`, when given. Also marks them considered and stamps `segment_targeted_at`. One undo entry (bulk edit) puts back the target and both stamps. A re-target, not a snooze, so the deadline neither refuses nor caps it. The caller's own open tasks only; anything else refuses the
-        whole request (400).
+        whole request (400). REPEATING tasks (an `rrule`) are skipped and listed in `skipped_recurring` (2026-10-12): re-targeting one would reset its occurrence. With nothing else in the request nothing is written and no undo entry is logged.
       requestBody:
         required: true
         content:
@@ -1644,6 +1644,10 @@ paths:
                     properties:
                       until: { type: string, format: date-time }
                       affected: { type: integer }
+                      skipped_recurring:
+                        type: array
+                        items: { type: integer }
+                        description: Ids of repeating tasks left alone (2026-10-12).
   /api/process:
     get:
       summary: What Process works through
@@ -1758,20 +1762,27 @@ paths:
                       task_segments:
                         type: array
                         description: |
-                          Task segments (2026-10-10): one-off tasks whose
-                          target hasn't arrived, one segment per horizon
-                          (days daily; weeks Saturdays; months the first
-                          Saturday; eventually the first Saturday of Jan, Apr,
-                          Jul, Oct), in screen order. A task not considered
-                          since its segment came round shows daily until it
-                          is. TOP-LEVEL, never inside `groups`; never counted
-                          in `total`, the nav badge or the slot notifications.
+                          Task segments (2026-10-10): one-off tasks with no
+                          target of their own, one segment per horizon (days
+                          daily; weeks on the user's `check_in_day`, Saturday
+                          by default; months the first check-in day of the
+                          month; eventually the first one of Jan, Apr, Jul,
+                          Oct) — plus UPCOMING (2026-10-12, `horizon:
+                          "upcoming"`, after `days`): targeted one-offs and
+                          repeating tasks' next occurrences on their heads-up
+                          days (the day before the target when the wait since
+                          `target_set_at` is 2+ local days; also 3 days before
+                          at a wait of 8–15, 4 days before at 16+), ordered by
+                          target. A task not considered since its segment (or
+                          heads-up day) came round shows daily until it is.
+                          TOP-LEVEL, never inside `groups`; never counted in
+                          `total`, the nav badge or the slot notifications.
                         items:
                           type: object
                           properties:
                             horizon:
                               type: string
-                              enum: [days, weeks, months, eventually]
+                              enum: [days, upcoming, weeks, months, eventually]
                             tasks:
                               type: array
                               items:
@@ -1782,6 +1793,12 @@ paths:
                                       segment_state:
                                         type: string
                                         enum: [waiting, considered, deferred]
+                                      recurring:
+                                        type: boolean
+                                        description: >
+                                          A repeating task's occurrence (2026-10-12; Upcoming only).
+                                          Clients offer no Today, picker or Remove target on it:
+                                          target-today skips it (`skipped_recurring`).
                             waiting:
                               type: integer
                             considered:
@@ -4216,6 +4233,18 @@ components:
             then on. Progress logged after that boundary stays in the new
             period. With INTERVAL > 1 the short period is at most one week and
             the next period runs the full interval from the boundary.
+        check_in_day:
+          type: integer
+          minimum: 1
+          maximum: 7
+          default: 6
+          description: |
+            The weekday the horizon task segments come round on (2026-10-12),
+            in Luxon numbering: 1 = Monday … 7 = Sunday; default 6 = Saturday.
+            Weeks shows on it, Months on the first one of the month, Eventually
+            on the first one of January, April, July and October. Independent
+            of `week_start`; no part of Upcoming. PATCH refuses anything but an
+            integer 1–7 (400).
         default_snooze_option:
           type: string
           default: '60'
@@ -4452,6 +4481,15 @@ components:
             the Just now card for 15 minutes. Deliberately not a general "target changed" stamp: a
             snooze, an edit, a create or a recurrence advance never sets it. Undo restores the previous
             value.
+        target_set_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            When the task's target was last set, by any path (2026-10-12): create, any move, Today,
+            a completion advance, skip, put-back, AI enrichment, or a change to `deadline_at` (it moves
+            the effective target). The anchor of Upcoming's wait (docs/TASK-MODEL.md § Upcoming).
+            Undo restores it. Null on rows written before it existed: read as `created_at` (a
+            repeating task: the later of that and `last_completed_at`). Server-set; never sent.
         deadline_nag_off:
           type: boolean
           description: Silences the deadline's implied nag (set by remove-target).
