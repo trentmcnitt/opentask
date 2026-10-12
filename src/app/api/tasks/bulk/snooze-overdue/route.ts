@@ -157,9 +157,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
-      // 2026-10-10, additive: left where they were because the sweep would
-      // have moved them past their deadline.
+      // Left where they were: their deadline has passed, and a target never
+      // goes past its deadline (§8.2, 2026-10-12).
       skipped_deadline: result.deadlineSkipped,
+      // Snoozed only as far as their deadline (§8.2).
+      capped_deadline: result.deadlineCapped,
       // The resolved target (ISO), so a client can say where things went.
       until,
       // Ready-to-display summary for clients that can't branch on the counts
@@ -168,6 +170,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // Urgent alone is the difference.
       message: bulkSnoozeMessage({
         deadline: result.deadlineSkipped,
+        capped: result.deadlineCapped,
         affected: result.tasksAffected,
         highAffected: result.highSnoozed,
         high: result.highSkipped,

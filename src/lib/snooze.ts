@@ -170,8 +170,13 @@ export interface BulkSnoozeSkips {
   high: number
   /** P4 skipped — never bulk-snoozable at all. */
   urgent: number
-  /** Left where they were: the sweep would have crossed their deadline (2026-10-10). */
+  /**
+   * Left where they were: their deadline has passed, and a target never goes
+   * past its deadline (§8.2, 2026-10-12).
+   */
   deadline?: number
+  /** Moved only as far as their deadline (§8.2). Counted in `affected` too. */
+  capped?: number
 }
 
 /** "2 high", "1 urgent", "2 high, 1 urgent". Empty when nothing was skipped. */
@@ -206,12 +211,16 @@ export function bulkSnoozeMessage({
   high,
   urgent,
   deadline = 0,
+  capped = 0,
 }: BulkSnoozeSkips): string {
   const list = skipList(high, urgent)
-  // A deadline-capped task is never silently clamped: the toast says it stayed.
+  // The deadline cap is never silent (§8.2): the toast says which stopped at
+  // their deadline, and which stayed because the deadline has passed.
+  const stopped =
+    capped > 0 ? ` · ${capped} stopped at ${capped === 1 ? 'its' : 'their'} deadline` : ''
   const kept =
-    deadline > 0 ? ` · ${deadline} kept before ${deadline === 1 ? 'its' : 'their'} deadline` : ''
-  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + kept
+    deadline > 0 ? ` · ${deadline} past ${deadline === 1 ? 'its' : 'their'} deadline` : ''
+  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + stopped + kept
 }
 
 function bulkSnoozeCore(

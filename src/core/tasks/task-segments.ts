@@ -19,9 +19,10 @@
  * tomorrow, and not a consider, which keeps "considered" honest. Target today
  * is a deliberate target — the age clock starts there. Each is one undo entry;
  * a misfire is undone with the standard Undo.
+ *
+ * Repeating tasks appear only in Upcoming (their next occurrence's heads-ups).
  */
 
-import { getTargetContext } from './target-context'
 import { getDb, withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
@@ -121,16 +122,16 @@ function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
  * finger (the 09-05 rule). Within Upcoming: the effective target, then id —
  * the order the dates come in.
  *
- * A one-off with a target of its own is in no horizon segment (spec §1): it
- * shows only in Upcoming, on its heads-up days.
+ * A one-off with a target the user picked is in no horizon segment (spec §1,
+ * §8.5): it shows only in Upcoming, on its heads-up days. A deadline task
+ * whose target is the automatic one stays in its horizon segment.
  */
 export function getTaskSegments(userId: number, timezone: string, now = new Date()): TaskSegment[] {
   const byKind = new Map<SegmentKind, SegmentTask[]>()
-  const ctx = getTargetContext(userId)
   const checkInDay = getCheckInDay(userId)
   const upcoming: (SegmentTask & { target: string })[] = []
   const addUpcoming = (task: Task) => {
-    const heads = upcomingState(task, timezone, now, ctx)
+    const heads = upcomingState(task, timezone, now)
     if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
   }
   for (const task of eligibleTasks(userId)) {
@@ -138,7 +139,7 @@ export function getTaskSegments(userId: number, timezone: string, now = new Date
       addUpcoming(task)
       continue
     }
-    const placed = segmentState(task, timezone, now, ctx, checkInDay)
+    const placed = segmentState(task, timezone, now, checkInDay)
     if (!placed) continue
     const list = byKind.get(placed.horizon) ?? []
     list.push({ task, state: placed.state })
@@ -291,17 +292,25 @@ function assertTargetDay(at: string, timezone: string, now: Date): void {
 }
 
 /**
- * Target today: a DELIBERATE target, so the age clock starts at it
- * (`reset_original_due_at`). Goes through bulk edit for one undo entry, the
+ * Target today: a move of the target (§6 — one gesture; there is no separate
+ * re-target any more). Goes through bulk edit for one undo entry, the
  * notification dismissal and the sync — and lists every id as an explicit
  * pick, so the High/Urgent sweep filter never drops one the user tapped.
  *
  * `at` (2026-10-12): the Today button's long-press / right-click picker sends
  * the chosen moment instead of `targetTodayTime`. Same path, same stamps.
  *
- * The deadline: a deliberate re-target is not a snooze, so — like the plain
- * Today — it is neither refused nor capped by `deadline_at` (bulk edit skips
- * the deadline rule when `reset_original_due_at` rides along).
+ * The deadline caps it like every move (§8.2): a deadline earlier than the
+ * chosen time gets the target AT the deadline.
+ *
+ * REPEATING TASKS ARE TARGETED TOO (since §6, 2026-10-12). Batch 1 skipped
+ * them (ruling Q1): Today used to reset a repeating task's occurrence, so done
+ * that day brought the next one the very next day (the double fire) and the
+ * deadline drifted. The occurrence is now kept apart from the target
+ * (`occurrence_at`): Today moves only the target, done advances from the
+ * scheduled occurrence (codes-blog: Today on Saturday, done Saturday → next
+ * Sunday a week on, deadline measured from Sunday). `skipped_recurring` stays
+ * in the response, always empty, for clients that read it.
  *
  * Stamps `segment_targeted_at` (the dashboard's Just now card, see
  * `src/lib/just-added.ts`) in the same bulk edit, so the one Undo puts the
@@ -313,34 +322,23 @@ export function targetTasksToday(
   ids: number[],
   at?: string,
 ): { until: string; affected: number; skipped_recurring: number[] } {
-  const tasks = ownOpenTasks(userId, ids)
+  ownOpenTasks(userId, ids)
   const now = new Date()
   if (at !== undefined) assertTargetDay(at, timezone, now)
   const until = at ?? targetTodayTime(userId, timezone, now)
-  // REPEATING TASKS ARE SKIPPED (2026-10-12, ruling Q1). Today is a re-target
-  // (`reset_original_due_at`), which on a repeating task resets its occurrence
-  // date: done that day, the next occurrence is the very next day (the double
-  // fire), and `advanceDeadline` measures from the moved origin (the deadline
-  // drifts). Doing it early with done is already safe. Reported, never a 400,
-  // so a mixed batch still targets its one-offs; with nothing left there is
-  // nothing to write and no undo entry.
-  const skipped = tasks.filter((t) => t.rrule !== null).map((t) => t.id)
-  const oneOffs = ids.filter((id) => !skipped.includes(id))
-  if (oneOffs.length === 0) return { until, affected: 0, skipped_recurring: skipped }
   const stamp = now.toISOString()
   // Also "considered" (amendment 11): the row finishes on the tap. One bulk
   // edit, so one Undo puts back the target and the stamps together.
   const result = bulkEdit({
     userId,
     userTimezone: timezone,
-    taskIds: oneOffs,
+    taskIds: ids,
     changes: {
       due_at: until,
-      reset_original_due_at: true,
       last_considered_at: stamp,
       segment_targeted_at: stamp,
     },
-    includeTaskIds: oneOffs,
+    includeTaskIds: ids,
   })
-  return { until, affected: result.tasksAffected, skipped_recurring: skipped }
+  return { until, affected: result.tasksAffected, skipped_recurring: [] }
 }

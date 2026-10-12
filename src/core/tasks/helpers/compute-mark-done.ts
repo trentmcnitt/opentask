@@ -8,7 +8,7 @@
 
 import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
-import { advanceDeadline } from '@/lib/task-segments'
+import { advanceDeadline, capAtDeadline } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import { TARGET_SET_FIELD } from '../target-set'
 
@@ -25,9 +25,16 @@ export interface RecurringComputation {
    * nothing. See the tracked branch in `computeMarkDone`.
    */
   nextDueAt: string | null
+  /**
+   * The next SCHEDULED occurrence (§6, 2026-10-12) — `nextDueAt` before the
+   * deadline cap. The new `occurrence_at`.
+   */
+  nextOccurrenceAt: string | null
   /** The deadline moved with the occurrence (`advanceDeadline`); unchanged when none. */
   nextDeadlineAt: string | null
   prevDueAt: string | null
+  /** The occurrence this completion closes (`completions.occurrence_at_was`). */
+  prevOccurrenceAt: string | null
   stats: MarkDoneStats
   fieldsChanged: string[]
 }
@@ -72,6 +79,15 @@ export function computeMarkDone(
     // with no anchor and no previous date, so rrule.js would place the "next
     // occurrence" on an arbitrary weekday and write that date back onto a row
     // that is not supposed to have one.
+    //
+    // FROM THE OCCURRENCE, NOT THE TARGET (§6, 2026-10-12; red team B1). A
+    // moved target (any snooze, Today) no longer drags the schedule: the next
+    // occurrence is rrule.after(max(occurrence, completedAt)). Done EARLY
+    // (Saturday, for a Sunday occurrence moved to Saturday) → the following
+    // Sunday, never tomorrow (no double fire). Done after a target moved PAST
+    // the next occurrence (ruling Q3: a weekly moved +10 days) → the next
+    // occurrence after now: no catch-up, no double row.
+    const prevOccurrence = task.occurrence_at ?? task.due_at
     const nextOccurrence = isTracked(task)
       ? null
       : computeNextOccurrence({
@@ -80,18 +96,24 @@ export function computeMarkDone(
           anchorTime: task.anchor_time,
           timezone: userTimezone,
           completedAt,
-          prevDueAt: task.due_at ? new Date(task.due_at) : null,
+          prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
         })
 
-    const nextDueAt = nextOccurrence?.toISOString() ?? null
+    const nextOccurrenceAt = nextOccurrence?.toISOString() ?? null
+    const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, userTimezone)
+    // The new target is the occurrence, never past its deadline (§8.2).
+    const nextDueAt = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
     return {
       type: 'recurring',
       nextDueAt,
-      nextDeadlineAt: advanceDeadline(task, nextDueAt, userTimezone),
+      nextOccurrenceAt,
+      nextDeadlineAt,
       prevDueAt: task.due_at,
+      prevOccurrenceAt: task.occurrence_at,
       stats,
       fieldsChanged: [
         'due_at',
+        'occurrence_at',
         'original_due_at',
         'deadline_at',
         // §5: the period boundary resets tracked progress, so it must be in

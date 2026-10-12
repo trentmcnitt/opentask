@@ -44,6 +44,11 @@ const VALID_TASK_COLUMNS = new Set([
   // Upcoming (2026-10-12): every target/deadline write stamps it, so every
   // such undo restores it — missing here would throw and wedge the stack.
   'target_set_at',
+  // §8 / §6 (2026-10-12): the auto-target flag and the repeating occurrence.
+  'target_auto',
+  'occurrence_at',
+  // Retired 2026-10-12 but KEPT: undo entries written before then name them,
+  // and an unknown field throws (wedging the stack — see `is_tracked`).
   'deadline_nag_off',
   'deleted_at',
   'archived_at',
@@ -133,11 +138,11 @@ export function applyFieldsToTask(
         // so without this branch better-sqlite3 refuses the raw JS boolean.
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
-      } else if (dbColumn === 'deadline_nag_off') {
-        // Task model (2026-10-10): a boolean in the snapshot, 0/1 in the column.
-        // Without this an Undo of remove-target throws and wedges the stack.
+      } else if (dbColumn === 'deadline_nag_off' || dbColumn === 'target_auto') {
+        // A boolean in the snapshot, 0/1 in the column. Without this an Undo
+        // that names either throws and wedges the stack.
         setClauses.push(`${dbColumn} = ?`)
-        values.push((state as { deadline_nag_off?: boolean }).deadline_nag_off ? 1 : 0)
+        values.push((state as Record<string, unknown>)[stateKey] ? 1 : 0)
       } else if (JSON_OBJECT_COLUMNS.has(dbColumn)) {
         // The snapshot holds the parsed object (rowToTask's shape);
         // better-sqlite3 cannot bind a plain object.

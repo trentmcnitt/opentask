@@ -4,7 +4,7 @@
  * - `done` on a quota needs `close_period` (single, bulk/done, bulk/complete)
  * - GET /api/tasks `kind` filter; `overdue=true` excludes reminders/quotas
  * - PATCH `{ rrule, due_at }` honors the date
- * - PATCH `{ due_at }` stays a snooze; `+ reset_original_due_at` reschedules
+ * - PATCH `{ due_at }` is a move; `+ reset_original_due_at` changes nothing on a task (§6)
  * - PATCH `{ due_at }` on a dated reminder is refused
  */
 import { describe, test, expect, beforeEach } from 'vitest'
@@ -125,12 +125,14 @@ describe('API guards', () => {
     expect(after.fields_changed).toContain('due_at')
   })
 
-  test('PATCH { due_at } snoozes; with reset_original_due_at it reschedules', async () => {
+  test('PATCH { due_at } moves the target; reset_original_due_at changes nothing on a task (§6)', async () => {
     const first = hoursFromNow(2)
     const task = await create({ title: 'Call the plumber', due_at: first })
-    expect(task.is_snoozed).toBe(false)
+    // No snooze state in the API since 2026-10-12.
+    expect(task).not.toHaveProperty('is_snoozed')
+    expect(task).not.toHaveProperty('snooze_count')
 
-    const snoozed = (
+    const moved = (
       await (
         await apiFetch(`/api/tasks/${task.id}`, {
           method: 'PATCH',
@@ -138,11 +140,11 @@ describe('API guards', () => {
         })
       ).json()
     ).data
-    expect(snoozed.is_snoozed).toBe(true)
-    expect(snoozed.original_due_at).toBe(first)
+    expect(moved.original_due_at).toBe(first)
 
+    // An old client's re-target is a plain move: the first target is kept.
     const picked = hoursFromNow(48)
-    const rescheduled = (
+    const again = (
       await (
         await apiFetch(`/api/tasks/${task.id}`, {
           method: 'PATCH',
@@ -150,10 +152,8 @@ describe('API guards', () => {
         })
       ).json()
     ).data
-    expect(rescheduled.due_at).toBe(picked)
-    expect(rescheduled.original_due_at).toBe(picked)
-    expect(rescheduled.snooze_count).toBe(0)
-    expect(rescheduled.is_snoozed).toBe(false)
+    expect(again.due_at).toBe(picked)
+    expect(again.original_due_at).toBe(first)
   })
 
   test('PATCH { due_at } on a dated reminder is refused; an explicit reschedule is not', async () => {

@@ -76,10 +76,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           userTimezone: user.timezone,
           taskId: task_id,
           until,
-          // A notification's snooze button is one tap with no room for a
-          // confirm: it stops AT the deadline instead of passing it (ruling
-          // A3, Trent 10-11). Only the web's "Snooze anyway" goes past.
-          capAtDeadline: true,
+          // Stops AT the deadline instead of passing it, like every move
+          // (§8.2, 2026-10-12; ruling A3 first did it for these buttons).
         })
         log.info('notifications', `Action complete: ${action} on task ${task_id}`)
         // A3: `until` is where the task actually went — the deadline when the

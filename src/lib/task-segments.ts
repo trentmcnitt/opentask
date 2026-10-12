@@ -6,21 +6,26 @@
  * surface reads a task the same way. Each constant is named here ONCE; nothing
  * else restates one.
  *
- * In order: the deadline's automatic target (`DEADLINE_LEAD_DAYS`) and its
- * pull-in (`DEADLINE_PULL_DAYS`); the effective horizon; the check-in day and
- * the horizon segments' days (`latestSegmentDay`); segment membership and
- * carry-over (`segmentState`); the target age; the deadline cap; the recurring
- * deadline; and UPCOMING — the wait, the heads-up days and their carry-over
- * (`headsUpDays`, `upcomingState`). Batch 2 (attempts, age thresholds, the
- * target ≤ deadline cap) adds its rules here, beside the ones they extend.
+ * In order: the deadline pull-in (`DEADLINE_PULL_DAYS`); the deadline's stored
+ * automatic target (`autoTargetAt`, §8), the target ≤ deadline cap
+ * (`capAtDeadline`) and the picker's "Deadline day"; the effective horizon; the
+ * check-in day and the horizon segments' days (`latestSegmentDay`); segment
+ * membership and carry-over (`segmentState`); the target age; the recurring
+ * deadline (`advanceDeadline`, from the occurrence); and UPCOMING — the wait,
+ * the 3/4 lead (`leadDaysForWait`, shared with the auto target), the heads-up
+ * days and their carry-over (`headsUpDays`, `upcomingState`). Phase B
+ * (attempts, age thresholds) adds its rules here, beside the ones they extend.
  *
  * THE MODEL IN ONE PARAGRAPH. A task's `due_at` is its TARGET: when nagging
- * starts. `deadline_at` is the real cutoff. `horizon` is how soon it should get
- * done. With no target a one-off sits in a TASK SEGMENT on the reminders
- * screen, for awareness; with a target it is quiet until the date, apart from
- * its Upcoming heads-ups (2026-10-12); once the target arrives it
- * leaves the segment and is "over target" — today's overdue under a new name,
- * nagged on the dashboard, in notifications and in the badge. Never both.
+ * starts. `deadline_at` is the real cutoff, and the target never passes it; a
+ * deadline with no target the user picked carries a stored AUTOMATIC target
+ * (`target_auto`, §8). `horizon` is how soon it should get done. With no
+ * picked target a one-off sits in a TASK SEGMENT on the reminders screen, for
+ * awareness; with a picked target it is quiet until the date, apart from its
+ * Upcoming heads-ups (2026-10-12); once the target arrives it leaves the
+ * segment and is "over target" — today's overdue under a new name, nagged on
+ * the dashboard, in notifications and in the badge. Never both. A repeating
+ * task keeps its scheduled occurrence (`occurrence_at`) apart from its target.
  *
  * ONE SEGMENT PER HORIZON, each on its own day (Trent, 10-10): days every day,
  * weeks every check-in day (`users.check_in_day`, Saturday by default — §3,
@@ -76,29 +81,25 @@ const DEADLINE_PULL_DAYS: [number, HorizonValue][] = [
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/**
- * A task with a deadline and no target starts nagging this many days before
- * the deadline, at every priority (Trent, 10-10: "maybe 4 days early for all
- * priorities" — tentative, tune here). Computed, never stored, so nothing
- * drifts; `deadline_nag_off` (what remove-target sets) turns it off.
- */
-export const DEADLINE_LEAD_DAYS = 4
-
 /** The fields that decide a task's target. */
 export interface TargetFields {
   due_at: string | null
   deadline_at: string | null
-  deadline_nag_off?: boolean
+  /**
+   * The target is the deadline's AUTOMATIC one (§8, 2026-10-12): stored, not
+   * computed, and set by the server whenever a one-off has a deadline and no
+   * target the user picked. Absent reads as picked.
+   */
+  target_auto?: boolean
   rrule?: string | null
 }
 
 /**
- * Whose clock the implied target is read on: the deadline's lead day starts at
+ * Whose clock a deadline's automatic target is read on: its lead day starts at
  * the user's MORNING (`users.morning_time`), not at the deadline's own time of
- * day — an end-of-day deadline must not first nag at 23:59 four days out.
- * Server code always passes it (every user has their own); the browser sets
- * its one user's once (`setClientTargetContext`). Without one the lead is a
- * plain DEADLINE_LEAD_DAYS × 24h.
+ * day — an end-of-day deadline must not first nag at 23:59 days out. Server
+ * code always passes it (every user has their own); the browser sets its one
+ * user's once (`setClientTargetContext`) for the editor's "auto" preview.
  */
 export interface TargetContext {
   timezone: string
@@ -107,74 +108,168 @@ export interface TargetContext {
 
 let clientContext: TargetContext | null = null
 
-/** Browser only: the signed-in user's clock, for every implied target read. */
+/** Browser only: the signed-in user's clock, for the editor's auto-target preview. */
 export function setClientTargetContext(ctx: TargetContext | null): void {
   clientContext = ctx
 }
 
 /**
- * The deadline's implied target, when it applies (2026-10-10, rulings A2/B2):
- * the morning of the day DEADLINE_LEAD_DAYS before the deadline, for a one-off
- * with a deadline whose implied nag isn't off, and which has either no target
- * or a target AFTER the deadline — a target set past its own deadline never
- * hides the deadline. A target at or before the deadline is honoured as set.
+ * Whether the task has a target the USER picked (§8.5, 2026-10-12): a target
+ * that is not the deadline's automatic one. Only a picked target makes a task
+ * quiet until its date (no horizon segment, Upcoming heads-ups). An automatic
+ * target leaves the task on its horizon rhythm until it arrives, then nags.
  */
-export function impliedTargetAt(
-  task: TargetFields,
-  ctx: TargetContext | null = clientContext,
-  now: Date = new Date(),
-): string | null {
-  if (task.deadline_at === null || task.rrule) return null
-  const deadlineMs = Date.parse(task.deadline_at)
-  // A target of the user's own at or before the deadline is honored as set.
-  if (task.due_at !== null && Date.parse(task.due_at) <= deadlineMs) return null
-  if (task.deadline_nag_off) {
-    // Silenced (remove target, or a snooze past the deadline) — but the nag
-    // RE-ARMS on the deadline day itself (ruling A4, Trent 10-11): on its last
-    // day a deadline task is silenced only by done, delete or the per-task nag
-    // override. A task with a target of its own (a deliberate snooze past the
-    // deadline) is left to that target once the deadline has passed, so a
-    // snooze after the deadline still holds; with no target it keeps nagging.
-    if (task.due_at !== null && deadlineMs <= now.getTime()) return null
-    return deadlineDayStart(task.deadline_at, ctx)
-  }
-  const deadline = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
-  if (!ctx) return deadline.minus({ days: DEADLINE_LEAD_DAYS }).toISO()!
+export function hasPickedTarget(task: Pick<TargetFields, 'due_at' | 'target_auto'>): boolean {
+  return task.due_at !== null && !task.target_auto
+}
+
+/** The user's morning on `day` (a local DateTime). */
+function morningOn(day: DateTime, ctx: TargetContext): DateTime {
   const [hour, minute] = ctx.morningTime.split(':').map(Number)
-  return deadline
-    .setZone(ctx.timezone)
-    .minus({ days: DEADLINE_LEAD_DAYS })
-    .set({ hour, minute, second: 0, millisecond: 0 })
-    .toUTC()
-    .toISO()!
+  return day.set({ hour, minute, second: 0, millisecond: 0 })
 }
 
 /**
- * When a silenced deadline re-arms (ruling A4): the user's morning on the
- * deadline's own local day — or the deadline itself if it falls earlier.
+ * THE DEADLINE'S AUTOMATIC TARGET (§8.1, 2026-10-12 — replaces the read-time
+ * implied target, `deadline_nag_off` and the deadline-day re-arm). Setting a
+ * deadline with no target stores a real target: the user's morning on the
+ * deadline's local day minus the LEAD — the same 3/4 lead as Upcoming's early
+ * heads-up (`leadDaysForWait`; Trent 10-12: "let's make it consistent
+ * everywhere"). The wait is counted in local days from now (when the deadline
+ * is set) to the deadline's day. A moment already past is now (ruling Q10): the
+ * task is over target at once. Never after the deadline (target ≤ deadline,
+ * §8.2), so a deadline already past gives the deadline itself.
+ *
+ * Example (Chicago, morning 9:00): deadline Fri Oct 23 23:59, set Mon Oct 12 →
+ * wait 11, lead 3 → Tue Oct 20, 9:00 AM. Set Sep 30 (wait 23) → lead 4 → Mon
+ * Oct 19, 9:00 AM.
+ *
+ * "Back to auto" recomputes it from the moment it is pressed: nothing records
+ * when the deadline was first set, so it is the auto target for this deadline
+ * as of now.
  */
-function deadlineDayStart(deadlineAt: string, ctx: TargetContext | null): string {
+export function autoTargetAt(
+  deadlineAt: string,
+  ctx: TargetContext | null = clientContext,
+  now: Date = new Date(),
+): string {
+  const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
+  if (deadline.toMillis() <= now.getTime()) return deadlineAt
+  const zone = ctx?.timezone ?? 'utc'
+  const deadlineDay = deadline.setZone(zone).startOf('day')
+  const today = DateTime.fromJSDate(now).setZone(zone).startOf('day')
+  const leadDay = deadlineDay.minus({ days: leadDaysForWait(waitDays(deadlineDay, today)) })
+  const at = ctx ? morningOn(leadDay, ctx) : leadDay
+  if (at.toMillis() <= now.getTime()) return now.toISOString()
+  return (at < deadline ? at : deadline).toUTC().toISO()!
+}
+
+/**
+ * TARGET ≤ DEADLINE, ALWAYS (§8.2). Every move — a single PATCH, a snooze, a
+ * quick snooze, a bulk snooze or edit, snooze-overdue, the picker, Today — is
+ * capped here. There is no "past the deadline anyway": to go later, change or
+ * remove the deadline.
+ */
+export function capAtDeadline(dueAt: string, deadlineAt: string | null): string {
+  return pastDeadline(dueAt, deadlineAt) ? deadlineAt! : dueAt
+}
+
+/** Whether `dueAt` lies after the deadline — what `capAtDeadline` pulls back. */
+export function pastDeadline(dueAt: string, deadlineAt: string | null): boolean {
+  return deadlineAt !== null && Date.parse(dueAt) > Date.parse(deadlineAt)
+}
+
+/** What a write would leave on a task, for `resolveTarget`. */
+export interface TargetWrite {
+  /** The target the write leaves (its own `due_at`, or the row's if it sends none). */
+  dueAt: string | null
+  /** The write sets the target itself: a move, a clear, a schedule change. */
+  dueWritten: boolean
+  /** The row's target before the write. */
+  currentDueAt: string | null
+  /** The row's current `target_auto`. */
+  wasAuto: boolean
+  /** The deadline the write leaves. */
+  deadlineAt: string | null
+  /** The write changes the deadline's value. */
+  deadlineChanged: boolean
+  /**
+   * The row the write leaves can carry an automatic target: a one-off (no
+   * rule), not a reminder, not a quota. Repeating tasks never do — their
+   * occurrence is their target.
+   */
+  autoEligible: boolean
+}
+
+export interface ResolvedTarget {
+  dueAt: string | null
+  /** `target_auto` after the write. */
+  auto: boolean
+  /** The target was pulled back to the deadline (§8.2). */
+  capped: boolean
+}
+
+/**
+ * THE TARGET A WRITE LEAVES (§8, 2026-10-12). Every writer of `due_at` or
+ * `deadline_at` on an ordinary task asks this — the single PATCH, bulk edit,
+ * bulk snooze and snooze-overdue (all through `collectFieldChanges`), create,
+ * and AI enrichment — so the two invariants hold however a task is written:
+ *
+ *  - A one-off with a deadline always has a target (§8.1): with none, it gets
+ *    the deadline's automatic one (`autoTargetAt`, `auto: true`). So clearing
+ *    the target of a deadline task — "Back to auto", or an old client's
+ *    Remove target — puts the automatic target back (§8.3).
+ *  - The target is never after the deadline (§8.2): `capAtDeadline`.
+ *
+ * And the automatic target follows its deadline (§8.4): a deadline change
+ * re-derives it, removing the deadline removes it. A target the user picked
+ * stays put on a deadline change, pulled back if the new deadline is earlier,
+ * and survives the deadline's removal. Any target the write sets itself is a
+ * picked one (`auto: false`).
+ *
+ * Once the deadline has PASSED, a move past it changes nothing: the target
+ * stays where it was (still at or before the deadline), `capped` says why.
+ * Pulling it forward to a deadline already behind us would only restart its
+ * clock. The task nags until done, or the deadline is changed or removed
+ * (Trent 10-12: "to go later, change or remove the deadline").
+ */
+export function resolveTarget(
+  w: TargetWrite,
+  ctx: TargetContext | null = clientContext,
+  now: Date = new Date(),
+): ResolvedTarget {
+  let dueAt = w.dueAt
+  let auto = w.wasAuto && !w.dueWritten && w.autoEligible
+  if (auto && (w.deadlineChanged || w.deadlineAt === null)) {
+    dueAt = null
+    auto = false
+  }
+  if (w.autoEligible && w.deadlineAt !== null && dueAt === null) {
+    return { dueAt: autoTargetAt(w.deadlineAt, ctx, now), auto: true, capped: false }
+  }
+  if (dueAt !== null && w.deadlineAt !== null && pastDeadline(dueAt, w.deadlineAt)) {
+    const keep =
+      Date.parse(w.deadlineAt) <= now.getTime() &&
+      w.currentDueAt !== null &&
+      !pastDeadline(w.currentDueAt, w.deadlineAt)
+    if (keep) return { dueAt: w.currentDueAt, auto: w.wasAuto && w.autoEligible, capped: true }
+    return { dueAt: w.deadlineAt, auto, capped: true }
+  }
+  return { dueAt, auto, capped: false }
+}
+
+/**
+ * The picker's "Deadline day" (ruling Q8): the user's morning on the
+ * deadline's own local day — or the deadline itself, if that is earlier.
+ */
+export function deadlineDayTarget(
+  deadlineAt: string,
+  ctx: TargetContext | null = clientContext,
+): string {
   const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
   if (!ctx) return deadline.startOf('day').toISO()!
-  const [hour, minute] = ctx.morningTime.split(':').map(Number)
-  const morning = deadline.setZone(ctx.timezone).set({ hour, minute, second: 0, millisecond: 0 })
+  const morning = morningOn(deadline.setZone(ctx.timezone).startOf('day'), ctx)
   return (morning < deadline ? morning : deadline).toUTC().toISO()!
-}
-
-/**
- * The target the task nags from: the earlier of its own and the deadline's
- * implied one (which only exists when there is no target, or the target is
- * past the deadline).
- */
-export function effectiveTargetAt(
-  task: TargetFields,
-  ctx: TargetContext | null = clientContext,
-  now: Date = new Date(),
-): string | null {
-  const implied = impliedTargetAt(task, ctx, now)
-  if (task.due_at === null) return implied
-  if (implied === null) return task.due_at
-  return Date.parse(implied) < Date.parse(task.due_at) ? implied : task.due_at
 }
 
 /** The horizon a deadline implies on its own, or null when it is far enough away to imply none. */
@@ -264,7 +359,7 @@ export function latestSegmentDay(
 export interface SegmentTaskFields {
   due_at: string | null
   deadline_at: string | null
-  deadline_nag_off?: boolean
+  target_auto?: boolean
   horizon: string | null
   last_considered_at: string | null
   segment_deferred_at: string | null
@@ -303,21 +398,21 @@ export function targetIsToday(dueAt: string | null, timezone: string, now: Date)
  *   (Trent's rule, 2026-10-11: anything not considered is reshown until it is).
  * - Deferred today (Defer All) → 'deferred': off today's list, back tomorrow.
  *
- * A TARGET MAKES A TASK QUIET UNTIL ITS DATE (2026-10-12, spec §1): a one-off
- * with a target of its own (`due_at`) is in no horizon segment at all. Before
- * its target arrives it shows only on its Upcoming heads-up days
- * (`upcomingState`, below); after, it is over target. A deadline-only task (no
- * target of its own) stays here, its deadline pulling the horizon in.
+ * A PICKED TARGET MAKES A TASK QUIET UNTIL ITS DATE (2026-10-12, spec §1, §8.5):
+ * a one-off with a target the user picked is in no horizon segment at all.
+ * Before its target arrives it shows only on its Upcoming heads-up days
+ * (`upcomingState`, below); after, it is over target. A deadline task whose
+ * target is the AUTOMATIC one stays here, its deadline pulling the horizon
+ * in, until that target's day comes — then it nags.
  */
 export function segmentState(
   task: SegmentTaskFields,
   timezone: string,
   now: Date,
-  ctx: TargetContext | null = clientContext,
   checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
 ): { horizon: HorizonValue; state: SegmentState } | null {
-  if (task.due_at !== null) return null
-  if (targetIsToday(effectiveTargetAt(task, ctx, now), timezone, now)) return null
+  if (hasPickedTarget(task)) return null
+  if (targetIsToday(task.due_at, timezone, now)) return null
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const horizon = effectiveHorizon(task, now)
 
@@ -352,23 +447,21 @@ export const STALE_TARGET_DAYS = 7
 
 /**
  * Whole local days since the task's FIRST target (`original_due_at`, which a
- * snooze keeps and a deliberate re-target resets), or null when the task has
- * no target, its target has not arrived, or it is the target day itself — the
- * badge is blank then (Trent, 10-10: "no word on the badge for the target day").
+ * move keeps and only a cleared-then-set target restarts), or null when the
+ * task has no target, its target has not arrived, or it is the target day
+ * itself — the badge is blank then (Trent, 10-10: "no word on the badge for
+ * the target day"). Phase B replaces it with the attempts badge (§7).
  */
 export function targetAgeDays(
-  task: TargetFields & { original_due_at: string | null; created_at?: string },
+  task: Pick<TargetFields, 'due_at'> & { original_due_at: string | null; created_at?: string },
   timezone: string,
   now: Date,
-  ctx: TargetContext | null = clientContext,
 ): number | null {
-  const target = effectiveTargetAt(task, ctx, now)
+  const target = task.due_at
   if (!target || Date.parse(target) > now.getTime()) return null
-  // Its own target counts from its first one; an implied target from itself.
-  // Never from before the task existed (2026-10-11): a task created with a
-  // deadline 3 days out has an implied target a day BEFORE it was created, and
-  // its age is how long it has been on the list, not "1d" on its first day.
-  const from = target === task.due_at ? (task.original_due_at ?? task.due_at) : target
+  // Never from before the task existed (2026-10-11): its age is how long it
+  // has been on the list.
+  const from = task.original_due_at ?? target
   const first =
     task.created_at && Date.parse(task.created_at) > Date.parse(from) ? task.created_at : from
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
@@ -390,34 +483,25 @@ export function isPastDeadline(deadlineAt: string | null, now: Date): boolean {
 }
 
 /**
- * Whether snoozing a task's target to `until` is capped by its deadline: the
- * deadline is still ahead and `until` is past it. Once a deadline has passed
- * the cap is off — snooze works as it always did and the row carries the
- * past-deadline marker; nagging continues (Trent, 10-10). PROVISIONAL.
- */
-export function crossesDeadline(
-  deadlineAt: string | null,
-  until: string,
-  now: Date = new Date(),
-): boolean {
-  if (deadlineAt === null) return false
-  const deadline = Date.parse(deadlineAt)
-  return deadline > now.getTime() && Date.parse(until) > deadline
-}
-
-/**
  * A recurring task's deadline for its next occurrence (2026-10-10, spec §4):
  * the same distance from the new occurrence as it was from the current one, so
  * the weekly Upwork lock moves with the week. Left alone on a stale one, a
- * deadline would cap every later snooze. Measured from the occurrence ORIGIN
- * (`original_due_at`), not a snoozed `due_at`, so snoozing never shifts it.
+ * deadline would cap every later move. Measured from the SCHEDULED occurrence
+ * (`occurrence_at`, §6 2026-10-12), never from a moved target, so moving the
+ * target never shifts it (the red team's B1 drift). A row from before the
+ * column falls back to `original_due_at`, then `due_at`.
  */
 export function advanceDeadline(
-  task: { deadline_at: string | null; due_at: string | null; original_due_at: string | null },
+  task: {
+    deadline_at: string | null
+    due_at: string | null
+    original_due_at: string | null
+    occurrence_at?: string | null
+  },
   nextDueAt: string | null,
   timezone: string,
 ): string | null {
-  const origin = task.original_due_at ?? task.due_at
+  const origin = task.occurrence_at ?? task.original_due_at ?? task.due_at
   if (!task.deadline_at || !nextDueAt || !origin) return task.deadline_at
   // In LOCAL WALL-CLOCK time, so a DST change between occurrences doesn't
   // shift it by an hour: the same number of calendar days after the
@@ -448,8 +532,9 @@ export function advanceDeadline(
  *
  * A target makes a task quiet until its date (spec §1). Upcoming is the one
  * exception: a task whose target hasn't arrived shows on at most two heads-up
- * days before it. It holds one-off tasks with a target of their OWN (a
- * deadline-only task stays in its horizon segment, its deadline pulling it in)
+ * days before it. It holds one-off tasks with a target the user picked (a
+ * deadline task with its automatic target stays in its horizon segment, its
+ * deadline pulling it in)
  * and repeating tasks' next occurrences — never reminders or quotas.
  *
  * THE RULE. wait = the target's local day − the local day of `target_set_at`
@@ -461,8 +546,7 @@ export function advanceDeadline(
  * LOCAL DAYS throughout (Luxon calendar days in the user's zone) — UTC days or
  * 24-hour math give the wrong wait across DST and late at night.
  *
- * The EFFECTIVE target (`effectiveTargetAt`): a target set after its own
- * deadline counts to the deadline's automatic target.
+ * Only a PICKED target (§8.5): an automatic deadline target has no rows.
  *
  * CARRY-OVER. An untapped heads-up shows again the next day — as the same,
  * single row — until it is considered or the target's day comes: it shows
@@ -486,6 +570,16 @@ export function waitDays(targetDay: DateTime, setDay: DateTime): number {
 }
 
 /**
+ * THE 3/4 LEAD — one function for both rules that use it (Trent 10-12: "let's
+ * make it consistent everywhere"): Upcoming's earlier heads-up and the
+ * deadline's automatic target (`autoTargetAt`). 3 days when the wait is under
+ * HEADS_UP_LONG_WAIT (16) local days, 4 days at 16 or more.
+ */
+export function leadDaysForWait(wait: number): number {
+  return wait < HEADS_UP_LONG_WAIT ? HEADS_UP_EARLY_LEAD_DAYS : HEADS_UP_LONG_LEAD_DAYS
+}
+
+/**
  * The heads-up days for a target set on `setDay`, earliest first (0, 1 or 2
  * local start-of-day DateTimes). Calendar arithmetic, so a DST change between
  * them still lands on local midnight.
@@ -494,8 +588,7 @@ export function headsUpDays(targetDay: DateTime, setDay: DateTime): DateTime[] {
   const wait = waitDays(targetDay, setDay)
   const days: DateTime[] = []
   if (wait > HEADS_UP_EARLY_AFTER_WAIT) {
-    const lead = wait < HEADS_UP_LONG_WAIT ? HEADS_UP_EARLY_LEAD_DAYS : HEADS_UP_LONG_LEAD_DAYS
-    days.push(targetDay.minus({ days: lead }))
+    days.push(targetDay.minus({ days: leadDaysForWait(wait) }))
   }
   if (wait >= HEADS_UP_DAY_BEFORE_MIN_WAIT) days.push(targetDay.minus({ days: 1 }))
   return days
@@ -523,31 +616,31 @@ export function targetSetAtOf(task: UpcomingTaskFields): string {
 
 /**
  * Whether the task belongs in Upcoming at all (whatever today is): a target
- * of its own on a one-off, or a repeating task's occurrence. The caller has
- * already left out reminders, quotas and anything done or deleted.
+ * the user PICKED on a one-off (§8.5 — an automatic deadline target never has
+ * Upcoming rows; the deadline pull-in already shows the task), or a repeating
+ * task's occurrence. The caller has already left out reminders, quotas and
+ * anything done or deleted.
  */
-export function upcomingCandidate(task: Pick<TargetFields, 'due_at' | 'rrule'>): boolean {
-  return task.due_at !== null
+export function upcomingCandidate(task: Pick<TargetFields, 'due_at' | 'target_auto'>): boolean {
+  return hasPickedTarget(task)
 }
 
 /**
  * Where the task stands in today's Upcoming, or null when it is not there:
- * - its effective target is today or earlier (over target), or there is none;
+ * - its target is today or earlier (over target), or it has no picked one;
  * - no heads-up day has come yet;
  * - it was considered on or after the latest heads-up day (but not today).
  * Considered today → 'considered' (listed ticked, so "X of Y" and put-back
  * work); Defer All today → 'deferred'; otherwise 'waiting'. `target` is the
- * effective target the row is ordered by.
+ * target the row is ordered by.
  */
 export function upcomingState(
   task: UpcomingTaskFields,
   timezone: string,
   now: Date,
-  ctx: TargetContext | null = null,
 ): { state: SegmentState; target: string } | null {
   if (!upcomingCandidate(task)) return null
-  const target = effectiveTargetAt(task, ctx ?? undefined, now)
-  if (!target) return null
+  const target = task.due_at!
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const targetDay = localDay(target, timezone)
   if (targetDay <= today) return null
@@ -567,11 +660,9 @@ export function upcomingState(
 
 /**
  * The row's gap text (spec §2): "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)".
- * No deadline: "Target Tue Nov 3". A target of the task's own set AFTER its
- * deadline — the deadline's automatic target is the one that counts — names
- * its own target and says so: "Target Mon Oct 26 · deadline Fri Oct 23
- * (deadline before target)". A deadline the same day as the target: "(same
- * day)". Returned in parts so the row can make the target a chip.
+ * No deadline: "Target Tue Nov 3". A deadline the same day as the target:
+ * "(same day)". The target is never after the deadline (§8.2). Returned in
+ * parts so the row can make the target a chip.
  */
 export function upcomingGap(
   task: Pick<TargetFields, 'due_at' | 'deadline_at'>,
@@ -584,22 +675,42 @@ export function upcomingGap(
   const deadline = `deadline ${fmt(task.deadline_at)}`
   if (!task.due_at) return { target, deadline }
   const gap = waitDays(localDay(task.deadline_at, timezone), localDay(task.due_at, timezone))
-  if (Date.parse(task.deadline_at) < Date.parse(task.due_at) && gap <= 0) {
-    return { target, deadline: `${deadline} (deadline before target)` }
-  }
-  return { target, deadline: gap === 0 ? `${deadline} (same day)` : `${deadline} (+${gap}d)` }
+  return { target, deadline: gap <= 0 ? `${deadline} (same day)` : `${deadline} (+${gap}d)` }
 }
 
 /**
- * Whether an Upcoming row offers Today (and its picker) and Remove target
- * (2026-10-12). Today: one-off rows only — target-today skips a repeating
- * task (ruling Q1). Remove target: one-off rows with NO deadline — removing a
- * repeating task's target would take the recurrence with it, and what Remove
- * target does to a deadline task is being redesigned with Trent.
+ * What a target can be sent back to (§8.3, ruling Q9, 2026-10-12):
+ * - 'auto': "Back to auto" — a one-off with a deadline whose target the user
+ *   picked. A deadline task never has Remove target; its target goes back to
+ *   the deadline's automatic one. An auto target offers neither.
+ * - 'remove': "Remove target" — a one-off with a target and no deadline (back
+ *   to its horizon segment).
+ * - null: nothing to offer (no target, an auto target, or a repeating task —
+ *   whose target goes with its recurrence, in the editor's own menu).
+ * Every surface that offers either reads it here: the row menus, the snooze
+ * menu, the editor and Upcoming's target chip.
+ */
+export function targetReset(task: {
+  due_at: string | null
+  deadline_at: string | null
+  target_auto?: boolean
+  rrule?: string | null
+}): 'auto' | 'remove' | null {
+  if (task.rrule || task.due_at === null || task.target_auto) return null
+  return task.deadline_at !== null ? 'auto' : 'remove'
+}
+
+/**
+ * Which buttons an Upcoming row offers (2026-10-12): Today and its picker on
+ * EVERY row — since the occurrence is kept apart from the target (§6), moving
+ * a repeating task's target no longer resets its schedule, so Today on one is
+ * safe (done that day advances to the next scheduled occurrence; the deadline
+ * still measures from the occurrence). Back to auto / Remove target per
+ * `targetReset`.
  */
 export function upcomingRowActions(row: {
   recurring: boolean
-  task: { deadline_at: string | null }
-}): { today: boolean; removeTarget: boolean } {
-  return { today: !row.recurring, removeTarget: !row.recurring && row.task.deadline_at === null }
+  task: { due_at: string | null; deadline_at: string | null; target_auto?: boolean }
+}): { today: boolean; reset: 'auto' | 'remove' | null } {
+  return { today: true, reset: row.recurring ? null : targetReset(row.task) }
 }

@@ -15,46 +15,12 @@
 
 import { getDb } from '@/core/db'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
-import { effectiveTargetAt } from '@/lib/task-segments'
 
-/**
- * Which rows MIGHT have a deadline-implied target (2026-10-10): a one-off with a
- * deadline — even one whose nag is off, since it re-arms on the deadline day
- * (ruling A4). SQL can only shortlist them — the
- * implied target is the morning of the lead day in the USER'S timezone
- * (`impliedTargetAt`), which SQLite cannot compute — so they are fetched as
- * candidates and `withEffectiveTarget` decides in JS, with the same function
- * the client uses. Callers put the effective target in `due_at`, so the rest
- * of the due-ness machinery (`isCurrentlyDue`, the notifier's cadence math)
- * reads an implied target exactly like a set one.
+/*
+ * A deadline's target is STORED since 2026-10-12 (§8: `target_auto`), so
+ * `due_at` is the whole truth here again — the read-time implied target, its
+ * candidate shortlist and the JS swap (`withEffectiveTarget`) are gone.
  */
-export function deadlineCandidateSql(alias = 't'): string {
-  return `(${alias}.deadline_at IS NOT NULL AND ${alias}.rrule IS NULL)`
-}
-
-/** A candidate row with its `due_at` replaced by its effective target. */
-export function withEffectiveTarget<
-  T extends {
-    due_at: string | null
-    deadline_at?: string | null
-    deadline_nag_off?: number | boolean
-    rrule: string | null
-    timezone: string
-    morning_time?: string | null
-  },
->(row: T): T {
-  if (!row.deadline_at) return row
-  const due_at = effectiveTargetAt(
-    {
-      due_at: row.due_at,
-      rrule: row.rrule,
-      deadline_at: row.deadline_at,
-      deadline_nag_off: row.deadline_nag_off === 1 || row.deadline_nag_off === true,
-    },
-    { timezone: row.timezone, morningTime: row.morning_time || '09:00' },
-  )
-  return { ...row, due_at }
-}
 
 interface DueCandidate {
   id: number
@@ -64,9 +30,6 @@ interface DueCandidate {
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
   timezone: string
-  deadline_at: string | null
-  deadline_nag_off: number
-  morning_time: string | null
 }
 
 /**
@@ -76,11 +39,11 @@ interface DueCandidate {
  * Ordered by due_at so callers that slice — the notifier's per-bucket caps —
  * keep the existing "most overdue first" behavior.
  */
-function fetchDueCandidates(userId: number): DueCandidate[] {
+function fetchDueCandidates(userId: number, now: Date): DueCandidate[] {
   const rows = getDb()
     .prepare(
       `SELECT t.id, t.project_id, t.due_at, t.rrule, t.recurrence_mode, t.anchor_time,
-              t.deadline_at, t.deadline_nag_off, u.timezone, u.morning_time
+              u.timezone
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
         WHERE t.user_id = ?
@@ -100,19 +63,18 @@ function fetchDueCandidates(userId: number): DueCandidate[] {
           AND t.is_reminder = 0
           AND (
             t.rrule IS NOT NULL
-            OR (t.due_at IS NOT NULL AND datetime(t.due_at) < datetime('now'))
-            OR ${deadlineCandidateSql()}
-          )`,
+            -- At or before now: an automatic target set to "now" (ruling Q10)
+            -- is over target at once, as isCurrentlyDue says.
+            OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))
+          )
+        ORDER BY t.due_at ASC NULLS LAST`,
     )
-    .all(userId) as DueCandidate[]
-  // Effective targets first (2026-10-10), then "most overdue first" as before.
+    .all(userId, now.toISOString()) as DueCandidate[]
   return rows
-    .map(withEffectiveTarget)
-    .sort((a, b) => (a.due_at ?? '\uffff').localeCompare(b.due_at ?? '\uffff'))
 }
 
 function fetchCurrentlyDue(userId: number, now: Date): DueCandidate[] {
-  return fetchDueCandidates(userId).filter((row) => isCurrentlyDue(row, row.timezone, now))
+  return fetchDueCandidates(userId, now).filter((row) => isCurrentlyDue(row, row.timezone, now))
 }
 
 /** IDs of the user's tasks that are due or overdue as of `now`. */

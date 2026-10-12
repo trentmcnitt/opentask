@@ -794,11 +794,15 @@ paths:
       operationId: snoozeTask
       tags: [Tasks]
       description: |
-        Moves a task's `due_at`. Two populations refuse it with a 400, because
-        neither has a due date to move: reminders (§6), which stay in their time
-        slot until completed, and quotas (§5), which are counted within a period
-        rather than due on a day. The bulk snooze sweep skips both instead of
-        failing.
+        Moves a task's target (`due_at`) — the same move as `PATCH { target_at }`
+        (2026-10-12, spec §6: there is no snooze state). It stops at the task's
+        deadline (spec §8.2): the response's `capped_at_deadline` is true when
+        it did. `allow_past_deadline` and `cap_at_deadline` are accepted from
+        old clients and change nothing. Two populations refuse it with a 400,
+        because neither has a due date to move: reminders (§6), which stay in
+        their time slot until completed, and quotas (§5), which are counted
+        within a period rather than due on a day. The bulk snooze sweep skips
+        both instead of failing.
       requestBody:
         required: true
         content:
@@ -832,6 +836,9 @@ paths:
                             format: date-time
                           description:
                             type: [string, 'null']
+                          capped_at_deadline:
+                            type: boolean
+                            description: The move stopped AT the deadline instead of `until`.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -952,8 +959,10 @@ paths:
         name the two tiers accurately; Urgent alone is the difference.
 
         Each eligible task is changed exactly as `PATCH /api/tasks/{id}` with
-        `{ due_at }` would change it: a dated task is snoozed (`snooze_count`
-        +1, origin kept); a task with no date (absolute mode only) gets its
+        `{ due_at }` would change it: a dated task's target moves (its
+        first-target date kept), stopping at its deadline (`capped_deadline`;
+        kept where it is if the deadline has passed, `skipped_deadline`); a
+        task with no date (absolute mode only) gets its
         first date, which is not counted as a snooze; a task already due at
         the target is left alone. `tasks_affected` counts only the tasks whose
         date actually moved, so it plus `tasks_skipped` can be less than the
@@ -987,11 +996,13 @@ paths:
                 allow_past_deadline_ids:
                   type: array
                   items: { type: integer }
-                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
+                  deprecated: true
+                  description: 'Accepted from old clients and ignored since 2026-10-12: every move stops at its deadline (spec §8.2).'
                 cap_at_deadline_ids:
                   type: array
                   items: { type: integer }
-                  description: Ids whose snooze stops AT their deadline instead of being skipped (ruling A3, 2026-10-11) — what the native one-tap snoozes send. Counted in `capped_deadline` on bulk snooze.
+                  deprecated: true
+                  description: 'Accepted from old clients and ignored since 2026-10-12: every move stops at its deadline (spec §8.2).'
       responses:
         '200':
           description: Bulk operation result
@@ -1062,7 +1073,8 @@ paths:
                 allow_past_deadline_ids:
                   type: array
                   items: { type: integer }
-                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
+                  deprecated: true
+                  description: 'Accepted from old clients and ignored since 2026-10-12: every move stops at its deadline (spec §8.2).'
                 notify:
                   type: boolean
                   default: true
@@ -1099,7 +1111,10 @@ paths:
                         description: Reminders left in place (reminders are period-locked).
                       skipped_deadline:
                         type: integer
-                        description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
+                        description: Left where they were — the move went past a deadline that has already passed, and a target never goes past its deadline (2026-10-12, spec §8.2).
+                      capped_deadline:
+                        type: integer
+                        description: Moved only as far as their deadline (2026-10-12, spec §8.2). Also counted in `tasks_affected`.
                       until:
                         type: string
                         format: date-time
@@ -1155,9 +1170,9 @@ paths:
                       format: date-time
                       description: >-
                         The new target for every task (`due_at` is the deprecated alias;
-                        `null` removes the target). A move of an existing target is a
-                        snooze and is subject to the deadline cap — see
-                        `allow_past_deadline_ids` / `cap_at_deadline_ids`.
+                        `null` removes the target — on a one-off with a deadline it puts
+                        the deadline's automatic target back). Every move stops at each
+                        task's deadline (counted in `capped_deadline`).
                     deadline_at:
                       type: [string, 'null']
                       format: date-time
@@ -1166,7 +1181,8 @@ paths:
                       enum: [days, weeks, months, eventually, null]
                     deadline_nag_off:
                       type: boolean
-                      description: Turn the deadline's implied 4-day nag off (what remove target sets).
+                      deprecated: true
+                      description: Accepted from old clients and ignored since 2026-10-12 (spec §8).
                     affirm_horizon:
                       type: boolean
                       description: Keep each task's horizon and restart its growth clock (Process's "keep").
@@ -1211,11 +1227,13 @@ paths:
                 allow_past_deadline_ids:
                   type: array
                   items: { type: integer }
-                  description: Ids the user confirmed snoozing past their deadline (2026-10-10).
+                  deprecated: true
+                  description: 'Accepted from old clients and ignored since 2026-10-12: every move stops at its deadline (spec §8.2).'
                 cap_at_deadline_ids:
                   type: array
                   items: { type: integer }
-                  description: Ids whose snooze stops AT their deadline instead of being skipped (ruling A3, 2026-10-11) — what the native one-tap snoozes send. Counted in `capped_deadline` on bulk snooze.
+                  deprecated: true
+                  description: 'Accepted from old clients and ignored since 2026-10-12: every move stops at its deadline (spec §8.2).'
                 delta_minutes:
                   type: integer
                   minimum: -1440
@@ -1610,8 +1628,8 @@ paths:
       operationId: taskSegmentTargetToday
       tags: [Reminders]
       description: >
-        A deliberate target (age restarts) at the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour; or at `at`, when given. Also marks them considered and stamps `segment_targeted_at`. One undo entry (bulk edit) puts back the target and both stamps. A re-target, not a snooze, so the deadline neither refuses nor caps it. The caller's own open tasks only; anything else refuses the
-        whole request (400). REPEATING tasks (an `rrule`) are skipped and listed in `skipped_recurring` (2026-10-12): re-targeting one would reset its occurrence. With nothing else in the request nothing is written and no undo entry is logged.
+        A move of the target (a target the user picked) to the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour; or to `at`, when given. Also marks them considered and stamps `segment_targeted_at`. One undo entry (bulk edit) puts back the target and both stamps. Like every move it stops at the task's deadline (2026-10-12, spec §8.2). The caller's own open tasks only; anything else refuses the
+        whole request (400). REPEATING tasks (an `rrule`) are targeted too since 2026-10-12 (spec §6): only the target moves, the scheduled occurrence (`occurrence_at`) stays, so done that day brings the next occurrence round on schedule.
       requestBody:
         required: true
         content:
@@ -1647,7 +1665,7 @@ paths:
                       skipped_recurring:
                         type: array
                         items: { type: integer }
-                        description: Ids of repeating tasks left alone (2026-10-12).
+                        description: Always empty since 2026-10-12 (repeating tasks are targeted too); kept for older clients.
   /api/process:
     get:
       summary: What Process works through
@@ -1655,8 +1673,8 @@ paths:
       tags: [Tasks]
       description: >
         The in-app Process button's lists, computed by rule (no AI, so it works with AI off). Read-only:
-        Process writes through PATCH, bulk edit (`affirm_horizon`, `target_at: null` with
-        `deadline_nag_off: true`), target-today and DELETE. Only the caller's own open tasks, never
+        Process writes through PATCH, bulk edit (`affirm_horizon`, `target_at: null` — on a deadline
+        task that is Back to auto), target-today and DELETE. Only the caller's own open tasks, never
         reminders or quotas; `growth` and the stale-target lists also leave out recurring tasks.
 
         - `inbox`: tasks still in the Inbox project, oldest first, recurring ones included (the
@@ -1797,8 +1815,9 @@ paths:
                                         type: boolean
                                         description: >
                                           A repeating task's occurrence (2026-10-12; Upcoming only).
-                                          Clients offer no Today, picker or Remove target on it:
-                                          target-today skips it (`skipped_recurring`).
+                                          Clients offer no Remove target on it (its target goes with
+                                          its recurrence); Today and its picker move only its target
+                                          (spec §6).
                             waiting:
                               type: integer
                             considered:
@@ -3705,7 +3724,7 @@ paths:
           description: |
             The action taken. `result` is the task operation's own result: its
             `task` is the stored task, without the computed `is_recurring` and
-            `is_snoozed` fields.
+            `target_at` fields.
           content:
             application/json:
               schema:
@@ -4435,10 +4454,11 @@ components:
           type: [string, 'null']
           format: date-time
           description: >
-            The occurrence origin, and the FIRST-TARGET date (2026-10-10): a
-            snooze keeps it, a deliberate re-target (or a task getting a
-            target after having none) restarts it. The target-age badge counts
-            whole local days from it.
+            The FIRST-TARGET date (2026-10-10): every move of the target keeps
+            it; a task getting a target after having none restarts it; a
+            repeating task's done or skip sets it to the next occurrence. The
+            target-age badge counts whole local days from it (and shipped native
+            builds read it as their age clock).
         target_at:
           type: [string, 'null']
           format: date-time
@@ -4449,11 +4469,11 @@ components:
           type: [string, 'null']
           format: date-time
           description: >
-            The real cutoff. Never moved by a snooze; while it is still ahead it
-            caps one (see PATCH `allow_past_deadline`). With no target, the
-            task is over target from 4 days before it (computed, not stored)
-            unless `deadline_nag_off`. On a recurring task it moves with each
-            occurrence.
+            The real cutoff. Never moved by a snooze, and the target is never
+            after it: every move stops at it (2026-10-12, spec §8.2). A one-off
+            with a deadline always has a target — with none picked, the stored
+            automatic one (`target_auto`). On a recurring task it moves with
+            each occurrence, measured from `occurrence_at`.
         horizon:
           type: [string, 'null']
           enum: [days, weeks, months, eventually, null]
@@ -4486,13 +4506,31 @@ components:
           format: date-time
           description: >
             When the task's target was last set, by any path (2026-10-12): create, any move, Today,
-            a completion advance, skip, put-back, AI enrichment, or a change to `deadline_at` (it moves
-            the effective target). The anchor of Upcoming's wait (docs/TASK-MODEL.md § Upcoming).
+            a completion advance, skip, put-back, AI enrichment, or a change to `deadline_at` (it can
+            move the target). The anchor of Upcoming's wait (docs/TASK-MODEL.md § Upcoming).
             Undo restores it. Null on rows written before it existed: read as `created_at` (a
             repeating task: the later of that and `last_completed_at`). Server-set; never sent.
+        target_auto:
+          type: boolean
+          description: >
+            `due_at` is the deadline's AUTOMATIC target (2026-10-12, spec §8): stored by the server
+            for a one-off with a deadline and no target the user picked — the user's morning 3 days
+            before the deadline's day (4 when the deadline was set 16+ days out; now, if that moment
+            had passed). It follows the deadline when the deadline changes. Only a picked target
+            (false) makes a task quiet until its date (Upcoming). Server-set.
+        occurrence_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            A repeating task's SCHEDULED occurrence (2026-10-12, spec §6); `due_at` is its target,
+            which a move changes alone. Done and skip advance from this and set both; the deadline
+            measures from it. Null for a one-off. Server-set.
         deadline_nag_off:
           type: boolean
-          description: Silences the deadline's implied nag (set by remove-target).
+          deprecated: true
+          description: >
+            Always false since 2026-10-12 (spec §8: a deadline's target is stored). Kept for shipped
+            native builds, which decode it.
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -4586,8 +4624,6 @@ components:
                 for a daily numbered one.
         completion_count:
           type: integer
-        snooze_count:
-          type: integer
         skip_count:
           type: integer
           description: >
@@ -4608,13 +4644,6 @@ components:
         is_recurring:
           type: boolean
           description: Computed field — true if rrule is set
-        is_snoozed:
-          type: boolean
-          description: |
-            Computed field — true when the due date has moved off its
-            occurrence origin (`original_due_at` set and different from
-            `due_at`). A freshly dated task, or one given an explicit new date
-            with `reset_original_due_at`, is not snoozed.
 
     TaskCreate:
       type: object
@@ -4806,17 +4835,20 @@ components:
           type: [string, 'null']
           format: date-time
           description: |
-            On its own, moving an existing date is a **snooze**: the
-            occurrence origin (`original_due_at`) is kept, `snooze_count`
-            increments, and the task reads as snoozed. Send
-            `reset_original_due_at: true` with it for an **explicit
-            reschedule** instead (what the date picker does): the new date
-            becomes the origin, `snooze_count` resets, and it is not a snooze.
+            Moving an existing date is a **move of the target** (2026-10-12,
+            spec §6 — "Snooze" in the UI; there is no snooze state): the
+            first-target date (`original_due_at`) is kept, a repeating task's
+            `occurrence_at` is untouched, and the move stops at the deadline
+            (`capped_at_deadline: true` in the response; once the deadline has
+            passed, a move past it changes nothing). `null` removes the target —
+            on a one-off with a deadline it puts the deadline's automatic target
+            back ("Back to auto").
 
-            A snooze of a dated reminder is refused (400) — reminders are not
-            snoozed; an explicit reschedule is allowed. Sent together with
-            `rrule`, the date is honored and the rule's anchors are derived
-            from it (a re-schedule, never a snooze). A quota has no due date.
+            A move of a dated reminder is refused (400) — reminders are not
+            snoozed; an explicit reschedule (`reset_original_due_at: true`) is
+            allowed. Sent together with `rrule`, the date is honored and the
+            rule's anchors are derived from it (a re-schedule). A quota has no
+            due date.
         target_at:
           type: [string, 'null']
           format: date-time
@@ -4829,36 +4861,38 @@ components:
           enum: [days, weeks, months, eventually, null]
         retarget:
           type: boolean
-          description: Alias of `reset_original_due_at` (a deliberate re-target).
+          deprecated: true
+          description: Alias of `reset_original_due_at`. Accepted and ignored on a task since 2026-10-12 (a move is a move).
         deadline_nag_off:
           type: boolean
+          deprecated: true
           description: >
-            Silence the deadline's implied nag on a task with no target (remove-target sends it with `target_at: null`). A new `deadline_at` clears it.
+            Accepted from old clients and ignored since 2026-10-12 (spec §8). An old "Remove target" sends it with `target_at: null`, which on a deadline task now puts the automatic target back.
         affirm_horizon:
           type: boolean
           description: >
             Keep the current horizon and restart its growth clock (`horizon_set_at` = now) without changing it — an unset horizon stays unset. Process's "keep" answer to a growth ask. Ignored when the same request changes `horizon` (that restarts the clock anyway). Also accepted in bulk edit `changes`.
         allow_past_deadline:
           type: boolean
+          deprecated: true
           description: |
-            A snooze that would move the target past a deadline that is still
-            ahead is refused with 409 `PAST_DEADLINE`; send this once the user
-            confirms. A deliberate re-target is not capped. PROVISIONAL.
+            Accepted from old clients and ignored since 2026-10-12: every move
+            stops at the deadline (spec §8.2); there is no "past the deadline
+            anyway". To go later, change or remove the deadline.
         cap_at_deadline:
           type: boolean
           description: |
-            Ruling A3 (2026-10-11): a quick snooze from a native surface stops
-            AT a deadline still ahead instead of passing it — the target is
-            moved to the deadline and the response says `capped_at_deadline:
-            true` (the description reads "Snoozed to deadline …"). Only a
-            snooze is capped, and `allow_past_deadline` wins. Also on
-            `POST /api/tasks/{id}/snooze`.
+            Every move stops at the deadline since 2026-10-12, so this no
+            longer changes where the target lands. It marks the caller as a
+            native quick snooze (the notification content extension's custom
+            time), whose capped move also gets the quiet "Snoozed to deadline"
+            push (ruling A3), since that surface shows nothing itself.
         reset_original_due_at:
           type: boolean
           description: |
-            Make the occurrence origin the task's due date — the NEW `due_at`
-            when one is sent in the same request — and reset `snooze_count` to
-            0. Undo restores the previous values.
+            On a REMINDER: an explicit reschedule (what a period move sends) —
+            the new `due_at` becomes its first-target date and occurrence.
+            Ignored on a task since 2026-10-12 (a move is a move).
         priority:
           type: integer
           minimum: 0
@@ -5295,10 +5329,10 @@ components:
           description: Reminders skipped — they are bucket-locked and never snoozed
         skipped_deadline:
           type: integer
-          description: Left where they were — the snooze would have crossed their deadline (2026-10-10). Resend their ids in `allow_past_deadline_ids` once the user confirms.
+          description: Left where they were — the move went past a deadline that has already passed, and a target never goes past its deadline (2026-10-12, spec §8.2).
         capped_deadline:
           type: integer
-          description: Snoozed only as far as their deadline — ids in `cap_at_deadline_ids` whose snooze would have crossed it (ruling A3, 2026-10-11). `POST /api/tasks/bulk/snooze` only.
+          description: Moved only as far as their deadline (2026-10-12, spec §8.2) — every move stops at it. Also counted in `tasks_affected`.
         skipped_no_due_date:
           type: integer
           description: Relative mode only — tasks with no due_at to add the delta to

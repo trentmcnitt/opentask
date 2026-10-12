@@ -2390,14 +2390,10 @@ function DashboardView({
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
             // Remove target (2026-10-10): back to its horizon's task segment.
-            // Silences a deadline's implied nag too, or "remove" would do nothing.
+            // On a deadline task the same clear is "Back to auto" (§8.3): the
+            // server puts the deadline's automatic target back.
             onRemoveTarget={(task) =>
-              void actions
-                .handleSaveAllChanges(task.id, {
-                  due_at: null,
-                  ...(task.deadline_at ? { deadline_nag_off: true } : {}),
-                })
-                .catch(() => undefined)
+              void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
             }
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}

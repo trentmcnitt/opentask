@@ -12,10 +12,11 @@ import type { StaleTargetItem } from '@/lib/process-client'
  * gets a one-tap 'remove targets aged 7d+'"). A removed target sends the task
  * back to its horizon's task segment; nothing is lost but the nag.
  *
- * Tasks WITH a deadline are listed apart and start UNCHECKED (amendment 7):
- * removing the target also stops the deadline's own nag, and a client
- * deadline's nag must never be stopped quietly. Checking one is a deliberate
- * choice.
+ * Tasks WITH a deadline are listed apart and start UNCHECKED (amendment 7): a
+ * deadline task never loses its target — removing the one the user picked
+ * puts the deadline's automatic target back (§8.3, 2026-10-12), which may
+ * nag sooner. Checking one is a deliberate choice. A task already on its
+ * automatic target is not listed (`planProcess`).
  *
  * One tap removes every checked target in one bulk edit — one Undo.
  */
@@ -69,7 +70,7 @@ export function ProcessTargetsStep({
         <div className="flex flex-col gap-1" data-process-deadline-targets>
           <p className="text-sm font-medium">With a deadline</p>
           <p className="text-muted-foreground text-xs">
-            Left unchecked: removing the target also stops the deadline&rsquo;s reminder.
+            Left unchecked: these go back to the deadline&rsquo;s automatic target.
           </p>
           <TargetList
             items={withDeadline}

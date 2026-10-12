@@ -296,9 +296,14 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(row.title, "Fix the squeaky door")
         XCTAssertEqual(row.horizon, "days")
         XCTAssertEqual(row.horizonLabel, "Days")
-        XCTAssertNil(row.dueAt)
+        // Since 2026-10-12 (§8) a deadline always carries a stored target —
+        // the AUTOMATIC one (`target_auto`, which this DTO doesn't decode) —
+        // so the row has a due date and a first-target date, and
+        // `deadline_nag_off` is always false. Its automatic target keeps it
+        // in its horizon segment.
+        XCTAssertEqual(row.dueAt, Fixtures.pinnedTimestamp)
         XCTAssertEqual(row.deadlineAt, Fixtures.pinnedTimestamp)
-        XCTAssertNil(row.originalDueAt)
+        XCTAssertEqual(row.originalDueAt, Fixtures.pinnedTimestamp)
         XCTAssertFalse(row.deadlineNagOff)
         XCTAssertFalse(row.isReminder)
 
@@ -314,7 +319,8 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(rawTask["horizon"] as? String, row.horizon)
         XCTAssertEqual(rawTask["deadline_at"] as? String, row.deadlineAt)
         XCTAssertEqual(rawTask["deadline_nag_off"] as? Bool, row.deadlineNagOff)
-        XCTAssertTrue(rawTask["target_at"] is NSNull, "target_at mirrors due_at")
+        XCTAssertEqual(rawTask["target_at"] as? String, row.dueAt, "target_at mirrors due_at")
+        XCTAssertEqual(rawTask["target_auto"] as? Bool, true, "the deadline's automatic target")
 
         // Segments stay out of every group, and out of every reminders count.
         let groupIds = Set(payload.groups.flatMap { $0.reminders + $0.consideredItems }.map(\.id))
@@ -405,14 +411,15 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(back.taskSegments.last?.tasks.map(\.recurring), [false, true])
     }
 
-    /// `POST /api/task-segments/target-today` on a repeating task: nothing
-    /// targeted, the id named in `skipped_recurring`.
-    func testTargetTodaySkippedRecurringResponse() throws {
-        let result = try Fixtures.decode(APIClient.SegmentTargetResult.self, "task-segments-target-today-skipped")
-        XCTAssertEqual(result.affected, 0)
-        XCTAssertEqual(result.skippedRecurring, [Fixtures.plantsRecurring])
-        let raw = try Fixtures.object("task-segments-target-today-skipped")
-        XCTAssertEqual(raw["skipped_recurring"] as? [Int], [Fixtures.plantsRecurring])
+    /// `POST /api/task-segments/target-today` on a repeating task: since §6
+    /// (2026-10-12) its target moves (the occurrence stays), so it is
+    /// targeted, and `skipped_recurring` is present and empty.
+    func testTargetTodayRepeatingResponse() throws {
+        let result = try Fixtures.decode(APIClient.SegmentTargetResult.self, "task-segments-target-today-repeating")
+        XCTAssertEqual(result.affected, 1)
+        XCTAssertEqual(result.skippedRecurring, [])
+        let raw = try Fixtures.object("task-segments-target-today-repeating")
+        XCTAssertEqual(raw["skipped_recurring"] as? [Int], [])
     }
 
     /// `GET /api/user/preferences` carries the check-in day (Luxon: 6 = Saturday).

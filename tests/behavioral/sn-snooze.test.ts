@@ -324,47 +324,36 @@ describe('Snooze Validation Tests', () => {
   /**
    * SN-006: snooze_count increments on EVERY snooze
    *
-   * The new behavior increments snooze_count every time a task is snoozed,
-   * not just on the first snooze.
+   * Since 2026-10-12 (§6) a snooze is just a move of the target: nothing is
+   * counted, and the first-target date is kept however many times it moves.
    */
-  test('SN-006: snooze_count increments on EVERY snooze', () => {
+  test('SN-006: every snooze is a move — the target moves, the first-target date stays', () => {
+    const first = futureTime(1)
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: {
         title: 'Test task',
-        due_at: futureTime(1),
+        due_at: first,
       },
     })
 
-    expect(task.snooze_count).toBe(0)
+    // No snooze state since 2026-10-12 (§6): no count, no snoozed flag.
+    expect(task).not.toHaveProperty('snooze_count')
+    expect(task).not.toHaveProperty('is_snoozed')
 
-    // First snooze
-    snoozeTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      taskId: task.id,
-      until: futureTime(2),
-    })
-    expect(getTaskById(task.id)!.snooze_count).toBe(1)
-
-    // Second snooze - should increment
-    snoozeTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      taskId: task.id,
-      until: futureTime(3),
-    })
-    expect(getTaskById(task.id)!.snooze_count).toBe(2)
-
-    // Third snooze - should increment again
-    snoozeTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      taskId: task.id,
-      until: futureTime(4),
-    })
-    expect(getTaskById(task.id)!.snooze_count).toBe(3)
+    for (const hours of [2, 3, 4]) {
+      const until = futureTime(hours)
+      snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: task.id,
+        until,
+      })
+      const after = getTaskById(task.id)!
+      expect(after.due_at).toBe(until)
+      expect(after.original_due_at).toBe(first)
+    }
   })
 
   /**
@@ -386,19 +375,18 @@ describe('Snooze Validation Tests', () => {
 
     // original_due_at is set eagerly at creation time
     expect(task.original_due_at).toBe(originalDueAt)
-    expect(task.snooze_count).toBe(0)
 
     // Update due_at via PATCH
-    const { task: updatedTask } = updateTask({
+    const { task: updatedTask, description } = updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       input: { due_at: futureTime(3) },
     })
 
-    // Snooze logic should have been applied (original_due_at preserved from creation)
+    // A move: original_due_at preserved from creation, worded as a snooze
     expect(updatedTask.original_due_at).toBe(originalDueAt)
-    expect(updatedTask.snooze_count).toBe(1)
+    expect(description).toMatch(/^Snoozed to/)
   })
 
   /**
@@ -433,40 +421,41 @@ describe('Snooze Validation Tests', () => {
     expect(editEntry).toBeDefined()
     expect(editEntry!.fields_changed).toContain('due_at')
     expect(editEntry!.fields_changed).toContain('priority')
-    expect(editEntry!.fields_changed).toContain('snooze_count')
+    expect(editEntry!.fields_changed).not.toContain('snooze_count')
     // original_due_at is NOT in fields_changed because it was already set at creation time
     expect(editEntry!.fields_changed).not.toContain('original_due_at')
   })
 
   /**
-   * SN-009: undo restores snooze_count correctly
+   * SN-009: undo puts the target back (there is no snooze count to restore)
    */
-  test('SN-009: undo restores snooze_count correctly', () => {
+  test('SN-009: undo of a snooze restores the target and the origin', () => {
+    const first = futureTime(1)
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: {
         title: 'Test task',
-        due_at: futureTime(1),
+        due_at: first,
       },
     })
 
-    expect(task.snooze_count).toBe(0)
-
     // Snooze the task
+    const until = futureTime(3)
     snoozeTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
-      until: futureTime(3),
+      until,
     })
-    expect(getTaskById(task.id)!.snooze_count).toBe(1)
+    expect(getTaskById(task.id)!.due_at).toBe(until)
 
     // Undo
     executeUndo(TEST_USER_ID)
 
-    // snooze_count should be restored to 0
-    expect(getTaskById(task.id)!.snooze_count).toBe(0)
+    const restored = getTaskById(task.id)!
+    expect(restored.due_at).toBe(first)
+    expect(restored.original_due_at).toBe(first)
   })
 
   /**
@@ -485,18 +474,20 @@ describe('Snooze Validation Tests', () => {
       },
     })
 
-    expect(task.snooze_count).toBe(0)
-
     // Update with both rrule and due_at
-    const { task: updatedTask } = updateTask({
+    const when = futureTime(3)
+    const { task: updatedTask, description } = updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
-      input: { rrule: 'FREQ=DAILY', due_at: futureTime(3) },
+      input: { rrule: 'FREQ=DAILY', due_at: when },
     })
 
-    // Snooze logic should NOT have been applied
-    expect(updatedTask.snooze_count).toBe(0)
+    // A re-schedule, not a move: the date is honored, the old origin dropped,
+    // and the description does not call it a snooze.
+    expect(updatedTask.due_at).toBe(when)
+    expect(updatedTask.original_due_at).toBeNull()
+    expect(description).not.toMatch(/snooz/i)
   })
 
   /**
@@ -506,9 +497,9 @@ describe('Snooze Validation Tests', () => {
    * This is because changing the recurrence schedule establishes a new baseline,
    * making the original snooze tracking irrelevant.
    *
-   * Task: snoozed (original_due_at set, snooze_count=2)
+   * Task: snoozed twice (original_due_at set)
    * Action: Change rrule
-   * Result: original_due_at=NULL (cleared), anchors re-derived, snooze_count unchanged
+   * Result: original_due_at=NULL (cleared), anchors re-derived
    */
   test('SN-011: Snoozed task + rrule change clears snooze tracking', () => {
     // Create recurring task
@@ -523,7 +514,7 @@ describe('Snooze Validation Tests', () => {
       },
     })
 
-    // Snooze twice to get snooze_count=2
+    // Snooze twice
     snoozeTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -540,7 +531,6 @@ describe('Snooze Validation Tests', () => {
     // Verify snoozed state
     const snoozedTask = getTaskById(task.id)!
     expect(snoozedTask.original_due_at).toBe(originalDueAt)
-    expect(snoozedTask.snooze_count).toBe(2)
 
     // Change rrule from daily to weekly
     const { task: updatedTask } = updateTask({
@@ -553,9 +543,6 @@ describe('Snooze Validation Tests', () => {
     // Snooze tracking should be cleared (new schedule = new baseline)
     expect(updatedTask.original_due_at).toBeNull()
 
-    // snooze_count is NOT reset (it's a lifetime stat)
-    expect(updatedTask.snooze_count).toBe(2)
-
     // Anchors should be re-derived from new rrule
     expect(updatedTask.anchor_time).toBe('09:00')
     expect(updatedTask.anchor_dow).toBe(0) // Monday
@@ -567,7 +554,7 @@ describe('Snooze Validation Tests', () => {
    * When converting a snoozed one-off task to recurring by adding an rrule,
    * the snooze tracking is cleared and due_at is computed to next occurrence.
    *
-   * Task: one-off, snoozed (original_due_at set, snooze_count=1)
+   * Task: one-off, snoozed (original_due_at set)
    * Action: Add rrule to make it recurring
    * Result: original_due_at=NULL, due_at computed to next occurrence
    */
@@ -596,7 +583,6 @@ describe('Snooze Validation Tests', () => {
     // Verify snoozed state
     const snoozedTask = getTaskById(task.id)!
     expect(snoozedTask.original_due_at).toBe(originalDueAt)
-    expect(snoozedTask.snooze_count).toBe(1)
 
     // Add rrule to convert to recurring
     const { task: updatedTask } = updateTask({
@@ -608,9 +594,6 @@ describe('Snooze Validation Tests', () => {
 
     // Snooze tracking should be cleared (converting to recurring = new baseline)
     expect(updatedTask.original_due_at).toBeNull()
-
-    // snooze_count preserved (lifetime stat)
-    expect(updatedTask.snooze_count).toBe(1)
 
     // Task is now recurring
     expect(updatedTask.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
@@ -626,11 +609,10 @@ describe('Snooze Validation Tests', () => {
   /**
    * SN-013: Clearing due_at to null is NOT a snooze
    *
-   * When a user clears the due date (sets due_at to null), it should NOT
-   * increment snooze_count or set original_due_at — clearing is a different
-   * action from moving to a new date.
+   * When a user clears the due date (sets due_at to null), it is not a move:
+   * no "Snoozed to" description, and original_due_at goes with the date.
    */
-  test('SN-013: clearing due_at to null does not increment snooze_count', () => {
+  test('SN-013: clearing due_at to null is not a snooze and clears the origin', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -641,12 +623,11 @@ describe('Snooze Validation Tests', () => {
     })
 
     expect(task.due_at).not.toBeNull()
-    expect(task.snooze_count).toBe(0)
     // original_due_at is set eagerly at creation time
     expect(task.original_due_at).toBe(task.due_at)
 
     // Clear due_at and rrule to null
-    const { task: updated } = updateTask({
+    const { task: updated, description } = updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
@@ -654,17 +635,17 @@ describe('Snooze Validation Tests', () => {
     })
 
     expect(updated.due_at).toBeNull()
-    expect(updated.snooze_count).toBe(0)
+    expect(description).not.toMatch(/snooz/i)
     expect(updated.original_due_at).toBeNull()
   })
 
   /**
    * SN-014: Clearing due_at on a previously-snoozed task does not add another snooze
    *
-   * Even if a task was already snoozed (snooze_count > 0), clearing due_at
-   * should not increment snooze_count further.
+   * A moved task keeps its first-target date — until the target is cleared,
+   * which takes the origin with it.
    */
-  test('SN-014: clearing due_at on snoozed task does not add another snooze', () => {
+  test('SN-014: clearing due_at on a moved task clears its origin too', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -682,8 +663,7 @@ describe('Snooze Validation Tests', () => {
       input: { due_at: futureLocalTime(14, 0) },
     })
 
-    expect(snoozed.snooze_count).toBe(1)
-    expect(snoozed.original_due_at).not.toBeNull()
+    expect(snoozed.original_due_at).toBe(task.due_at)
 
     // Now clear due_at
     const { task: cleared } = updateTask({
@@ -694,8 +674,7 @@ describe('Snooze Validation Tests', () => {
     })
 
     expect(cleared.due_at).toBeNull()
-    // snooze_count should stay at 1, not increment to 2
-    expect(cleared.snooze_count).toBe(1)
+    expect(cleared.original_due_at).toBeNull()
   })
 })
 
@@ -724,9 +703,11 @@ describe('Reset original_due_at', () => {
   })
 
   /**
-   * SN-025: reset_original_due_at sets original_due_at = due_at and snooze_count = 0
+   * SN-025: on an ordinary task `reset_original_due_at` is accepted and
+   * IGNORED since 2026-10-12 (§6, ruling Q4: a move is a move) — the
+   * first-target date stays.
    */
-  test('SN-025: reset_original_due_at resets origin and snooze_count', () => {
+  test('SN-025: reset_original_due_at on a task changes nothing', () => {
     const originalDueAt = futureLocalTime(8, 0, 1)
     const task = createTask({
       userId: TEST_USER_ID,
@@ -752,65 +733,59 @@ describe('Reset original_due_at', () => {
     })
 
     const snoozedTask = getTaskById(task.id)!
-    expect(snoozedTask.snooze_count).toBe(2)
     expect(snoozedTask.original_due_at).toBe(originalDueAt)
 
-    // Reset origin
-    const { task: resetTask } = updateTask({
+    // Reset origin — ignored
+    const { task: resetTask, fieldsChanged } = updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       input: { reset_original_due_at: true },
     })
 
-    expect(resetTask.original_due_at).toBe(snoozedTask.due_at)
-    expect(resetTask.snooze_count).toBe(0)
+    expect(fieldsChanged).toEqual([])
+    expect(resetTask.original_due_at).toBe(originalDueAt)
+    expect(resetTask.due_at).toBe(snoozedTask.due_at)
   })
 
   /**
-   * SN-026: undo after reset_original_due_at restores previous values
+   * SN-026: on a REMINDER the flag still means an explicit reschedule (a
+   * period move sends it): the new date becomes the origin, and undo restores
+   * both.
    */
-  test('SN-026: undo after reset restores original values', () => {
+  test('SN-026: a reminder reschedule sets the origin; undo restores both', () => {
     const originalDueAt = futureLocalTime(8, 0, 1)
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: {
-        title: 'Snoozed task',
+        title: 'Take the bins out',
         due_at: originalDueAt,
+        is_reminder: true,
       },
     })
+    expect(task.original_due_at).toBe(originalDueAt)
 
-    // Snooze once
-    snoozeTask({
+    const newDate = futureLocalTime(14, 0, 1)
+    const { task: moved } = updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
-      until: futureLocalTime(14, 0, 1),
+      input: { reset_original_due_at: true, due_at: newDate },
     })
-
-    const snoozedTask = getTaskById(task.id)!
-    expect(snoozedTask.snooze_count).toBe(1)
-    expect(snoozedTask.original_due_at).toBe(originalDueAt)
-
-    // Reset origin
-    updateTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      taskId: task.id,
-      input: { reset_original_due_at: true },
-    })
+    expect(moved.due_at).toBe(newDate)
+    expect(moved.original_due_at).toBe(newDate)
 
     // Undo
     executeUndo(TEST_USER_ID)
 
     const restored = getTaskById(task.id)!
+    expect(restored.due_at).toBe(originalDueAt)
     expect(restored.original_due_at).toBe(originalDueAt)
-    expect(restored.snooze_count).toBe(1)
   })
 
   /**
-   * SN-027: reset on un-snoozed task is a no-op
+   * SN-027: reset on a task that never moved is a no-op too
    */
   test('SN-027: reset on un-snoozed task is a no-op', () => {
     const dueAt = futureLocalTime(8, 0, 1)
@@ -823,9 +798,7 @@ describe('Reset original_due_at', () => {
       },
     })
 
-    // original_due_at == due_at and snooze_count == 0, so reset is a no-op
     expect(task.original_due_at).toBe(dueAt)
-    expect(task.snooze_count).toBe(0)
 
     const { task: resetTask, fieldsChanged } = updateTask({
       userId: TEST_USER_ID,
@@ -837,7 +810,6 @@ describe('Reset original_due_at', () => {
     // No fields should have changed
     expect(fieldsChanged).toEqual([])
     expect(resetTask.original_due_at).toBe(dueAt)
-    expect(resetTask.snooze_count).toBe(0)
   })
 })
 

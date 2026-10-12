@@ -1,4 +1,3 @@
-import { isPastDeadlineBody, PastDeadlineRefusal } from '@/lib/past-deadline'
 import type { Task } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { QuotaChanges } from '@/components/QuotaDetail'
@@ -53,11 +52,6 @@ export async function saveTaskChanges(
     // tracked and a reminder" — and silently swallowing them makes the toggle
     // look broken instead of refused.
     const body = (await res.json().catch(() => null)) as { error?: string } | null
-    if (isPastDeadlineBody(body)) {
-      throw new PastDeadlineRefusal(body?.error ?? 'Past the deadline', () =>
-        saveTaskChanges(taskId, { ...changes, allow_past_deadline: true }),
-      )
-    }
     throw new Error(body?.error || 'Failed to update task')
   }
   const data = await res.json()

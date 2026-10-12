@@ -5,7 +5,9 @@
  * and drifted from `collectDueAtChanges`: a task with no date got a snooze
  * count and a snooze stat for being given its FIRST date, and a task already
  * due at the target was "snoozed" without moving. It now goes through the same
- * `collectFieldChanges` + `applyFieldChanges` pair as bulk/edit.
+ * `collectFieldChanges` + `applyFieldChanges` pair as bulk/edit. (Since
+ * 2026-10-12 there is no snooze count at all — §6: a move keeps the
+ * first-target date and, on a repeating task, leaves `occurrence_at` alone.)
  *
  * The parity tests run one fixed selection through `bulkSnooze` and, on a
  * fresh database, through `bulkEdit` with the same date, and compare what
@@ -58,7 +60,7 @@ interface Outcome {
   counts: { tasksAffected: number; tasksSkipped: number; noDueDateSkipped: number }
   rows: Record<
     string,
-    { due_at: string | null; original_due_at: string | null; snooze_count: number }
+    { due_at: string | null; original_due_at: string | null; occurrence_at: string | null }
   >
   snapshots: Record<string, { before: unknown; after: unknown; fields: string[] }>
   undoFields: string[]
@@ -74,7 +76,7 @@ function capture(ids: Map<string, number>, counts: Outcome['counts'], statBefore
     rows[title] = {
       due_at: t.due_at,
       original_due_at: t.original_due_at,
-      snooze_count: t.snooze_count,
+      occurrence_at: t.occurrence_at,
     }
   }
 
@@ -173,9 +175,18 @@ describe('Bulk snooze parity with bulk edit (D1)', () => {
     // And what that shared outcome is, so parity cannot pass by both being wrong.
     expect(snooze.counts.tasksAffected).toBe(4) // dated, dateless, recurring, rescued P4
     expect(snooze.counts.tasksSkipped).toBe(2) // High (something lower present) + Urgent
-    expect(snooze.rows['dated-p0'].snooze_count).toBe(1)
-    expect(snooze.rows['recurring-p1'].snooze_count).toBe(1)
-    expect(snooze.rows['rescued-p4'].snooze_count).toBe(1)
+    expect(snooze.rows['dated-p0']).toEqual({
+      due_at: target(),
+      original_due_at: localTime(8, 0),
+      occurrence_at: null,
+    })
+    // A repeating task's move changes only its target (§6).
+    expect(snooze.rows['recurring-p1']).toEqual({
+      due_at: target(),
+      original_due_at: localTime(7, 0),
+      occurrence_at: localTime(7, 0),
+    })
+    expect(snooze.rows['rescued-p4'].due_at).toBe(target())
     expect(snooze.rows['high-p3'].due_at).toBe(localTime(8, 30))
     expect(snooze.rows['urgent-p4'].due_at).toBe(localTime(8, 45))
     expect(snooze.snoozeStat).toBe(3)
@@ -205,7 +216,7 @@ describe('Bulk snooze — dateless and no-op targets (D1)', () => {
     teardownTestDb()
   })
 
-  test('BSP-003: a dateless task gets its first date — no snooze count, no snooze stat', () => {
+  test('BSP-003: a dateless task gets its first date — not a move, no snooze stat', () => {
     const task = createTask({ ...base, input: { title: 'Someday' } })
     const stat = snoozeStatNow()
 
@@ -215,7 +226,6 @@ describe('Bulk snooze — dateless and no-op targets (D1)', () => {
     const after = getTaskById(task.id)!
     expect(after.due_at).toBe(target())
     expect(after.original_due_at).toBe(target())
-    expect(after.snooze_count).toBe(0)
     expect(snoozeStatNow() - stat).toBe(0)
   })
 
@@ -230,7 +240,7 @@ describe('Bulk snooze — dateless and no-op targets (D1)', () => {
     expect(result.tasksAffected).toBe(0)
     expect(result.snoozedIds).toEqual([])
     const after = getTaskById(task.id)!
-    expect(after.snooze_count).toBe(before.snooze_count)
+    expect(after.due_at).toBe(before.due_at)
     expect(after.updated_at).toBe(before.updated_at)
     // No empty undo entry — nothing for a toast's Undo to reverse.
     const undoAfter = getDb().prepare('SELECT COUNT(*) AS n FROM undo_log').get() as { n: number }
@@ -245,14 +255,15 @@ describe('Bulk snooze — dateless and no-op targets (D1)', () => {
 
     bulkSnooze({ ...base, taskIds: [dated.id, dateless.id], until: target() })
 
-    expect(getTaskById(dated.id)!.snooze_count).toBe(1)
+    expect(getTaskById(dated.id)!.due_at).toBe(target())
     expect(getTaskById(dated.id)!.original_due_at).toBe(localTime(8, 0))
-    expect(getTaskById(dateless.id)!.snooze_count).toBe(0)
+    expect(getTaskById(dateless.id)!.original_due_at).toBe(target())
+    // Only the dated task's move counts as a snooze.
     expect(snoozeStatNow() - stat).toBe(1)
 
     executeUndo(TEST_USER_ID)
     expect(getTaskById(dated.id)!.due_at).toBe(localTime(8, 0))
-    expect(getTaskById(dated.id)!.snooze_count).toBe(0)
+    expect(getTaskById(dated.id)!.original_due_at).toBe(localTime(8, 0))
     expect(getTaskById(dateless.id)!.due_at).toBeNull()
     expect(getTaskById(dateless.id)!.original_due_at).toBeNull()
   })

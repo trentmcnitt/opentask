@@ -2,8 +2,9 @@
  * Snooze operation
  *
  * Thin wrapper around updateTask that applies snooze-specific validation.
- * The actual snooze logic (original_due_at tracking, snooze_count increment)
- * is handled by updateTask when due_at changes without rrule change.
+ * A snooze is a move of the target (§6, 2026-10-12 — there is no snooze
+ * state): updateTask keeps the first-target date and caps the move at the
+ * deadline (§8.2).
  */
 
 import type { Task } from '@/types'
@@ -20,10 +21,6 @@ export interface SnoozeTaskOptions {
   userTimezone: string
   taskId: number
   until: string // ISO 8601 datetime
-  /** The user confirmed a snooze past the deadline (otherwise 409 PAST_DEADLINE). */
-  allowPastDeadline?: boolean
-  /** A3: stop AT the deadline instead (a quick snooze from a native surface). */
-  capAtDeadline?: boolean
 }
 
 export interface SnoozeResult {
@@ -31,7 +28,7 @@ export interface SnoozeResult {
   previousDueAt: string | null
   originalDueAt: string | null
   description: string | null
-  /** A3: the snooze stopped AT the deadline instead of `until`. */
+  /** §8.2: the snooze stopped AT the deadline instead of `until`. */
   cappedAtDeadline: boolean
 }
 
@@ -43,7 +40,7 @@ export interface SnoozeResult {
  * 2. Delegates to updateTask which handles snooze logic internally
  */
 export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
-  const { userId, userTimezone, taskId, until, allowPastDeadline, capAtDeadline } = options
+  const { userId, userTimezone, taskId, until } = options
 
   // Pre-validation (snooze-specific checks)
   // 'allow': the trashed refusal comes later, after the reminder/quota/done
@@ -99,11 +96,7 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     userId,
     userTimezone,
     taskId,
-    input: {
-      due_at: until,
-      allow_past_deadline: allowPastDeadline,
-      cap_at_deadline: capAtDeadline,
-    },
+    input: { due_at: until },
     prefetchedTask: task,
     skipWebhookDispatch: true, // snoozeTask dispatches task.snoozed below
   })

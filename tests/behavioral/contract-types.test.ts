@@ -114,6 +114,8 @@ const TASK: Record<keyof FormattedTask, Field> = {
   segment_deferred_at: STR_N,
   segment_targeted_at: STR_N,
   target_set_at: STR_N,
+  occurrence_at: STR_N,
+  target_auto: BOOL,
   deadline_nag_off: BOOL,
   target_at: STR_N,
   last_notified_at: STR_N,
@@ -130,7 +132,6 @@ const TASK: Record<keyof FormattedTask, Field> = {
   quota_day_state: ['object', 'null'],
   is_reminder: BOOL,
   completion_count: INT,
-  snooze_count: INT,
   skip_count: INT,
   first_completed_at: STR_N,
   last_completed_at: STR_N,
@@ -138,7 +139,6 @@ const TASK: Record<keyof FormattedTask, Field> = {
   created_at: STR,
   updated_at: STR,
   is_recurring: BOOL,
-  is_snoozed: BOOL,
 }
 
 const TASK_COUNTS: Record<keyof TaskCounts, Field> = {
@@ -326,11 +326,10 @@ describe('contract fixtures match the TS types', () => {
     expect(seg.waiting).toBe(2)
   })
 
-  test('target-today reports the repeating tasks it skipped', () => {
-    const d = data('task-segments-target-today-skipped')
-    expect(d.affected).toBe(0)
-    expect(Array.isArray(d.skipped_recurring)).toBe(true)
-    expect((d.skipped_recurring as unknown[]).length).toBe(1)
+  test('target-today moves a repeating task too; skipped_recurring stays, always empty (§6)', () => {
+    const d = data('task-segments-target-today-repeating')
+    expect(d.affected).toBe(1)
+    expect(d.skipped_recurring).toEqual([])
     expect(typeof d.until).toBe('string')
   })
 

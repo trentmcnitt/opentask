@@ -17,9 +17,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
-import { effectiveTargetAt } from '@/lib/task-segments'
-import { DEADLINE_TODAY_HOLDS } from '@/lib/task-model-words'
-import { getTargetContext } from './target-context'
+import { DEADLINE_PASSED_HOLDS } from '@/lib/task-model-words'
 import { getTaskById } from './read'
 import { canUserAccessTask } from './access'
 import { applyFieldChanges, collectFieldChanges } from './helpers'
@@ -44,7 +42,7 @@ export interface UpdateTaskResult {
   task: Task
   fieldsChanged: string[]
   description: string
-  /** A3: `cap_at_deadline` moved this snooze to the deadline (`capSnoozeAtDeadline`). */
+  /** §8.2: the requested target was past the deadline and stopped AT it. */
   cappedAtDeadline?: boolean
 }
 
@@ -115,7 +113,14 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   })
 
   if (data.setClauses.length === 0) {
-    return { task, fieldsChanged: [], description: '' }
+    // A move capped at a deadline that has already passed changes nothing:
+    // say why instead of looking like nothing happened.
+    return {
+      task,
+      fieldsChanged: [],
+      description: deadlinePassedCap(task, data.cappedAtDeadline) ? DEADLINE_PASSED_HOLDS : '',
+      cappedAtDeadline: data.cappedAtDeadline === true,
+    }
   }
 
   // Look up project name if project_id changed
@@ -158,14 +163,13 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     const updatedTask = getTaskById(taskId)
     if (!updatedTask) throw new Error('Failed to retrieve updated task')
 
-    // A4: a snooze on the deadline's own day is saved, but the re-armed nag
-    // keeps the task over target — say why instead of looking like nothing
-    // happened (the undo log keeps the plain description).
-    const holds = data.isSnoozeScenario && deadlineHolds(updatedTask, userId)
+    // A move capped at a deadline already passed leaves the task over target:
+    // say why (the undo log keeps the plain description).
+    const holds = deadlinePassedCap(updatedTask, data.cappedAtDeadline)
     return {
       task: updatedTask,
       fieldsChanged: data.fieldsChanged,
-      description: holds ? DEADLINE_TODAY_HOLDS : description,
+      description: holds ? DEADLINE_PASSED_HOLDS : description,
       cappedAtDeadline: data.cappedAtDeadline === true,
     }
   })
@@ -204,14 +208,10 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
 }
 
 /**
- * Whether a just-snoozed task is still over target because its deadline-day
- * nag re-armed (ruling A4): its own target is in the future, but the
- * effective one has arrived.
+ * Whether a move was capped at a deadline that has already passed (§8.2): the
+ * target can go no later than the deadline, so the task stays over target
+ * until it is done, or the deadline is changed or removed.
  */
-function deadlineHolds(task: Task, userId: number): boolean {
-  if (!task.deadline_at || !task.due_at) return false
-  const now = Date.now()
-  if (Date.parse(task.due_at) <= now) return false
-  const target = effectiveTargetAt(task, getTargetContext(userId), new Date(now))
-  return target !== null && Date.parse(target) <= now
+function deadlinePassedCap(task: Task, capped: boolean | undefined): boolean {
+  return capped === true && task.deadline_at !== null && Date.parse(task.deadline_at) <= Date.now()
 }

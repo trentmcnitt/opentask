@@ -34,8 +34,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until: input.until,
       deltaMinutes: input.delta_minutes,
       includeTaskIds: input.include_task_ids,
-      allowPastDeadlineIds: input.allow_past_deadline_ids,
-      capAtDeadlineIds: input.cap_at_deadline_ids,
+      // `allow_past_deadline_ids` / `cap_at_deadline_ids` are accepted and
+      // ignored (2026-10-12): every move stops at its deadline (§8.2).
     })
 
     notifyDemoEngagement(user.name, 'update')
@@ -55,11 +55,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
       skipped_no_due_date: result.noDueDateSkipped,
-      // 2026-10-10: left where they were — the snooze would have crossed
-      // their deadline. Resend their ids in `allow_past_deadline_ids` once the
-      // user confirms.
+      // Left where they were: their deadline has passed, and a target never
+      // goes past its deadline (§8.2, 2026-10-12).
       skipped_deadline: result.deadlineSkipped,
-      // A3 (2026-10-11): snoozed only as far as their deadline.
+      // Snoozed only as far as their deadline (§8.2; ruling A3 first).
       capped_deadline: result.deadlineCapped,
     })
   } catch (err) {

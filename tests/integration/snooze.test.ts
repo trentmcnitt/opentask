@@ -24,6 +24,7 @@ describe('Snooze integration', () => {
     const after = (await afterRes.json()).data
     expect(after.due_at).toBe(futureTime)
     expect(after.original_due_at).toBe(originalDueAt)
-    expect(after.is_snoozed).toBe(true)
+    // No snooze state since 2026-10-12 (§6): a snooze is a move of the target.
+    expect(after).not.toHaveProperty('is_snoozed')
   })
 })

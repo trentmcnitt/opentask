@@ -118,7 +118,7 @@ describe('deadline and target', () => {
     expect(after.horizon).toBeNull()
   })
 
-  test('a deadline with no target leaves due_at empty', async () => {
+  test('a deadline with no target gets the automatic target (§8.1)', async () => {
     const task = titleOnly('use the voucher before it expires on the 13th')
     mockEnrichmentQuery.mockResolvedValueOnce(
       modelAnswer({ title: 'Use the voucher', deadline_at: '2026-10-13T23:59:00' }),
@@ -127,7 +127,10 @@ describe('deadline and target', () => {
     await enrichSingleTask(task.id, TEST_USER_ID)
 
     const after = getTaskById(task.id)!
-    expect(after.due_at).toBeNull()
+    // Clock: Sat Oct 10, 20:00 Chicago. Deadline Tue Oct 13 → a 3-day wait,
+    // lead 3 → the morning of Oct 10, already past → now.
+    expect(after.due_at).toBe('2026-10-11T01:00:00.000Z')
+    expect(after.target_auto).toBe(true)
     expect(after.deadline_at).toBe('2026-10-14T04:59:00.000Z')
   })
 

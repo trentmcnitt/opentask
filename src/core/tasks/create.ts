@@ -3,6 +3,8 @@
  */
 
 import { TARGET_SET_FIELD } from './target-set'
+import { getTargetContext } from './target-context'
+import { resolveTarget } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -134,6 +136,23 @@ export function createTask(options: CreateTaskOptions): Task {
     const firstOccurrence = computeFirstOccurrence(rrule, null, userTimezone)
     dueAt = firstOccurrence.toISOString()
   }
+  // §6: a repeating task's scheduled occurrence starts at its first date.
+  const occurrenceAt = rrule && !tracked ? dueAt : null
+  // §8 (2026-10-12): a deadline with no target gets the stored automatic one;
+  // a target is never after the deadline. `resolveTarget` decides both.
+  const target = resolveTarget(
+    {
+      dueAt,
+      dueWritten: true,
+      currentDueAt: null,
+      wasAuto: false,
+      deadlineAt: tracked ? null : (input.deadline_at ?? null),
+      deadlineChanged: false,
+      autoEligible: !rrule && !tracked && !input.is_reminder,
+    },
+    getTargetContext(userId),
+  )
+  dueAt = target.dueAt
 
   // Derive anchor fields from rrule
   let anchorTime: string | null = null
@@ -193,8 +212,8 @@ export function createTask(options: CreateTaskOptions): Task {
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        target_auto, occurrence_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -229,6 +248,8 @@ export function createTask(options: CreateTaskOptions): Task {
         // was made — every task gets the stamp, so a later first target is
         // the only thing that moves it (src/core/tasks/target-set.ts).
         now,
+        target.auto ? 1 : 0,
+        occurrenceAt,
         now,
         now,
       )

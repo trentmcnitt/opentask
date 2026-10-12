@@ -1,0 +1,187 @@
+/**
+ * TM-INV: invariants of the target model over random tasks and dates (spec
+ * "Testing and evaluation", §6, §8; 2026-10-12). America/Chicago, with both
+ * DST changes in range (Sun Nov 1 2026, Sun Mar 14 2027).
+ *
+ * Seeded, so a failure reproduces: the seed and the case are in the message.
+ * Each case writes through the real paths (create, PATCH, the snooze
+ * endpoint, bulk snooze, bulk edit, Today, done) and then checks, after every
+ * write and on every local day of the following month:
+ *
+ *  - target ≤ deadline, always;
+ *  - a one-off with a deadline always has a target, and an automatic target
+ *    always has a deadline;
+ *  - a picked target always means quiet (no horizon segment);
+ *  - an automatic target never does (no Upcoming row);
+ *  - never in both a horizon segment and Upcoming, nor in Upcoming and over
+ *    target.
+ *
+ * And for repeating tasks: done always lands on a scheduled occurrence after
+ * now (no double fire, no catch-up), and a move never changes the occurrence.
+ */
+import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { DateTime } from 'luxon'
+import { createTask, updateTask, markDone, bulkSnooze, bulkEdit } from '@/core/tasks'
+import { snoozeTask } from '@/core/tasks/snooze'
+import { getTaskById } from '@/core/tasks/read'
+import { targetTasksToday } from '@/core/tasks/task-segments'
+import { isCurrentlyDue } from '@/core/recurrence/occurrence'
+import { segmentState, upcomingState, hasPickedTarget } from '@/lib/task-segments'
+import type { Task } from '@/types'
+import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+
+const tz = TEST_TIMEZONE
+const SEED = 20261012
+const u = { userId: TEST_USER_ID, userTimezone: tz }
+
+/** mulberry32 — a tiny seeded PRNG. */
+function rng(seed: number) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const WINDOWS = ['2026-10-20T00:00', '2027-03-05T00:00'] // across Nov 1 and Mar 14
+
+function checkDay(task: Task, now: Date, label: string): void {
+  const placed = segmentState(task, tz, now)
+  const heads = upcomingState(task, tz, now)
+  if (hasPickedTarget(task)) expect(placed, `${label}: picked target but in a segment`).toBeNull()
+  if (task.target_auto) expect(heads, `${label}: auto target in Upcoming`).toBeNull()
+  expect(placed !== null && heads !== null, `${label}: segment AND Upcoming`).toBe(false)
+  if (heads) {
+    expect(isCurrentlyDue(task, tz, now), `${label}: Upcoming AND over target`).toBe(false)
+  }
+}
+
+function checkStored(task: Task, label: string): void {
+  if (task.due_at && task.deadline_at) {
+    expect(Date.parse(task.due_at), `${label}: target after deadline`).toBeLessThanOrEqual(
+      Date.parse(task.deadline_at),
+    )
+  }
+  if (task.target_auto) {
+    expect(task.deadline_at, `${label}: auto target with no deadline`).not.toBeNull()
+    expect(task.due_at, `${label}: auto target with no date`).not.toBeNull()
+  }
+  if (!task.rrule && task.deadline_at && !task.done && !task.is_reminder) {
+    expect(task.due_at, `${label}: a deadline with no target`).not.toBeNull()
+  }
+}
+
+describe('TM-INV: target-model invariants (seeded random)', () => {
+  beforeAll(() => setupTestDb())
+  afterAll(() => teardownTestDb())
+  afterEach(() => vi.useRealTimers())
+
+  test('TM-INV-01: one-offs — random targets, deadlines and moves', () => {
+    const r = rng(SEED)
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    const offset = (maxDays: number) => Math.round((r() * 2 - 1) * maxDays * 24 * 60) // minutes
+    for (let c = 0; c < 120; c++) {
+      const start = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
+        minutes: Math.floor(r() * 20 * 24 * 60),
+      })
+      let clock = start
+      vi.setSystemTime(clock.toJSDate())
+      const rel = (maxDays: number) =>
+        clock
+          .plus({ minutes: offset(maxDays) })
+          .toUTC()
+          .toISO()!
+      const t = createTask({
+        ...u,
+        input: {
+          title: `inv ${c}`,
+          due_at: r() < 0.5 ? rel(20) : undefined,
+          deadline_at: r() < 0.6 ? rel(30) : undefined,
+          horizon: pick(['days', 'weeks', 'months', 'eventually', undefined]),
+        },
+      })
+      const label = (step: string) => `seed ${SEED} case ${c} ${step}`
+      checkStored(getTaskById(t.id)!, label('create'))
+      for (let s = 0; s < 5; s++) {
+        clock = clock.plus({ minutes: Math.floor(r() * 3 * 24 * 60) })
+        vi.setSystemTime(clock.toJSDate())
+        const op = Math.floor(r() * 7)
+        const step = `op ${s}:${op}`
+        if (op === 0) updateTask({ ...u, taskId: t.id, input: { due_at: rel(25) } })
+        if (op === 1) updateTask({ ...u, taskId: t.id, input: { due_at: null } })
+        if (op === 2) {
+          updateTask({ ...u, taskId: t.id, input: { deadline_at: r() < 0.25 ? null : rel(30) } })
+        }
+        if (op === 3) snoozeTask({ ...u, taskId: t.id, until: rel(15) })
+        if (op === 4) bulkSnooze({ ...u, taskIds: [t.id], until: rel(15), includeTaskIds: [t.id] })
+        if (op === 5) bulkEdit({ ...u, taskIds: [t.id], changes: { due_at: rel(15) } })
+        if (op === 6) {
+          const later = clock.plus({ minutes: Math.floor(r() * 5 * 24 * 60) })
+          targetTasksToday(TEST_USER_ID, tz, [t.id], later.toUTC().toISO()!)
+        }
+        const task = getTaskById(t.id)!
+        checkStored(task, label(step))
+        checkDay(task, clock.toJSDate(), label(step))
+      }
+      const final = getTaskById(t.id)!
+      for (let d = 0; d < 35; d++) {
+        const day = clock.plus({ days: d }).set({ hour: 12 })
+        checkDay(final, day.toJSDate(), label(`day +${d}`))
+      }
+    }
+  })
+
+  test('TM-INV-02: repeating — moves never touch the occurrence; done lands on the schedule after now', () => {
+    const r = rng(SEED + 1)
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    const DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+    for (let c = 0; c < 60; c++) {
+      let clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
+        minutes: Math.floor(r() * 10 * 24 * 60),
+      })
+      vi.setSystemTime(clock.toJSDate())
+      const byday = pick(DAYS)
+      const hour = 7 + Math.floor(r() * 12)
+      const t = createTask({
+        ...u,
+        input: { title: `rep ${c}`, rrule: `FREQ=WEEKLY;BYDAY=${byday};BYHOUR=${hour};BYMINUTE=0` },
+      })
+      const label = (step: string) => `seed ${SEED + 1} case ${c} ${step}`
+      for (let s = 0; s < 6; s++) {
+        clock = clock.plus({ minutes: Math.floor(r() * 4 * 24 * 60) })
+        vi.setSystemTime(clock.toJSDate())
+        const before = getTaskById(t.id)!
+        if (r() < 0.5) {
+          // A move: up to 12 days either way of now (it may pass the next occurrence).
+          const to = clock.plus({ minutes: Math.round((r() * 2 - 0.5) * 12 * 24 * 60) })
+          updateTask({ ...u, taskId: t.id, input: { due_at: to.toUTC().toISO()! } })
+          const after = getTaskById(t.id)!
+          expect(after.occurrence_at, label(`move ${s}`)).toBe(before.occurrence_at)
+        } else {
+          markDone({ ...u, taskId: t.id })
+          const after = getTaskById(t.id)!
+          const next = DateTime.fromISO(after.occurrence_at!, { zone: 'utc' }).setZone(tz)
+          expect(next.toMillis(), label(`done ${s}: not after now`)).toBeGreaterThan(
+            clock.toMillis(),
+          )
+          expect(next.toFormat('ccc').toUpperCase().slice(0, 2), label(`done ${s}: weekday`)).toBe(
+            byday,
+          )
+          expect(next.hour, label(`done ${s}: hour (DST)`)).toBe(hour)
+          expect(after.due_at, label(`done ${s}: target = occurrence`)).toBe(after.occurrence_at)
+          // Not a day early: never more than a week out, never before the
+          // occurrence it closed.
+          const closed = Date.parse(before.occurrence_at!)
+          expect(next.toMillis(), label(`done ${s}: before the closed one`)).toBeGreaterThan(closed)
+          expect(isCurrentlyDue(after, tz, clock.toJSDate()), label(`done ${s}: double fire`)).toBe(
+            false,
+          )
+        }
+        checkDay(getTaskById(t.id)!, clock.toJSDate(), label(`step ${s}`))
+      }
+    }
+  })
+})

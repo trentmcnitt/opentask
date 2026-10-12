@@ -11,11 +11,18 @@ import type { CheckInDay, HorizonValue } from '@/lib/task-segments'
 export const OVER_TARGET = 'Over target'
 
 /**
- * Said when a snooze can't quiet a task because its deadline is today (ruling
- * A4, 2026-10-11): on the deadline's own day only done, delete or the per-task
- * nag override silence it, so the snooze is saved but the nag stays on.
+ * Said when a snooze can't move a task because its deadline has passed (§8.2,
+ * 2026-10-12): the target never goes past the deadline, so the task stays
+ * over target until it is done, or the deadline is changed or removed.
  */
-export const DEADLINE_TODAY_HOLDS = 'Deadline today: this stays on until it’s done'
+export const DEADLINE_PASSED_HOLDS = 'Deadline passed: change or remove it to snooze this'
+
+/** The editor's word for the deadline's stored automatic target (§8.1). */
+export const AUTO_TARGET_WORD = 'auto'
+/** The action that puts a picked target back to the automatic one (§8.3). */
+export const BACK_TO_AUTO = 'Back to auto'
+/** The picker's choice for the deadline's own day (ruling Q8). */
+export const DEADLINE_DAY = 'Deadline day'
 /** Lower-case, mid-sentence form ("3 over target"). */
 export const OVER_TARGET_LOWER = 'over target'
 

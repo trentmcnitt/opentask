@@ -7,8 +7,7 @@
 
 import { getTasks } from '@/core/tasks'
 import { getProjectNameMap } from '@/core/projects'
-import { getTargetContext } from '@/core/tasks/target-context'
-import { effectiveTargetAt, type TargetContext } from '@/lib/task-segments'
+import { autoTargetAt, capAtDeadline, type TargetContext } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import type { TaskSummary } from './types'
@@ -28,8 +27,8 @@ export const AI_SUMMARY_UNTARGETED_SHARE = 100
  * The task list's own order (target ascending, no target LAST) would fill the
  * cap with targeted tasks and drop every untargeted one first — and those are
  * exactly what Insights and What's Next exist to catch: the forgotten task with
- * no date, and the deadline-only task (whose target is implied, not stored).
- * So the cap is split in two:
+ * no date. (A deadline task carries its stored automatic target since
+ * 2026-10-12, so it sits with the targeted.) So the cap is split in two:
  *
  * - each side (stored target / none) is guaranteed AI_SUMMARY_UNTARGETED_SHARE
  *   (half the cap) when it has that many;
@@ -65,34 +64,28 @@ export function orderUntargeted<T extends { deadline_at: string | null }>(tasks:
 const UNTARGETED_FETCH_LIMIT = 100_000
 
 /**
- * Show the target the task actually nags from (2026-10-10): a deadline-only
- * task — or one whose own target falls after its deadline — nags from the
- * implied target (the user's morning DEADLINE_LEAD_DAYS before the deadline,
- * `effectiveTargetAt`). Without this the model reads such a task as "target:
- * none", i.e. forgotten and undated. `target_implied` marks the swap so the
- * line can say "(from deadline)".
- *
- * Pure (context and clock passed in); the quality harness applies it to its
- * scenario tasks too, so the prompts it judges match production.
+ * A HAND-WRITTEN task summary as the database would store it (§8,
+ * 2026-10-12): a one-off with a deadline and no target carries the deadline's
+ * stored AUTOMATIC target (`autoTargetAt`), and a target past its deadline is
+ * pulled back to it. In production every row already does — the target is
+ * stored, `target_implied` comes straight from `target_auto`
+ * (`buildTaskSummaries`). The quality harness and `dump-prompts` apply this
+ * to their scenario tasks, so the prompts they judge match production.
+ * `target_implied` marks an automatic target so the line can say "(from
+ * deadline)".
  */
 export function withEffectiveSummaryTarget(
   summary: TaskSummary,
   ctx: TargetContext,
   now: Date = new Date(),
-  deadlineNagOff = false,
 ): TaskSummary {
-  const effective = effectiveTargetAt(
-    {
-      due_at: summary.due_at,
-      deadline_at: summary.deadline_at ?? null,
-      rrule: summary.rrule,
-      deadline_nag_off: deadlineNagOff,
-    },
-    ctx,
-    now,
-  )
-  if (effective === summary.due_at) return summary
-  return { ...summary, due_at: effective, target_implied: effective !== null }
+  const deadline = summary.deadline_at ?? null
+  if (deadline === null || summary.rrule) return summary
+  if (summary.due_at === null) {
+    return { ...summary, due_at: autoTargetAt(deadline, ctx, now), target_implied: true }
+  }
+  const capped = capAtDeadline(summary.due_at, deadline)
+  return capped === summary.due_at ? summary : { ...summary, due_at: capped }
 }
 
 /**
@@ -120,30 +113,24 @@ export function buildTaskSummaries(userId: number): TaskSummary[] {
   // Pre-fetch all project names in one query to avoid N+1
   const projectIds = [...new Set(tasks.map((t) => t.project_id))]
   const projectMap = getProjectNameMap(projectIds)
-  const ctx = getTargetContext(userId)
-  const now = new Date()
 
-  return tasks.map((t) =>
-    withEffectiveSummaryTarget(
-      {
-        id: t.id,
-        title: t.title,
-        priority: t.priority,
-        due_at: t.due_at,
-        original_due_at: t.original_due_at,
-        created_at: t.created_at,
-        labels: t.labels,
-        project_name: projectMap.get(t.project_id) ?? null,
-        is_recurring: t.rrule !== null,
-        rrule: t.rrule,
-        notes: t.notes,
-        recurrence_mode: t.recurrence_mode,
-        deadline_at: t.deadline_at,
-        horizon: t.horizon,
-      },
-      ctx,
-      now,
-      t.deadline_nag_off,
-    ),
-  )
+  // A deadline's automatic target is stored (§8): `target_implied` is just
+  // `target_auto`, printed "(from deadline)".
+  return tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    priority: t.priority,
+    due_at: t.due_at,
+    original_due_at: t.original_due_at,
+    created_at: t.created_at,
+    labels: t.labels,
+    project_name: projectMap.get(t.project_id) ?? null,
+    is_recurring: t.rrule !== null,
+    rrule: t.rrule,
+    notes: t.notes,
+    recurrence_mode: t.recurrence_mode,
+    deadline_at: t.deadline_at,
+    horizon: t.horizon,
+    ...(t.target_auto ? { target_implied: true } : {}),
+  }))
 }

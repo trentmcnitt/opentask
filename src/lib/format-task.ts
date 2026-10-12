@@ -1,7 +1,7 @@
 /**
  * Task response formatting helper
  *
- * Adds computed fields (is_recurring, is_snoozed) to task responses.
+ * Adds computed fields (is_recurring, target_at) to task responses.
  * Also provides clipboard formatting for selected tasks.
  */
 
@@ -31,29 +31,32 @@ const CLIPBOARD_SORT_LABELS: Record<SortOption, { default: string; reversed: str
 
 export interface FormattedTask extends Task {
   is_recurring: boolean
-  is_snoozed: boolean
   /**
    * The TARGET (2026-10-10): when nagging starts. The primary name; `due_at`
    * is the same value under its deprecated name, kept for older clients.
    */
   target_at: string | null
+  /**
+   * RETIRED (2026-10-12, §8): always false. Shipped native builds decode it
+   * (`TaskDTO.deadlineNagOff`, `TargetAge.swift`); with every deadline task now
+   * carrying a stored target at or before its deadline, false makes their
+   * client-side implied-target rule return nothing, so they read `due_at` as
+   * the target — the server's own answer.
+   */
+  deadline_nag_off: false
 }
 
 /**
- * Format a task for API response by adding computed fields.
+ * Format a task for API response by adding computed fields. `is_snoozed` and
+ * `snooze_count` left the response on 2026-10-12 (§6: no snooze state); no
+ * native build decodes either.
  */
 export function formatTaskResponse(task: Task): FormattedTask {
   return {
     ...task,
     target_at: task.due_at,
     is_recurring: task.rrule !== null,
-    // Snoozed = the due date has moved off its occurrence origin. The same
-    // test the row's snoozed indicator uses (TaskRow). It used to be
-    // `original_due_at !== null` alone, which read every dated task as
-    // snoozed from birth — `createTask` sets the origin to the first due date
-    // — and would have kept an explicit reschedule (origin reset to the new
-    // date, see `collectBasicFields`) reading as snoozed too.
-    is_snoozed: task.original_due_at !== null && task.original_due_at !== task.due_at,
+    deadline_nag_off: false,
   }
 }
 

@@ -163,7 +163,6 @@ describe('Moving a slot’s start', () => {
 
   test('TSE-005: a one-time reminder keeps its date and moves as a reschedule, not a snooze', () => {
     const once = reminder('Pick up the parcel', null, '2026-01-20T09:00')
-    const before = getTaskById(once.id)!
     updateTimeSlot({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -172,7 +171,6 @@ describe('Moving a slot’s start', () => {
     })
     const after = getTaskById(once.id)!
     expect(localTimeOf(after.due_at)).toBe('2026-01-20 09:30')
-    expect(after.snooze_count).toBe(before.snooze_count)
     expect(after.original_due_at).toBe(after.due_at)
   })
 

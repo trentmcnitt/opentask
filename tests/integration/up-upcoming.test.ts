@@ -1,9 +1,9 @@
 /**
  * Upcoming over HTTP (2026-10-12, docs/TASK-MODEL.md § Upcoming): the
  * `task_segments` entry with `horizon: "upcoming"`, the `recurring` flag on
- * every segment row, `target_set_at` on a task, target-today's
- * `skipped_recurring`, Remove target sending a task back to its horizon
- * segment, and `check_in_day`.
+ * every segment row, `target_set_at` on a task, target-today on a repeating
+ * task (its target moves, its occurrence stays — §6), Remove target sending a
+ * task back to its horizon segment, and `check_in_day`.
  *
  * The integration server runs on the real clock, and a heads-up day is always
  * after the day the target was set, so `target_set_at` is backdated in the
@@ -104,19 +104,24 @@ describe('Upcoming over HTTP', () => {
     expect([...kinds].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(kinds)
   })
 
-  test('target-today skips the repeating task and reports it; the picker (`at`) too', async () => {
+  test("target-today moves a repeating task's target, never its occurrence (§6); Undo puts it back", async () => {
+    const before = (await json(await apiFetch(`/api/tasks/${repeating}`))).data
+    expect(before.occurrence_at).toBe(before.target_at)
+    const later = DateTime.fromISO(tomorrow9()).plus({ hours: 5 }).toUTC().toISO()!
     const res = await apiFetch('/api/task-segments/target-today', {
       method: 'POST',
-      body: { ids: [repeating] },
+      body: { ids: [repeating], at: later },
     })
     expect(res.status).toBe(200)
-    const d = (await json(res)).data
-    expect(d).toMatchObject({ affected: 0, skipped_recurring: [repeating] })
-    const at = await apiFetch('/api/task-segments/target-today', {
-      method: 'POST',
-      body: { ids: [repeating], at: tomorrow9() },
-    })
-    expect((await json(at)).data).toMatchObject({ affected: 0, skipped_recurring: [repeating] })
+    // `skipped_recurring` stays in the response, always empty, for old clients.
+    expect((await json(res)).data).toMatchObject({ affected: 1, skipped_recurring: [] })
+    const after = (await json(await apiFetch(`/api/tasks/${repeating}`))).data
+    expect(Date.parse(String(after.target_at))).toBe(Date.parse(later))
+    expect(after.occurrence_at).toBe(before.occurrence_at)
+    expect((await apiFetch('/api/undo', { method: 'POST' })).status).toBe(200)
+    const restored = (await json(await apiFetch(`/api/tasks/${repeating}`))).data
+    expect(restored.target_at).toBe(before.target_at)
+    backdateTargetSet([repeating], 10)
     expect(await placeOf(repeating)).toBe('upcoming')
   })
 

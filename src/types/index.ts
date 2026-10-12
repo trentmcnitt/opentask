@@ -89,10 +89,19 @@ export interface Task {
   anchor_dow: number | null // 0=Mon..6=Sun
   anchor_dom: number | null // 1-31
 
-  // Snooze tracking (stores the original due_at when task is first snoozed).
-  // Also the FIRST-TARGET date (2026-10-10): kept by a snooze, reset by a
-  // deliberate re-target, so the target-age badge counts from it.
+  // The FIRST-TARGET date (2026-10-10): kept by every move, set when a task
+  // with no target gets one, cleared with the target, and reset to the next
+  // occurrence by a completion advance. The target-age badge counts from it,
+  // and old native builds read it (`TargetAge.swift`). Since 2026-10-12 (§6)
+  // there is no snooze state: no snoozed flag, no snooze count.
   original_due_at: string | null
+  /**
+   * A repeating task's SCHEDULED occurrence (§6, 2026-10-12). `due_at` is its
+   * target; a move (any snooze) changes only `due_at`. Done and skip advance
+   * from this and set both; `advanceDeadline` measures from it. Null for a
+   * one-off.
+   */
+  occurrence_at: string | null
 
   /**
    * Task model (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
@@ -125,10 +134,12 @@ export interface Task {
    */
   target_set_at: string | null
   /**
-   * Turns off the deadline's implied nag (deadline − DEADLINE_LEAD_DAYS) on a
-   * task with no target — what remove-target sets. A new deadline clears it.
+   * `due_at` is the deadline's AUTOMATIC target (§8, 2026-10-12): stored by
+   * the server whenever a one-off has a deadline and no target the user
+   * picked (`autoTargetAt`). Only a picked target (false) makes a task quiet
+   * until its date.
    */
-  deadline_nag_off: boolean
+  target_auto: boolean
 
   // Notifications
   last_notified_at: string | null
@@ -183,7 +194,6 @@ export interface Task {
 
   // Per-task stats (survive beyond completions retention)
   completion_count: number
-  snooze_count: number
   /** §7.5: occurrences declined without a completion, so completion_count stays honest. */
   skip_count: number
   first_completed_at: string | null
@@ -313,7 +323,6 @@ export type ErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'CONFLICT'
-  | 'PAST_DEADLINE'
   | 'SERVICE_UNAVAILABLE'
   | 'INTERNAL_ERROR'
 

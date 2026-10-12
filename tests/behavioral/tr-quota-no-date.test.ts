@@ -347,7 +347,6 @@ describe('A quota is not a task — the other paths the first cut missed', () =>
     })
     const before = getTaskById(task.id)!
     expect(before.due_at).not.toBeNull()
-    expect(before.snooze_count).toBe(0)
 
     const when = new Date(NOW.getTime() + 86_400_000).toISOString()
     const { description } = updateTask({
@@ -360,12 +359,8 @@ describe('A quota is not a task — the other paths the first cut missed', () =>
     const after = getTaskById(task.id)!
     expect(after.rrule).toBeNull()
     expect(after.due_at).toBe(when)
-    expect(after.snooze_count).toBe(0)
-    // The occurrence origin went with the old schedule, so nothing reads this
-    // row as snoozed: `is_snoozed` in the API response is
-    // `original_due_at !== null`, and the row's snoozed indicator is the same
-    // test. A task created recurring has this set to its first occurrence, so
-    // leaving it behind drew the indicator on a plain re-schedule.
+    // The first-target date went with the old schedule: a re-schedule starts
+    // the target-age clock over rather than inheriting the old occurrence.
     expect(after.original_due_at).toBeNull()
     expect(description).not.toMatch(/snooz/i)
   })
@@ -481,14 +476,14 @@ describe('The occurrence origin survives what it should', () => {
    * new-schedule branch applied it to EVERY rrule change, including clearing
    * the rule on a genuinely snoozed task.
    */
-  test('TR-027: dropping the rule alone leaves a snoozed task its snooze', () => {
+  test('TR-027: dropping the rule alone leaves a moved task its first-target date', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: { title: 'Weekly report', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
     })
-    // Genuinely snoozed, twice, so the origin is a real pre-snooze date rather
-    // than the create-time first occurrence.
+    // Moved twice. Since 2026-10-12 (§6) a move keeps the first-target date,
+    // which for a task created recurring is its first occurrence.
     for (const days of [1, 2]) {
       snoozeTask({
         userId: TEST_USER_ID,
@@ -498,8 +493,8 @@ describe('The occurrence origin survives what it should', () => {
       })
     }
     const before = getTaskById(task.id)!
-    expect(before.snooze_count).toBe(2)
-    expect(before.original_due_at).not.toBeNull()
+    expect(before.original_due_at).toBe(task.due_at)
+    expect(before.due_at).not.toBe(task.due_at)
 
     // The rule alone. Nothing here says anything about the date.
     updateTask({
@@ -511,11 +506,9 @@ describe('The occurrence origin survives what it should', () => {
 
     const after = getTaskById(task.id)!
     expect(after.rrule).toBeNull()
-    // The deferral survives: the row keeps its stripe and "snoozed from", and
-    // the quick panel's age anchor stays on the origin instead of jumping back
-    // to created_at.
+    // The moves survive: the target-age clock stays on the first target
+    // instead of jumping back to created_at.
     expect(after.original_due_at).toBe(before.original_due_at)
-    expect(after.snooze_count).toBe(2)
     expect(after.due_at).toBe(before.due_at)
   })
 
@@ -545,13 +538,13 @@ describe('The occurrence origin survives what it should', () => {
   })
 
   /**
-   * Finding 4 — also a regression from the previous commit.
-   * `collectBasicFields` pushes the reset first and the hoisted block pushed
-   * `original_due_at = NULL` after it; SQLite takes the last clause, so the
-   * user's explicit reset lost. Reachable from the quick panel, which batches
-   * "Reset origin to current due date" with the recurrence picker.
+   * Finding 4 — originally "an explicit origin reset beats the rrule change in
+   * the same PATCH". Since 2026-10-12 (§6, ruling Q4) `reset_original_due_at`
+   * is accepted and IGNORED on an ordinary task (a move is a move), so the
+   * rule change alone decides the origin: clearing the rule (no date sent)
+   * keeps it, a new rule drops it. (A reminder's reset still wins — SN-121.)
    */
-  test('TR-029: an explicit origin reset beats the rrule change in the same PATCH', () => {
+  test('TR-029: reset_original_due_at is ignored on a task; the rrule change rules the origin', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -563,7 +556,7 @@ describe('The occurrence origin survives what it should', () => {
       taskId: task.id,
       until: new Date(NOW.getTime() + 86_400_000).toISOString(),
     })
-    const dueAt = getTaskById(task.id)!.due_at
+    const moved = getTaskById(task.id)!
 
     updateTask({
       userId: TEST_USER_ID,
@@ -573,12 +566,12 @@ describe('The occurrence origin survives what it should', () => {
     })
 
     const after = getTaskById(task.id)!
-    // "The origin IS the current due date" — said explicitly, so it wins.
-    expect(after.original_due_at).toBe(dueAt)
-    expect(after.snooze_count).toBe(0)
+    // Not reset to the current target: the first-target date is kept.
+    expect(after.original_due_at).toBe(task.due_at)
+    expect(after.original_due_at).not.toBe(moved.due_at)
+    expect(after.due_at).toBe(moved.due_at)
 
-    // The same holds when the rule changes to a NEW value, which was already
-    // overridden before any of this PR's changes.
+    // A NEW rule still drops the old origin, reset flag or not.
     const other = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -590,14 +583,13 @@ describe('The occurrence origin survives what it should', () => {
       taskId: other.id,
       until: new Date(NOW.getTime() + 86_400_000).toISOString(),
     })
-    const otherDue = getTaskById(other.id)!.due_at
     updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: other.id,
       input: { reset_original_due_at: true, rrule: 'FREQ=DAILY' },
     })
-    expect(getTaskById(other.id)!.original_due_at).toBe(otherDue)
+    expect(getTaskById(other.id)!.original_due_at).toBeNull()
   })
 
   /**

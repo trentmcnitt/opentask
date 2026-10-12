@@ -19,7 +19,6 @@ import { planProcess, type GrowthAsk } from '@/lib/process-rules'
 import type { Task } from '@/types'
 import { eligibleTasks } from './task-segments'
 import { rowToTask, taskColumns, type TaskRow } from './read'
-import { getTargetContext } from './target-context'
 
 export interface ProcessData {
   inbox_project_id: number | null
@@ -42,7 +41,7 @@ export function getProcessData(userId: number, timezone: string, now = new Date(
   const tasks = eligibleTasks(userId)
   const inboxId = getInboxId(userId)
   const inbox = inboxId === null ? [] : inboxTasks(userId, inboxId)
-  const plan = planProcess(tasks, timezone, now, getTargetContext(userId))
+  const plan = planProcess(tasks, timezone, now)
   return {
     inbox_project_id: inboxId,
     inbox,

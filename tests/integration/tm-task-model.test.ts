@@ -3,10 +3,11 @@
  * native apps, Trent's Shortcuts and the desks depend on:
  * - `due_at` still reads and writes, and always equals `target_at`;
  * - POST /api/tasks/bulk/snooze-overdue keeps every response field it had
- *   (Shortcuts read them) and only adds `skipped_deadline`;
+ *   (Shortcuts read them) and only adds `skipped_deadline` / `capped_deadline`;
  * - GET /api/reminders keeps `groups` exactly as before and puts task rows in
  *   a separate top-level `task_segments`.
- * Plus the new paths: deadline cap (409 + override), segment endpoints.
+ * Plus the new paths: the deadline cap (every move stops at it, §8.2), the
+ * stored automatic target (§8.1/§8.3), segment endpoints.
  */
 import { describe, test, expect, beforeAll } from 'vitest'
 import { apiFetch, resetTestData } from './helpers'
@@ -45,27 +46,55 @@ describe('Task model over HTTP', () => {
     expect(conflict.status).toBe(400)
   })
 
-  test('a snooze past a deadline still ahead is 409 PAST_DEADLINE until confirmed', async () => {
-    const t = await create({ title: 'tm cap', due_at: iso(HOUR), deadline_at: iso(3 * HOUR) })
-    const refused = await apiFetch(`/api/tasks/${t.id}/snooze`, {
+  test("a snooze past a deadline stops AT it — never refused; old clients' override changes nothing (§8.2)", async () => {
+    const deadline = iso(3 * HOUR)
+    const t = await create({ title: 'tm cap', due_at: iso(HOUR), deadline_at: deadline })
+    const capped = await apiFetch(`/api/tasks/${t.id}/snooze`, {
       method: 'POST',
       body: { until: iso(24 * HOUR) },
     })
-    expect(refused.status).toBe(409)
-    expect((await json(refused)).code).toBe('PAST_DEADLINE')
-    const ok = await apiFetch(`/api/tasks/${t.id}/snooze`, {
+    expect(capped.status).toBe(200)
+    const body = (await json(capped)).data as {
+      task: { due_at: string }
+      capped_at_deadline: boolean
+    }
+    expect(body.capped_at_deadline).toBe(true)
+    expect(Date.parse(body.task.due_at)).toBe(Date.parse(deadline))
+    const old = await apiFetch(`/api/tasks/${t.id}/snooze`, {
       method: 'POST',
       body: { until: iso(24 * HOUR), allow_past_deadline: true },
     })
-    expect(ok.status).toBe(200)
+    expect(old.status).toBe(200)
+    expect(Date.parse(((await json(old)).data as { task: { due_at: string } }).task.due_at)).toBe(
+      Date.parse(deadline),
+    )
   })
 
-  test('snooze-overdue keeps every field old clients read, and adds skipped_deadline', async () => {
+  test('a deadline with no target stores the automatic one; clearing a picked target is Back to auto (§8)', async () => {
+    const deadline = iso(10 * 24 * HOUR)
+    const t = await create({ title: 'tm auto', deadline_at: deadline })
+    expect(t.target_auto).toBe(true)
+    expect(t.due_at).not.toBeNull()
+    expect(Date.parse(String(t.due_at))).toBeLessThan(Date.parse(deadline))
+    expect(t.deadline_nag_off).toBe(false)
+    const picked = await json(
+      await apiFetch(`/api/tasks/${t.id}`, { method: 'PATCH', body: { target_at: iso(5 * HOUR) } }),
+    )
+    expect(picked.data.target_auto).toBe(false)
+    const back = await json(
+      await apiFetch(`/api/tasks/${t.id}`, { method: 'PATCH', body: { target_at: null } }),
+    )
+    expect(back.data.target_auto).toBe(true)
+    expect(back.data.due_at).toBe(t.due_at)
+  })
+
+  test('snooze-overdue keeps every field old clients read, and reports the deadline cap', async () => {
     await create({ title: 'tm overdue', due_at: iso(-2 * HOUR) })
+    // Its deadline has passed: a snooze cannot move it.
     await create({
       title: 'tm overdue capped',
-      due_at: iso(-2 * HOUR),
-      deadline_at: iso(30 * 60 * 1000),
+      due_at: iso(-3 * HOUR),
+      deadline_at: iso(-HOUR),
     })
     const res = await apiFetch('/api/tasks/bulk/snooze-overdue', {
       method: 'POST',
@@ -86,8 +115,9 @@ describe('Task model over HTTP', () => {
     ]) {
       expect(data, key).toHaveProperty(key)
     }
+    expect(data).toHaveProperty('capped_deadline')
     expect(data.skipped_deadline).toBeGreaterThanOrEqual(1)
-    expect(String(data.message)).toContain('kept before')
+    expect(String(data.message)).toContain('past its deadline')
   })
 
   test('reminders: groups unchanged in shape, task rows only in task_segments', async () => {
@@ -167,7 +197,8 @@ describe('Task model over HTTP', () => {
     expect(body.until).toBe(new Date(at).toISOString())
     const after = (await json(await apiFetch(`/api/tasks/${t.id}`))).data
     expect(after.target_at).toBe(body.until)
-    expect(after.original_due_at).toBe(body.until)
+    // A move keeps the first target (§6, 2026-10-12: no re-target split).
+    expect(after.original_due_at).toBe(first.target_at)
 
     // Undo takes back the second targeting: the first target and stamp return.
     await apiFetch('/api/undo', { method: 'POST' })

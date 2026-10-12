@@ -34,9 +34,12 @@ import type { Task } from '@/types'
  *   targeted one-off is in no horizon segment, and set today it has no
  *   heads-up today)
  * - Remove target (Upcoming's one-off rows with no deadline, 2026-10-12) →
- *   `PATCH { target_at: null }`; the task goes back to its horizon segment
- * - Repeating Upcoming rows have neither: target-today skips them
- *   (`skipped_recurring`, toast "Repeating tasks: mark done early instead")
+ *   `PATCH { target_at: null }`; the task goes back to its horizon segment.
+ *   "Back to auto" (a one-off with a deadline, §8.3) is the same PATCH: the
+ *   server puts the deadline's automatic target back, and the row leaves
+ *   Upcoming (an automatic target has no heads-ups)
+ * - Repeating Upcoming rows have Today and its picker too (§6: moving the
+ *   target leaves the occurrence where it was), but no target reset
  * - Defer All → everything still waiting in that segment, back tomorrow
  * - horizon chip → a new horizon (the row may change segment on refresh; the
  *   toast then says "Moved to Tasks · <Horizon>")
@@ -134,7 +137,8 @@ export function useTaskSegments({
       })
       inFlight.current++
       try {
-        toastResult(await send(), ids.length, message, onUndo)
+        await send()
+        toastResult(message, onUndo)
         onCompleted?.()
       } catch (err) {
         setOverlay((prev) => {
@@ -249,11 +253,11 @@ type RunSegmentAction = (
 ) => Promise<void>
 
 /**
- * Remove target (2026-10-12): Upcoming's one-off rows WITHOUT a deadline only
- * (`upcomingRowActions`) — what it should do to a deadline task is still being
- * decided with Trent, so those rows don't offer it. The same PATCH the
- * dashboard's remove-target sends for a no-deadline task. The task goes back
- * to its horizon segment; Undo restores the target and `target_set_at`.
+ * Remove target / Back to auto (2026-10-12, `targetReset`): the same PATCH
+ * the dashboard's row menu sends. With no deadline the task goes back to its
+ * horizon segment; with one, the server puts the deadline's automatic target
+ * back (§8.3). Either way the row leaves Upcoming; Undo restores the target
+ * and `target_set_at`.
  */
 function useRemoveTarget(run: RunSegmentAction) {
   return useCallback(
@@ -262,40 +266,21 @@ function useRemoveTarget(run: RunSegmentAction) {
         [task.id],
         'gone',
         () => patchTask(task.id, { target_at: null }),
-        `Target removed: “${task.title}”`,
+        task.deadline_at
+          ? `Back to the automatic target: “${task.title}”`
+          : `Target removed: “${task.title}”`,
       ),
     [run],
   )
 }
 
 /**
- * A write's toast, with Undo. When target-today skipped repeating tasks
- * (`skipped_recurring`, ruling Q1) it says so; when it skipped every one,
- * nothing was written and there is no Undo to offer.
+ * A write's toast, with Undo. (Target-today no longer skips repeating tasks —
+ * §6 keeps the occurrence apart from the target, 2026-10-12 — so its
+ * `skipped_recurring` is always empty and needs no wording.)
  */
-function toastResult(data: unknown, count: number, message: string, onUndo: () => void): void {
-  const skipped = skippedRecurring(data)
-  if (skipped > 0 && skipped === count) {
-    showToast({ message: REPEATING_TODAY_MESSAGE, type: 'success' })
-    return
-  }
-  showToast({
-    message: skipped > 0 ? `${message} · ${REPEATING_TODAY_MESSAGE}` : message,
-    type: 'success',
-    action: { label: 'Undo', onClick: onUndo },
-  })
-}
-
-/**
- * The toast when Today skips a repeating task (ruling Q1, 2026-10-12): the web
- * offers no Today on those rows, so this is for a stale screen or a mixed
- * batch. Done early is the safe gesture for a repeating task.
- */
-export const REPEATING_TODAY_MESSAGE = 'Repeating tasks: mark done early instead'
-
-function skippedRecurring(data: unknown): number {
-  const skipped = (data as { skipped_recurring?: unknown } | null)?.skipped_recurring
-  return Array.isArray(skipped) ? skipped.length : 0
+function toastResult(message: string, onUndo: () => void): void {
+  showToast({ message, type: 'success', action: { label: 'Undo', onClick: onUndo } })
 }
 
 async function patchTask(id: number, body: unknown): Promise<unknown> {

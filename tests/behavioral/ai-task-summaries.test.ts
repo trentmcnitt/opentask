@@ -1,10 +1,11 @@
 /**
  * AI task summaries (What's Next, Insights) — the 2026-10-10 task model
  *
- * - The cap (AI_SUMMARY_CAP) is split so untargeted and deadline-only tasks are
- *   not the first dropped when a user has more open tasks than the cap.
- * - A deadline-only task (or one targeted past its deadline) carries its
- *   implied target, printed "(from deadline)", instead of "target: none".
+ * - The cap (AI_SUMMARY_CAP) is split so untargeted tasks are not the first
+ *   dropped when a user has more open tasks than the cap.
+ * - A deadline-only task carries the deadline's AUTOMATIC target (§8.1,
+ *   2026-10-12: stored, `target_auto`), printed "(from deadline)", instead of
+ *   "target: none"; a target past its deadline is pulled back to it (§8.2).
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
@@ -62,7 +63,7 @@ describe('pickSummaryTasks', () => {
 })
 
 describe('buildTaskSummaries', () => {
-  test('over the cap, untargeted and deadline-only tasks keep their share; quotas never count', () => {
+  test('over the cap, untargeted tasks keep their share; deadline-only ones ride their auto target; quotas never count', () => {
     const db = getDb()
     const deadlineIds: number[] = []
     db.transaction(() => {
@@ -118,14 +119,19 @@ describe('buildTaskSummaries', () => {
     expect(summaries).toHaveLength(AI_SUMMARY_CAP)
     expect(summaries.some((s) => s.title.startsWith('Quota'))).toBe(false)
     // Old order (target ascending, none last) kept every targeted task and only
-    // 50 untargeted ones; now each side keeps its share.
+    // 50 untargeted ones; now each side keeps its share. A deadline-only task
+    // has a stored automatic target (§8.1) — within the next few days here —
+    // so it sits on the targeted side, among the soonest, and is kept.
+    expect(summaries.filter((s) => s.title.startsWith('Untargeted'))).toHaveLength(
+      AI_SUMMARY_UNTARGETED_SHARE,
+    )
     expect(summaries.filter((s) => s.title.startsWith('Targeted'))).toHaveLength(
-      AI_SUMMARY_CAP - AI_SUMMARY_UNTARGETED_SHARE,
+      AI_SUMMARY_CAP - AI_SUMMARY_UNTARGETED_SHARE - deadlineIds.length,
     )
     const ids = new Set(summaries.map((s) => s.id))
     for (const id of deadlineIds) expect(ids.has(id)).toBe(true)
 
-    // A deadline-only task reads with its implied target, marked as such.
+    // A deadline-only task reads with its automatic target, marked as such.
     const deadlineOnly = summaries.find((s) => s.id === deadlineIds[0])!
     expect(deadlineOnly.due_at).not.toBeNull()
     expect(deadlineOnly.target_implied).toBe(true)
@@ -150,15 +156,18 @@ describe('withEffectiveSummaryTarget / formatTaskLine', () => {
   }
   const now = DateTime.fromJSDate(NOW).setZone('America/Chicago')
 
-  test('deadline only → the morning 4 days before, "(from deadline)"', () => {
+  test('deadline only → the automatic target, "(from deadline)"', () => {
+    // Deadline Fri Oct 16, 23:59 Chicago; today Sun Oct 11 → a 5-day wait,
+    // lead 3 → the morning of Tue Oct 13.
     const s = withEffectiveSummaryTarget({ ...base, deadline_at: '2026-10-17T04:59:00Z' }, ctx, NOW)
-    expect(s.due_at).toBe('2026-10-12T14:00:00.000Z') // Mon Oct 12, 9:00 AM Chicago
+    expect(s.due_at).toBe('2026-10-13T14:00:00.000Z') // Tue Oct 13, 9:00 AM Chicago
+    expect(s.target_implied).toBe(true)
     expect(formatTaskLine(s, 'America/Chicago', now)).toContain(
-      'target: Mon, Oct 12, 9:00 AM (from deadline)',
+      'target: Tue, Oct 13, 9:00 AM (from deadline)',
     )
   })
 
-  test('own target after the deadline → the implied one, with no first-target note', () => {
+  test("own target after the deadline → pulled back to the deadline, still the user's own", () => {
     const s = withEffectiveSummaryTarget(
       {
         ...base,
@@ -170,8 +179,9 @@ describe('withEffectiveSummaryTarget / formatTaskLine', () => {
       ctx,
       NOW,
     )
-    expect(s.target_implied).toBe(true)
-    expect(formatTaskLine(s, 'America/Chicago', now)).not.toContain('first target')
+    expect(s.due_at).toBe('2026-10-17T04:59:00Z')
+    expect(s.target_implied).toBeUndefined()
+    expect(formatTaskLine(s, 'America/Chicago', now)).not.toContain('(from deadline)')
   })
 
   test('own target at or before the deadline, or no deadline → unchanged', () => {

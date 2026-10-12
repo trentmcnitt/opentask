@@ -217,8 +217,7 @@ describe('bulkEdit — a combined date + priority save is one undo entry', () =>
       const t = getTaskById(id)!
       expect(t.due_at).toBe(TARGET)
       expect(t.priority).toBe(4)
-      // Snooze bookkeeping, as bulk/snooze did it
-      expect(t.snooze_count).toBe(1)
+      // A move (§6): the first-target date is kept, nothing else recorded
       expect(t.original_due_at).toBe(before.find((x) => x.id === id)!.due_at)
     }
 
@@ -227,7 +226,6 @@ describe('bulkEdit — a combined date + priority save is one undo entry', () =>
       const t = getTaskById(orig.id)!
       expect(t.due_at).toBe(orig.due_at)
       expect(t.priority).toBe(orig.priority)
-      expect(t.snooze_count).toBe(orig.snooze_count)
       expect(t.original_due_at).toBe(orig.original_due_at)
     }
   })
@@ -245,12 +243,13 @@ describe('bulkEdit — a combined date + priority save is one undo entry', () =>
     expect(getTaskById(a)).toMatchObject({ due_at: orig.due_at, priority: 0 })
   })
 
-  test('a date + reset_original_due_at is a reschedule: the new date is the origin', () => {
+  test('a date + reset_original_due_at is a move like any other: the first target is kept', () => {
     const a = make('[M] Snoozed before', { priority: 0 })
     const b = make('[M] Also', { priority: 0 })
-    // Give both a snooze history first.
+    const firstTargets = new Map([a, b].map((id) => [id, getTaskById(id)!.due_at]))
+    // Move both once first.
     bulkEdit({ ...base, taskIds: [a, b], changes: { due_at: localTime(9, 0) } })
-    expect(getTaskById(a)!.snooze_count).toBe(1)
+    expect(getTaskById(a)!.original_due_at).toBe(firstTargets.get(a))
     clearUndoLog()
 
     bulkEdit({
@@ -260,10 +259,11 @@ describe('bulkEdit — a combined date + priority save is one undo entry', () =>
       includeTaskIds: [a, b],
     })
     for (const id of [a, b]) {
+      // The flag is ignored on a task since 2026-10-12 (§6, ruling Q4); it
+      // still reschedules a reminder, which is why the panel sends it.
       expect(getTaskById(id)).toMatchObject({
         due_at: TARGET,
-        original_due_at: TARGET,
-        snooze_count: 0,
+        original_due_at: firstTargets.get(id),
         priority: 1,
       })
     }
@@ -333,7 +333,7 @@ describe('bulkEdit — the date rules bulk/snooze had, applied per task', () => 
       dateTaskIds: [a],
     })
     expect(getTaskById(a)).toMatchObject({ due_at: TARGET, priority: 3 })
-    expect(getTaskById(b)).toMatchObject({ due_at: dueB, priority: 3, snooze_count: 0 })
+    expect(getTaskById(b)).toMatchObject({ due_at: dueB, priority: 3, original_due_at: dueB })
     expect(undoRows()).toHaveLength(1)
   })
 

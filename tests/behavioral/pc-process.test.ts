@@ -220,13 +220,14 @@ describe('Process: stale targets', () => {
       due_at: daysAgo(10),
       deadline_at: new Date(NOW.getTime() + 2 * DAY).toISOString(),
     })
-    // Deadline, no target: the implied nag started deadline − 4 days ago.
-    const implied = makeOld({ deadline_at: daysAgo(5) })
+    // Deadline, no target: it gets the deadline's AUTOMATIC target (§8.1,
+    // 2026-10-12). Nobody picked it, so it is never a stale pick to question —
+    // Process skips `target_auto` tasks on both lists.
+    const auto = makeOld({ deadline_at: daysAgo(5) })
+    expect(auto.target_auto).toBe(true)
     const data = getProcessData(TEST_USER_ID, tz)
     expect(data.stale_targets.map((s) => s.task.id)).toEqual([plain.id])
-    expect(data.stale_targets_with_deadline.map((s) => s.task.id).sort()).toEqual(
-      [client.id, implied.id].sort(),
-    )
+    expect(data.stale_targets_with_deadline.map((s) => s.task.id)).toEqual([client.id])
   })
 
   test('PC-014: a snooze keeps the age (measured from the first target)', () => {
@@ -247,6 +248,7 @@ describe('Process: stale targets', () => {
     const low = make({ due_at: daysAgo(10), priority: 0 })
     const urgent = make({ due_at: daysAgo(10), priority: 4 })
     const ids = [low.id, urgent.id]
+    // An old client still sends `deadline_nag_off` with it: accepted, ignored.
     const input = validateBulkEdit({
       ids,
       changes: { target_at: null, deadline_nag_off: true },
@@ -263,15 +265,15 @@ describe('Process: stale targets', () => {
     for (const id of ids) {
       const t = getTaskById(id)!
       expect(t.due_at).toBeNull()
-      expect(t.deadline_nag_off).toBe(true)
+      expect(t.target_auto).toBe(false)
+      expect(t).not.toHaveProperty('deadline_nag_off')
     }
     const data = getProcessData(TEST_USER_ID, tz)
     expect(data.stale_targets).toEqual([])
 
     executeUndo(TEST_USER_ID)
-    // deadline_nag_off is a boolean in the snapshot: its undo used to throw.
     expect(getTaskById(urgent.id)!.due_at).toBe(daysAgo(10))
-    expect(getTaskById(urgent.id)!.deadline_nag_off).toBe(false)
+    expect(getTaskById(low.id)!.due_at).toBe(daysAgo(10))
   })
 })
 

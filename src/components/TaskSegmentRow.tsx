@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
+  BACK_TO_AUTO,
   HORIZON_LABELS,
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
@@ -34,7 +35,8 @@ import {
   type SegmentKind,
 } from '@/lib/task-segments'
 import { upcomingGap, upcomingRowActions } from '@/lib/task-segments'
-import { useCheckInDay } from '@/components/PreferencesProvider'
+import { useCheckInDay, useSnoozePreferences } from '@/components/PreferencesProvider'
+import { deadlineDayPick } from '@/lib/editor-target-labels'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -321,8 +323,12 @@ function TargetTodayButton({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [anchor, setAnchor] = useState<string | null>(null)
+  const { morningTime } = useSnoozePreferences()
+  // "Deadline day" (ruling Q8), read as the picker opens.
+  const [deadlineDay, setDeadlineDay] = useState<{ label: string; at: string } | null>(null)
   const openPicker = () => {
     setAnchor(actions.targetTodayAnchor())
+    setDeadlineDay(deadlineDayPick(task.deadline_at, { timezone, morningTime }))
     setPickerOpen(true)
   }
   const press = useSimpleLongPress({
@@ -345,6 +351,7 @@ function TargetTodayButton({
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         allowClear={false}
+        quickPick={deadlineDay}
         submitLabel="Set target"
         onChange={(at) => {
           if (at) void actions.targetAt(task, at)
@@ -498,11 +505,11 @@ function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
 /**
  * An UPCOMING row's second line (2026-10-12, spec §2): the gap text —
  * "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" — after the project and
- * priority. The "Target …" part is a chip: on a one-off row with no deadline
- * it opens a one-item menu, "Remove target", which sends the task back to its
- * horizon segment (Undo on the toast). A repeating row's chip says "Repeats"
- * and does nothing; a deadline row's is plain text (what Remove target means
- * for a deadline task is still being decided).
+ * priority. The "Target …" part is a chip that opens a one-item menu
+ * (`targetReset`, §8.3): on a one-off with no deadline, "Remove target"
+ * (back to its horizon segment); on one with a deadline, "Back to auto" (the
+ * deadline's automatic target again — which leaves Upcoming). Undo on the
+ * toast either way. A repeating row's chip says "repeats" and does nothing.
  */
 function UpcomingMeta({
   row,
@@ -518,7 +525,7 @@ function UpcomingMeta({
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const gap = upcomingGap(task, timezone)
-  const { removeTarget } = upcomingRowActions(row)
+  const { reset } = upcomingRowActions(row)
   return (
     <div
       data-upcoming-gap
@@ -536,7 +543,7 @@ function UpcomingMeta({
         </span>
       )}
       {gap.target &&
-        (removeTarget ? (
+        (reset ? (
           <DropdownMenu>
             <DropdownMenuTrigger
               onClick={(e) => e.stopPropagation()}
@@ -549,8 +556,12 @@ function UpcomingMeta({
               <ChevronDown className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem data-remove-target onSelect={() => void actions.removeTarget(task)}>
-                Remove target
+              <DropdownMenuItem
+                data-remove-target={reset === 'remove' ? '' : undefined}
+                data-back-to-auto={reset === 'auto' ? '' : undefined}
+                onSelect={() => void actions.removeTarget(task)}
+              >
+                {reset === 'auto' ? BACK_TO_AUTO : 'Remove target'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

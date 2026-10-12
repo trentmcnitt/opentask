@@ -74,14 +74,9 @@ export function TaskDetail({
           />
         </DirtyCard>
 
-        {/* Only show "Snoozed" for recurring tasks - for one-offs, it's just a due date change */}
-        {task.original_due_at && task.rrule && (
-          <DetailField label="Snoozed">
-            <span className="text-blue-500">
-              Originally due {formatDateTime(task.original_due_at, timezone)}
-            </span>
-          </DetailField>
-        )}
+        {/* The "Snoozed · Originally due" row is gone (§6, 2026-10-12: there
+            is no snooze state). A repeating task moved off its occurrence is
+            named in the editor above, under its target. */}
 
         <DetailField label="Created">{formatDateTime(task.created_at, timezone)}</DetailField>
 

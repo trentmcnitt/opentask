@@ -1,14 +1,16 @@
 /**
  * Field change collection helper for task updates
  *
- * Extracts common logic for tracking field changes, anchor derivation,
- * and snooze detection. Used by both single and bulk edit operations.
+ * Extracts common logic for tracking field changes, anchor derivation, the
+ * target model (§6/§8, 2026-10-12: the stored automatic deadline target, the
+ * target ≤ deadline cap, a repeating task's occurrence kept apart from its
+ * target) and move detection. Used by both single and bulk edit operations.
  */
 
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError, ValidationError, PastDeadlineError } from '@/core/errors'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import {
   QUOTA_DUE_DATE_MESSAGE,
   QUOTA_PERIOD_MESSAGE,
@@ -16,7 +18,7 @@ import {
   TRACKED_REMINDER_MESSAGE,
 } from '@/core/validation'
 import { isTracked, quotaPeriodOf } from '@/lib/track'
-import { crossesDeadline, impliedTargetAt } from '@/lib/task-segments'
+import { capAtDeadline, resolveTarget, type TargetContext } from '@/lib/task-segments'
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
@@ -25,6 +27,7 @@ import { stampTargetSet } from '../target-set'
 export type FieldChangesInput = TaskUpdateInput & {
   labels_add?: string[]
   labels_remove?: string[]
+  /** Ignored on a task (§6: a move is a move); a reminder's explicit reschedule. */
   reset_original_due_at?: boolean
   /**
    * Server-internal (never in a request schema): "Target today" marks the task
@@ -45,8 +48,14 @@ export interface FieldChangeData {
   fieldsChanged: string[]
   beforeState: Partial<Task> & { id: number }
   afterState: Partial<Task> & { id: number }
+  /**
+   * The user moved a dated task's target to another date (any "snooze", any
+   * client — §6, 2026-10-12, one gesture). Counts the snooze stat and words
+   * the description "Snoozed to …". Not a first date, a clear, a schedule
+   * change or a target the server derived (the automatic one).
+   */
   isSnoozeScenario: boolean
-  /** A3 (2026-10-11): `cap_at_deadline` stopped this snooze AT the deadline. */
+  /** The requested target was past the deadline and stopped AT it (§8.2). */
   cappedAtDeadline?: boolean
 }
 
@@ -59,6 +68,11 @@ export interface CollectFieldChangesOptions {
   now?: Date
   /** Skip project access validation (for bulk operations that validate upfront) */
   skipProjectValidation?: boolean
+  /**
+   * The owner's clock for an automatic target (`getTargetContext`); a bulk
+   * caller passes it once. Read from the task's owner when absent.
+   */
+  targetCtx?: TargetContext
 }
 
 /**
@@ -136,7 +150,13 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     wasTracked && !willBeTracked && options.input.rrule === undefined
       ? { ...options.input, rrule: null }
       : options.input
-  const input = capSnoozeAtDeadline(task, retired, now)
+  const target = resolveTargetInput(task, retired, {
+    willBeTracked,
+    willBeReminder,
+    ctx: options.targetCtx ?? getTargetContext(task.user_id),
+    now,
+  })
+  const input = target.input
 
   const data: FieldChangeData = {
     setClauses: [],
@@ -145,35 +165,49 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     beforeState: { id: task.id, title: task.title },
     afterState: { id: task.id, title: task.title },
     isSnoozeScenario: false,
-    cappedAtDeadline: input !== retired,
+    cappedAtDeadline: target.capped,
   }
 
   // Track basic field changes
-  collectBasicFields(data, task, input, userId, skipProjectValidation)
+  collectBasicFields(data, task, input, userId, skipProjectValidation, willBeReminder)
   collectTaskModelFields(data, task, input, now)
   collectQuotaPromptFields(data, task, input)
 
   // Track rrule changes with anchor derivation
-  const rruleChanged = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
+  const rrule = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
 
-  // Track due_at changes with snooze detection
-  collectDueAtChanges(data, task, input, rruleChanged, now)
+  // Track due_at changes and move detection. Only a date the USER sent is a
+  // move — not a clear, and not the automatic target the server put in its
+  // place (a deadline edit, "Back to auto").
+  const userMoved = retired.due_at !== undefined && retired.due_at !== null
+  collectDueAtChanges(
+    data,
+    task,
+    input,
+    rrule.changed,
+    userMoved && !(willBeReminder && reschedulesReminder(input)),
+  )
+
+  // §6: a repeating task's scheduled occurrence, apart from its target.
+  collectOccurrence(data, task, input, rrule, willBeTracked, willBeReminder)
+  // §8: whether the target the write leaves is the deadline's automatic one.
+  if (target.auto !== task.target_auto) {
+    trackField(data, 'target_auto', task.target_auto, target.auto, undefined, target.auto ? 1 : 0)
+  }
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
 
   // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
-  // enforced here because a bare `{ due_at }` on a dated reminder is a snooze
-  // by every other measure (`isSnoozeScenario`: origin kept, count bumped,
-  // snooze stat) and used to walk straight past it. Here rather than in
-  // updateTask so the single PATCH and bulk edit refuse it alike.
+  // enforced here because a bare `{ due_at }` on a dated reminder is a move
+  // by every other measure and used to walk straight past it. Here rather
+  // than in updateTask so the single PATCH and bulk edit refuse it alike.
   //
   // An EXPLICIT reschedule is still allowed: `reset_original_due_at: true`
-  // with the date (what the date picker sends) is not a snooze — it moves the
-  // occurrence and clears "snoozed from" — so `isSnoozeScenario` is false and
-  // this does not fire. Nor does giving an undated ("anytime") reminder its
-  // first date, or a schedule change that recomputes one (a period move sends
-  // the rule, or the date with `reset_original_due_at`).
+  // with the date is what a period move sends for its reminders — the one
+  // place the flag still means something (`reschedulesReminder`). Nor does
+  // giving an undated ("anytime") reminder its first date, or a schedule
+  // change that recomputes one, count as a snooze.
   //
   // Asked of the RESULTING flag, like the exclusivity guard in
   // `assertQuotaInvariants`, so
@@ -191,6 +225,77 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   stampTargetSet(data, task, now.toISOString())
 
   return data
+}
+
+/**
+ * §8 (2026-10-12): put the target the write leaves through `resolveTarget` —
+ * the automatic target of a deadline with none, its re-derivation when the
+ * deadline moves, the target ≤ deadline cap — and send the result on as an
+ * ordinary `due_at`, so everything below treats it like any other date.
+ * `capped`: the date the caller SENT was past the deadline and stopped at it
+ * (the response's `capped_at_deadline`, ruling A3's feedback).
+ */
+function resolveTargetInput(
+  task: Task,
+  input: FieldChangesInput,
+  opts: { willBeTracked: boolean; willBeReminder: boolean; ctx: TargetContext; now: Date },
+): { input: FieldChangesInput; auto: boolean; capped: boolean } {
+  const rrule = input.rrule !== undefined ? input.rrule : task.rrule
+  const dueWritten = input.due_at !== undefined
+  const left = dueWritten ? (input.due_at ?? null) : task.due_at
+  const deadlineAt = input.deadline_at !== undefined ? input.deadline_at : task.deadline_at
+  const resolved = resolveTarget(
+    {
+      dueAt: left,
+      dueWritten,
+      currentDueAt: task.due_at,
+      wasAuto: task.target_auto,
+      deadlineAt,
+      deadlineChanged: deadlineAt !== task.deadline_at,
+      autoEligible: !rrule && !opts.willBeReminder && !opts.willBeTracked,
+    },
+    opts.ctx,
+    opts.now,
+  )
+  const out = resolved.dueAt === left ? input : { ...input, due_at: resolved.dueAt }
+  return { input: out, auto: resolved.auto, capped: resolved.capped && dueWritten }
+}
+
+/** A period move's explicit reschedule of a reminder — not a snooze (see the guard above). */
+function reschedulesReminder(input: FieldChangesInput): boolean {
+  return input.reset_original_due_at === true
+}
+
+/**
+ * §6 (2026-10-12): a repeating task's SCHEDULED occurrence (`occurrence_at`),
+ * kept apart from its target (`due_at`). A move changes only the target; done
+ * and skip advance from the occurrence (`computeMarkDone`, `skip.ts`). Here:
+ * - a schedule change (a new rule) sets it to the occurrence the rule gives —
+ *   or to the date sent with the rule;
+ * - a reminder's date IS its occurrence (a reminder is never moved, only
+ *   rescheduled), so it follows `due_at`;
+ * - a row from before the column, or an undated repeating task getting its
+ *   first date, takes the target it had (or the new one);
+ * - a one-off (or a quota) has none.
+ */
+function collectOccurrence(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  rrule: RruleChange,
+  willBeTracked: boolean,
+  willBeReminder: boolean,
+): void {
+  const resultingRule = input.rrule !== undefined ? input.rrule : task.rrule
+  const dueAfter = data.afterState.due_at !== undefined ? data.afterState.due_at : task.due_at
+  let next: string | null
+  if (!resultingRule || willBeTracked) next = null
+  else if (rrule.changed) next = rrule.scheduled ?? dueAfter ?? null
+  else if (willBeReminder) next = dueAfter ?? null
+  else if (task.occurrence_at === null && data.fieldsChanged.includes('due_at')) {
+    next = task.due_at ?? dueAfter ?? null
+  } else return
+  if (next !== task.occurrence_at) trackField(data, 'occurrence_at', task.occurrence_at, next)
 }
 
 /**
@@ -253,9 +358,8 @@ function assertQuotaInvariants(
  * quota that still holds a date from before the migration loses it the first
  * time anything about it is edited.
  *
- * `original_due_at` goes with it — it is the occurrence origin of a due date
- * that no longer exists, and left behind it makes `is_snoozed` true on a row
- * that cannot be snoozed.
+ * `original_due_at` goes with it — it is the first-target date of a due date
+ * that no longer exists.
  */
 function collectQuotaDateClear(data: FieldChangeData, task: Task, willBeTracked: boolean): void {
   if (!willBeTracked) return
@@ -272,39 +376,26 @@ function collectQuotaDateClear(data: FieldChangeData, task: Task, willBeTracked:
   }
 }
 
-/** The origin reset itself — see the comment at its call in collectBasicFields. */
+/**
+ * A reminder's explicit reschedule makes the new date its first-target date —
+ * see the comment at its call in collectBasicFields.
+ */
 function collectOriginReset(data: FieldChangeData, task: Task, input: FieldChangesInput): void {
   const resetTo = input.due_at !== undefined ? input.due_at : task.due_at
   if (!resetTo) return
   if (task.original_due_at !== resetTo) {
     trackField(data, 'original_due_at', task.original_due_at, resetTo)
   }
-  if (task.snooze_count !== 0) {
-    trackField(data, 'snooze_count', task.snooze_count, 0)
-  }
-}
-
-/**
- * A3 (Trent, 2026-10-11): a QUICK snooze — a notification, widget, watch, Mac
- * menu bar or native row — stops AT the deadline instead of passing it, and
- * says so. The caller opts in with `cap_at_deadline`; only the web's explicit
- * "Snooze anyway" (`allow_past_deadline`) goes past. Only a snooze is capped:
- * not a re-target, not a schedule change, and only while the deadline is ahead.
- */
-function capSnoozeAtDeadline(task: Task, input: FieldChangesInput, now: Date): FieldChangesInput {
-  if (!input.cap_at_deadline || !input.due_at || input.reset_original_due_at) return input
-  if (input.rrule !== undefined) return input
-  const deadline = input.deadline_at !== undefined ? input.deadline_at : task.deadline_at
-  if (!crossesDeadline(deadline, input.due_at, now)) return input
-  return { ...input, due_at: deadline }
 }
 
 /**
  * Task model fields (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
  *
  * `deadline_at` is an ordinary field — no snooze path ever sends it, which is
- * what keeps a snooze from moving a deadline. Changing `horizon` restarts its
- * clock (`horizon_set_at`), which Process reads to ask whether it should grow;
+ * what keeps a snooze from moving a deadline. (What a deadline change does to
+ * the target — the automatic one follows it, a picked one is pulled back — is
+ * `resolveTargetInput`'s.) Changing `horizon` restarts its clock
+ * (`horizon_set_at`), which Process reads to ask whether it should grow;
  * re-sending the same horizon is not a change and leaves the clock alone.
  */
 function collectTaskModelFields(
@@ -315,15 +406,6 @@ function collectTaskModelFields(
 ): void {
   if (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at) {
     trackField(data, 'deadline_at', task.deadline_at, input.deadline_at)
-  }
-  // Remove-target sends `deadline_nag_off: true` to silence the deadline's
-  // implied nag too. A NEW deadline is new information and turns it back on,
-  // unless the same request says otherwise.
-  const nagOff =
-    input.deadline_nag_off ??
-    (input.deadline_at !== undefined && input.deadline_at !== task.deadline_at ? false : undefined)
-  if (nagOff !== undefined && nagOff !== task.deadline_nag_off) {
-    trackField(data, 'deadline_nag_off', task.deadline_nag_off, nagOff, undefined, nagOff ? 1 : 0)
   }
   if (input.last_considered_at !== undefined) {
     trackField(data, 'last_considered_at', task.last_considered_at, input.last_considered_at)
@@ -356,26 +438,17 @@ function collectBasicFields(
   input: FieldChangesInput,
   userId: number,
   skipProjectValidation: boolean,
+  willBeReminder: boolean,
 ): void {
-  // Reset origin: the user says what the occurrence origin is. Sets
-  // original_due_at to the task's due date and snooze_count to 0.
-  //
-  // WITH A DATE IN THE SAME REQUEST, the origin is the NEW date: this is how an
-  // explicit reschedule is told apart from a snooze (Trent, 2026-09-24).
-  // Picking a date in the quick panel's date picker sends
-  // `{ due_at, reset_original_due_at: true }`, and the row stops being
-  // "snoozed from" anything. A bare `{ due_at }` stays a snooze — the iOS
-  // content extension's "snooze to a specific time" is exactly that payload —
-  // so the reschedule has to opt in.
-  //
-  // Before 2026-09-24 the two halves disagreed: this block set the origin to
-  // the OLD due date, then `collectDueAtChanges` still ran its snooze branch
-  // and pushed `snooze_count = old + 1` after this block's `0` (SQLite keeps
-  // the last assignment), so "reset + new date" came out as a snooze.
-  // `collectDueAtChanges` now skips its snooze branch when this flag is set.
-  // A null date (clearing it) is not a reschedule — the due-date clear there
-  // takes the origin with it.
-  if (input.reset_original_due_at) collectOriginReset(data, task, input)
+  // Reset origin — A REMINDER ONLY since 2026-10-12. On a task there is no
+  // snooze/re-target split any more (§6, ruling Q4): `retarget` /
+  // `reset_original_due_at` are accepted from old clients and a move is a
+  // move, keeping the first-target date. A reminder is never snoozed, so for
+  // one the flag is still the explicit reschedule a period move sends
+  // (`time-slots/edit.ts`): the new date becomes its first-target date. A
+  // null date (clearing it) is not a reschedule — the due-date clear in
+  // `collectDueAtChanges` takes the origin with it.
+  if (input.reset_original_due_at && willBeReminder) collectOriginReset(data, task, input)
 
   if (input.title !== undefined && input.title !== task.title) {
     trackField(data, 'title', task.title, input.title)
@@ -552,9 +625,19 @@ function applyDateWithNewRule(
 }
 
 /**
+ * What `collectRruleChanges` did: whether the rule changed, and the
+ * occurrence a new rule scheduled (before the deadline cap — the target may
+ * be capped, the occurrence never is).
+ */
+interface RruleChange {
+  changed: boolean
+  scheduled?: string
+}
+
+/**
  * Collect rrule changes with anchor field derivation
  *
- * @returns Whether rrule changed (used by due_at logic)
+ * @returns Whether rrule changed (used by due_at logic) and what it scheduled
  */
 function collectRruleChanges(
   data: FieldChangeData,
@@ -563,9 +646,9 @@ function collectRruleChanges(
   userTimezone: string,
   now: Date,
   willBeTracked: boolean,
-): boolean {
+): RruleChange {
   if (input.rrule === undefined || input.rrule === task.rrule) {
-    return false
+    return { changed: false }
   }
 
   trackField(data, 'rrule', task.rrule, input.rrule)
@@ -584,13 +667,13 @@ function collectRruleChanges(
   // age anchor jumped back to `created_at`. A date has to be arriving in the
   // same request for the clear to mean a re-schedule.
   //
-  // An explicit `reset_original_due_at` always wins: it is the user saying what
-  // the origin is, in the same breath. `collectBasicFields` has already pushed
-  // it, and SQLite takes the last clause, so without this guard the reset was
-  // silently overridden — including on the pre-existing `{ reset, rrule: <new
-  // rule> }` path.
+  // A reminder's explicit reschedule (`reset_original_due_at`) always wins: it
+  // is the caller saying what the origin is, in the same breath.
+  // `collectBasicFields` has already pushed it, and SQLite takes the last
+  // clause, so without this guard the reset was silently overridden.
   const rruleTakesTheOrigin =
-    !input.reset_original_due_at && (input.rrule !== null || input.due_at != null)
+    !data.fieldsChanged.includes('original_due_at') &&
+    (input.rrule !== null || input.due_at != null)
 
   if (rruleTakesTheOrigin && task.original_due_at) {
     data.setClauses.push('original_due_at = NULL')
@@ -667,7 +750,12 @@ function collectRruleChanges(
     const isOverdue = task.due_at && new Date(task.due_at) < now
     if (!willBeTracked && input.due_at === undefined && (!isOverdue || task.is_reminder)) {
       const nextOccurrence = computeFirstOccurrence(input.rrule, anchors.anchor_time, userTimezone)
-      const nextDueAt = nextOccurrence.toISOString()
+      const scheduled = nextOccurrence.toISOString()
+      // The target never passes the deadline (§8.2); the occurrence keeps the
+      // schedule (`collectOccurrence`).
+      const deadline =
+        data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
+      const nextDueAt = capAtDeadline(scheduled, deadline ?? null)
 
       data.setClauses.push('due_at = ?')
       data.values.push(nextDueAt)
@@ -676,39 +764,27 @@ function collectRruleChanges(
         data.beforeState.due_at = task.due_at
       }
       data.afterState.due_at = nextDueAt
+      return { changed: true, scheduled }
     }
   }
 
-  return true
+  return { changed: true }
 }
 
 /**
- * A SNOOZE that lands past the deadline — confirmed while the deadline was
- * still ahead, or any snooze once it has passed — turns the deadline's implied
- * nag off for the task (2026-10-10, ruling A2). Otherwise the implied target,
- * which a target past the deadline no longer hides, would keep nagging and the
- * snooze the user just chose would do nothing. A deliberate re-target past the
- * deadline is NOT a snooze and leaves the implied nag on, so a target set past
- * its own deadline never hides the deadline. A new deadline turns it back on.
- */
-function keepSnoozePastDeadline(
-  data: FieldChangeData,
-  task: Task,
-  deadline: string | null,
-  until: string,
-): void {
-  if (!deadline || Date.parse(until) <= Date.parse(deadline)) return
-  if (data.fieldsChanged.includes('deadline_nag_off') || task.deadline_nag_off) return
-  trackField(data, 'deadline_nag_off', task.deadline_nag_off, true, undefined, 1)
-}
-
-/**
- * Collect due_at changes with snooze detection
+ * Collect due_at changes and detect a MOVE.
  *
- * When due_at changes without rrule changing, it's treated as a snooze:
- * - Sets original_due_at if not already set
- * - Increments snooze_count
- * - Sets isSnoozeScenario flag (caller handles stats increment)
+ * ONE GESTURE (§6, 2026-10-12; Trent: "snooze is just retargeting"). Any date
+ * change of a dated task without a schedule change is a move of its target:
+ * the first-target date (`original_due_at`) is kept, and nothing else is
+ * recorded — no snoozed flag, no snooze count, no snooze/re-target split
+ * (old clients' `retarget` changes nothing). The visible word stays "Snooze".
+ * `userMoved` says the user sent the date (the snooze stat and the "Snoozed
+ * to …" description); a target the server derived — the automatic one — is
+ * not a move. A repeating task's move changes only `due_at`; its occurrence
+ * is `collectOccurrence`'s.
+ *
+ * The deadline cap has already been applied (`resolveTargetInput`).
  *
  * Note: The caller is responsible for calling incrementDailyStat() when
  * isSnoozeScenario is true. This allows bulk operations to batch the stats.
@@ -718,7 +794,7 @@ function collectDueAtChanges(
   task: Task,
   input: FieldChangesInput,
   rruleChanged: boolean,
-  now: Date,
+  userMoved: boolean,
 ): void {
   // If rrule changed, due_at was handled there (if auto-computed)
   // Special case: when clearing rrule to null AND due_at to null together,
@@ -745,81 +821,16 @@ function collectDueAtChanges(
 
   trackField(data, 'due_at', task.due_at, input.due_at)
 
-  // A deadline-only task whose implied target (deadline − DEADLINE_LEAD_DAYS)
-  // has ARRIVED is already nagging: moving it is a snooze of that target, not
-  // giving a dateless task its first date (2026-10-10). It is capped by the
-  // deadline, counts as a snooze, and keeps the implied target as its origin,
-  // so the age badge doesn't reset.
-  const implied = task.deadline_at ? impliedTargetAt(task, getTargetContext(task.user_id)) : null
-  const impliedArrived = implied !== null && Date.parse(implied) <= now.getTime()
-  if (
-    impliedArrived &&
-    !rruleChanged &&
-    !input.reset_original_due_at &&
-    task.due_at === null &&
-    input.due_at !== null
-  ) {
-    data.isSnoozeScenario = true
-    if (crossesDeadline(task.deadline_at, input.due_at, now) && !input.allow_past_deadline) {
-      throw new PastDeadlineError()
+  // A move: a dated task's target to another date. Never when the rrule
+  // changed in the same request — that is a RE-SCHEDULE (`{ rrule: null,
+  // due_at: <date> }` is what the quick panel sends to clear recurrence and
+  // pick a date). The first-target date is kept (set to the old target if the
+  // row never had one).
+  if (!rruleChanged && task.due_at !== null && input.due_at !== null) {
+    data.isSnoozeScenario = userMoved
+    if (task.original_due_at === null && !data.fieldsChanged.includes('original_due_at')) {
+      trackField(data, 'original_due_at', null, task.due_at)
     }
-    keepSnoozePastDeadline(data, task, task.deadline_at, input.due_at)
-    if (task.original_due_at !== implied) {
-      trackField(data, 'original_due_at', task.original_due_at, implied)
-    }
-    trackField(data, 'snooze_count', task.snooze_count, task.snooze_count + 1)
-    return
-  }
-
-  // Apply snooze logic if task had a previous due_at and is being moved to a new date
-  // (not when clearing due_at to null — that's not a snooze).
-  //
-  // Never when the rrule changed in the same request: that is a RE-SCHEDULE,
-  // not a deferral. `{ rrule: null, due_at: <date> }` is exactly what the quick
-  // panel sends when a user clears recurrence and picks a date, and it only
-  // started reaching this branch when the guard above was widened from
-  // `due_at === null` to "any explicit date" — before that the payload lost its
-  // date instead. Without this it would bump `snooze_count`, back-fill
-  // `original_due_at`, fire the snooze stat and the `snooze` activity entry,
-  // and draw the snoozed indicator on a row nobody snoozed.
-  //
-  // Nor when `reset_original_due_at` rides along: that is an explicit
-  // reschedule, and `collectBasicFields` has already made the new date the
-  // origin (see the comment there).
-  if (
-    !rruleChanged &&
-    !input.reset_original_due_at &&
-    task.due_at !== null &&
-    input.due_at !== null
-  ) {
-    data.isSnoozeScenario = true
-
-    // The deadline caps a snooze (2026-10-10): never silently — refused unless
-    // the caller says the user confirmed it. A deliberate re-target is not a
-    // snooze and is not capped. Bulk paths filter such tasks out before here.
-    const deadline =
-      data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
-    if (crossesDeadline(deadline, input.due_at) && !input.allow_past_deadline) {
-      throw new PastDeadlineError()
-    }
-    keepSnoozePastDeadline(data, task, deadline, input.due_at)
-
-    // Set original_due_at if not already set (preserve existing)
-    if (task.original_due_at === null) {
-      data.setClauses.push('original_due_at = ?')
-      data.values.push(task.due_at)
-      data.fieldsChanged.push('original_due_at')
-      data.beforeState.original_due_at = null
-      data.afterState.original_due_at = task.due_at
-    }
-
-    // Always increment snooze_count
-    const newSnoozeCount = task.snooze_count + 1
-    data.setClauses.push('snooze_count = ?')
-    data.values.push(newSnoozeCount)
-    data.fieldsChanged.push('snooze_count')
-    data.beforeState.snooze_count = task.snooze_count
-    data.afterState.snooze_count = newSnoozeCount
   }
 
   // When a task with no date gets one, the occurrence origin — which is also

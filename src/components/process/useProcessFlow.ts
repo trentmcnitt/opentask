@@ -255,7 +255,9 @@ export function useProcessBatchActions(flow: ReturnType<typeof useProcessFlow>) 
       setBusy(true)
       const tally = newTally()
       try {
-        await bulkEditChunks(ids, { target_at: null, deadline_nag_off: true }, tally)
+        // On a deadline task, clearing the target puts the deadline's
+        // automatic one back (§8.3) — the server decides, per task.
+        await bulkEditChunks(ids, { target_at: null }, tally)
         remove(ids, ['targets'])
         const n = tally.affected
         toastWithUndo(`Removed ${n} target${n === 1 ? '' : 's'}`, tally.entries)

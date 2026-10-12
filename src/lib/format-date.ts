@@ -267,52 +267,6 @@ function formatTodayFuture(due: Date, now: Date, time: string): DueTimeParts {
   return { relative: time }
 }
 
-/**
- * "snoozed from Tue" or "snoozed from Jan 30" for snooze context in TaskRow.
- * Named formatOriginalDueAt to match the field name, but displays as "snoozed from".
- */
-export function formatOriginalDueAt(isoUtc: string, timezone: string): string | null {
-  const snoozedDate = new Date(isoUtc)
-  const now = new Date()
-
-  // Only render if original_due_at is in the past
-  if (snoozedDate > now) return null
-
-  const { yesterdayStart, todayStart } = getTimezoneDayBoundaries(timezone)
-  const time = formatTimeInZone(snoozedDate, timezone)
-
-  // Today — show time instead of day name (avoids "snoozed from Tue" when today is Tue)
-  if (snoozedDate >= todayStart) {
-    return `snoozed from ${time}`
-  }
-
-  // Yesterday
-  if (snoozedDate >= yesterdayStart) {
-    return `snoozed from yesterday ${time}`
-  }
-
-  // Use calendar-day math (timezone-aware) to decide between day name and date.
-  // Day names are only unambiguous within 6 calendar days — e.g., if today is Friday,
-  // "Sat" (6 days ago) clearly means last Saturday, but "Fri" (7 days ago) is ambiguous
-  // with today.
-  const calendarDays = calendarDaysBetween(snoozedDate, now, timezone)
-
-  if (calendarDays <= 6) {
-    const dayName = snoozedDate.toLocaleDateString('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-    })
-    return `snoozed from ${dayName} ${time}`
-  }
-
-  const dateStr = snoozedDate.toLocaleDateString('en-US', {
-    timeZone: timezone,
-    month: 'short',
-    day: 'numeric',
-  })
-  return `snoozed from ${dateStr}`
-}
-
 function formatTimeInZone(date: Date, timezone: string): string {
   return date.toLocaleTimeString('en-US', {
     timeZone: timezone,

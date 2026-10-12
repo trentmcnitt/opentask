@@ -19,7 +19,7 @@
  * that completions stay honest, NOT so anyone can infer avoidance from it.
  */
 
-import { advanceDeadline } from '@/lib/task-segments'
+import { advanceDeadline, capAtDeadline } from '@/lib/task-segments'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
@@ -88,7 +88,11 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       // §5: a quota has no date to advance — see the same guard in
       // `computeMarkDone`. Skipping one is still a period boundary, so the
       // progress reset below stands.
-      const nextDueAt = isTracked(task)
+      //
+      // From the SCHEDULED occurrence, like done (§6, 2026-10-12): a moved
+      // target never drags the schedule.
+      const prevOccurrence = task.occurrence_at ?? task.due_at
+      const nextOccurrenceAt = isTracked(task)
         ? null
         : computeNextOccurrence({
             rrule: task.rrule!,
@@ -96,23 +100,35 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
             anchorTime: task.anchor_time,
             timezone: userTimezone,
             completedAt: new Date(),
-            prevDueAt: task.due_at ? new Date(task.due_at) : null,
+            prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
           }).toISOString()
       // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`).
-      const nextDeadlineAt = advanceDeadline(task, nextDueAt, userTimezone)
+      const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, userTimezone)
+      // The target is the occurrence, never past its deadline (§8.2).
+      const nextDueAt = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
 
       // §5: advancing the occurrence is a period boundary, so a tracked task's
       // progress resets here exactly as it would on completion.
       tx.prepare(
         `UPDATE tasks
-            SET due_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
+            SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
                 progress_current = 0, ${TARGET_SET_FIELD} = ?, updated_at = ?
           WHERE id = ?`,
-      ).run(nextDueAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, nowStr, taskId)
+      ).run(
+        nextDueAt,
+        nextOccurrenceAt,
+        nextDueAt,
+        nextDeadlineAt,
+        skipCount,
+        nowStr,
+        nowStr,
+        taskId,
+      )
 
       after = {
         ...task,
         due_at: nextDueAt,
+        occurrence_at: nextOccurrenceAt,
         original_due_at: nextDueAt,
         deadline_at: nextDeadlineAt,
         skip_count: skipCount,
@@ -122,6 +138,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       }
       fieldsChanged = [
         'due_at',
+        'occurrence_at',
         'original_due_at',
         'deadline_at',
         'skip_count',
