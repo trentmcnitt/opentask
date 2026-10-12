@@ -253,10 +253,12 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                 let outcome = try await NotificationActionRunner.handle(response)
                 print("[OpenTaskWatch] \(categoryId) \(response.actionIdentifier): \(outcome)")
                 switch outcome {
+                // The single click, never a success chime (2026-10-11 —
+                // the app's taps too); a failure keeps its buzz.
                 case .taskUpdated, .swept:
-                    playHaptic(.success)
+                    playHaptic(.click)
                 case .slotCompleted(let affected):
-                    playHaptic(affected > 0 ? .success : .failure)
+                    playHaptic(affected > 0 ? .click : .failure)
                 case .ignored, .missingTaskId, .openDashboard, .openTask:
                     break
                 }

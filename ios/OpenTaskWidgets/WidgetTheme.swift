@@ -1764,6 +1764,12 @@ struct SelectEntryButton: View {
 /// — a bar offering to snooze zero tasks has nothing honest to say.
 struct SnoozeAllOverdueBar: View {
     let count: Int
+    /// Every over-target task (`TasksEntry.overdueTotalCount`). The sweep
+    /// moves `count` of them (never Urgent; High only when nothing lower is
+    /// left), so "All over target (8)" under a header of "10 tasks" read as
+    /// a contradiction (2026-10-11). The label now says what the pills do:
+    /// "Snooze 8 of 10:", or "Snooze all 10:" when they're the same.
+    let total: Int
     /// `nil` when `TimeSlotStore` has no cached slots — unlike the per-row/
     /// select-mode buttons, the "Next period" pill here still WORKS (its
     /// target is resolved server-side for the sweep — `slot: "next"` on
@@ -1773,7 +1779,7 @@ struct SnoozeAllOverdueBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("All \(TaskWording.overTargetLower) (\(count)):")
+            Text(count < total ? "Snooze \(count) of \(total):" : "Snooze all \(count):")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

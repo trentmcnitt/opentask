@@ -122,6 +122,10 @@ struct TasksEntry: TimelineEntry {
     /// every one of them (7 entries per `getTimeline` pass) for a single
     /// number would be pure waste.
     var overdueSweepCount = 0
+    /// Every over-target task in the same full cache (2026-10-11) — the "of
+    /// 10" beside the sweep's 8 in `SnoozeAllOverdueBar`, so the bar's number
+    /// can't be mistaken for the header's.
+    var overdueTotalCount = 0
     /// The next few tasks due after today (2026-09-29) — the "Up next" list
     /// under the Today page's "Nothing due today". At most
     /// `TaskDayProgress.upcomingLimit`, and empty on every entry that can't
@@ -211,6 +215,7 @@ struct TasksProvider: TimelineProvider {
                         colorProjects: entry.colorProjects,
                         doneTasks: entry.doneTasks,
                         overdueSweepCount: entry.overdueSweepCount,
+                        overdueTotalCount: entry.overdueTotalCount,
                         upcoming: entry.upcoming
                     )
                 )
@@ -317,6 +322,7 @@ struct TasksProvider: TimelineProvider {
             // `TasksEntry.overdueSweepCount`'s doc for why this must not be
             // `displayedTasks`.
             overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks, now: now),
+            overdueTotalCount: TaskLists.overdue(tasks, now: now).count,
             upcoming: TasksTimeline.upcomingForEmptyToday(
                 scope: scope, openOnPage: displayedTasks, allTasks: tasks, now: now
             )
@@ -481,7 +487,8 @@ private enum TasksPreviewData {
             doneTasks: doneToday,
             // Computed the same way `TasksProvider.makeEntry` does, from the
             // FULL task list — see `TasksEntry.overdueSweepCount`'s doc.
-            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks)
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks),
+            overdueTotalCount: TaskLists.overdue(tasks).count
         )
     }
 
@@ -516,7 +523,8 @@ private enum TasksPreviewData {
             actionDescription: nil,
             colorProjects: projects,
             doneTasks: [],
-            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: all)
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: all),
+            overdueTotalCount: TaskLists.overdue(all).count
         )
     }
 
@@ -545,7 +553,8 @@ private enum TasksPreviewData {
             actionDescription: nil,
             colorProjects: projects,
             doneTasks: [],
-            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: all, now: now)
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: all, now: now),
+            overdueTotalCount: TaskLists.overdue(all, now: now).count
         )
     }
 
@@ -565,7 +574,8 @@ private enum TasksPreviewData {
             actionDescription: nil,
             colorProjects: projects,
             doneTasks: [],
-            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks)
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks),
+            overdueTotalCount: TaskLists.overdue(tasks).count
         )
     }
 }
@@ -845,6 +855,7 @@ private enum DayCompletePreviewData {
             colorProjects: projects,
             doneTasks: TasksTimeline.doneTasks(from: done, scope: scope),
             overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: open, now: now),
+            overdueTotalCount: TaskLists.overdue(open, now: now).count,
             upcoming: TasksTimeline.upcomingForEmptyToday(scope: scope, openOnPage: today, allTasks: open, now: now)
         )
     }

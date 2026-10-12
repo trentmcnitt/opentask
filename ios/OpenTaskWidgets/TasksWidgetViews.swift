@@ -550,8 +550,10 @@ private struct TasksListView: View {
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes),
                 dueStacked: layout.dueStacked,
                 markerBleed: mode.isNormal ? markerBleed : 0,
-                projectColor: entry.projectColor(for: task),
-                // Project edge: systemLarge, unified pages only — see
+                // Priority, never the project (2026-10-11): see
+                // `TaskRow.markColor`.
+                markColor: WidgetTheme.priorityColor(task.priority),
+                // Edge stripe: systemLarge, unified pages only — see
                 // `TaskRow.showsProjectEdge`.
                 showsProjectEdge: isLarge && entry.isUnifiedScope,
                 mode: modeForRow(task.id, base: mode, selected: picks)
@@ -561,7 +563,7 @@ private struct TasksListView: View {
         case .done(let completion):
             DoneTaskRow(
                 completion: completion,
-                projectColor: entry.projectColor(forProjectId: completion.projectId),
+                markColor: .secondary,
                 firstLineHeight: metrics.titleHeight(lines: 1),
                 lines: layout.lines,
                 height: layout.height,
@@ -608,7 +610,10 @@ private struct TasksListView: View {
                 }
                 if snoozeMode {
                     if entry.overdueSweepCount > 0 {
-                        SnoozeAllOverdueBar(count: entry.overdueSweepCount, nextPeriodLabel: nextPeriodTimeLabel)
+                        SnoozeAllOverdueBar(
+                            count: entry.overdueSweepCount, total: entry.overdueTotalCount,
+                            nextPeriodLabel: nextPeriodTimeLabel
+                        )
                             .frame(height: metrics.actionPillHeight)
                     }
                 } else {
@@ -631,7 +636,10 @@ private struct TasksListView: View {
                     )
                 }
                 if showsRestingOverdueBar {
-                    SnoozeAllOverdueBar(count: entry.overdueSweepCount, nextPeriodLabel: nextPeriodTimeLabel)
+                    SnoozeAllOverdueBar(
+                            count: entry.overdueSweepCount, total: entry.overdueTotalCount,
+                            nextPeriodLabel: nextPeriodTimeLabel
+                        )
                         .frame(height: metrics.actionPillHeight)
                 }
             }
@@ -936,7 +944,7 @@ private struct UpNextList: View {
                 Link(destination: WidgetLink.task(task.id)) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Circle()
-                            .fill(entry.projectColor(for: task).opacity(0.7))
+                            .fill(WidgetTheme.priorityColor(task.priority).opacity(0.7))
                             .frame(width: 6, height: 6)
                             .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 1 }
                         Text(task.title)
@@ -1019,9 +1027,13 @@ private struct TaskRow: View {
     /// mode's controls are already finger-sized on their own (a 32pt circle,
     /// a full pill), and select mode's whole row is the target.
     let markerBleed: CGFloat
-    /// This task's project's color (`TasksEntry.projectColor(for:)`) — the
-    /// same `WidgetTheme.projectColor(_:)` a project page's header dot uses.
-    var projectColor: Color = WidgetTheme.projectColor(nil)
+    /// The row's mark color — its edge stripe and checkbox outline. Its
+    /// PRIORITY color since 2026-10-11 (`WidgetTheme.priorityColor`: red
+    /// Urgent, orange High, yellow Medium, neutral Low/None), the reminder
+    /// circle's rule. It was the task's project color, which put green and
+    /// magenta stripes on the Today/Up next pages that read as states
+    /// ("Tasks widget: stripes use priority colors only").
+    var markColor: Color = WidgetTheme.priorityColor(0)
     /// The project identity mark on the unified Today/Up next pages
     /// (2026-09-23, item 5 — Trent: "Up Next and Today should both have some
     /// indication... that shows what project they're from").
@@ -1068,7 +1080,7 @@ private struct TaskRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if showsProjectEdge {
                 Capsule()
-                    .fill(projectColor)
+                    .fill(markColor)
                     .frame(width: 3, height: max(height - 2, 10))
                     // Its bottom sits on the title's first baseline
                     // otherwise; this lines its top up with the text.
@@ -1130,7 +1142,7 @@ private struct TaskRow: View {
         case .normal:
             Button(intent: CompleteTaskIntent(taskId: task.id, kind: TasksWidget.kind)) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(projectColor, lineWidth: 1.5)
+                    .strokeBorder(markColor, lineWidth: 1.5)
                     .frame(width: 16, height: 16)
                     // THREE frames — see `ReminderRow`'s identical trick: the
                     // square is centred within one line's height, and only
@@ -1271,7 +1283,9 @@ private struct TargetAgeBadge: View {
 /// line) is what the pager counted.
 private struct DoneTaskRow: View {
     let completion: CompletionDTO
-    let projectColor: Color
+    /// Neutral (2026-10-11): a completion carries no priority, and the
+    /// project color is no longer a Tasks widget mark.
+    let markColor: Color
     let firstLineHeight: CGFloat
     /// Title lines — wrapped in full since 2026-09-24 (it was `.lineLimit(1)`).
     let lines: Int
@@ -1306,7 +1320,7 @@ private struct DoneTaskRow: View {
 
             Button(intent: UncompleteTaskIntent(taskId: completion.taskId, kind: TasksWidget.kind)) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(projectColor.opacity(0.7))
+                    .fill(markColor.opacity(0.7))
                     .frame(width: 16, height: 16)
                     .overlay(
                         Image(systemName: "checkmark")

@@ -247,10 +247,9 @@ struct RemindersPageView: View {
 
 /// One segment per slot with something in it — indigo while waiting, green
 /// once finished, a faint placeholder before it starts. The on-screen
-/// segment draws slightly thicker so it's identifiable without reading text,
-/// same instinct as the phone widget's `ReminderSlotStrip` (its own doc notes
-/// a plain height bump alone didn't read clearly enough — this watch version
-/// adds a matching outline for the same reason, at a smaller scale).
+/// segment draws twice as thick so it's identifiable without reading text —
+/// the phone widget's `ReminderSlotStrip` treatment. It also wore an outline
+/// until 2026-10-11 (Trent: no outline on any bar; it should just grow).
 ///
 /// Then one bar per task segment shown today (2026-10-11, "segments as
 /// slots", the phone widget's strip): its horizon's teal while a row waits (option 3, 2026-10-11), green once
@@ -267,14 +266,12 @@ private struct SlotProgressStrip: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(Array(groups.enumerated()), id: \.element.slotKey) { index, group in
+                // The on-screen period grows, with no outline — the phone
+                // widget's treatment (Trent, 2026-10-11: no outline on any
+                // bar).
                 Capsule()
                     .fill(color(for: group))
-                    .frame(height: index == currentIndex ? 5 : 3)
-                    .overlay(
-                        Capsule()
-                            .stroke(WatchTheme.accent, lineWidth: index == currentIndex ? 1 : 0)
-                            .padding(-1.5)
-                    )
+                    .frame(height: index == currentIndex ? 6 : 3)
             }
             // The faint divider between periods and tasks (2026-10-11,
             // option 3), only when both are there.
