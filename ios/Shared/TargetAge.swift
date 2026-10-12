@@ -230,23 +230,42 @@ extension TaskDTO {
     /// the dot non-breaking, so a line can break only after the dot. A wrap
     /// then leaves the dot trailing the line before ("… for the car ·"),
     /// never leading the next ("· Target Wed Oct 14", 2026-10-12, Trent's
-    /// phone) — and the widget row avoids even that by putting the words on
-    /// their own line when they don't fit on the title's last one
-    /// (`segmentLabelText(metaOnOwnLine:)`).
+    /// phone) — and the widget row avoids even that, measuring and picking a
+    /// `SegmentMetaPlacement` so no dot is left at either end of a line.
     static let metaJoiner = "\u{00A0}· "
 
     /// The whole segment row label as ONE string — title, then the small
     /// words — the string both the row's `Text` and the pager's measurement
-    /// build from (the `QuotaPromptDTO.labelText` rule). `metaOnOwnLine`
-    /// (2026-10-12): the words start a new line with no separator at all,
-    /// which is what the widget row does when they wouldn't fit on the
-    /// title's last line (`TaskSegmentListView` measures both and picks), so
-    /// a line never starts with "·".
+    /// build from (the `QuotaPromptDTO.labelText` rule), laid out per
+    /// `placement` (2026-10-12; `TaskSegmentListView` measures and picks).
     func segmentLabelText(
-        segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current, metaOnOwnLine: Bool = false
+        segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
+        placement: SegmentMetaPlacement = .inline
     ) -> String {
         guard let meta = segmentMeta(segmentHorizon: segmentHorizon, now: now, calendar: calendar) else { return title }
-        return "\(title)\(metaOnOwnLine ? "\n" : Self.metaJoiner)\(meta)"
+        return title + placement.joined(meta: meta)
+    }
+}
+
+/// Where a segment row's small words go relative to its title (2026-10-12,
+/// "· Target Wed Oct 14 · repeats" on Trent's phone: a wrap left a dot at
+/// the start of a line). The widget row measures and picks the first that
+/// keeps every dot mid-line:
+/// - `inline`: the words fit on the title's last line — "Title · words".
+/// - `ownLine`: they don't, but fit on one line of their own — "Title" /
+///   "Target Wed Oct 14 · every Wed", no separator before them.
+/// - `partsOnOwnLines`: even alone they wrap — one part per line, no dots at
+///   all ("Target Wed Oct 14" / "deadline Sat Oct 17 (+3d)").
+enum SegmentMetaPlacement: Equatable {
+    case inline, ownLine, partsOnOwnLines
+
+    /// What follows the title: the separator or line break, then the words.
+    func joined(meta: String) -> String {
+        switch self {
+        case .inline: return TaskDTO.metaJoiner + meta
+        case .ownLine: return "\n" + meta
+        case .partsOnOwnLines: return "\n" + meta.components(separatedBy: TaskDTO.metaJoiner).joined(separator: "\n")
+        }
     }
 }
 

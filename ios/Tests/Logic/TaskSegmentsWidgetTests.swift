@@ -314,11 +314,17 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
             "Fix the gate\u{00A0}· Weeks\u{00A0}· Nov\u{00A0}1"
         )
         // Words that don't fit on the title's last line start their own,
-        // with no separator (2026-10-12: never a line that starts with "·").
+        // with no separator; words that wrap even alone go one part per
+        // line, with no dot (2026-10-12: never a "·" at either end of a line).
         XCTAssertEqual(
-            set.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal, metaOnOwnLine: true),
+            set.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal, placement: .ownLine),
             "Fix the gate\nWeeks\u{00A0}· Nov\u{00A0}1"
         )
+        XCTAssertEqual(
+            set.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal, placement: .partsOnOwnLines),
+            "Fix the gate\nWeeks\nNov\u{00A0}1"
+        )
+        XCTAssertEqual(SegmentMetaPlacement.partsOnOwnLines.joined(meta: "One"), "\nOne")
         // Every break opportunity around a dot is AFTER it.
         XCTAssertFalse(TaskDTO.metaJoiner.hasPrefix(" "))
         XCTAssertTrue(TaskDTO.metaJoiner.hasSuffix(" "))
