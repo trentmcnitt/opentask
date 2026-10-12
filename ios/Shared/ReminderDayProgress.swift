@@ -26,6 +26,14 @@ import Foundation
 /// Quota prompts count exactly like reminders here, as in every other count
 /// the Reminders surfaces show (`ReminderGroupDTO.waitingCount`/
 /// `consideredCount`).
+///
+/// Task segments (2026-10-11, "segments as slots"): a task segment with a
+/// row still waiting keeps the day open — Trent, on the widget: "there is no
+/// indication that it's there or how complete it is." They sit AFTER the
+/// periods in the strip (`stripBars`), carry their own "X of Y"
+/// (`PeriodCount(segment)`), and `isDayComplete` asks them too. They still
+/// count toward no PERIOD's number: a period's "N of M", "N left" and
+/// `handledTotal` are reminders and prompts only.
 enum ReminderDayProgress {
 
     // MARK: Day complete
@@ -36,12 +44,21 @@ enum ReminderDayProgress {
         groups.reduce(0) { $0 + $1.consideredCount }
     }
 
-    /// Every period of today — started or not — has nothing waiting, and at
-    /// least one item was handled. A day with nothing configured (or nothing
-    /// in any period) is never "complete": there was no work to finish, so it
-    /// keeps its ordinary empty state rather than a celebration.
-    static func isDayComplete(_ groups: [ReminderGroupDTO]) -> Bool {
-        handledTotal(groups) > 0 && groups.allSatisfy(\.hasNothingWaiting)
+    /// Every period of today — started or not — has nothing waiting, no task
+    /// segment shown today has a row waiting, and at least one item (a
+    /// reminder, a prompt, or a segment row considered or deferred) was
+    /// handled. A day with nothing configured (or nothing in any period) is
+    /// never "complete": there was no work to finish, so it keeps its
+    /// ordinary empty state rather than a celebration.
+    ///
+    /// `segments` is required, not defaulted, so every caller says whether it
+    /// knows them (2026-10-11): a waiting task segment means the day isn't
+    /// done — the strip shows its bar unfinished, so "Congratulations" above
+    /// it would contradict the card. Pass the LISTED, pending-filtered
+    /// segments the surface draws.
+    static func isDayComplete(_ groups: [ReminderGroupDTO], segments: [TaskSegmentDTO]) -> Bool {
+        let handled = handledTotal(groups) + segments.reduce(0) { $0 + $1.handledCount }
+        return handled > 0 && groups.allSatisfy(\.hasNothingWaiting) && !segments.contains(where: \.hasWaiting)
     }
 
     // MARK: Per-period counts
@@ -61,6 +78,13 @@ enum ReminderDayProgress {
         init(_ group: ReminderGroupDTO) {
             handled = group.consideredCount
             total = group.waitingCount + group.consideredCount
+        }
+
+        /// A task segment's "X of Y" (2026-10-11): considered or deferred
+        /// today over every row it holds today (`TaskSegmentDTO.handledCount`).
+        init(_ segment: TaskSegmentDTO) {
+            handled = segment.handledCount
+            total = segment.tasks.count
         }
 
         /// "4 of 7". The caller hides it when `total == 0` — "0 of 0" reports
@@ -85,12 +109,105 @@ enum ReminderDayProgress {
         case nothingHere
     }
 
-    static func emptyBody(groups: [ReminderGroupDTO], displayedIndex: Int) -> EmptyBody {
+    static func emptyBody(
+        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], displayedIndex: Int
+    ) -> EmptyBody {
         guard !groups.isEmpty else { return .noReminders }
-        if isDayComplete(groups) { return .dayComplete }
+        if isDayComplete(groups, segments: segments) { return .dayComplete }
         if groups.indices.contains(displayedIndex), groups[displayedIndex].consideredCount > 0 {
             return .periodDone
         }
         return .nothingHere
+    }
+
+    /// The same question on a task segment page (2026-10-11) — a segment
+    /// with nothing waiting reads like a finished period: "Congratulations /
+    /// Day complete" when the whole day is, else the seal and "Complete".
+    /// (It used to say "All considered".) A listed segment always holds a
+    /// row, so `.nothingHere` is only a guard.
+    static func emptyBody(
+        segment: TaskSegmentDTO, groups: [ReminderGroupDTO], segments: [TaskSegmentDTO]
+    ) -> EmptyBody {
+        if isDayComplete(groups, segments: segments) { return .dayComplete }
+        return segment.handledCount > 0 ? .periodDone : .nothingHere
+    }
+
+    // MARK: The progress strip (2026-09-23; task segments 2026-10-11)
+
+    /// Has this period's time arrived? The un-slotted "Anytime" group has no
+    /// start time and is always available, so it counts as started — the
+    /// web's `ReminderSlotBar.hasStarted` and the watch's `WatchSlotLogic.
+    /// state` agree. `RemindersTimeline.hasStarted` calls this.
+    static func hasStarted(_ group: ReminderGroupDTO, now: Date, calendar: Calendar = .current) -> Bool {
+        guard let minutes = group.slot?.startMinutes else { return true }
+        let comps = calendar.dateComponents([.hour, .minute], from: now)
+        return (comps.hour ?? 0) * 60 + (comps.minute ?? 0) >= minutes
+    }
+
+    /// One bar of the Reminders widget's strip.
+    struct StripBar: Equatable {
+        enum Kind: Equatable { case period, taskSegment }
+        /// indigo while something waits, green once nothing does, a faint
+        /// track while the period's time hasn't come.
+        enum State: Equatable { case behind, done, upcoming }
+
+        /// The page this bar jumps to — a period's `slotKey` or a segment's
+        /// `pageKey` (one Int space, `RemindersTimeline`'s page ring).
+        let key: Int
+        let kind: Kind
+        /// For VoiceOver: "Morning", "Tasks · Days".
+        let label: String
+        let state: State
+        let handled: Int
+        /// The bar's width weight: the period's (or segment's) day total, so
+        /// checking things off moves the fill but never resizes a bar.
+        let total: Int
+        /// A task segment's horizon (its teal, `TaskHorizon.segmentColorHex`);
+        /// nil for a period.
+        var horizon: TaskHorizon? = nil
+
+        /// How far it has filled.
+        var fraction: Double { total > 0 ? Double(handled) / Double(total) : 0 }
+    }
+
+    /// The strip, left to right: one bar per period with anything in it
+    /// today, then one per task segment shown today (`segments` LISTED, in
+    /// ring order) — "segments as slots" (Trent, 2026-10-11: "it's really
+    /// bizarre that it doesn't have segments for the tasks. you have to <-
+    /// and -> to get to it and there is no indication that it's there or how
+    /// complete it is").
+    ///
+    /// A segment's bar is weighed and filled by its "X of Y" (`PeriodCount(
+    /// segment)`), and is always STARTED — it is shown today, so it is never
+    /// the faint "not yet" track: indigo while a row waits, green once none
+    /// does. A period that was finished early reads done whatever the clock
+    /// says (the web `ReminderSlotBar`'s rule).
+    static func stripBars(
+        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date, calendar: Calendar = .current
+    ) -> [StripBar] {
+        let periods = groups.compactMap { group -> StripBar? in
+            let count = PeriodCount(group)
+            guard count.total > 0 else { return nil }
+            let state: StripBar.State
+            if group.hasNothingWaiting {
+                state = .done
+            } else {
+                state = hasStarted(group, now: now, calendar: calendar) ? .behind : .upcoming
+            }
+            return StripBar(
+                key: group.slotKey, kind: .period, label: group.label, state: state,
+                handled: count.handled, total: count.total
+            )
+        }
+        let tasks = segments.compactMap { segment -> StripBar? in
+            let count = PeriodCount(segment)
+            guard segment.isListed, count.total > 0 else { return nil }
+            return StripBar(
+                key: segment.pageKey, kind: .taskSegment, label: "Tasks · \(segment.label)",
+                state: segment.hasWaiting ? .behind : .done, handled: count.handled, total: count.total,
+                horizon: segment.horizonValue
+            )
+        }
+        return periods + tasks
     }
 }

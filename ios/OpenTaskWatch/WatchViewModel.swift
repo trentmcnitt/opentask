@@ -294,7 +294,7 @@ final class WatchViewModel: ObservableObject {
 
     /// Segments with a row on today's list, in screen order, with in-flight
     /// considers drawn. The Reminders page shows each one that still has a
-    /// row waiting, ahead of the time slot.
+    /// row waiting, under the time slot's rows.
     var listedSegments: [TaskSegmentDTO] {
         let drawn = pendingSegmentConsiders.isEmpty ? taskSegments : taskSegments.map { segment in
             segment.replacingTasks(segment.tasks.map {

@@ -85,10 +85,14 @@ final class WidgetRenderTests: XCTestCase {
 
         let remindersPayload = try load("reminders", as: RemindersPayload.self, from: env.dataDir)
         let groups = remindersPayload.groups
-        // Task segments (2026-10-10): the page ahead of the slots, when the
-        // account has one today.
+        // Task segments (2026-10-10): the first segment's page (after the
+        // slots, 2026-10-11), when the account has one today — by key, since
+        // the natural page is a segment only once the day so far is done.
         let segments = TaskSegmentDTO.listed(remindersPayload.taskSegments)
-        let segmentPage = RemindersTimeline.naturalPage(groups: groups, segments: segments, now: env.now)
+        let segmentPage = RemindersTimeline.page(
+            forKey: segments.first?.pageKey, groups: groups, segments: segments,
+            naturalSlot: RemindersTimeline.naturalSlotIndex(in: groups, now: env.now)
+        )
         let remindersSegment: RemindersEntry? = segmentPage.segmentIndex == nil ? nil : RemindersEntry(
             date: env.now, groups: groups, segments: segments,
             slotIndex: segmentPage.slotIndex, segmentIndex: segmentPage.segmentIndex,
@@ -99,9 +103,10 @@ final class WidgetRenderTests: XCTestCase {
         let labelConfig = try load("label-config", as: UserPreferencesLabelConfigPage.self, from: env.dataDir).labelConfig
         let completions = (try? load("completions", as: CompletionsPage.self, from: env.dataDir))?.completions ?? []
 
-        // Reminders: the clock's period, and "day complete" that evening.
+        // Reminders: the clock's period (its strip shows the task segments'
+        // bars too, 2026-10-11), and "day complete" that evening.
         let reminders = RemindersEntry(
-            date: env.now, groups: groups, segments: [],
+            date: env.now, groups: groups, segments: segments,
             slotIndex: RemindersTimeline.naturalSlotIndex(in: groups, now: env.now), segmentIndex: nil,
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
@@ -155,22 +160,22 @@ final class WidgetRenderTests: XCTestCase {
             for (family, familyName, size) in Self.sizes {
                 try render(
                     RemindersWidgetView(entry: reminders, familyOverride: family), size: size, scheme: scheme,
-                    wash: ReminderDayProgress.isDayComplete(reminders.groups),
+                    wash: ReminderDayProgress.isDayComplete(reminders.groups, segments: reminders.segments),
                     name: "widget-reminders-\(familyName)-\(theme)",
                     shows: "Reminders widget, \(familyName), the 9:41 AM period", theme: theme, env: env
                 )
                 if let remindersSegment, family != .systemSmall {
                     try render(
                         RemindersWidgetView(entry: remindersSegment, familyOverride: family), size: size, scheme: scheme,
-                        wash: false,
+                        wash: ReminderDayProgress.isDayComplete(remindersSegment.groups, segments: remindersSegment.segments),
                         name: "widget-reminders-\(familyName)-task-segment-\(theme)",
-                        shows: "Reminders widget, \(familyName), a task segment page ahead of the slots",
+                        shows: "Reminders widget, \(familyName), a task segment page after the slots",
                         theme: theme, env: env
                     )
                 }
                 try render(
                     RemindersWidgetView(entry: remindersDone, familyOverride: family), size: size, scheme: scheme,
-                    wash: ReminderDayProgress.isDayComplete(remindersDone.groups),
+                    wash: ReminderDayProgress.isDayComplete(remindersDone.groups, segments: remindersDone.segments),
                     name: "widget-reminders-\(familyName)-day-complete-\(theme)",
                     shows: "Reminders widget, \(familyName), day complete", theme: theme, env: env
                 )

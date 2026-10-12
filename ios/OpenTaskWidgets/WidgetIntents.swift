@@ -744,8 +744,8 @@ struct ShiftReminderSlotIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        // The whole page ring — task segments first, then the slots
-        // (2026-10-10) — from the same filtered cache the provider draws.
+        // The whole page ring — the slots, then the task segments
+        // (2026-10-11) — from the same filtered cache the provider draws.
         let (groups, segments) = RemindersTimeline.cachedPages()
         let keys = RemindersTimeline.pageKeys(groups: groups, segments: segments)
         guard !keys.isEmpty,

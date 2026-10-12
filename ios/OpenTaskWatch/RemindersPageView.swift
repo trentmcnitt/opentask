@@ -24,7 +24,10 @@ struct RemindersPageView: View {
             VStack(alignment: .leading, spacing: 10) {
                 header
                 if !model.reminderGroups.isEmpty {
-                    SlotProgressStrip(groups: model.reminderGroups, currentIndex: model.displayedSlotIndex)
+                    SlotProgressStrip(
+                        groups: model.reminderGroups, segments: model.listedSegments,
+                        currentIndex: model.displayedSlotIndex
+                    )
                 }
 
                 if let description = model.lastActionDescription {
@@ -140,7 +143,9 @@ struct RemindersPageView: View {
     /// had anything. It used to read "All caught up" for all three.
     @ViewBuilder
     private var periodFinishedView: some View {
-        switch ReminderDayProgress.emptyBody(groups: model.reminderGroups, displayedIndex: model.displayedSlotIndex) {
+        switch ReminderDayProgress.emptyBody(
+            groups: model.reminderGroups, segments: model.listedSegments, displayedIndex: model.displayedSlotIndex
+        ) {
         case .dayComplete:
             AllCaughtUpView(symbol: "checkmark.seal.fill", title: "Congratulations", detail: "Day complete")
         case .periodDone:
@@ -246,13 +251,22 @@ struct RemindersPageView: View {
 /// same instinct as the phone widget's `ReminderSlotStrip` (its own doc notes
 /// a plain height bump alone didn't read clearly enough — this watch version
 /// adds a matching outline for the same reason, at a smaller scale).
+///
+/// Then one bar per task segment shown today (2026-10-11, "segments as
+/// slots", the phone widget's strip): its horizon's teal while a row waits (option 3, 2026-10-11), green once
+/// none does, never the faint "not started" look — a segment is shown today.
+/// Never ringed: the page doesn't page to a segment, it lists every waiting
+/// segment's rows under whichever period is on screen, so the bar's job is
+/// "there is more below, and this much of it is done".
 private struct SlotProgressStrip: View {
     let groups: [ReminderGroupDTO]
+    /// `WatchViewModel.listedSegments` — today's segments, considers drawn.
+    let segments: [TaskSegmentDTO]
     let currentIndex: Int
 
     var body: some View {
         HStack(spacing: 3) {
-            ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+            ForEach(Array(groups.enumerated()), id: \.element.slotKey) { index, group in
                 Capsule()
                     .fill(color(for: group))
                     .frame(height: index == currentIndex ? 5 : 3)
@@ -261,6 +275,24 @@ private struct SlotProgressStrip: View {
                             .stroke(WatchTheme.accent, lineWidth: index == currentIndex ? 1 : 0)
                             .padding(-1.5)
                     )
+            }
+            // The faint divider between periods and tasks (2026-10-11,
+            // option 3), only when both are there.
+            if !groups.isEmpty, !segments.isEmpty {
+                Rectangle()
+                    .fill(WatchTheme.stripSeparator)
+                    .frame(width: 1, height: 8)
+                    .padding(.horizontal, 2)
+                    .accessibilityHidden(true)
+            }
+            // Teal per horizon while a row waits, green once none does —
+            // option 3's colors. Whole-bar fills, like the watch's slot bars
+            // (which have no partial fill either).
+            ForEach(segments) { segment in
+                Capsule()
+                    .fill(segment.hasWaiting ? WatchTheme.taskSegment(segment.horizonValue) : WatchTheme.done)
+                    .frame(height: 3)
+                    .accessibilityLabel(Text("Tasks · \(segment.label)"))
             }
         }
         .frame(height: 8)
@@ -394,6 +426,7 @@ struct TaskSegmentSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tasks · \(segment.label)")
                     .font(.headline)
+                    .foregroundStyle(WatchTheme.taskSegment(segment.horizonValue))
                 Text("\(segment.waitingCount) left")
                     .font(.caption)
                     .foregroundStyle(.secondary)

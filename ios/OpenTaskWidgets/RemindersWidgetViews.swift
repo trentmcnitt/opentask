@@ -90,11 +90,11 @@ struct RemindersWidgetView: View {
         }
     }
 
-    /// The day-complete wash belongs to the slot pages: a task segment page
-    /// with rows still waiting is not a finished day.
+    /// On every page, task segment pages included (2026-10-11): day complete
+    /// now asks the task segments too, so a segment with rows still waiting
+    /// keeps the wash off everywhere, and a finished one doesn't hold it back.
     private var showsDayCompleteWash: Bool {
-        let onSegmentPage = entry.segment != nil && family != .systemSmall
-        return !onSegmentPage && ReminderDayProgress.isDayComplete(entry.groups)
+        ReminderDayProgress.isDayComplete(entry.groups, segments: entry.segments)
     }
 }
 
@@ -180,7 +180,9 @@ private struct RemindersSmallView: View {
     /// is no room here for the big seal or "Congratulations".
     @ViewBuilder
     private var emptyState: some View {
-        let state = ReminderDayProgress.emptyBody(groups: entry.groups, displayedIndex: entry.slotIndex)
+        let state = ReminderDayProgress.emptyBody(
+            groups: entry.groups, segments: entry.segments, displayedIndex: entry.slotIndex
+        )
         switch state {
         case .noReminders:
             WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today", compact: true)
@@ -349,7 +351,10 @@ private struct RemindersListView: View {
                 // systemMedium skips it entirely rather than just costing it
                 // some height.
                 if isLarge {
-                    ReminderSlotStrip(groups: entry.groups, currentIndex: entry.slotIndex, now: entry.date)
+                    ReminderSlotStrip(
+                        groups: entry.groups, segments: entry.segments,
+                        currentKey: entry.group?.slotKey, now: entry.date
+                    )
                 }
 
                 // Everything below the header and strip. The reader gets the
@@ -555,7 +560,9 @@ private struct RemindersListView: View {
     /// what's left of the day (Trent's review of the mockups).
     @ViewBuilder
     private var emptySlotView: some View {
-        let state = ReminderDayProgress.emptyBody(groups: entry.groups, displayedIndex: entry.slotIndex)
+        let state = ReminderDayProgress.emptyBody(
+            groups: entry.groups, segments: entry.segments, displayedIndex: entry.slotIndex
+        )
         switch state {
         case .noReminders:
             WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today")
@@ -879,51 +886,29 @@ private struct PeriodDoneView: View {
 /// ring, not just its existing height bump (2026-09-23, "we need some kind
 /// of outline... to show which segment we're currently on" — the bump alone
 /// didn't read clearly enough at a glance) — see `segmentBar`.
+///
+/// TASK SEGMENTS ARE BARS TOO (2026-10-11): after the periods, one bar per
+/// task segment shown today — sized by its rows today, filled by its "X of
+/// Y" (considered + deferred), indigo while a row waits and green once none
+/// does, never the faint "not yet" track. Trent: "it's really bizarre that
+/// it doesn't have segments for the tasks. you have to <- and -> to get to
+/// it and there is no indication that it's there or how complete it is."
+/// A task page rings its own bar, and tapping a task bar jumps to its page.
 private struct ReminderSlotStrip: View {
     let groups: [ReminderGroupDTO]
-    let currentIndex: Int
+    /// Today's LISTED task segments — a bar each, after the periods
+    /// (2026-10-11, "segments as slots").
+    let segments: [TaskSegmentDTO]
+    /// The page on screen — a period's `slotKey` or a segment's `pageKey`,
+    /// one key space — whose bar wears the ring.
+    let currentKey: Int?
     let now: Date
 
-    private enum SlotState { case done, behind, upcoming }
-
-    private struct Segment: Identifiable {
-        let id: Int
-        /// The slot this segment represents — what `JumpToReminderSlotIntent`
-        /// needs to jump straight to it, since `id` is only this segment's
-        /// position in the (already-filtered) `segments` array, not a stable
-        /// slot identity.
-        let slotKey: Int
-        let state: SlotState
-        let isCurrent: Bool
-        /// Considered over the slot's total — how far the indigo has filled.
-        let fraction: Double
-        /// The slot's day total (waiting plus considered) — its width weight.
-        let total: Int
-    }
-
-    private var segments: [Segment] {
-        // Quota prompts count exactly like reminders (2026-09-24): waiting
-        // and handled both, so a slot's segment is sized by its day total.
-        groups.enumerated().compactMap { index, group -> Segment? in
-            let waiting = group.waitingCount
-            let considered = group.consideredCount
-            guard waiting + considered > 0 else { return nil }
-            let started = RemindersTimeline.hasStarted(group, now: now)
-            // Fully considered reads as done whatever the clock says — a
-            // period finished EARLY (Trent, 2026-09-28: pre-bedtime and
-            // evening done at 8 PM drew gray) is finished, the web
-            // `ReminderSlotBar`'s rule. The track below still tells started
-            // from not-yet.
-            let state: SlotState
-            if waiting == 0 { state = .done } else if started { state = .behind } else {
-                state = .upcoming
-            }
-            return Segment(
-                id: index, slotKey: group.slotKey, state: state, isCurrent: index == currentIndex,
-                fraction: Double(considered) / Double(waiting + considered),
-                total: waiting + considered
-            )
-        }
+    /// The bars, from the Foundation-only model `ReminderDayProgress.
+    /// stripBars` (tested in `ReminderDayProgressTests`): which bars, their
+    /// order, state, fill and width weight. This view only draws them.
+    private var bars: [ReminderDayProgress.StripBar] {
+        ReminderDayProgress.stripBars(groups: groups, segments: segments, now: now)
     }
 
     /// Half of `WidgetTheme.rowSpacing` — the same bleed `ReminderRow`'s
@@ -952,23 +937,58 @@ private struct ReminderSlotStrip: View {
 
     private let segmentSpacing: CGFloat = 3
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The faint divider between the period bars and the task bars
+    /// (2026-10-11, option 3): 1pt wide, 12pt tall, with 6pt of air each side
+    /// — the `HStack`'s 3pt spacing plus 3pt of its own padding.
+    private static let separatorWidth: CGFloat = 1
+    private static let separatorHeight: CGFloat = 12
+    private static let separatorPadding: CGFloat = 3
+
+    /// Where the divider goes: before the first task bar, only when a period
+    /// bar comes before it (task segments exist today AND periods do).
+    private func separatorBefore(_ position: Int, in shown: [ReminderDayProgress.StripBar]) -> Bool {
+        position > 0 && shown[position].kind == .taskSegment && shown[position - 1].kind == .period
+    }
+
     var body: some View {
-        // One segment is not a strip — same rule as the web's ReminderSlotBar
+        // One bar is not a strip — same rule as the web's ReminderSlotBar
         // ("it would say only 'everything is here', which the header already
-        // says better").
-        let shown = segments
+        // says better"). Task segment bars count (2026-10-11): one period and
+        // one task segment is two pages, and the strip is how you find the
+        // second.
+        let shown = bars
         if shown.count >= 2 {
             GeometryReader { geo in
-                let gaps = segmentSpacing * CGFloat(shown.count - 1)
+                let hasSeparator = shown.indices.contains { separatorBefore($0, in: shown) }
+                // The divider is one more `HStack` child: its width, its own
+                // padding, and one more spacing.
+                let separatorCost = hasSeparator
+                    ? Self.separatorWidth + 2 * Self.separatorPadding + segmentSpacing : 0
+                let gaps = segmentSpacing * CGFloat(shown.count - 1) + separatorCost
                 let widths = SegmentWidths.widths(
                     weights: shown.map { Double($0.total) },
                     available: Double(max(geo.size.width - gaps, 0)),
                     minimum: Self.minimumSegmentWidth
                 )
                 HStack(spacing: segmentSpacing) {
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { position, segment in
-                        Button(intent: JumpToReminderSlotIntent(slotKey: segment.slotKey)) {
-                            segmentBar(for: segment)
+                    ForEach(Array(shown.enumerated()), id: \.element.key) { position, bar in
+                        if separatorBefore(position, in: shown) {
+                            Rectangle()
+                                .fill(WidgetTheme.stripSeparator(scheme: colorScheme))
+                                .frame(width: Self.separatorWidth, height: Self.separatorHeight)
+                                // Taller than the strip's 8pt row on purpose
+                                // (the mockup's 12px); drawn centred over it,
+                                // inside the card, so nothing clips.
+                                .frame(height: maxSegmentHeight)
+                                .padding(.horizontal, Self.separatorPadding)
+                                .accessibilityHidden(true)
+                        }
+                        // A task segment's bar jumps to its page exactly as a
+                        // period's does: the intent takes any page key.
+                        Button(intent: JumpToReminderSlotIntent(slotKey: bar.key)) {
+                            segmentBar(for: bar)
                                 // Real visual size — nothing painted beyond this
                                 // frame, so nothing for WidgetKit's renderer to
                                 // clip (see `segmentBar`'s doc).
@@ -981,7 +1001,8 @@ private struct ReminderSlotStrip: View {
                         .buttonStyle(.plain)
                         .frame(width: CGFloat(widths[position]))
                         .padding(.vertical, -segmentBleed)
-                        .accessibilityLabel(Text(groups[segment.id].label))
+                        .accessibilityLabel(Text(bar.label))
+                        .accessibilityValue(Text("\(bar.handled) of \(bar.total)"))
                     }
                 }
             }
@@ -1004,26 +1025,50 @@ private struct ReminderSlotStrip: View {
     /// same whatever the fill. Both replaced a 1pt white ring he found hard to
     /// look at, which the widget also clipped at both rounded ends. Nothing is
     /// drawn outside the bar's own frame, so nothing can be clipped.
-    private func segmentBar(for segment: Segment) -> some View {
+    ///
+    /// TASK SEGMENT BARS (2026-10-11, option 3): filled in their horizon's
+    /// teal while a row waits, green once none does (like a period), on the
+    /// same gray track. The task page's own bar wears a ring in its teal —
+    /// drawn as a border INSIDE the 8pt frame, the bar inset within it, so
+    /// nothing paints outside the frame here either.
+    @ViewBuilder
+    private func segmentBar(for bar: ReminderDayProgress.StripBar) -> some View {
+        if bar.kind == .taskSegment, bar.key == currentKey {
+            let teal = WidgetTheme.taskSegmentColor(bar.horizon, scheme: colorScheme)
+            ZStack {
+                Capsule().strokeBorder(teal, lineWidth: 1.5)
+                barBody(for: bar).padding(2.5)
+            }
+            .frame(height: 8)
+        } else {
+            barBody(for: bar)
+                .frame(height: bar.key == currentKey ? 8 : 4)
+        }
+    }
+
+    private func barBody(for bar: ReminderDayProgress.StripBar) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 // Fainter for a period whose time hasn't come — which is
-                // what makes the clock's period read as "now" (type doc).
-                Capsule().fill(Color.primary.opacity(segment.state == .upcoming ? 0.055 : 0.14))
+                // what makes the clock's period read as "now" (type doc). A
+                // task segment is shown today, so it is never `.upcoming`.
+                Capsule().fill(Color.primary.opacity(bar.state == .upcoming ? 0.055 : 0.14))
                 // Any progress fills, started or not — indigo while something
                 // waits, green once nothing does (`color(for:)`), as on the web.
-                if segment.fraction > 0 {
+                if bar.fraction > 0 {
                     Capsule()
-                        .fill(color(for: segment.state))
-                        .frame(width: max(geo.size.height, geo.size.width * segment.fraction))
+                        .fill(color(for: bar))
+                        .frame(width: max(geo.size.height, geo.size.width * bar.fraction))
                 }
             }
         }
-        .frame(height: segment.isCurrent ? 8 : 4)
     }
 
-    private func color(for state: SlotState) -> Color {
-        switch state {
+    private func color(for bar: ReminderDayProgress.StripBar) -> Color {
+        if bar.kind == .taskSegment, bar.state != .done {
+            return WidgetTheme.taskSegmentColor(bar.horizon, scheme: colorScheme)
+        }
+        switch bar.state {
         case .done: return WidgetTheme.trackMetTint.opacity(0.85)
         // `WidgetTheme.indigoAccent` (2026-09-23) — the same named constant
         // the "show completed" dot's ON state now uses, so this
@@ -1403,8 +1448,8 @@ enum SegmentRowMetrics {
 }
 
 /// A task segment page of the Reminders widget (2026-10-10): one horizon's
-/// one-off tasks that are up for a look today, ahead of the time slots in
-/// the page ring (`RemindersTimeline`'s page ring). A sibling of
+/// one-off tasks that are up for a look today, after the time slots in the
+/// page ring (`RemindersTimeline`'s page ring). A sibling of
 /// `RemindersListView`, copying its machinery — the real header above a
 /// `RenderedTextReader`, every row's height measured up front and paged by
 /// `WidgetTheme.pages`, the bottom row with its pager and "done" dot — so a
@@ -1423,10 +1468,21 @@ enum SegmentRowMetrics {
 /// - Order is the server's (priority, then id) and fixed: a considered row
 ///   leaves the open list but nothing else moves.
 /// - The bottom row's leading control is "Defer all" (`DeferSegmentIntent`)
-///   while anything waits: the whole segment's rest goes to tomorrow.
-/// - Nothing here counts toward any reminders number (amendment 8): the
-///   slot strip is drawn for orientation only, with no period marked current.
+///   while anything waits: the whole segment's rest goes to tomorrow. The
+///   segment's "X of Y" follows it — the Tasks widget's "Select" then
+///   "N of M" arrangement.
+///
+/// What reads like a period (2026-10-11, "segments as slots"): the strip
+/// draws this segment's own bar (ringed, as the on-screen period's is), the
+/// header subtitle is "N left" in the period's place and style, the bottom
+/// row carries "X of Y" (considered + deferred of today's rows, the web
+/// header's count), and a finished segment shows the period's seal and
+/// "Complete" (or "Congratulations / Day complete" once the whole day is
+/// — `ReminderDayProgress.emptyBody(segment:…)`). Its rows still count
+/// toward no PERIOD's number (amendment 8).
 private struct TaskSegmentListView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let entry: RemindersEntry
     let segment: TaskSegmentDTO
     let isLarge: Bool
@@ -1470,7 +1526,10 @@ private struct TaskSegmentListView: View {
             VStack(alignment: .leading, spacing: rowSpacing) {
                 header
                 if isLarge {
-                    ReminderSlotStrip(groups: entry.groups, currentIndex: -1, now: entry.date)
+                    ReminderSlotStrip(
+                        groups: entry.groups, segments: entry.segments,
+                        currentKey: segment.pageKey, now: entry.date
+                    )
                 }
                 RenderedTextReader { size, metrics in
                     listBody(size: size, metrics: metrics)
@@ -1501,7 +1560,7 @@ private struct TaskSegmentListView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             if items.isEmpty {
-                WidgetEmptyView(symbol: "checkmark.seal.fill", message: "All considered")
+                finishedView
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
                     ForEach(range.map { ListRowRef(index: $0, id: items[$0].id) }) { ref in
@@ -1516,7 +1575,7 @@ private struct TaskSegmentListView: View {
 
             if isLarge {
                 ListBottomBar(height: barHeight) {
-                    deferAll(width: size.width, pages: pages.count, page: page, metrics: metrics)
+                    bottomLeading(width: size.width, pages: pages.count, page: page, metrics: metrics)
                 } pager: {
                     if pages.count > 1 {
                         ListPager(
@@ -1581,27 +1640,72 @@ private struct TaskSegmentListView: View {
         }
     }
 
-    /// "Defer all", left of the pager, while anything waits — measured like
-    /// the slot pages' "4 of 7" and left out when it wouldn't clear the pager.
+    /// A segment with nothing left in its list — the slot page's finished
+    /// states (`RemindersListView.emptySlotView`), not "All considered".
     @ViewBuilder
-    private func deferAll(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
-        let text = "Defer all"
-        if segment.hasWaiting, WidgetTheme.fitsLeftOfPager(
-            width: WidgetTheme.measuredWidth(for: text, font: metrics.caption2Font),
-            cardWidth: width, pagerText: pages > 1 ? "\(page + 1)/\(pages)" : nil, metrics: metrics
-        ) {
-            Button(intent: DeferSegmentIntent(horizon: segment.horizon)) {
-                Text(text)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(WidgetTheme.indigoAccent)
+    private var finishedView: some View {
+        switch ReminderDayProgress.emptyBody(segment: segment, groups: entry.groups, segments: entry.segments) {
+        case .dayComplete:
+            DayCompleteView(isLarge: isLarge)
+        case .periodDone:
+            PeriodDoneView(isLarge: isLarge)
+        case .noReminders, .nothingHere:
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here")
+        }
+    }
+
+    /// Left of the pager: "Defer all" while anything waits, then the
+    /// segment's "X of Y" (2026-10-11) — the slot page's "4 of 7", in its
+    /// font and color. The Tasks widget's resting row is the sibling: the
+    /// action first (it never moves as the count's width changes), then the
+    /// count, measured together and the count left out while it wouldn't
+    /// clear the pager — never truncated, never at the cost of the action.
+    /// "Defer all" itself is left out only when it alone wouldn't fit.
+    @ViewBuilder
+    private func bottomLeading(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
+        let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
+        let deferWidth = WidgetTheme.measuredWidth(for: "Defer all", font: metrics.caption2Font(weight: .semibold))
+        let showsDefer = segment.hasWaiting && WidgetTheme.fitsLeftOfPager(
+            width: deferWidth, cardWidth: width, pagerText: pagerText, metrics: metrics
+        )
+        let count = ReminderDayProgress.PeriodCount(segment)
+        let countWidth = WidgetTheme.measuredWidth(for: count.text, font: metrics.caption2Font)
+        let showsCount = count.total > 0 && WidgetTheme.fitsLeftOfPager(
+            width: (showsDefer ? deferWidth + Self.bottomGap : 0) + countWidth,
+            cardWidth: width, pagerText: pagerText, metrics: metrics
+        )
+        HStack(spacing: Self.bottomGap) {
+            if showsDefer {
+                deferAllButton(metrics: metrics)
+            }
+            if showsCount {
+                Text(count.text)
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize()
-                    .frame(height: metrics.bottomBarHeight)
-                    .contentShape(Rectangle())
+                    .accessibilityLabel(Text("\(count.handled) of \(count.total) considered in \(segment.label)"))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
         }
+    }
+
+    /// "Defer all" and the count: the Tasks row's "Select" gap.
+    private static let bottomGap: CGFloat = 8
+
+    /// "Defer all", measured in the semibold caption2 it is drawn in.
+    private func deferAllButton(metrics: WidgetTextMetrics) -> some View {
+        Button(intent: DeferSegmentIntent(horizon: segment.horizon)) {
+            Text("Defer all")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(WidgetTheme.indigoAccent)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(height: metrics.bottomBarHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
     }
 
     // MARK: Header — `RemindersListView.header`'s layout
@@ -1644,13 +1748,17 @@ private struct TaskSegmentListView: View {
     private var title: some View {
         Text("Tasks · \(segment.label)")
             .font(.headline)
-            .foregroundStyle(.primary)
+            // Its horizon's teal (2026-10-11): the page's accent, matching
+            // its strip bar and ring.
+            .foregroundStyle(WidgetTheme.taskSegmentTitleColor(segment.horizonValue, scheme: colorScheme))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }
 
-    /// "5 left", "all considered"; over the nudge threshold it suggests
-    /// Process instead of a tap-through (spec §3, ~50 items).
+    /// "5 left", "all clear" — a period's subtitle words (2026-10-11; it
+    /// said "all considered"); over the nudge threshold it suggests Process
+    /// instead of a tap-through (spec §3, ~50 items). The "X of Y" sits in
+    /// the bottom row, where a period's "N of M" does.
     private var subtitle: some View {
         Text(entry.actionDescription ?? subtitleText)
             .font(.caption2)
@@ -1661,7 +1769,7 @@ private struct TaskSegmentListView: View {
 
     private var subtitleText: String {
         let waiting = segment.waitingCount
-        let count = waiting == 0 ? "all considered" : "\(waiting) left"
+        let count = waiting == 0 ? "all clear" : "\(waiting) left"
         return segment.nudge ? "\(count) · try Process" : count
     }
 

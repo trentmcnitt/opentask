@@ -8,10 +8,12 @@ struct RemindersEntry: TimelineEntry {
     let groups: [ReminderGroupDTO]
     /// Today's LISTED task segments (2026-10-10; `TaskSegmentDTO.listed`,
     /// after the pending filters), in screen order — the pages that come
-    /// BEFORE the time slots in the widget's ring. Never merged into
-    /// `groups`: no slot count, strip, "N of M" or day-complete reads them
-    /// (amendment 8). No default, so every construction site says what it
-    /// shows.
+    /// AFTER the time slots in the widget's ring. Never merged into
+    /// `groups`: no PERIOD's count ("N left", "N of M") reads them
+    /// (amendment 8); since 2026-10-11 they have their own strip bars and
+    /// "X of Y", and a waiting one keeps the day from being complete
+    /// (`ReminderDayProgress`). No default, so every construction site says
+    /// what it shows.
     let segments: [TaskSegmentDTO]
     /// Index into `groups`. Never out of range — the provider clamps. While a
     /// segment page is on screen this is the clock's natural slot, which the
@@ -85,9 +87,10 @@ struct RemindersProvider: TimelineProvider {
             if !entry.isSignedOut {
                 // Boundary entries always show the *natural* page for their
                 // moment, so crossing into a new slot visibly overrides
-                // whatever the user had chevroned to. A task segment still
-                // waiting stays the natural page across a boundary (it is
-                // ahead of every slot until considered or deferred).
+                // whatever the user had chevroned to. A waiting task segment
+                // is the natural page only while every slot through the
+                // clock's is finished, so a boundary into a slot with
+                // something waiting takes the widget back to that slot.
                 for boundary in RemindersTimeline.upcomingBoundaries(in: entry.groups).prefix(8) {
                     let page = RemindersTimeline.naturalPage(
                         groups: entry.groups, segments: entry.segments, now: boundary.date
@@ -544,16 +547,58 @@ private enum ReminderPreviewData {
         ]
     }
 
-    /// The natural page with segments waiting: the Days segment, ahead of
-    /// every slot.
-    static func segmentEntry() -> RemindersEntry {
-        let page = RemindersTimeline.naturalPage(groups: groups, segments: segments, now: now)
+    /// The page `key` names, with the task segments in the ring — built by
+    /// key, not from the clock (`naturalPage`), so a render shows the same
+    /// page whatever time it is drawn. -10 is the Days segment; the default
+    /// is Early morning with the segments' bars in its strip (2026-10-11).
+    static func segmentEntry(key: Int = -10, groups gs: [ReminderGroupDTO]? = nil) -> RemindersEntry {
+        let gs = gs ?? groups
+        let listed = TaskSegmentDTO.listed(segments)
+        let natural = RemindersTimeline.naturalSlotIndex(in: gs, now: now)
+        let page = RemindersTimeline.page(forKey: key, groups: gs, segments: listed, naturalSlot: natural)
         return RemindersEntry(
-            date: now, groups: groups, segments: segments, slotIndex: page.slotIndex,
+            date: now, groups: gs, segments: listed, slotIndex: page.slotIndex,
             segmentIndex: page.segmentIndex, staleSince: nil, isSignedOut: false,
             canUndo: true, canRedo: false, actionDescription: nil
         )
     }
+
+    /// Every period considered, and the Days segment finished too (its
+    /// waiting rows considered) — Weeks still waits, so the day isn't done.
+    static func segmentFinishedEntry() -> RemindersEntry {
+        let gs = groups.map { g in
+            ReminderGroupDTO(
+                slot: g.slot, reminders: [], considered: g.considered + g.reminders.count,
+                consideredItems: g.reminders + g.consideredItems, prompts: g.prompts.map { $0.handled(did: false) }
+            )
+        }
+        let days = segments[0].replacingTasks(segments[0].tasks.map {
+            SegmentTaskDTO(task: $0.task, state: $0.state == .waiting ? .considered : $0.state)
+        })
+        let listed = TaskSegmentDTO.listed([days] + segments.dropFirst())
+        let page = RemindersTimeline.page(forKey: -10, groups: gs, segments: listed, naturalSlot: 0)
+        return RemindersEntry(
+            date: now, groups: gs, segments: listed, slotIndex: page.slotIndex,
+            segmentIndex: page.segmentIndex, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+}
+
+#Preview("Reminders Large — slot page with task bars", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.segmentEntry(key: ReminderPreviewData.earlyMorningKey)
+}
+
+#Preview("Reminders Large — task segment finished", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -10)
+    ReminderPreviewData.segmentFinishedEntry()
 }
 
 #Preview("Reminders Large — task segment (Days)", as: .systemLarge) {

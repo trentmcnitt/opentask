@@ -214,7 +214,10 @@ enum ReminderStackTimeline {
         let card = WatchWidgetEntry.CaughtUpCard(
             nextSlotLabel: next?.label, nextSlotStart: next.flatMap { startDate(of: $0, on: date) },
             nextSlotCount: next?.waitingCount ?? 0, urgentOverdue: urgent,
-            isDayComplete: ReminderDayProgress.isDayComplete(groups)
+            // A waiting segment took the card above, so here they are all
+            // finished; passing them lets a day whose only handled items
+            // were segment rows still read "Day complete" (2026-10-11).
+            isDayComplete: ReminderDayProgress.isDayComplete(groups, segments: TaskSegmentDTO.listed(liveSegments))
         )
         return WatchWidgetEntry(
             date: date, content: .caughtUp(card), ring: ring,
