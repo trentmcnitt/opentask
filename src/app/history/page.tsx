@@ -489,6 +489,8 @@ function formatEditDetails(
       case 'snoozed_from': // legacy field name
       case 'original_due_at': // current field name
       case 'target_set_at': // Upcoming's wait anchor, moves with every target write
+      case 'target_auto': // §8: whether the target is the deadline's automatic one
+      case 'occurrence_at': // §6: a repeating task's schedule, moves with done/skip
       case 'updated_at':
         break
       default:
@@ -864,6 +866,8 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
         'updated_at',
         'original_due_at',
         'target_set_at',
+        'target_auto',
+        'occurrence_at',
       ].includes(f),
   )
 
@@ -973,8 +977,10 @@ function formatFieldDetail(snapshot: UndoSnapshot, field: string, timezone: stri
       return `${before} → ${after}`
     }
     case 'snooze_count': {
-      const before = before_state.snooze_count ?? 0
-      const after = after_state.snooze_count ?? 0
+      // Retired 2026-10-12 (§6: no snooze state); still read for history
+      // written before then.
+      const before = (before_state as { snooze_count?: number }).snooze_count ?? 0
+      const after = (after_state as { snooze_count?: number }).snooze_count ?? 0
       return `${before} → ${after}`
     }
     default:

@@ -14,6 +14,8 @@ export interface CompletionCopy {
   completed_at: string
   due_at_was: string | null
   due_at_next: string | null
+  /** The occurrence the completion closed (§6, 2026-10-12); absent in older entries. */
+  occurrence_at_was?: string | null
 }
 
 export function reinsertCompletion(
@@ -25,7 +27,15 @@ export function reinsertCompletion(
   const copy = (state as Partial<Task> & { _completion?: CompletionCopy })._completion
   if (!copy) return
   tx.prepare(
-    `INSERT INTO completions (id, task_id, user_id, completed_at, due_at_was, due_at_next)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(completionId, taskId, copy.user_id, copy.completed_at, copy.due_at_was, copy.due_at_next)
+    `INSERT INTO completions (id, task_id, user_id, completed_at, due_at_was, due_at_next, occurrence_at_was)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    completionId,
+    taskId,
+    copy.user_id,
+    copy.completed_at,
+    copy.due_at_was,
+    copy.due_at_next,
+    copy.occurrence_at_was ?? null,
+  )
 }

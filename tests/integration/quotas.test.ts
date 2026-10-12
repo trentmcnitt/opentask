@@ -133,7 +133,7 @@ describe('A quota over HTTP has no date and no snooze', () => {
     expect(status).toBe(201)
     expect(body.due_at).toBeNull()
     expect(body.original_due_at).toBeNull()
-    expect(body.is_snoozed).toBe(false)
+    expect(body.occurrence_at).toBeNull()
   })
 
   test('POST /api/tasks refuses a quota that is given a due date', async () => {

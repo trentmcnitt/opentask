@@ -74,11 +74,11 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
-2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "do it Saturday", "remind me Thursday at 9"). When no specific time is mentioned, use the configured default task time from the user prompt — except for today (see below). If no date is mentioned, return null.
+2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "call the plumber Thursday", "do it Saturday", "remind me Thursday at 9", "remind me Monday at 3"). When no specific time is mentioned, use the configured default task time from the user prompt — except for today (see below). If no date is mentioned, return null.
 
    The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
 
-   A date that only says when the task must be done BY ("by Friday", "before the 17th", "expires Oct 13") is a deadline, not a target: put it in deadline_at and leave due_at null. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both. A target never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
+   A date that only says when the task must be done BY ("by Friday", "due the 23rd", "before the 17th", "expires Oct 13") is a deadline, not a target: put it in deadline_at and leave due_at null. Nothing is lost: the app gives a deadline with no target an automatic target of its own, a few days before the deadline, and starts reminding the user from there. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both. A target never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
 
    No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "right now" / "immediately" / "tonight" name a time).
 
@@ -209,7 +209,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "notes": null,
-  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null. No pace wording, priority, or label request."
+  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app sets the deadline's automatic target. No pace wording, priority, or label request."
 }
 \`\`\`
 

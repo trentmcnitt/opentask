@@ -61,7 +61,7 @@
  *     targeted 10 days ago (backdated in the DB), due tomorrow
  *     GET  /api/reminders                       → reminders-upcoming.json
  *     POST /api/task-segments/target-today [repeating]
- *                                               → task-segments-target-today-skipped.json
+ *                                               → task-segments-target-today-repeating.json
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -497,7 +497,8 @@ describe('contract fixtures (native clients)', () => {
     //     tomorrow — both targeted 10 days ago, so today is a heads-up day
     //     (wait 11: T−3 has passed, T−1 is today). `target_set_at` can't be set
     //     over the API (every write stamps now), so it is backdated in the DB.
-    //     Then Today on the repeating row: skipped, `skipped_recurring`.
+    //     Then Today on the repeating row: its target moves (its occurrence
+    //     stays — §6, 2026-10-12); `skipped_recurring` is always [].
     const tomorrow = DateTime.now().setZone('America/New_York').plus({ days: 1 })
     const at9 = tomorrow.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toISO()
     await make('upcomingOneOff', {
@@ -512,9 +513,12 @@ describe('contract fixtures (native clients)', () => {
     })
     backdateTargetSet([created.upcomingOneOff, created.upcomingRepeating], 10)
     captured['reminders-upcoming'] = await call('/api/reminders')
-    captured['task-segments-target-today-skipped'] = await call('/api/task-segments/target-today', {
-      ids: [created.upcomingRepeating],
-    })
+    captured['task-segments-target-today-repeating'] = await call(
+      '/api/task-segments/target-today',
+      {
+        ids: [created.upcomingRepeating],
+      },
+    )
   })
 
   const names = [
@@ -532,7 +536,7 @@ describe('contract fixtures (native clients)', () => {
     'task-segments-consider',
     'reminders-segments',
     'reminders-upcoming',
-    'task-segments-target-today-skipped',
+    'task-segments-target-today-repeating',
     'quota-prompts-restore',
     'task-counts',
     'bulk-snooze',

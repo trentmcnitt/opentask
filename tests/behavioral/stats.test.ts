@@ -137,7 +137,7 @@ describe('Per-Task Stats Tests', () => {
     expect(result2.task.last_completed_at).not.toBe(firstLastCompletedAt)
   })
 
-  test('snooze_count increments on EVERY snooze', () => {
+  test('every snooze is a move: the target moves, the first-target date stays (no snooze count)', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -147,7 +147,8 @@ describe('Per-Task Stats Tests', () => {
       },
     })
 
-    expect(task.snooze_count).toBe(0)
+    expect(task).not.toHaveProperty('snooze_count')
+    expect(task.original_due_at).toBe(localTime(8, 0))
 
     // First snooze
     const result = snoozeTask({
@@ -157,9 +158,11 @@ describe('Per-Task Stats Tests', () => {
       until: localTime(14, 0),
     })
 
-    expect(result.task.snooze_count).toBe(1)
+    expect(result.task.due_at).toBe(localTime(14, 0))
+    expect(result.task.original_due_at).toBe(localTime(8, 0))
+    expect(result.task).not.toHaveProperty('snooze_count')
 
-    // Second snooze - should ALSO increment (new behavior)
+    // Second snooze — the same: one more move, origin unchanged
     const result2 = snoozeTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -167,8 +170,8 @@ describe('Per-Task Stats Tests', () => {
       until: localTime(16, 0),
     })
 
-    // Should increment on every snooze
-    expect(result2.task.snooze_count).toBe(2)
+    expect(result2.task.due_at).toBe(localTime(16, 0))
+    expect(result2.task.original_due_at).toBe(localTime(8, 0))
   })
 
   test('undo decrements completion_count', () => {
@@ -239,7 +242,7 @@ describe('Per-Task Stats Tests', () => {
     expect(updated2.completion_count).toBe(1)
   })
 
-  test('bulk snooze increments snooze_count for every snooze', () => {
+  test('bulk snooze moves every task and keeps each first-target date', () => {
     const task1 = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -267,7 +270,8 @@ describe('Per-Task Stats Tests', () => {
     })
 
     const task1AfterFirstSnooze = getTaskById(task1.id)!
-    expect(task1AfterFirstSnooze.snooze_count).toBe(1)
+    expect(task1AfterFirstSnooze.due_at).toBe(localTime(12, 0))
+    expect(task1AfterFirstSnooze.original_due_at).toBe(localTime(8, 0))
 
     // Now bulk snooze both
     bulkSnooze({
@@ -280,10 +284,11 @@ describe('Per-Task Stats Tests', () => {
     const updated1 = getTaskById(task1.id)!
     const updated2 = getTaskById(task2.id)!
 
-    // task1 was already snoozed, bulk snooze increments again (new behavior)
-    expect(updated1.snooze_count).toBe(2)
-    // task2 is getting its first snooze, so count should be 1
-    expect(updated2.snooze_count).toBe(1)
+    // Both moved; each keeps the date it was first targeted for
+    expect(updated1.due_at).toBe(localTime(14, 0))
+    expect(updated1.original_due_at).toBe(localTime(8, 0))
+    expect(updated2.due_at).toBe(localTime(14, 0))
+    expect(updated2.original_due_at).toBe(localTime(9, 0))
   })
 })
 

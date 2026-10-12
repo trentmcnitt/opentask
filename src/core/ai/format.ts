@@ -46,10 +46,10 @@ export function formatAge(isoUtc: string, now: DateTime): string {
  * P0-3 target was "pushed back" only where it can see the history, and showing
  * it on every line would invite exactly that narrative about routine sweeps.
  *
- * A target the deadline implies (no target of the user's own, or theirs falls
- * after the deadline — `target_implied`) reads `target: <date> (from deadline)`
- * and never gets the first-target note: comparing the user's old target with
- * an implied one would describe a move nobody made.
+ * The deadline's automatic target (no target the user picked — `target_auto`,
+ * carried as `target_implied`) reads `target: <date> (from deadline)` and
+ * never gets the first-target note: comparing an old target with an automatic
+ * one would describe a move nobody made.
  */
 export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime): string {
   const due = t.due_at

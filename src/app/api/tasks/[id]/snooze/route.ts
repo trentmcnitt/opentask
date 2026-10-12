@@ -45,8 +45,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       userTimezone: user.timezone,
       taskId,
       until: input.until,
-      allowPastDeadline: input.allow_past_deadline,
-      capAtDeadline: input.cap_at_deadline,
+      // `allow_past_deadline` / `cap_at_deadline` are accepted and ignored
+      // (2026-10-12): every move stops at the deadline (§8.2).
     })
 
     notifyDemoEngagement(user.name, 'update')
@@ -56,7 +56,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       previous_due_at: result.previousDueAt,
       original_due_at: result.originalDueAt,
       description: result.description,
-      // A3: the snooze stopped AT the deadline instead of where it was asked.
+      // §8.2: the snooze stopped AT the deadline instead of where it was asked.
       capped_at_deadline: result.cappedAtDeadline,
     })
   } catch (err) {

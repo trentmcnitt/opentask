@@ -28,15 +28,13 @@ import {
   effectiveHorizon,
   latestSegmentDay,
   targetAgeDays,
-  impliedTargetAt,
-  effectiveTargetAt,
+  autoTargetAt,
   advanceDeadline,
 } from '@/lib/task-segments'
 import { countTasks } from '@/lib/task-counts'
 import { normalizeTargetAliases } from '@/core/validation/task'
 import { formatTaskResponse } from '@/lib/format-task'
-import { DEADLINE_TODAY_HOLDS } from '@/lib/task-model-words'
-import { PastDeadlineError, ValidationError } from '@/core/errors'
+import { ValidationError } from '@/core/errors'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -310,17 +308,21 @@ describe('Task model', () => {
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T15:00'))
     })
 
-    test('TM-025: like the plain Today, a picked time is a re-target — the deadline does not cap it', () => {
+    test('TM-025: like every move, a picked time is capped at the deadline (§8.2)', () => {
+      // Deadline Mon Oct 12 12:00: its automatic target is now (a 2-day wait,
+      // lead 3 → a morning already past).
       const t = make({ deadline_at: at('2026-10-12T12:00') })
       age(t.id, '2026-10-01T09:00')
       targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-13T09:00'))
-      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T09:00'))
-      expect(getTaskById(t.id)!.deadline_at).toBe(at('2026-10-12T12:00'))
+      const after = getTaskById(t.id)!
+      expect(after.due_at).toBe(at('2026-10-12T12:00'))
+      expect(after.target_auto).toBe(false)
+      expect(after.deadline_at).toBe(at('2026-10-12T12:00'))
     })
   })
 
   describe('deadline', () => {
-    test('TM-030: a single snooze past a future deadline is refused unless confirmed', () => {
+    test('TM-030: a single snooze past a future deadline stops AT it — never refused (§8.2)', () => {
       const t = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
       const snooze = (allow?: boolean) =>
         updateTask({
@@ -329,12 +331,16 @@ describe('Task model', () => {
           taskId: t.id,
           input: { due_at: at('2026-10-11T09:00'), allow_past_deadline: allow },
         })
-      expect(() => snooze()).toThrow(PastDeadlineError)
-      expect(snooze(true).task.due_at).toBe(at('2026-10-11T09:00'))
+      const r = snooze()
+      expect(r.task.due_at).toBe(at('2026-10-10T18:00'))
+      expect(r.cappedAtDeadline).toBe(true)
+      expect(r.description).toMatch(/^Snoozed to deadline/)
+      // `allow_past_deadline` is accepted from old clients and ignored.
+      expect(snooze(true).task.due_at).toBe(at('2026-10-10T18:00'))
       expect(getTaskById(t.id)!.deadline_at).toBe(at('2026-10-10T18:00'))
     })
 
-    test('TM-031: once the deadline has passed, snooze works as before', () => {
+    test('TM-031: once the deadline has passed, a snooze past it is allowed (2026-10-12 ruling)', () => {
       const t = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
       const r = updateTask({
         userId: TEST_USER_ID,
@@ -343,9 +349,13 @@ describe('Task model', () => {
         input: { due_at: at('2026-10-11T09:00') },
       })
       expect(r.task.due_at).toBe(at('2026-10-11T09:00'))
+      expect(r.cappedAtDeadline).toBe(false)
+      expect(r.description).toMatch(/^Snoozed/)
+      expect(r.task.deadline_at).toBe(at('2026-10-09T18:00'))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
     })
 
-    test('TM-032: a deliberate re-target past the deadline is not capped', () => {
+    test('TM-032: a re-target past the deadline is a move like any other: capped', () => {
       const t = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
       const r = updateTask({
         userId: TEST_USER_ID,
@@ -353,113 +363,119 @@ describe('Task model', () => {
         taskId: t.id,
         input: { due_at: at('2026-10-12T09:00'), reset_original_due_at: true },
       })
-      expect(r.task.due_at).toBe(at('2026-10-12T09:00'))
+      expect(r.task.due_at).toBe(at('2026-10-10T18:00'))
+      expect(r.task.original_due_at).toBe(at('2026-10-10T09:00'))
     })
 
-    test('TM-033: bulk snooze leaves a deadline-capped task where it is and reports it', () => {
+    test('TM-033: bulk snooze stops at a future deadline; a passed one waits like High (2026-10-12)', () => {
       const capped = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
+      const passed = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
       const free = make({ due_at: at('2026-10-10T09:00') })
       const r = bulkSnooze({
         userId: TEST_USER_ID,
         userTimezone: tz,
-        taskIds: [capped.id, free.id],
+        taskIds: [capped.id, passed.id, free.id],
         until: at('2026-10-11T09:00'),
       })
-      expect(r.tasksAffected).toBe(1)
+      expect(r.tasksAffected).toBe(2)
+      expect(r.deadlineCapped).toBe(1)
       expect(r.deadlineSkipped).toBe(1)
-      expect(getTaskById(capped.id)!.due_at).toBe(at('2026-10-10T09:00'))
-      const confirmed = bulkSnooze({
-        userId: TEST_USER_ID,
-        userTimezone: tz,
-        taskIds: [capped.id],
-        until: at('2026-10-11T09:00'),
-        allowPastDeadlineIds: [capped.id],
-      })
-      expect(confirmed.tasksAffected).toBe(1)
+      expect(getTaskById(capped.id)!.due_at).toBe(at('2026-10-10T18:00'))
+      expect(getTaskById(passed.id)!.due_at).toBe(at('2026-10-09T09:00'))
+      expect(getTaskById(free.id)!.due_at).toBe(at('2026-10-11T09:00'))
     })
 
-    test('TM-034: a deadline with no target nags from 4 days before, unless turned off', () => {
+    test('TM-034: a deadline with no target gets a stored automatic target that follows it (§8.1, §8.4)', () => {
+      // Deadline Tue Oct 13 18:00, set Sat Oct 10 10:00: a 3-day wait, lead 3
+      // → Oct 10 09:00, already past → now. Over target at once.
       const t = make({ deadline_at: at('2026-10-13T18:00') })
-      expect(impliedTargetAt(t)).toBe(at('2026-10-09T18:00'))
+      expect(t.due_at).toBe(SAT.toISOString())
+      expect(t.target_auto).toBe(true)
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
-      expect(countTasks([getTaskById(t.id)!], tz, SAT).overdue).toBe(1)
-      expect(segmentOf(t.id)).toBeNull()
-      updateTask({
-        userId: TEST_USER_ID,
-        userTimezone: tz,
-        taskId: t.id,
-        input: { due_at: null, deadline_nag_off: true },
+      // "Overdue" in the counts is strictly past, so a minute on.
+      const minuteOn = new Date(SAT.getTime() + 60_000)
+      expect(countTasks([getTaskById(t.id)!], tz, minuteOn).overdue).toBe(1)
+      expect(formatTaskResponse(getTaskById(t.id)!).deadline_nag_off).toBe(false)
+
+      // A picked target replaces it.
+      const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
+      updateTask({ ...u, input: { due_at: at('2026-10-12T09:00') } })
+      expect(getTaskById(t.id)!).toMatchObject({
+        due_at: at('2026-10-12T09:00'),
+        target_auto: false,
       })
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
-      // Back in its effective-horizon segment: 3 days out is "days".
-      age(t.id, '2026-10-01T09:00')
-      expect(segmentOf(t.id)).toEqual({ horizon: 'days', state: 'waiting' })
-      // Undo and redo of that write (a boolean column) work and leave the
-      // stack usable — the remove-target Undo used to throw and wedge it.
+      // Undo and redo carry target_auto (a boolean column) both ways.
       executeUndo(TEST_USER_ID)
-      expect(getTaskById(t.id)!.deadline_nag_off).toBe(false)
+      expect(getTaskById(t.id)!).toMatchObject({ due_at: SAT.toISOString(), target_auto: true })
       executeRedo(TEST_USER_ID)
-      expect(getTaskById(t.id)!.deadline_nag_off).toBe(true)
-      // A new deadline turns the nag back on.
-      updateTask({
-        userId: TEST_USER_ID,
-        userTimezone: tz,
-        taskId: t.id,
-        input: { deadline_at: at('2026-10-12T18:00') },
+      expect(getTaskById(t.id)!.target_auto).toBe(false)
+
+      // "Back to auto" — clearing the target of a deadline one-off (an old
+      // client's Remove target sends deadline_nag_off too, ignored).
+      updateTask({ ...u, input: { due_at: null, deadline_nag_off: true } })
+      expect(getTaskById(t.id)!).toMatchObject({ due_at: SAT.toISOString(), target_auto: true })
+
+      // The automatic target follows a new deadline: Tue Oct 20 18:00 → a
+      // 10-day wait, lead 3 → Sat Oct 17, 9:00 AM.
+      updateTask({ ...u, input: { deadline_at: at('2026-10-20T18:00') } })
+      expect(getTaskById(t.id)!).toMatchObject({
+        due_at: at('2026-10-17T09:00'),
+        target_auto: true,
       })
-      expect(getTaskById(t.id)!.deadline_nag_off).toBe(false)
+      // And goes with the deadline when it is removed.
+      updateTask({ ...u, input: { deadline_at: null } })
+      expect(getTaskById(t.id)!).toMatchObject({ due_at: null, target_auto: false })
     })
 
     test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its age', () => {
-      // Deadline Oct 12 18:00 → implied target Oct 8 09:00: nagging since then.
+      // Deadline Mon Oct 12 18:00 → its automatic target is now (Sat 10:00).
       const t = make({ deadline_at: at('2026-10-12T18:00') })
-      age(t.id, '2026-10-01T09:00')
-      // A sweep past the deadline leaves it and reports it.
+      expect(t.due_at).toBe(SAT.toISOString())
+      const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
+      // A sweep past the deadline stops AT it and reports it.
       const swept = bulkSnooze({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskIds: [t.id],
         until: at('2026-10-13T09:00'),
       })
-      expect(swept.deadlineSkipped).toBe(1)
-      expect(getTaskById(t.id)!.due_at).toBeNull()
-      // A single snooze past it is refused unless confirmed.
-      expect(() =>
-        updateTask({
-          userId: TEST_USER_ID,
-          userTimezone: tz,
-          taskId: t.id,
-          input: { due_at: at('2026-10-13T09:00') },
-        }),
-      ).toThrow(PastDeadlineError)
-      // A snooze inside the deadline is a snooze: the age counts from the
-      // implied target, not from the snooze.
-      const snoozed = updateTask({
-        userId: TEST_USER_ID,
-        userTimezone: tz,
-        taskId: t.id,
-        input: { due_at: at('2026-10-10T16:00') },
-      }).task
-      // The implied target is the MORNING of the lead day (ruling B2).
-      expect(snoozed.original_due_at).toBe(at('2026-10-08T09:00'))
-      expect(snoozed.snooze_count).toBe(1)
-      vi.setSystemTime(new Date(at('2026-10-10T17:00')))
+      expect(swept.deadlineCapped).toBe(1)
+      expect(swept.deadlineSkipped).toBe(0)
+      expect(getTaskById(t.id)!).toMatchObject({
+        due_at: at('2026-10-12T18:00'),
+        target_auto: false,
+      })
+      // A single snooze past it is capped too — never refused.
+      const past = updateTask({ ...u, input: { due_at: at('2026-10-13T09:00') } })
+      expect(past.task.due_at).toBe(at('2026-10-12T18:00'))
+      expect(past.cappedAtDeadline).toBe(true)
+      // A snooze inside the deadline is a move: the age counts from the first
+      // target (the automatic one), not from the snooze.
+      const snoozed = updateTask({ ...u, input: { due_at: at('2026-10-10T16:00') } }).task
+      expect(snoozed.due_at).toBe(at('2026-10-10T16:00'))
+      expect(snoozed.original_due_at).toBe(SAT.toISOString())
+      vi.setSystemTime(new Date(at('2026-10-12T17:00')))
       expect(targetAgeDays(snoozed, tz, new Date())).toBe(2)
     })
 
-    test('TM-038: a target set past its own deadline never hides the deadline (A2)', () => {
-      const ctx = { timezone: tz, morningTime: '09:00' }
-      // Target Oct 20, deadline Oct 13 18:00 → nags from Oct 9 09:00.
+    test('TM-038: a target set past its own deadline is stored AT the deadline (A2, §8.2)', () => {
+      // Asked for Oct 20, deadline Oct 13 18:00: stored at the deadline, still
+      // the user's pick.
       const t = make({ due_at: at('2026-10-20T09:00'), deadline_at: at('2026-10-13T18:00') })
-      expect(effectiveTargetAt(t, ctx)).toBe(at('2026-10-09T09:00'))
+      expect(t.due_at).toBe(at('2026-10-13T18:00'))
+      expect(t.target_auto).toBe(false)
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
+      vi.setSystemTime(new Date(at('2026-10-13T18:30')))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
       // A target at or before the deadline is honoured as set.
+      vi.setSystemTime(SAT)
       const ok = make({ due_at: at('2026-10-13T08:00'), deadline_at: at('2026-10-13T18:00') })
-      expect(effectiveTargetAt(ok, ctx)).toBe(at('2026-10-13T08:00'))
+      expect(ok.due_at).toBe(at('2026-10-13T08:00'))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(ok.id)
     })
 
-    test('TM-039: a confirmed snooze past the deadline turns the implied nag off, so it holds', () => {
+    test('TM-039: allow_past_deadline no longer lets a snooze past the deadline; it nags from it', () => {
       const t = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-11T18:00') })
       updateTask({
         userId: TEST_USER_ID,
@@ -467,27 +483,20 @@ describe('Task model', () => {
         taskId: t.id,
         input: { due_at: at('2026-10-12T09:00'), allow_past_deadline: true },
       })
-      expect(getTaskById(t.id)!.deadline_nag_off).toBe(true)
+      expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-11T18:00'))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
-      // A deliberate re-target past the deadline is not a snooze: nag stays on.
-      const r = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-11T18:00') })
-      updateTask({
-        userId: TEST_USER_ID,
-        userTimezone: tz,
-        taskId: r.id,
-        input: { due_at: at('2026-10-12T09:00'), reset_original_due_at: true },
-      })
-      expect(getTaskById(r.id)!.deadline_nag_off).toBe(false)
-      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(r.id)
+      vi.setSystemTime(new Date(at('2026-10-11T18:30')))
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
     })
 
-    test('TM-040: the implied nag starts at the morning of the lead day, not at 23:59 (B2)', () => {
-      expect(
-        impliedTargetAt(
-          { due_at: null, deadline_at: at('2026-10-17T23:59') },
-          { timezone: tz, morningTime: '08:30' },
-        ),
-      ).toBe(at('2026-10-13T08:30'))
+    test('TM-040: the automatic target starts at the morning of the lead day, not at 23:59 (B2)', () => {
+      const ctx = { timezone: tz, morningTime: '08:30' }
+      // Sat Oct 17 23:59, set Sat Oct 10: a 7-day wait, lead 3 → Wed Oct 14.
+      expect(autoTargetAt(at('2026-10-17T23:59'), ctx, SAT)).toBe(at('2026-10-14T08:30'))
+      // A wait of 16 days or more takes lead 4: Fri Oct 30 → Mon Oct 26.
+      expect(autoTargetAt(at('2026-10-30T23:59'), ctx, SAT)).toBe(at('2026-10-26T08:30'))
+      // A deadline before the lead day's morning: never after the deadline.
+      expect(autoTargetAt(at('2026-10-11T07:00'), ctx, SAT)).toBe(SAT.toISOString())
     })
 
     test('TM-041: a recurring deadline keeps its local time across DST', () => {
@@ -540,7 +549,7 @@ describe('Task model', () => {
   })
 
   describe('target age', () => {
-    test('TM-040: counts from the first target; a snooze keeps it, a re-target restarts it', () => {
+    test('TM-040: counts from the first target; every move keeps it, a re-target too (§6)', () => {
       const t = make({ due_at: at('2026-10-07T09:00') })
       age(t.id, '2026-10-01T09:00')
       const snoozed = updateTask({
@@ -556,8 +565,9 @@ describe('Task model', () => {
         taskId: t.id,
         input: { due_at: at('2026-10-10T08:00'), reset_original_due_at: true },
       }).task
-      // The target day itself: blank.
-      expect(targetAgeDays(retargeted, tz, SAT)).toBeNull()
+      // `reset_original_due_at` is ignored on a task: the first target stays.
+      expect(retargeted.original_due_at).toBe(at('2026-10-07T09:00'))
+      expect(targetAgeDays(retargeted, tz, SAT)).toBe(3)
     })
 
     test('TM-041: a cleared then re-set target starts fresh', () => {
@@ -573,14 +583,14 @@ describe('Task model', () => {
       expect(targetAgeDays(r, tz, SAT)).toBeNull()
     })
     test('TM-042: the age never counts from before the task existed', () => {
-      // Created today with a deadline in 3 days: the implied target (deadline −
-      // 4 days, morning) is yesterday — the task is over target at once, but its
-      // age is blank today, not "1d".
+      // Created today with a deadline in 3 days: the automatic target's lead
+      // day morning is already past, so it is now — over target at once, but
+      // its age is blank today, not "1d".
       const t = make({ deadline_at: at('2026-10-13T18:00') })
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
-      expect(targetAgeDays(t, tz, SAT, { timezone: tz, morningTime: '09:00' })).toBeNull()
+      expect(targetAgeDays(t, tz, SAT)).toBeNull()
       vi.setSystemTime(new Date(at('2026-10-12T10:00')))
-      expect(targetAgeDays(t, tz, new Date(), { timezone: tz, morningTime: '09:00' })).toBe(2)
+      expect(targetAgeDays(t, tz, new Date())).toBe(2)
     })
   })
 
@@ -617,18 +627,17 @@ describe('Task model', () => {
     })
   })
 
-  describe('rulings A3 and A4 (Trent, 2026-10-11)', () => {
-    test('TM-060: a quick snooze stops AT the deadline, says so, and keeps the nag on (A3)', () => {
+  describe('rulings A3 and A4 (Trent, 2026-10-11), as revised by §8 (2026-10-12)', () => {
+    test('TM-060: a quick snooze stops AT the deadline and says so (A3)', () => {
       const t = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
       const r = snoozeTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskId: t.id,
         until: at('2026-10-11T09:00'),
-        capAtDeadline: true,
       })
       expect(r.task.due_at).toBe(at('2026-10-10T18:00'))
-      expect(getTaskById(t.id)!.deadline_nag_off).toBe(false)
+      expect(r.cappedAtDeadline).toBe(true)
       // Under the deadline it is an ordinary snooze.
       const free = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-14T18:00') })
       const r2 = snoozeTask({
@@ -636,22 +645,23 @@ describe('Task model', () => {
         userTimezone: tz,
         taskId: free.id,
         until: at('2026-10-11T09:00'),
-        capAtDeadline: true,
       })
       expect(r2.task.due_at).toBe(at('2026-10-11T09:00'))
-      // A passed deadline caps nothing: a snooze after it goes where asked.
+      expect(r2.cappedAtDeadline).toBe(false)
+      // A passed deadline caps nothing: the snooze goes where it was sent
+      // (Trent's ruling, 2026-10-12).
       const late = make({ due_at: at('2026-10-09T09:00'), deadline_at: at('2026-10-09T18:00') })
       const r3 = snoozeTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskId: late.id,
         until: at('2026-10-11T09:00'),
-        capAtDeadline: true,
       })
       expect(r3.task.due_at).toBe(at('2026-10-11T09:00'))
+      expect(r3.cappedAtDeadline).toBe(false)
     })
 
-    test('TM-061: bulk snooze and bulk edit cap the listed ids and count them (A3)', () => {
+    test('TM-061: bulk snooze and bulk edit cap every task and count them (A3)', () => {
       const capped = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T18:00') })
       const free = make({ due_at: at('2026-10-10T09:00') })
       const r = bulkSnooze({
@@ -659,7 +669,6 @@ describe('Task model', () => {
         userTimezone: tz,
         taskIds: [capped.id, free.id],
         until: at('2026-10-11T09:00'),
-        capAtDeadlineIds: [capped.id, free.id],
       })
       expect(r.tasksAffected).toBe(2)
       expect(r.deadlineCapped).toBe(1)
@@ -668,77 +677,91 @@ describe('Task model', () => {
       expect(getTaskById(free.id)!.due_at).toBe(at('2026-10-11T09:00'))
 
       const viaEdit = make({ due_at: at('2026-10-10T09:00'), deadline_at: at('2026-10-10T20:00') })
-      bulkEdit({
+      const e = bulkEdit({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskIds: [viaEdit.id],
         changes: { due_at: at('2026-10-12T09:00') },
-        capAtDeadlineIds: [viaEdit.id],
       })
+      expect(e.deadlineCapped).toBe(1)
       expect(getTaskById(viaEdit.id)!.due_at).toBe(at('2026-10-10T20:00'))
     })
 
-    test('TM-062: remove-target silences the 4-day nag but it re-arms on the deadline day (A4)', () => {
-      const t = make({ deadline_at: at('2026-10-13T18:00') })
+    test('TM-062: Remove target on a deadline task goes back to auto, which nags past the deadline (§8.3)', () => {
+      // A picked target with a deadline Tue Oct 20 18:00.
+      const t = make({ due_at: at('2026-10-12T09:00'), deadline_at: at('2026-10-20T18:00') })
+      expect(t.target_auto).toBe(false)
+      // What an old client's Remove target sends.
       updateTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskId: t.id,
         input: { due_at: null, deadline_nag_off: true },
       })
-      const ctx = { timezone: tz, morningTime: '09:00' }
+      // Back to auto: a 10-day wait, lead 3 → Sat Oct 17, 9:00 AM.
+      expect(getTaskById(t.id)!).toMatchObject({
+        due_at: at('2026-10-17T09:00'),
+        target_auto: true,
+      })
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
-      // The deadline's own day, at the morning time.
-      expect(impliedTargetAt(getTaskById(t.id)!, ctx)).toBe(at('2026-10-13T09:00'))
-      vi.setSystemTime(new Date(at('2026-10-13T09:30')))
+      vi.setSystemTime(new Date(at('2026-10-17T09:30')))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
       // And stays on after the deadline passes, until done.
-      vi.setSystemTime(new Date(at('2026-10-14T09:30')))
+      vi.setSystemTime(new Date(at('2026-10-21T09:30')))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
     })
 
-    test('TM-063: re-arming leaves a target at or before the deadline alone (A4)', () => {
-      const ctx = { timezone: tz, morningTime: '09:00' }
-      const base = {
-        rrule: null,
-        deadline_at: at('2026-10-13T18:00'),
-        deadline_nag_off: true,
-      }
-      // The user's own target before the deadline is honored as set.
-      expect(impliedTargetAt({ ...base, due_at: at('2026-10-13T15:00') }, ctx)).toBeNull()
-      // A target past the deadline: the deadline morning comes first.
-      const past = { ...base, due_at: at('2026-10-15T09:00') }
-      expect(effectiveTargetAt(past, ctx, SAT)).toBe(at('2026-10-13T09:00'))
-      // Once the deadline has passed, that target (a deliberate snooze past it) holds.
-      expect(effectiveTargetAt(past, ctx, new Date(at('2026-10-14T09:00')))).toBe(
-        at('2026-10-15T09:00'),
-      )
-      // A deadline earlier than the morning re-arms at the deadline itself.
-      const early = { ...base, due_at: null, deadline_at: at('2026-10-13T07:00') }
-      expect(impliedTargetAt(early, ctx)).toBe(at('2026-10-13T07:00'))
+    test('TM-063: a picked target stays on a deadline change (pulled back if earlier); an auto one goes with it (§8.4)', () => {
+      const u = { userId: TEST_USER_ID, userTimezone: tz }
+      const picked = make({ due_at: at('2026-10-13T15:00'), deadline_at: at('2026-10-13T18:00') })
+      // A later deadline: the pick stays as set.
+      updateTask({ ...u, taskId: picked.id, input: { deadline_at: at('2026-10-20T18:00') } })
+      expect(getTaskById(picked.id)!).toMatchObject({
+        due_at: at('2026-10-13T15:00'),
+        target_auto: false,
+      })
+      // An earlier deadline than the pick: pulled back to it.
+      updateTask({ ...u, taskId: picked.id, input: { deadline_at: at('2026-10-12T12:00') } })
+      expect(getTaskById(picked.id)!.due_at).toBe(at('2026-10-12T12:00'))
+      // The deadline removed: the pick survives.
+      updateTask({ ...u, taskId: picked.id, input: { deadline_at: null } })
+      expect(getTaskById(picked.id)!.due_at).toBe(at('2026-10-12T12:00'))
+
+      // An automatic target is re-derived on a deadline change, and removed
+      // with the deadline.
+      const auto = make({ deadline_at: at('2026-10-20T18:00') })
+      expect(auto.due_at).toBe(at('2026-10-17T09:00'))
+      updateTask({ ...u, taskId: auto.id, input: { deadline_at: at('2026-11-06T18:00') } })
+      // Fri Nov 6: a 27-day wait, lead 4 → Mon Nov 2, 9:00 AM (CST).
+      expect(getTaskById(auto.id)!.due_at).toBe(at('2026-11-02T09:00'))
+      updateTask({ ...u, taskId: auto.id, input: { deadline_at: null } })
+      expect(getTaskById(auto.id)!).toMatchObject({ due_at: null, target_auto: false })
     })
 
-    test('TM-065: a snooze on the deadline day is saved, and says why the nag stays (A4)', () => {
+    test('TM-065: a snooze on the deadline day stops at the deadline; after it, any target can be picked', () => {
       vi.setSystemTime(new Date(at('2026-10-13T10:00')))
       const t = make({ deadline_at: at('2026-10-13T18:00') })
-      const r = updateTask({
-        userId: TEST_USER_ID,
-        userTimezone: tz,
-        taskId: t.id,
-        input: { due_at: at('2026-10-14T09:00'), allow_past_deadline: true },
-      })
-      expect(r.task.due_at).toBe(at('2026-10-14T09:00'))
-      expect(r.description).toBe(DEADLINE_TODAY_HOLDS)
+      const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
+      const r = updateTask({ ...u, input: { due_at: at('2026-10-14T09:00') } })
+      expect(r.task.due_at).toBe(at('2026-10-13T18:00'))
+      expect(r.description).toMatch(/^Snoozed to deadline/)
+      // The deadline passes: the cap no longer applies, the snooze moves it.
+      vi.setSystemTime(new Date(at('2026-10-13T19:00')))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
-      // An ordinary snooze before the deadline says what it did.
-      const u = make({ due_at: at('2026-10-13T09:00'), deadline_at: at('2026-10-13T18:00') })
+      const moved = updateTask({ ...u, input: { due_at: at('2026-10-14T09:00') } })
+      expect(moved.task.due_at).toBe(at('2026-10-14T09:00'))
+      expect(moved.cappedAtDeadline).toBe(false)
+      expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
+      // An ordinary snooze before a deadline says what it did.
+      vi.setSystemTime(new Date(at('2026-10-14T08:00')))
+      const v = make({ due_at: at('2026-10-14T09:00'), deadline_at: at('2026-10-14T18:00') })
       const r2 = updateTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
-        taskId: u.id,
-        input: { due_at: at('2026-10-13T15:00') },
+        taskId: v.id,
+        input: { due_at: at('2026-10-14T15:00') },
       })
-      expect(r2.description).not.toBe(DEADLINE_TODAY_HOLDS)
+      expect(r2.description).not.toMatch(/deadline/)
     })
 
     test('TM-064: a new user starts on the horizon sort', () => {

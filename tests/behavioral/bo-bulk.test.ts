@@ -761,11 +761,12 @@ describe('Bulk Edit Snooze & Recurrence', () => {
   /**
    * BE-001: bulkEdit with due_at changes applies snooze logic
    *
-   * When bulkEdit is called with only due_at changes (no rrule change),
-   * snooze logic is applied: original_due_at is set, snooze_count incremented.
+   * When bulkEdit is called with only due_at changes (no rrule change), each
+   * is a move (§6, 2026-10-12): the first-target date is kept, nothing is
+   * counted.
    *
    * Action: bulkEdit with { due_at: tomorrow } on multiple tasks
-   * Result: original_due_at set, snooze_count incremented for each
+   * Result: due_at moved, original_due_at kept for each
    */
   test('BE-001: bulkEdit with due_at changes applies snooze logic', () => {
     // Create multiple tasks with different due dates
@@ -789,9 +790,7 @@ describe('Bulk Edit Snooze & Recurrence', () => {
 
     // Verify initial state — original_due_at is set eagerly at creation time
     expect(task1.original_due_at).toBe(task1.due_at)
-    expect(task1.snooze_count).toBe(0)
     expect(task2.original_due_at).toBe(task2.due_at)
-    expect(task2.snooze_count).toBe(0)
 
     const originalTask1DueAt = task1.due_at
     const originalTask2DueAt = task2.due_at
@@ -819,9 +818,8 @@ describe('Bulk Edit Snooze & Recurrence', () => {
     expect(updatedTask1.original_due_at).toBe(originalTask1DueAt)
     expect(updatedTask2.original_due_at).toBe(originalTask2DueAt)
 
-    // snooze_count incremented
-    expect(updatedTask1.snooze_count).toBe(1)
-    expect(updatedTask2.snooze_count).toBe(1)
+    // No snooze state is recorded
+    expect(updatedTask1).not.toHaveProperty('snooze_count')
   })
 
   /**
@@ -831,7 +829,7 @@ describe('Bulk Edit Snooze & Recurrence', () => {
    * is NOT applied because rrule change takes precedence (schedule change).
    *
    * Action: bulkEdit with { due_at: tomorrow, rrule: 'FREQ=DAILY' }
-   * Result: snooze_count NOT incremented (rrule takes precedence)
+   * Result: a re-schedule — the date is honored, the old origin dropped
    */
   test('BE-002: bulkEdit with due_at + rrule does NOT apply snooze logic', () => {
     const task = createTask({
@@ -842,8 +840,6 @@ describe('Bulk Edit Snooze & Recurrence', () => {
         due_at: localTime(8, 0), // Today 8 AM
       },
     })
-
-    expect(task.snooze_count).toBe(0)
 
     // Bulk edit with both due_at and rrule
     const result = bulkEdit({
@@ -860,8 +856,11 @@ describe('Bulk Edit Snooze & Recurrence', () => {
 
     const updatedTask = getTaskById(task.id)!
 
-    // rrule change takes precedence - snooze logic NOT applied
-    expect(updatedTask.snooze_count).toBe(0)
+    // rrule change takes precedence - a re-schedule, not a move: the date is
+    // the new schedule's occurrence and the old origin goes
+    expect(updatedTask.due_at).toBe(localTime(18, 0, 1))
+    expect(updatedTask.occurrence_at).toBe(localTime(18, 0, 1))
+    expect(updatedTask.original_due_at).toBeNull()
 
     // Task is now recurring
     expect(updatedTask.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
@@ -919,8 +918,6 @@ describe('Bulk Edit Snooze & Recurrence', () => {
     const snoozedTask2 = getTaskById(task2.id)!
     expect(snoozedTask1.original_due_at).not.toBeNull()
     expect(snoozedTask2.original_due_at).not.toBeNull()
-    expect(snoozedTask1.snooze_count).toBe(1)
-    expect(snoozedTask2.snooze_count).toBe(1)
 
     // Bulk edit to change rrule
     const result = bulkEdit({
@@ -938,10 +935,6 @@ describe('Bulk Edit Snooze & Recurrence', () => {
 
     expect(updatedTask1.original_due_at).toBeNull()
     expect(updatedTask2.original_due_at).toBeNull()
-
-    // snooze_count preserved (lifetime stat)
-    expect(updatedTask1.snooze_count).toBe(1)
-    expect(updatedTask2.snooze_count).toBe(1)
 
     // New rrule applied
     expect(updatedTask1.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0')
@@ -2060,7 +2053,7 @@ describe('Bulk Edit quota/reminder invariants', () => {
     const after = getTaskById(task.id)!
     expect(after.is_reminder).toBe(false)
     expect(after.due_at).toBe(localTime(8, 0))
-    expect(after.snooze_count).toBe(0)
+    expect(after.original_due_at).toBe(localTime(8, 0))
   })
 
   test('BO-009: moving reminders between periods still passes', () => {
@@ -2088,6 +2081,7 @@ describe('Bulk Edit quota/reminder invariants', () => {
     expect(result.tasksAffected).toBe(2)
     expect(getTaskById(a.id)!.rrule).toBe('FREQ=DAILY;BYHOUR=19;BYMINUTE=0')
     expect(getTaskById(b.id)!.rrule).toBe('FREQ=DAILY;BYHOUR=20;BYMINUTE=0')
-    expect(getTaskById(a.id)!.snooze_count).toBe(0)
+    // A reminder's date follows its new schedule (it IS its occurrence).
+    expect(getTaskById(a.id)!.occurrence_at).toBe(getTaskById(a.id)!.due_at)
   })
 })

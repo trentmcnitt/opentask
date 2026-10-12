@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { RotateCcw } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 /**
@@ -9,18 +8,17 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
  *
  * Extracted as a separate component to isolate the open state and event
  * handlers from the main QuickActionPanel render (avoids hooks-in-conditionals
- * and keeps the main component clean).
+ * and keeps the main component clean). Its "Reset origin" button went with the
+ * snooze/re-target split (§6, 2026-10-12): a move keeps the first-target date.
  */
 export function SinceAge({
   label,
   timeAgo,
   fullDate,
-  onReset,
 }: {
   label: string
   timeAgo: string
   fullDate: string
-  onReset?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -59,17 +57,6 @@ export function SinceAge({
         <div className="flex flex-col gap-0.5">
           <span>{fullDate}</span>
           <span className="text-muted-foreground">{timeAgo}</span>
-          {onReset && (
-            <button
-              onClick={() => {
-                onReset()
-                setOpen(false)
-              }}
-              className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1 text-xs"
-            >
-              <RotateCcw className="size-3" /> Reset origin to current due date
-            </button>
-          )}
         </div>
       </PopoverContent>
     </Popover>

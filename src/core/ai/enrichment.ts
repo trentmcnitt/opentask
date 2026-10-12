@@ -46,6 +46,8 @@ import {
 } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { stampTargetSet } from '@/core/tasks/target-set'
+import { getTargetContext } from '@/core/tasks/target-context'
+import { resolveTarget } from '@/lib/task-segments'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
@@ -1229,13 +1231,11 @@ function collectEnrichmentChanges(
   // §5: a quota has no due date, no schedule to derive and no recurrence mode.
   const tracked = isTracked(task)
 
-  // Due date — always overwrite
-  if (!tracked && enrichment.due_at) {
-    if (enrichment.due_at !== task.due_at) {
-      setClauses.push('due_at = ?')
-      values.push(enrichment.due_at)
-      fieldsChanged.push('due_at')
-    }
+  // Due date — always overwrite. Written once, at the end, after the target
+  // model has had its say (`collectEnrichmentTarget`).
+  let proposedDue: string | undefined
+  if (!tracked && enrichment.due_at && enrichment.due_at !== task.due_at) {
+    proposedDue = enrichment.due_at
   }
 
   collectTaskModelEnrichment(task, enrichment, tracked, { setClauses, values, fieldsChanged })
@@ -1306,11 +1306,7 @@ function collectEnrichmentChanges(
         null,
         user.timezone,
       ).toISOString()
-      if (firstOccurrence !== task.due_at) {
-        setClauses.push('due_at = ?')
-        values.push(firstOccurrence)
-        if (!fieldsChanged.includes('due_at')) fieldsChanged.push('due_at')
-      }
+      if (firstOccurrence !== task.due_at) proposedDue = firstOccurrence
     }
   }
 
@@ -1348,12 +1344,63 @@ function collectEnrichmentChanges(
     fieldsChanged.push('project_id')
   }
 
+  const write = { setClauses, values, fieldsChanged }
+  collectEnrichmentTarget(task, enrichment, { tracked, proposedDue, userId: user.id }, write)
+
   // Upcoming (2026-10-12): a target or deadline the AI set restarts the wait
   // its heads-ups count over, like any other target write. The snapshot is
   // taken from the re-read row, so it carries the stamp.
-  const write = { setClauses, values, fieldsChanged }
   stampTargetSet(write, task, nowUtc())
   return write
+}
+
+/**
+ * The target model on an enrichment write (§6 / §8, 2026-10-12). These clauses
+ * are raw SQL and do not pass through `collectFieldChanges`, so they ask the
+ * same `resolveTarget`: a deadline the AI found on a task with no target gets
+ * the stored AUTOMATIC target ("by Friday" → deadline Friday, target auto,
+ * a few days before); a target the AI set (from explicit day or time wording)
+ * is a picked one, never after the deadline. A repeating task's date the AI
+ * set is its scheduled occurrence too.
+ */
+function collectEnrichmentTarget(
+  task: Task,
+  enrichment: EnrichmentResult,
+  opts: { tracked: boolean; proposedDue: string | undefined; userId: number },
+  changes: FieldChanges,
+): void {
+  const rrule = changes.fieldsChanged.includes('rrule') ? enrichment.rrule : task.rrule
+  const deadlineAt = changes.fieldsChanged.includes('deadline_at')
+    ? (enrichment.deadline_at ?? null)
+    : task.deadline_at
+  const resolved = resolveTarget(
+    {
+      dueAt: opts.proposedDue ?? task.due_at,
+      dueWritten: opts.proposedDue !== undefined,
+      wasAuto: task.target_auto,
+      deadlineAt,
+      deadlineChanged: deadlineAt !== task.deadline_at,
+      autoEligible: !rrule && !task.is_reminder && !opts.tracked,
+    },
+    getTargetContext(opts.userId),
+  )
+  if (resolved.dueAt !== task.due_at) {
+    changes.setClauses.push('due_at = ?')
+    changes.values.push(resolved.dueAt)
+    changes.fieldsChanged.push('due_at')
+  }
+  if (resolved.auto !== task.target_auto) {
+    changes.setClauses.push('target_auto = ?')
+    changes.values.push(resolved.auto ? 1 : 0)
+    changes.fieldsChanged.push('target_auto')
+  }
+  // A repeating task's date set here is its occurrence (a schedule, not a move).
+  const occurrenceAt = rrule && !opts.tracked && opts.proposedDue ? opts.proposedDue : undefined
+  if (occurrenceAt !== undefined && occurrenceAt !== task.occurrence_at) {
+    changes.setClauses.push('occurrence_at = ?')
+    changes.values.push(occurrenceAt)
+    changes.fieldsChanged.push('occurrence_at')
+  }
 }
 
 /**

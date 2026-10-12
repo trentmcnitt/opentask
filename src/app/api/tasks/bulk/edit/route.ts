@@ -36,8 +36,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       includeTaskIds: input.include_task_ids,
       deltaMinutes: input.delta_minutes,
       dateTaskIds: input.date_task_ids,
-      allowPastDeadlineIds: input.allow_past_deadline_ids,
-      capAtDeadlineIds: input.cap_at_deadline_ids,
+      // `allow_past_deadline_ids` / `cap_at_deadline_ids`: accepted, ignored
+      // (2026-10-12) — every move stops at its deadline (§8.2).
     })
 
     notifyDemoEngagement(user.name, 'update')
@@ -45,7 +45,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_no_due_date: result.noDueDateSkipped,
+      // Dates withheld because a passed deadline holds the task to the High
+      // tier (2026-10-12) / stopped at a deadline still ahead (§8.2). Other
+      // fields applied either way.
       skipped_deadline: result.deadlineSkipped,
+      capped_deadline: result.deadlineCapped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

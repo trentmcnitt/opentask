@@ -51,6 +51,14 @@ interface DateTimePickerProps {
   onOpenChange?: (open: boolean) => void
   /** The confirm button's text (default "Set Date"). */
   submitLabel?: string
+  /** The Clear button's text (default "Clear"): "Back to auto" on a deadline task (§8.3). */
+  clearLabel?: string
+  /**
+   * One ready choice above the calendar — the target picker's "Deadline day"
+   * (ruling Q8, 2026-10-12: the morning of the deadline's day, or the deadline
+   * itself if earlier). A tap picks it and closes, like Set Date.
+   */
+  quickPick?: { label: string; at: string } | null
 }
 
 /** The empty default: tomorrow at 9:00 AM in the user's timezone (UTC ISO). */
@@ -61,6 +69,54 @@ function tomorrowAtNine(timezone: string): string {
     .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
     .toUTC()
     .toISO()!
+}
+
+/** The picker's one ready choice above the calendar (`quickPick`). */
+function QuickPickRow({ label, onPick }: { label: string; onPick: () => void }) {
+  return (
+    <div className="border-b px-3 py-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="w-full justify-start"
+        data-quick-pick
+        onClick={onPick}
+      >
+        <CalendarDays className="mr-1 size-3.5" />
+        {label}
+      </Button>
+    </div>
+  )
+}
+
+/** Set Date and Clear (the Clear absent when `clearLabel` is null). */
+function PickerActions({
+  submitLabel,
+  onSubmit,
+  canSubmit,
+  clearLabel,
+  onClear,
+}: {
+  submitLabel: string
+  onSubmit: () => void
+  canSubmit: boolean
+  clearLabel: string | null
+  onClear: () => void
+}) {
+  return (
+    <div className="mt-2 flex gap-2">
+      <Button size="sm" onClick={onSubmit} disabled={!canSubmit} className="flex-1">
+        <CalendarDays className="mr-1 size-3.5" />
+        {submitLabel}
+      </Button>
+      {clearLabel !== null && (
+        <Button size="sm" variant="outline" onClick={onClear} className="flex-1">
+          {clearLabel}
+        </Button>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -81,6 +137,8 @@ export function DateTimePicker({
   open: controlledOpen,
   onOpenChange,
   submitLabel = 'Set Date',
+  clearLabel = 'Clear',
+  quickPick = null,
 }: DateTimePickerProps) {
   const controlled = controlledOpen !== undefined
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
@@ -173,6 +231,15 @@ export function DateTimePicker({
         sideOffset={4}
         onInteractOutside={keepOpenOnAnchor}
       >
+        {quickPick && (
+          <QuickPickRow
+            label={quickPick.label}
+            onPick={() => {
+              onChange(quickPick.at)
+              setOpen(false)
+            }}
+          />
+        )}
         <Calendar
           mode="single"
           selected={selectedDate}
@@ -215,18 +282,13 @@ export function DateTimePicker({
               {period}
             </Button>
           </div>
-          {/* Action buttons */}
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" onClick={handleSetDate} disabled={!selectedDate} className="flex-1">
-              <CalendarDays className="mr-1 size-3.5" />
-              {submitLabel}
-            </Button>
-            {allowClear && (
-              <Button size="sm" variant="outline" onClick={handleClear} className="flex-1">
-                Clear
-              </Button>
-            )}
-          </div>
+          <PickerActions
+            submitLabel={submitLabel}
+            onSubmit={handleSetDate}
+            canSubmit={!!selectedDate}
+            clearLabel={allowClear ? clearLabel : null}
+            onClear={handleClear}
+          />
         </div>
       </PopoverContent>
     </Popover>

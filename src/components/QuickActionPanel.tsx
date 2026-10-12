@@ -1,7 +1,7 @@
 'use client'
 
-import type { HorizonValue } from '@/lib/task-segments'
-import { TARGET_WORD } from '@/lib/task-model-words'
+import { targetReset, type HorizonValue } from '@/lib/task-segments'
+import { BACK_TO_AUTO, TARGET_WORD } from '@/lib/task-model-words'
 import { TaskModelFields } from '@/components/TaskModelFields'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
@@ -16,6 +16,7 @@ import {
   Plus,
   ChevronDown,
   XCircle,
+  RotateCcw,
   Sparkles,
   CalendarDays,
   Mic,
@@ -62,7 +63,11 @@ import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { computeRecurrencePreview } from '@/lib/recurrence-preview'
 import { DateTime } from 'luxon'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
-import { useLabelConfig, useAutoSnoozeDefault } from '@/components/PreferencesProvider'
+import {
+  useLabelConfig,
+  useAutoSnoozeDefault,
+  useSnoozePreferences,
+} from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatDateTime, formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
@@ -79,7 +84,12 @@ import {
   RECURRENCE_EDITOR_ID,
 } from '@/components/quick-panel/RecurrenceSummaryLine'
 import { AutoTargetText } from '@/components/quick-panel/AutoTargetText'
-import { describeAutoTarget, deadlineRepeatLabel } from '@/lib/editor-target-labels'
+import {
+  deadlineDayPick,
+  deadlineRepeatLabel,
+  movedOccurrenceLabel,
+  stagedAutoTarget,
+} from '@/lib/editor-target-labels'
 import type { Task, Project } from '@/types'
 
 /**
@@ -122,10 +132,6 @@ export interface QuickActionPanelChanges {
   /** Task model (2026-10-10). Single-task only. */
   deadline_at?: string | null
   horizon?: HorizonValue | null
-  /** Remove-target on a task with a deadline also silences the deadline's nag. */
-  deadline_nag_off?: boolean
-  /** The user confirmed a snooze past the deadline (the refusal toast's button). */
-  allow_past_deadline?: boolean
 }
 
 export interface QuickActionPanelProps {
@@ -195,7 +201,6 @@ type DirtyField =
   | 'project'
   | 'dueAtCleared'
   | 'autoSnooze'
-  | 'resetOrigin'
   | 'isReminder'
   | 'notes'
   | 'deadline'
@@ -203,8 +208,8 @@ type DirtyField =
 
 /**
  * The fields that make create mode dirty (besides the title, which is compared
- * against initialTitle on its own). recurrenceMode, isReminder, dueAtCleared and
- * resetOrigin are deliberately left out: create mode has never counted them as a
+ * against initialTitle on its own). recurrenceMode, isReminder and dueAtCleared
+ * are deliberately left out: create mode has never counted them as a
  * change from its defaults, and this list keeps that membership as it was.
  */
 const CREATE_MODE_DIRTY_FIELDS: readonly DirtyField[] = [
@@ -338,6 +343,7 @@ export function QuickActionPanel({
   const labelWrapperRef = useRef<HTMLDivElement>(null)
   const { labelConfig } = useLabelConfig()
   const { autoSnoozeDefault } = useAutoSnoozeDefault()
+  const { morningTime } = useSnoozePreferences()
 
   // Staged changes state - all changes are staged until Save is clicked
   // undefined means "no change" for rrule (to distinguish from null = "remove recurrence")
@@ -358,13 +364,12 @@ export function QuickActionPanel({
   // pendingAutoSnooze: undefined = no change, null = default, 0 = off, positive = custom
   const [pendingAutoSnooze, setPendingAutoSnooze] = useState<number | null | undefined>(undefined)
   const [autoSnoozePopoverOpen, setAutoSnoozePopoverOpen] = useState(false)
-  // pendingResetOrigin: when true, reset_original_due_at will be sent on save
-  const [pendingResetOrigin, setPendingResetOrigin] = useState(false)
   // pendingDatePicked: the staged date came from the date PICKER, not a snooze
-  // button. Picking an explicit date is a reschedule, not a snooze (Trent,
-  // 2026-09-24): the save sends reset_original_due_at with it so the task stops
-  // being "snoozed from" its old date. Any preset / increment / Now / Next Hour
-  // tap after the pick clears it — those are snoozes and must keep the origin.
+  // button. The save sends reset_original_due_at with it. Since 2026-10-12 (§6)
+  // the server ignores that on a task — a move is a move — but a REMINDER still
+  // needs it: a picked date is its explicit reschedule (a bare date move of a
+  // dated reminder is refused). Any preset / increment / Now / Next Hour tap
+  // after the pick clears it.
   const [pendingDatePicked, setPendingDatePicked] = useState(false)
   // pendingIsReminder: null = no change, boolean = staged flag (§6 Reminders surface)
   const [pendingIsReminder, setPendingIsReminder] = useState<boolean | null>(null)
@@ -498,7 +503,6 @@ export function QuickActionPanel({
     project: isProjectDirty,
     dueAtCleared: pendingDueAtCleared,
     autoSnooze: pendingAutoSnooze !== undefined,
-    resetOrigin: pendingResetOrigin,
     isReminder: isReminderDirty,
     notes: pendingNotes !== undefined,
     deadline: pendingDeadline !== undefined,
@@ -571,34 +575,38 @@ export function QuickActionPanel({
   const showsNoTarget =
     pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null)
 
-  // A deadline with no target still nags, from its implied target (deadline −
-  // 4 days at the user's morning; the deadline day's morning once
-  // `deadline_nag_off` is set — ruling A4). The target line names it ("auto ·
-  // Thu Oct 15, 9:00 AM (4 days before deadline)") instead of claiming "No
-  // target" for a task that is over target. Read with the STAGED values, so it
-  // shows what Save would produce: staging "Remove target" on a deadline task
-  // also sends `deadline_nag_off` (collectPendingChanges), which leaves the
-  // deadline-day nag, and a new deadline turns the nag back on.
-  const autoTarget = (() => {
-    if (isBulkMode || isReminderLike || !showsNoTarget) return null
-    const deadline = pendingDeadline !== undefined ? pendingDeadline : effectiveTask?.deadline_at
-    if (!deadline) return null
-    const deadlineChanged =
-      pendingDeadline !== undefined && pendingDeadline !== (effectiveTask?.deadline_at ?? null)
-    return describeAutoTarget(
-      {
-        due_at: null,
-        deadline_at: deadline,
-        deadline_nag_off: pendingDueAtCleared
-          ? true
-          : deadlineChanged
-            ? false
-            : (effectiveTask?.deadline_nag_off ?? false),
-        rrule: displayRrule ?? null,
-      },
-      timezone,
-    )
-  })()
+  // A DEADLINE ALWAYS HAS A VISIBLE TARGET (§8, 2026-10-12): the target line
+  // labels a deadline's automatic target "auto · Tue, Oct 20, 9:00 AM (3 days
+  // before deadline)", read with the STAGED values so it shows what Save would
+  // produce — see `stagedAutoTarget`.
+  const { label: autoTarget, staged: autoTargetStaged } =
+    isBulkMode || isReminderLike || displayRrule
+      ? { label: null, staged: false }
+      : stagedAutoTarget(
+          effectiveTask,
+          { pendingDeadline, targetCleared: pendingDueAtCleared, datePicked: isDateDirty },
+          timezone,
+        )
+  // The … menu's target reset (§8.3, ruling Q9): "Remove target", "Back to
+  // auto" (a deadline one-off whose target the user picked), or nothing (an
+  // automatic target, or no target). A repeating task's target goes with its
+  // recurrence ("Remove target & recurrence").
+  // The target picker's "Deadline day" (ruling Q8): single task, deadline ahead.
+  const pickerDeadlineDay = isBulkMode
+    ? null
+    : deadlineDayPick(
+        pendingDeadline !== undefined ? pendingDeadline : effectiveTask?.deadline_at,
+        { timezone, morningTime },
+      )
+  const movedOccurrence =
+    !isBulkMode && !isCreateMode && effectiveTask && !isDateDirty && !isRruleDirty
+      ? movedOccurrenceLabel(effectiveTask, timezone)
+      : null
+  const singleTargetReset: 'auto' | 'remove' | null = !effectiveTask
+    ? null
+    : effectiveTask.rrule
+      ? 'remove'
+      : targetReset(effectiveTask)
 
   // Only show delta when task originally had a due date. When due_at is null,
   // initWorkingDate generates a near-now default (5-min snap) and showing a delta
@@ -798,9 +806,8 @@ export function QuickActionPanel({
     if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
     if (pendingProject !== null) changes.project_id = pendingProject
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
-    if (pendingResetOrigin) changes.reset_original_due_at = true
-    // A picked date is a reschedule: the server makes it the new origin (see
-    // collectBasicFields). Single-task only — a bulk pick is staged in the bulk
+    // A picked date is a reminder's explicit reschedule (see pendingDatePicked;
+    // ignored on a task). Single-task only — a bulk pick is staged in the bulk
     // hook as an absolute target and saves like a preset (see
     // handleBulkPickerChange) — and create mode has no origin to reset.
     if (isPickedReschedule(pendingDatePicked, isBulkMode, isCreateMode, changes.due_at)) {
@@ -810,21 +817,12 @@ export function QuickActionPanel({
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     if (pendingDeadline !== undefined) changes.deadline_at = pendingDeadline
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
-    // Remove target on a task with a deadline also turns off the deadline's
-    // implied nag (deadline − 4 days) — otherwise "remove" would do nothing.
-    if (
-      pendingDueAtCleared &&
-      (pendingDeadline ??
-        effectiveTask?.deadline_at ??
-        (isBulkMode && selectedTasks?.some((t) => t.deadline_at)))
-    ) {
-      changes.deadline_nag_off = true
-    }
+    // A cleared target on a task with a deadline is "Back to auto" (§8.3): the
+    // server puts the deadline's automatic target back. Nothing extra to send.
     return changes
   }, [
     pendingDeadline,
     pendingHorizon,
-    effectiveTask?.deadline_at,
     pendingTitle,
     editingTitle,
     titleDraft,
@@ -839,7 +837,6 @@ export function QuickActionPanel({
     pendingRecurrenceMode,
     pendingProject,
     pendingAutoSnooze,
-    pendingResetOrigin,
     pendingDatePicked,
     isCreateMode,
     pendingIsReminder,
@@ -862,7 +859,6 @@ export function QuickActionPanel({
     setPendingDueAt(null)
     setPendingDueAtCleared(false)
     setPendingAutoSnooze(undefined)
-    setPendingResetOrigin(false)
     setPendingDatePicked(false)
     setPendingIsReminder(null)
     setPendingNotes(undefined)
@@ -1200,7 +1196,13 @@ export function QuickActionPanel({
                 : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
             }
             timezone={timezone}
-            allowClear={!isBulkMode || canBulkClearDueDate}
+            // A deadline task's Clear is "Back to auto" (§8.3), and an
+            // automatic target has nothing to clear (ruling Q9).
+            allowClear={
+              isBulkMode ? canBulkClearDueDate : singleTargetReset !== null || !autoTarget
+            }
+            clearLabel={singleTargetReset === 'auto' ? BACK_TO_AUTO : undefined}
+            quickPick={pickerDeadlineDay}
             emptyDefault={isBulkMode ? 'now' : 'tomorrow'}
             onChange={isBulkMode ? handleBulkPickerChange : handleSinglePickerChange}
           >
@@ -1211,11 +1213,7 @@ export function QuickActionPanel({
               <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
               <span className="text-muted-foreground/70">{TARGET_WORD}</span>
               {autoTarget ? (
-                <AutoTargetText
-                  label={autoTarget}
-                  timezone={timezone}
-                  dirty={pendingDueAtCleared}
-                />
+                <AutoTargetText label={autoTarget} timezone={timezone} dirty={autoTargetStaged} />
               ) : showsNoTarget ? (
                 <span
                   className={cn(
@@ -1261,6 +1259,15 @@ export function QuickActionPanel({
               )}
             </p>
           </DateTimePicker>
+          {/* A repeating task whose target was moved off its scheduled
+              occurrence (§6, 2026-10-12) names the occurrence under the
+              target, so a moved target never reads as a changed schedule:
+              done still brings the next one round from the occurrence. */}
+          {movedOccurrence && (
+            <p data-occurrence-line className="text-muted-foreground/70 mt-0.5 text-xs">
+              Occurrence {movedOccurrence} · target moved
+            </p>
+          )}
           {/* Deadline + horizon (2026-10-10): their own lines, never moved by a
               snooze button. Ordinary tasks only — a reminder or a quota has
               neither — and one task at a time (Process sets horizons in bulk). */}
@@ -1288,15 +1295,19 @@ export function QuickActionPanel({
                 due_at:
                   pendingDueAt ?? effectiveTask?.due_at ?? (displayRrule ? workingDate : null),
                 original_due_at: effectiveTask?.original_due_at ?? null,
+                occurrence_at: effectiveTask?.occurrence_at ?? null,
               })}
               showHorizon={!displayRrule}
-              // A one-off with a target of its own is quiet until its date
-              // (spec §1, 2026-10-12): its horizon decides nothing until the
-              // target is removed, so the row is greyed and says so. Read from
-              // the target line's own (staged) value, so Remove target staged
-              // brings the horizon back at once.
+              // A one-off with a target the user picked is quiet until its
+              // date (spec §1/§8.5, 2026-10-12): its horizon decides nothing
+              // until the target is removed, so the row is greyed and says so.
+              // An automatic deadline target keeps the horizon working. Read
+              // from the target line's own (staged) value, so Remove target or
+              // Back to auto staged brings the horizon back at once.
               quietUntil={
-                displayRrule ? null : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
+                displayRrule || autoTarget
+                  ? null
+                  : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
               }
               emptyAnchor={
                 displayRrule ? (pendingDueAt ?? effectiveTask?.due_at ?? workingDate) : null
@@ -1331,7 +1342,6 @@ export function QuickActionPanel({
                     label={sinceInfo.label}
                     timeAgo={sinceInfo.timeAgo}
                     fullDate={sinceInfo.fullDate}
-                    onReset={onSaveAll ? () => setPendingResetOrigin(true) : undefined}
                   />
                 )
               }
@@ -1699,29 +1709,36 @@ export function QuickActionPanel({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-                      {/* Clear due date - only for single task with due_at or rrule */}
-                      {isSingleTask &&
-                        (effectiveTask?.due_at ||
-                          effectiveTask?.rrule ||
-                          (effectiveTask?.deadline_at && !effectiveTask.deadline_nag_off)) &&
-                        !pendingDueAtCleared && (
-                          <DropdownMenuItem
-                            // `inset` matches the left padding DropdownMenuCheckboxItem
-                            // reserves for its tick, so the icons and labels in this
-                            // mixed menu sit on one line (Trent, 2026-09-06: "reminder
-                            // and due date are not aligned right").
-                            inset
-                            onClick={() => {
-                              setPendingDueAtCleared(true)
-                              if (effectiveTask?.rrule) {
-                                setPendingRrule(null)
-                              }
-                            }}
-                          >
+                      {/* Clear the target — single task. A one-off with a
+                          deadline never loses its target (§8.3): its picked
+                          target goes "Back to auto", and an automatic target
+                          offers neither (ruling Q9). A repeating task's goes
+                          with its recurrence. */}
+                      {isSingleTask && singleTargetReset && !pendingDueAtCleared && (
+                        <DropdownMenuItem
+                          // `inset` matches the left padding DropdownMenuCheckboxItem
+                          // reserves for its tick, so the icons and labels in this
+                          // mixed menu sit on one line (Trent, 2026-09-06: "reminder
+                          // and due date are not aligned right").
+                          inset
+                          data-target-reset={singleTargetReset}
+                          onClick={() => {
+                            setPendingDueAtCleared(true)
+                            if (effectiveTask?.rrule) {
+                              setPendingRrule(null)
+                            }
+                          }}
+                        >
+                          {singleTargetReset === 'auto' ? (
+                            <RotateCcw className="mr-2 size-4" />
+                          ) : (
                             <XCircle className="mr-2 size-4" />
-                            Remove target{effectiveTask?.rrule ? ' & recurrence' : ''}
-                          </DropdownMenuItem>
-                        )}
+                          )}
+                          {singleTargetReset === 'auto'
+                            ? BACK_TO_AUTO
+                            : `Remove target${effectiveTask?.rrule ? ' & recurrence' : ''}`}
+                        </DropdownMenuItem>
+                      )}
                       {/* Clear due date - multi-task: applies to every selected task on Save */}
                       {showBulkClearItem && (
                         <DropdownMenuItem inset onClick={handleBulkClearDueDate}>

@@ -16,8 +16,9 @@
  *    their own; this only ASKS, and the modal batches the asks with a default.
  * 4. Old targets — over-target tasks whose target is STALE_TARGET_DAYS old or
  *    more, offered for one-tap target removal (spec §4). A task with a
- *    deadline is listed apart and never pre-checked (amendment 7): a client
- *    deadline's nag is not something to stop quietly.
+ *    deadline is listed apart and never pre-checked (amendment 7): its target
+ *    goes back to the deadline's automatic one (§8.3, "Back to auto"), and a
+ *    task already on its automatic target is not listed at all.
  *
  * ONE PLACE PER TASK. A task with a target of its own decides nothing by its
  * horizon (2026-10-12, spec §1: a target makes a task quiet until its date;
@@ -34,11 +35,10 @@ import {
   STALE_TARGET_DAYS,
   UNSET_HORIZON,
   deadlineHorizon,
-  effectiveTargetAt,
+  hasPickedTarget,
   targetAgeDays,
   targetIsToday,
   type HorizonValue,
-  type TargetContext,
 } from '@/lib/task-segments'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -76,7 +76,7 @@ export interface ProcessTaskFields {
   due_at: string | null
   original_due_at: string | null
   deadline_at: string | null
-  deadline_nag_off?: boolean
+  target_auto?: boolean
   rrule?: string | null
 }
 
@@ -102,16 +102,11 @@ function setHorizon(value: string | null): HorizonValue | null {
  * (`deadlineHorizon`, within 90 days or past) is never asked — growing the set
  * horizon would change nothing it shows, and the deadline already decides.
  */
-export function growthAsk(
-  task: ProcessTaskFields,
-  timezone: string,
-  now: Date,
-  ctx: TargetContext | null = null,
-): GrowthAsk | null {
-  // A target of its own: quiet until its date, its horizon shown nowhere
+export function growthAsk(task: ProcessTaskFields, timezone: string, now: Date): GrowthAsk | null {
+  // A target the user picked: quiet until its date, its horizon shown nowhere
   // (spec §1, 2026-10-12) — "grow it?" would ask about a hidden setting.
-  if (task.due_at !== null) return null
-  if (targetIsToday(effectiveTargetAt(task, ctx, now), timezone, now)) return null
+  if (hasPickedTarget(task)) return null
+  if (targetIsToday(task.due_at, timezone, now)) return null
   if (deadlineHorizon(task.deadline_at, now) !== null) return null
   const from = setHorizon(task.horizon)
   const on = from ?? UNSET_HORIZON
@@ -132,9 +127,8 @@ export function staleTargetAge(
   task: ProcessTaskFields,
   timezone: string,
   now: Date,
-  ctx: TargetContext | null = null,
 ): number | null {
-  const age = targetAgeDays(task, timezone, now, ctx)
+  const age = targetAgeDays(task, timezone, now)
   return age !== null && age >= STALE_TARGET_DAYS ? age : null
 }
 
@@ -153,17 +147,18 @@ export function planProcess<T extends ProcessTaskFields>(
   tasks: T[],
   timezone: string,
   now: Date,
-  /** The user's target context (`getTargetContext`), so an implied deadline target lands where the dashboard puts it. */
-  ctx: TargetContext | null = null,
 ): ProcessPlan<T> {
   const plan: ProcessPlan<T> = { growth: [], staleTargets: [], staleTargetsWithDeadline: [] }
   for (const task of tasks) {
-    const age = staleTargetAge(task, timezone, now, ctx)
+    // A deadline's AUTOMATIC target (§8) is not offered: there is nothing to
+    // remove — clearing it puts the same automatic target back — and the
+    // deadline is what it nags for.
+    const age = task.target_auto ? null : staleTargetAge(task, timezone, now)
     if (age !== null) {
       ;(task.deadline_at ? plan.staleTargetsWithDeadline : plan.staleTargets).push({ task, age })
       continue
     }
-    const ask = growthAsk(task, timezone, now, ctx)
+    const ask = growthAsk(task, timezone, now)
     if (ask) plan.growth.push({ task, ask })
   }
   plan.growth.sort((a, b) => b.ask.days_on_horizon - a.ask.days_on_horizon || a.task.id - b.task.id)

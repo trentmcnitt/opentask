@@ -76,7 +76,7 @@ const upcoming = (page: Page) => page.locator('[data-task-segment="upcoming"]')
 const row = (page: Page, id: number) => upcoming(page).locator(`[data-segment-task="${id}"]`)
 
 test.describe('Upcoming', () => {
-  test('on /reminders: after Days, rows in target order with the gap text; Today on one-offs only', async ({
+  test('on /reminders: after Days, rows in target order with the gap text; Today on every row', async ({
     authenticatedPage: page,
   }) => {
     const t = await upcomingTrio(page)
@@ -109,19 +109,21 @@ test.describe('Upcoming', () => {
       await expect(row(page, t.plain).locator('[data-upcoming-gap]')).toContainText(
         /Target \w{3} \w{3} \d+/,
       )
-      // One-offs keep Today; the repeating row has circle and done only.
+      // Every row has Today — the repeating one too since §6 (its occurrence
+      // stays put; only the target moves) — plus circle and done.
       await expect(row(page, t.withDeadline).locator('[data-target-today]')).toHaveCount(1)
       await expect(row(page, t.plain).locator('[data-target-today]')).toHaveCount(1)
-      await expect(row(page, t.repeating).locator('[data-target-today]')).toHaveCount(0)
+      await expect(row(page, t.repeating).locator('[data-target-today]')).toHaveCount(1)
       await expect(
         row(page, t.repeating).getByRole('button', { name: /as considered/ }),
       ).toHaveCount(1)
       await expect(row(page, t.repeating).getByRole('button', { name: /^Done:/ })).toHaveCount(1)
       // No horizon chip on any Upcoming row.
       await expect(section.locator('[data-horizon-chip]')).toHaveCount(0)
-      // Remove target: only the no-deadline one-off's chip opens a menu.
+      // The one-offs' target chips open a menu (Remove target / Back to auto);
+      // the repeating row's doesn't.
       await expect(row(page, t.withDeadline).getByRole('button', { name: /Options$/ })).toHaveCount(
-        0,
+        1,
       )
       await expect(row(page, t.repeating).getByRole('button', { name: /Options$/ })).toHaveCount(0)
       await expect(row(page, t.plain).getByRole('button', { name: /Options$/ })).toHaveCount(1)
@@ -155,6 +157,33 @@ test.describe('Upcoming', () => {
     }
   })
 
+  test("Back to auto puts a deadline row's automatic target back (it leaves Upcoming); Undo restores the pick", async ({
+    authenticatedPage: page,
+  }) => {
+    const t = await upcomingTrio(page)
+    try {
+      const before = await stateOf(page, t.withDeadline)
+      expect(before.target_auto).toBe(false)
+      await page.goto('/reminders')
+      await row(page, t.withDeadline)
+        .getByRole('button', { name: /Options$/ })
+        .click()
+      await expect(page.locator('[data-remove-target]')).toHaveCount(0)
+      await page.locator('[data-back-to-auto]').click()
+      await expect(row(page, t.withDeadline)).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, t.withDeadline)).target_auto).toBe(true)
+      const auto = await stateOf(page, t.withDeadline)
+      expect(Date.parse(String(auto.target_at))).toBeLessThan(Date.parse(String(auto.deadline_at)))
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect
+        .poll(async () => (await stateOf(page, t.withDeadline)).target_at)
+        .toBe(before.target_at)
+      expect((await stateOf(page, t.withDeadline)).target_auto).toBe(false)
+    } finally {
+      await trash(page, Object.values(t))
+    }
+  })
+
   test('on the dashboard Tasks card: its own page and bar, considered with "X of Y"', async ({
     authenticatedPage: page,
   }) => {
@@ -172,7 +201,7 @@ test.describe('Upcoming', () => {
       await expect(card).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
       await expect(card.getByText('Tasks · Upcoming')).toBeVisible()
       const r = card.locator(`[data-segment-task="${t.repeating}"]`)
-      await expect(r.locator('[data-target-today]')).toHaveCount(0)
+      await expect(r.locator('[data-target-today]')).toHaveCount(1)
       await r.getByRole('button', { name: /as considered/ }).click()
       await expect(r).toHaveCount(0)
       await expect

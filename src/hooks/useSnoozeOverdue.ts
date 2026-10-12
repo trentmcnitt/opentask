@@ -108,6 +108,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
           high: skippedHigh,
           urgent: skippedByPriority - skippedHigh,
           deadline: responseData.data?.skipped_deadline ?? 0,
+          capped: responseData.data?.capped_deadline ?? 0,
         })
 
         showToast({

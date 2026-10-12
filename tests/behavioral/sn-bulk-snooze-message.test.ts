@@ -83,6 +83,23 @@ describe('bulkSnoozeMessage', () => {
     )
   })
 
+  test('names a passed deadline the way it names High (ruling 2026-10-12)', () => {
+    expect(bulkSnoozeMessage({ affected: 2, high: 0, urgent: 0, deadline: 1 })).toBe(
+      'Snoozed 2 tasks (1 past deadline skipped)',
+    )
+    expect(bulkSnoozeMessage({ affected: 2, high: 2, urgent: 1, deadline: 1 })).toBe(
+      'Snoozed 2 tasks (2 high, 1 past deadline, 1 urgent skipped)',
+    )
+    // Never "must be snoozed individually": the next press takes it.
+    expect(bulkSnoozeMessage({ affected: 0, high: 0, urgent: 1, deadline: 2 })).toBe(
+      'No snoozable tasks (2 past deadline, 1 urgent skipped)',
+    )
+    // A cap at a deadline still ahead is said after.
+    expect(bulkSnoozeMessage({ affected: 3, high: 0, urgent: 0, deadline: 1, capped: 1 })).toBe(
+      'Snoozed 3 tasks (1 past deadline skipped) · 1 stopped at its deadline',
+    )
+  })
+
   test('a mixed batch, or no High count at all, says plain "tasks"', () => {
     expect(bulkSnoozeMessage({ affected: 3, highAffected: 1, high: 0, urgent: 0 })).toBe(
       'Snoozed 3 tasks',

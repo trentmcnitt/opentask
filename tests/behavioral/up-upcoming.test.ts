@@ -265,7 +265,9 @@ describe('Upcoming', () => {
           'weeks: W weeks, no target',
         ],
         '2026-10-18': ['days: D deadline Fri Oct 23'],
-        '2026-10-19': ['upcoming: B target Tue Oct 20'],
+        // D's automatic target (§8.1): an 11-day wait, lead 3 → Tue Oct 20,
+        // 9:00 — so it still waits in Days on the 19th, over target from the 20th.
+        '2026-10-19': ['days: D deadline Fri Oct 23', 'upcoming: B target Tue Oct 20'],
         '2026-10-23': ['upcoming: F every 2 weeks'],
         '2026-10-24': ['weeks: W weeks, no target'],
         '2026-10-25': ['upcoming: F every 2 weeks'],
@@ -320,14 +322,18 @@ describe('Upcoming', () => {
       expect(upcomingDays(t.id, '2026-10-12', '2026-10-19')).toEqual(['2026-10-18'])
     })
 
-    test('UP-033: a target past its deadline counts to the automatic target; the gap text says so', () => {
-      // Deadline Fri Oct 23 00:00, own target Oct 26: the implied target is
-      // Mon Oct 19 09:00 (4 days before, at the morning) — wait 7 → Sun Oct 18.
+    test('UP-033: a target past its deadline is stored AT the deadline; Upcoming counts to it', () => {
+      // Deadline Fri Oct 23 00:00, asked-for target Mon Oct 26: target ≤
+      // deadline always (§8.2), so it is stored at the deadline, still a picked
+      // target. Wait 11 (Oct 12 → Oct 23) → heads-ups Tue Oct 20 and Thu Oct 22.
       const t = make({ due_at: at('2026-10-26T09:00'), deadline_at: at('2026-10-23T00:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-19')).toEqual(['2026-10-18'])
-      expect(upcomingGap(getTaskById(t.id)!, tz)).toEqual({
-        target: 'Target Mon Oct 26',
-        deadline: 'deadline Fri Oct 23 (deadline before target)',
+      const stored = getTaskById(t.id)!
+      expect(stored.due_at).toBe(at('2026-10-23T00:00'))
+      expect(stored.target_auto).toBe(false)
+      expect(upcomingDays(t.id, '2026-10-12', '2026-10-23')).toEqual(['2026-10-20', '2026-10-22'])
+      expect(upcomingGap(stored, tz)).toEqual({
+        target: 'Target Fri Oct 23',
+        deadline: 'deadline Fri Oct 23 (same day)',
       })
       expect(
         upcomingGap({ due_at: at('2026-11-03T09:00'), deadline_at: at('2026-11-07T23:59') }, tz),
@@ -375,14 +381,20 @@ describe('Upcoming', () => {
   })
 
   describe('§1: a target makes a task quiet until its date', () => {
-    test('UP-040: a deadline-only task (23:59) shows in its pulled-in segment on D−6 and D−5, never Upcoming', () => {
+    test('UP-040: a deadline-only task (23:59) shows in its pulled-in segment D−6 to D−4, never Upcoming', () => {
       const t = make({ deadline_at: at('2026-10-23T23:59') })
+      // The automatic target (§8.1): set Mon Oct 12, an 11-day wait → lead 3
+      // → Tue Oct 20, 9:00 AM. Auto, so it never makes the task quiet.
+      const stored = getTaskById(t.id)!
+      expect(stored.due_at).toBe(at('2026-10-20T09:00'))
+      expect(stored.target_auto).toBe(true)
       expect(walk(t.id, '2026-10-12', '2026-10-23')).toEqual([
         ['2026-10-17', 'days'],
         ['2026-10-18', 'days'],
+        ['2026-10-19', 'days'],
       ])
-      // D−4: the automatic target, 9:00 AM — over target.
-      setClock('2026-10-19T10:00')
+      // D−3: the automatic target, 9:00 AM — over target.
+      setClock('2026-10-20T10:00')
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
     })
 
@@ -406,13 +418,18 @@ describe('Upcoming', () => {
   })
 
   describe('row actions', () => {
-    test('UP-043: Today on one-off rows only; Remove target only on one-offs with no deadline', () => {
-      const row = (recurring: boolean, deadline_at: string | null) =>
-        upcomingRowActions({ recurring, task: { deadline_at } })
-      expect(row(false, null)).toEqual({ today: true, removeTarget: true })
-      expect(row(false, at('2026-11-07T23:59'))).toEqual({ today: true, removeTarget: false })
-      expect(row(true, null)).toEqual({ today: false, removeTarget: false })
-      expect(row(true, at('2026-11-07T23:59'))).toEqual({ today: false, removeTarget: false })
+    test('UP-043: Today on every row; Remove target with no deadline, Back to auto with one', () => {
+      const target = at('2026-11-03T09:00')
+      const deadline = at('2026-11-07T23:59')
+      const row = (recurring: boolean, deadline_at: string | null, target_auto = false) =>
+        upcomingRowActions({ recurring, task: { due_at: target, deadline_at, target_auto } })
+      expect(row(false, null)).toEqual({ today: true, reset: 'remove' })
+      expect(row(false, deadline)).toEqual({ today: true, reset: 'auto' })
+      // An automatic target has nothing to go back to.
+      expect(row(false, deadline, true)).toEqual({ today: true, reset: null })
+      // A repeating task's target goes with its recurrence: no reset here.
+      expect(row(true, null)).toEqual({ today: true, reset: null })
+      expect(row(true, deadline)).toEqual({ today: true, reset: null })
     })
   })
 
@@ -532,25 +549,38 @@ describe('Upcoming', () => {
     })
   })
 
-  describe('Today on a repeating row (ruling Q1)', () => {
-    test('UP-070: target-today skips repeating tasks and reports them; one-offs in the batch still go', () => {
+  describe('Today on a repeating row (§6, 2026-10-12 — replaces ruling Q1)', () => {
+    test("UP-070: target-today moves a repeating task's target only; done advances from the occurrence", () => {
       const rec = make({ rrule: 'FREQ=WEEKLY;BYDAY=SU', due_at: at('2026-10-18T12:00') })
       const one = make({ due_at: at('2026-10-20T09:00') })
       const r = targetTasksToday(TEST_USER_ID, tz, [rec.id, one.id])
-      expect(r.skipped_recurring).toEqual([rec.id])
-      expect(r.affected).toBe(1)
-      expect(getTaskById(rec.id)!.due_at).toBe(at('2026-10-18T12:00'))
-      expect(getTaskById(rec.id)!.original_due_at).toBe(at('2026-10-18T12:00'))
+      expect(r.skipped_recurring).toEqual([])
+      expect(r.affected).toBe(2)
+      const moved = getTaskById(rec.id)!
+      expect(moved.due_at).toBe(r.until)
+      // The scheduled occurrence and the first-target date stay put.
+      expect(moved.occurrence_at).toBe(at('2026-10-18T12:00'))
+      expect(moved.original_due_at).toBe(at('2026-10-18T12:00'))
+      expect(getTaskById(one.id)!.due_at).toBe(r.until)
+      // Done today: the next one is the Sunday AFTER the scheduled one — no
+      // double fire on Oct 18.
+      done(rec.id)
+      const next = getTaskById(rec.id)!
+      expect(next.due_at).toBe(at('2026-10-25T12:00'))
+      expect(next.occurrence_at).toBe(at('2026-10-25T12:00'))
     })
 
-    test('UP-071: only repeating — nothing written, no undo entry; the picker (`at`) too', () => {
+    test('UP-071: only repeating — written as one undo entry; the picker (`at`) too', () => {
       const rec = make({ rrule: 'FREQ=WEEKLY;BYDAY=SU', due_at: at('2026-10-18T12:00') })
       const entries = () =>
         (getDb().prepare('SELECT COUNT(*) AS n FROM undo_log').get() as { n: number }).n
       const n = entries()
       const r = targetTasksToday(TEST_USER_ID, tz, [rec.id], at('2026-10-13T15:00'))
-      expect(r).toMatchObject({ affected: 0, skipped_recurring: [rec.id] })
-      expect(entries()).toBe(n)
+      expect(r).toMatchObject({ affected: 1, skipped_recurring: [] })
+      expect(entries()).toBe(n + 1)
+      expect(getTaskById(rec.id)!.due_at).toBe(at('2026-10-13T15:00'))
+      expect(getTaskById(rec.id)!.occurrence_at).toBe(at('2026-10-18T12:00'))
+      executeUndo(TEST_USER_ID)
       expect(getTaskById(rec.id)!.due_at).toBe(at('2026-10-18T12:00'))
     })
   })
@@ -674,6 +704,9 @@ describe('target_set_at guard', () => {
     // Migrations and backfills: the column's own seed, and clearing quotas'
     // stray dates (a quota is never in Upcoming).
     'src/core/db/index.ts': 'migrations',
+    // §8 (2026-10-12): the one-time pass that gives deadline tasks their
+    // automatic target and caps targets at their deadline.
+    'src/core/db/migrate-deadline-targets.ts': 'migrations',
   }
 
   function files(dir: string): string[] {

@@ -265,9 +265,11 @@ function useBulkActions(
       const result = await saveQuickPanelChanges(allIds, changes, dateTaskIds)
       bumpUndoCount()
       fetchTasks()
-      // A deadline-capped task is never moved silently: the toast says it stayed.
+      // A task held back by a passed deadline (the High tier, 2026-10-12) is
+      // never skipped silently. Explicit picks (`include_task_ids`) are not
+      // held, so this is rare here; the wording matches the sweep toast.
       const kept = result.skippedDeadline
-        ? ` · ${result.skippedDeadline} kept before ${result.skippedDeadline === 1 ? 'its' : 'their'} deadline`
+        ? ` · ${result.skippedDeadline} past deadline skipped`
         : ''
       showToast({
         message:
@@ -2390,14 +2392,10 @@ function DashboardView({
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
             // Remove target (2026-10-10): back to its horizon's task segment.
-            // Silences a deadline's implied nag too, or "remove" would do nothing.
+            // On a deadline task the same clear is "Back to auto" (§8.3): the
+            // server puts the deadline's automatic target back.
             onRemoveTarget={(task) =>
-              void actions
-                .handleSaveAllChanges(task.id, {
-                  due_at: null,
-                  ...(task.deadline_at ? { deadline_nag_off: true } : {}),
-                })
-                .catch(() => undefined)
+              void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
             }
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}

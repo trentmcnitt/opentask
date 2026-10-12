@@ -3,6 +3,8 @@ import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
 import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
+import { log } from '@/lib/logger'
+import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -351,6 +353,17 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'deadline_nag_off')) {
     database.exec('ALTER TABLE tasks ADD COLUMN deadline_nag_off INTEGER NOT NULL DEFAULT 0')
   }
+  // §8 / §6 (2026-10-12): the stored automatic deadline target, a repeating
+  // task's scheduled occurrence, and the occurrence a completion row closed.
+  if (!hasColumn(database, 'tasks', 'target_auto')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_auto INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn(database, 'tasks', 'occurrence_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN occurrence_at TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'completions', 'occurrence_at_was')) {
+    database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_was TEXT DEFAULT NULL')
+  }
   if (!hasColumn(database, 'projects', 'description')) {
     database.exec('ALTER TABLE projects ADD COLUMN description TEXT DEFAULT NULL')
   }
@@ -362,6 +375,14 @@ function runMigrations(database: Database.Database): void {
   backfillTimeSlots(database)
   clearQuotaDueDates(database)
   restoreProjectGrouping(database)
+  logTargetMigration(migrateDeadlineTargets(database))
+}
+
+/** Log what the target-model data steps did, only when they did something. */
+function logTargetMigration(counts: TargetMigrationCounts): void {
+  if (Object.values(counts).some((n) => n > 0)) {
+    log.info('db', `target model migration (2026-10-12): ${JSON.stringify(counts)}`)
+  }
 }
 
 /**

@@ -10,12 +10,12 @@ import type { CheckInDay, HorizonValue } from '@/lib/task-segments'
 /** What "overdue" used to say: a task whose target has arrived. PROVISIONAL. */
 export const OVER_TARGET = 'Over target'
 
-/**
- * Said when a snooze can't quiet a task because its deadline is today (ruling
- * A4, 2026-10-11): on the deadline's own day only done, delete or the per-task
- * nag override silence it, so the snooze is saved but the nag stays on.
- */
-export const DEADLINE_TODAY_HOLDS = 'Deadline today: this stays on until it’s done'
+/** The editor's word for the deadline's stored automatic target (§8.1). */
+export const AUTO_TARGET_WORD = 'auto'
+/** The action that puts a picked target back to the automatic one (§8.3). */
+export const BACK_TO_AUTO = 'Back to auto'
+/** The picker's choice for the deadline's own day (ruling Q8). */
+export const DEADLINE_DAY = 'Deadline day'
 /** Lower-case, mid-sentence form ("3 over target"). */
 export const OVER_TARGET_LOWER = 'over target'
 

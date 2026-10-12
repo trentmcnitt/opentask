@@ -77,10 +77,14 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       input,
     })
 
-    // A3 (2026-10-11): a native quick snooze (`cap_at_deadline`, the
-    // notification content extension's custom time) that stopped AT the
-    // deadline says so in a quiet push — that surface shows nothing itself.
-    if (cappedAtDeadline) void sendDeadlineCapFeedback(user.id, task.due_at!, user.timezone)
+    // A3 (2026-10-11): a native quick snooze that stopped AT the deadline
+    // says so in a quiet push — that surface (the notification content
+    // extension's custom time) shows nothing itself. Every move is capped
+    // since 2026-10-12 (§8.2); `cap_at_deadline` now only marks the caller as
+    // one of those surfaces, so the web, whose toast says it, gets no push.
+    if (cappedAtDeadline && input.cap_at_deadline) {
+      void sendDeadlineCapFeedback(user.id, task.due_at!, user.timezone)
+    }
 
     notifyDemoEngagement(user.name, 'update')
     return success({

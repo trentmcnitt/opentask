@@ -25,13 +25,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
-import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
-import {
-  effectiveTargetAt,
-  isPastDeadline,
-  targetAgeDays,
-  targetAgeTone,
-} from '@/lib/task-segments'
+import { formatDueTimeParts, formatTaskAge } from '@/lib/format-date'
+import { isPastDeadline, targetAgeDays, targetAgeTone, targetReset } from '@/lib/task-segments'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -50,7 +45,7 @@ import type { Task, LabelConfig, LabelColor } from '@/types'
  * TaskRow visual reference — complete rendered examples:
  *
  *   Line 1: [title]
- *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X]
+ *   Line 2: [relative time] · [absolute time] · [recurrence text] · [deadline]
  *   Line 3: [priority] [↻] [⏱] [📝] [labels] [project]
  *
  * Due soon (< 3h, shows both relative + absolute):
@@ -71,15 +66,10 @@ import type { Task, LabelConfig, LabelColor } from '@/types'
  *   ┃    3h ago · 9:00 AM                                     │
  *   ┃─────────────────────────────────────────────────────────┘
  *
- * Snoozed (blue left border, snoozed-from context):
- *   ┃─────────────────────────────────────────────────────────┐
- *   ┃ ○  Review PR  [ops]                                     │
- *   ┃    Tomorrow 3:00 PM · snoozed from Tue                  │
- *   ┃─────────────────────────────────────────────────────────┘
- *
  * Overdue times: <1m ago · 5:00 PM | 3h ago · 9 AM | yesterday · 5 PM | 3d ago · Jan 30 5 PM
  * Future times:  in 47m · 5:00 PM · Tomorrow 9 AM · Wed 9 AM · Feb 11 9 AM
- * Left border:   red=overdue (wins), blue=snoozed, none=default
+ * Left border:   red=past deadline, plum=over target, none=default (no
+ *                "snoozed" state since 2026-10-12, §6)
  * Snooze button:  desktop only (hover) — mobile uses swipe
  */
 
@@ -359,12 +349,6 @@ export function TaskRow({
   const priorityBadge = getPriorityBadge(task.priority)
   const priorityIcon = getPriorityIcon(task.priority)
   const priorityColors = getPriorityColors(task.priority)
-  // A task is snoozed when its due date has drifted from the original.
-  // On creation, original_due_at === due_at; snoozing changes due_at but not original_due_at.
-  // A quota's due_at is its period boundary, not a promise that got moved — no
-  // "snoozed" stripe on tracked rows (§5), just as they get no overdue stripe.
-  const isSnoozed =
-    !isTracked(task) && task.original_due_at !== null && task.original_due_at !== task.due_at
   const isAiProcessing = task.labels.includes('ai-to-process')
   const tracked = isTracked(task)
   const pastDeadline = !tracked && isPastDeadline(task.deadline_at, new Date())
@@ -422,22 +406,19 @@ export function TaskRow({
         isAiHighlighted && !isSelected && 'bg-blue-50/50 dark:bg-blue-950/20',
         // A 4px state border is 3px wider than the plain 1px one, so the
         // padding on that side gives the 3px back (12px - 3px = 9px). Without
-        // it the circle and title of an over-target or snoozed row sat 3px to
-        // the right of a plain row's, a visible zigzag down the list.
+        // it the circle and title of an over-target row sat 3px to the right
+        // of a plain row's, a visible zigzag down the list.
         // The hover:border-l-* repeats keep the state colour on hover: the
         // row's `hover:border-border/80` sets all four sides and would
-        // otherwise turn the plum (or blue) left edge grey under the pointer.
-        // A passed deadline outranks both (red = a passed deadline, and only
+        // otherwise turn the plum left edge grey under the pointer.
+        // A passed deadline outranks it (red = a passed deadline, and only
         // that): the stripe goes red beside the red "past deadline" line
-        // rather than plum or blue (2026-10-11 visual QA).
+        // rather than plum (2026-10-11 visual QA). The blue "snoozed" stripe
+        // went with the snooze state (§6, 2026-10-12).
         pastDeadline && 'border-l-destructive hover:border-l-destructive border-l-4 pl-[9px]',
         !pastDeadline &&
           isOverdue &&
           'border-l-over-target hover:border-l-over-target border-l-4 pl-[9px]',
-        !pastDeadline &&
-          !isOverdue &&
-          isSnoozed &&
-          'border-l-4 border-l-blue-400 pl-[9px] hover:border-l-blue-400',
         // Right border for priority (user preference), with the same give-back
         priorityDisplay.rightBorder && priorityColors && 'border-r-4 pr-[9px]',
         priorityDisplay.rightBorder && priorityColors?.border,
@@ -700,12 +681,11 @@ export function TaskRow({
           open={snoozeMenuOpen}
           onOpenChange={setSnoozeMenuOpen}
           onSnooze={(until) => onSnooze(task.id, until)}
-          onRemoveTarget={
-            // Any target it nags from — its own, or a deadline's implied one.
-            onRemoveTarget && effectiveTargetAt(task) && !task.rrule
-              ? () => onRemoveTarget(task)
-              : undefined
-          }
+          // Remove target, or "Back to auto" on a deadline task whose target
+          // the user picked; nothing on an automatic target (§8.3, Q9).
+          targetReset={onRemoveTarget ? targetReset(task) : null}
+          onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
+          deadlineAt={task.deadline_at}
         >
           <Button
             variant="ghost"
@@ -820,22 +800,15 @@ function trackedMetaSegments(task: Task): MetaSegment[] {
 function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
   const segments: MetaSegment[] = []
 
-  // A quota's due_at is its period boundary, not a promise that got moved — no
-  // "snoozed" stripe on tracked rows (§5), just as they get no overdue stripe.
-  const isSnoozed =
-    !isTracked(task) && task.original_due_at !== null && task.original_due_at !== task.due_at
-
+  // No "snoozed" colour or "snoozed from" note since 2026-10-12 (§6): there is
+  // no snooze state — a snooze is a move of the target, nothing more.
   if (task.due_at) {
     const dueParts = formatDueTimeParts(task.due_at, timezone)
-    // Snoozed tasks show the new due time in blue (overdue red wins)
-    const snoozedClass = isSnoozed ? 'text-blue-400' : undefined
     segments.push({
       text: dueParts.relative,
-      className: isOverdue ? 'text-over-target font-medium' : snoozedClass,
+      className: isOverdue ? 'text-over-target font-medium' : undefined,
     })
-    if (dueParts.absolute) {
-      segments.push({ text: dueParts.absolute, className: isOverdue ? undefined : snoozedClass })
-    }
+    if (dueParts.absolute) segments.push({ text: dueParts.absolute })
   }
 
   if (task.rrule) {
@@ -847,14 +820,6 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   // client and you're in a rush"), and this marker is the honest label.
   const deadline = deadlineSegment(task, timezone)
   if (deadline) segments.push(deadline)
-
-  // Show "snoozed from" when the due date has drifted from the original
-  if (isSnoozed && task.original_due_at) {
-    const text = formatOriginalDueAt(task.original_due_at, timezone)
-    if (text) {
-      segments.push({ text, className: 'text-muted-foreground/60' })
-    }
-  }
 
   // Age indicator: how old a task is (very subtle, at the end of metadata)
   // One-off: original_due_at ?? created_at (captures deferral time when present)

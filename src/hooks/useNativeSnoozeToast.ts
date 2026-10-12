@@ -20,6 +20,8 @@ interface NativeSnoozeSuccess {
   skipped_high: number
   /** The TOTAL skipped on priority, as in the API — Urgent is this minus `skipped_high`. */
   skipped_urgent: number
+  /** Held back by a passed deadline (2026-10-12); absent from an older native build. */
+  skipped_deadline?: number
 }
 
 declare global {
@@ -66,6 +68,7 @@ export function useNativeSnoozeToast() {
           highAffected: result.snoozed_high,
           high: result.skipped_high,
           urgent: result.skipped_urgent - result.skipped_high,
+          deadline: result.skipped_deadline ?? 0,
         }),
         type: 'success',
         action: affected > 0 ? { label: 'Undo', onClick: undoLatest } : undefined,

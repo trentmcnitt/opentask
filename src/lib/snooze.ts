@@ -170,14 +170,24 @@ export interface BulkSnoozeSkips {
   high: number
   /** P4 skipped — never bulk-snoozable at all. */
   urgent: number
-  /** Left where they were: the sweep would have crossed their deadline (2026-10-10). */
+  /**
+   * Below High, held back like High because their deadline has passed
+   * (Trent's ruling, 2026-10-12) — swept on the next press once nothing lower
+   * is left. Named beside High: "(2 high, 1 past deadline skipped)".
+   */
   deadline?: number
+  /** Moved only as far as their deadline (§8.2). Counted in `affected` too. */
+  capped?: number
 }
 
-/** "2 high", "1 urgent", "2 high, 1 urgent". Empty when nothing was skipped. */
-function skipList(high: number, urgent: number): string {
+/**
+ * "2 high", "1 past deadline", "1 urgent", "2 high, 1 past deadline, 1 urgent".
+ * Empty when nothing was skipped.
+ */
+function skipList(high: number, urgent: number, deadline = 0): string {
   const parts: string[] = []
   if (high > 0) parts.push(`${high} high`)
+  if (deadline > 0) parts.push(`${deadline} past deadline`)
   if (urgent > 0) parts.push(`${urgent} urgent`)
   return parts.join(', ')
 }
@@ -206,12 +216,16 @@ export function bulkSnoozeMessage({
   high,
   urgent,
   deadline = 0,
+  capped = 0,
 }: BulkSnoozeSkips): string {
-  const list = skipList(high, urgent)
-  // A deadline-capped task is never silently clamped: the toast says it stayed.
-  const kept =
-    deadline > 0 ? ` · ${deadline} kept before ${deadline === 1 ? 'its' : 'their'} deadline` : ''
-  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + kept
+  // A passed deadline is held back like High (Trent's ruling, 2026-10-12),
+  // so it is named the way High is: "(2 high, 1 past deadline skipped)".
+  const list = skipList(high, urgent, deadline)
+  // The deadline cap is never silent (§8.2): the toast says which stopped at
+  // a deadline still ahead.
+  const stopped =
+    capped > 0 ? ` · ${capped} stopped at ${capped === 1 ? 'its' : 'their'} deadline` : ''
+  return bulkSnoozeCore({ affected, highAffected, high, urgent }, list) + stopped
 }
 
 function bulkSnoozeCore(
@@ -228,7 +242,7 @@ function bulkSnoozeCore(
     return `Snoozed ${affected} ${what}${list ? ` (${list} skipped)` : ''}`
   }
   if (!list) return 'No snoozable tasks'
-  if (high === 0) {
+  if (high === 0 && list === `${urgent} urgent`) {
     return `No snoozable tasks (${urgent} urgent ${taskWord(urgent)} must be snoozed individually)`
   }
   return `No snoozable tasks (${list} skipped)`

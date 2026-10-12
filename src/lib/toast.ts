@@ -1,4 +1,3 @@
-import { offerSnoozeAnyway, PastDeadlineRefusal } from '@/lib/past-deadline'
 import { toast as sonnerToast } from 'sonner'
 import { createElement } from 'react'
 import { Sparkles } from 'lucide-react'
@@ -58,8 +57,6 @@ export function showErrorToast(message: string) {
  * it was refused. Unexpected failures fall back to a generic message.
  */
 export function showSaveError(err: unknown): void {
-  // A snooze past the deadline is a question, not a failure: offer the override.
-  if (err instanceof PastDeadlineRefusal) return offerSnoozeAnyway(err)
   showToast({
     message: err instanceof Error && err.message ? err.message : 'Save failed',
     type: 'error',

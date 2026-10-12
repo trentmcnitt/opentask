@@ -99,7 +99,7 @@ export function SnoozeSection() {
         </SettingRow>
         <SettingRow
           label="Morning time"
-          description="Default task time for snooze and AI enrichment"
+          description="Default task time for snooze and AI enrichment, and a deadline's automatic target"
         >
           <TimeInput
             value={morningTime}

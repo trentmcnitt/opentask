@@ -13,10 +13,16 @@ import type { Locator, Page } from '@playwright/test'
  *   page scroll-locked behind it — nothing could scroll.
  * - #8: a recurring task's time is labelled the target, its deadline says it
  *   moves with each occurrence, and it has no Horizon row.
- * - #5: a deadline-only task names its implied target instead of "No target".
+ * - #5: a deadline-only task names its stored automatic target instead of "No target".
  */
 
-test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+test.use({
+  viewport: { width: 390, height: 844 },
+  hasTouch: true,
+  isMobile: true,
+  // The deadline picker works in the browser's local days.
+  timezoneId: process.env.E2E_TZ || 'America/Chicago',
+})
 
 const WEEKLY = 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=9;BYMINUTE=0'
 const DAY_MS = 24 * 3600_000
@@ -161,11 +167,12 @@ test.describe('Task editor sheet on a phone', () => {
     }
   })
 
-  test('a deadline-only task names its auto target', async ({ authenticatedPage: page }) => {
-    // Deadline two days out: its implied target (4 days before) has arrived.
+  test('a deadline-only task names its stored auto target', async ({ authenticatedPage: page }) => {
+    // Deadline 20 days out: a wait of 16+ days, so the stored automatic
+    // target is 4 days before it (spec §8.1).
     const id = await createTask(page, {
       title: uniqueTitle('Renew passport'),
-      deadline_at: new Date(Date.now() + 2 * DAY_MS).toISOString(),
+      deadline_at: new Date(Date.now() + 20 * DAY_MS).toISOString(),
       priority: 2,
     })
     try {

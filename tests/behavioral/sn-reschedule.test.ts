@@ -1,13 +1,13 @@
 /**
  * SN-100..: explicit reschedule vs snooze, and the due_at guard gaps
- * (2026-09-24).
+ * (2026-09-24; revised 2026-10-12).
  *
- * Trent's decision: picking an explicit new date (the date picker) clears
- * "snoozed from" — the new date becomes the occurrence origin, so the task is
- * no longer snoozed. Every snooze path (snooze endpoint, bulk snooze, a bare
- * `PATCH { due_at }` from the quick panel's buttons or the iOS content
- * extension) keeps the origin exactly as before. The picker opts in with
- * `reset_original_due_at: true` alongside the date.
+ * Since 2026-10-12 (§6, ruling Q4) there is ONE gesture: every date change of
+ * a dated task is a move of its target, and a move keeps the first-target
+ * date (`original_due_at`). There is no snooze state (`snooze_count`,
+ * `is_snoozed`) and no snooze/re-target split: the picker's
+ * `reset_original_due_at: true` is accepted and ignored on a task. On a
+ * REMINDER it is still the explicit reschedule (a reminder is never moved).
  *
  * Also here: `{ rrule, due_at }` honors the date (it used to be dropped at
  * 200), a bare `{ due_at }` on a dated reminder is refused like any other
@@ -42,10 +42,9 @@ function snoozedTask(title = 'Call the plumber') {
   const task = createTask({ ...base, input: { title, due_at: at(9, 1) } })
   snoozeTask({ ...base, taskId: task.id, until: at(14, 1) })
   const snoozed = getTaskById(task.id)!
-  // Sanity: this is what "snoozed from" looks like.
+  // Sanity: a move keeps the first-target date, and records nothing else.
   expect(snoozed.original_due_at).toBe(at(9, 1))
-  expect(snoozed.snooze_count).toBe(1)
-  expect(formatTaskResponse(snoozed).is_snoozed).toBe(true)
+  expect(snoozed).not.toHaveProperty('snooze_count')
   return snoozed
 }
 
@@ -59,14 +58,16 @@ describe('Explicit reschedule vs snooze', () => {
     teardownTestDb()
   })
 
-  test('SN-100: a freshly created dated task is not reported as snoozed', () => {
+  test('SN-100: a freshly created dated task carries no snooze state', () => {
     const task = createTask({ ...base, input: { title: 'Fresh', due_at: at(9, 1) } })
-    // createTask sets the origin to the first due date; that is not a snooze.
+    // createTask sets the origin to the first due date.
     expect(task.original_due_at).toBe(task.due_at)
-    expect(formatTaskResponse(task).is_snoozed).toBe(false)
+    const formatted = formatTaskResponse(task)
+    expect(formatted).not.toHaveProperty('is_snoozed')
+    expect(formatted).not.toHaveProperty('snooze_count')
   })
 
-  test('SN-101: picking a date (reset_original_due_at + due_at) clears "snoozed from"', () => {
+  test('SN-101: a picked date (reset_original_due_at + due_at) is a move like any other', () => {
     const snoozed = snoozedTask()
     const picked = at(11, 3)
 
@@ -77,15 +78,12 @@ describe('Explicit reschedule vs snooze', () => {
     })
 
     expect(task.due_at).toBe(picked)
-    // The new date IS the origin now — nothing to be snoozed from.
-    expect(task.original_due_at).toBe(picked)
-    expect(task.snooze_count).toBe(0)
-    expect(formatTaskResponse(task).is_snoozed).toBe(false)
-    // It is not reported as a snooze either.
-    expect(description).not.toMatch(/snooz/i)
+    // The flag is ignored on a task: the first-target date stays.
+    expect(task.original_due_at).toBe(at(9, 1))
+    expect(description).toMatch(/^Snoozed to/)
   })
 
-  test('SN-102: undo of a picked date restores the prior "snoozed from"', () => {
+  test('SN-102: undo of a picked date restores the target; redo re-applies it', () => {
     const snoozed = snoozedTask()
 
     updateTask({
@@ -98,16 +96,14 @@ describe('Explicit reschedule vs snooze', () => {
     const restored = getTaskById(snoozed.id)!
     expect(restored.due_at).toBe(snoozed.due_at)
     expect(restored.original_due_at).toBe(snoozed.original_due_at)
-    expect(restored.snooze_count).toBe(1)
-    expect(formatTaskResponse(restored).is_snoozed).toBe(true)
 
     executeRedo(TEST_USER_ID)
     const redone = getTaskById(snoozed.id)!
-    expect(redone.original_due_at).toBe(at(11, 3))
-    expect(redone.snooze_count).toBe(0)
+    expect(redone.due_at).toBe(at(11, 3))
+    expect(redone.original_due_at).toBe(at(9, 1))
   })
 
-  test('SN-103: a bare PATCH { due_at } is still a snooze and keeps the origin', () => {
+  test('SN-103: a bare PATCH { due_at } is a move and keeps the origin', () => {
     // The quick panel's +1h / preset buttons and the iOS content extension's
     // "snooze to a specific time" both send exactly this.
     const snoozed = snoozedTask()
@@ -120,8 +116,6 @@ describe('Explicit reschedule vs snooze', () => {
 
     expect(task.due_at).toBe(at(16, 1))
     expect(task.original_due_at).toBe(at(9, 1))
-    expect(task.snooze_count).toBe(2)
-    expect(formatTaskResponse(task).is_snoozed).toBe(true)
     expect(description).toMatch(/snooz/i)
   })
 
@@ -135,10 +129,9 @@ describe('Explicit reschedule vs snooze', () => {
     const afterBulk = getTaskById(two.id)!
     expect(afterBulk.due_at).toBe(at(18, 1))
     expect(afterBulk.original_due_at).toBe(at(9, 1))
-    expect(afterBulk.snooze_count).toBe(2)
   })
 
-  test('SN-105: a snooze after a picked date is snoozed from the PICKED date', () => {
+  test('SN-105: a snooze after a picked date still counts from the FIRST target', () => {
     const snoozed = snoozedTask()
     updateTask({
       ...base,
@@ -147,8 +140,8 @@ describe('Explicit reschedule vs snooze', () => {
     })
     snoozeTask({ ...base, taskId: snoozed.id, until: at(15, 3) })
     const after = getTaskById(snoozed.id)!
-    expect(after.original_due_at).toBe(at(11, 3))
-    expect(after.snooze_count).toBe(1)
+    expect(after.due_at).toBe(at(15, 3))
+    expect(after.original_due_at).toBe(at(9, 1))
   })
 
   test('SN-106: picking a first date for an undated task sets it as the origin once', () => {
@@ -189,10 +182,11 @@ describe('PATCH with rrule and due_at together', () => {
     expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
     expect(after.due_at).toBe(monday)
     expect(after.anchor_time).toBe('18:30')
-    expect(after.snooze_count).toBe(0)
     expect(fieldsChanged).toContain('due_at')
-    // A new schedule starts clean — same as clearing recurrence with a date.
-    expect(formatTaskResponse(after).is_snoozed).toBe(false)
+    // A new schedule starts clean — same as clearing recurrence with a date:
+    // the old origin goes, and the date sent is the scheduled occurrence (§6).
+    expect(after.original_due_at).toBeNull()
+    expect(after.occurrence_at).toBe(monday)
 
     // Undo puts the old date and the one-off shape back.
     executeUndo(TEST_USER_ID)
@@ -212,7 +206,8 @@ describe('PATCH with rrule and due_at together', () => {
     })
     const after = getTaskById(task.id)!
     expect(after.due_at).toBe(when)
-    expect(after.snooze_count).toBe(0)
+    expect(after.occurrence_at).toBe(when)
+    expect(after.original_due_at).toBeNull()
   })
 
   test('SN-112: without an explicit date, an rrule change still computes one', () => {
@@ -250,7 +245,7 @@ describe('Reminder due_at guards', () => {
     )
     const after = getTaskById(r.id)!
     expect(after.due_at).toBe(at(7))
-    expect(after.snooze_count).toBe(0)
+    expect(after.original_due_at).toBe(at(7))
   })
 
   test('SN-121: an explicit reschedule of a reminder is allowed', () => {
@@ -261,8 +256,10 @@ describe('Reminder due_at guards', () => {
       input: { due_at: at(12), reset_original_due_at: true },
     })
     expect(task.due_at).toBe(at(12))
-    expect(task.snooze_count).toBe(0)
-    expect(formatTaskResponse(task).is_snoozed).toBe(false)
+    // The reschedule makes the new date the origin, and a reminder's date IS
+    // its occurrence.
+    expect(task.original_due_at).toBe(at(12))
+    expect(task.occurrence_at).toBe(at(12))
   })
 
   test('SN-122: giving an undated reminder its first date is not a snooze', () => {

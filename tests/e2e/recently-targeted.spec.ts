@@ -149,7 +149,15 @@ test.describe('Recently targeted: Today → the Just now card', () => {
 })
 
 test.describe('Recently targeted: the Today picker on a phone', () => {
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+  // The picker's calendar works in the browser's local days, so the browser
+  // runs in the user's zone (as selection-tasks does); a UTC runner after 7 PM
+  // Chicago otherwise opened it on tomorrow.
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+    timezoneId: TEST_TZ,
+  })
 
   test("Today's 44px hit area keeps 12px clear of the done square, on /reminders and the Tasks card", async ({
     authenticatedPage: page,
@@ -278,7 +286,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
 })
 
 test.describe('Recently targeted: the Today picker on a desktop', () => {
-  test.use({ viewport: { width: 1280, height: 800 } })
+  test.use({ viewport: { width: 1280, height: 800 }, timezoneId: TEST_TZ })
 
   test('a right-click opens the picker and never targets; a plain click still does', async ({
     authenticatedPage: page,

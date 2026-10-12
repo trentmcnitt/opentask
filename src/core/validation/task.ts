@@ -292,6 +292,9 @@ export const taskUpdateSchema = z
     // growth clock (`horizon_set_at`) without changing it. Needed because
     // sending the same horizon is a no-op, and an unset horizon must stay unset.
     affirm_horizon: z.boolean().optional(),
+    // RETIRED 2026-10-12 (§8): accepted from old clients and ignored. An old
+    // "Remove target" sends it with `due_at: null`, which on a deadline task
+    // now means "back to the automatic target".
     deadline_nag_off: z.boolean().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
@@ -300,12 +303,15 @@ export const taskUpdateSchema = z
     labels: labels.optional(),
     notes: z.string().max(10000, 'Notes too long').nullable().optional(),
     auto_snooze_minutes: autoSnoozeMinutes.optional(),
+    // §6 (2026-10-12, ruling Q4): there is no snooze/re-target split any more —
+    // every date change is one "move target". `retarget` (alias
+    // `reset_original_due_at`), `allow_past_deadline` and `cap_at_deadline`
+    // are accepted from old clients and change nothing: a move is a move,
+    // always capped at the deadline. The one meaning `reset_original_due_at`
+    // keeps is on a REMINDER, where it is the explicit reschedule a period
+    // move sends (a reminder is never snoozed).
     reset_original_due_at: z.boolean().optional(),
-    // A snooze past `deadline_at` is refused (409 PAST_DEADLINE) unless this
-    // says the user confirmed it (2026-10-10).
     allow_past_deadline: z.boolean().optional(),
-    // A3 (2026-10-11): a quick snooze stops AT the deadline instead (see
-    // capSnoozeAtDeadline). What the native one-tap snoozes send.
     cap_at_deadline: z.boolean().optional(),
     create_label: createLabelFlag,
     progress_target: progressTarget.optional(),
@@ -367,9 +373,9 @@ export const bulkSnoozeSchema = z
       .max(525600, 'Cannot snooze more than 1 year')
       .optional(),
     include_task_ids: z.array(z.number().int().positive()).max(500).optional(),
-    // 2026-10-10: ids the user confirmed snoozing past their deadline.
+    // Accepted from old clients and ignored (2026-10-12): every move is
+    // capped at its deadline (§8.2).
     allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
-    // A3 (2026-10-11): ids whose snooze stops AT their deadline instead.
     cap_at_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
   })
   .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
@@ -472,8 +478,9 @@ export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>
  * target and `due_at` its deprecated alias — older native builds, Shortcuts
  * and the desks send `due_at`, so both are accepted and both are returned
  * (`formatTaskResponse`). Likewise `retarget: true` for
- * `reset_original_due_at: true` (a deliberate re-target, which restarts the
- * target's age). The column is still `due_at`; this only maps the names.
+ * `reset_original_due_at: true` (since 2026-10-12 ignored on a task — a move
+ * is a move — and the explicit reschedule on a reminder). The column is still
+ * `due_at`; this only maps the names.
  * Sending both names with different values is refused rather than guessed.
  */
 export function normalizeTargetAliases(input: unknown): unknown {

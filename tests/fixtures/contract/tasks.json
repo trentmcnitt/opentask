@@ -25,7 +25,8 @@
         "segment_deferred_at": null,
         "segment_targeted_at": null,
         "target_set_at": null,
-        "deadline_nag_off": false,
+        "target_auto": false,
+        "occurrence_at": null,
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -40,7 +41,6 @@
         "quota_prompt_config": null,
         "quota_day_state": null,
         "completion_count": 0,
-        "snooze_count": 0,
         "skip_count": 0,
         "first_completed_at": null,
         "last_completed_at": null,
@@ -49,7 +49,7 @@
         "updated_at": "2026-01-15T16:00:00.000Z",
         "target_at": "2026-01-15T16:00:00.000Z",
         "is_recurring": false,
-        "is_snoozed": false
+        "deadline_nag_off": false
       },
       {
         "id": 101,
@@ -75,7 +75,8 @@
         "segment_deferred_at": null,
         "segment_targeted_at": null,
         "target_set_at": "2026-01-15T16:00:00.000Z",
-        "deadline_nag_off": false,
+        "target_auto": false,
+        "occurrence_at": null,
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -96,7 +97,6 @@
           "did_applied": { "q:101:1:2026-01-15": 1 }
         },
         "completion_count": 0,
-        "snooze_count": 0,
         "skip_count": 0,
         "first_completed_at": null,
         "last_completed_at": null,
@@ -105,7 +105,7 @@
         "updated_at": "2026-01-15T16:00:00.000Z",
         "target_at": null,
         "is_recurring": true,
-        "is_snoozed": false
+        "deadline_nag_off": false
       },
       {
         "id": 102,
@@ -131,7 +131,8 @@
         "segment_deferred_at": null,
         "segment_targeted_at": null,
         "target_set_at": "2026-01-15T16:00:00.000Z",
-        "deadline_nag_off": false,
+        "target_auto": false,
+        "occurrence_at": null,
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -152,7 +153,6 @@
           "did_applied": {}
         },
         "completion_count": 0,
-        "snooze_count": 0,
         "skip_count": 0,
         "first_completed_at": null,
         "last_completed_at": null,
@@ -161,7 +161,7 @@
         "updated_at": "2026-01-15T16:00:00.000Z",
         "target_at": null,
         "is_recurring": true,
-        "is_snoozed": false
+        "deadline_nag_off": false
       },
       {
         "id": 103,
@@ -187,7 +187,8 @@
         "segment_deferred_at": null,
         "segment_targeted_at": null,
         "target_set_at": "2026-01-15T16:00:00.000Z",
-        "deadline_nag_off": false,
+        "target_auto": false,
+        "occurrence_at": null,
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -202,7 +203,6 @@
         "quota_prompt_config": null,
         "quota_day_state": null,
         "completion_count": 0,
-        "snooze_count": 0,
         "skip_count": 0,
         "first_completed_at": null,
         "last_completed_at": null,
@@ -211,7 +211,7 @@
         "updated_at": "2026-01-15T16:00:00.000Z",
         "target_at": null,
         "is_recurring": true,
-        "is_snoozed": false
+        "deadline_nag_off": false
       },
       {
         "id": 104,
@@ -237,7 +237,8 @@
         "segment_deferred_at": null,
         "segment_targeted_at": null,
         "target_set_at": "2026-01-15T16:00:00.000Z",
-        "deadline_nag_off": false,
+        "target_auto": false,
+        "occurrence_at": "2026-01-15T16:00:00.000Z",
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -252,7 +253,6 @@
         "quota_prompt_config": null,
         "quota_day_state": null,
         "completion_count": 1,
-        "snooze_count": 0,
         "skip_count": 0,
         "first_completed_at": "2026-01-15T16:00:00.000Z",
         "last_completed_at": "2026-01-15T16:00:00.000Z",
@@ -261,7 +261,7 @@
         "updated_at": "2026-01-15T16:00:00.000Z",
         "target_at": "2026-01-15T16:00:00.000Z",
         "is_recurring": true,
-        "is_snoozed": false
+        "deadline_nag_off": false
       },
       {
         "id": 105,
@@ -287,7 +287,8 @@
         "segment_deferred_at": null,
         "segment_targeted_at": null,
         "target_set_at": "2026-01-15T16:00:00.000Z",
-        "deadline_nag_off": false,
+        "target_auto": false,
+        "occurrence_at": "2026-01-15T16:00:00.000Z",
         "last_notified_at": null,
         "last_critical_alert_at": null,
         "auto_snooze_minutes": null,
@@ -302,7 +303,6 @@
         "quota_prompt_config": null,
         "quota_day_state": null,
         "completion_count": 0,
-        "snooze_count": 0,
         "skip_count": 0,
         "first_completed_at": null,
         "last_completed_at": null,
@@ -311,7 +311,7 @@
         "updated_at": "2026-01-15T16:00:00.000Z",
         "target_at": "2026-01-15T16:00:00.000Z",
         "is_recurring": true,
-        "is_snoozed": false
+        "deadline_nag_off": false
       }
     ],
     "count": 6

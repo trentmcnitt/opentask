@@ -49,21 +49,26 @@ function executeRecurringMarkDone(
   userId: number,
   nowStr: string,
 ): ExecuteMarkDoneResult {
-  const { nextDueAt, nextDeadlineAt, prevDueAt, stats } = computation
+  const { nextDueAt, nextOccurrenceAt, nextDeadlineAt, prevDueAt, prevOccurrenceAt, stats } =
+    computation
 
-  // Create completion record
+  // Create completion record. `occurrence_at_was` (§6, 2026-10-12): the
+  // occurrence it closed, so a put-back restores the schedule with the target.
   const completionResult = tx
     .prepare(
       `
-      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next, occurrence_at_was)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
     )
-    .run(task.id, userId, nowStr, prevDueAt, nextDueAt)
+    .run(task.id, userId, nowStr, prevDueAt, nextDueAt, prevOccurrenceAt)
 
   const completionId = Number(completionResult.lastInsertRowid)
 
-  // Update task: advance due_at, set original_due_at to new occurrence origin, update completion stats
+  // Update task: advance the occurrence and the target together (§6: both
+  // land on the next scheduled occurrence; the target capped at the moved
+  // deadline), set original_due_at to it (the first target of the new
+  // occurrence — old native builds read it), update completion stats
   //
   // §5: `progress_current = 0` only matters for a quota, and a quota reaches
   // this path only through `close_period` — an API-only early close (see
@@ -74,7 +79,7 @@ function executeRecurringMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET due_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
+    SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         progress_current = 0,
         updated_at = ?
@@ -82,7 +87,8 @@ function executeRecurringMarkDone(
   `,
   ).run(
     nextDueAt,
-    nextDueAt, // original_due_at tracks the new occurrence's origin timestamp
+    nextOccurrenceAt, // the next scheduled occurrence (§6)
+    nextDueAt, // original_due_at: the new occurrence's first target
     nextDeadlineAt, // the deadline moves with the occurrence (advanceDeadline)
     nowStr, // target_set_at: the next occurrence's wait counts from now
     stats.completionCount,
@@ -96,6 +102,7 @@ function executeRecurringMarkDone(
   const afterState: Partial<Task> & { _completion?: unknown } = {
     id: task.id,
     due_at: nextDueAt,
+    occurrence_at: nextOccurrenceAt,
     original_due_at: nextDueAt,
     deadline_at: nextDeadlineAt,
     target_set_at: nowStr,
@@ -108,6 +115,7 @@ function executeRecurringMarkDone(
       completed_at: nowStr,
       due_at_was: prevDueAt,
       due_at_next: nextDueAt,
+      occurrence_at_was: prevOccurrenceAt,
     },
   }
 
@@ -117,6 +125,7 @@ function executeRecurringMarkDone(
       id: task.id,
       title: task.title,
       due_at: task.due_at,
+      occurrence_at: task.occurrence_at,
       original_due_at: task.original_due_at,
       deadline_at: task.deadline_at,
       target_set_at: task.target_set_at,

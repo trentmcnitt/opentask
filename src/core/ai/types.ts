@@ -129,8 +129,8 @@ export interface TaskSummary {
   /** Pace: days | weeks | months | eventually. Absent/null = not set. */
   horizon?: 'days' | 'weeks' | 'months' | 'eventually' | null
   /**
-   * True when `due_at` is the deadline's implied target, not one the user set
-   * (`withEffectiveSummaryTarget` in task-summaries.ts). Printed "(from deadline)".
+   * True when `due_at` is the deadline's AUTOMATIC target (`target_auto`, §8),
+   * not one the user set. Printed "(from deadline)".
    */
   target_implied?: boolean
 }

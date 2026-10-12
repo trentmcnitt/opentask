@@ -89,6 +89,23 @@ describe('the copy (counts only)', () => {
     })
   })
 
+  test('a passed deadline left behind is named and the next press takes it (2026-10-12)', () => {
+    expect(
+      sweepFeedbackContent(counts({ affected: 3, deadline: 1 }), UNTIL_3PM, TEST_TIMEZONE),
+    ).toEqual({
+      title: 'Snoozed 3 tasks until 3:00 PM',
+      body: '1 past deadline still over target. Snooze again to move it',
+      priority: 3,
+    })
+    expect(
+      sweepFeedbackContent(
+        counts({ affected: 3, high: 2, deadline: 1, urgent: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+      )?.body,
+    ).toBe('2 High, 1 past deadline and 1 Urgent still over target. Snooze again to move them')
+  })
+
   test('Urgent only, nothing snoozed', () => {
     expect(sweepFeedbackContent(counts({ urgent: 3 }), UNTIL_3PM, TEST_TIMEZONE)).toEqual({
       title: 'Nothing snoozed',

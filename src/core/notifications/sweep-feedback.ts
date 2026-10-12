@@ -24,7 +24,8 @@
  *   keep the push: the notification buttons, the iPhone widget's "All
  *   overdue" bar, and the Mac's Snooze menu items (they alert only when
  *   nothing moved).
- * - Something High or Urgent was LEFT BEHIND (still overdue after the sweep).
+ * - Something High or Urgent — or held like High by a passed deadline
+ *   (2026-10-12) — was LEFT BEHIND (still overdue after the sweep).
  *   Nothing left → nothing sent: a sweep that cleared everything needs no
  *   report, and a banner saying so would be noise.
  * - The user has `notifications_enabled` AND `sweep_feedback_notifications_enabled`
@@ -84,6 +85,11 @@ export interface SweepCounts {
   high: number
   /** Urgent tasks left overdue (never bulk-snoozed). */
   urgent: number
+  /**
+   * Below High, left like High because their deadline has passed (ruling
+   * 2026-10-12): the next press takes them. Optional; 0 when absent.
+   */
+  deadline?: number
 }
 
 export interface SweepFeedbackContent {
@@ -93,12 +99,15 @@ export interface SweepFeedbackContent {
   priority: 3 | 4
 }
 
-/** "2 High", "1 Urgent", "2 High and 1 Urgent". */
-function leftList(high: number, urgent: number): string {
+/** "2 High", "1 Urgent", "2 High and 1 Urgent", "2 High, 1 past deadline and 1 Urgent". */
+function leftList(high: number, urgent: number, deadline = 0): string {
   const parts: string[] = []
   if (high > 0) parts.push(`${high} High`)
+  if (deadline > 0) parts.push(`${deadline} past deadline`)
   if (urgent > 0) parts.push(`${urgent} Urgent`)
-  return parts.join(' and ')
+  return parts.length <= 1
+    ? parts.join('')
+    : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
 /**
@@ -110,8 +119,10 @@ export function sweepFeedbackContent(
   until: string,
   timezone: string,
 ): SweepFeedbackContent | null {
-  const { affected, highAffected, high, urgent } = counts
-  if (high <= 0 && urgent <= 0) return null
+  const { affected, highAffected, high, urgent, deadline = 0 } = counts
+  if (high <= 0 && urgent <= 0 && deadline <= 0) return null
+  // A passed deadline waits for the next press exactly as High does.
+  const waiting = high + deadline
 
   let title: string
   if (affected > 0) {
@@ -125,16 +136,20 @@ export function sweepFeedbackContent(
   }
 
   const sentences: string[] = []
-  if (affected === 0 && high === 0) {
+  if (affected === 0 && waiting === 0) {
     // Only Urgent was there: nothing a sweep could ever move.
     sentences.push(`${urgent} Urgent can't be bulk snoozed`)
   } else {
-    sentences.push(`${leftList(high, urgent)} still ${OVER_TARGET_LOWER}`)
-    if (high > 0 && affected > 0) {
+    sentences.push(`${leftList(high, urgent, deadline)} still ${OVER_TARGET_LOWER}`)
+    if (waiting > 0 && affected > 0) {
       // High waits for the next press, once nothing lower is left. When
       // nothing moved at all, another press would do the same, so no hint.
-      sentences.push(`Snooze again to move the High ${high === 1 ? 'one' : 'ones'}`)
-    } else if (high === 0) {
+      sentences.push(
+        deadline === 0
+          ? `Snooze again to move the High ${high === 1 ? 'one' : 'ones'}`
+          : `Snooze again to move ${waiting === 1 ? 'it' : 'them'}`,
+      )
+    } else if (waiting === 0) {
       sentences.push(`Urgent can't be bulk snoozed`)
     }
   }
@@ -184,7 +199,8 @@ export function decideSweepFeedback(
 export function planSweepFeedback(userId: number, input: SweepFeedbackInput): SweepFeedback | null {
   // Cheap exits first, so the common cases never touch the database.
   if (!input.viaBearer || input.notify === false) return null
-  if (input.counts.high <= 0 && input.counts.urgent <= 0) return null
+  const { high, urgent, deadline = 0 } = input.counts
+  if (high <= 0 && urgent <= 0 && deadline <= 0) return null
 
   const user = getDb()
     .prepare(

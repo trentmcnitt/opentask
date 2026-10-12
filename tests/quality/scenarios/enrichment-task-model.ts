@@ -532,4 +532,98 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
         'Title "Pay the electric bill".',
     },
   },
+
+  // ---------------------------------------------------------------------------
+  // Target vs deadline wording (spec §8.8, 2026-10-12). A target the AI sets
+  // is a PICKED target: it makes the task quiet until its date. A cutoff is a
+  // deadline, and the app stores the deadline's AUTOMATIC target itself — so
+  // the AI sets a target only from explicit start or time wording.
+  // ---------------------------------------------------------------------------
+  {
+    id: 'enrich-tm8-by-weekday-is-deadline',
+    feature: 'enrichment',
+    description: '"by Friday" → deadline; the target is left to the app (auto)',
+    input: {
+      text: `pay the AT&T card by ${weekday(4)}`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: iso(4),
+        due_at: null,
+        horizon: null,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        `"by ${weekday(4)}" is a cutoff → deadline_at the coming ${weekday(4)}, end of day (T23:59:00). ` +
+        'due_at MUST be null: no day to do it was named, and the app sets the automatic target a few days before the deadline. ' +
+        'A due_at here (even on or before the deadline) is a failure — it would make the task quiet until that date. ' +
+        'Title "Pay the AT&T card" or similar, date phrase removed.',
+    },
+  },
+  {
+    id: 'enrich-tm8-due-the-ordinal-is-deadline',
+    feature: 'enrichment',
+    description: '"due the 23rd" → deadline only, no target',
+    input: {
+      text: `rebate form is due the ${ordinal(9)}`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: iso(9),
+        due_at: null,
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        `"due the ${ordinal(9)}" is a cutoff → deadline_at ${monthDay(9)}, end of day. due_at MUST be null (the app sets the automatic target). ` +
+        'Title "Send the rebate form", "Rebate form" or similar.',
+    },
+  },
+  {
+    id: 'enrich-tm8-weekday-at-time-is-target',
+    feature: 'enrichment',
+    description: '"Thursday at 3" → a target at 3 PM, no deadline',
+    input: {
+      text: `call the plumber ${weekday(3)} at 3`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        due_at: iso(3),
+        deadline_at: null,
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        `due_at = the coming ${weekday(3)} at 3:00 PM local (T15:00:00 — "at 3" for a call is the afternoon). ` +
+        'deadline_at MUST be null: a day and time to do it is a target, not a cutoff. Title "Call the plumber".',
+    },
+  },
+  {
+    id: 'enrich-tm8-remind-monday-with-due-date',
+    feature: 'enrichment',
+    description: '"remind me Monday at 3 … it\'s due the 23rd" → target AND deadline',
+    input: {
+      text: `remind me ${weekday(5)} at 3 to send the invoice, it's due the ${ordinal(9)}`,
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        due_at: iso(5),
+        deadline_at: iso(9),
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        `due_at (the target) = the coming ${weekday(5)} at 3:00 PM local; deadline_at = ${monthDay(9)}, end of day. ` +
+        'Both must be set and not swapped; the target is before the deadline. Title "Send the invoice".',
+    },
+  },
 ]

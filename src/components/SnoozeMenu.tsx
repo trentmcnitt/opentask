@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Clock, XCircle, CalendarDays } from 'lucide-react'
+import { Clock, XCircle, CalendarDays, RotateCcw } from 'lucide-react'
 import {
   Sheet,
   SheetContent,
@@ -27,8 +27,13 @@ import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
 import { to24Hour } from '@/lib/time-utils'
 import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
+import { deadlineDayPick } from '@/lib/editor-target-labels'
+import { BACK_TO_AUTO } from '@/lib/task-model-words'
 
 const SLOT_PREFIX = 'slot:'
+
+/** The target-reset entry's words, by `targetReset` (§8.3). */
+const RESET_LABELS = { auto: BACK_TO_AUTO, remove: 'Remove target' } as const
 
 /**
  * The user's time slots, fetched when a menu opens and kept for the session.
@@ -62,8 +67,20 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
   return slots
 }
 
-/** The menu's remove-target entry (not a snooze option). */
+/** The menu's remove-target / back-to-auto entry (not a snooze option). */
 const REMOVE_TARGET = 'remove-target'
+/** "Back to auto" (§8.3): the same clear as Remove target, drawn as a reset. */
+const BACK_TO_AUTO_OPTION = 'back-to-auto'
+/** The picker's "Deadline day" (ruling Q8, 2026-10-12). */
+const DEADLINE_DAY_OPTION = 'deadline-day'
+
+/** Each option's icon: custom → calendar, Remove target → ✕, Back to auto → ↺, else a clock. */
+function OptionIcon({ option, className }: { option: string; className: string }) {
+  if (option === 'custom') return <CalendarDays className={className} />
+  if (option === REMOVE_TARGET) return <XCircle className={className} />
+  if (option === BACK_TO_AUTO_OPTION) return <RotateCcw className={className} />
+  return <Clock className={className} />
+}
 
 interface SnoozeMenuProps {
   open: boolean
@@ -73,10 +90,19 @@ interface SnoozeMenuProps {
   /** Trigger element — rendered as-is; parent controls click/long-press behavior */
   children?: React.ReactNode
   /**
-   * Remove the target (2026-10-10): the task goes back to its horizon's task
-   * segment instead of being snoozed. Offered only where the caller passes it.
+   * Remove the target (2026-10-10), or put a picked target back to the
+   * deadline's automatic one (§8.3) — which, is `targetReset`. Offered only
+   * where the caller passes both.
    */
   onRemoveTarget?: () => void
+  /** `targetReset(task)`: 'remove' → "Remove target", 'auto' → "Back to auto", null → neither. */
+  targetReset?: 'auto' | 'remove' | null
+  /**
+   * The task's deadline: while it is ahead the menu offers "Deadline day"
+   * (ruling Q8 — the morning of its day, or the deadline itself if earlier),
+   * and every option stops at it anyway (the server caps, §8.2).
+   */
+  deadlineAt?: string | null
 }
 
 /**
@@ -91,6 +117,8 @@ export function SnoozeMenu({
   onSnooze,
   children,
   onRemoveTarget,
+  targetReset = 'remove',
+  deadlineAt = null,
 }: SnoozeMenuProps) {
   const isMobile = useIsMobile()
   const timezone = useTimezone()
@@ -127,6 +155,8 @@ export function SnoozeMenu({
   slotOptions.sort((a, b) => a.until.localeCompare(b.until))
   const [nextPeriod, ...laterSlots] = slotOptions
   const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime)
+  const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now)
+  const resetLabel = onRemoveTarget && targetReset ? RESET_LABELS[targetReset] : null
   const options = [
     ...(nextPeriod
       ? [
@@ -142,14 +172,27 @@ export function SnoozeMenu({
     ...(slotOptions.some((o) => o.until === tomorrowMorning)
       ? []
       : [{ label: `Tomorrow at ${formatMorningTime(morningTime)}`, option: 'tomorrow' }]),
+    ...(deadlineDay ? [{ label: deadlineDay.label, option: DEADLINE_DAY_OPTION }] : []),
     { label: 'Custom...', option: 'custom' },
-    ...(onRemoveTarget ? [{ label: 'Remove target', option: REMOVE_TARGET }] : []),
+    ...(resetLabel
+      ? [
+          {
+            label: resetLabel,
+            option: targetReset === 'auto' ? BACK_TO_AUTO_OPTION : REMOVE_TARGET,
+          },
+        ]
+      : []),
   ]
 
   const handleSelect = (option: string) => {
-    if (option === REMOVE_TARGET) {
+    if (option === REMOVE_TARGET || option === BACK_TO_AUTO_OPTION) {
       onOpenChange(false)
       onRemoveTarget?.()
+      return
+    }
+    if (option === DEADLINE_DAY_OPTION && deadlineDay) {
+      onSnooze(deadlineDay.at)
+      onOpenChange(false)
       return
     }
     if (option === 'custom') {
@@ -188,13 +231,7 @@ export function SnoozeMenu({
                   onClick={() => handleSelect(opt.option)}
                   className="hover:bg-accent active:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors"
                 >
-                  {opt.option === 'custom' ? (
-                    <CalendarDays className="text-muted-foreground size-4" />
-                  ) : opt.option === REMOVE_TARGET ? (
-                    <XCircle className="text-muted-foreground size-4" />
-                  ) : (
-                    <Clock className="text-muted-foreground size-4" />
-                  )}
+                  <OptionIcon option={opt.option} className="text-muted-foreground size-4" />
                   {opt.label}
                 </button>
               ))}
@@ -322,13 +359,7 @@ function SnoozeDropdown({
           onClick={() => onSelect(opt.option)}
           className="hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors"
         >
-          {opt.option === 'custom' ? (
-            <CalendarDays className="size-4 flex-shrink-0" />
-          ) : opt.option === REMOVE_TARGET ? (
-            <XCircle className="size-4 flex-shrink-0" />
-          ) : (
-            <Clock className="size-4 flex-shrink-0" />
-          )}
+          <OptionIcon option={opt.option} className="size-4 flex-shrink-0" />
           {opt.label}
         </button>
       ))}

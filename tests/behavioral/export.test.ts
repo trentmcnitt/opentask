@@ -62,11 +62,12 @@ describe('Data export', () => {
       expect(taskIds).toContain(102) // trashed
     })
 
-    test('tasks include computed fields is_recurring and is_snoozed', () => {
+    test('tasks include the computed is_recurring and no snooze state', () => {
       const data = exportUserData(TEST_USER_ID)
       const task = data.tasks.find((t) => t.id === 100)!
       expect(task).toHaveProperty('is_recurring')
-      expect(task).toHaveProperty('is_snoozed')
+      expect(task).not.toHaveProperty('is_snoozed')
+      expect(task).not.toHaveProperty('snooze_count')
     })
   })
 
@@ -80,7 +81,8 @@ describe('Data export', () => {
       expect(header).toContain('"priority"')
       expect(header).toContain('"labels"')
       expect(header).toContain('"is_recurring"')
-      expect(header).toContain('"is_snoozed"')
+      expect(header).toContain('"deadline_at"')
+      expect(header).not.toContain('"is_snoozed"')
     })
 
     test('empty data produces header-only CSV', () => {
@@ -302,7 +304,8 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     segment_deferred_at: null,
     segment_targeted_at: null,
     target_set_at: null,
-    deadline_nag_off: false,
+    occurrence_at: null,
+    target_auto: false,
     last_notified_at: null,
     last_critical_alert_at: null,
     auto_snooze_minutes: null,
@@ -310,14 +313,13 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     archived_at: null,
     labels: [],
     completion_count: 0,
-    snooze_count: 0,
     first_completed_at: null,
     last_completed_at: null,
     notes: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     is_recurring: false,
-    is_snoozed: false,
+    deadline_nag_off: false,
     ...overrides,
   }
 }

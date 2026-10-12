@@ -251,31 +251,39 @@ interface CompletionRow {
   completed_at: string
   due_at_was: string | null
   due_at_next: string | null
+  occurrence_at_was: string | null
 }
 
 /**
  * Reverse a recurring task's most recent completion.
  *
  * The completion row remembers the due date it advanced from (`due_at_was`)
- * and to (`due_at_next`), which is all a clean reversal needs. It refuses if
- * the task's due date no longer matches `due_at_next` — a snooze or edit since
- * the completion would otherwise be overwritten — and if there is no
- * completion to put back.
+ * and to (`due_at_next`), and the occurrence it closed (`occurrence_at_was`,
+ * §6), which is all a clean reversal needs. It refuses if the task's
+ * schedule has moved since — its occurrence is no longer the one the
+ * completion advanced to — and if there is no completion to put back. A move
+ * of the target alone since the completion does not refuse it (the target is
+ * not the schedule); the put-back restores the old target either way.
  */
 function putBackLatestOccurrence(task: Task, userId: number, userTimezone: string): Task {
   const db = getDb()
   const latest = db
     .prepare(
-      `SELECT id, completed_at, due_at_was, due_at_next FROM completions
+      `SELECT id, completed_at, due_at_was, due_at_next, occurrence_at_was FROM completions
         WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1`,
     )
     .get(task.id, userId) as CompletionRow | undefined
   if (!latest) {
     throw new ValidationError('Nothing to put back')
   }
-  if (task.due_at !== latest.due_at_next) {
+  // `due_at_next` is the target the completion set: the occurrence itself,
+  // or — rarely — the occurrence capped at its deadline (then the target is
+  // still there unless moved).
+  if (task.occurrence_at !== latest.due_at_next && task.due_at !== latest.due_at_next) {
     throw new ValidationError('Task changed since it was completed')
   }
+  // The occurrence it closed; a row from before the column reads the target.
+  const restoredOccurrence = latest.occurrence_at_was ?? latest.due_at_was
   const previous = db
     .prepare(
       `SELECT completed_at FROM completions
@@ -288,9 +296,10 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
   const restoredLastCompleted = previous?.completed_at ?? null
   // The deadline goes back with the occurrence, by the same offset it moved.
-  const restoredDeadline = advanceDeadline(task, latest.due_at_was, userTimezone)
+  const restoredDeadline = advanceDeadline(task, restoredOccurrence, userTimezone)
   const fieldsChanged = [
     'due_at',
+    'occurrence_at',
     'original_due_at',
     'deadline_at',
     'completion_count',
@@ -304,12 +313,14 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const updatedTask = withTransaction((tx) => {
     tx.prepare(
       `UPDATE tasks
-        SET due_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
+        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?,
+            ${TARGET_SET_FIELD} = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
             updated_at = ?
         WHERE id = ?`,
     ).run(
       latest.due_at_was,
+      restoredOccurrence,
       latest.due_at_was,
       restoredDeadline,
       nowStr,
@@ -329,6 +340,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         id: task.id,
         title: task.title,
         due_at: task.due_at,
+        occurrence_at: task.occurrence_at,
         original_due_at: task.original_due_at,
         deadline_at: task.deadline_at,
         target_set_at: task.target_set_at,
@@ -340,6 +352,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         id: task.id,
         title: task.title,
         due_at: latest.due_at_was,
+        occurrence_at: restoredOccurrence,
         original_due_at: latest.due_at_was,
         deadline_at: restoredDeadline,
         target_set_at: nowStr,
@@ -357,6 +370,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         completed_at: latest.completed_at,
         due_at_was: latest.due_at_was,
         due_at_next: latest.due_at_next,
+        occurrence_at_was: latest.occurrence_at_was,
       },
     } as typeof snapshot.before_state
     logAction(userId, 'undone', `Put back "${task.title}"`, fieldsChanged, [snapshot])

@@ -211,10 +211,19 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- undo restores it. NULL reads as created_at (a repeating task:
   -- max(created_at, last_completed_at)). Distinct from segment_targeted_at.
   target_set_at TEXT DEFAULT NULL,
-  -- A task with a deadline and no target nags from DEADLINE_LEAD_DAYS before
-  -- the deadline (computed, never stored). Remove-target sets this to turn
-  -- that off for the task; a new deadline turns it back on.
+  -- RETIRED 2026-10-12 (§8): the deadline's target is now stored
+  -- (target_auto), so nothing reads or writes this. Kept so old undo entries
+  -- that name it still apply; the API reports it as false for old native builds.
   deadline_nag_off INTEGER NOT NULL DEFAULT 0,
+  -- 1 when due_at is the deadline's AUTOMATIC target (§8, 2026-10-12): stored,
+  -- set by the server whenever a one-off has a deadline and no target the user
+  -- picked (src/lib/task-segments.ts autoTargetAt). Only a picked target (0)
+  -- makes a task quiet until its date.
+  target_auto INTEGER NOT NULL DEFAULT 0,
+  -- A repeating task's SCHEDULED occurrence (§6, 2026-10-12); due_at is its
+  -- target, which a move changes alone. Done and skip advance from this and
+  -- set both; advanceDeadline measures from it. NULL for one-offs.
+  occurrence_at TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
@@ -223,6 +232,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
   -- Per-task stats (survive beyond completions retention)
   completion_count   INTEGER NOT NULL DEFAULT 0,
+  -- RETIRED 2026-10-12 (§6: no snooze state): no longer written or returned.
   snooze_count       INTEGER NOT NULL DEFAULT 0,
   first_completed_at TEXT,
   last_completed_at  TEXT,
@@ -239,7 +249,10 @@ CREATE TABLE IF NOT EXISTS completions (
   user_id     INTEGER NOT NULL REFERENCES users(id),
   completed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   due_at_was  TEXT,
-  due_at_next TEXT
+  due_at_next TEXT,
+  -- The occurrence it completed (§6, 2026-10-12), so a put-back restores the
+  -- schedule as well as the target. NULL on older rows: put-back reads due_at_was.
+  occurrence_at_was TEXT
 );
 
 -- API tokens table (token column stores SHA-256 hash; token_preview stores last 8 chars of raw token)

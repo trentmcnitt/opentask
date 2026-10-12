@@ -25,7 +25,6 @@
 
 import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
-import { deadlineCandidateSql, withEffectiveTarget } from '@/core/tasks/currently-due'
 import { log } from '@/lib/logger'
 import { HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
@@ -64,10 +63,6 @@ interface OverdueTask {
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
   timezone: string
-  // Task model (2026-10-10): to put a deadline's implied target in due_at.
-  deadline_at?: string | null
-  deadline_nag_off?: number
-  morning_time?: string | null
   /**
    * The due time this task is actually being notified about, from
    * `effectiveDueAt` (§4.6 as amended 2026-09-07). For anything carrying a
@@ -311,7 +306,6 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
                t.rrule, t.recurrence_mode, t.anchor_time,
-               t.deadline_at, t.deadline_nag_off, u.morning_time,
                u.timezone,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
@@ -334,21 +328,19 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))
-            OR ${deadlineCandidateSql()}
           )
         ORDER BY t.priority DESC, t.due_at ASC
       `,
       )
       .all(now.toISOString()) as OverdueTask[]
 
-    // A deadline's implied target (2026-10-10) is decided in JS — see
-    // `withEffectiveTarget` — and sorted back into priority, then due order.
-    const targeted = candidates
-      .map(withEffectiveTarget)
-      .sort(
-        (a, b) =>
-          b.priority - a.priority || (a.due_at ?? '\uffff').localeCompare(b.due_at ?? '\uffff'),
-      )
+    // A deadline's target is stored (§8, 2026-10-12: `target_auto`), so
+    // `due_at` is the target for every row — no read-time swap. Priority,
+    // then due order (the SQL already orders them; kept explicit for nulls).
+    const targeted = [...candidates].sort(
+      (a, b) =>
+        b.priority - a.priority || (a.due_at ?? '\uffff').localeCompare(b.due_at ?? '\uffff'),
+    )
     const overdueTasks = targeted.flatMap((task) => {
       const effective = effectiveDueAt(task, task.timezone, now)
       if (!effective || effective.getTime() > now.getTime()) return []

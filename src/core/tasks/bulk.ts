@@ -5,7 +5,6 @@
  */
 
 import { getTargetContext } from './target-context'
-import { crossesDeadline, effectiveTargetAt, type TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
@@ -33,6 +32,7 @@ import {
   type FieldChangesInput,
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { isPastDeadline } from '@/lib/task-segments'
 import {
   describePromptActions,
   dispatchProgressed,
@@ -277,7 +277,25 @@ interface BulkSnoozeFilterResult {
   eligible: Task[]
   urgentSkipped: number
   highSkipped: number
+  /** Below High by priority, held to the High tier by a passed deadline. */
+  deadlineSkipped: number
   reminderSkipped: number
+}
+
+/**
+ * The tier a bulk sweep reads a task at (Trent's ruling, 2026-10-12): its
+ * priority — except that a task whose deadline has PASSED counts as at least
+ * High (P3), so it is swept only once nothing lower is left in the batch. A
+ * P3 with a passed deadline is still P3; a P4 is never swept, deadline or not.
+ */
+export function bulkSnoozeTier(
+  task: Pick<Task, 'priority' | 'deadline_at'>,
+  now: Date = new Date(),
+): number {
+  const priority = task.priority ?? 0
+  return isPastDeadline(task.deadline_at, now)
+    ? Math.max(priority, HIGH_PRIORITY_THRESHOLD)
+    : priority
 }
 
 /**
@@ -312,12 +330,23 @@ interface BulkSnoozeFilterResult {
  * `includeTaskIds` still rescues an explicitly chosen task at any priority,
  * P4 included, and a rescued task is never what defers the High tier.
  *
+ * A PASSED DEADLINE JOINS THE HIGH TIER (Trent's ruling, 2026-10-12): the
+ * test reads `bulkSnoozeTier`, not the bare priority. A P1 whose deadline has
+ * passed waits for the second press like a High task; on its own it moves.
+ *
  * COUNTS: `urgentSkipped` is the TOTAL skipped on priority (High + Urgent) and
  * keeps its name for API compatibility (`skipped_urgent` reaches the iOS
  * client); `highSkipped` is the High subset, so a caller can word a message
  * that names the two accurately. Urgent alone is the difference.
+ * `deadlineSkipped` counts the tasks held back ONLY by a passed deadline (their
+ * own priority is below High). It is not in `urgentSkipped`, so the native
+ * apps' High/Urgent lines stay true; it reaches the API as `skipped_deadline`.
  */
-function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkSnoozeFilterResult {
+function filterForBulkSnooze(
+  tasks: Task[],
+  includeTaskIds?: Set<number>,
+  now: Date = new Date(),
+): BulkSnoozeFilterResult {
   // §6: reminders are bucket-locked and can never be snoozed, not even by an
   // explicit selection — `include_task_ids` deliberately does NOT rescue them,
   // because the constraint is about what a reminder IS, not about how carefully
@@ -334,7 +363,8 @@ function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkS
   const reminderSkipped = tasks.length - snoozable.length
 
   const priorityOf = (t: Task) => t.priority ?? 0
-  const anyLowerLeft = snoozable.some((t) => priorityOf(t) < HIGH_PRIORITY_THRESHOLD)
+  const tierOf = (t: Task) => bulkSnoozeTier(t, now)
+  const anyLowerLeft = snoozable.some((t) => tierOf(t) < HIGH_PRIORITY_THRESHOLD)
   // The ceiling this call sweeps up to, inclusive. Normally P2; once nothing
   // lower is left, the High tier joins in. P4 is above both and never included.
   const ceiling = anyLowerLeft ? HIGH_PRIORITY_THRESHOLD - 1 : HIGH_PRIORITY_THRESHOLD
@@ -342,16 +372,21 @@ function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkS
   const eligible: Task[] = []
   let urgentSkipped = 0
   let highSkipped = 0
+  let deadlineSkipped = 0
   for (const task of snoozable) {
-    if (priorityOf(task) <= ceiling || includeTaskIds?.has(task.id)) {
+    if (tierOf(task) <= ceiling || includeTaskIds?.has(task.id)) {
       eligible.push(task)
+      continue
+    }
+    if (priorityOf(task) < HIGH_PRIORITY_THRESHOLD) {
+      deadlineSkipped++
       continue
     }
     urgentSkipped++
     if (priorityOf(task) === HIGH_PRIORITY_THRESHOLD) highSkipped++
   }
 
-  return { eligible, urgentSkipped, highSkipped, reminderSkipped }
+  return { eligible, urgentSkipped, highSkipped, deadlineSkipped, reminderSkipped }
 }
 
 export interface BulkSnoozeOptions {
@@ -371,14 +406,6 @@ export interface BulkSnoozeOptions {
    * the dismissal at the end of `bulkSnooze`.
    */
   dueBeforeIds?: number[]
-  /**
-   * Ids the user confirmed snoozing past their deadline. Every other task whose
-   * snooze would cross its `deadline_at` is left where it is and counted in
-   * `deadlineSkipped` (2026-10-10) — the way an Urgent task is.
-   */
-  allowPastDeadlineIds?: number[]
-  /** A3 (2026-10-11): ids whose snooze stops AT their deadline, reported. */
-  capAtDeadlineIds?: number[]
 }
 
 export interface BulkSnoozeResult {
@@ -401,9 +428,13 @@ export interface BulkSnoozeResult {
   /** §6: reminders excluded because they are bucket-locked. */
   reminderSkipped: number
   noDueDateSkipped: number
-  /** Left where they were: the snooze would have crossed their deadline. */
+  /**
+   * Held back by a passed deadline (Trent's ruling, 2026-10-12): below High by
+   * priority, but a passed deadline puts a task in the High tier, swept only
+   * once nothing lower is left (`bulkSnoozeTier`). Not in `urgentSkipped`.
+   */
   deadlineSkipped: number
-  /** Snoozed only as far as their deadline (`capAtDeadlineIds`, A3). */
+  /** Snoozed only as far as their deadline (§8.2). Counted in `tasksAffected` too. */
   deadlineCapped: number
   /**
    * The ids actually moved, in the order they were snoozed.
@@ -431,33 +462,17 @@ export interface BulkSnoozeResult {
  *
  * What it writes to each of those is the single snooze's and bulk/edit's own
  * rule, through the same `collectFieldChanges` + `applyFieldChanges` pair: a
- * dated task is snoozed (origin kept, snooze_count + 1, snooze stat); a
+ * dated task's target moves (its first-target date kept, the snooze stat); a
  * dateless task (absolute mode only) gets its first date, which is not a
  * snooze; a task already due at the target is left alone and not counted.
+ * Every move stops at a deadline still ahead (§8.2): `deadlineCapped` counts
+ * those. A task whose deadline has passed is held to the High tier
+ * (`filterForBulkSnooze`), counted in `deadlineSkipped` when held back.
  */
-/**
- * Where one task's bulk snooze lands against its deadline. The deadline caps
- * a snooze (2026-10-10): one that would cross a deadline still ahead is
- * skipped and reported (null) — or, for an id the caller listed in
- * `capAtDeadlineIds`, moved only as far as the deadline (ruling A3,
- * 2026-10-11). An id the user confirmed (`allowed`) goes where asked. Only a
- * SNOOZE is capped — a dateless task getting its first date is setting a
- * target — and the EFFECTIVE target counts: a deadline-only task already
- * nagging from its implied target is being snoozed too.
- */
-function placeAgainstDeadline(
-  task: Task,
-  dueAt: string,
-  opts: { allowed: boolean; cap: boolean; ctx: TargetContext; now: Date },
-): { dueAt: string; capped: boolean } | null {
-  const target = effectiveTargetAt(task, opts.ctx, opts.now)
-  const nagging = target !== null && Date.parse(target) <= opts.now.getTime()
-  const isSnooze = task.due_at !== null || nagging
-  if (!isSnooze || opts.allowed || !crossesDeadline(task.deadline_at, dueAt, opts.now)) {
-    return { dueAt, capped: false }
-  }
-  if (opts.cap && task.deadline_at) return { dueAt: task.deadline_at, capped: true }
-  return null
+
+/** Whether the deadline cap (§8.2) stopped this task's date at its deadline. */
+function wasCapped(data: { cappedAtDeadline?: boolean; fieldsChanged: string[] }): boolean {
+  return data.cappedAtDeadline === true && data.fieldsChanged.includes('due_at')
 }
 
 /** Exactly one of `until` / `deltaMinutes`, and a parseable `until`. */
@@ -477,8 +492,6 @@ function validateSnoozeMode(until: string | undefined, deltaMinutes: number | un
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds, dueBeforeIds } =
     options
-  const allowPastDeadline = new Set(options.allowPastDeadlineIds ?? [])
-  const capAtDeadline = new Set(options.capAtDeadlineIds ?? [])
 
   if (taskIds.length === 0) {
     return {
@@ -501,13 +514,11 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // P0-P2 always; P3 once nothing lower is left; P4 never — unless explicitly
-  // included. See `filterForBulkSnooze`.
+  // P0-P2 always; P3 (and a passed deadline) once nothing lower is left; P4
+  // never — unless explicitly included. See `filterForBulkSnooze`.
   const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
-  const { eligible, urgentSkipped, highSkipped, reminderSkipped } = filterForBulkSnooze(
-    tasks,
-    includeSet,
-  )
+  const { eligible, urgentSkipped, highSkipped, deadlineSkipped, reminderSkipped } =
+    filterForBulkSnooze(tasks, includeSet)
 
   // In relative mode, skip tasks without a due_at (can't add delta to nothing)
   let noDueDateSkipped = 0
@@ -532,14 +543,13 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       highSnoozed: 0,
       reminderSkipped,
       noDueDateSkipped,
-      deadlineSkipped: 0,
+      deadlineSkipped,
       deadlineCapped: 0,
       snoozedIds: [],
     }
   }
 
   const nowDate = new Date()
-  let deadlineSkipped = 0
   let deadlineCapped = 0
   const targetCtx = getTargetContext(userId)
   const snapshots: UndoSnapshot[] = []
@@ -556,7 +566,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       // Absolute mode: every task gets the same target. Relative mode: the
       // delta is added to each task's own due_at (dateless tasks were filtered
       // out above).
-      let newDueAt =
+      const newDueAt =
         until !== undefined
           ? until
           : new Date(new Date(task.due_at!).getTime() + deltaMinutes! * 60_000).toISOString()
@@ -569,29 +579,18 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       // due at the target (nothing moved). Now each task is exactly a bulk edit
       // of `{ due_at }`. The reminder and quota filters above still run first,
       // so a sweep skips those rows instead of failing; the refusals inside
-      // `collectFieldChanges` are only a safety net here.
-      const allowed = allowPastDeadline.has(task.id)
-      const placed = placeAgainstDeadline(task, newDueAt, {
-        allowed,
-        cap: capAtDeadline.has(task.id),
-        ctx: targetCtx,
-        now: nowDate,
-      })
-      if (placed === null) {
-        deadlineSkipped++
-        continue
-      }
-      if (placed.capped) deadlineCapped++
-      newDueAt = placed.dueAt
-
+      // `collectFieldChanges` are only a safety net here. It also stops the
+      // move at the deadline (§8.2).
       const data = collectFieldChanges({
         task,
-        input: { due_at: newDueAt, allow_past_deadline: allowed },
+        input: { due_at: newDueAt },
         userId,
         userTimezone,
         now: nowDate,
         skipProjectValidation: true,
+        targetCtx,
       })
+      if (wasCapped(data)) deadlineCapped++
       if (data.fieldsChanged.length === 0) continue
 
       const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
@@ -623,7 +622,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     return {
       // A no-op target is neither affected nor skipped, as in bulk/edit.
       tasksAffected: moved.length,
-      tasksSkipped: skippedCount + deadlineSkipped,
+      tasksSkipped: skippedCount,
       urgentSkipped,
       highSkipped,
       highSnoozed: moved.filter((t) => t.priority === HIGH_PRIORITY_THRESHOLD).length,
@@ -736,10 +735,6 @@ export interface BulkEditOptions {
    * Omitted = the date applies to all of them.
    */
   dateTaskIds?: number[]
-  /** Ids the user confirmed snoozing past their deadline (see `BulkSnoozeOptions`). */
-  allowPastDeadlineIds?: number[]
-  /** A3: ids whose snooze stops AT their deadline (see `BulkSnoozeOptions`). */
-  capAtDeadlineIds?: number[]
 }
 
 export interface BulkEditResult {
@@ -747,8 +742,14 @@ export interface BulkEditResult {
   tasksSkipped: number
   /** Tasks a relative (`deltaMinutes`) move could not shift — they have no date. */
   noDueDateSkipped: number
-  /** Tasks whose date was withheld: the snooze would have crossed their deadline. */
+  /**
+   * Tasks whose date was withheld because a passed deadline holds them to the
+   * High tier while something lower is in the batch (Trent's ruling,
+   * 2026-10-12). Their other fields still applied.
+   */
   deadlineSkipped: number
+  /** Tasks whose date stopped at their deadline (§8.2). */
+  deadlineCapped: number
 }
 
 interface BulkEditDatePlan {
@@ -757,6 +758,7 @@ interface BulkEditDatePlan {
   /** Withheld by a rule (quota, sweep filter, no date to shift) — reported as skipped. */
   skipped: number
   noDueDateSkipped: number
+  /** Of `skipped`: held to the High tier by a passed deadline. */
   deadlineSkipped: number
 }
 
@@ -813,19 +815,14 @@ function dropQuotasFromDatedBatch(
  *   leaves it out — the same function bulk/snooze uses, with the same
  *   `includeTaskIds` rescue for explicit picks;
  * - it is a relative move and the task has no date to move.
+ *
+ * The deadline is not planned here: `collectFieldChanges` stops every move at
+ * the task's deadline (§8.2), and the loop counts what it did.
  */
-/** The batch owner's clock (a bulk edit is one user's tasks). */
-function t0Ctx(tasks: Task[]) {
-  return tasks[0] ? getTargetContext(tasks[0].user_id) : null
-}
-
 function planBulkEditDates(
   tasks: Task[],
   changes: BulkEditChanges,
-  opts: Pick<
-    BulkEditOptions,
-    'includeTaskIds' | 'deltaMinutes' | 'dateTaskIds' | 'allowPastDeadlineIds' | 'capAtDeadlineIds'
-  >,
+  opts: Pick<BulkEditOptions, 'includeTaskIds' | 'deltaMinutes' | 'dateTaskIds'>,
 ): BulkEditDatePlan {
   const { includeTaskIds, deltaMinutes, dateTaskIds } = opts
   const plan: BulkEditDatePlan = {
@@ -859,40 +856,16 @@ function planBulkEditDates(
   const isSnoozeEdit = changes.rrule === undefined
   if (isSnoozeEdit) {
     const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
-    const eligible = new Set(filterForBulkSnooze(candidates, includeSet).eligible.map((t) => t.id))
+    const filtered = filterForBulkSnooze(candidates, includeSet)
+    const eligible = new Set(filtered.eligible.map((t) => t.id))
     withhold((t) => eligible.has(t.id))
+    plan.deadlineSkipped = filtered.deadlineSkipped
   }
 
   if (deltaMinutes !== undefined) {
     const before = plan.skipped
     withhold((t) => t.due_at !== null)
     plan.noDueDateSkipped = plan.skipped - before
-  }
-
-  // The deadline caps a snooze (2026-10-10): a dated task whose snooze would
-  // cross its deadline keeps its date and is reported, unless the user
-  // confirmed it. A deliberate re-target (`reset_original_due_at`) is not a
-  // snooze and is not capped.
-  if (isSnoozeEdit && !changes.reset_original_due_at) {
-    // A capped id isn't withheld: `inputFor` moves it only as far as its deadline.
-    const allowed = new Set([
-      ...(opts.allowPastDeadlineIds ?? []),
-      ...(opts.capAtDeadlineIds ?? []),
-    ])
-    const before = plan.skipped
-    const now = Date.now()
-    const targetCtx = t0Ctx(tasks)
-    withhold((t) => {
-      const current = effectiveTargetAt(t, targetCtx)
-      const nagging = current !== null && Date.parse(current) <= now
-      if ((t.due_at === null && !nagging) || allowed.has(t.id) || current === null) return true
-      const target =
-        deltaMinutes !== undefined
-          ? new Date(Date.parse(current) + deltaMinutes * 60_000).toISOString()
-          : changes.due_at
-      return !target || !crossesDeadline(t.deadline_at, target)
-    })
-    plan.deadlineSkipped = plan.skipped - before
   }
 
   return plan
@@ -964,7 +937,13 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const { userId, userTimezone, taskIds, changes, perTask, deltaMinutes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: 0, noDueDateSkipped: 0, deadlineSkipped: 0 }
+    return {
+      tasksAffected: 0,
+      tasksSkipped: 0,
+      noDueDateSkipped: 0,
+      deadlineSkipped: 0,
+      deadlineCapped: 0,
+    }
   }
   if (deltaMinutes !== undefined && changes.due_at !== undefined) {
     throw new ValidationError('Cannot provide both due_at and delta_minutes')
@@ -998,8 +977,6 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     } else if (deltaMinutes !== undefined && task.due_at) {
       input.due_at = new Date(new Date(task.due_at).getTime() + deltaMinutes * 60_000).toISOString()
     }
-    if (options.allowPastDeadlineIds?.includes(task.id)) input.allow_past_deadline = true
-    else if (options.capAtDeadlineIds?.includes(task.id)) input.cap_at_deadline = true
     if (input.quota_prompt_config) {
       input.quota_prompt_config = mergePromptConfig(
         task.quota_prompt_config,
@@ -1018,11 +995,14 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       tasksSkipped,
       noDueDateSkipped: dates.noDueDateSkipped,
       deadlineSkipped: dates.deadlineSkipped,
+      deadlineCapped: 0,
     }
   }
 
   const nowStr = nowUtc()
   const nowDate = new Date()
+  const targetCtx = getTargetContext(tasks[0].user_id)
+  let deadlineCapped = 0
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
@@ -1051,7 +1031,10 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         userTimezone,
         now: nowDate,
         skipProjectValidation: true, // Already validated above
+        targetCtx,
       })
+      // §8.2: a date stopped at a deadline still ahead.
+      if (wasCapped(data)) deadlineCapped++
 
       if (data.fieldsChanged.length > 0) {
         const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
@@ -1089,6 +1072,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       tasksSkipped,
       noDueDateSkipped: dates.noDueDateSkipped,
       deadlineSkipped: dates.deadlineSkipped,
+      deadlineCapped,
     }
   })
 

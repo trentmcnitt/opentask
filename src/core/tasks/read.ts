@@ -40,7 +40,8 @@ const TASK_COLUMNS = [
   'segment_deferred_at',
   'segment_targeted_at',
   'target_set_at',
-  'deadline_nag_off',
+  'target_auto',
+  'occurrence_at',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -55,7 +56,6 @@ const TASK_COLUMNS = [
   'quota_prompt_config',
   'quota_day_state',
   'completion_count',
-  'snooze_count',
   'skip_count',
   'first_completed_at',
   'last_completed_at',
@@ -264,7 +264,8 @@ export interface TaskRow {
   segment_deferred_at: string | null
   segment_targeted_at: string | null
   target_set_at: string | null
-  deadline_nag_off: number
+  target_auto: number
+  occurrence_at: string | null
   last_notified_at: string | null
   last_critical_alert_at: string | null
   auto_snooze_minutes: number | null
@@ -279,7 +280,6 @@ export interface TaskRow {
   quota_prompt_config: string | null
   quota_day_state: string | null
   completion_count: number
-  snooze_count: number
   skip_count: number
   first_completed_at: string | null
   last_completed_at: string | null
@@ -328,7 +328,8 @@ export function rowToTask(row: TaskRow): Task {
     segment_deferred_at: row.segment_deferred_at ?? null,
     segment_targeted_at: row.segment_targeted_at ?? null,
     target_set_at: row.target_set_at ?? null,
-    deadline_nag_off: (row.deadline_nag_off ?? 0) === 1,
+    target_auto: (row.target_auto ?? 0) === 1,
+    occurrence_at: row.occurrence_at ?? null,
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,
     auto_snooze_minutes: row.auto_snooze_minutes,
@@ -346,7 +347,6 @@ export function rowToTask(row: TaskRow): Task {
     quota_prompt_config: parseJsonColumn<QuotaPromptConfig>(row.quota_prompt_config),
     quota_day_state: normalizeDayState(parseJsonColumn<QuotaDayState>(row.quota_day_state)),
     completion_count: row.completion_count,
-    snooze_count: row.snooze_count,
     skip_count: row.skip_count ?? 0,
     first_completed_at: row.first_completed_at,
     last_completed_at: row.last_completed_at,
