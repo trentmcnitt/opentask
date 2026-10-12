@@ -483,7 +483,7 @@ final class WatchViewModel: ObservableObject {
                     stored: stored, numbers: prompt.numbers, toSlotId: slot.id
                 )
                 try await api.setQuotaPromptConfig(taskId: prompt.taskId, config: config)
-                WKInterfaceDevice.current().play(.success)
+                // The tap's click was the feedback (no success chime, 2026-10-11).
                 canUndo = true
                 let note = "Moved to \(slot.label)"
                 lastActionDescription = note
@@ -568,7 +568,7 @@ final class WatchViewModel: ObservableObject {
         Task {
             let moved = await TaskSnoozePlan.send(requests)
             if moved.contains(task.id) {
-                WKInterfaceDevice.current().play(.success)
+                // The tap's click was the feedback (no success chime, 2026-10-11).
                 canUndo = true
                 WidgetCenter.shared.reloadAllTimelines()
             } else {
@@ -609,13 +609,15 @@ final class WatchViewModel: ObservableObject {
         if delta < 0, shown <= 0 { return }
         if pendingQuotaDeltas[task.id] != nil { overlappedQuotaIds.insert(task.id) }
         pendingQuotaDeltas[task.id, default: 0] += delta
-        WKInterfaceDevice.current().play(delta > 0 ? .click : .directionDown)
+        // One click for +1 and −1 alike (2026-10-11: every successful tap is
+        // the single click; only a failure buzzes).
+        WKInterfaceDevice.current().play(.click)
 
         Task {
             do {
                 let confirmed = try await api.logProgress(taskId: task.id, delta: delta)
                 settleQuota(task.id, delta: delta, confirmed: confirmed)
-                WKInterfaceDevice.current().play(.success)
+                // The tap's click was the feedback (no success chime, 2026-10-11).
                 canUndo = true
                 WidgetCenter.shared.reloadAllTimelines()
                 // Logged, but the body didn't decode: nothing trustworthy to
@@ -706,7 +708,8 @@ final class WatchViewModel: ObservableObject {
             case .nextPeriod: try await api.snoozeOverdue(slot: "next", notify: false)
             case .plusOneHour: try await api.snoozeOverdue(deltaMinutes: 60, notify: false)
             }
-            WKInterfaceDevice.current().play(result.tasksAffected > 0 ? .success : .failure)
+            // The click was the feedback; a sweep that moved nothing buzzes.
+            if result.tasksAffected == 0 { WKInterfaceDevice.current().play(.failure) }
             WidgetCenter.shared.reloadAllTimelines()
             await load()
             return result
@@ -730,7 +733,7 @@ final class WatchViewModel: ObservableObject {
                 let result = try await api.undoLastAction()
                 lastActionDescription = "Undid: \(result.description)"
                 canUndo = result.undoableCount > 0
-                WKInterfaceDevice.current().play(.success)
+                // The tap's click was the feedback (no success chime, 2026-10-11).
                 WidgetCenter.shared.reloadAllTimelines()
                 await load()
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
