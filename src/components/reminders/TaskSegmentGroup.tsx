@@ -17,7 +17,7 @@ import {
   handledRows,
   segmentCounts,
   segmentColor,
-  segmentHint,
+  useSegmentHint,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -67,6 +67,7 @@ export function TaskSegmentGroup({
   onScrollServed?: (seq: number) => void
 }) {
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
+  const hint = useSegmentHint()
   const color = segmentColor(segment.horizon)
   const label = segmentLabel(segment)
   const waiting = waitingRows(segment)
@@ -75,7 +76,7 @@ export function TaskSegmentGroup({
   const headerRow = (
     <SlotHeaderRow
       label={label}
-      time={segmentHint(segment)}
+      time={hint(segment)}
       count={waiting.length}
       considered={handledCount}
       open={open}

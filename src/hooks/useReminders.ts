@@ -1,6 +1,6 @@
 'use client'
 
-import type { HorizonValue, SegmentState } from '@/lib/task-segments'
+import type { SegmentKind, SegmentState } from '@/lib/task-segments'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -203,8 +203,10 @@ interface RemindersCache {
 
 /** One task segment as the API sends it (`src/app/api/reminders/route.ts`). */
 export interface TaskSegmentPayload {
-  horizon: HorizonValue
-  tasks: (Task & { segment_state: SegmentState })[]
+  /** A horizon, or `upcoming` (2026-10-12, the heads-up segment). */
+  horizon: SegmentKind
+  /** `recurring`: a repeating task's occurrence (Upcoming only) — no Today, no Remove target. */
+  tasks: (Task & { segment_state: SegmentState; recurring?: boolean })[]
   waiting: number
   considered: number
   deferred: number

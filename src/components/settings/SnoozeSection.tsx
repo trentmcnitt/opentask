@@ -8,9 +8,12 @@ import {
   useSnoozePreferences,
   useSchedulePreferences,
   useWeekStart,
+  useCheckInDay,
 } from '@/components/PreferencesProvider'
 import type { BulkSnoozeDefault } from '@/components/PreferencesProvider'
 import type { WeekStart } from '@/lib/week-start'
+import { coerceCheckInDay, type CheckInDay } from '@/lib/task-segments'
+import { CHECK_IN_DAY_NAMES } from '@/lib/task-model-words'
 import { savePreferenceField } from '@/lib/save-preference'
 import { formatSnoozeOptionLabel, formatMorningTime, NEXT_PERIOD_OPTION } from '@/lib/snooze'
 import { SettingsSection } from './SettingsSection'
@@ -62,6 +65,7 @@ export function SnoozeSection() {
     useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
   const { weekStart, setWeekStart } = useWeekStart()
+  const { checkInDay, setCheckInDay } = useCheckInDay()
 
   return (
     <SettingsSection
@@ -147,10 +151,41 @@ export function SnoozeSection() {
             <option value="monday">Monday</option>
           </select>
         </SettingRow>
+        {/* The check-in day (2026-10-12, spec §3): the weekday the Weeks,
+            Months and Eventually task segments come round on. Its own
+            setting, independent of the quota week above; Upcoming ignores it. */}
+        <SettingRow
+          label="Check-in day"
+          description="When Weeks tasks come round; Months and Eventually on the first one"
+        >
+          <select
+            aria-label="Check-in day"
+            data-check-in-day-select
+            value={checkInDay}
+            onChange={(e) =>
+              void savePreferenceField(
+                'check_in_day',
+                coerceCheckInDay(Number(e.target.value)),
+                checkInDay,
+                setCheckInDay,
+              )
+            }
+            className={SELECT_CLASS}
+          >
+            {CHECK_IN_DAY_ORDER.map((d) => (
+              <option key={d} value={d}>
+                {CHECK_IN_DAY_NAMES[d]}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
       </div>
     </SettingsSection>
   )
 }
+
+/** The check-in day's choices, Sunday first like the week-start select. */
+const CHECK_IN_DAY_ORDER: CheckInDay[] = [7, 1, 2, 3, 4, 5, 6]
 
 const DEFAULT_SNOOZE_PRESETS = ['30', '60', '120', NEXT_PERIOD_OPTION, 'tomorrow']
 

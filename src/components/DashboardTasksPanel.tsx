@@ -18,7 +18,7 @@ import {
   handledRows,
   segmentColor,
   segmentCounts,
-  segmentHint,
+  useSegmentHint,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -72,6 +72,7 @@ export function DashboardTasksPanel({
   })
   // No page is a slot: the natural page is the first segment still waiting.
   const pager = usePanelPager(pages, 0, 0)
+  const hint = useSegmentHint()
   if (!pager) return null
   if (pages.every((p) => p.waiting === 0)) {
     return <TasksDoneLine segments={actions.segments} actions={actions} />
@@ -89,7 +90,7 @@ export function DashboardTasksPanel({
       <SlotPagerHeader
         label={page.label}
         accent={segmentTitleColor(segment.horizon)}
-        time={segmentHint(segment)}
+        time={hint(segment)}
         stackTime
         considered={page.considered}
         total={page.total}

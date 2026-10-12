@@ -11,6 +11,7 @@ import { useProjects } from '@/components/ProjectsProvider'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -18,12 +19,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  HORIZON_HINTS,
   HORIZON_LABELS,
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
+  UPCOMING_HINT,
+  UPCOMING_LABEL,
+  horizonHints,
 } from '@/lib/task-model-words'
-import { HORIZON_ORDER, SEGMENT_NUDGE_THRESHOLD, type HorizonValue } from '@/lib/task-segments'
+import {
+  HORIZON_ORDER,
+  SEGMENT_NUDGE_THRESHOLD,
+  type CheckInDay,
+  type HorizonValue,
+  type SegmentKind,
+} from '@/lib/task-segments'
+import { upcomingGap, upcomingRowActions } from '@/lib/task-segments'
+import { useCheckInDay } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -82,14 +93,29 @@ export function segmentCounts(segment: SegmentView): { handled: number; total: n
   return { handled: segment.considered + segment.deferred, total: segment.rows.length }
 }
 
-/** "Tasks · Days": the segment's name on both surfaces. */
-export function segmentLabel(segment: SegmentView): string {
-  return `Tasks · ${HORIZON_LABELS[segment.horizon]}`
+/** A segment's one word: its horizon's, or "Upcoming". */
+export function segmentWord(kind: SegmentKind): string {
+  return kind === 'upcoming' ? UPCOMING_LABEL : HORIZON_LABELS[kind]
 }
 
-/** What sits where a slot shows its start time: when the segment comes round. */
-export function segmentHint(segment: SegmentView): string {
-  return HORIZON_HINTS[segment.horizon]
+/** "Tasks · Days": the segment's name on both surfaces. */
+export function segmentLabel(segment: SegmentView): string {
+  return `Tasks · ${segmentWord(segment.horizon)}`
+}
+
+/**
+ * What sits where a slot shows its start time: when the segment comes round
+ * — Weeks and Months name the user's check-in day ("Tuesdays", "1st
+ * Tuesday"). Upcoming says what it is instead: "Heads-up".
+ */
+export function segmentHint(segment: SegmentView, checkInDay: CheckInDay): string {
+  return segment.horizon === 'upcoming' ? UPCOMING_HINT : horizonHints(checkInDay)[segment.horizon]
+}
+
+/** `segmentHint` with the signed-in user's check-in day. */
+export function useSegmentHint(): (segment: SegmentView) => string {
+  const { checkInDay } = useCheckInDay()
+  return (segment) => segmentHint(segment, checkInDay)
 }
 
 /**
@@ -98,7 +124,7 @@ export function segmentHint(segment: SegmentView): string {
  * It fills the segment's bar while it fills (finished is green, like a slot),
  * rings the bar of the page on screen, and colours the segment's title.
  */
-export function segmentColor(horizon: HorizonValue): string {
+export function segmentColor(horizon: SegmentKind): string {
   return `var(--segment-${horizon})`
 }
 
@@ -107,7 +133,7 @@ export function segmentColor(horizon: HorizonValue): string {
  * be tuned apart from the bar — in light mode every title is one darker teal
  * (the lighter fills are too faint for small text); in dark mode it is the fill.
  */
-export function segmentTitleColor(horizon: HorizonValue): string {
+export function segmentTitleColor(horizon: SegmentKind): string {
   return `var(--segment-title-${horizon})`
 }
 
@@ -156,7 +182,7 @@ export function TaskSegmentRow({
   actions: TaskSegmentActions
   timezone: string
   panel: boolean
-  segmentHorizon: HorizonValue
+  segmentHorizon: SegmentKind
   /** Past the panel's narrow cap: in the DOM, on screen only from `xl` up —
    *  the panel's slot rows' own rule (`PanelRow`). */
   hiddenWhenNarrow?: boolean
@@ -244,11 +270,15 @@ export function TaskSegmentRow({
         >
           {task.title}
         </p>
-        <TaskSegmentMeta task={task} timezone={timezone} />
+        {segmentHorizon === 'upcoming' ? (
+          <UpcomingMeta row={row} actions={actions} timezone={timezone} />
+        ) : (
+          <TaskSegmentMeta task={task} timezone={timezone} />
+        )}
       </div>
       {!considered && (
         <TaskSegmentRowActions
-          task={task}
+          row={row}
           actions={actions}
           timezone={timezone}
           panel={panel}
@@ -351,20 +381,29 @@ function TargetTodayButton({
   )
 }
 
-/** The row's right side: horizon chip, "Today", and the done square. */
+/**
+ * The row's right side: horizon chip, "Today", and the done square.
+ *
+ * On an UPCOMING row (2026-10-12) there is no horizon chip — a targeted task's
+ * horizon decides nothing until the target is removed (spec §1) — and a
+ * REPEATING row has no Today either: target-today skips it (ruling Q1), so it
+ * keeps the circle and done only.
+ */
 function TaskSegmentRowActions({
-  task,
+  row,
   actions,
   timezone,
   panel,
   segmentHorizon,
 }: {
-  task: Task
+  row: SegmentRow
   actions: TaskSegmentActions
   timezone: string
   panel: boolean
-  segmentHorizon: HorizonValue
+  segmentHorizon: SegmentKind
 }) {
+  const { task } = row
+  const showToday = segmentHorizon !== 'upcoming' || upcomingRowActions(row).today
   return (
     <div
       className={cn(
@@ -372,12 +411,14 @@ function TaskSegmentRowActions({
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
-      <HorizonChip
-        task={task}
-        segmentHorizon={segmentHorizon}
-        onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
-      />
-      <TargetTodayButton task={task} actions={actions} timezone={timezone} />
+      {segmentHorizon !== 'upcoming' && (
+        <HorizonChip
+          task={task}
+          segmentHorizon={segmentHorizon}
+          onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
+        />
+      )}
+      {showToday && <TargetTodayButton task={task} actions={actions} timezone={timezone} />}
       {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
           stock checkbox: same size, radius, border and no shadow. */}
       <button
@@ -440,6 +481,80 @@ function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
       {deadline && (
         <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
           deadline {deadline.toFormat('LLL d')}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * An UPCOMING row's second line (2026-10-12, spec §2): the gap text —
+ * "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" — after the project and
+ * priority. The "Target …" part is a chip: on a one-off row with no deadline
+ * it opens a one-item menu, "Remove target", which sends the task back to its
+ * horizon segment (Undo on the toast). A repeating row's chip says "Repeats"
+ * and does nothing; a deadline row's is plain text (what Remove target means
+ * for a deadline task is still being decided).
+ */
+function UpcomingMeta({
+  row,
+  actions,
+  timezone,
+}: {
+  row: SegmentRow
+  actions: TaskSegmentActions
+  timezone: string
+}) {
+  const { task } = row
+  const { projects } = useProjects()
+  const project = projects.find((p) => p.id === task.project_id)
+  const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
+  const gap = upcomingGap(task, timezone)
+  const { removeTarget } = upcomingRowActions(row)
+  return (
+    <div
+      data-upcoming-gap
+      className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+    >
+      {project && (
+        <span data-segment-project className="inline-flex items-center gap-1">
+          <FolderOpen className="size-3" aria-hidden />
+          {project.name}
+        </span>
+      )}
+      {priority && (
+        <span data-segment-priority className={priority.color}>
+          {priority.label}
+        </span>
+      )}
+      {gap.target &&
+        (removeTarget ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              data-target-chip
+              aria-label={`${gap.target}. Options`}
+              className="text-foreground/70 hover:bg-foreground/5 -mx-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5"
+            >
+              {gap.target}
+              <ChevronDown className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem data-remove-target onSelect={() => void actions.removeTarget(task)}>
+                Remove target
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <span data-target-chip className="text-foreground/70">
+            {gap.target}
+            {row.recurring && <span className="text-muted-foreground"> · repeats</span>}
+          </span>
+        ))}
+      {gap.deadline && (
+        <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
+          {gap.deadline}
         </span>
       )}
     </div>
