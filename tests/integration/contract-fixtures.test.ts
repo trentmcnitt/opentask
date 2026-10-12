@@ -62,6 +62,9 @@
  *     GET  /api/reminders                       → reminders-upcoming.json
  *     POST /api/task-segments/target-today [repeating]
  *                                               → task-segments-target-today-repeating.json
+ * 12. The two badges (§7): an undated task 40 days old, and two tasks over
+ *     target for three local days (one with a deadline ahead), backdated
+ *     GET  /api/tasks/{id} ×3                   → task-badges.json
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -329,13 +332,21 @@ interface Prompt {
   number: number | null
 }
 
-/** `target_set_at` can't be set over the API; backdate it in the test DB. */
-function backdateTargetSet(taskIds: number[], days: number) {
+/**
+ * `target_set_at` and `created_at` can't be set over the API (every write
+ * stamps now); backdate them in the test DB.
+ */
+function backdate(
+  taskIds: number[],
+  days: number,
+  columns: ('target_set_at' | 'created_at')[] = ['target_set_at'],
+) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
   try {
     const when = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString()
-    const stmt = db.prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
-    for (const id of taskIds) stmt.run(when, id)
+    const sets = columns.map((c) => `${c} = ?`).join(', ')
+    const stmt = db.prepare(`UPDATE tasks SET ${sets} WHERE id = ?`)
+    for (const id of taskIds) stmt.run(...columns.map(() => when), id)
   } finally {
     db.close()
   }
@@ -511,7 +522,7 @@ describe('contract fixtures (native clients)', () => {
       rrule: 'FREQ=DAILY;INTERVAL=3;BYHOUR=9;BYMINUTE=0',
       target_at: at9,
     })
-    backdateTargetSet([created.upcomingOneOff, created.upcomingRepeating], 10)
+    backdate([created.upcomingOneOff, created.upcomingRepeating], 10)
     captured['reminders-upcoming'] = await call('/api/reminders')
     captured['task-segments-target-today-repeating'] = await call(
       '/api/task-segments/target-today',
@@ -519,6 +530,29 @@ describe('contract fixtures (native clients)', () => {
         ids: [created.upcomingRepeating],
       },
     )
+
+    // 12. The two badges (spec §7, 2026-10-12), as GET /api/tasks/{id} returns
+    //     them (the content extension reads it): an undated task written down
+    //     40 days ago (`age_label` ">1 mo"); a task over target since two days
+    //     ago (`attempts` 3, `attempts_label` "3×", `attempts_offer`
+    //     "remove"); the same with a deadline ahead (`attempts_offer` "auto").
+    //     Created and targeted five days ago, backdated in the DB, so every
+    //     day of the two counts. Last, so nothing above moves.
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString()
+    await make('ageOld', { title: 'Clear out the garage' })
+    await make('slipping', { title: 'Oil the hinges', target_at: twoDaysAgo })
+    await make('slippingDeadline', {
+      title: 'Book the inspection',
+      target_at: twoDaysAgo,
+      deadline_at: new Date(Date.now() + 20 * 24 * 3600 * 1000).toISOString(),
+    })
+    backdate([created.ageOld], 40, ['created_at'])
+    backdate([created.slipping, created.slippingDeadline], 5, ['created_at', 'target_set_at'])
+    captured['task-badges'] = {
+      age: await call(`/api/tasks/${created.ageOld}`),
+      attempts: await call(`/api/tasks/${created.slipping}`),
+      attempts_deadline: await call(`/api/tasks/${created.slippingDeadline}`),
+    }
   })
 
   const names = [
@@ -540,6 +574,7 @@ describe('contract fixtures (native clients)', () => {
     'quota-prompts-restore',
     'task-counts',
     'bulk-snooze',
+    'task-badges',
   ]
 
   for (const name of names) {

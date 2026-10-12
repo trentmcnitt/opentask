@@ -40,6 +40,9 @@
             "target_set_at": "2026-01-15T16:00:00.000Z",
             "target_auto": false,
             "occurrence_at": "2026-01-15T16:00:00.000Z",
+            "attempts": 0,
+            "attempts_counted_through": null,
+            "growth_kept_at": null,
             "last_notified_at": null,
             "last_critical_alert_at": null,
             "auto_snooze_minutes": null,
@@ -62,7 +65,10 @@
             "updated_at": "2026-01-15T16:00:00.000Z",
             "target_at": "2026-01-15T16:00:00.000Z",
             "is_recurring": true,
-            "deadline_nag_off": false
+            "deadline_nag_off": false,
+            "attempts_label": null,
+            "attempts_offer": null,
+            "age_label": null
           }
         ],
         "prompts": [
@@ -201,6 +207,9 @@
             "target_set_at": "2026-01-15T16:00:00.000Z",
             "target_auto": false,
             "occurrence_at": "2026-01-15T16:00:00.000Z",
+            "attempts": 0,
+            "attempts_counted_through": null,
+            "growth_kept_at": null,
             "last_notified_at": null,
             "last_critical_alert_at": null,
             "auto_snooze_minutes": null,
@@ -223,7 +232,10 @@
             "updated_at": "2026-01-15T16:00:00.000Z",
             "target_at": "2026-01-15T16:00:00.000Z",
             "is_recurring": true,
-            "deadline_nag_off": false
+            "deadline_nag_off": false,
+            "attempts_label": null,
+            "attempts_offer": null,
+            "age_label": null
           }
         ],
         "count": 1,
@@ -296,6 +308,9 @@
             "target_set_at": "2026-01-15T16:00:00.000Z",
             "target_auto": true,
             "occurrence_at": null,
+            "attempts": 0,
+            "attempts_counted_through": null,
+            "growth_kept_at": null,
             "last_notified_at": null,
             "last_critical_alert_at": null,
             "auto_snooze_minutes": null,
@@ -319,6 +334,9 @@
             "target_at": "2026-01-15T16:00:00.000Z",
             "is_recurring": false,
             "deadline_nag_off": false,
+            "attempts_label": null,
+            "attempts_offer": null,
+            "age_label": null,
             "segment_state": "considered",
             "recurring": false
           }
@@ -357,6 +375,9 @@
             "target_set_at": "2026-01-15T16:00:00.000Z",
             "target_auto": false,
             "occurrence_at": null,
+            "attempts": 0,
+            "attempts_counted_through": null,
+            "growth_kept_at": null,
             "last_notified_at": null,
             "last_critical_alert_at": null,
             "auto_snooze_minutes": null,
@@ -380,6 +401,9 @@
             "target_at": "2026-01-15T16:00:00.000Z",
             "is_recurring": false,
             "deadline_nag_off": false,
+            "attempts_label": null,
+            "attempts_offer": null,
+            "age_label": null,
             "segment_state": "waiting",
             "recurring": false
           },
@@ -409,6 +433,9 @@
             "target_set_at": "2026-01-15T16:00:00.000Z",
             "target_auto": false,
             "occurrence_at": "2026-01-15T16:00:00.000Z",
+            "attempts": 0,
+            "attempts_counted_through": null,
+            "growth_kept_at": null,
             "last_notified_at": null,
             "last_critical_alert_at": null,
             "auto_snooze_minutes": null,
@@ -432,6 +459,9 @@
             "target_at": "2026-01-15T16:00:00.000Z",
             "is_recurring": true,
             "deadline_nag_off": false,
+            "attempts_label": null,
+            "attempts_offer": null,
+            "age_label": null,
             "segment_state": "waiting",
             "recurring": true
           }
