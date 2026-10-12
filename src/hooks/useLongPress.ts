@@ -136,6 +136,16 @@ interface UseSimpleLongPressOptions {
   onShortPress: () => void
   /** Long-press delay in ms (default 400) */
   delay?: number
+  /**
+   * Where the short press fires. `'pointerup'` (the default) acts before the
+   * browser's click — needed where the press is a Radix menu trigger, whose
+   * pointerdown opens the menu and swallows the click (the snooze buttons).
+   * `'click'` waits for the click, for a press whose action REMOVES its own
+   * row: acting on pointerup re-rendered the list first, and on touch the
+   * click then landed on the row that slid up under the finger and acted on
+   * that task too (a task segment's Today, 2026-10-12).
+   */
+  tapOn?: 'pointerup' | 'click'
 }
 
 /** The fields the simple handlers read; a React pointer event has them. */
@@ -176,7 +186,7 @@ interface UseSimpleLongPressReturn {
  * one on a row's snooze button snoozed that task.
  */
 export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpleLongPressReturn {
-  const { onLongPress, onShortPress, delay = 400 } = options
+  const { onLongPress, onShortPress, delay = 400, tapOn = 'pointerup' } = options
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fired = useRef(false)
   const origin = useRef<{ x: number; y: number } | null>(null)
@@ -208,12 +218,12 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
         clearTimeout(timer.current)
         timer.current = null
       }
-      if (!fired.current) {
+      if (tapOn === 'pointerup' && !fired.current) {
         fired.current = true
         onShortPress()
       }
     },
-    [onShortPress],
+    [onShortPress, tapOn],
   )
 
   const onPointerLeave = useCallback(() => {

@@ -186,6 +186,39 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
     }
   })
 
+  test('a tap on Today targets only that task, not the row that slides up under the finger', async ({
+    authenticatedPage: page,
+  }) => {
+    // The tap used to fire on pointerup: the row left the list before the
+    // browser's click, which then landed on the next row's Today and targeted
+    // that task too (seen on dev, 2026-10-12).
+    const a = await segmentTask(page, 'RT ghost first')
+    const b = await segmentTask(page, 'RT ghost second')
+    try {
+      await page.goto('/reminders')
+      await expect(todayButton(page, a)).toBeVisible()
+      await expect(todayButton(page, b)).toBeVisible()
+      const [ya, yb] = await Promise.all(
+        [a, b].map(async (id) => (await todayButton(page, id).boundingBox())!.y),
+      )
+      const [upper, lower] = ya < yb ? [a, b] : [b, a]
+      const cdp = await page.context().newCDPSession(page)
+      const at = await centre(todayButton(page, upper))
+      await touch(cdp, 'touchStart', [at])
+      await touch(cdp, 'touchEnd', [])
+
+      await expect(segmentRow(page, upper)).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, upper)).segment_targeted_at).not.toBeNull()
+      // The one that slid up is untouched: still waiting, never targeted.
+      await expect(segmentRow(page, lower)).toHaveAttribute('data-segment-state', 'waiting')
+      const other = await stateOf(page, lower)
+      expect(other.segment_targeted_at).toBeNull()
+      expect(other.target_at).toBeNull()
+    } finally {
+      await trash(page, [a, b])
+    }
+  })
+
   test('a hold that moves is abandoned — no picker, no target — and the next tap targets', async ({
     authenticatedPage: page,
   }) => {

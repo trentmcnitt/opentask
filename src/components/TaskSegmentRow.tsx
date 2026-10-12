@@ -296,6 +296,9 @@ function TargetTodayButton({
   const press = useSimpleLongPress({
     onLongPress: openPicker,
     onShortPress: () => void actions.targetToday(task),
+    // The tap takes this row off the list; acting on pointerup let the
+    // click that follows land on the next row's Today (see `tapOn`).
+    tapOn: 'click',
   })
   return (
     <span
