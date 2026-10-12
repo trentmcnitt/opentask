@@ -8,6 +8,7 @@ import {
   SLOT_SWEEP_CLASS,
   SlotHairline,
   SlotHeaderRow,
+  useSlotScroll,
 } from '@/components/reminders/ReminderSlotGroup'
 import {
   ConsideredSegmentRow,
@@ -15,6 +16,7 @@ import {
   TaskSegmentRow,
   handledRows,
   segmentCounts,
+  segmentColor,
   segmentHint,
   segmentKey,
   segmentLabel,
@@ -50,13 +52,21 @@ export function TaskSegmentGroup({
   timezone,
   open,
   onToggle,
+  scrollRequest,
+  onScrollServed,
 }: {
   segment: SegmentView
   actions: TaskSegmentActions
   timezone: string
   open: boolean
   onToggle: () => void
+  /** A pending tap on this segment's bar in the headline's day bar
+   *  (`goToSlot`): scrolls the section into view, as for a slot. */
+  scrollRequest?: number
+  onScrollServed?: (seq: number) => void
 }) {
+  const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
+  const color = segmentColor(segment.horizon)
   const label = segmentLabel(segment)
   const waiting = waitingRows(segment)
   const handled = handledRows(segment)
@@ -69,15 +79,19 @@ export function TaskSegmentGroup({
       considered={handledCount}
       open={open}
       started
+      accent={color}
     />
   )
   return (
     <section
+      ref={sectionRef}
       aria-label={label}
       data-task-segment={segment.horizon}
       // The slot section's own frame (`ReminderSlotGroup`), so the column
       // reads as one list of segments.
       className={cn('bg-muted/30 rounded-2xl pb-1 transition-colors', open && 'pb-2')}
+      // Clears the sticky top bar when the day bar scrolls it to the top.
+      style={{ scrollMarginTop: '4.5rem' }}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
         <button
@@ -102,7 +116,7 @@ export function TaskSegmentGroup({
         )}
       </div>
 
-      <SlotHairline label={label} considered={handledCount} total={total} />
+      <SlotHairline label={label} considered={handledCount} total={total} color={color} />
 
       {open && (
         <>
@@ -177,11 +191,16 @@ export function TaskSegmentSections({
   timezone,
   isOpen,
   onToggle,
+  scroll,
+  onScrollServed,
 }: {
   actions: TaskSegmentActions
   timezone: string
   isOpen: (key: string) => boolean
   onToggle: (key: string) => void
+  /** `goToSlot`'s pending request, when it is for a task segment. */
+  scroll?: { key: string; seq: number } | null
+  onScrollServed?: (seq: number) => void
 }) {
   if (actions.segments.length === 0) return null
   return (
@@ -194,6 +213,8 @@ export function TaskSegmentSections({
           timezone={timezone}
           open={isOpen(segmentKey(segment))}
           onToggle={() => onToggle(segmentKey(segment))}
+          scrollRequest={scroll?.key === segmentKey(segment) ? scroll.seq : undefined}
+          onScrollServed={onScrollServed}
         />
       ))}
     </div>

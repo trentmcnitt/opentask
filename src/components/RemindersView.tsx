@@ -629,6 +629,8 @@ export function RemindersView({
       timezone={timezone}
       isOpen={isOpen}
       onToggle={toggleOpen}
+      scroll={slotScroll}
+      onScrollServed={slotScrollServed}
     />
   )
 
@@ -676,6 +678,7 @@ export function RemindersView({
             allWaitingDone={total === 0}
             onConsiderSoFar={() => considerAll.askSoFar(summary)}
             onGoToSlot={goToSlot}
+            taskSegments={segments.segments}
           />
           {/* The slot cards stay once the day is clear (Trent, 2026-09-05:
               "once everything is clear there's no way to expand it… in case I

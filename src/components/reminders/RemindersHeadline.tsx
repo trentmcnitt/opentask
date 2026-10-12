@@ -7,7 +7,9 @@ import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
 import type { RemindersSummary } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
-import { MIN_SEGMENT_PX } from '@/components/ReminderSlotBar'
+import { MIN_SEGMENT_PX, SegmentDivider } from '@/components/ReminderSlotBar'
+import { segmentColor, segmentCounts, segmentKey, segmentLabel } from '@/components/TaskSegmentRow'
+import type { SegmentView } from '@/hooks/useTaskSegments'
 
 /**
  * The headline: one short line for "what now" (never a breakdown — the slot
@@ -20,18 +22,27 @@ import { MIN_SEGMENT_PX } from '@/components/ReminderSlotBar'
  * Slots that haven't started yet are drawn fainter: "not yet" must not read
  * as "not done". A segment turns green when its slot is finished — a small
  * win each time — and the number goes green when the day is.
+ *
+ * The task segments follow the slots (2026-10-11), after a faint divider, in
+ * their teal — the dashboard strip's bars, so a segment reads the same on
+ * both surfaces; a tap scrolls to its section. They are NOT in the line or
+ * the count: task rows never count in "N waiting so far" or "X of Y
+ * considered" (docs/TASK-MODEL.md § Task segments).
  */
 export function RemindersHeadline({
   summary,
   allWaitingDone,
   onConsiderSoFar,
   onGoToSlot,
+  taskSegments = [],
 }: {
   summary: RemindersSummary<ReminderGroup>
   allWaitingDone: boolean
   onConsiderSoFar: () => void
   /** A segment was tapped: open that slot and scroll to it (`goToSlot` in `RemindersView`). */
   onGoToSlot: (key: string) => void
+  /** Today's task segments, drawn after the slots (never counted). */
+  taskSegments?: SegmentView[]
 }) {
   let line: React.ReactNode
   if (allWaitingDone) {
@@ -95,43 +106,38 @@ export function RemindersHeadline({
         <div className="-my-1.5 flex w-full gap-[3px]" role="group" aria-label="Go to a period">
           {segments.map((g) => {
             const considered = groupConsidered(g)
-            const slotTotal = groupWaiting(g) + considered
-            const done = slotTotal > 0 && considered >= slotTotal
-            const label = slotLabel(g)
-            const started = summary.started.includes(g)
             const key = slotGroupKey(g)
             return (
-              <button
+              <DayBarButton
                 key={key}
-                type="button"
+                id={key}
+                label={slotLabel(g)}
+                considered={considered}
+                total={groupWaiting(g) + considered}
+                started={summary.started.includes(g)}
                 onClick={() => onGoToSlot(key)}
-                data-day-segment={key}
-                aria-label={`Go to ${label}, ${considered} of ${slotTotal} considered`}
-                title={`${label} · ${considered} of ${slotTotal} considered`}
-                style={{ flexGrow: slotTotal, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
-                className="group rounded-full py-1.5 focus-visible:outline-none"
-              >
-                <span
-                  className={cn(
-                    'relative block h-2 overflow-hidden rounded-full transition-colors',
-                    'group-focus-visible:ring-ring group-focus-visible:ring-offset-background group-focus-visible:ring-2 group-focus-visible:ring-offset-1',
-                    started
-                      ? 'bg-muted group-hover:bg-foreground/15'
-                      : 'bg-muted/50 group-hover:bg-foreground/10',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'block h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-                      // Blue while still filling, green the moment it's done —
-                      // matches the dashboard's `ReminderSlotBar` (2026-09-22),
-                      // so a slot reads the same way on both surfaces.
-                      done ? 'bg-green-600' : 'bg-indigo-600',
-                    )}
-                    style={{ width: `${slotTotal > 0 ? (considered / slotTotal) * 100 : 0}%` }}
-                  />
-                </span>
-              </button>
+              />
+            )
+          })}
+          {taskSegments.length > 0 && segments.length > 0 && (
+            <span className="flex items-center self-center">
+              <SegmentDivider />
+            </span>
+          )}
+          {taskSegments.map((segment) => {
+            const { handled, total } = segmentCounts(segment)
+            const key = segmentKey(segment)
+            return (
+              <DayBarButton
+                key={key}
+                id={key}
+                label={segmentLabel(segment)}
+                considered={handled}
+                total={total}
+                started
+                color={segmentColor(segment.horizon)}
+                onClick={() => onGoToSlot(key)}
+              />
             )
           })}
         </div>
@@ -160,5 +166,63 @@ export function RemindersHeadline({
         </span>
       </div>
     </div>
+  )
+}
+
+/**
+ * One segment of the day bar: a slot, or a task segment in its teal. Blue (a
+ * task segment: its teal) while still filling, green the moment it's done —
+ * matches the dashboard's `ReminderSlotBar` (2026-09-22), so a segment reads
+ * the same way on both surfaces.
+ */
+function DayBarButton({
+  id,
+  label,
+  considered,
+  total,
+  started,
+  color,
+  onClick,
+}: {
+  id: string
+  label: string
+  considered: number
+  total: number
+  started: boolean
+  color?: string
+  onClick: () => void
+}) {
+  const done = total > 0 && considered >= total
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-day-segment={id}
+      aria-label={`Go to ${label}, ${considered} of ${total} considered`}
+      title={`${label} · ${considered} of ${total} considered`}
+      style={{ flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
+      className="group rounded-full py-1.5 focus-visible:outline-none"
+    >
+      <span
+        className={cn(
+          'relative block h-2 overflow-hidden rounded-full transition-colors',
+          'group-focus-visible:ring-ring group-focus-visible:ring-offset-background group-focus-visible:ring-2 group-focus-visible:ring-offset-1',
+          started
+            ? 'bg-muted group-hover:bg-foreground/15'
+            : 'bg-muted/50 group-hover:bg-foreground/10',
+        )}
+      >
+        <span
+          className={cn(
+            'block h-full rounded-full transition-[width,background-color] duration-500 ease-out',
+            done ? 'bg-green-600' : 'bg-indigo-600',
+          )}
+          style={{
+            width: `${total > 0 ? (considered / total) * 100 : 0}%`,
+            ...(color && !done ? { backgroundColor: color } : {}),
+          }}
+        />
+      </span>
+    </button>
   )
 }

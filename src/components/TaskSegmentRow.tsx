@@ -87,6 +87,16 @@ export function segmentHint(segment: SegmentView): string {
   return HORIZON_HINTS[segment.horizon]
 }
 
+/**
+ * A segment's colour (2026-10-11, Trent's pick): one teal per horizon, darkest
+ * for the soonest — the `--segment-*` tokens in globals.css, light and dark.
+ * It fills the segment's bar while it fills (finished is green, like a slot),
+ * rings the bar of the page on screen, and colours the segment's title.
+ */
+export function segmentColor(horizon: HorizonValue): string {
+  return `var(--segment-${horizon})`
+}
+
 /** The pager page / section key of a segment — never a slot id ("tasks:days"). */
 export function segmentKey(segment: SegmentView): string {
   return `tasks:${segment.horizon}`

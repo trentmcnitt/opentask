@@ -214,6 +214,12 @@ test.describe('Task segments on the dashboard panel', () => {
       // The strip: the task segment's bar comes after the slots'.
       const segs = page.getByRole('group', { name: "Today's reminder slots" }).getByRole('button')
       await expect(segs.last()).toHaveAttribute('data-slot-segment', 'tasks:days')
+      // A faint divider between the slots' bars and the task segments'.
+      await expect(
+        page
+          .getByRole('group', { name: "Today's reminder slots" })
+          .locator('[data-segment-divider]'),
+      ).toHaveCount(1)
       await segs.last().click()
       await expect(panel(page)).toHaveAttribute('data-reminders-slot', 'tasks:days')
       await expect(panel(page).getByText('Tasks · Days')).toBeVisible()
@@ -251,6 +257,37 @@ test.describe('Task segments on the dashboard panel', () => {
       await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
     } finally {
       await trash(page, [remId, ...taskIds])
+    }
+  })
+
+  test('the /reminders day bar shows task segments after the slots, uncounted', async ({
+    authenticatedPage: page,
+  }) => {
+    const slot = await inNaturalSlot(page)
+    const remId = await create(page, {
+      title: uniqueTitle('TM daybar rem'),
+      is_reminder: true,
+      due_at: slot.due,
+    })
+    const taskId = await create(page, { title: uniqueTitle('TM daybar task'), horizon: 'days' })
+    backdateCreated([taskId], { inSegments: true })
+    try {
+      await page.setViewportSize({ width: 375, height: 812 })
+      await page.goto('/reminders')
+      const headline = page.locator('[data-reminders-headline]')
+      const bar = headline.getByRole('group', { name: 'Go to a period' })
+      await expect(bar.locator('[data-day-segment]').last()).toHaveAttribute(
+        'data-day-segment',
+        'tasks:days',
+      )
+      await expect(bar.locator('[data-segment-divider]')).toHaveCount(1)
+      // The task row is not in the day's count: one reminder, nothing else.
+      await expect(headline.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '1')
+      // A tap goes to the segment's section.
+      await bar.locator('[data-day-segment="tasks:days"]').click()
+      await expect(page.locator('[data-task-segment="days"]')).toBeInViewport()
+    } finally {
+      await trash(page, [remId, taskId])
     }
   })
 

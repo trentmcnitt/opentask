@@ -27,6 +27,7 @@ import {
   TaskSegmentRow,
   handledRows,
   segmentCounts,
+  segmentColor,
   segmentHint,
   segmentKey,
   segmentLabel,
@@ -190,6 +191,8 @@ type PanelPage =
       considered: number
       total: number
       started: true
+      /** Its teal (`segmentColor`): the bar's fill and ring, the title. */
+      color: string
     }
 
 /**
@@ -233,6 +236,7 @@ function buildPages(
       considered: handled,
       total,
       started: true as const,
+      color: segmentColor(segment.horizon),
     }
   })
   return { pages: [...slots, ...tasks], slotCount: slots.length }
@@ -424,6 +428,7 @@ export function DashboardRemindersPanel({
     >
       <SlotPagerHeader
         label={page.label}
+        accent={page.kind === 'tasks' ? page.color : undefined}
         time={page.hint}
         considered={page.considered}
         total={page.total}
@@ -764,6 +769,7 @@ function PanelRowList({
  */
 function SlotPagerHeader({
   label,
+  accent,
   time,
   considered,
   total,
@@ -778,6 +784,8 @@ function SlotPagerHeader({
   onToggleConsidered,
 }: {
   label: string
+  /** A colour for the label — a task segment's teal. */
+  accent?: string
   time: string | null
   considered: number
   total: number
@@ -828,7 +836,11 @@ function SlotPagerHeader({
         className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
       >
         <span className="min-w-0 flex-1 truncate">
-          <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
+          <span
+            className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase"
+            // A task segment's title wears its horizon's teal (2026-10-11).
+            style={accent ? { color: accent } : undefined}
+          >
             {label}
           </span>
           {time && (
