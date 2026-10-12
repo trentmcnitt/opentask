@@ -1470,10 +1470,10 @@ enum SegmentRowMetrics {
 ///   controls, amendment 16).
 /// - Order is the server's (priority, then id) and fixed: a considered row
 ///   leaves the open list but nothing else moves.
-/// - The bottom row's leading control is "Defer all" (`DeferSegmentIntent`)
-///   while anything waits: the whole segment's rest goes to tomorrow. The
-///   segment's "X of Y" follows it — the Tasks widget's "Select" then
-///   "N of M" arrangement.
+/// - The bottom row reads the segment's "X of Y" in the leading spot (a
+///   period's "N of M" spot), then "Defer all" (`DeferSegmentIntent`) while
+///   anything waits: the whole segment's rest goes to tomorrow (2026-10-12;
+///   it was "Defer all" first).
 ///
 /// What reads like a period (2026-10-11, "segments as slots"): the strip
 /// draws this segment's own bar (grown, as the on-screen period's is — no ring), the
@@ -1684,13 +1684,17 @@ private struct TaskSegmentListView: View {
         }
     }
 
-    /// Left of the pager: "Defer all" while anything waits, then the
-    /// segment's "X of Y" (2026-10-11) — the slot page's "4 of 7", in its
-    /// font and color. The Tasks widget's resting row is the sibling: the
-    /// action first (it never moves as the count's width changes), then the
-    /// count, measured together and the count left out while it wouldn't
-    /// clear the pager — never truncated, never at the cost of the action.
-    /// "Defer all" itself is left out only when it alone wouldn't fit.
+    /// Left of the pager: the segment's "X of Y" FIRST — in the leading spot
+    /// where a period page's "4 of 7" sits, in its font and color — then
+    /// "Defer all" while anything waits (2026-10-12, Trent: "'1 of 3' needs
+    /// to swap with 'Defer all'"; it was the Tasks widget's "Select" then
+    /// "N of M" order). Same order on every task segment page (Days … Upcoming),
+    /// so the count reads in one place across the whole ring. Measured
+    /// together; the action still outranks the count: the count is left out
+    /// while both wouldn't clear the pager — never truncated, never at the
+    /// cost of the action — and "Defer all" only when it alone wouldn't fit.
+    /// The count is `monospacedDigit`, so "Defer all" moves only when the
+    /// count gains a digit ("9 of 12" → "10 of 12").
     @ViewBuilder
     private func bottomLeading(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
         let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
@@ -1705,9 +1709,6 @@ private struct TaskSegmentListView: View {
             cardWidth: width, pagerText: pagerText, metrics: metrics
         )
         HStack(spacing: Self.bottomGap) {
-            if showsDefer {
-                deferAllButton(metrics: metrics)
-            }
             if showsCount {
                 Text(count.text)
                     .font(.caption2)
@@ -1716,6 +1717,9 @@ private struct TaskSegmentListView: View {
                     .lineLimit(1)
                     .fixedSize()
                     .accessibilityLabel(Text("\(count.handled) of \(count.total) considered in \(segment.label)"))
+            }
+            if showsDefer {
+                deferAllButton(metrics: metrics)
             }
         }
     }
