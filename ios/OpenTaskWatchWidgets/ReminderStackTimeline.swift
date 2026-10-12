@@ -293,8 +293,13 @@ enum ReminderStackTimeline {
                 stripeColor: nil, slotLabel: "Tasks · \(segment.label)", slotKey: segment.pageKey,
                 remainingKeys: keys, urgentOverdue: urgent,
                 segmentTaskId: row.id,
+                // Plain spaces so the card's few words a line can break
+                // anywhere — except before a dot (`TaskDTO.metaJoiner`,
+                // 2026-10-12): a line may end "·", never start with one.
                 segmentMeta: row.task.segmentMeta(segmentHorizon: segment.horizon)?
-                    .replacingOccurrences(of: "\u{00A0}", with: " ")
+                    .components(separatedBy: TaskDTO.metaJoiner)
+                    .map { $0.replacingOccurrences(of: "\u{00A0}", with: " ") }
+                    .joined(separator: TaskDTO.metaJoiner)
             )
         }
     }

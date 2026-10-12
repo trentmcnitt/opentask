@@ -244,6 +244,10 @@ private struct ReminderRowLayout {
     /// The title is longer than the whole card: the row is one page tall and
     /// the title shrinks to fit it (see `WidgetTextMetrics.titleLines`).
     var shrinks = false
+    /// A task segment row's small words start their own line (2026-10-12):
+    /// they didn't fit on the title's last line, so the row draws them under
+    /// it with no leading "·" (`TaskDTO.segmentLabelText(metaOnOwnLine:)`).
+    var metaOnOwnLine = false
 }
 
 /// The Home Screen list.
@@ -1596,8 +1600,22 @@ private struct TaskSegmentListView: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    private func label(_ task: TaskDTO) -> String { task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date) }
+    private func label(_ task: TaskDTO, metaOnOwnLine: Bool) -> String {
+        task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date, metaOnOwnLine: metaOnOwnLine)
+    }
 
+    /// WHERE THE SMALL WORDS GO (2026-10-12, "· Target Wed Oct 14 · repeats"
+    /// on Trent's phone): a `Text` can't say where it wrapped, so the row
+    /// measures instead. If the title alone takes k lines and title + words
+    /// still takes k, the words fit on the title's last line and follow it
+    /// after " · ". Otherwise they start their own line, with no separator —
+    /// measured as "title\nwords", so the row's height is still exactly what
+    /// it draws. The title alone is measured without the notes glyph, which
+    /// is drawn after the words, not after the title. The measuring font is
+    /// the title's weight for the whole string, a little wider than the
+    /// regular-weight words: any error leans toward their own line, never
+    /// toward a wrap mid-line (and `TaskDTO.metaJoiner` can only break AFTER
+    /// a dot, so even then no line starts with one).
     private func layout(
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
@@ -1608,14 +1626,24 @@ private struct TaskSegmentListView: View {
             let task = row.task
             let isWaiting: Bool
             if case .waiting = item { isWaiting = true } else { isWaiting = false }
-            let fit = metrics.titleLines(
-                label(task), width: SegmentRowMetrics.titleWidth(in: width, showsTargetToday: row.offersTargetToday),
-                weight: isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular,
-                maxHeight: budget, hasNotes: task.hasNotes
-            )
-            if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
+            let titleWidth = SegmentRowMetrics.titleWidth(in: width, showsTargetToday: row.offersTargetToday)
+            let weight = isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular
+            func lines(_ text: String, hasNotes: Bool) -> (lines: Int, shrinks: Bool) {
+                metrics.titleLines(text, width: titleWidth, weight: weight, maxHeight: budget, hasNotes: hasNotes)
+            }
+            var fit = lines(label(task, metaOnOwnLine: false), hasNotes: task.hasNotes)
+            var ownLine = false
+            if task.segmentMeta(segmentHorizon: segment.horizon, now: entry.date) != nil,
+               fit.lines > lines(task.title, hasNotes: false).lines {
+                ownLine = true
+                fit = lines(label(task, metaOnOwnLine: true), hasNotes: task.hasNotes)
+            }
+            if fit.shrinks {
+                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true, metaOnOwnLine: ownLine)
+            }
             return ReminderRowLayout(
-                lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), isWaiting ? rowFloor : 0)
+                lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), isWaiting ? rowFloor : 0),
+                metaOnOwnLine: ownLine
             )
         }
     }
@@ -1628,14 +1656,14 @@ private struct TaskSegmentListView: View {
         case .waiting(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                considered: false, now: entry.date, lines: layout.lines, height: layout.height,
+                considered: false, now: entry.date, metaOnOwnLine: layout.metaOnOwnLine, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
         case .considered(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                considered: true, now: entry.date, lines: layout.lines, height: layout.height,
+                considered: true, now: entry.date, metaOnOwnLine: layout.metaOnOwnLine, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
@@ -1811,6 +1839,9 @@ private struct SegmentTaskRow: View {
     let segmentHorizon: String
     let considered: Bool
     let now: Date
+    /// The small words start their own line, with no "·" before them
+    /// (`ReminderRowLayout.metaOnOwnLine`, measured by the list).
+    let metaOnOwnLine: Bool
     let lines: Int
     let height: CGFloat
     let shrinks: Bool
@@ -1895,7 +1926,8 @@ private struct SegmentTaskRow: View {
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
             .foregroundStyle(considered ? Color.secondary : Color.primary)
         guard let meta = task.segmentMeta(segmentHorizon: segmentHorizon, now: now) else { return title }
-        return title + Text("\(QuotaPromptDTO.countSeparator)\(meta)").foregroundStyle(.secondary)
+        let joiner = metaOnOwnLine ? "\n" : TaskDTO.metaJoiner
+        return title + Text("\(joiner)\(meta)").foregroundStyle(.secondary)
     }
 
     /// `ReminderRow`'s two frames: centred on line 1, target the row's full

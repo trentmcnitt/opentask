@@ -308,11 +308,20 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "America/Chicago")!
         let set = TaskDTO(id: 1, title: "Fix the gate", dueAt: "2026-11-01T14:00:00.000Z", horizon: "weeks")
-        XCTAssertEqual(set.segmentMeta(segmentHorizon: "days", now: now, calendar: cal), "Weeks\u{00A0}·\u{00A0}Nov\u{00A0}1")
+        XCTAssertEqual(set.segmentMeta(segmentHorizon: "days", now: now, calendar: cal), "Weeks\u{00A0}· Nov\u{00A0}1")
         XCTAssertEqual(
             set.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal),
-            "Fix the gate ·\u{00A0}Weeks\u{00A0}·\u{00A0}Nov\u{00A0}1"
+            "Fix the gate\u{00A0}· Weeks\u{00A0}· Nov\u{00A0}1"
         )
+        // Words that don't fit on the title's last line start their own,
+        // with no separator (2026-10-12: never a line that starts with "·").
+        XCTAssertEqual(
+            set.segmentLabelText(segmentHorizon: "days", now: now, calendar: cal, metaOnOwnLine: true),
+            "Fix the gate\nWeeks\u{00A0}· Nov\u{00A0}1"
+        )
+        // Every break opportunity around a dot is AFTER it.
+        XCTAssertFalse(TaskDTO.metaJoiner.hasPrefix(" "))
+        XCTAssertTrue(TaskDTO.metaJoiner.hasSuffix(" "))
         // Its own segment: the horizon goes unsaid.
         XCTAssertEqual(set.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), "Nov\u{00A0}1")
         // A deadline shows as itself, not as its implied target.
@@ -326,13 +335,14 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
     // MARK: Upcoming (2026-10-12)
 
     /// Upcoming's words: the target date always (it is the whole point of the
-    /// segment), the deadline's gap, "repeats" — never the task's horizon.
+    /// segment), the deadline's gap, the schedule of a repeating one — never
+    /// the task's horizon.
     func testUpcomingRowWords() {
         let now = DateHelpers.parseISO("2026-10-12T15:00:00.000Z")!
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "America/Chicago")!
         let nb = "\u{00A0}"
-        let dot = "\(nb)·\(nb)"
+        let dot = "\(nb)· "
         func words(_ s: String) -> String { s.replacingOccurrences(of: " ", with: nb) }
 
         let plain = TaskDTO(id: 1, title: "Renew", dueAt: "2026-10-13T14:00:00.000Z", horizon: "weeks")
@@ -347,7 +357,7 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         )
         XCTAssertEqual(
             gap.segmentLabelText(segmentHorizon: "upcoming", now: now, calendar: cal),
-            "Passport ·\(nb)" + words("Target Tue Oct 13") + dot + words("deadline Sat Oct 17 (+4d)")
+            "Passport" + dot + words("Target Tue Oct 13") + dot + words("deadline Sat Oct 17 (+4d)")
         )
 
         let sameDay = TaskDTO(
@@ -367,7 +377,14 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         )
 
         let repeating = TaskDTO(id: 5, title: "Plants", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=DAILY;INTERVAL=3")
-        XCTAssertEqual(repeating.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + "repeats")
+        // "repeats" said when (2026-10-12): the schedule, from the rrule.
+        XCTAssertEqual(repeating.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + words("every 3 days"))
+        let weekly = TaskDTO(
+            id: 6, title: "Bins", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=WEEKLY;BYDAY=WE", anchorTime: "09:00"
+        )
+        XCTAssertEqual(weekly.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + words("every Wed at 9 AM"))
+        let unreadable = TaskDTO(id: 7, title: "Odd", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=HOURLY")
+        XCTAssertEqual(unreadable.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + "repeats")
     }
 
     /// Upcoming is its own kind: its own page key, label and colour — never a

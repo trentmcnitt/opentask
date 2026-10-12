@@ -87,6 +87,7 @@
 		551B4C39CEBAF1B1175172F7 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF23F7E7947DAD1F6AE3750 /* SegmentWidths.swift */; };
 		565AC3E90D05E6DAEB600958 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4AA3D7BA53FB714D8109DB /* TaskLists.swift */; };
 		5692A461B1813A3BD713547E /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4BA37EA1BFACF97944D4A4E /* WatchSlotLogic.swift */; };
+		57379086E2833F35E1327B75 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		57F9EC8914D8E01DE7893C91 /* QuotasPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D89051467E11E8109DC1304F /* QuotasPageView.swift */; };
 		5A27BB8A588484F2D674A312 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */; };
 		5B7C18D2036E85E45071AE7C /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8814A68EB77D7A79413494F9 /* SweepDismissal.swift */; };
@@ -94,6 +95,7 @@
 		5D948F2336DBDB3B71925E84 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */; };
 		5D9E4763F5677E677FB07F81 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */; };
 		5E30CAF6BE99186935757A5D /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */; };
+		5F0B9CA06A0179D74BBCBAA7 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		5F635846435BEFC6182C9BB2 /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFC9734B17BD64A979BFC41 /* WidgetPushRegistration.swift */; };
 		631FC694A15889CA5C735E6E /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B303AA099FBF21D29C23EEAA /* ReminderDayProgress.swift */; };
 		63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
@@ -148,6 +150,7 @@
 		AD56C73ABE6D862EFD583906 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		B0380A8B01CC9C814D5AD05C /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFC9734B17BD64A979BFC41 /* WidgetPushRegistration.swift */; };
 		B1F907C2ED2B1FA30E7551D6 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8814A68EB77D7A79413494F9 /* SweepDismissal.swift */; };
+		B24D0A4002F39E49DFAA36F7 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		B44AC055BB27E89C6E8CBC2E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		B5848AF766A5FA0EF47669EF /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
 		B62DF22E75C0C29296CE8408 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */; };
@@ -156,6 +159,7 @@
 		BC334DDDA5504D8367BB67CE /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B303AA099FBF21D29C23EEAA /* ReminderDayProgress.swift */; };
 		BD1378E55FCFB7263904EEE6 /* OpenTaskWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC8E2443EB8CFC907A4983 /* OpenTaskWatchApp.swift */; };
 		C0CCFFB530B0228F0C1F38E1 /* RemindersWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44BF1E5D3EAA30D3259E9BE /* RemindersWidget.swift */; };
+		C1A6A67E1E39A36852B76B7C /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		C60DB58FC123FB9A62331E11 /* BulkSnoozeSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272E41A6CFA6E60EB1581D0C /* BulkSnoozeSheetView.swift */; };
 		C7402FD42452F9BCB7034518 /* NotificationActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64F4684B1F08B3D0E9C8FA7 /* NotificationActionRunner.swift */; };
 		C8ED22076295A99579AB4702 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6670206D951705CAC891F28F /* WidgetTheme.swift */; };
@@ -196,6 +200,7 @@
 		F347EBEE087F2C516D1A9D31 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		F872076B2B9491D810F3DF1B /* NotificationActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64F4684B1F08B3D0E9C8FA7 /* NotificationActionRunner.swift */; };
 		F9D1F47F9930F04DA2B80E18 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B5F413C3A06EF7B3DEFE9AB1 /* Assets.xcassets */; };
+		FAB2788D1C7090627B23C655 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		FB7A654DBF27BE1F27819750 /* WatchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796964A2DD4C8A80D223996C /* WatchViewModel.swift */; };
 		FBB91BA91EEE6C115AF05C05 /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56DAD630482D315A1F294B8F /* WebViewManager.swift */; };
@@ -351,6 +356,7 @@
 		DAF23F7E7947DAD1F6AE3750 /* SegmentWidths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWidths.swift; sourceTree = "<group>"; };
 		DD187F0B86DA225EEF35BC1C /* TaskDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDayProgress.swift; sourceTree = "<group>"; };
 		DD91DE11F4F065B831544415 /* RemindersWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidgetViews.swift; sourceTree = "<group>"; };
+		E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceSummary.swift; sourceTree = "<group>"; };
 		E34F38A2233E6C7AD5D02FD9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E351757DF79BFD8A5FA11A08 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E4BA37EA1BFACF97944D4A4E /* WatchSlotLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSlotLogic.swift; sourceTree = "<group>"; };
@@ -517,6 +523,7 @@
 				45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */,
 				B91C682ED4122397787BE5C5 /* PromptDeepLink.swift */,
 				745EFD099B17F5A9EF43899C /* QuotaRules.swift */,
+				E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */,
 				B303AA099FBF21D29C23EEAA /* ReminderDayProgress.swift */,
 				DAF23F7E7947DAD1F6AE3750 /* SegmentWidths.swift */,
 				E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */,
@@ -756,6 +763,7 @@
 				7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */,
 				12DB40DFAC48488361ADE990 /* QuickActionSceneDelegate.swift in Sources */,
 				474DE8E3DCA60AA567966C9D /* QuotaRules.swift in Sources */,
+				FAB2788D1C7090627B23C655 /* RecurrenceSummary.swift in Sources */,
 				BC334DDDA5504D8367BB67CE /* ReminderDayProgress.swift in Sources */,
 				1F988513BC07F04D0CFB2FBB /* SegmentWidths.swift in Sources */,
 				6C165C26AA7755EAFD0CF151 /* ServerURL.swift in Sources */,
@@ -794,6 +802,7 @@
 				03EA0EED0718664A1BF29E0B /* PromptDeepLink.swift in Sources */,
 				74F89484C1A845E89C760DD7 /* QuotaRules.swift in Sources */,
 				57F9EC8914D8E01DE7893C91 /* QuotasPageView.swift in Sources */,
+				B24D0A4002F39E49DFAA36F7 /* RecurrenceSummary.swift in Sources */,
 				2BB46B5449DB3DEBCED35C43 /* ReminderDayProgress.swift in Sources */,
 				E39AE8A83FE1FD39F3723D79 /* RemindersPageView.swift in Sources */,
 				551B4C39CEBAF1B1175172F7 /* SegmentWidths.swift in Sources */,
@@ -842,6 +851,7 @@
 				017B2AD4779CA5016C0A44BB /* PreviewLocalData.swift in Sources */,
 				A852C9E09C4B2B91B98C41C5 /* PromptDeepLink.swift in Sources */,
 				4A6E1467539DCA234BB4D10B /* QuotaRules.swift in Sources */,
+				5F0B9CA06A0179D74BBCBAA7 /* RecurrenceSummary.swift in Sources */,
 				440A98EA687A8E35950CA98D /* ReminderDayProgress.swift in Sources */,
 				CFA96438104E39CC31A0D909 /* RemindersTimeline.swift in Sources */,
 				C0CCFFB530B0228F0C1F38E1 /* RemindersWidget.swift in Sources */,
@@ -889,6 +899,7 @@
 				5A27BB8A588484F2D674A312 /* PreviewLocalData.swift in Sources */,
 				1504EA7CACA0440C5ECF51CF /* PromptDeepLink.swift in Sources */,
 				0A155E4978B3662FFF375686 /* QuotaRules.swift in Sources */,
+				C1A6A67E1E39A36852B76B7C /* RecurrenceSummary.swift in Sources */,
 				4878E2635134BD8DED88B74C /* ReminderChecklistView.swift in Sources */,
 				30B390DAF8ECF549A07386B3 /* ReminderDayProgress.swift in Sources */,
 				147103E01CACBE78C706BA4C /* SegmentWidths.swift in Sources */,
@@ -923,6 +934,7 @@
 				EE9CE197D549AF68FFD5E433 /* PreviewLocalData.swift in Sources */,
 				6486F44B9FEDBE2EF01A6F73 /* PromptDeepLink.swift in Sources */,
 				404E2AB3E5A246F4DC81C588 /* QuotaRules.swift in Sources */,
+				57379086E2833F35E1327B75 /* RecurrenceSummary.swift in Sources */,
 				631FC694A15889CA5C735E6E /* ReminderDayProgress.swift in Sources */,
 				012779F75E299976CB1D1651 /* ReminderStackPreviewData.swift in Sources */,
 				38491646BCB157D234A0F89E /* ReminderStackTimeline.swift in Sources */,
