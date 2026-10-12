@@ -893,7 +893,8 @@ private struct PeriodDoneView: View {
 /// does, never the faint "not yet" track. Trent: "it's really bizarre that
 /// it doesn't have segments for the tasks. you have to <- and -> to get to
 /// it and there is no indication that it's there or how complete it is."
-/// A task page rings its own bar, and tapping a task bar jumps to its page.
+/// A task page's own bar grows like the on-screen period's (no outline),
+/// and tapping a task bar jumps to its page.
 private struct ReminderSlotStrip: View {
     let groups: [ReminderGroupDTO]
     /// Today's LISTED task segments — a bar each, after the periods
@@ -1028,22 +1029,13 @@ private struct ReminderSlotStrip: View {
     ///
     /// TASK SEGMENT BARS (2026-10-11, option 3): filled in their horizon's
     /// teal while a row waits, green once none does (like a period), on the
-    /// same gray track. The task page's own bar wears a ring in its teal —
-    /// drawn as a border INSIDE the 8pt frame, the bar inset within it, so
-    /// nothing paints outside the frame here either.
-    @ViewBuilder
+    /// same gray track. The task page's own bar grows exactly as the
+    /// on-screen period's does — no outline (Trent, 2026-10-11: "The
+    /// reminder segments don't have an outline and neither should this. It
+    /// should just grow, same as Reminders.").
     private func segmentBar(for bar: ReminderDayProgress.StripBar) -> some View {
-        if bar.kind == .taskSegment, bar.key == currentKey {
-            let teal = WidgetTheme.taskSegmentColor(bar.horizon, scheme: colorScheme)
-            ZStack {
-                Capsule().strokeBorder(teal, lineWidth: 1.5)
-                barBody(for: bar).padding(2.5)
-            }
-            .frame(height: 8)
-        } else {
-            barBody(for: bar)
-                .frame(height: bar.key == currentKey ? 8 : 4)
-        }
+        barBody(for: bar)
+            .frame(height: bar.key == currentKey ? 8 : 4)
     }
 
     private func barBody(for bar: ReminderDayProgress.StripBar) -> some View {
@@ -1433,17 +1425,22 @@ private enum SegmentListItem {
 /// The widths a task segment row spends on things that are not its label —
 /// the one place the pager's measurement and the row's drawing read them.
 enum SegmentRowMetrics {
-    /// Circle (leading) and checkbox (trailing), each on the reminder row's
-    /// 36pt finger column, with the reminder row's 10pt gap beside each.
+    /// The reminder row's one gap, between the title and its controls.
     static let gap: CGFloat = 10
 
-    /// "Target today" (2026-10-11), just left of the checkbox: an icon-only
-    /// button, narrower than the 36pt check columns (the title needs the
-    /// width more) but still a 28pt finger column.
+    /// "Target today" (2026-10-11): an icon-only button, narrower than the
+    /// 36pt check columns (the title needs the width more) but still a 28pt
+    /// finger column.
     static let targetTodayWidth: CGFloat = 28
 
+    /// The reminder row's geometry (2026-10-11, Trent: "The task ones should
+    /// mimic that but put the consideration circle in the same position as
+    /// the Reminders have it"): title from the card's leading edge, then the
+    /// 10pt gap, then the controls flush right — Target today, the done
+    /// checkbox, and the consider circle in the reminder circle's own
+    /// trailing 36pt column.
     static func titleWidth(in width: CGFloat) -> CGFloat {
-        width - 2 * WidgetTheme.rowMarkerSize - targetTodayWidth - 2 * gap
+        width - 2 * WidgetTheme.rowMarkerSize - targetTodayWidth - gap
     }
 }
 
@@ -1817,20 +1814,13 @@ private struct SegmentTaskRow: View {
         return NotesGlyph.accessibilityLabel("\(task.title)\(meta)", hasNotes: task.hasNotes)
     }
 
+    /// `ReminderRow`'s layout (2026-10-11): the title `Link` first, at the
+    /// reminder row's leading inset and font, then the 10pt gap, then the
+    /// controls flush right with the consider circle LAST — the exact column
+    /// a reminder's circle sits in — and Target today and the done checkbox
+    /// to its left. `SegmentRowMetrics.titleWidth` subtracts exactly these.
     var body: some View {
         HStack(alignment: .top, spacing: SegmentRowMetrics.gap) {
-            if considered {
-                marker(Image(systemName: "circle.inset.filled"), color: .secondary)
-                    .accessibilityLabel(Text("Considered today: \(spoken)"))
-            } else {
-                Button(intent: ConsiderSegmentTaskIntent(taskId: task.id)) {
-                    marker(Image(systemName: "circle"), color: WidgetTheme.priorityColor(task.priority))
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, -markerBleed)
-                .accessibilityLabel(Text("Considered: \(spoken)"))
-            }
-
             Link(destination: WidgetLink.task(task.id)) {
                 WidgetTheme.titleText(titleText, notesGlyphSize: notesGlyphSize)
                     .font(.subheadline)
@@ -1840,9 +1830,6 @@ private struct SegmentTaskRow: View {
                     .accessibilityLabel(Text(spoken))
             }
 
-            // "Target today" just left of the checkbox (spec §3), icon-only
-            // like the web's phone row. Its column is part of the trailing
-            // pair, so the title's measured width is unchanged by state.
             HStack(alignment: .top, spacing: 0) {
                 Button(intent: TargetSegmentTodayIntent(taskId: task.id)) {
                     Image(systemName: "calendar.badge.clock")
@@ -1866,6 +1853,18 @@ private struct SegmentTaskRow: View {
                 .buttonStyle(.plain)
                 .padding(.vertical, -markerBleed)
                 .accessibilityLabel(Text("Done: \(spoken)"))
+
+                if considered {
+                    marker(Image(systemName: "circle.inset.filled"), color: .secondary)
+                        .accessibilityLabel(Text("Considered today: \(spoken)"))
+                } else {
+                    Button(intent: ConsiderSegmentTaskIntent(taskId: task.id)) {
+                        marker(Image(systemName: "circle"), color: WidgetTheme.priorityColor(task.priority))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -markerBleed)
+                    .accessibilityLabel(Text("Considered: \(spoken)"))
+                }
             }
         }
     }

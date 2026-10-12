@@ -276,7 +276,9 @@ final class WatchViewModel: ObservableObject {
         Task {
             do {
                 try await api.markDone(taskId: task.id)
-                WKInterfaceDevice.current().play(.success)
+                // No success chime (Trent, 2026-10-11): the tap's single
+                // click is the whole feedback, as on a segment row; only a
+                // failure buzzes.
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 WKInterfaceDevice.current().play(.failure)
@@ -378,7 +380,7 @@ final class WatchViewModel: ObservableObject {
             do {
                 try await api.deferSegmentTasks(ids: ids)
                 ids.forEach { WatchCache.setSegmentRow(taskId: $0, state: .deferred) }
-                WKInterfaceDevice.current().play(.success)
+                // The click was the feedback; no success chime (2026-10-11).
                 WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
             } catch {
                 WKInterfaceDevice.current().play(.failure)
@@ -434,7 +436,7 @@ final class WatchViewModel: ObservableObject {
                     ? try await api.didPrompts(keys: [prompt.promptKey])
                     : try await api.considerPrompts(keys: [prompt.promptKey])
                 settleConfirmedQuotas(result.tasks)
-                WKInterfaceDevice.current().play(.success)
+                // The click was the feedback; no success chime (2026-10-11).
                 canUndo = true
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
@@ -517,7 +519,9 @@ final class WatchViewModel: ObservableObject {
         Task {
             do {
                 try await api.markDone(taskId: task.id)
-                WKInterfaceDevice.current().play(.success)
+                // No success chime (Trent, 2026-10-11): the tap's single
+                // click is the whole feedback, as on a segment row; only a
+                // failure buzzes.
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 WKInterfaceDevice.current().play(.failure)
