@@ -74,6 +74,12 @@ import { isTracked } from '@/lib/track'
 import { GridButton } from '@/components/quick-panel/GridButton'
 import { SinceAge } from '@/components/quick-panel/SinceAge'
 import { NotesInlineSection } from '@/components/quick-panel/NotesInlineSection'
+import {
+  RecurrenceSummaryLine,
+  RECURRENCE_EDITOR_ID,
+} from '@/components/quick-panel/RecurrenceSummaryLine'
+import { AutoTargetText } from '@/components/quick-panel/AutoTargetText'
+import { describeAutoTarget, deadlineRepeatLabel } from '@/lib/editor-target-labels'
 import type { Task, Project } from '@/types'
 
 /**
@@ -559,6 +565,40 @@ export function QuickActionPanel({
   const allNoDueDate = isBulkMode
     ? (selectedTasks ?? []).every((t) => !t.due_at)
     : !effectiveTask?.due_at
+
+  // The target line's "no target" state: a target staged for removal, or none
+  // stored and none picked.
+  const showsNoTarget =
+    pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null)
+
+  // A deadline with no target still nags, from its implied target (deadline −
+  // 4 days at the user's morning; the deadline day's morning once
+  // `deadline_nag_off` is set — ruling A4). The target line names it ("auto ·
+  // Thu Oct 15, 9:00 AM (4 days before deadline)") instead of claiming "No
+  // target" for a task that is over target. Read with the STAGED values, so it
+  // shows what Save would produce: staging "Remove target" on a deadline task
+  // also sends `deadline_nag_off` (collectPendingChanges), which leaves the
+  // deadline-day nag, and a new deadline turns the nag back on.
+  const autoTarget = (() => {
+    if (isBulkMode || isReminderLike || !showsNoTarget) return null
+    const deadline = pendingDeadline !== undefined ? pendingDeadline : effectiveTask?.deadline_at
+    if (!deadline) return null
+    const deadlineChanged =
+      pendingDeadline !== undefined && pendingDeadline !== (effectiveTask?.deadline_at ?? null)
+    return describeAutoTarget(
+      {
+        due_at: null,
+        deadline_at: deadline,
+        deadline_nag_off: pendingDueAtCleared
+          ? true
+          : deadlineChanged
+            ? false
+            : (effectiveTask?.deadline_nag_off ?? false),
+        rrule: displayRrule ?? null,
+      },
+      timezone,
+    )
+  })()
 
   // Only show delta when task originally had a due date. When due_at is null,
   // initWorkingDate generates a near-now default (5-min snap) and showing a delta
@@ -1166,11 +1206,17 @@ export function QuickActionPanel({
           >
             <p
               data-quick-panel-date
-              className="inline-flex cursor-pointer items-center gap-1 text-xs select-text"
+              className="inline-flex cursor-pointer flex-wrap items-center gap-x-1 text-xs select-text"
             >
               <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
               <span className="text-muted-foreground/70">{TARGET_WORD}</span>
-              {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
+              {autoTarget ? (
+                <AutoTargetText
+                  label={autoTarget}
+                  timezone={timezone}
+                  dirty={pendingDueAtCleared}
+                />
+              ) : showsNoTarget ? (
                 <span
                   className={cn(
                     'font-medium',
@@ -1233,6 +1279,17 @@ export function QuickActionPanel({
               timezone={timezone}
               onDeadline={setPendingDeadline}
               onHorizon={setPendingHorizon}
+              repeatLabel={deadlineRepeatLabel({
+                rrule: displayRrule,
+                deadline_at:
+                  pendingDeadline !== undefined
+                    ? pendingDeadline
+                    : (effectiveTask?.deadline_at ?? null),
+                due_at:
+                  pendingDueAt ?? effectiveTask?.due_at ?? (displayRrule ? workingDate : null),
+                original_due_at: effectiveTask?.original_due_at ?? null,
+              })}
+              showHorizon={!displayRrule}
             />
           )}
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
@@ -1241,42 +1298,33 @@ export function QuickActionPanel({
               → {formatDateTime(previewDueAt, timezone)}
             </p>
           )}
-          {/* Recurrence summary line (with icon) - only in SelectionActionSheet mode */}
-          {isSelectionSheetMode && recurrenceText && (
-            <p
-              className={cn(
-                'mt-0.5 text-xs select-text',
-                isRruleDirty ? 'font-medium text-blue-500' : 'text-muted-foreground',
-              )}
-            >
-              <Repeat className="mr-1 inline size-3" />
-              {recurrenceText}
-            </p>
-          )}
-          {/* Recurrence inline - for non-SelectionActionSheet modes */}
-          {/* Shows "One time" or recurrence pattern, plus "since X" age when available */}
-          {!isSelectionSheetMode && recurrenceText && (
-            <p
-              className={cn(
-                'mt-1 text-xs select-text',
-                isRruleDirty
-                  ? 'font-medium text-blue-500'
-                  : isOneTime
-                    ? 'text-muted-foreground/60'
-                    : 'text-muted-foreground',
-              )}
-            >
-              {!isOneTime && <Repeat className="mr-1 inline size-3" />}
-              {recurrenceText}
-              {sinceInfo && !isRruleDirty && (
-                <SinceAge
-                  label={sinceInfo.label}
-                  timeAgo={sinceInfo.timeAgo}
-                  fullDate={sinceInfo.fullDate}
-                  onReset={onSaveAll ? () => setPendingResetOrigin(true) : undefined}
-                />
-              )}
-            </p>
+          {/* Recurrence summary line: "One time", the rule ("Target Sundays at
+              9:00 AM") or the selection's summary, plus the "since X" age when
+              there is one. Tapping it opens the recurrence editor — see
+              RecurrenceSummaryLine for why the text, not the Repeat button, is
+              the way in. */}
+          {recurrenceText && (
+            <RecurrenceSummaryLine
+              text={recurrenceText}
+              isRecurring={!isBulkMode && !!displayRrule}
+              isOneTime={isOneTime}
+              dirty={isRruleDirty}
+              canEdit={canEdit}
+              expanded={editingRecurrence}
+              onToggle={handleRecurrenceToggle}
+              className={isSelectionSheetMode ? 'mt-0.5' : 'mt-1'}
+              since={
+                sinceInfo &&
+                !isRruleDirty && (
+                  <SinceAge
+                    label={sinceInfo.label}
+                    timeAgo={sinceInfo.timeAgo}
+                    fullDate={sinceInfo.fullDate}
+                    onReset={onSaveAll ? () => setPendingResetOrigin(true) : undefined}
+                  />
+                )
+              }
+            />
           )}
           {/* Project + Priority row */}
           {(effectiveTask || isBulkMode || isCreateMode) && (
@@ -1517,32 +1565,30 @@ export function QuickActionPanel({
               )}
               {/* Action icons — right-aligned */}
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {/* Recurrence button - shown when the panel is editable (canEdit) */}
-                {/* Blue pill when recurrence is set (matching auto-snooze style), gray icon when unset */}
-                {canEdit &&
-                  (displayRrule ? (
-                    <button
-                      type="button"
-                      onClick={handleRecurrenceToggle}
-                      className={cn(
-                        'flex h-8 shrink-0 items-center rounded-md px-1.5 text-xs transition-colors',
-                        editingRecurrence
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
-                      )}
-                      aria-label="Recurrence"
-                      title="Recurrence"
-                    >
-                      <Repeat className="size-4" />
-                    </button>
-                  ) : (
-                    <IconButton
-                      icon={<Repeat className="size-4" />}
-                      label="Recurrence"
-                      onClick={handleRecurrenceToggle}
-                      active={editingRecurrence}
-                    />
-                  ))}
+                {/* Recurrence button (when editable). Its ONE state is whether
+                    the editor is open, and its label says what a tap does
+                    ("Edit recurrence" / "Close recurrence editor"). It used to
+                    be painted solid blue whenever the task recurred, which read
+                    as an on/off toggle a tap would switch off (Trent,
+                    2026-10-12). Whether the task recurs is the summary line's
+                    job — see RecurrenceSummaryLine. */}
+                {canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'size-8',
+                      editingRecurrence && 'bg-accent text-accent-foreground',
+                    )}
+                    onClick={handleRecurrenceToggle}
+                    aria-expanded={editingRecurrence}
+                    aria-controls={RECURRENCE_EDITOR_ID}
+                    aria-label={editingRecurrence ? 'Close recurrence editor' : 'Edit recurrence'}
+                    title={editingRecurrence ? 'Close recurrence editor' : 'Edit recurrence'}
+                  >
+                    <Repeat className="size-4" />
+                  </Button>
+                )}
                 {/* Auto-snooze picker — per-task notification repeat interval */}
                 {(() => {
                   // In bulk mode, compute common auto-snooze across selected tasks
@@ -1715,6 +1761,27 @@ export function QuickActionPanel({
         </div>
       </div>
 
+      {/* Expandable recurrence editor, opened from the summary line or the
+          Repeat button. It opens right under them, ABOVE the snooze grid, so
+          a tap visibly opens something where the finger is (2026-10-12: below
+          the grid it could land off-screen on a phone, and the tap looked like
+          it did nothing). Uses displayRrule (pending or current) and stages
+          changes via setPendingRrule. */}
+      {editingRecurrence && canEdit && (
+        <div id={RECURRENCE_EDITOR_ID} className="rounded-lg border p-3">
+          <RecurrencePicker
+            value={displayRrule}
+            recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
+            initialTime={effectiveTask?.anchor_time}
+            defaultDayOfWeek={defaultDayOfWeek}
+            onChange={(rrule, mode) => {
+              setPendingRrule(rrule)
+              if (mode) setPendingRecurrenceMode(mode)
+            }}
+          />
+        </div>
+      )}
+
       {/* 4x3 Date grid */}
       <div className="grid grid-cols-4 gap-1.5">
         {/* Row 1: Preset times */}
@@ -1757,23 +1824,6 @@ export function QuickActionPanel({
           />
         ))}
       </div>
-
-      {/* Expandable recurrence section - shown when recurrence button is clicked */}
-      {/* Uses displayRrule (pending or current) and stages changes via setPendingRrule */}
-      {editingRecurrence && canEdit && (
-        <div className="rounded-lg border p-3">
-          <RecurrencePicker
-            value={displayRrule}
-            recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
-            initialTime={effectiveTask?.anchor_time}
-            defaultDayOfWeek={defaultDayOfWeek}
-            onChange={(rrule, mode) => {
-              setPendingRrule(rrule)
-              if (mode) setPendingRecurrenceMode(mode)
-            }}
-          />
-        </div>
-      )}
 
       {/* AI annotation — shown between date grid and action buttons */}
       {annotation && (
