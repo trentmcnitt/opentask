@@ -124,7 +124,7 @@ interface TaskRowProps {
   /** Project color for the project badge dot (used in unified view) */
   projectColor?: LabelColor | null
   /**
-   * Just added (`src/lib/just-added.ts`): the task was created in the last 10
+   * Just added (`src/lib/just-added.ts`): the task was created in the last 15
    * minutes — it is listed in the Just added card — and this is the small tag
    * ("New") that makes its real row easy to spot where it lives. Neutral on
    * purpose: new is not a state that needs acting on, just a fact to notice.
@@ -454,8 +454,11 @@ export function TaskRow({
     >
       {/* The target's age (2026-10-10): a tab flush with the corner on an
           over-target row, counted from the FIRST target — a snooze keeps it,
-          a deliberate re-target restarts it. Blank on the target day. */}
-      {isOverdue && !tracked && <TargetAgeTab task={task} timezone={timezone} />}
+          a deliberate re-target restarts it. Blank on the target day.
+          Gone once the deadline has passed (Trent, 2026-10-12): the red
+          stripe and the red "past deadline" line already say it, and a plum
+          age beside them was a second, weaker alarm for the same row. */}
+      {isOverdue && !tracked && !pastDeadline && <TargetAgeTab task={task} timezone={timezone} />}
       {/* Selection checkbox (shown in selection mode) or Done button */}
       {isSelectionMode ? (
         <Checkbox
@@ -899,7 +902,7 @@ function TargetAgeTab({ task, timezone }: { task: Task; timezone: string }) {
         'pointer-events-none absolute -top-px -right-px rounded-tr-lg rounded-bl-md px-2 py-1 text-[11px] leading-none font-semibold tabular-nums',
         tone === 'light' && 'bg-over-target/10 text-over-target',
         tone === 'medium' && 'bg-over-target/25 text-over-target',
-        tone === 'strong' && 'bg-over-target text-white',
+        tone === 'strong' && 'bg-over-target-badge text-white',
       )}
     >
       {days}d

@@ -363,6 +363,7 @@ export function SlotHeaderRow({
   open,
   started,
   accent,
+  stackTime = false,
 }: {
   label: string
   time: string | null
@@ -372,9 +373,23 @@ export function SlotHeaderRow({
   started: boolean
   /** A colour for the label — a task segment's teal. */
   accent?: string
+  /** Below `sm`, the time on its own line under the label (a task segment's hint). */
+  stackTime?: boolean
 }) {
   const total = count + considered
   const finished = count === 0 && considered > 0
+  const labelEl = (
+    <span
+      className={cn(
+        'text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase',
+        stackTime && 'truncate',
+      )}
+      // A task segment's title wears its horizon's teal (2026-10-11).
+      style={accent ? { color: accent } : undefined}
+    >
+      {label}
+    </span>
+  )
   // Trent (2026-09-05): the number must not count down as thoughts are
   // considered ("26, 25, 24" felt wrong under a progress bar). It reads
   // "1 of 26, 2 of 26" — the slot's size stays put and the considered
@@ -410,21 +425,32 @@ export function SlotHeaderRow({
           )}
         />
       </span>
-      <span
-        className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase"
-        // A task segment's title wears its horizon's teal (2026-10-11).
-        style={accent ? { color: accent } : undefined}
-      >
-        {label}
-      </span>
-      {/* The one part of the header that may give way on a phone: a task
-          segment puts its longer hint here ("Shown on Saturdays"), and the
-          count beside it must never be overlapped. A slot's time always fits. */}
-      {/* ~#8a8a8a light, ~#8f8f8f dark — see PanelPagerParts' header. */}
-      {time && (
-        <span className="text-muted-foreground/80 dark:text-muted-foreground/90 min-w-0 truncate text-xs">
-          &middot; {time}
+      {stackTime ? (
+        // Below `sm` the hint gets its own line under the label (2026-10-12):
+        // "TASKS · EVENTUALLY · Quarterly" beside the count and Defer all did
+        // not fit a 390px phone on one line. See `SlotPagerHeader`'s stackTime.
+        <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2">
+          {labelEl}
+          {time && (
+            <span className="text-muted-foreground/80 dark:text-muted-foreground/90 min-w-0 truncate text-xs">
+              <span className="hidden sm:inline">&middot; </span>
+              {time}
+            </span>
+          )}
         </span>
+      ) : (
+        <>
+          {labelEl}
+          {/* The one part of the header that may give way on a phone; the
+              count beside it must never be overlapped. A slot's time always
+              fits. */}
+          {/* ~#8a8a8a light, ~#8f8f8f dark — see PanelPagerParts' header. */}
+          {time && (
+            <span className="text-muted-foreground/80 dark:text-muted-foreground/90 min-w-0 truncate text-xs">
+              &middot; {time}
+            </span>
+          )}
+        </>
       )}
       <span className="flex-1" />
       <span

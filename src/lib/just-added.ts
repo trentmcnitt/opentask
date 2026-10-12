@@ -1,5 +1,5 @@
 /**
- * Just added: for 10 minutes after a task is created it is listed in the
+ * Just added: for 15 minutes after a task is created it is listed in the
  * dashboard's "Just added" card, under the add field (`JustAddedCard`), while
  * its real row stays exactly where it belongs and wears a small "New" tag.
  *
@@ -28,19 +28,21 @@
  * question then).
  *
  * The window is measured from `created_at` (server clock). A `created_at` a
- * moment ahead of this device's clock is still in, and still ages out ten
+ * moment ahead of this device's clock is still in, and still ages out fifteen
  * minutes after it. Entries leave without a reload — see `useJustAddedClock`.
  */
 import type { Task } from '@/types'
 
-export const JUST_ADDED_WINDOW_MINUTES = 10
+/** 10 until 2026-10-12, when Trent widened it. The enrichment-success push
+ *  (`enrichment-notify.ts`) shares this window, so it widened with it. */
+export const JUST_ADDED_WINDOW_MINUTES = 15
 export const JUST_ADDED_WINDOW_MS = JUST_ADDED_WINDOW_MINUTES * 60 * 1000
 
 function createdMs(task: Task): number {
   return Date.parse(task.created_at)
 }
 
-/** True while the task is inside the 10-minute window. Exactly 10 minutes old is out. */
+/** True while the task is inside the 15-minute window. Exactly 15 minutes old is out. */
 export function isJustAdded(task: Task, now: number): boolean {
   const created = createdMs(task)
   return !Number.isNaN(created) && created > now - JUST_ADDED_WINDOW_MS
@@ -76,7 +78,7 @@ export function nextJustAddedExpiry(tasks: Task[], now: number): number | null {
 /**
  * The next moment anything just-added changes on screen: an entry's age
  * turning over ("2m ago" → "3m ago", every whole minute after
- * `created_at`) or, at the tenth, the task aging out. Null when nothing is in
+ * `created_at`) or, at the fifteenth, the task aging out. Null when nothing is in
  * the window. `useJustAddedClock` schedules ONE timeout for this — the next
  * visible change — rather than ticking on an interval.
  */
@@ -95,7 +97,7 @@ export function nextJustAddedTick(tasks: Task[], now: number): number | null {
 
 /**
  * How long ago, for the Just added card: "just now" under a minute, then
- * "2m ago". Minutes, floored — inside a 10-minute window nothing coarser is
+ * "2m ago". Minutes, floored — inside a 15-minute window nothing coarser is
  * useful. `now` is the dashboard's just-added clock, which advances on each
  * minute boundary (`nextJustAddedTick`), so the age counts up without polling.
  */

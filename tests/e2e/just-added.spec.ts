@@ -1,16 +1,16 @@
 /**
- * Just added (`src/lib/just-added.ts`, `JustAddedCard`): for 10 minutes after
+ * Just added (`src/lib/just-added.ts`, `JustAddedCard`): for 15 minutes after
  * a task is created it is listed in the Just added card under the add field —
  * its project, what the AI filled in, how long ago — while the real row stays
  * at its natural place wearing a "New" tag. Tapping an entry goes to the real
- * row. After 10 minutes the entry and the tag leave without a reload.
+ * row. After 15 minutes the entry and the tag leave without a reload.
  *
  * Isolation: tasks and projects are created per test and deleted in
  * `finally`; the grouping and sort are set per test by `withPreferences`
  * (every spec shares one test user). Tasks meant to be "old" are backdated in
  * the database (`backdateCreated`) so they are not listed.
  *
- * Time-agnostic: due dates are whole days from now; the 10-minute window is
+ * Time-agnostic: due dates are whole days from now; the 15-minute window is
  * crossed with Playwright's `page.clock`, never by waiting.
  */
 import {
@@ -237,10 +237,30 @@ test.describe('Just added: tapping through', () => {
       await cleanup(page, ids, null)
     }
   })
+
+  test('a task with no target, only a horizon, added through the API is listed', async ({
+    authenticatedPage: page,
+  }) => {
+    // A target-less task lives in the task segments, not on a dated row, so
+    // the card is the one place "did it land?" is answered on the dashboard.
+    const ids: number[] = []
+    try {
+      const title = uniqueTitle('Horizon only fresh')
+      const id = await post(page, '/api/tasks', { title, project_id: INBOX_ID, horizon: 'weeks' })
+      ids.push(id)
+      await withPreferences(page, FLAT_BY_DUE, async () => {
+        await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
+        await expect(entry(page, id)).toContainText(title)
+        await expect(entry(page, id)).toContainText('Inbox')
+      })
+    } finally {
+      await cleanup(page, ids, null)
+    }
+  })
 })
 
 test.describe('Just added: age-out', () => {
-  test('the entry and the tag leave after 10 minutes, without a reload', async ({
+  test('the entry and the tag leave after 15 minutes, without a reload', async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
@@ -262,7 +282,7 @@ test.describe('Just added: age-out', () => {
         await page.clock.fastForward('03:00')
         await expect(entry(page, id)).toContainText('3m ago')
 
-        await page.clock.fastForward('07:30')
+        await page.clock.fastForward('12:30')
         await expect(entry(page, id)).toHaveCount(0)
         await expect(realRow(page, id)).toBeVisible()
         await expect(realRow(page, id).locator('[data-just-added-badge]')).toHaveCount(0)

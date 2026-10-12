@@ -30,12 +30,17 @@ export const HORIZON_LABELS: Record<HorizonValue, string> = {
   eventually: 'Eventually',
 }
 
-/** What each segment means, for its header's second line. */
+/**
+ * When each segment comes round, after its name in the header ("TASKS · WEEKS
+ * · Saturdays"), where a slot shows its start time. Short on purpose
+ * (2026-10-12): the longer "Shown on the first Saturday" forms truncated on a
+ * 390px phone beside the "X of Y" count and the pager's chevrons.
+ */
 export const HORIZON_HINTS: Record<HorizonValue, string> = {
-  days: 'Shown every day',
-  weeks: 'Shown on Saturdays',
-  months: 'Shown on the first Saturday',
-  eventually: 'Shown each quarter',
+  days: 'Daily',
+  weeks: 'Saturdays',
+  months: '1st Saturday',
+  eventually: 'Quarterly',
 }
 
 /** An unset horizon is treated as weeks, but never shown as if it were set. */

@@ -337,12 +337,13 @@ test.describe('Task segments on the dashboard', () => {
 })
 
 test.describe('Dashboard over-target marks', () => {
-  test('the age tab counts days since the first target; a passed deadline is marked', async ({
+  test('the age tab counts days since the first target; a passed deadline drops it', async ({
     authenticatedPage: page,
   }) => {
     const threeDaysAgo = new Date(Date.now() - 3 * DAY - 60_000).toISOString()
-    const id = await create(page, {
-      title: uniqueTitle('TM aged'),
+    const aged = await create(page, { title: uniqueTitle('TM aged'), target_at: threeDaysAgo })
+    const late = await create(page, {
+      title: uniqueTitle('TM aged late'),
       target_at: threeDaysAgo,
       deadline_at: new Date(Date.now() - DAY).toISOString(),
     })
@@ -350,21 +351,23 @@ test.describe('Dashboard over-target marks', () => {
     // existed (2026-10-11), and the API can't create one in the past.
     const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
     try {
-      db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(
-        new Date(Date.now() - 7 * DAY).toISOString(),
-        id,
-      )
+      const backdate = db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?')
+      for (const id of [aged, late]) backdate.run(new Date(Date.now() - 7 * DAY).toISOString(), id)
     } finally {
       db.close()
     }
     try {
       await page.goto('/')
-      const row = page.locator(`#task-row-${id}`)
+      const row = page.locator(`#task-row-${aged}`)
       await expect(row).toBeVisible()
       await expect(row.locator('[data-target-age]')).toHaveText(/^[34]d$/)
-      await expect(row).toContainText('past deadline')
+      // Past its deadline the red stripe and "past deadline" say it, with no
+      // age tab beside them (2026-10-12).
+      const lateRow = page.locator(`#task-row-${late}`)
+      await expect(lateRow).toContainText('past deadline')
+      await expect(lateRow.locator('[data-target-age]')).toHaveCount(0)
     } finally {
-      await trash(page, [id])
+      await trash(page, [aged, late])
     }
   })
 })
