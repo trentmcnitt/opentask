@@ -112,7 +112,8 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       tx.prepare(
         `UPDATE tasks
             SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
-                progress_current = 0, ${TARGET_SET_FIELD} = ?, updated_at = ?
+                progress_current = 0, ${TARGET_SET_FIELD} = ?,
+                attempts = 0, attempts_counted_through = NULL, updated_at = ?
           WHERE id = ?`,
       ).run(
         nextDueAt,
@@ -135,6 +136,9 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         progress_current: 0,
         // Upcoming (2026-10-12): the next occurrence's wait counts from the skip.
         target_set_at: nowStr,
+        // §7: a new occurrence starts its attempts afresh.
+        attempts: 0,
+        attempts_counted_through: null,
       }
       fieldsChanged = [
         'due_at',
@@ -144,6 +148,8 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         'skip_count',
         'progress_current',
         TARGET_SET_FIELD,
+        'attempts',
+        'attempts_counted_through',
       ]
     } else {
       // Archived, never completed. done stays 0 — that is the entire point.

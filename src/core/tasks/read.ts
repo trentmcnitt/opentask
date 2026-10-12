@@ -10,6 +10,7 @@
 import { getDb } from '@/core/db'
 import type { QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import { normalizeDayState } from '@/lib/quota-prompts'
+import { effectiveAttempts } from '@/lib/task-segments'
 import { getCurrentlyDueTaskIds } from './currently-due'
 
 /**
@@ -42,6 +43,9 @@ const TASK_COLUMNS = [
   'target_set_at',
   'target_auto',
   'occurrence_at',
+  'attempts',
+  'attempts_counted_through',
+  'growth_kept_at',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -70,7 +74,11 @@ const TASK_COLUMNS = [
  * `getTasks` joins `projects`, which has its own `id`.
  */
 export function taskColumns(alias?: string): string {
-  return TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)).join(', ')
+  const table = alias ?? 'tasks'
+  // The OWNER's timezone, for the attempts read (`effectiveAttempts`): a
+  // local day is the owner's, whoever reads a shared task.
+  const ownerTz = `(SELECT timezone FROM users WHERE users.id = ${table}.user_id) AS owner_timezone`
+  return [...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)), ownerTz].join(', ')
 }
 
 /**
@@ -266,6 +274,11 @@ export interface TaskRow {
   target_set_at: string | null
   target_auto: number
   occurrence_at: string | null
+  attempts: number
+  attempts_counted_through: string | null
+  growth_kept_at: string | null
+  /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
+  owner_timezone?: string | null
   last_notified_at: string | null
   last_critical_alert_at: string | null
   auto_snooze_minutes: number | null
@@ -303,7 +316,24 @@ export function parseJsonColumn<T>(raw: string | null | undefined): T | null {
   }
 }
 
+/**
+ * A row as a `Task`. ATTEMPTS ARE READ AS OF NOW (spec §7): the stored
+ * checkpoint plus the over-target local days since (`effectiveAttempts`, in
+ * the owner's zone), so every reader — the API, the snapshot a mutation takes,
+ * the checkpoint a move writes — sees the same count without waiting for the
+ * minute cron. A row read without `owner_timezone` keeps the stored values.
+ */
 export function rowToTask(row: TaskRow): Task {
+  const task = baseTask(row)
+  if (row.owner_timezone) {
+    const { attempts, countedThrough } = effectiveAttempts(task, row.owner_timezone, new Date())
+    task.attempts = attempts
+    task.attempts_counted_through = countedThrough
+  }
+  return task
+}
+
+function baseTask(row: TaskRow): Task {
   return {
     id: row.id,
     user_id: row.user_id,
@@ -330,6 +360,9 @@ export function rowToTask(row: TaskRow): Task {
     target_set_at: row.target_set_at ?? null,
     target_auto: (row.target_auto ?? 0) === 1,
     occurrence_at: row.occurrence_at ?? null,
+    attempts: row.attempts ?? 0,
+    attempts_counted_through: row.attempts_counted_through ?? null,
+    growth_kept_at: row.growth_kept_at ?? null,
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,
     auto_snooze_minutes: row.auto_snooze_minutes,

@@ -32,9 +32,10 @@ export interface ProcessData {
    */
   inbox: Task[]
   growth: ({ task: Task } & GrowthAsk)[]
-  stale_targets: { task: Task; age_days: number }[]
-  /** Stale targets on tasks with a deadline: listed apart, never pre-checked. */
-  stale_targets_with_deadline: { task: Task; age_days: number }[]
+  /** Tasks at 3× attempts or more (spec §7), offered for target removal. */
+  stale_targets: { task: Task; attempts: number }[]
+  /** The same on tasks with a deadline: listed apart, never pre-checked ("Back to auto"). */
+  stale_targets_with_deadline: { task: Task; attempts: number }[]
 }
 
 export function getProcessData(userId: number, timezone: string, now = new Date()): ProcessData {
@@ -46,11 +47,8 @@ export function getProcessData(userId: number, timezone: string, now = new Date(
     inbox_project_id: inboxId,
     inbox,
     growth: plan.growth.map(({ task, ask }) => ({ task, ...ask })),
-    stale_targets: plan.staleTargets.map(({ task, age }) => ({ task, age_days: age })),
-    stale_targets_with_deadline: plan.staleTargetsWithDeadline.map(({ task, age }) => ({
-      task,
-      age_days: age,
-    })),
+    stale_targets: plan.staleTargets,
+    stale_targets_with_deadline: plan.staleTargetsWithDeadline,
   }
 }
 

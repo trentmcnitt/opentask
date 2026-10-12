@@ -25,8 +25,16 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
-import { formatDueTimeParts, formatTaskAge } from '@/lib/format-date'
-import { isPastDeadline, targetAgeDays, targetAgeTone, targetReset } from '@/lib/task-segments'
+import { formatDueTimeParts } from '@/lib/format-date'
+import {
+  ageLabel,
+  attemptsOffer,
+  attemptsTone,
+  effectiveAttempts,
+  isPastDeadline,
+  targetReset,
+} from '@/lib/task-segments'
+import { BACK_TO_AUTO } from '@/lib/task-model-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -357,6 +365,14 @@ export function TaskRow({
   const metaSegments = tracked
     ? trackedMetaSegments(task)
     : buildMetaSegments(task, timezone, isOverdue)
+  // ATTEMPTS (spec §7): local days over target, read here with the same rule
+  // the server uses, so the row shows "1×" the moment the target passes
+  // without a refetch. At 3× the row OFFERS to drop the target (never does it
+  // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
+  // target the user picked; nothing on an automatic target or a repeating task.
+  const attempts = effectiveAttempts(task, timezone, new Date()).attempts
+  const offer =
+    onRemoveTarget && !isSelectionMode && !tracked ? attemptsOffer({ ...task, attempts }) : null
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
@@ -436,13 +452,12 @@ export function TaskRow({
         highlighted && 'animate-row-highlight',
       )}
     >
-      {/* The target's age (2026-10-10): a tab flush with the corner on an
-          over-target row, counted from the FIRST target — a snooze keeps it,
-          a deliberate re-target restarts it. Blank on the target day.
-          Gone once the deadline has passed (Trent, 2026-10-12): the red
-          stripe and the red "past deadline" line already say it, and a plum
-          age beside them was a second, weaker alarm for the same row. */}
-      {isOverdue && !tracked && !pastDeadline && <TargetAgeTab task={task} timezone={timezone} />}
+      {/* ATTEMPTS (spec §7, 2026-10-12; replaced the "2d" target-age tab): a
+          tab flush with the corner on any row with a target and at least one
+          attempt ("3×" = three local days over target). A moved-ahead task
+          keeps it, so the row still says it has slipped. Shown past the
+          deadline too: it is a count, not a second alarm beside the red. */}
+      {!tracked && task.due_at !== null && attempts >= 1 && <AttemptsTab attempts={attempts} />}
       {/* Selection checkbox (shown in selection mode) or Done button */}
       {isSelectionMode ? (
         <Checkbox
@@ -527,14 +542,35 @@ export function TaskRow({
           )}
         </div>
 
-        {metaSegments.length > 0 && (
+        {(metaSegments.length > 0 || offer) && (
           <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
             {metaSegments.map((seg, i) => (
               <span key={i} className="contents">
-                <span className={cn('whitespace-nowrap', seg.className)}>{seg.text}</span>
+                <span
+                  className={cn('whitespace-nowrap', seg.className)}
+                  data-age-label={seg.ageLabel ? seg.text : undefined}
+                >
+                  {seg.text}
+                </span>
                 {i < metaSegments.length - 1 && <span className="text-muted-foreground/50">·</span>}
               </span>
             ))}
+            {offer && (
+              <button
+                type="button"
+                data-attempts-offer={offer}
+                // The click must not reach the row (select / open). Not the
+                // pointerdown, like the done button: SwipeableRow's drag
+                // handler swallows a click whose pointerdown it never saw.
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemoveTarget?.(task)
+                }}
+                className="text-over-target hover:bg-over-target/10 -my-0.5 rounded px-1 py-0.5 text-xs font-medium whitespace-nowrap underline-offset-2 hover:underline"
+              >
+                {offer === 'auto' ? `${BACK_TO_AUTO}?` : 'Remove target?'}
+              </button>
+            )}
           </div>
         )}
 
@@ -783,6 +819,8 @@ function LabelBadges({
 interface MetaSegment {
   text: string
   className?: string
+  /** The age badge (`data-age-label`). */
+  ageLabel?: boolean
 }
 
 /** "2 / 4 this week" — a quota's standing, as its row's only metadata. */
@@ -821,16 +859,13 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   const deadline = deadlineSegment(task, timezone)
   if (deadline) segments.push(deadline)
 
-  // Age indicator: how old a task is (very subtle, at the end of metadata)
-  // One-off: original_due_at ?? created_at (captures deferral time when present)
-  // Recurring: original_due_at ?? due_at (when the current occurrence was originally due)
-  const ageAnchor = task.rrule
-    ? (task.original_due_at ?? task.due_at)
-    : (task.original_due_at ?? task.created_at)
-  if (ageAnchor) {
-    const ageText = formatTaskAge(ageAnchor, timezone)
-    if (ageText) segments.push({ text: ageText, className: 'text-muted-foreground/50' })
-  }
+  // AGE (spec §7, 2026-10-12; replaced the "Xd old" text every row had): only
+  // on a task with neither a target nor a deadline, and only once it is past
+  // its horizon's threshold — ">1 wk" (days), ">1 mo" (weeks or unset),
+  // ">3 mo" (months), ">6 mo" (eventually). A dated task's slipping is told by
+  // its attempts tab instead.
+  const age = ageLabel(task, new Date(), timezone)
+  if (age) segments.push({ text: age, className: 'text-muted-foreground/70', ageLabel: true })
 
   return segments
 }
@@ -855,15 +890,13 @@ function deadlineSegment(task: Task, timezone: string): MetaSegment | null {
   }
 }
 
-/** The over-target age tab — see the render site. Nothing on the target day. */
-function TargetAgeTab({ task, timezone }: { task: Task; timezone: string }) {
-  const days = targetAgeDays(task, timezone, new Date())
-  if (days === null) return null
-  const tone = targetAgeTone(days)
+/** The attempts tab — see the render site. */
+function AttemptsTab({ attempts }: { attempts: number }) {
+  const tone = attemptsTone(attempts)
   return (
     <span
-      data-target-age={days}
-      title={`${days} day${days === 1 ? '' : 's'} since its first target`}
+      data-attempts={attempts}
+      title={`Over target on ${attempts} day${attempts === 1 ? '' : 's'}`}
       className={cn(
         // A true corner tab (mockup C): flush with the card's top-right
         // corner, over its border, sharing its rounded corner.
@@ -873,7 +906,7 @@ function TargetAgeTab({ task, timezone }: { task: Task; timezone: string }) {
         tone === 'strong' && 'bg-over-target-badge text-white',
       )}
     >
-      {days}d
+      {attempts}×
     </span>
   )
 }

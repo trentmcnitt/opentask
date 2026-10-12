@@ -140,6 +140,18 @@ export interface Task {
    * until its date.
    */
   target_auto: boolean
+  /**
+   * ATTEMPTS (spec §7, 2026-10-12): local days on which the task was over
+   * target, AS OF THE READ (`effectiveAttempts` in src/lib/task-segments.ts —
+   * the server reads it in `rowToTask`). Reset by done and each new
+   * occurrence; frozen while there is no target. The badge ("3×") shows only
+   * while the task has a target.
+   */
+  attempts: number
+  /** The local date (yyyy-MM-dd) `attempts` counts through. */
+  attempts_counted_through: string | null
+  /** Process's last "keep" of the horizon (ruling Q7); null = never kept. */
+  growth_kept_at: string | null
 
   // Notifications
   last_notified_at: string | null

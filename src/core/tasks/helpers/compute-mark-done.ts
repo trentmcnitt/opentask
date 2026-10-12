@@ -128,6 +128,9 @@ export function computeMarkDone(
         // Upcoming (2026-10-12): the advance sets the next occurrence's
         // target, so its wait counts from the completion.
         TARGET_SET_FIELD,
+        // §7: done resets attempts (the completion row keeps the count).
+        'attempts',
+        'attempts_counted_through',
       ],
     }
   } else {
@@ -141,6 +144,8 @@ export function computeMarkDone(
         'completion_count',
         'first_completed_at',
         'last_completed_at',
+        'attempts',
+        'attempts_counted_through',
       ],
     }
   }

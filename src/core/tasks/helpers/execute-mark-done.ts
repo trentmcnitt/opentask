@@ -57,11 +57,11 @@ function executeRecurringMarkDone(
   const completionResult = tx
     .prepare(
       `
-      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next, occurrence_at_was)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next, occurrence_at_was, attempts)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     )
-    .run(task.id, userId, nowStr, prevDueAt, nextDueAt, prevOccurrenceAt)
+    .run(task.id, userId, nowStr, prevDueAt, nextDueAt, prevOccurrenceAt, task.attempts ?? 0)
 
   const completionId = Number(completionResult.lastInsertRowid)
 
@@ -81,7 +81,7 @@ function executeRecurringMarkDone(
     UPDATE tasks
     SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-        progress_current = 0,
+        progress_current = 0, attempts = 0, attempts_counted_through = NULL,
         updated_at = ?
     WHERE id = ?
   `,
@@ -110,12 +110,16 @@ function executeRecurringMarkDone(
     completion_count: stats.completionCount,
     first_completed_at: stats.firstCompletedAt,
     last_completed_at: stats.lastCompletedAt,
+    // §7: a new occurrence starts its attempts afresh.
+    attempts: 0,
+    attempts_counted_through: null,
     _completion: {
       user_id: userId,
       completed_at: nowStr,
       due_at_was: prevDueAt,
       due_at_next: nextDueAt,
       occurrence_at_was: prevOccurrenceAt,
+      attempts: task.attempts ?? 0,
     },
   }
 
@@ -133,6 +137,8 @@ function executeRecurringMarkDone(
       completion_count: task.completion_count,
       first_completed_at: task.first_completed_at,
       last_completed_at: task.last_completed_at,
+      attempts: task.attempts,
+      attempts_counted_through: task.attempts_counted_through,
     },
     after_state: afterState,
     completion_id: completionId,
@@ -154,11 +160,11 @@ function executeOneOffMarkDone(
   const completionResult = tx
     .prepare(
       `
-      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
-      VALUES (?, ?, ?, ?, NULL)
+      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next, attempts)
+      VALUES (?, ?, ?, ?, NULL, ?)
     `,
     )
-    .run(task.id, userId, nowStr, task.due_at)
+    .run(task.id, userId, nowStr, task.due_at, task.attempts ?? 0)
 
   const completionId = Number(completionResult.lastInsertRowid)
 
@@ -166,7 +172,7 @@ function executeOneOffMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET done = 1, done_at = ?, archived_at = ?,
+    SET done = 1, done_at = ?, archived_at = ?, attempts = 0, attempts_counted_through = NULL,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         updated_at = ?
     WHERE id = ?
@@ -195,10 +201,14 @@ function executeOneOffMarkDone(
       completion_count: task.completion_count,
       first_completed_at: task.first_completed_at,
       last_completed_at: task.last_completed_at,
+      attempts: task.attempts,
+      attempts_counted_through: task.attempts_counted_through,
     },
     after_state: {
       id: task.id,
       done: true,
+      attempts: 0,
+      attempts_counted_through: null,
       done_at: nowStr,
       archived_at: nowStr,
       completion_count: stats.completionCount,
@@ -209,6 +219,7 @@ function executeOneOffMarkDone(
         completed_at: nowStr,
         due_at_was: task.due_at,
         due_at_next: null,
+        attempts: task.attempts ?? 0,
       },
     } as Partial<Task> & { _completion: unknown },
     completion_id: completionId,

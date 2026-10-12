@@ -14,8 +14,9 @@
  *    been months, it asks, 'Is this a months-horizon item?' … after 6 months,
  *    'Do you want this to just be an eventual thing?'" Horizons never grow on
  *    their own; this only ASKS, and the modal batches the asks with a default.
- * 4. Old targets — over-target tasks whose target is STALE_TARGET_DAYS old or
- *    more, offered for one-tap target removal (spec §4). A task with a
+ * 4. Old targets — tasks with ATTEMPTS_OFFER_REMOVE (3) attempts or more (spec
+ *    §7: "At 3×, Process … offer 'remove target?'"), offered for one-tap
+ *    target removal. Offered, never automatic. A task with a
  *    deadline is listed apart and never pre-checked (amendment 7): its target
  *    goes back to the deadline's automatic one (§8.3, "Back to auto"), and a
  *    task already on its automatic target is not listed at all.
@@ -31,32 +32,27 @@
  */
 
 import {
+  ATTEMPTS_OFFER_REMOVE,
   HORIZON_ORDER,
-  STALE_TARGET_DAYS,
   UNSET_HORIZON,
   deadlineHorizon,
   hasPickedTarget,
-  targetAgeDays,
+  pastAgeThreshold,
   targetIsToday,
   type HorizonValue,
 } from '@/lib/task-segments'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/**
- * How long a task may sit on its horizon before Process asks to grow it, by
- * the horizon it is on. Measured from `horizon_set_at` (the last time the
- * horizon was set or re-affirmed), else from creation. Unset counts as weeks.
- * - days → 14 days ("weeks?")
- * - weeks / unset → 60 days ("months?")
- * - months → 180 days ("eventually?" — Trent's "after 6 months")
- * Placeholders Trent may tune.
+/*
+ * WHEN GROWTH ASKS (spec §7, rulings Q6/Q7, 2026-10-12): past the SAME
+ * per-horizon threshold as the age badge (`AGE_THRESHOLDS` in
+ * task-segments.ts — one set): days > 7 days ("weeks?"), weeks or unset > 1
+ * month ("months?"), months > 1 quarter ("eventually?"). Measured from the
+ * latest of the horizon's own clock (`horizon_set_at`, else creation) and the
+ * last "keep" (`growth_kept_at`): keeping a horizon asks again only after
+ * another threshold period. The badge still shows creation age.
  */
-export const GROWTH_ASK_DAYS: Record<Exclude<HorizonValue, 'eventually'>, number> = {
-  days: 14,
-  weeks: 60,
-  months: 180,
-}
 
 /**
  * From this priority up (P2 Medium), a growth ask also offers "do it" (target
@@ -76,6 +72,10 @@ export interface ProcessTaskFields {
   due_at: string | null
   original_due_at: string | null
   deadline_at: string | null
+  /** The last Process "keep" (ruling Q7): growth asks again a threshold after it. */
+  growth_kept_at?: string | null
+  /** Effective attempts (§7) — the old-targets step lists 3× and up. */
+  attempts?: number
   target_auto?: boolean
   rrule?: string | null
 }
@@ -84,7 +84,7 @@ export interface GrowthAsk {
   /** The set horizon, or null when unset (read as weeks, never reported as set). */
   from: HorizonValue | null
   to: HorizonValue
-  /** Whole days on the current horizon. */
+  /** Whole days on the current horizon (since `horizon_set_at`, else creation). */
   days_on_horizon: number
   /** P2+: offer "do it" and "raise priority" beside "grow". */
   can_act: boolean
@@ -111,9 +111,13 @@ export function growthAsk(task: ProcessTaskFields, timezone: string, now: Date):
   const from = setHorizon(task.horizon)
   const on = from ?? UNSET_HORIZON
   if (on === 'eventually') return null
-  const since = Date.parse(task.horizon_set_at ?? task.created_at)
-  const days = Math.floor((now.getTime() - since) / DAY_MS)
-  if (days < GROWTH_ASK_DAYS[on]) return null
+  const onSince = task.horizon_set_at ?? task.created_at
+  const clock =
+    task.growth_kept_at && Date.parse(task.growth_kept_at) > Date.parse(onSince)
+      ? task.growth_kept_at
+      : onSince
+  if (!pastAgeThreshold(on, clock, now, timezone)) return null
+  const days = Math.floor((now.getTime() - Date.parse(onSince)) / DAY_MS)
   return {
     from,
     to: HORIZON_ORDER[HORIZON_ORDER.indexOf(on) + 1],
@@ -122,26 +126,28 @@ export function growthAsk(task: ProcessTaskFields, timezone: string, now: Date):
   }
 }
 
-/** Whole days the task's target is past (see `targetAgeDays`) when it is stale, else null. */
-export function staleTargetAge(
-  task: ProcessTaskFields,
-  timezone: string,
-  now: Date,
-): number | null {
-  const age = targetAgeDays(task, timezone, now)
-  return age !== null && age >= STALE_TARGET_DAYS ? age : null
+/**
+ * The task's attempts when Process should offer to remove its target: over
+ * target now, at 3× or more (`ATTEMPTS_OFFER_REMOVE`). Else null. (The row
+ * offers it at 3× whatever the target's date — `attemptsOffer`; Process, like
+ * its old "targets 7+ days old" step, works through what is over target.)
+ */
+export function staleTargetAttempts(task: ProcessTaskFields, now: Date): number | null {
+  const attempts = task.attempts ?? 0
+  if (task.due_at === null || Date.parse(task.due_at) > now.getTime()) return null
+  return attempts >= ATTEMPTS_OFFER_REMOVE ? attempts : null
 }
 
 export interface ProcessPlan<T extends ProcessTaskFields> {
   growth: { task: T; ask: GrowthAsk }[]
-  staleTargets: { task: T; age: number }[]
-  staleTargetsWithDeadline: { task: T; age: number }[]
+  staleTargets: { task: T; attempts: number }[]
+  staleTargetsWithDeadline: { task: T; attempts: number }[]
 }
 
 /**
  * Sort the user's segment-eligible tasks (open, one-off, own, not a reminder
  * or quota) into Process's rule-based steps. Growth: longest on its horizon
- * first. Old targets: oldest first. Ties by id, so the lists hold still.
+ * first. Old targets: most attempts first. Ties by id, so the lists hold still.
  */
 export function planProcess<T extends ProcessTaskFields>(
   tasks: T[],
@@ -153,18 +159,21 @@ export function planProcess<T extends ProcessTaskFields>(
     // A deadline's AUTOMATIC target (§8) is not offered: there is nothing to
     // remove — clearing it puts the same automatic target back — and the
     // deadline is what it nags for.
-    const age = task.target_auto ? null : staleTargetAge(task, timezone, now)
-    if (age !== null) {
-      ;(task.deadline_at ? plan.staleTargetsWithDeadline : plan.staleTargets).push({ task, age })
+    const attempts = task.target_auto ? null : staleTargetAttempts(task, now)
+    if (attempts !== null) {
+      ;(task.deadline_at ? plan.staleTargetsWithDeadline : plan.staleTargets).push({
+        task,
+        attempts,
+      })
       continue
     }
     const ask = growthAsk(task, timezone, now)
     if (ask) plan.growth.push({ task, ask })
   }
   plan.growth.sort((a, b) => b.ask.days_on_horizon - a.ask.days_on_horizon || a.task.id - b.task.id)
-  const byAge = (a: { task: T; age: number }, b: { task: T; age: number }) =>
-    b.age - a.age || a.task.id - b.task.id
-  plan.staleTargets.sort(byAge)
-  plan.staleTargetsWithDeadline.sort(byAge)
+  const byAttempts = (a: { task: T; attempts: number }, b: { task: T; attempts: number }) =>
+    b.attempts - a.attempts || a.task.id - b.task.id
+  plan.staleTargets.sort(byAttempts)
+  plan.staleTargetsWithDeadline.sort(byAttempts)
   return plan
 }

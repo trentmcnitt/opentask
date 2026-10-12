@@ -13,7 +13,7 @@ The 2026-10-10 task model. Until then one field, `due_at`, carried four differen
 | `horizon`     | `horizon`                               | How soon it should get done, its pace: `days`, `weeks`, `months`, `eventually`, or `null` (unset, = weeks) | Only an explicit write. Nothing grows or shrinks it on its own |
 | `priority`    | `priority`                              | Unchanged: what missing it costs                                                                           | Unchanged                                                      |
 
-Target, deadline and horizon are each nullable, but tied by two rules since 2026-10-12 (spec §8): **a one-off with a deadline always has a target** (the deadline's stored automatic target, if the user picked none), and **the target is never after the deadline**. The pure rules live in ONE module, `src/lib/task-segments.ts` (each constant named once), shared by the server and the web UI. `tests/behavioral/tm-task-model.test.ts`, `tm-auto-target.test.ts`, `tm-occurrence.test.ts` and the seeded random invariants in `tm-invariants.test.ts` have the rules as tests.
+Target, deadline and horizon are each nullable, but tied by two rules since 2026-10-12 (spec §8): **a one-off with a deadline always has a target** (the deadline's stored automatic target, if the user picked none), and **the target is never after the deadline**. The pure rules live in ONE module, `src/lib/task-segments.ts` (each constant named once), shared by the server and the web UI — the native apps get them through the API (`attempts_label`, `attempts_offer`, `age_label`, the segments). `tests/behavioral/tm-task-model.test.ts`, `tm-auto-target.test.ts`, `tm-occurrence.test.ts`, `bg-badges.test.ts`, the seeded random invariants in `tm-invariants.test.ts` and the golden suite have the rules as tests (see [Testing the model](#testing-the-model-the-golden-suite-and-the-day-simulator)).
 
 ### API names
 
@@ -21,7 +21,7 @@ Target, deadline and horizon are each nullable, but tied by two rules since 2026
 
 Old clients' flags are accepted and change nothing (rulings Q1/Q4, 2026-10-12): `retarget` (alias `reset_original_due_at`) is a plain move on a task (on a reminder it is still the explicit reschedule a period move sends, see [Snooze](#snooze)); `allow_past_deadline(_ids)` and `cap_at_deadline(_ids)` change nothing, since every move stops at the deadline; `deadline_nag_off` is ignored (an old "Remove target" sends it with `target_at: null`, which on a deadline task is now Back to auto).
 
-Reads also expose `deadline_at`, `horizon`, `horizon_set_at`, `last_considered_at`, `segment_deferred_at`, `segment_targeted_at`, `target_set_at` (when the target was last set, see [Upcoming](#upcoming)), `target_auto` (the target is the deadline's automatic one), `occurrence_at` (a repeating task's scheduled occurrence, see [Recurrence Model](#recurrence-model)) and `original_due_at` (the first-target date). `deadline_nag_off` is still returned, always `false`, for shipped native builds (see [Native builds](#native-builds)). `is_snoozed` and `snooze_count` left the API on 2026-10-12: there is no snooze state.
+Reads also expose `deadline_at`, `horizon`, `horizon_set_at`, `last_considered_at`, `segment_deferred_at`, `segment_targeted_at`, `target_set_at` (when the target was last set, see [Upcoming](#upcoming)), `target_auto` (the target is the deadline's automatic one), `occurrence_at` (a repeating task's scheduled occurrence, see [Recurrence Model](#recurrence-model)), `original_due_at` (the first-target date), and the two badges' fields — `attempts`, `attempts_counted_through`, `attempts_label`, `attempts_offer`, `age_label`, `growth_kept_at` (see [The two badges](#the-two-badges-attempts-and-age)). `deadline_nag_off` is no longer stored, but is still returned for shipped native builds: computed per response, `true` only for a one-off whose deadline has passed and whose target is after it, `false` otherwise — so those builds' own implied-target rule reads the task's own target (see [Native builds](#native-builds)). `is_snoozed` and `snooze_count` left the API on 2026-10-12: there is no snooze state.
 
 ### Target
 
@@ -35,7 +35,7 @@ The target is when a task starts nagging: the dashboard's over-target list, the 
 
 `hasPickedTarget` (`src/lib/task-segments.ts`) is the one test: a target that is not `target_auto`.
 
-**The target's age.** `original_due_at` is the first-target date, and the age clock (phase B replaces the badge with attempts, spec §7):
+**The first target.** `original_due_at` is the first-target date. It no longer drives a badge (the attempts badge replaced the target-age "2d" tab, spec §7), but it is still written for shipped native builds, which read it as their age clock:
 
 | Change                                                               | `original_due_at`              |
 | -------------------------------------------------------------------- | ------------------------------ |
@@ -47,11 +47,11 @@ The target is when a task starts nagging: the dashboard's over-target list, the 
 
 A no-target → target change always restarts the clock, even if a stale origin is somehow still stored, so a fresh target never shows an age inherited from an old one (`collectDueAtChanges`, `src/core/tasks/helpers/collect-field-changes.ts`).
 
-**Target-age badge.** An over-target row carries a corner tab with just the age ("2d"): whole local days since the first target (`targetAgeDays`). Blank on the target day itself. Three depths of one calm plum (`--over-target`; never red or amber — Trent, 2026-10-11): 1–2 days light, 3–6 medium, 7+ strong. Red is kept for a passed deadline only (`TARGET_AGE_MEDIUM_DAYS = 3`, `TARGET_AGE_STRONG_DAYS = 7`, placeholders Trent may tune). Never from before the task was created (2026-10-11): the age is how long it has been on the list.
+**The attempts tab.** A row with a target and at least one attempt carries a corner tab with the count ("3×"): local days on which it was over target (see [The two badges](#the-two-badges-attempts-and-age)). It replaced the target-age "2d" tab on 2026-10-12.
 
 **Remove target** sends a one-off with no deadline back to its horizon's segment (the row's snooze menu, the editor's … menu, Upcoming's target chip). **A deadline task never loses its target** (§8.3): in the same places it offers **Back to auto** instead — only when its target is one the user picked (ruling Q9); an automatic target offers neither. Back to auto is `target_at: null` on a deadline task: the server stores the automatic target again, computed from that moment (nothing records when the deadline was first set). One rule decides what each surface offers: `targetReset` (`src/lib/task-segments.ts`). A repeating task's target goes only with its recurrence ("Remove target & recurrence").
 
-There is no automatic target lapse. Over-target items are cleared by done, remove target / Back to auto, Process ("remove targets aged 7d+", `STALE_TARGET_DAYS = 7`, which lists deadline tasks apart and unchecked, and never an automatic target) and review.
+There is no automatic target lapse. Over-target items are cleared by done, remove target / Back to auto (which the row offers at 3×), Process (targets missed on 3 or more days, `ATTEMPTS_OFFER_REMOVE`; it lists deadline tasks apart and unchecked, and never an automatic target) and review.
 
 ### Deadline
 
@@ -207,6 +207,62 @@ Local days throughout, Luxon calendar days in the user's zone — UTC days and 2
 
 **Process** never asks to grow the horizon of a task with a target of its own (`growthAsk`), and the dashboard's left panel (desktop) has a Process button.
 
+## The two badges: attempts and age
+
+Spec §7 (2026-10-12; rulings Q5–Q7, Q10 — Trent: separate signals). The rules are in the one rules module, `src/lib/task-segments.ts` (§ the two badges); `tests/behavioral/bg-badges.test.ts` has them as tests, and the golden suite (below) has them day by day.
+
+### Attempts
+
+**An attempt is a local day (the owner's zone) on which the task was over target.** The day counts **the moment** the task goes over target — the badge reads "1×" at once (ruling Q5), including a deadline's automatic target that is already past when it is set (Q10). One per local day: moving it again the same day adds nothing. Days before the target never count, so moving a target that has not arrived adds nothing.
+
+- **Who counts:** any ordinary open task that can go over target — its own target, a repeating occurrence, a deadline's automatic target. Never a reminder or a quota (`canAttempt`).
+- **Resets** only on done (one-off) and on each new occurrence of a repeating task (done or skip): attempts 0, checkpoint cleared. The completion row keeps the count (`completions.attempts`), so History shows a late occurrence ("· 3×").
+- **Removing the target freezes the count** (nothing counts without a target); it resumes if the task is retargeted and goes over target again.
+- **The badge shows only while the task has a target** (`attempts_label`, "3×"); the count is kept under it. On the dashboard row a corner tab, one calm plum in three depths (1–2 light, `ATTEMPTS_MEDIUM` 3–6 medium, `ATTEMPTS_STRONG` 7+ strong; red is kept for a passed deadline); on a segment or Upcoming row a chip at the end of the second line.
+- **At 3× (`ATTEMPTS_OFFER_REMOVE`) the row offers to drop the target** — offered, never automatic: a small "Remove target?" on a one-off with no deadline, "Back to auto?" on a deadline task whose target the user picked. Nothing on an automatic target (Q9), on a repeating task (its target goes only with its recurrence), or once the deadline has passed ("auto" would be the passed deadline). `attemptsOffer`; the API sends it as `attempts_offer`. Process lists the same tasks in its old-targets step (over target now, 3×+).
+
+**Storage and the read.** `tasks.attempts` is the count as of a checkpoint, `tasks.attempts_counted_through` (a local date, yyyy-MM-dd). Between two writes the target is constant, and a task over target stays over target, so the days since the checkpoint are exactly the local days from the latest of (the day after the checkpoint, the target's day, the day the target was set — `target_set_at` —, the creation day) through today if the target has arrived, else through yesterday (`effectiveAttempts`). Every read adds them: the server in `rowToTask` (the owner's zone, from a subquery in `taskColumns`), the web row at render — so "1×" appears the moment the target passes, without a refetch.
+
+**Advancing it** — three places, one rule:
+
+1. **On read**, as above (no write).
+2. **The checkpoint on every target move.** A write that moves `due_at` or `deadline_at` first persists the count as of now, read from the row _before_ the move (`stampTargetSet`, `src/core/tasks/target-set.ts` — the module every target writer already goes through). Without it, a task that went over target at 9:00 and was moved at 9:00:30 would lose the day.
+3. **The minute cron** (`persistAttempts`, `src/core/tasks/attempts.ts`, started in `src/instrumentation.ts`) writes the stored columns current for every task whose target has arrived, for anything that reads them raw. No undo entry, no `updated_at` bump, no sync event.
+
+**Undo.** The checkpoint and the cron record the past, so they are not undo entries: undo of a move restores the old target and leaves the count, which is still true. Done and skip change the count, so their snapshots carry `attempts` and `attempts_counted_through`: undo restores the count, redo resets it again. Put-back (`markUndone`) restores the count from the completion row it deletes, checkpointed at the later of the completion day (or the day before, if the target had not arrived by then) and yesterday — so the days it sat done don't count, and today counts at most once.
+
+**Migration.** New columns, `attempts = 0` and no checkpoint. The read then counts the over-target days of each task's _current_ target, from its day (never before the task existed or the target was set) — the part of the history that is recoverable. The days earlier targets were missed are not known.
+
+### Age
+
+Only a task with **neither a target nor a deadline** (truly undated), counted from `created_at`, shown only past one threshold per horizon — unset reads as weeks (`AGE_THRESHOLDS`, `AGE_LABELS`, `ageLabel`):
+
+| Horizon         | Shown past | Label   |
+| --------------- | ---------- | ------- |
+| `days`          | 7 days     | `>1 wk` |
+| `weeks` / unset | 1 month    | `>1 mo` |
+| `months`        | 1 quarter  | `>3 mo` |
+| `eventually`    | 6 months   | `>6 mo` |
+
+Calendar arithmetic (a month is a calendar month), strictly past. The API sends it as `age_label`; the dashboard row shows it where every row used to show "Xd old", and segment rows end their second line with it.
+
+**The same thresholds are Process's growth asks** (ruling Q7; they replaced 14/60/180 days): a days task is asked "weeks?" past 7 days on its horizon, weeks or unset "months?" past a month, months "eventually?" past a quarter — counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Choosing **keep** (`affirm_horizon`) stamps `growth_kept_at`, so Process asks again only one threshold period after it; the horizon's own clock is untouched and the badge still shows creation age. Growth asks about a deadline-only task too (when its deadline is far enough not to steer the horizon); the badge is for undated tasks only.
+
+## Testing the model: the golden suite and the day simulator
+
+Spec "Testing and evaluation" (2026-10-12): the date rules grew one at a time, so they are pinned down as a whole.
+
+- **The day simulator** (`src/core/sim/day-simulator.ts`) steps a task list forward day by day (or hour by hour, `hourly`) through the **real core** — it moves the clock, reads the Reminders screen with `getTaskSegments` (segments and Upcoming), over target with `getCurrentlyDueTaskIds`, the badges through `getTaskById` — and a policy acts through the real writers: `never`, `tap` (consider every waiting row the day it shows), `complete-repeating` (done on its day), `complete`. Each day records each task's place (`quiet`, a horizon, `upcoming`, `over`, `done`), its attempts, age and offer, and the day's counts. A day is read at 21:00 by default (`at`), after that day's scripted steps and before the policy acts.
+- **The golden suite** (`tests/golden/*.ts`, one runner: `tests/behavioral/golden.test.ts`): 26 dated timelines — the spec's reference dates, the v7 table's rows (restated with the approved 3/4 lead where v7's wait/6 rule differs), and every case raised on 10-12 (codes-blog on the day and early, a weekly Friday, every 2 weeks, every 10 days over 5 cycles, every 22 days, the monthly 1st across Nov/Dec/Jan, snowmobile, taxes, gutters, made Saturday for Tuesday, made today for tomorrow, a deadline tomorrow at 3 PM made at 1:35 PM, the squeaky door, the Nov 1 pile, the past-deadline case, undated ages, a weekly across the March DST change). Each states, for every local day of its window, a line such as `upcoming`, `over 3× →remove`, `quiet 1×`, `weeks >1 mo`; unlisted days are `quiet`. The runner compares every day. America/Chicago.
+- **Invariants** (`tests/behavioral/tm-invariants.test.ts`): seeded random tasks and writes (TM-INV-01–03), and a random list through the simulator (TM-INV-04/05): one segment at most, never Upcoming and over target, a picked target never in a horizon segment and an automatic one never in Upcoming, never told then silent before the target, target ≤ deadline while it is ahead, attempts +1 a local day at most and only while over target, none before a target arrives.
+- **The CLI**, for watching daily load on a real list:
+
+  ```bash
+  npx tsx scripts/simulate-days.ts <database> --user <id> [--days 61] [--policy tap] [--from 2026-10-12] [--at 21:00] [--hourly] [--titles] [--json]
+  ```
+
+  It opens `<database>` **read-only**, copies it with SQLite's backup into a temp file, empties every delivery channel on the copy (push subscriptions, APNs devices, widget push tokens, webhooks), runs there, and deletes the copy. It prints one line a day — the rows in each segment (Upcoming included), over target, at the 3× offer — and the Upcoming and over-target task ids. Ids only unless `--titles` (local use only). Run it on a `.backup` copy of production, never the live file, and keep that copy out of the repo (ruling Q11). There is no dev page: the CLI covers it.
+
 ## Priority and bulk snooze
 
 Priority is **what missing the task costs**. It no longer says whether a date is a deadline: the deadline is its own field (see [Deadline](#deadline)), and a low-priority meal voucher that expires on the 11th still expires on the 11th. Priority sets the nag cadence (`docs/NOTIFICATIONS.md` § Repeat intervals), the notification's interruption level, and how a bulk snooze treats an over-target task:
@@ -334,7 +390,7 @@ Each is one transaction and one undo entry (`quota_prompt`, or the `bulk_done` e
 
 ## Native builds
 
-Shipped iOS / watchOS / Mac builds (including ones not yet reinstalled) decode every task field with defaults, and still run their own copy of the old implied-target rule (`TargetAge.swift`). The server keeps them correct without a rebuild: every deadline task now carries a stored target at or before its deadline, and `deadline_nag_off` is `false`, so their rule finds nothing to imply and reads `due_at` as the target — the server's own answer. The one exception is a one-off whose deadline has passed and whose target is after it (allowed since 2026-10-12): the response sends `deadline_nag_off: true` for it (computed, never stored), because their rule leaves a nag-off task with a passed deadline to its own target — without it they would imply a target 4 days before the deadline and show it over target. `original_due_at` keeps its meaning (the first target of the current occurrence, their age clock). `is_snoozed` and `snooze_count`, which no build decodes, left the response. `target_auto` and `occurrence_at` are new and ignored by them. A capped quick snooze still answers `capped_at_deadline` / `capped_deadline`, and `skipped_deadline` stays (now: held back like High because the deadline has passed — their sweep summaries ignore it); `skipped_recurring` stays, always `[]`.
+Shipped iOS / watchOS / Mac builds (including ones not yet reinstalled) decode every task field with defaults, and still run their own copy of the old implied-target rule (`TargetAge.swift`). The server keeps them correct without a rebuild: every deadline task now carries a stored target at or before its deadline, and `deadline_nag_off` is `false`, so their rule finds nothing to imply and reads `due_at` as the target — the server's own answer. The one exception is a one-off whose deadline has passed and whose target is after it (allowed since 2026-10-12): the response sends `deadline_nag_off: true` for it (computed, never stored), because their rule leaves a nag-off task with a passed deadline to its own target — without it they would imply a target 4 days before the deadline and show it over target. `original_due_at` keeps its meaning (the first target of the current occurrence, their age clock). `is_snoozed` and `snooze_count`, which no build decodes, left the response. `target_auto`, `occurrence_at` and the badge fields (`attempts`, `attempts_label`, `attempts_offer`, `age_label`, …) are new and ignored by them — they still draw their own "2d" age tab from `original_due_at` until rebuilt. A capped quick snooze still answers `capped_at_deadline` / `capped_deadline`, and `skipped_deadline` stays (now: held back like High because the deadline has passed — their sweep summaries ignore it); `skipped_recurring` stays, always `[]`.
 
 ## Updating Recurrence Rules
 

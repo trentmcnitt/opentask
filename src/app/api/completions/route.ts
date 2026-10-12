@@ -36,6 +36,7 @@ interface CompletionRow {
   completed_at: string
   due_at_was: string | null
   due_at_next: string | null
+  attempts: number | null
   task_title: string
   project_id: number
   is_reminder: number
@@ -98,7 +99,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const completions = db
       .prepare(
         `
-        SELECT c.id, c.task_id, c.user_id, c.completed_at, c.due_at_was, c.due_at_next,
+        SELECT c.id, c.task_id, c.user_id, c.completed_at, c.due_at_was, c.due_at_next, c.attempts,
                t.title AS task_title, t.project_id, t.is_reminder, t.is_tracked, t.progress_target
         FROM completions c
         INNER JOIN tasks t ON c.task_id = t.id
@@ -117,6 +118,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         completed_at: c.completed_at,
         due_at_was: c.due_at_was,
         due_at_next: c.due_at_next,
+        // Spec §7 (2026-10-12): local days the task was over target when it
+        // was completed — a missed or late occurrence shows in History. Null
+        // on rows from before it was recorded.
+        attempts: c.attempts,
         task_title: c.task_title,
         project_id: c.project_id,
         is_reminder: !!c.is_reminder,

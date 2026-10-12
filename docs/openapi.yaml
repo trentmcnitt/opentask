@@ -1195,7 +1195,7 @@ paths:
                       description: Accepted from old clients and ignored since 2026-10-12 (spec §8).
                     affirm_horizon:
                       type: boolean
-                      description: Keep each task's horizon and restart its growth clock (Process's "keep").
+                      description: Keep each task's horizon and stamp `growth_kept_at` (Process's "keep"; it asks again a threshold later).
                     quota_prompt_config:
                       type: [object, 'null']
                       description: >-
@@ -1689,14 +1689,17 @@ paths:
 
         - `inbox`: tasks still in the Inbox project, oldest first, recurring ones included (the
           dashboard's Inbox group, so the two counts agree).
-        - `growth`: tasks long past their horizon, longest first. Measured from `horizon_set_at`, else
-          `created_at`; days after 14 days, weeks or unset after 60, months after 180 (eventually never).
-          Asks for the next horizon up. Excludes tasks whose target has arrived (they are in the old-target
+        - `growth`: tasks long past their horizon, longest first. Past the age badge's thresholds
+          (one set, spec §7): days over 7 days, weeks or unset over 1 month, months over 1 quarter
+          (eventually never), measured from the latest of `horizon_set_at` (else `created_at`) and
+          `growth_kept_at` (the last "keep": it asks again one threshold after it). Asks for the
+          next horizon up. Excludes tasks whose target has arrived (they are in the old-target
           lists or on the dashboard) and tasks whose deadline is close enough to steer the horizon (90 days
           or past). `from` is null for an unset horizon. `can_act` (priority 2+) offers "do it" / "raise
           priority" beside "grow".
-        - `stale_targets`: tasks whose target arrived 7+ days ago (`age_days`, measured from the first
-          target, so snoozing does not reset it), oldest first.
+        - `stale_targets`: tasks over target now with 3 or more attempts (`attempts`: local days
+          over target, spec §7 — a move keeps them), most first. Offered for removal, never
+          automatic.
         - `stale_targets_with_deadline`: the same for tasks with a deadline, listed apart so a client's
           nag is never stopped by default.
       responses:
@@ -4545,6 +4548,45 @@ components:
             shipped native builds, which decode it and run their own implied-target rule: true only
             for a one-off whose deadline has passed and whose target is after it, which makes that
             rule honor the target; false otherwise.
+        attempts:
+          type: integer
+          description: >
+            ATTEMPTS (spec §7, 2026-10-12): the local days (owner's timezone) on which the task was
+            over target, as of this response — a day counts the moment the task goes over target,
+            once per day; days before the target never count. Reset by done and by each new
+            occurrence of a repeating task; frozen while there is no target. Never counts for a
+            reminder or a quota. Server-computed: draw `attempts_label`.
+        attempts_counted_through:
+          type: [string, 'null']
+          format: date
+          description: >
+            The local date `attempts` is counted through (the checkpoint the server advances on
+            reads, on target moves and every minute). Server-set.
+        attempts_label:
+          type: [string, 'null']
+          description: >
+            The attempts badge, e.g. "3×" — shown only while the task has a target and at least
+            one attempt; null otherwise.
+        attempts_offer:
+          type: [string, 'null']
+          enum: [remove, auto, null]
+          description: >
+            At 3 attempts or more, what the row offers (never does on its own): `remove` ("Remove
+            target?" — a one-off with no deadline), `auto` ("Back to auto?" — a deadline still ahead
+            and a target the user picked; send `target_at: null`). Null below 3×, on an automatic
+            target, on a repeating task, and once the deadline has passed.
+        age_label:
+          type: [string, 'null']
+          description: >
+            The age badge (spec §7): ">1 wk" (days), ">1 mo" (weeks or unset), ">3 mo" (months),
+            ">6 mo" (eventually) — only on a one-off with neither a target nor a deadline, once
+            `created_at` is past its horizon's threshold. Null otherwise.
+        growth_kept_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            The last Process "keep" of the horizon (`affirm_horizon`); Process asks to grow it
+            again only one threshold period after it. Server-set.
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -4829,9 +4871,11 @@ components:
       type: object
       properties:
         task: { $ref: '#/components/schemas/Task' }
-        age_days:
+        attempts:
           type: integer
-          description: Whole days since the first target (7 or more).
+          description: >
+            Local days on which the task was over target (3 or more; spec §7). Replaced
+            `age_days` (days since the first target) on 2026-10-12.
     TaskUpdate:
       type: object
       properties:
@@ -4885,7 +4929,7 @@ components:
         affirm_horizon:
           type: boolean
           description: >
-            Keep the current horizon and restart its growth clock (`horizon_set_at` = now) without changing it — an unset horizon stays unset. Process's "keep" answer to a growth ask. Ignored when the same request changes `horizon` (that restarts the clock anyway). Also accepted in bulk edit `changes`.
+            Keep the current horizon (an unset horizon stays unset) and stamp `growth_kept_at` = now, so Process asks to grow it again only one threshold period later (ruling Q7, 2026-10-12; it used to restart `horizon_set_at`). Process's "keep" answer to a growth ask. Ignored when the same request changes `horizon`. Also accepted in bulk edit `changes`.
         allow_past_deadline:
           type: boolean
           deprecated: true
@@ -4998,6 +5042,11 @@ components:
         due_at_next:
           type: [string, 'null']
           format: date-time
+        attempts:
+          type: [integer, 'null']
+          description: >
+            The task's attempts (local days over target, spec §7) when it was completed — a late
+            occurrence shows how late. Null on rows from before 2026-10-12.
         task_title:
           type: string
         project_id:

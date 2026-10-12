@@ -364,6 +364,21 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'completions', 'occurrence_at_was')) {
     database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_was TEXT DEFAULT NULL')
   }
+  // The two badges (spec §7, 2026-10-12). Attempts start at 0 with no
+  // checkpoint: the read then counts the over-target days of the CURRENT
+  // target (from its local day, never before the task existed) — the honest
+  // part of the history that is recoverable. Earlier targets' days are lost.
+  if (!hasColumn(database, 'tasks', 'attempts')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0')
+  }
+  for (const col of ['attempts_counted_through', 'growth_kept_at']) {
+    if (!hasColumn(database, 'tasks', col)) {
+      database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
+    }
+  }
+  if (!hasColumn(database, 'completions', 'attempts')) {
+    database.exec('ALTER TABLE completions ADD COLUMN attempts INTEGER DEFAULT NULL')
+  }
   if (!hasColumn(database, 'projects', 'description')) {
     database.exec('ALTER TABLE projects ADD COLUMN description TEXT DEFAULT NULL')
   }

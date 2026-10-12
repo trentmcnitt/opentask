@@ -421,10 +421,11 @@ function collectTaskModelFields(
       input.horizon ? now.toISOString() : null,
     )
   } else if (input.affirm_horizon) {
-    // Process "keep": the horizon stays as it is (unset stays unset) and its
-    // growth clock restarts, so Process stops asking until it is long past
-    // again. Undo restores the old stamp like any other field.
-    trackField(data, 'horizon_set_at', task.horizon_set_at, now.toISOString())
+    // Process "keep" (ruling Q7, 2026-10-12): the horizon stays as it is
+    // (unset stays unset) and `growth_kept_at` is stamped, so Process asks
+    // again only one threshold period after it (`growthAsk`). The horizon's
+    // own clock is untouched. Undo restores the old stamp like any other field.
+    trackField(data, 'growth_kept_at', task.growth_kept_at, now.toISOString())
   }
 }
 

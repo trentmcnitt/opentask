@@ -1,0 +1,26 @@
+import { DateTime } from 'luxon'
+import { getDb } from '@/core/db'
+
+export const TZ = 'America/Chicago'
+
+/** Chicago wall-clock → UTC ISO (what the API takes). */
+export function iso(local: string): string {
+  return DateTime.fromISO(local, { zone: TZ }).toUTC().toISO()!
+}
+
+/** Backdate a column the API always stamps with now (a past completion, an old task). */
+export function backdate(
+  id: number,
+  column: 'target_set_at' | 'created_at' | 'last_completed_at',
+  local: string,
+): void {
+  getDb().prepare(`UPDATE tasks SET ${column} = ? WHERE id = ?`).run(iso(local), id)
+}
+
+/**
+ * A timeline that is `line` on each of `days` and quiet otherwise — the shape
+ * of every reference row (heads-up days, then over target from the target day).
+ */
+export function headsUps(days: string[], line = 'upcoming'): Record<string, string> {
+  return Object.fromEntries(days.map((d) => [d, line]))
+}

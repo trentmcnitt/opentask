@@ -10,6 +10,7 @@ import type { SortOption } from '@/lib/task-grouping'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
+import { ageLabel, attemptsLabel, attemptsOffer } from '@/lib/task-segments'
 
 export interface ClipboardGroup {
   label: string
@@ -43,6 +44,21 @@ export interface FormattedTask extends Task {
    * `nativeNagOff`.
    */
   deadline_nag_off: boolean
+  /**
+   * THE TWO BADGES (spec §7, 2026-10-12), server-computed so the native apps
+   * draw the server's answer and copy no rule:
+   * - `attempts_label`: "3×" — the task's attempts (local days over target,
+   *   `attempts`), shown only while it has a target and at least one attempt;
+   *   else null.
+   * - `attempts_offer`: at 3× (`ATTEMPTS_OFFER_REMOVE`), what the row offers —
+   *   "remove" (Remove target?), "auto" (Back to auto?), or null (none yet,
+   *   an automatic target, or a repeating task).
+   * - `age_label`: ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo" on a task with
+   *   neither a target nor a deadline, past its horizon's threshold; else null.
+   */
+  attempts_label: string | null
+  attempts_offer: 'remove' | 'auto' | null
+  age_label: string | null
 }
 
 /**
@@ -70,11 +86,15 @@ function nativeNagOff(task: Task, now: Date): boolean {
  * native build decodes either.
  */
 export function formatTaskResponse(task: Task): FormattedTask {
+  const now = new Date()
   return {
     ...task,
     target_at: task.due_at,
     is_recurring: task.rrule !== null,
-    deadline_nag_off: nativeNagOff(task, new Date()),
+    deadline_nag_off: nativeNagOff(task, now),
+    attempts_label: attemptsLabel(task),
+    attempts_offer: attemptsOffer(task, now),
+    age_label: ageLabel(task, now),
   }
 }
 
