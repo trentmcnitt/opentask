@@ -46,7 +46,10 @@ export function ChipDueBadges({ dueToday, overdue, showDueToday = true }: ChipDu
         </span>
       )}
       {renderOverdue && (
-        <span data-chip-overdue={overdue} className={cn(PILL_CLASSES, 'bg-over-target text-white')}>
+        <span
+          data-chip-overdue={overdue}
+          className={cn(PILL_CLASSES, 'bg-over-target-badge text-white')}
+        >
           {overdue}
         </span>
       )}

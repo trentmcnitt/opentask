@@ -9,7 +9,7 @@ import { formatJustAddedAge } from '@/lib/just-added'
 import type { Project, Task } from '@/types'
 
 interface JustAddedCardProps {
-  /** Tasks inside the 10-minute window, newest first (`selectJustAddedTasks`). */
+  /** Tasks inside the 15-minute window, newest first (`selectJustAddedTasks`). */
   tasks: Task[]
   projects: Project[]
   /** The just-added clock (`useJustAddedClock`). */
@@ -22,7 +22,7 @@ interface JustAddedCardProps {
 }
 
 /**
- * "Just added" — the tasks created in the last 10 minutes, in a card of their
+ * "Just added" — the tasks created in the last 15 minutes, in a card of their
  * own under the add field (Trent, 2026-09-28, mockup A of three).
  *
  * The question right after adding is "did it land, where, and what did the AI

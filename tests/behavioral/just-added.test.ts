@@ -1,5 +1,5 @@
 /**
- * Just added (`src/lib/just-added.ts`): for 10 minutes after a task is
+ * Just added (`src/lib/just-added.ts`): for 15 minutes after a task is
  * created it is listed in the dashboard's Just added card, newest first, with
  * how long ago it was added. Pure selection logic, frozen clock.
  */
@@ -79,10 +79,10 @@ afterEach(() => {
 })
 
 describe('isJustAdded', () => {
-  test('the window is 10 minutes, and exactly 10 minutes old is out', () => {
+  test('the window is 15 minutes, and exactly 15 minutes old is out', () => {
     expect(isJustAdded(makeTask({ id: 1, created_at: ago(0) }), NOW)).toBe(true)
-    expect(isJustAdded(makeTask({ id: 1, created_at: ago(9 * MIN + 59_000) }), NOW)).toBe(true)
-    expect(isJustAdded(makeTask({ id: 1, created_at: ago(10 * MIN) }), NOW)).toBe(false)
+    expect(isJustAdded(makeTask({ id: 1, created_at: ago(14 * MIN + 59_000) }), NOW)).toBe(true)
+    expect(isJustAdded(makeTask({ id: 1, created_at: ago(15 * MIN) }), NOW)).toBe(false)
     expect(isJustAdded(makeTask({ id: 1, created_at: ago(HOUR) }), NOW)).toBe(false)
   })
 
@@ -96,10 +96,10 @@ describe('isJustAdded', () => {
 })
 
 describe('nextJustAddedExpiry', () => {
-  test('is the earliest moment a task in the window turns 10 minutes old', () => {
+  test('is the earliest moment a task in the window turns 15 minutes old', () => {
     const tasks = [
       makeTask({ id: 1, created_at: ago(2 * MIN) }),
-      makeTask({ id: 2, created_at: ago(7 * MIN) }), // ages out first, in 3 minutes
+      makeTask({ id: 2, created_at: ago(12 * MIN) }), // ages out first, in 3 minutes
       makeTask({ id: 3, created_at: ago(HOUR) }), // already out — no timer for it
     ]
     expect(nextJustAddedExpiry(tasks, NOW)).toBe(NOW + 3 * MIN)
@@ -116,10 +116,10 @@ describe('nextJustAddedExpiry', () => {
       makeTask({ id: 2, created_at: ago(4 * MIN) }),
     ]
     const first = nextJustAddedExpiry(tasks, NOW)!
-    expect(first).toBe(NOW + 6 * MIN)
+    expect(first).toBe(NOW + 11 * MIN)
     expect(tasks.filter((t) => isJustAdded(t, first)).map((t) => t.id)).toEqual([1])
     const second = nextJustAddedExpiry(tasks, first)!
-    expect(second).toBe(NOW + 9 * MIN)
+    expect(second).toBe(NOW + 14 * MIN)
     expect(tasks.filter((t) => isJustAdded(t, second))).toEqual([])
     expect(nextJustAddedExpiry(tasks, second)).toBeNull()
     expect(first).toBe(Date.parse(tasks[1].created_at) + JUST_ADDED_WINDOW_MS)
@@ -147,6 +147,11 @@ describe('nextJustAddedTick', () => {
       '7m ago',
       '8m ago',
       '9m ago',
+      '10m ago',
+      '11m ago',
+      '12m ago',
+      '13m ago',
+      '14m ago',
       'gone',
     ])
     expect(now).toBe(nextJustAddedExpiry([task], NOW))
@@ -173,7 +178,7 @@ describe('selectJustAddedTasks', () => {
       makeTask({ id: 2, created_at: ago(5 * MIN) }),
       makeTask({ id: 3, created_at: ago(MIN) }),
       makeTask({ id: 4, created_at: ago(MIN) }),
-      makeTask({ id: 5, created_at: ago(11 * MIN) }),
+      makeTask({ id: 5, created_at: ago(16 * MIN) }),
     ]
     expect(selectJustAddedTasks(tasks, NOW).map((t) => t.id)).toEqual([4, 3, 2])
   })

@@ -153,7 +153,7 @@ interface TaskListProps {
    * turns the tag off; the dashboard passes null while searching.
    */
   justAddedSource?: Task[] | null
-  /** The "now" the 10-minute window is measured against (`useJustAddedClock`). */
+  /** The "now" the 15-minute window is measured against (`useJustAddedClock`). */
   justAddedNow?: number
   /**
    * Filled in by this list with a function that brings a task's real row on

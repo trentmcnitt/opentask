@@ -5,7 +5,7 @@
  *
  * WHAT IT IS. The Just added card (`JustAddedCard`, `src/lib/just-added.ts`)
  * answers "did it land, where, and what did the AI make of it?" for tasks
- * added in the last 10 minutes — but only once you open the app. This push
+ * added in the last 15 minutes — but only once you open the app. This push
  * answers the same question on the lock screen / Notification Center:
  *
  *   title: the task's cleaned title                    "Call the dentist"
@@ -36,7 +36,7 @@
  *   Whichever path ran it, the task is claimed once (`claimTask`), so only one
  *   of them gets here.
  * - Only while the task is inside the Just added window
- *   (`JUST_ADDED_WINDOW_MS`, 10 minutes from `created_at`). The queue also
+ *   (`JUST_ADDED_WINDOW_MS`, 15 minutes from `created_at`). The queue also
  *   picks up old tasks — a user re-enriching one by adding `ai-to-process`, a
  *   reprocessed `ai-failed` from last week — and those are not "just added".
  * - At most once per task id: `notified` below is checked and filled
@@ -44,7 +44,7 @@
  *   (Next.js bundles instrumentation.ts and the routes separately — the same
  *   reason the enrichment pipeline's state is on globalThis) cannot double-send.
  *   The set is in memory; a restart empties it, which only matters if the same
- *   task is enriched again inside its 10 minutes after the restart.
+ *   task is enriched again inside its 15 minutes after the restart.
  * - NOT on failure: the `ai-failed` path never calls this. A failure has its
  *   own push since 2026-10-05 — "AI couldn't process a task", with the text
  *   the user typed — in `enrichment-failed-notify.ts`. It is not governed by

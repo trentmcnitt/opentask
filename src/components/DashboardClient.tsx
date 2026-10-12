@@ -1141,7 +1141,7 @@ function HomeContent({
     clearListNarrowing,
   ])
 
-  // Just added (`src/lib/just-added.ts`): each task created in the last 10
+  // Just added (`src/lib/just-added.ts`): each task created in the last 15
   // minutes is listed in the Just added card under the add field, and its
   // real row wears a "New" tag. Drawn from `visibleTasks` — unfiltered on
   // purpose — and off while searching. The clock advances itself at each

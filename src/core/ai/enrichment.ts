@@ -9,7 +9,7 @@
  *   [New title-only task] → add `ai-to-process` label
  *   [Fire-and-forget or cron picks up task with `ai-to-process`]
  *     → Success: remove `ai-to-process`, apply enrichment, and — for a task
- *       added in the last 10 minutes — one quiet "AI finished" push
+ *       added in the last 15 minutes — one quiet "AI finished" push
  *       (`announceEnrichmentFinished`, src/core/notifications/enrichment-notify.ts)
  *     → Failure attempt 1: keep `ai-to-process` (retry on next cycle)
  *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`, and one
@@ -513,7 +513,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
  * Called from BOTH entry points after a successful model run — never from the
  * failure path (that is `announceEnrichmentFailed`, below) and never when the
  * user's enrichment mode is off (`enrichTask` returns null: no model ran).
- * Whether it actually sends — a task added in the last 10 minutes, first time
+ * Whether it actually sends — a task added in the last 15 minutes, first time
  * only, the user's settings, not the demo user — is decided there; see the
  * header of `src/core/notifications/enrichment-notify.ts`.
  */

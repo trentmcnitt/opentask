@@ -32,6 +32,14 @@ interface DateTimePickerProps {
    * popover opens, not during render, so "now" is the moment of the tap.
    */
   emptyDefault?: 'tomorrow' | 'now'
+  /**
+   * When `value` is null, open on this moment (UTC ISO) instead of
+   * `emptyDefault`. A recurring task's deadline picker opens on the
+   * occurrence's target, so "target late morning, deadline before bed that
+   * night" is a change of time, not a hunt through the calendar for Sunday
+   * (Trent, 2026-10-12). Opening on it sets nothing until the user picks.
+   */
+  emptyAnchor?: string | null
 }
 
 /**
@@ -48,6 +56,7 @@ export function DateTimePicker({
   children,
   allowClear = true,
   emptyDefault = 'tomorrow',
+  emptyAnchor = null,
 }: DateTimePickerProps) {
   const [open, setOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
@@ -59,7 +68,8 @@ export function DateTimePicker({
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (newOpen) {
-        const initial = value ?? (emptyDefault === 'now' ? snapToNearestFiveMinutes() : null)
+        const initial =
+          value ?? emptyAnchor ?? (emptyDefault === 'now' ? snapToNearestFiveMinutes() : null)
         if (initial) {
           const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
           setSelectedDate(dt.toJSDate())
@@ -79,7 +89,7 @@ export function DateTimePicker({
       }
       setOpen(newOpen)
     },
-    [value, timezone, emptyDefault],
+    [value, timezone, emptyDefault, emptyAnchor],
   )
 
   const handleSetDate = () => {

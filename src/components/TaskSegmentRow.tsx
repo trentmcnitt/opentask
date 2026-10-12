@@ -115,14 +115,15 @@ export function segmentKey(segment: SegmentView): string {
 /**
  * Over SEGMENT_NUDGE_THRESHOLD waiting, a nudge toward Process or the AI.
  * Counted from what still waits, so it leaves as rows are considered, without
- * waiting for the next fetch (the server's `nudge` rule).
+ * waiting for the next fetch (the server's `nudge` rule). A neutral grey box,
+ * not amber (Trent, 2026-10-12): a long list is a suggestion, not a warning.
  */
 export function SegmentNudge({ segment, className }: { segment: SegmentView; className?: string }) {
   if (segment.waiting <= SEGMENT_NUDGE_THRESHOLD) return null
   return (
     <p
       className={cn(
-        'text-muted-foreground mb-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs',
+        'text-muted-foreground bg-muted mb-2 rounded-md px-2 py-1.5 text-xs',
         className,
       )}
     >

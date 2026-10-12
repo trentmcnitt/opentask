@@ -14,7 +14,7 @@ import type { Task } from '@/types'
  *
  * 1. The next visible change. ONE `setTimeout` is scheduled for the earliest
  *    moment something just-added changes on screen — a "New · 3m" badge
- *    turning over a minute, or a task turning 10 minutes old and its preview
+ *    turning over a minute, or a task turning 15 minutes old and its preview
  *    leaving (`nextJustAddedTick`). When it fires, `now` advances and the
  *    effect schedules the next one. No task in the window, no timer. This
  *    also keeps `now` honest for tasks that arrive later: whenever a task is

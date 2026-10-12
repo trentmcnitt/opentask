@@ -81,6 +81,7 @@ export function TaskSegmentGroup({
       open={open}
       started
       accent={segmentTitleColor(segment.horizon)}
+      stackTime
     />
   )
   return (
@@ -99,7 +100,9 @@ export function TaskSegmentGroup({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left transition-colors"
+          // py-1.5 below `sm`: the hint's own line (stackTime) still fits the
+          // 44px row. A slot's header is one line, py-2.
+          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 text-left transition-colors sm:py-2"
         >
           {headerRow}
         </button>

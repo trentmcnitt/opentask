@@ -19,6 +19,12 @@ import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
  *
  * Staged like every other field in the panel: blue while dirty, saved with the
  * rest on Save.
+ *
+ * Recurring tasks (2026-10-12, Trent's morning QA): the deadline line says it
+ * repeats ("· moves with each week", `repeatLabel`) — `advanceDeadline` carries
+ * it to every next occurrence, the same distance after it — and the horizon is
+ * hidden (`showHorizon`), because a recurring task never enters a task segment,
+ * so its horizon does nothing; "Horizon: Unset" there read as broken.
  */
 export function TaskModelFields({
   deadline,
@@ -28,6 +34,9 @@ export function TaskModelFields({
   timezone,
   onDeadline,
   onHorizon,
+  repeatLabel = null,
+  showHorizon = true,
+  emptyAnchor = null,
 }: {
   deadline: string | null
   horizon: HorizonValue | null
@@ -36,6 +45,12 @@ export function TaskModelFields({
   timezone: string
   onDeadline: (value: string | null) => void
   onHorizon: (value: HorizonValue | null) => void
+  /** "moves with each week": the deadline follows each occurrence (`deadlineRepeatLabel`). */
+  repeatLabel?: string | null
+  /** False on a recurring task: it never enters a segment, so a horizon means nothing. */
+  showHorizon?: boolean
+  /** Where an empty deadline picker opens: a recurring task's occurrence target. */
+  emptyAnchor?: string | null
 }) {
   const when = deadline ? DateTime.fromISO(deadline).setZone(timezone) : null
   const past = deadline ? isPastDeadline(deadline, new Date()) : false
@@ -49,6 +64,7 @@ export function TaskModelFields({
         timezone={timezone}
         onChange={onDeadline}
         emptyDefault="tomorrow"
+        emptyAnchor={emptyAnchor}
       >
         <p data-quick-panel-deadline className="inline-flex cursor-pointer items-center gap-1">
           <Flag className="text-muted-foreground/50 size-3 shrink-0" />
@@ -66,12 +82,22 @@ export function TaskModelFields({
           >
             {when ? `${past ? 'passed ' : ''}${when.toFormat('ccc LLL d, h:mm a')}` : 'None'}
           </span>
+          {when && repeatLabel && (
+            <span
+              data-quick-panel-deadline-repeat
+              className={cn(deadlineDirty ? 'text-blue-500' : 'text-muted-foreground')}
+            >
+              &middot; {repeatLabel}
+            </span>
+          )}
         </p>
       </DateTimePicker>
-      <span className={cn('inline-flex items-center gap-1', horizonDirty && 'text-blue-500')}>
-        <span className="text-muted-foreground/70">{HORIZON_WORD}</span>
-        <HorizonChip task={{ horizon, title: '' }} onChange={onHorizon} />
-      </span>
+      {showHorizon && (
+        <span className={cn('inline-flex items-center gap-1', horizonDirty && 'text-blue-500')}>
+          <span className="text-muted-foreground/70">{HORIZON_WORD}</span>
+          <HorizonChip task={{ horizon, title: '' }} onChange={onHorizon} />
+        </span>
+      )}
     </div>
   )
 }

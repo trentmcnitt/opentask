@@ -260,7 +260,7 @@ The URL stayed the bare `/?task=<id>` on purpose: every producer of it is a noti
 
 **When.** Both enrichment entry points in `src/core/ai/enrichment.ts` — the fire-and-forget `enrichSingleTask` on create and the per-minute `processEnrichmentQueue` safety net — call it after a successful model run, outside their error handling (a push failure is never an enrichment failure). It sends only when:
 
-- the task was created inside the Just added window (`JUST_ADDED_WINDOW_MS`, 10 minutes). The queue also enriches old tasks (a user re-adding `ai-to-process`, a reprocessed `ai-failed`); those get nothing.
+- the task was created inside the Just added window (`JUST_ADDED_WINDOW_MS`, 15 minutes). The queue also enriches old tasks (a user re-adding `ai-to-process`, a reprocessed `ai-failed`); those get nothing.
 - it has not already sent for that task. An in-memory map on `globalThis`, checked and set synchronously before any await, so a retry, a re-enrichment inside the window, or the second bundle's copy of the module cannot double-send. A restart empties it.
 - the task is not done, deleted, or a quota.
 - the user has `notifications_enabled` and `enrichment_notifications_enabled`, and is not the demo user.

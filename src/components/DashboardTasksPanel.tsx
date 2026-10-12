@@ -36,7 +36,7 @@ import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
  * their own again — but one shaped like the Reminders card: its own pager
  * across today's segments (Days, Weeks, Months, Eventually), its own strip of
  * teal bars (the current one taller, as a slot's is; green when finished), the
- * same header ("TASKS · DAYS · Shown every day", "X of Y" that opens what was
+ * same header ("TASKS · DAYS · Daily", "X of Y" that opens what was
  * considered with put-back, ‹ ›), the same rows, and "Defer all" behind the
  * header tap where a slot has "Considered all".
  *
@@ -90,6 +90,7 @@ export function DashboardTasksPanel({
         label={page.label}
         accent={segmentTitleColor(segment.horizon)}
         time={segmentHint(segment)}
+        stackTime
         considered={page.considered}
         total={page.total}
         expanded={expanded}

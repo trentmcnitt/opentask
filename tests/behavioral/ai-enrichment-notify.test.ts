@@ -1,6 +1,6 @@
 /**
  * The "AI finished" notification (2026-09-29): one quiet push when enrichment
- * finishes for a task or reminder added in the last 10 minutes — the Just
+ * finishes for a task or reminder added in the last 15 minutes — the Just
  * added card, without opening the app. See
  * src/core/notifications/enrichment-notify.ts.
  *
@@ -279,9 +279,9 @@ describe('sends nothing', () => {
     expect(webPush.mock.calls.map(([, payload]) => payload.tag)).not.toContain(`enriched-${id}`)
   })
 
-  test('for a task added more than 10 minutes ago (the safety net sweeping an old task)', async () => {
+  test('for a task added more than 15 minutes ago (the safety net sweeping an old task)', async () => {
     const id = newTask('old task')
-    vi.setSystemTime(new Date(NOW.getTime() + 11 * 60_000))
+    vi.setSystemTime(new Date(NOW.getTime() + 16 * 60_000))
     enrichmentQueryMock.mockResolvedValue(modelResult({ title: 'Old task' }))
 
     await processEnrichmentQueue()
