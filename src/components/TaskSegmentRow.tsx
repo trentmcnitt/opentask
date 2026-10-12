@@ -322,10 +322,9 @@ function TargetTodayButton({
             e.stopPropagation()
             press.onClick()
           }}
-          onPointerDown={(e) => {
-            e.stopPropagation()
-            press.onPointerDown(e)
-          }}
+          // Not stopped: the panel pager's swipe may start here, and a
+          // swipe's move abandons the hold.
+          onPointerDown={press.onPointerDown}
           onPointerUp={press.onPointerUp}
           onPointerLeave={press.onPointerLeave}
           onPointerMove={press.onPointerMove}

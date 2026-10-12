@@ -185,9 +185,13 @@ describe('Task model over HTTP', () => {
     }
     expect((await json(await apiFetch(`/api/tasks/${t.id}`))).data.target_at).toBe(first.target_at)
 
-    // Not a general "target changed" stamp: a PATCH of the target leaves it.
+    // Not a general "target changed" stamp: a PATCH of the target leaves it,
+    // and it is server-only — a client can't write it in a body.
     const patched = await json(
-      await apiFetch(`/api/tasks/${t.id}`, { method: 'PATCH', body: { due_at: iso(5 * HOUR) } }),
+      await apiFetch(`/api/tasks/${t.id}`, {
+        method: 'PATCH',
+        body: { due_at: iso(5 * HOUR), segment_targeted_at: '2020-01-01T00:00:00.000Z' },
+      }),
     )
     expect(patched.data.segment_targeted_at).toBe(first.segment_targeted_at)
   })
