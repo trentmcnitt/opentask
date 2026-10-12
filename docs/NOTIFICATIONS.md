@@ -2,7 +2,7 @@
 
 Reference for OpenTask's notification system: architecture, platform capabilities, and constraints.
 
-**Over target = overdue** (2026-10-10). The UI now says "over target" where it said "overdue": a task whose target (`due_at`) has arrived. The notifier, the badge and the sweeps are the same machinery under the old code names (`checkOverdueTasks`, `getOverdueCount`, `snooze-overdue`), and this document keeps "overdue" for them. What reaches the user reads from the `OVER_TARGET` constant (`src/lib/task-model-words.ts`): "Over target task", "N more tasks over target", "2 High still over target". Two things changed beyond the word, both below: a deadline with no target nags from an implied target, and task segments never notify. See `docs/TASK-MODEL.md` § Deadline, target, horizon.
+**Over target = overdue** (2026-10-10). The UI now says "over target" where it said "overdue": a task whose target (`due_at`) has arrived. The notifier, the badge and the sweeps are the same machinery under the old code names (`checkOverdueTasks`, `getOverdueCount`, `snooze-overdue`), and this document keeps "overdue" for them. What reaches the user reads from the `OVER_TARGET` constant (`src/lib/task-model-words.ts`): "Over target task", "N more tasks over target", "2 High still over target". Two things changed beyond the word, both below: a deadline with no target nags from its stored automatic target (since 2026-10-12; until then an implied one), and task segments never notify. See `docs/TASK-MODEL.md` § Deadline, target, horizon.
 
 ## Architecture
 
