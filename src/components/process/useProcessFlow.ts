@@ -230,7 +230,7 @@ export function useProcessBatchActions(flow: ReturnType<typeof useProcessFlow>) 
     (item: GrowthItem) => {
       remove([item.task.id], ['growth'])
       targetToday([item.task.id])
-        .then(() => toastWithUndo('Targeted today'))
+        .then(() => toastWithUndo('Targeted for today, not done'))
         .catch(fail)
     },
     [remove, toastWithUndo, fail],

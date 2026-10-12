@@ -151,6 +151,36 @@ test.describe('Recently targeted: Today → the Just now card', () => {
 test.describe('Recently targeted: the Today picker on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
+  test("Today's 44px hit area keeps 12px clear of the done square, on /reminders and the Tasks card", async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent tapped Today while reaching for done (2026-10-12): the two sat 2px apart.
+    const id = await segmentTask(page, 'RT hit areas')
+    try {
+      const check = async (scope: Locator) => {
+        const today = scope.getByRole('button', { name: /^Target .* today \(hold for a time\)$/ })
+        const done = scope.getByRole('button', { name: /^Done: / })
+        const t = (await today.boundingBox())!
+        const d = (await done.boundingBox())!
+        expect(t.width).toBeGreaterThanOrEqual(44)
+        expect(t.height).toBeGreaterThanOrEqual(44)
+        // Today sits left of done; the gap between the two hit areas is dead space.
+        expect(d.x - (t.x + t.width)).toBeGreaterThanOrEqual(12)
+        // The glyph matches the done square's size.
+        const glyph = (await today.locator('svg').boundingBox())!
+        expect(Math.abs(glyph.width - d.width)).toBeLessThanOrEqual(1)
+      }
+      await page.goto('/reminders')
+      await check(segmentRow(page, id))
+      await page.goto('/')
+      const card = page.locator(`[data-segment-task="${id}"]`).first()
+      await expect(card).toBeVisible()
+      await check(card)
+    } finally {
+      await trash(page, [id])
+    }
+  })
+
   test('a hold opens the picker without targeting; a picked time targets the task then', async ({
     authenticatedPage: page,
   }) => {

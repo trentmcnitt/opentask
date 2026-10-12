@@ -312,10 +312,12 @@ function TargetTodayButton({
   task,
   actions,
   timezone,
+  panel,
 }: {
   task: Task
   actions: TaskSegmentActions
   timezone: string
+  panel: boolean
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [anchor, setAnchor] = useState<string | null>(null)
@@ -370,9 +372,13 @@ function TargetTodayButton({
           title="Target today · hold for a time"
           aria-label={`Target "${task.title}" today (hold for a time)`}
           // No text selection or iOS callout under a held finger.
-          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex touch-manipulation items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium select-none [-webkit-touch-callout:none]"
+          // A full 44px hit target around a glyph the size of the circle and
+          // the done square; the negative margin keeps the row's height. The
+          // 12px `mr-3` after it is dead space, so its hit area never touches
+          // the done square's (Trent mis-tapped Today for done, 2026-10-12).
+          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 -my-3 mr-3 flex h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none] sm:px-2"
         >
-          <CalendarClock className="size-3.5" />
+          <CalendarClock className={panel ? 'size-[19px]' : 'size-6'} strokeWidth={1.75} />
           {/* Icon-only on a phone, so the title keeps the width. */}
           <span className="sr-only sm:not-sr-only">Today</span>
         </button>
@@ -418,7 +424,9 @@ function TaskSegmentRowActions({
           onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
         />
       )}
-      {showToday && <TargetTodayButton task={task} actions={actions} timezone={timezone} />}
+      {showToday && (
+        <TargetTodayButton task={task} actions={actions} timezone={timezone} panel={panel} />
+      )}
       {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
           stock checkbox: same size, radius, border and no shadow. */}
       <button
