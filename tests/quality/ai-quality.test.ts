@@ -456,8 +456,13 @@ async function runEnrichment(
   // so the scenario is judged on what the database would receive. When the
   // guard changes the model's answer, the raw value is logged so a prompt
   // regression the guard is hiding still shows up in the run output.
-  const { filterProjectMatch, sanitizeTaskModelFields, alignTaskModelDates } =
-    await import('@/core/ai/enrichment')
+  const {
+    filterProjectMatch,
+    sanitizeTaskModelFields,
+    alignTaskModelDates,
+    resolveDateOnlyTarget,
+  } = await import('@/core/ai/enrichment')
+  const { targetTodayTime } = await import('@/core/tasks/task-segments')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -467,7 +472,17 @@ async function runEnrichment(
 
   // Same for the task model's deadline/horizon guard (2026-10-10): judged on
   // what production stores, with the raw answer logged when the guard changed it.
-  const taskModel = alignTaskModelDates(sanitizeTaskModelFields(parsed, input.text), input.timezone)
+  // A date-only target ("today", no time) is placed the way production places it.
+  const taskModel = alignTaskModelDates(
+    resolveDateOnlyTarget(
+      sanitizeTaskModelFields(parsed, input.text),
+      input.text,
+      input.timezone,
+      input.morningTime ?? '09:00',
+      targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
+    ),
+    input.timezone,
+  )
   if (
     taskModel.deadline_at !== parsed.deadline_at ||
     taskModel.horizon !== parsed.horizon ||
@@ -566,7 +581,12 @@ async function runWhatsNext(
   const { DateTime } = await import('luxon')
   const now = DateTime.now().setZone(input.timezone)
 
-  const taskList = input.tasks.map((t) => formatTaskLine(t, input.timezone, now)).join('\n')
+  // Match production (buildTaskSummaries): a deadline-only task shows its implied target.
+  const { withEffectiveSummaryTarget } = await import('@/core/ai/task-summaries')
+  const ctx = { timezone: input.timezone, morningTime: '09:00' }
+  const taskList = input.tasks
+    .map((t) => formatTaskLine(withEffectiveSummaryTarget(t, ctx), input.timezone, now))
+    .join('\n')
 
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
@@ -709,7 +729,12 @@ async function runInsights(
   const now = DateTime.now().setZone(input.timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
-  const taskLines = input.tasks.map((t) => formatTaskLine(t, input.timezone, now)).join('\n')
+  // Match production (buildTaskSummaries): a deadline-only task shows its implied target.
+  const { withEffectiveSummaryTarget } = await import('@/core/ai/task-summaries')
+  const ctx = { timezone: input.timezone, morningTime: '09:00' }
+  const taskLines = input.tasks
+    .map((t) => formatTaskLine(withEffectiveSummaryTarget(t, ctx), input.timezone, now))
+    .join('\n')
 
   const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
 

@@ -110,6 +110,8 @@ export interface GetTasksOptions {
   oneOff?: boolean
   search?: string
   label?: string
+  /** true: only tasks with a stored target (`due_at`); false: only tasks without one. */
+  hasTarget?: boolean
   trashed?: boolean
   archived?: boolean
   limit?: number
@@ -155,6 +157,10 @@ export function getTasks(options: GetTasksOptions): Task[] {
   } else if (!options.done) {
     // If not explicitly asking for done tasks, exclude archived
     conditions.push('tasks.archived_at IS NULL')
+  }
+
+  if (options.hasTarget !== undefined) {
+    conditions.push(options.hasTarget ? 'tasks.due_at IS NOT NULL' : 'tasks.due_at IS NULL')
   }
 
   // Filter by kind — the three populations the app keeps on separate surfaces.

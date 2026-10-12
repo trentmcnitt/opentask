@@ -39,11 +39,13 @@ import {
   sanitizeTaskModelFields,
   sanitizeReminderEnrichment,
   alignTaskModelDates,
+  resolveDateOnlyTarget,
   _resetCircuitBreaker,
   _resetProcessingState,
 } from '@/core/ai/enrichment'
 import { enrichmentQuery } from '@/core/ai/enrichment-slot'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { targetTodayTime } from '@/core/tasks/task-segments'
 
 const mockEnrichmentQuery = vi.mocked(enrichmentQuery)
 
@@ -352,5 +354,68 @@ describe('undo', () => {
     expect(after.horizon).toBeNull()
     expect(after.horizon_set_at).toBeNull()
     expect(after.title).toBe('renew the passport by the 30th, sometime this week')
+  })
+})
+
+describe('a target with a day but no time (resolveDateOnlyTarget)', () => {
+  // Frozen at Sat Oct 10 2026, 8 PM Chicago (beforeEach above).
+  test('"today" with no time lands where Target today would put it, never now', async () => {
+    const task = titleOnly('text Matthew today, latest tomorrow 10 AM')
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Text Matthew',
+        due_at: '2026-10-10',
+        deadline_at: '2026-10-11T10:00:00',
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    const after = getTaskById(task.id)!
+    const expected = targetTodayTime(TEST_USER_ID, TEST_TIMEZONE)
+    expect(Date.parse(after.due_at!)).toBe(Date.parse(expected))
+    expect(Date.parse(after.due_at!)).toBeGreaterThan(Date.now())
+    expect(after.deadline_at).toBe('2026-10-11T15:00:00.000Z')
+  })
+
+  test('a stated time today is kept; another bare day gets the default task time', () => {
+    const today = '2026-10-11T02:00:00.000Z' // what targetTodayTime would return
+    expect(
+      resolveDateOnlyTarget(
+        result({ due_at: '2026-10-10T21:30:00' }),
+        'water the tomatoes today at 9:30pm',
+        'America/Chicago',
+        '09:00',
+        today,
+      ).due_at,
+    ).toBe('2026-10-10T21:30:00')
+    expect(
+      resolveDateOnlyTarget(
+        result({ due_at: '2026-10-10' }),
+        'call the pharmacy today',
+        'America/Chicago',
+        '09:00',
+        today,
+      ).due_at,
+    ).toBe('2026-10-10T21:00:00')
+    // No "today" in the words: the model invented the day, so there is no target.
+    expect(
+      resolveDateOnlyTarget(
+        result({ due_at: '2026-10-10' }),
+        'check the mail',
+        'America/Chicago',
+        '09:00',
+        today,
+      ).due_at,
+    ).toBeNull()
+    expect(
+      resolveDateOnlyTarget(
+        result({ due_at: '2026-10-13' }),
+        'renew it Tuesday',
+        'America/Chicago',
+        '08:30',
+        today,
+      ).due_at,
+    ).toBe('2026-10-13T08:30:00')
   })
 })

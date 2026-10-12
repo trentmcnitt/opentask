@@ -74,7 +74,7 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
-2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "do it Saturday", "remind me Thursday at 9"). When no specific time is mentioned, use the configured default task time from the user prompt. If no date is mentioned, return null.
+2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "do it Saturday", "remind me Thursday at 9"). When no specific time is mentioned, use the configured default task time from the user prompt — except for today (see below). If no date is mentioned, return null.
 
    The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
 
@@ -86,7 +86,7 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    Use the current **local** time (not UTC) to determine today's date and day of week. When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date. A month and day with no year ("February 28th", "Oct 13") means the NEXT time that date comes round: if it has already passed this year, use next year. This applies to due_at and deadline_at alike.
 
-   When "today" is mentioned with no specific time and the default task time has already passed, use the next reasonable time (e.g., one hour from now or early evening) rather than setting a time in the past.
+   **The word "today" with no time:** ONLY when the user's words say "today" as the day to do it and give no time of day ("do it today", "text Matthew today"), return the date alone — \`2026-03-04\`, no time part — and the app places it. This never applies when the user names no day: no day mentioned → due_at null, as above (a bare task like "check the mail" or "urgent call the bank" has no target). "right now" / "immediately" → the current local time as a full datetime. A time the user states for today ("today at 3pm", "tonight", "this afternoon") is a full datetime, as usual.
 
 3. **deadline_at** — the real outside cutoff, as an ISO 8601 local datetime (same format as due_at), or null. Set it ONLY when the wording states a date or time the task must be done by: "by Friday", "before the 17th", "due Monday", "due to the client Monday 10am", "expires Oct 13", "the deadline is February 28th", "last day to return it is Sunday", "the pharmacy closes at 9pm tonight". When the cutoff names a day but no time, use the END of that day: \`T23:59:00\` local.
 
@@ -477,7 +477,7 @@ const SHARED_BEHAVIORAL_MODEL = `## How OpenTask works
 
 Each task can carry three separate time fields. Read them separately:
 
-- **target** (\`target:\` in the task list) — the task's due date: when the user wants to do it, and when its reminder starts nagging. It is soft — snoozed, moved or removed freely — so a task past its target ("overdue" below) only means its reminder has fired, not that anything is late. "none" means no target.
+- **target** (\`target:\` in the task list) — the task's due date: when the user wants to do it, and when its reminder starts nagging. It is soft — snoozed, moved or removed freely — so a task past its target ("overdue" below) only means its reminder has fired, not that anything is late. "none" means no target. A target marked "(from deadline)" was not set by the user: the task has a deadline and no target of its own (or its own falls after the deadline), so it starts nagging a few days before the deadline. Being past a "(from deadline)" target is the deadline's lead-in, not routine overdue — judge that task by its deadline.
 - **deadline** (\`deadline:\`, shown only when the task has one) — the real outside cutoff: an expiry, a filing date, a promise to a client. Snoozing never moves it. A stored deadline is the clearest sign that missing the task has a consequence, and a passed deadline means the consequence is real — at any priority. Tasks without the field may still state a deadline in their notes (older tasks predate the field); treat a deadline in the notes the same way.
 - **horizon** (\`horizon:\`, shown only when set) — the pace the user chose: days, weeks, months, or eventually. Absent means the user has not said.
 
@@ -652,7 +652,7 @@ Low (0-29): On track — skip during review
 
 Apply these rules in order — earlier rules take priority:
 1. P4/Urgent → ALWAYS score 0-20, no exceptions, no signals
-2. P0-3 task overdue 0-2 days → score 0-25, no signals (OpenTask's global snooze button catches overdue P0-3 tasks — 1-2 days overdue just means the user hasn't opened the app or snoozed yet)
+2. P0-3 task overdue 0-2 days → score 0-25, no signals (OpenTask's global snooze button catches overdue P0-3 tasks — 1-2 days overdue just means the user hasn't opened the app or snoozed yet). This rule is about targets the user set: a task past a "(from deadline)" target is scored by its deadline (rule 6 and act_soon), not by this rule
 3. Task due today/tomorrow → score 0-25 (user already sees it)
 4. P3 due today with consequences still days away → MEDIUM (30-50), not HIGH — the task is visible and the user has time
 5. Old forgotten task (3+ weeks, no due date) → HIGH (70+)
@@ -672,7 +672,7 @@ Examples:
 
 ## P0-3 overdue guidance
 
-P0-3 due dates are reminders, not hard deadlines. In OpenTask, the global snooze button in the top bar lets users push all overdue P0-3 tasks forward at once — most users lean on this regularly, so P0-3 tasks are rarely overdue by more than 1-2 days. When you see P0-3 tasks overdue by 3+ days, the user likely hasn't been engaging with the app recently.
+Targets are reminders at every priority, never deadlines — the \`deadline:\` field is the only cutoff. In OpenTask, the global snooze button in the top bar lets users push all overdue P0-3 tasks forward at once — most users lean on this regularly, so P0-3 tasks are rarely overdue by more than 1-2 days. When you see P0-3 tasks overdue by 3+ days, the user likely hasn't been engaging with the app recently.
 
 Score based on:
 - Task age (created_at) — most reliable signal for how long a task has been sitting
@@ -795,7 +795,7 @@ export const WHATS_NEXT_REMINDERS = `## Reminders
 - P4/Urgent: NEVER surface — they're always at the top of the user's list and impossible to miss
 - Pick 0-8 tasks — output valid JSON only (no text outside the JSON object)
 - Use created_at for task age, not due date history
-- For P0-3, targets are reminders — being "overdue" (past the target) is routine, not urgent. A \`deadline:\` is the real cutoff, at any priority
+- Targets are reminders at every priority — being "overdue" (past the target) is routine for P0-3, not urgent. A \`deadline:\` is the real cutoff, at any priority; a "(from deadline)" target is that deadline's lead-in, so judge the task by the deadline
 - When notes are present, reference specific details (claim numbers, deadlines, instructions)
 - from_completion recurring tasks overdue for multiple cycles = genuinely not completed (worth surfacing)`
 
@@ -805,7 +805,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 - act_soon → ONLY for a \`deadline:\` within 7 days or passed (any priority), or P3-4 with a deadline in the notes within 7 days. Never P0-2 without a \`deadline:\` field
 - Well-organized tasks (clear title, appropriate priority, reasonable due date) → score LOW (0-25), NO signals
 - 60-70% of tasks should have ZERO signals — most tasks are fine
-- P0-3 overdue 0-2 days → score LOW (0-25), no signals (routine in OpenTask)
+- P0-3 overdue 0-2 days → score LOW (0-25), no signals (routine in OpenTask) — unless the target is "(from deadline)": then the deadline decides
 - Every task in the input MUST appear in the output
 - Output valid JSON only — a single object with a \`tasks\` array, no text outside it`
 
@@ -819,7 +819,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Urgency is priority, not a date: "urgent X" / "critical alert X" with no day or time named → due_at null
 - horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
 - Return due_at and deadline_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
-- When no specific time is mentioned for a target, use the configured default task time (if already past, use a reasonable near-future time)
+- When no specific time is mentioned for a target, use the configured default task time. Exception: the user says "today" with no time → the date alone ("YYYY-MM-DD"); the app places it. No day mentioned at all → due_at null, never today
 - When uncertain about priority, prefer 0 over guessing — but don't ignore strong emotional signals (hyperbolic urgency = P3-4, not P0)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
 - Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL.
@@ -886,6 +886,7 @@ User's schedule:
 - Goes to sleep: ${formattedSleep}
 
 When resolving time-of-day language:
+- the word "today" with no time specified → the date alone (YYYY-MM-DD, no time part) — the app picks the time. No day mentioned → null
 - "tomorrow" with no time specified → default task time (${formattedMorning})
 - "morning" → default task time (${formattedMorning})
 - "afternoon" → use your judgment, typically early afternoon

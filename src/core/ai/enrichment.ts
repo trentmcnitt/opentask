@@ -36,6 +36,7 @@
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { getTaskById } from '@/core/tasks'
+import { targetTodayTime } from '@/core/tasks/task-segments'
 import {
   nowUtc,
   computeFirstOccurrence,
@@ -747,7 +748,13 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, defaultSlotLabel)
   else {
     parsed = alignTaskModelDates(
-      sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+      resolveDateOnlyTarget(
+        sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+        textToEnrich,
+        user.timezone,
+        user.morning_time,
+        targetTodayTime(user.id, user.timezone),
+      ),
       user.timezone,
     )
   }
@@ -891,6 +898,60 @@ export function sanitizeTaskModelFields(
   }
   return { ...enrichment, deadline_at: deadlineAt, horizon }
 }
+
+/**
+ * A target with a day but no time (2026-10-11). The prompt asks for a bare
+ * date ("2026-10-11") when the user names a day to do it but no time of day
+ * — "do it today", "text Matthew today, latest tomorrow 10 AM" — and the code
+ * places it, so the result never depends on the model's sense of "now":
+ *
+ * - today → `targetTodayTime`, the Target today button's rule: where Snooze
+ *   all goes (the next period) while that is still today, else the top of the
+ *   next hour. Never "now", which would be over target the moment it lands.
+ * - any other day → the user's default task time on that day (the rule the
+ *   prompt already gives for "tomorrow" with no time).
+ *
+ * A stated time ("today at 3pm") arrives as a full datetime and is left as
+ * said. A bare date of TODAY survives only when the input says "today": in
+ * the quality runs the model also returned today's date for tasks that named
+ * no day at all ("check the mail"), and an invented target is exactly what the
+ * prompt forbids — so with no "today" in the words, the target is dropped. Runs on the model's LOCAL values, before `alignTaskModelDates` (which
+ * compares the target with the deadline) and `toUtcTimes`. `todayTarget` is a
+ * UTC ISO string; it is a parameter so the function stays pure — production
+ * passes `targetTodayTime(userId, timezone)`, and so does the quality harness.
+ */
+export function resolveDateOnlyTarget(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  morningTime: string,
+  todayTarget: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return enrichment
+  const day = DateTime.fromISO(value.trim(), { zone: timezone })
+  if (!day.isValid) return { ...enrichment, due_at: null }
+  const today = DateTime.fromJSDate(now).setZone(timezone)
+  if (day.hasSame(today, 'day') && !TODAY_CUE.test(inputText)) {
+    log.info('ai', 'Enrichment: dropped a date-only target of today with no "today" in the input')
+    return { ...enrichment, due_at: null }
+  }
+  const local =
+    day.hasSame(today, 'day') && !enrichment.rrule
+      ? DateTime.fromISO(todayTarget, { zone: 'utc' }).setZone(timezone)
+      : (() => {
+          const [hour, minute] = (morningTime || '09:00').split(':').map(Number)
+          return day.set({ hour, minute, second: 0, millisecond: 0 })
+        })()
+  return {
+    ...enrichment,
+    due_at: local.toISO({ includeOffset: false, suppressMilliseconds: true })!,
+  }
+}
+
+/** The word that licenses a date-only target of today (`resolveDateOnlyTarget`). */
+const TODAY_CUE = /\btoday\b/i
 
 /** A date further in the past than this is a wrong year, not a missed date. */
 const STALE_DATE_DAYS = 7

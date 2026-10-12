@@ -45,11 +45,22 @@ export function formatAge(isoUtc: string, now: DateTime): string {
  * (`original_due_at`) stays P3+ only — the grounding rules let the model say a
  * P0-3 target was "pushed back" only where it can see the history, and showing
  * it on every line would invite exactly that narrative about routine sweeps.
+ *
+ * A target the deadline implies (no target of the user's own, or theirs falls
+ * after the deadline — `target_implied`) reads `target: <date> (from deadline)`
+ * and never gets the first-target note: comparing the user's old target with
+ * an implied one would describe a move nobody made.
  */
 export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime): string {
-  const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
+  const due = t.due_at
+    ? `${formatLocalDate(t.due_at, timezone)}${t.target_implied ? ' (from deadline)' : ''}`
+    : 'none'
   const originalDue =
-    t.priority >= 3 && t.due_at && t.original_due_at && t.original_due_at !== t.due_at
+    !t.target_implied &&
+    t.priority >= 3 &&
+    t.due_at &&
+    t.original_due_at &&
+    t.original_due_at !== t.due_at
       ? ` (first target: ${formatLocalDate(t.original_due_at, timezone)})`
       : ''
   const deadline = t.deadline_at ? ` | deadline: ${formatLocalDate(t.deadline_at, timezone)}` : ''

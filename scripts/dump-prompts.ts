@@ -32,6 +32,7 @@ import {
 import { buildWhatsNextFullPrompt } from '../src/core/ai/whats-next'
 import { buildInsightsFullPrompt } from '../src/core/ai/insights'
 import { formatTaskLine } from '../src/core/ai/format'
+import { withEffectiveSummaryTarget } from '../src/core/ai/task-summaries'
 import {
   buildQuickTakePrompt,
   buildQuickTakeUserPrompt,
@@ -159,7 +160,15 @@ function renderWhatsNextPrompt(scenario?: ScenarioInput): string {
   const tasks = scenario?.input.tasks || []
   const taskList =
     tasks.length > 0
-      ? tasks.map((t) => formatTaskLine(t as TaskSummary, timezone, now)).join('\n')
+      ? tasks
+          .map((t) =>
+            formatTaskLine(
+              withEffectiveSummaryTarget(t as TaskSummary, { timezone, morningTime: '09:00' }),
+              timezone,
+              now,
+            ),
+          )
+          .join('\n')
       : '<task lines would appear here>'
 
   const prompt = buildWhatsNextFullPrompt({
@@ -180,7 +189,15 @@ function renderInsightsPrompt(scenario?: ScenarioInput): string {
   const tasks = scenario?.input.tasks || []
   const taskLines =
     tasks.length > 0
-      ? tasks.map((t) => formatTaskLine(t as TaskSummary, timezone, now)).join('\n')
+      ? tasks
+          .map((t) =>
+            formatTaskLine(
+              withEffectiveSummaryTarget(t as TaskSummary, { timezone, morningTime: '09:00' }),
+              timezone,
+              now,
+            ),
+          )
+          .join('\n')
       : '<task lines would appear here>'
 
   const prompt = buildInsightsFullPrompt({

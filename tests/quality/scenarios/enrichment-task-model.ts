@@ -176,10 +176,54 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
         labels: [],
       },
       quality_notes:
-        '"today" is when to do it → due_at today: the default task time (9:00 AM) if it has not passed yet, otherwise ' +
-        'the next reasonable time today (a run after ~10 PM may fairly land on tomorrow morning, before the deadline — minor). ' +
+        '"today" with no time is when to do it → due_at today, placed by the app like the Target today button: the next ' +
+        'period start, or the top of the next hour — NEVER the current minute (that is instantly over target). ' +
+        '(A run after ~11 PM may land on midnight — minor.) ' +
         '"latest tomorrow 10 AM" is the cutoff → deadline_at tomorrow at 10:00 AM local (T10:00:00), not end of day. ' +
         'The target must not fall after the deadline. Title "Text Matthew" (both date phrases removed).',
+    },
+  },
+  {
+    id: 'enrich-tm-do-it-today',
+    feature: 'enrichment',
+    description: '"do it today" with no time → target today, placed like Target today (not now)',
+    input: {
+      text: 'call the pharmacy about the refill, do it today',
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        due_at: iso(0),
+        deadline_at: null,
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        'due_at today, at the next period start or the top of the next hour (the app places a bare "today"), never the ' +
+        'current minute and never a time already past. deadline_at null ("do it today" is a target, not a cutoff). ' +
+        'Title "Call the pharmacy about the refill". (A run after ~11 PM may land on midnight — minor.)',
+    },
+  },
+  {
+    id: 'enrich-tm-today-at-time',
+    feature: 'enrichment',
+    description: 'A stated time today stays as stated',
+    input: {
+      text: 'water the tomatoes today at 11:45pm',
+      timezone: TZ,
+      projects: INBOX,
+    },
+    requirements: {
+      must_include: {
+        due_at: iso(0),
+        deadline_at: null,
+        horizon: null,
+        labels: [],
+      },
+      quality_notes:
+        'due_at today at 11:45 PM local (T23:45:00) — a stated time is kept exactly, not moved to a period or the next hour. ' +
+        'deadline_at null. Title "Water the tomatoes".',
     },
   },
   {
