@@ -41,7 +41,8 @@ export interface GrowthItem {
 
 export interface StaleTargetItem {
   task: ProcessTask
-  age_days: number
+  /** Local days over target (spec §7); listed from ATTEMPTS_OFFER_REMOVE (3). */
+  attempts: number
 }
 
 export interface ProcessData {

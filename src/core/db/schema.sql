@@ -224,6 +224,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- target, which a move changes alone. Done and skip advance from this and
   -- set both; advanceDeadline measures from it. NULL for one-offs.
   occurrence_at TEXT DEFAULT NULL,
+  -- ATTEMPTS (spec §7, 2026-10-12): local days on which the task was over
+  -- target. `attempts` is the count as of the checkpoint
+  -- `attempts_counted_through` (a local date, yyyy-MM-dd); the days since are
+  -- added on read (effectiveAttempts in src/lib/task-segments.ts), persisted by
+  -- the minute cron and by every write that moves the target. Reset by done
+  -- and by each new occurrence; frozen while there is no target.
+  attempts INTEGER NOT NULL DEFAULT 0,
+  attempts_counted_through TEXT DEFAULT NULL,
+  -- Process's last "keep" of this horizon (ruling Q7): the growth ask returns
+  -- only one threshold period after it. NULL = never kept.
+  growth_kept_at TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
@@ -252,7 +263,10 @@ CREATE TABLE IF NOT EXISTS completions (
   due_at_next TEXT,
   -- The occurrence it completed (§6, 2026-10-12), so a put-back restores the
   -- schedule as well as the target. NULL on older rows: put-back reads due_at_was.
-  occurrence_at_was TEXT
+  occurrence_at_was TEXT,
+  -- The task's attempts when it was completed (§7, 2026-10-12): how many local
+  -- days the occurrence was over target. Put-back restores it.
+  attempts INTEGER DEFAULT NULL
 );
 
 -- API tokens table (token column stores SHA-256 hash; token_preview stores last 8 chars of raw token)

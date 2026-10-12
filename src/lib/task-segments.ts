@@ -10,11 +10,11 @@
  * automatic target (`autoTargetAt`, §8), the target ≤ deadline cap
  * (`capAtDeadline`) and the picker's "Deadline day"; the effective horizon; the
  * check-in day and the horizon segments' days (`latestSegmentDay`); segment
- * membership and carry-over (`segmentState`); the target age; the recurring
+ * membership and carry-over (`segmentState`); the two badges (§7: the age
+ * thresholds, `ageLabel`, and attempts, `effectiveAttempts`); the recurring
  * deadline (`advanceDeadline`, from the occurrence); and UPCOMING — the wait,
  * the 3/4 lead (`leadDaysForWait`, shared with the auto target), the heads-up
- * days and their carry-over (`headsUpDays`, `upcomingState`). Phase B
- * (attempts, age thresholds) adds its rules here, beside the ones they extend.
+ * days and their carry-over (`headsUpDays`, `upcomingState`).
  *
  * THE MODEL IN ONE PARAGRAPH. A task's `due_at` is its TARGET: when nagging
  * starts. `deadline_at` is the real cutoff, and the target never passes it; a
@@ -442,47 +442,230 @@ export function segmentState(
   return { horizon, state: 'waiting' }
 }
 
-/**
- * Target-age steps (spec §4; thresholds are placeholders Trent may tune). The
- * steps are three depths of ONE calm plum (`--over-target`), never red or
- * amber: an arrived target signals nothing wrong (Trent, 2026-10-11). Red is
- * kept for a passed deadline only.
- */
-export const TARGET_AGE_MEDIUM_DAYS = 3
-export const TARGET_AGE_STRONG_DAYS = 7
-/** Process's one-tap "remove targets aged 7d+" threshold. */
-export const STALE_TARGET_DAYS = 7
+// ===========================================================================
+// THE TWO BADGES (spec §7, 2026-10-12 — Trent: "separate signals")
+// ===========================================================================
 
 /**
- * Whole local days since the task's FIRST target (`original_due_at`, which a
- * move keeps and only a cleared-then-set target restarts), or null when the
- * task has no target, its target has not arrived, or it is the target day
- * itself — the badge is blank then (Trent, 10-10: "no word on the badge for
- * the target day"). Phase B replaces it with the attempts badge (§7).
+ * AGE — only a task with NEITHER a target NOR a deadline (truly undated),
+ * counted from `created_at`, and shown only past one threshold per horizon
+ * (unset reads as weeks). Fixed labels (ruling Q6). The SAME thresholds are
+ * Process's growth thresholds (ruling Q7, `growthAsk` in process-rules.ts):
+ * one set. They replaced the row's "Xd old" text and Process's 14/60/180-day
+ * growth clock.
  */
-export function targetAgeDays(
-  task: Pick<TargetFields, 'due_at'> & { original_due_at: string | null; created_at?: string },
-  timezone: string,
-  now: Date,
-): number | null {
-  const target = task.due_at
-  if (!target || Date.parse(target) > now.getTime()) return null
-  // Never from before the task existed (2026-10-11): its age is how long it
-  // has been on the list.
-  const from = task.original_due_at ?? target
-  const first =
-    task.created_at && Date.parse(task.created_at) > Date.parse(from) ? task.created_at : from
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  const days = Math.round(today.diff(localDay(first, timezone), 'days').days)
-  return days > 0 ? days : null
+export const AGE_THRESHOLDS: Record<HorizonValue, { days?: number; months?: number }> = {
+  days: { days: 7 },
+  weeks: { months: 1 },
+  months: { months: 3 },
+  eventually: { months: 6 },
 }
 
-export type TargetAgeTone = 'light' | 'medium' | 'strong'
+export const AGE_LABELS: Record<HorizonValue, string> = {
+  days: '>1 wk',
+  weeks: '>1 mo',
+  months: '>3 mo',
+  eventually: '>6 mo',
+}
 
-export function targetAgeTone(days: number): TargetAgeTone {
-  if (days >= TARGET_AGE_STRONG_DAYS) return 'strong'
-  if (days >= TARGET_AGE_MEDIUM_DAYS) return 'medium'
+/** A stored horizon as a HorizonValue, unset read as weeks. */
+export function setHorizonOrUnset(horizon: string | null): HorizonValue {
+  return (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
+    ? (horizon as HorizonValue)
+    : UNSET_HORIZON
+}
+
+/**
+ * Whether `since` is past this horizon's threshold at `now` — strictly past:
+ * a weeks task is ">1 mo" from one calendar month after `since` (calendar
+ * arithmetic in `timezone`, UTC when not given). Shared by the age badge and
+ * Process's growth ask.
+ */
+export function pastAgeThreshold(
+  horizon: HorizonValue,
+  since: string,
+  now: Date,
+  timezone = 'utc',
+): boolean {
+  const limit = DateTime.fromISO(since, { zone: 'utc' })
+    .setZone(timezone)
+    .plus(AGE_THRESHOLDS[horizon])
+  return now.getTime() > limit.toMillis()
+}
+
+/** The fields the badges read. */
+export interface BadgeTaskFields {
+  due_at: string | null
+  deadline_at: string | null
+  target_auto?: boolean
+  rrule?: string | null
+  horizon?: string | null
+  created_at: string
+  target_set_at?: string | null
+  last_completed_at?: string | null
+  done?: boolean
+  deleted_at?: string | null
+  is_reminder?: boolean
+  is_tracked?: boolean
+  progress_target?: number
+  attempts?: number
+  attempts_counted_through?: string | null
+}
+
+function isQuotaOrReminder(task: BadgeTaskFields): boolean {
+  return !!task.is_reminder || !!task.is_tracked || (task.progress_target ?? 1) > 1
+}
+
+/**
+ * The age badge's label (">1 mo"), or null: not undated, a repeating task, a
+ * reminder or quota, done, or not yet past its horizon's threshold.
+ */
+export function ageLabel(task: BadgeTaskFields, now: Date, timezone = 'utc'): string | null {
+  if (task.due_at !== null || task.deadline_at !== null || task.rrule) return null
+  if (isQuotaOrReminder(task) || task.done) return null
+  const horizon = setHorizonOrUnset(task.horizon ?? null)
+  return pastAgeThreshold(horizon, task.created_at, now, timezone) ? AGE_LABELS[horizon] : null
+}
+
+/**
+ * ATTEMPTS — any task that can go over target: an ordinary open task (its own
+ * target, a repeating occurrence, or a deadline's automatic target). Never a
+ * reminder or a quota, which are never over target.
+ *
+ * AN ATTEMPT = A LOCAL DAY ON WHICH THE TASK WAS OVER TARGET (rulings Q5, Q10).
+ * The day counts the MOMENT the task goes over target ("1×" at once), once per
+ * local day: moves the same day add nothing, and days before the target never
+ * count — so moving a target that hasn't arrived adds nothing.
+ *
+ * STORAGE: `attempts` (the count) and `attempts_counted_through` (the last
+ * local date, yyyy-MM-dd, already counted). Between two writes the target is
+ * constant, and a task over target stays over target, so the days since the
+ * checkpoint are exactly the local days from the latest of
+ *   - the day after `attempts_counted_through`,
+ *   - the target's local day,
+ *   - the local day the target was SET (`target_set_at` — before it this
+ *     target did not exist, so a target set today to yesterday counts today
+ *     only),
+ *   - the task's creation day,
+ * through today if the target has arrived (else through yesterday). That is
+ * `effectiveAttempts`: computed on every read (server `rowToTask`, and the web
+ * row at render, so "1×" appears the moment the target passes), persisted by
+ * the minute cron (`persistAttempts`) and — the checkpoint — by every write
+ * that moves the target, from the row BEFORE the move
+ * (`src/core/tasks/target-set.ts`).
+ *
+ * RESETS only on done, and on each new occurrence of a repeating task (done or
+ * skip): attempts 0, checkpoint cleared. Removing the target FREEZES the count
+ * (no target, nothing counts); it resumes if the task is retargeted and goes
+ * over target again. The badge shows only while the task has a target.
+ */
+export const ATTEMPTS_OFFER_REMOVE = 3
+/** The attempts tab's tones, one calm plum: 1–2 light, 3–6 medium, 7+ strong. */
+export const ATTEMPTS_MEDIUM = 3
+export const ATTEMPTS_STRONG = 7
+
+/** Whether the task can go over target at all (and so count attempts). */
+export function canAttempt(task: BadgeTaskFields): boolean {
+  return !isQuotaOrReminder(task) && !task.done && !task.deleted_at
+}
+
+/** `attempts_counted_through`'s format: a local calendar date. */
+export const ATTEMPTS_DATE_FORMAT = 'yyyy-MM-dd'
+
+/**
+ * The task's attempts as of `now`, in the owner's `timezone`: the stored
+ * checkpoint plus the over-target local days since it (see above). Pure; no
+ * write. With no target, or nothing new to count, the stored values.
+ */
+export function effectiveAttempts(
+  task: BadgeTaskFields,
+  timezone: string,
+  now: Date,
+): { attempts: number; countedThrough: string | null } {
+  const stored = {
+    attempts: task.attempts ?? 0,
+    countedThrough: task.attempts_counted_through ?? null,
+  }
+  if (!task.due_at || !canAttempt(task)) return stored
+  const setAt =
+    task.target_set_at ??
+    (task.rrule && task.last_completed_at && task.last_completed_at > task.created_at
+      ? task.last_completed_at
+      : task.created_at)
+  // A malformed stored date (a hand-written row, an old import) must never
+  // take down a read — Luxon throws on one here (`throwOnInvalid`): it counts
+  // nothing new.
+  const dates = [task.due_at, setAt, task.created_at, stored.countedThrough ?? task.created_at]
+  if (dates.some((d) => Number.isNaN(Date.parse(d)))) return stored
+  const arrived = Date.parse(task.due_at) <= now.getTime()
+  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  const end = arrived ? today : today.minus({ days: 1 })
+  const starts = [
+    localDay(task.due_at, timezone),
+    localDay(setAt, timezone),
+    localDay(task.created_at, timezone),
+  ]
+  if (stored.countedThrough) {
+    starts.push(
+      DateTime.fromISO(stored.countedThrough, { zone: timezone }).startOf('day').plus({ days: 1 }),
+    )
+  }
+  const start = DateTime.max(...starts)!
+  const added = start <= end ? waitDays(end, start) + 1 : 0
+  if (added === 0) return stored
+  return {
+    attempts: stored.attempts + added,
+    countedThrough: end.toFormat(ATTEMPTS_DATE_FORMAT),
+  }
+}
+
+/**
+ * The checkpoint a PUT-BACK restores with the completion's count (§7): the
+ * completion day itself if the target had arrived by then (that day was
+ * counted), else the day before — but never before yesterday, so the days the
+ * task sat done don't count as attempts, and today counts once at most.
+ */
+export function putBackCountedThrough(
+  completedAt: string,
+  targetWas: string | null,
+  timezone: string,
+  now: Date,
+): string {
+  const completedDay = localDay(completedAt, timezone)
+  const arrived = targetWas !== null && Date.parse(targetWas) <= Date.parse(completedAt)
+  const counted = arrived ? completedDay : completedDay.minus({ days: 1 })
+  const yesterday = DateTime.fromJSDate(now).setZone(timezone).startOf('day').minus({ days: 1 })
+  return DateTime.max(counted, yesterday)!.toFormat(ATTEMPTS_DATE_FORMAT)
+}
+
+/** The badge's label ("3×"), or null: no target, or no attempt yet. */
+export function attemptsLabel(task: { due_at: string | null; attempts?: number }): string | null {
+  return task.due_at !== null && (task.attempts ?? 0) >= 1 ? `${task.attempts}×` : null
+}
+
+export type AttemptsTone = 'light' | 'medium' | 'strong'
+
+export function attemptsTone(attempts: number): AttemptsTone {
+  if (attempts >= ATTEMPTS_STRONG) return 'strong'
+  if (attempts >= ATTEMPTS_MEDIUM) return 'medium'
   return 'light'
+}
+
+/**
+ * At ATTEMPTS_OFFER_REMOVE (3×) the row and Process OFFER to drop the target
+ * — never automatically: "Remove target?" on a one-off with no deadline,
+ * "Back to auto?" on a deadline task whose target the user picked. An
+ * automatic target offers nothing (ruling Q9), and a repeating task's target
+ * goes only with its recurrence (`targetReset` decides all three).
+ */
+export function attemptsOffer(task: {
+  due_at: string | null
+  deadline_at: string | null
+  target_auto?: boolean
+  rrule?: string | null
+  attempts?: number
+}): 'auto' | 'remove' | null {
+  return (task.attempts ?? 0) >= ATTEMPTS_OFFER_REMOVE ? targetReset(task) : null
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */

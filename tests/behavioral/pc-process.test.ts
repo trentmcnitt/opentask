@@ -13,8 +13,9 @@ import { createTask, updateTask, bulkEdit } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { executeUndo } from '@/core/undo'
 import { getProcessData } from '@/core/tasks/process'
-import { GROWTH_ASK_DAYS, growthAsk } from '@/lib/process-rules'
+import { growthAsk } from '@/lib/process-rules'
 import { validateBulkEdit } from '@/core/validation'
+import { formatTaskResponse } from '@/lib/format-task'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -53,20 +54,23 @@ function useProcessClock() {
 
 describe('Process: horizon growth asks', () => {
   useProcessClock()
+  // The age badge's thresholds (spec §7, ruling Q7: one set): days > 7 days,
+  // weeks > 1 month (Sep 10 → Oct 10 is 30 days), months > 1 quarter (Jul 10
+  // → Oct 10 is 92 days). Exactly at the threshold is not past it.
   test.each([
-    ['days', GROWTH_ASK_DAYS.days, 'weeks'],
-    ['weeks', GROWTH_ASK_DAYS.weeks, 'months'],
-    ['months', GROWTH_ASK_DAYS.months, 'eventually'],
-  ] as const)('PC-001: %s asks at %i days, not the day before', (horizon, days, to) => {
-    const before = onHorizonFor(days - 1, { horizon })
+    ['days', 7, 'weeks'],
+    ['weeks', 30, 'months'],
+    ['months', 92, 'eventually'],
+  ] as const)('PC-001: %s asks the day after %i days, not at it', (horizon, days, to) => {
     const at = onHorizonFor(days, { horizon })
-    expect(growthOf(before.id)).toBeNull()
-    expect(growthOf(at.id)).toMatchObject({ from: horizon, to, days_on_horizon: days })
+    const after = onHorizonFor(days + 1, { horizon })
+    expect(growthOf(at.id)).toBeNull()
+    expect(growthOf(after.id)).toMatchObject({ from: horizon, to, days_on_horizon: days + 1 })
   })
 
   test('PC-002: unset reads as weeks on the clock but is reported as unset', () => {
-    const young = onHorizonFor(59)
-    const old = onHorizonFor(60)
+    const young = onHorizonFor(30)
+    const old = onHorizonFor(31)
     expect(growthOf(young.id)).toBeNull()
     expect(growthOf(old.id)).toMatchObject({ from: null, to: 'months' })
   })
@@ -145,13 +149,14 @@ describe('Process: horizon growth asks', () => {
       deadline_at: null,
     }
     expect(growthAsk(base, 'Pacific/Auckland', NOW)?.to).toBe('weeks')
-    expect(growthAsk({ ...base, horizon_set_at: daysAgo(13.9) }, 'UTC', NOW)).toBeNull()
+    expect(growthAsk({ ...base, horizon_set_at: daysAgo(7.1) }, 'UTC', NOW)?.to).toBe('weeks')
+    expect(growthAsk({ ...base, horizon_set_at: daysAgo(7) }, 'UTC', NOW)).toBeNull()
   })
 })
 
 describe('Process: affirm_horizon ("keep")', () => {
   useProcessClock()
-  test('PC-010: restarts the clock, leaves the horizon (unset stays unset), and undoes', () => {
+  test('PC-010: stamps growth_kept_at, leaves the horizon and its clock, and undoes', () => {
     const unset = onHorizonFor(90)
     const weeks = onHorizonFor(90, { horizon: 'weeks' })
     bulkEdit({
@@ -163,15 +168,35 @@ describe('Process: affirm_horizon ("keep")', () => {
     const a = getTaskById(unset.id)!
     const b = getTaskById(weeks.id)!
     expect(a.horizon).toBeNull()
-    expect(a.horizon_set_at).toBe(NOW.toISOString())
+    expect(a.horizon_set_at).toBeNull()
+    expect(a.growth_kept_at).toBe(NOW.toISOString())
     expect(b.horizon).toBe('weeks')
-    expect(b.horizon_set_at).toBe(NOW.toISOString())
+    expect(b.horizon_set_at).toBe(daysAgo(90))
+    expect(b.growth_kept_at).toBe(NOW.toISOString())
     expect(growthOf(unset.id)).toBeNull()
     expect(growthOf(weeks.id)).toBeNull()
 
     executeUndo(TEST_USER_ID)
-    expect(getTaskById(unset.id)!.horizon_set_at).toBeNull()
-    expect(getTaskById(weeks.id)!.horizon_set_at).toBe(daysAgo(90))
+    expect(getTaskById(unset.id)!.growth_kept_at).toBeNull()
+    expect(getTaskById(weeks.id)!.growth_kept_at).toBeNull()
+    expect(growthOf(weeks.id)).not.toBeNull()
+  })
+
+  test('PC-010b: after a keep, it asks again one threshold later; the age badge still counts from creation', () => {
+    const t = onHorizonFor(90, { horizon: 'weeks' })
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      taskId: t.id,
+      input: { affirm_horizon: true },
+    })
+    expect(growthOf(t.id)).toBeNull()
+    // Oct 10 + 1 month = Nov 10: not past it on Nov 10, past it on Nov 11.
+    vi.setSystemTime(new Date('2026-11-10T16:00:00Z'))
+    expect(growthOf(t.id)).toBeNull()
+    vi.setSystemTime(new Date('2026-11-11T16:00:00Z'))
+    expect(growthOf(t.id)).toMatchObject({ from: 'weeks', to: 'months' })
+    expect(formatTaskResponse(getTaskById(t.id)!).age_label).toBe('>1 mo')
   })
 
   test('PC-011b: single PATCH too — what "Raise" sends with the new priority', () => {
@@ -185,7 +210,7 @@ describe('Process: affirm_horizon ("keep")', () => {
     const after = getTaskById(t.id)!
     expect(after.priority).toBe(3)
     expect(after.horizon).toBe('weeks')
-    expect(after.horizon_set_at).toBe(NOW.toISOString())
+    expect(after.growth_kept_at).toBe(NOW.toISOString())
     expect(growthOf(t.id)).toBeNull()
   })
 
@@ -197,21 +222,24 @@ describe('Process: affirm_horizon ("keep")', () => {
 
 describe('Process: stale targets', () => {
   useProcessClock()
-  // Tasks written down a month ago: the target age never counts from before
-  // a task existed (2026-10-11), so a task created "now" with a past target
-  // would read as no age at all.
+  // Tasks written down (and targeted) a month ago: attempts never count from
+  // before a task existed, nor before its target was set (spec §7), so a task
+  // created "now" with a past target would read as one attempt, today's.
   const makeOld = (input: Record<string, unknown>) => {
     const t = make(input)
-    getDb().prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(daysAgo(30), t.id)
+    getDb()
+      .prepare('UPDATE tasks SET created_at = ?, target_set_at = ? WHERE id = ?')
+      .run(daysAgo(30), daysAgo(30), t.id)
     return getTaskById(t.id)!
   }
-  test('PC-012: 7 days or more past the first target; 6 days is not', () => {
-    const seven = makeOld({ due_at: daysAgo(7) })
-    const six = makeOld({ due_at: daysAgo(6) })
+  test('PC-012: 3 attempts or more (local days over target); 2 is not', () => {
+    // Over target since Thu Oct 8: Oct 8, 9, 10 → 3×. Since Oct 9 → 2×.
+    const three = makeOld({ due_at: daysAgo(2) })
+    const two = makeOld({ due_at: daysAgo(1) })
     const data = getProcessData(TEST_USER_ID, tz)
-    expect(data.stale_targets.map((s) => s.task.id)).toEqual([seven.id])
-    expect(data.stale_targets[0].age_days).toBe(7)
-    expect(data.stale_targets.some((s) => s.task.id === six.id)).toBe(false)
+    expect(data.stale_targets.map((s) => s.task.id)).toEqual([three.id])
+    expect(data.stale_targets[0].attempts).toBe(3)
+    expect(data.stale_targets.some((s) => s.task.id === two.id)).toBe(false)
   })
 
   test('PC-013: a task with a deadline is listed apart, never with the rest', () => {
@@ -230,7 +258,7 @@ describe('Process: stale targets', () => {
     expect(data.stale_targets_with_deadline.map((s) => s.task.id)).toEqual([client.id])
   })
 
-  test('PC-014: a snooze keeps the age (measured from the first target)', () => {
+  test('PC-014: a same-day move keeps the attempts (one per local day)', () => {
     const t = makeOld({ due_at: daysAgo(10) })
     updateTask({
       userId: TEST_USER_ID,
@@ -240,8 +268,19 @@ describe('Process: stale targets', () => {
     })
     expect(getProcessData(TEST_USER_ID, tz).stale_targets[0]).toMatchObject({
       task: { id: t.id },
-      age_days: 10,
+      // Sep 30 … Oct 10: 11 local days over target. The move to yesterday
+      // keeps it over target and adds nothing today.
+      attempts: 11,
     })
+    // Moved ahead it leaves Process (not over target) but keeps its count.
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      taskId: t.id,
+      input: { due_at: new Date(NOW.getTime() + DAY).toISOString() },
+    })
+    expect(getProcessData(TEST_USER_ID, tz).stale_targets).toEqual([])
+    expect(getTaskById(t.id)!.attempts).toBe(11)
   })
 
   test('PC-015: remove-target bulk edit clears every pick, P4 included, and undoes', () => {

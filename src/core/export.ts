@@ -47,6 +47,7 @@ export function exportUserData(userId: number): ExportData {
       `SELECT id, user_id, project_id, title, original_title, short_title, done, done_at, priority,
               due_at, rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
               original_due_at, deadline_at, target_auto, occurrence_at,
+              attempts, attempts_counted_through, growth_kept_at,
               deleted_at, archived_at, labels,
               last_notified_at, last_critical_alert_at, auto_snooze_minutes,
               completion_count, first_completed_at, last_completed_at,

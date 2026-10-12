@@ -7,9 +7,9 @@
  * - `growth`: tasks long past their horizon, each `{ task, from, to,
  *   days_on_horizon, can_act }` — `from` null means unset (read as weeks),
  *   `can_act` (P2+) offers "do it" / "raise priority" beside "grow"
- * - `stale_targets` / `stale_targets_with_deadline`: over-target tasks whose
- *   target is 7+ days old, `{ task, age_days }`; the deadline ones apart so a
- *   client's nag is never stopped by default
+ * - `stale_targets` / `stale_targets_with_deadline`: tasks at 3× attempts or
+ *   more (spec §7 — local days over target), `{ task, attempts }`; the
+ *   deadline ones apart so a client's nag is never stopped by default
  *
  * Read-only. The writes go through PATCH, bulk edit (`affirm_horizon` keeps a
  * horizon and restarts its clock), target-today and DELETE.
@@ -25,9 +25,9 @@ import { withLogging } from '@/lib/with-logging'
 import { getProcessData } from '@/core/tasks/process'
 import type { Task } from '@/types'
 
-const aged = ({ task, age_days }: { task: Task; age_days: number }) => ({
+const aged = ({ task, attempts }: { task: Task; attempts: number }) => ({
   task: formatTaskResponse(task),
-  age_days,
+  attempts,
 })
 
 export const GET = withLogging(async function GET(request: NextRequest) {

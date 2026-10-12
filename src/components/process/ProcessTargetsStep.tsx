@@ -4,13 +4,15 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DateTime } from 'luxon'
-import { STALE_TARGET_DAYS } from '@/lib/task-segments'
+import { ATTEMPTS_OFFER_REMOVE } from '@/lib/task-segments'
 import type { StaleTargetItem } from '@/lib/process-client'
 
 /**
- * Process step 4 — remove targets aged STALE_TARGET_DAYS+ (spec §4: "Process
- * gets a one-tap 'remove targets aged 7d+'"). A removed target sends the task
- * back to its horizon's task segment; nothing is lost but the nag.
+ * Process step 4 — remove targets missed ATTEMPTS_OFFER_REMOVE (3) days or
+ * more (spec §7, 2026-10-12: "At 3×, Process … offer 'remove target?'"; it
+ * replaced "remove targets aged 7d+"). Over-target tasks only. A removed
+ * target sends the task back to its horizon's task segment; nothing is lost
+ * but the nag. Offered, never automatic.
  *
  * Tasks WITH a deadline are listed apart and start UNCHECKED (amendment 7): a
  * deadline task never loses its target — removing the one the user picked
@@ -56,7 +58,8 @@ export function ProcessTargetsStep({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-muted-foreground text-sm">
-        Targets {STALE_TARGET_DAYS}+ days old. Removing one sends the task back to its segment.
+        Over target on {ATTEMPTS_OFFER_REMOVE} or more days. Removing a target sends the task back
+        to its segment.
       </p>
       {plain.length > 0 && (
         <TargetList
@@ -108,7 +111,7 @@ function TargetList({
 }) {
   return (
     <ul className="flex flex-col divide-y">
-      {items.map(({ task, age_days }) => {
+      {items.map(({ task, attempts }) => {
         const id = `process-target-${task.id}`
         return (
           <li
@@ -131,8 +134,11 @@ function TargetList({
                 </span>
               )}
             </label>
-            <span className="text-muted-foreground flex-shrink-0 text-xs tabular-nums">
-              {age_days}d
+            <span
+              className="text-over-target flex-shrink-0 text-xs font-semibold tabular-nums"
+              title={`Over target on ${attempts} days`}
+            >
+              {attempts}×
             </span>
           </li>
         )

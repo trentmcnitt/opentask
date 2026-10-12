@@ -305,6 +305,9 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     segment_targeted_at: null,
     target_set_at: null,
     occurrence_at: null,
+    attempts: 0,
+    attempts_counted_through: null,
+    growth_kept_at: null,
     target_auto: false,
     last_notified_at: null,
     last_critical_alert_at: null,
@@ -320,6 +323,9 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     updated_at: '2026-01-01T00:00:00Z',
     is_recurring: false,
     deadline_nag_off: false,
+    attempts_label: null,
+    attempts_offer: null,
+    age_label: null,
     ...overrides,
   }
 }

@@ -47,6 +47,11 @@ const VALID_TASK_COLUMNS = new Set([
   // §8 / §6 (2026-10-12): the auto-target flag and the repeating occurrence.
   'target_auto',
   'occurrence_at',
+  // §7 (2026-10-12): done / skip reset attempts, put-back restores them, and
+  // Process "keep" stamps growth_kept_at — all in undo snapshots.
+  'attempts',
+  'attempts_counted_through',
+  'growth_kept_at',
   // Retired 2026-10-12 but KEPT: undo entries written before then name them,
   // and an unknown field throws (wedging the stack — see `is_tracked`).
   'deadline_nag_off',

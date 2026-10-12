@@ -19,6 +19,17 @@
  *
  * Undo / redo never stamp: they restore the snapshot's value.
  * Distinct from `segment_targeted_at` (targeted FROM a task segment only).
+ *
+ * THE ATTEMPTS CHECKPOINT (spec §7, 2026-10-12) rides on the same stamp. The
+ * attempts read (`effectiveAttempts`) assumes the target has not moved since
+ * `attempts_counted_through`; so every write that moves the target first
+ * persists the count as of now, read from the row BEFORE the move (the
+ * `Task` every writer already holds is read through `rowToTask`, which
+ * computes it). Without it, a task that went over target at 9:00 and was
+ * moved at 9:00:30, before the minute cron, would lose that day's attempt.
+ * The checkpoint is an observation of the past, like the cron's, so it is
+ * not in `fieldsChanged`: undo of the move restores the old target and leaves
+ * the count, which is still true.
  */
 
 import type { Task } from '@/types'
@@ -48,11 +59,15 @@ export interface CollectedWrite {
  */
 export function stampTargetSet(
   write: CollectedWrite,
-  task: Pick<Task, 'target_set_at'>,
+  task: Pick<Task, 'target_set_at'> & Partial<Pick<Task, 'attempts' | 'attempts_counted_through'>>,
   nowStr: string,
 ): boolean {
   if (!movesTarget(write.fieldsChanged) || write.fieldsChanged.includes(TARGET_SET_FIELD)) {
     return false
+  }
+  if (typeof task.attempts === 'number' && !write.fieldsChanged.includes('attempts')) {
+    write.setClauses.push('attempts = ?', 'attempts_counted_through = ?')
+    write.values.push(task.attempts, task.attempts_counted_through ?? null)
   }
   write.setClauses.push(`${TARGET_SET_FIELD} = ?`)
   write.values.push(nowStr)

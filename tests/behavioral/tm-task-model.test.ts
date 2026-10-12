@@ -27,7 +27,6 @@ import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import {
   effectiveHorizon,
   latestSegmentDay,
-  targetAgeDays,
   autoTargetAt,
   advanceDeadline,
 } from '@/lib/task-segments'
@@ -54,6 +53,13 @@ function make(input: Record<string, unknown> = {}) {
 
 function age(id: number, createdLocal: string) {
   getDb().prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(at(createdLocal), id)
+}
+
+/** As `age`, and the target was set then too (attempts never count before it). */
+function ageTargeted(id: number, createdLocal: string) {
+  getDb()
+    .prepare('UPDATE tasks SET created_at = ?, target_set_at = ? WHERE id = ?')
+    .run(at(createdLocal), at(createdLocal), id)
 }
 
 function segmentOf(id: number) {
@@ -428,7 +434,7 @@ describe('Task model', () => {
       expect(getTaskById(t.id)!).toMatchObject({ due_at: null, target_auto: false })
     })
 
-    test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its age', () => {
+    test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its attempts', () => {
       // Deadline Mon Oct 12 18:00 → its automatic target is now (Sat 10:00).
       const t = make({ deadline_at: at('2026-10-12T18:00') })
       expect(t.due_at).toBe(SAT.toISOString())
@@ -450,13 +456,16 @@ describe('Task model', () => {
       const past = updateTask({ ...u, input: { due_at: at('2026-10-13T09:00') } })
       expect(past.task.due_at).toBe(at('2026-10-12T18:00'))
       expect(past.cappedAtDeadline).toBe(true)
-      // A snooze inside the deadline is a move: the age counts from the first
-      // target (the automatic one), not from the snooze.
+      // A snooze inside the deadline is a move: the first target (the
+      // automatic one) is kept, and the attempts go on — 1× on Saturday the
+      // moment it was made (ruling Q10), the same-day moves add nothing, then
+      // one a day: Sat, Sun, Mon → 3×.
       const snoozed = updateTask({ ...u, input: { due_at: at('2026-10-10T16:00') } }).task
       expect(snoozed.due_at).toBe(at('2026-10-10T16:00'))
       expect(snoozed.original_due_at).toBe(SAT.toISOString())
+      expect(snoozed.attempts).toBe(1)
       vi.setSystemTime(new Date(at('2026-10-12T17:00')))
-      expect(targetAgeDays(snoozed, tz, new Date())).toBe(2)
+      expect(getTaskById(t.id)!.attempts).toBe(3)
     })
 
     test('TM-038: a target set past its own deadline is stored AT the deadline (A2, §8.2)', () => {
@@ -548,49 +557,66 @@ describe('Task model', () => {
     })
   })
 
-  describe('target age', () => {
-    test('TM-040: counts from the first target; every move keeps it, a re-target too (§6)', () => {
+  describe('attempts (spec §7 — replaced the target-age badge)', () => {
+    test('TM-040: one per local day over target; moves keep the count, a re-target too (§6)', () => {
       const t = make({ due_at: at('2026-10-07T09:00') })
-      age(t.id, '2026-10-01T09:00')
+      ageTargeted(t.id, '2026-10-01T09:00')
+      // Over target Wed Oct 7 … Sat Oct 10: 4×.
+      expect(getTaskById(t.id)!.attempts).toBe(4)
       const snoozed = updateTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskId: t.id,
         input: { due_at: at('2026-10-10T09:00') },
       }).task
-      expect(targetAgeDays(snoozed, tz, SAT)).toBe(3)
+      expect(snoozed.attempts).toBe(4)
       const retargeted = updateTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskId: t.id,
-        input: { due_at: at('2026-10-10T08:00'), reset_original_due_at: true },
+        input: { due_at: at('2026-10-11T08:00'), reset_original_due_at: true },
       }).task
       // `reset_original_due_at` is ignored on a task: the first target stays.
       expect(retargeted.original_due_at).toBe(at('2026-10-07T09:00'))
-      expect(targetAgeDays(retargeted, tz, SAT)).toBe(3)
+      // Moved to tomorrow: frozen at 4 until it arrives, then 5.
+      expect(retargeted.attempts).toBe(4)
+      expect(formatTaskResponse(retargeted).attempts_label).toBe('4×')
+      vi.setSystemTime(new Date(at('2026-10-11T07:59')))
+      expect(getTaskById(t.id)!.attempts).toBe(4)
+      vi.setSystemTime(new Date(at('2026-10-11T08:00')))
+      expect(getTaskById(t.id)!.attempts).toBe(5)
     })
 
-    test('TM-041: a cleared then re-set target starts fresh', () => {
-      const t = make({ due_at: at('2026-09-20T09:00') })
+    test('TM-041: a removed target freezes the count; a new one resumes it', () => {
+      const t = make({ due_at: at('2026-10-08T09:00') })
+      ageTargeted(t.id, '2026-10-01T09:00')
       updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId: t.id, input: { due_at: null } })
-      const r = updateTask({
+      // Oct 8, 9, 10 counted at the removal; no target, no badge, no new days.
+      let r = getTaskById(t.id)!
+      expect(r.attempts).toBe(3)
+      expect(formatTaskResponse(r).attempts_label).toBeNull()
+      vi.setSystemTime(new Date(at('2026-10-14T10:00')))
+      expect(getTaskById(t.id)!.attempts).toBe(3)
+      // Re-set to a moment already past: today counts (once), the days it
+      // had no target never do.
+      r = updateTask({
         userId: TEST_USER_ID,
         userTimezone: tz,
         taskId: t.id,
-        input: { due_at: at('2026-10-10T09:00') },
+        input: { due_at: at('2026-10-12T09:00') },
       }).task
-      expect(r.original_due_at).toBe(at('2026-10-10T09:00'))
-      expect(targetAgeDays(r, tz, SAT)).toBeNull()
+      expect(r.original_due_at).toBe(at('2026-10-12T09:00'))
+      expect(r.attempts).toBe(4)
     })
-    test('TM-042: the age never counts from before the task existed', () => {
+
+    test('TM-042: never from before the task existed; an auto target already past is 1× at once (Q10)', () => {
       // Created today with a deadline in 3 days: the automatic target's lead
-      // day morning is already past, so it is now — over target at once, but
-      // its age is blank today, not "1d".
+      // day morning is already past, so it is now — over target at once.
       const t = make({ deadline_at: at('2026-10-13T18:00') })
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
-      expect(targetAgeDays(t, tz, SAT)).toBeNull()
+      expect(t.attempts).toBe(1)
       vi.setSystemTime(new Date(at('2026-10-12T10:00')))
-      expect(targetAgeDays(t, tz, new Date())).toBe(2)
+      expect(getTaskById(t.id)!.attempts).toBe(3)
     })
   })
 

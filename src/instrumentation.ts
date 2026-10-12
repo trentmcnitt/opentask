@@ -9,6 +9,8 @@
  * - Every 1 min: time-slot reminder check (§6 — the slot notifies, not the item)
  * - Every 1 min: unfinished-slot nag (hourly in effect; see slot-nags.ts)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
+ * - Every 1 min: persist attempts (§7 — reads are already exact; this keeps
+ *   the stored columns current, see src/core/tasks/attempts.ts)
  * - 3:00 AM UTC daily: undo purge
  * - 3:30 AM UTC daily: trash purge
  * - 4:00 AM UTC daily: completions purge
@@ -26,6 +28,49 @@
  */
 
 import { log } from '@/lib/logger'
+
+type NotifyError = (kind: 'cron-failure', title: string, detail: string) => unknown
+
+/** A runner for synchronous cron jobs, with error logging and ntfy alerting. */
+function makeSafeCronRun(notifyError: NotifyError) {
+  return function safeCronRun(label: string, fn: () => void): void {
+    log.info('cron', `Running ${label}`)
+    try {
+      fn()
+    } catch (err) {
+      log.error('cron', `${label} error:`, err)
+      notifyError(
+        'cron-failure',
+        `${label} failed`,
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  }
+}
+
+/**
+ * Attempts (spec §7): keep the stored count current every minute — reads are
+ * already exact (src/core/tasks/attempts.ts). Its own job, so a failure here
+ * never blocks a notification. Quiet: no per-run info log.
+ */
+async function startAttemptsCron(
+  schedule: (expr: string, fn: () => void) => unknown,
+  notifyError: NotifyError,
+) {
+  const { persistAttempts } = await import('@/core/tasks/attempts')
+  schedule('* * * * *', () => {
+    try {
+      persistAttempts()
+    } catch (err) {
+      log.error('cron', 'Attempts persist error:', err)
+      notifyError(
+        'cron-failure',
+        'Attempts persist failed',
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  })
+}
 
 export async function register() {
   // Only run on the server, not during build
@@ -102,6 +147,7 @@ export async function register() {
       }
     })
     log.info('cron', 'Notification cron started (every 1 min)')
+    await startAttemptsCron(cron.schedule, notifyError)
 
     // --- WidgetKit push sync (event-driven, not a cron) ---
     initWidgetPushSync()
@@ -127,21 +173,7 @@ export async function register() {
     log.info('cron', 'Enrichment cron started (every 1 min)')
 
     // --- Daily purge crons ---
-
-    /** Run a synchronous cron job with error logging and ntfy alerting. */
-    function safeCronRun(label: string, fn: () => void): void {
-      log.info('cron', `Running ${label}`)
-      try {
-        fn()
-      } catch (err) {
-        log.error('cron', `${label} error:`, err)
-        notifyError(
-          'cron-failure',
-          `${label} failed`,
-          err instanceof Error ? err.message : String(err),
-        )
-      }
-    }
+    const safeCronRun = makeSafeCronRun(notifyError)
 
     // §5: a quota's period ends on its own. Every 5 minutes, and once at
     // startup, so a boundary crossed while the server was down is caught up.

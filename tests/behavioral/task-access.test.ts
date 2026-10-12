@@ -94,16 +94,22 @@ describe('taskColumns', () => {
   beforeEach(() => setupTestDb())
   afterEach(() => teardownTestDb())
 
+  // The last entry is not a column: the owner's timezone, for the attempts
+  // read (spec §7), as a subquery on the (aliased) table.
+  const OWNER_TZ = ' AS owner_timezone'
+  const columnsOf = (list: string) => list.split(', ').filter((c) => !c.endsWith(OWNER_TZ))
+
   test('every listed column exists in the tasks table', () => {
     const tableColumns = (
       getDb().prepare('PRAGMA table_info(tasks)').all() as { name: string }[]
     ).map((c) => c.name)
-    for (const col of taskColumns().split(', ')) expect(tableColumns).toContain(col)
+    for (const col of columnsOf(taskColumns())) expect(tableColumns).toContain(col)
   })
 
   test('qualifies each column with the alias', () => {
-    const plain = taskColumns().split(', ')
-    const aliased = taskColumns('tasks').split(', ')
+    const plain = columnsOf(taskColumns())
+    const aliased = columnsOf(taskColumns('tasks'))
     expect(aliased).toEqual(plain.map((c) => `tasks.${c}`))
+    expect(taskColumns('t')).toContain('WHERE users.id = t.user_id) AS owner_timezone')
   })
 })
