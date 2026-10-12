@@ -215,6 +215,13 @@ export default async function globalSetup() {
   // dashboard panel's pager — a "Tasks · Eventually 3 of 3" page after the
   // slots that every pager spec would have to step over. A day ahead is never
   // "today" and is past every segment day, so the segment never forms.
+  //
+  // Upcoming (2026-10-12): a targeted task shows on its heads-up days, counted
+  // from `target_set_at` — null reads as created_at, a day back, which would
+  // put "Buy groceries" (tomorrow) and the daily tasks in today's Upcoming.
+  // Stamped now, as the API would have: a heads-up day is always after the day
+  // the target was set, so none of them is ever today.
+  db.exec(`UPDATE tasks SET target_set_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`)
   db.exec(
     `UPDATE tasks SET horizon = 'eventually',
        last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day')
