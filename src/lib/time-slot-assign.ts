@@ -308,16 +308,16 @@ export function slotAfterFinishing(
 }
 
 /**
- * The dashboard reminders panel's pager walks PAGES: every slot group, then
- * every task segment with a row today (2026-10-11, Trent: "days, weeks, etc.
- * should be individual segments and behave similarly to the segments for
- * reminders"). These two rules extend `naturalSlotIndex` and
- * `slotAfterFinishing` to that list. Both take what each page has waiting, in
- * pager order, and how many of the pages are slots (the slots come first).
+ * The pager rules over PAGES (2026-10-11): slots first, then task segments.
+ * Both take what each page has waiting, in pager order, and how many of the
+ * pages are slots. The dashboard runs them on two cards (`usePanelPager`):
+ * the Reminders card, every page a slot (so they are `naturalSlotIndex` and
+ * `slotAfterFinishing`), and the Tasks card, no page a slot (so it opens on
+ * the first segment still waiting and moves to the next that waits).
  *
  * A task segment has no start time: it is today's from the first minute, so
- * it is never "not yet due". But it is not the day's spine either — an
- * unfinished slot up to now always comes before it.
+ * it is never "not yet due". In a mixed list an unfinished slot up to now
+ * still comes before it.
  */
 
 /**

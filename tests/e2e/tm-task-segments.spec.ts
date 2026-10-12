@@ -158,10 +158,13 @@ test.describe('Task segments', () => {
 })
 
 /**
- * The dashboard panel pages through each task segment AFTER the slots
- * (2026-10-11): its own bar in the strip, the chevrons, the "X of Y" that
- * shows what was considered, "Defer all" where a slot has "Considered all".
- * Each test makes a reminder in the natural slot so a slot page comes first.
+ * The dashboard: the Reminders card pages through the slots alone, and the
+ * task segments have their own Tasks card directly beneath it (2026-10-11,
+ * Trent: "i liked the reminders on top of tasks like it was before") — its
+ * own pager and strip, "X of Y" with put-back, "Defer all" behind the header
+ * tap, opening on the first segment that waits and collapsing to one line
+ * when every segment is finished. Each test makes a reminder in the natural
+ * slot so the Reminders card is there too.
  */
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
@@ -187,76 +190,117 @@ async function inNaturalSlot(page: Page): Promise<{ id: number; due: string }> {
   return { id: natural.id, due }
 }
 
-const panel = (page: Page) => page.locator('[data-reminders-panel]')
-const panelRow = (page: Page, id: number) => panel(page).locator(`[data-segment-task="${id}"]`)
+/**
+ * A weeks task created a month ago: its segment (Saturdays) has come round
+ * since, so it waits today whatever the weekday.
+ */
+function createdLongAgo(ids: number[]) {
+  const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+  try {
+    const stmt = db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?')
+    for (const id of ids) stmt.run(new Date(Date.now() - 30 * DAY).toISOString(), id)
+  } finally {
+    db.close()
+  }
+}
 
-test.describe('Task segments on the dashboard panel', () => {
+const remindersCard = (page: Page) => page.locator('[data-reminders-panel]')
+const tasksCard = (page: Page) => page.locator('[data-tasks-panel]')
+const cardRow = (page: Page, id: number) => tasksCard(page).locator(`[data-segment-task="${id}"]`)
+const consider = (page: Page, id: number) =>
+  cardRow(page, id)
+    .getByRole('button', { name: /as considered/ })
+    .click()
+
+test.describe('Task segments on the dashboard', () => {
   test.use({ viewport: { width: 1600, height: 900 } })
 
-  test('a segment is a page after the slots: bar, chevrons, X of Y, put back, Defer all', async ({
+  test('a Tasks card under the Reminders card: its own pager, X of Y, Defer all, then one line', async ({
     authenticatedPage: page,
   }) => {
     const slot = await inNaturalSlot(page)
-    const remTitle = uniqueTitle('TM panel rem')
-    const remId = await create(page, { title: remTitle, is_reminder: true, due_at: slot.due })
-    const taskIds: number[] = []
-    for (const s of ['A', 'B', 'C']) {
-      taskIds.push(await create(page, { title: uniqueTitle(`TM panel ${s}`), horizon: 'days' }))
-    }
-    backdateCreated(taskIds, { inSegments: true })
+    const remId = await create(page, {
+      title: uniqueTitle('TM card rem'),
+      is_reminder: true,
+      due_at: slot.due,
+    })
+    const days = [
+      await create(page, { title: uniqueTitle('TM card A'), horizon: 'days' }),
+      await create(page, { title: uniqueTitle('TM card B'), horizon: 'days' }),
+    ]
+    const weeks = await create(page, { title: uniqueTitle('TM card C'), horizon: 'weeks' })
+    backdateCreated(days, { inSegments: true })
+    createdLongAgo([weeks])
     try {
       await page.goto('/')
-      // A slot still waits, so the panel opens on it, not on the tasks.
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
-      // No task row on a slot page: the segment is a page of its own.
-      await expect(panelRow(page, taskIds[0])).toHaveCount(0)
+      // The Reminders card is the slots alone, as before 2026-10-11.
+      await expect(remindersCard(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
+      await expect(remindersCard(page).locator('[data-slot-segment^="tasks:"]')).toHaveCount(0)
+      await expect(remindersCard(page).locator('[data-segment-task]')).toHaveCount(0)
 
-      // The strip: the task segment's bar comes after the slots'.
-      const segs = page.getByRole('group', { name: "Today's reminder slots" }).getByRole('button')
-      await expect(segs.last()).toHaveAttribute('data-slot-segment', 'tasks:days')
-      // A faint divider between the slots' bars and the task segments'.
-      await expect(
-        page
-          .getByRole('group', { name: "Today's reminder slots" })
-          .locator('[data-segment-divider]'),
-      ).toHaveCount(1)
-      await segs.last().click()
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', 'tasks:days')
-      await expect(panel(page).getByText('Tasks · Days')).toBeVisible()
-      await expect(panel(page).getByRole('button', { name: 'Next time slot' })).toBeDisabled()
-      for (const id of taskIds) await expect(panelRow(page, id)).toBeVisible()
-      // The chevron walks back to the slots.
-      await panel(page).getByRole('button', { name: 'Previous time slot' }).click()
-      await expect(panel(page)).not.toHaveAttribute('data-reminders-slot', 'tasks:days')
-      await panel(page).getByRole('button', { name: 'Next time slot' }).click()
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', 'tasks:days')
+      // The Tasks card sits directly beneath it, on the first segment waiting.
+      const tasks = tasksCard(page)
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
+      const remBox = (await remindersCard(page).boundingBox())!
+      expect((await tasks.boundingBox())!.y).toBeGreaterThan(remBox.y + remBox.height - 1)
+      // Its own strip: one bar per segment, no divider.
+      const strip = tasks.getByRole('group', { name: "Today's task segments" })
+      await expect(strip.getByRole('button')).toHaveCount(2)
+      await expect(strip.locator('[data-segment-divider]')).toHaveCount(0)
+      await expect(tasks.getByText('Tasks · Days')).toBeVisible()
 
-      // Consider one: it leaves; "X of Y" climbs and is the way to see it.
-      await panelRow(page, taskIds[0])
-        .getByRole('button', { name: /as considered/ })
-        .click()
-      await expect(panelRow(page, taskIds[0])).toHaveCount(0)
-      const count = panel(page).locator('[data-considered-toggle]')
-      await expect(count).toHaveText(/^1 of 3/)
+      // Consider one: "X of Y" climbs and opens it, with its put-back.
+      await consider(page, days[0])
+      await expect(cardRow(page, days[0])).toHaveCount(0)
+      const count = tasks.locator('[data-considered-toggle]')
+      await expect(count).toHaveText(/^1 of 2/)
       await count.click()
-      const considered = panel(page).locator(`[data-considered-task-id="${taskIds[0]}"]`)
-      await expect(considered).toBeVisible()
+      const considered = tasks.locator(`[data-considered-task-id="${days[0]}"]`)
       await considered.getByRole('button', { name: /^Put back/ }).click()
-      await expect(panelRow(page, taskIds[0])).toBeVisible()
-      await expect.poll(async () => (await stateOf(page, taskIds[0])).last_considered_at).toBeNull()
+      await expect(cardRow(page, days[0])).toBeVisible()
+      await expect.poll(async () => (await stateOf(page, days[0])).last_considered_at).toBeNull()
 
-      // Defer all sits where a slot's "Considered all" does (header expanded).
-      await panel(page).locator('[data-slot-header-toggle]').click()
-      await panel(page)
-        .getByRole('button', { name: /^Defer all/ })
-        .click()
-      for (const id of taskIds) {
+      // The chevrons page through the segments.
+      await tasks.getByRole('button', { name: 'Next task segment' }).click()
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      await tasks.getByRole('button', { name: 'Previous task segment' }).click()
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
+
+      // Defer all, behind the header tap, finishes Days: on to Weeks.
+      await tasks.locator('[data-slot-header-toggle]').click()
+      await tasks.getByRole('button', { name: /^Defer all/ }).click()
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      for (const id of days) {
         await expect.poll(async () => (await stateOf(page, id)).segment_deferred_at).not.toBeNull()
       }
-      // Finishing the page moves on, and the unfinished slot wins.
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
+
+      // The last segment finished: one line, never a "Nothing left here" page.
+      await consider(page, weeks)
+      await expect(tasks).toHaveAttribute('data-tasks-done')
+      await expect(tasks.locator('[data-considered-toggle]')).toHaveText(/^3 of 3/)
+      await expect(tasks.getByText('Nothing left here')).toHaveCount(0)
+      // The Reminders card never moved.
+      await expect(remindersCard(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
     } finally {
-      await trash(page, [remId, ...taskIds])
+      await trash(page, [remId, ...days, weeks])
+    }
+  })
+
+  test('the Tasks card opens on a segment that waits, never on a finished one', async ({
+    authenticatedPage: page,
+  }) => {
+    const days = await create(page, { title: uniqueTitle('TM open days'), horizon: 'days' })
+    const weeks = await create(page, { title: uniqueTitle('TM open weeks'), horizon: 'weeks' })
+    backdateCreated([days], { inSegments: true })
+    createdLongAgo([weeks])
+    try {
+      // Days is finished (considered today); Weeks still waits.
+      await page.request.post('/api/task-segments/consider', { data: { ids: [days] } })
+      await page.goto('/')
+      await expect(tasksCard(page)).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      await expect(cardRow(page, weeks)).toBeVisible()
+    } finally {
+      await trash(page, [days, weeks])
     }
   })
 
@@ -286,31 +330,6 @@ test.describe('Task segments on the dashboard panel', () => {
       // A tap goes to the segment's section.
       await bar.locator('[data-day-segment="tasks:days"]').click()
       await expect(page.locator('[data-task-segment="days"]')).toBeInViewport()
-    } finally {
-      await trash(page, [remId, taskId])
-    }
-  })
-
-  test('with the day so far done, the panel lands on a waiting task segment', async ({
-    authenticatedPage: page,
-  }) => {
-    const slot = await inNaturalSlot(page)
-    const remTitle = uniqueTitle('TM landing rem')
-    const remId = await create(page, { title: remTitle, is_reminder: true, due_at: slot.due })
-    const taskId = await create(page, { title: uniqueTitle('TM landing task'), horizon: 'days' })
-    backdateCreated([taskId], { inSegments: true })
-    try {
-      await page.goto('/')
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
-      // Finishing the slot moves to the task segment on the spot…
-      await panel(page)
-        .getByRole('button', { name: `Mark "${remTitle}" as considered` })
-        .click()
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', 'tasks:days')
-      await expect(panelRow(page, taskId)).toBeVisible()
-      // …and the next load opens there too.
-      await page.reload()
-      await expect(panel(page)).toHaveAttribute('data-reminders-slot', 'tasks:days')
     } finally {
       await trash(page, [remId, taskId])
     }

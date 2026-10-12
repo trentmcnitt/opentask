@@ -20,6 +20,7 @@ import {
   segmentHint,
   segmentKey,
   segmentLabel,
+  segmentTitleColor,
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
@@ -79,7 +80,7 @@ export function TaskSegmentGroup({
       considered={handledCount}
       open={open}
       started
-      accent={color}
+      accent={segmentTitleColor(segment.horizon)}
     />
   )
   return (

@@ -122,12 +122,15 @@ export function ReminderSlotBar({
   items,
   currentIndex,
   onJump,
+  ariaLabel = "Today's reminder slots",
 }: {
   /** Every page, in pager order: the slots, then the task segments. */
   items: SlotBarItem[]
   /** The page on screen, so it can be marked "you are here". */
   currentIndex: number
   onJump: (index: number) => void
+  /** The group's name: the slots' strip, or the Tasks card's. */
+  ariaLabel?: string
 }) {
   // AN EMPTY SECTION GETS NO SEGMENT. Trent, 2026-09-21: "for the 'anytime' if
   // a section does not have anything in it, it doesn't need a segment." It
@@ -143,11 +146,7 @@ export function ReminderSlotBar({
   if (shown.length < 2) return null
 
   return (
-    <div
-      className="flex items-center gap-1 px-3 pb-2"
-      role="group"
-      aria-label="Today's reminder slots"
-    >
+    <div className="flex items-center gap-1 px-3 pb-2" role="group" aria-label={ariaLabel}>
       {shown.map(({ item, index: i }, n) => {
         const { considered, total, label, color } = item
         // The divider goes before the first task segment, after a slot.
