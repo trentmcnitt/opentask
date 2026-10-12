@@ -16,6 +16,8 @@ import { test, expect, holdUntil, uniqueTitle, withPreferences } from './fixture
 import type { Locator, Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
+// The pickers work in the browser's local days; run the browser in the user's zone.
+test.use({ timezoneId: TZ })
 const MIN = 60_000
 const DAY = 24 * 60 * MIN
 
@@ -84,7 +86,9 @@ test.describe('Deadline: the snooze menu', () => {
     authenticatedPage: page,
   }) => {
     const title = uniqueTitle('TM8 capped')
-    const deadline = new Date(Date.now() + 30 * MIN).toISOString()
+    // "1 hour" lands on the nearest whole hour, so at least 30 minutes out:
+    // a deadline 10 minutes out is always crossed, whatever the minute.
+    const deadline = new Date(Date.now() + 10 * MIN).toISOString()
     const id = await create(page, {
       title,
       target_at: new Date(Date.now() - 60 * MIN).toISOString(),
@@ -133,7 +137,9 @@ test.describe('Deadline: the snooze menu', () => {
         await expect(toast).not.toContainText('deadline')
         await expect
           .poll(async () => Date.parse(String((await stateOf(page, id)).target_at)))
-          .toBeGreaterThan(Date.now() + 30 * MIN)
+          // Past the deadline and still ahead: "1 hour" rounds to the nearest
+          // hour, so "now + 1h" itself is not the floor.
+          .toBeGreaterThan(Date.now())
         await expect(page.locator(`#task-row-${id}`)).toContainText('past deadline')
       })
     } finally {

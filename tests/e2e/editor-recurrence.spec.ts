@@ -16,7 +16,13 @@ import type { Locator, Page } from '@playwright/test'
  * - #5: a deadline-only task names its stored automatic target instead of "No target".
  */
 
-test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+test.use({
+  viewport: { width: 390, height: 844 },
+  hasTouch: true,
+  isMobile: true,
+  // The deadline picker works in the browser's local days.
+  timezoneId: process.env.E2E_TZ || 'America/Chicago',
+})
 
 const WEEKLY = 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=9;BYMINUTE=0'
 const DAY_MS = 24 * 3600_000
