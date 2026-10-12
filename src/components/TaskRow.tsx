@@ -559,8 +559,9 @@ export function TaskRow({
               <button
                 type="button"
                 data-attempts-offer={offer}
-                // A press here must not reach the row (select / open).
-                onPointerDown={(e) => e.stopPropagation()}
+                // The click must not reach the row (select / open). Not the
+                // pointerdown, like the done button: SwipeableRow's drag
+                // handler swallows a click whose pointerdown it never saw.
                 onClick={(e) => {
                   e.stopPropagation()
                   onRemoveTarget?.(task)

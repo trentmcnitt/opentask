@@ -337,22 +337,35 @@ test.describe('Task segments on the dashboard', () => {
 })
 
 test.describe('Dashboard over-target marks', () => {
-  test('the age tab counts days since the first target; a passed deadline drops it', async ({
+  // Attempts are local days: the row reads them in the user's zone.
+  test.use({ timezoneId: TEST_TZ })
+  test('the attempts tab counts local days over target; at 3× the row offers Remove target?', async ({
     authenticatedPage: page,
   }) => {
-    const threeDaysAgo = new Date(Date.now() - 3 * DAY - 60_000).toISOString()
+    // Noon three local days ago: over target on 4 local days (spec §7).
+    const threeDaysAgo = DateTime.now()
+      .setZone(TEST_TZ)
+      .minus({ days: 3 })
+      .set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
+      .toUTC()
+      .toISO()!
     const aged = await create(page, { title: uniqueTitle('TM aged'), target_at: threeDaysAgo })
     const late = await create(page, {
       title: uniqueTitle('TM aged late'),
       target_at: threeDaysAgo,
       deadline_at: new Date(Date.now() - DAY).toISOString(),
     })
-    // On the list for a week: the age never counts from before the task
-    // existed (2026-10-11), and the API can't create one in the past.
+    const undated = await create(page, { title: uniqueTitle('TM undated') })
+    // On the list (and targeted) for a week, the undated one for 40 days: the
+    // API can't create either in the past, and attempts never count from
+    // before the task existed or its target was set.
     const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
     try {
-      const backdate = db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?')
-      for (const id of [aged, late]) backdate.run(new Date(Date.now() - 7 * DAY).toISOString(), id)
+      const backdate = db.prepare('UPDATE tasks SET created_at = ?, target_set_at = ? WHERE id = ?')
+      const weekAgo = new Date(Date.now() - 7 * DAY).toISOString()
+      for (const id of [aged, late]) backdate.run(weekAgo, weekAgo, id)
+      const old = new Date(Date.now() - 40 * DAY).toISOString()
+      backdate.run(old, old, undated)
     } finally {
       db.close()
     }
@@ -360,14 +373,29 @@ test.describe('Dashboard over-target marks', () => {
       await page.goto('/')
       const row = page.locator(`#task-row-${aged}`)
       await expect(row).toBeVisible()
-      await expect(row.locator('[data-target-age]')).toHaveText(/^[34]d$/)
-      // Past its deadline the red stripe and "past deadline" say it, with no
-      // age tab beside them (2026-10-12).
+      await expect(row.locator('[data-attempts]')).toHaveText('4×')
+      // Past its deadline the tab stays (a count, not a second alarm); no
+      // offer — "Back to auto" would be the passed deadline.
       const lateRow = page.locator(`#task-row-${late}`)
       await expect(lateRow).toContainText('past deadline')
-      await expect(lateRow.locator('[data-target-age]')).toHaveCount(0)
+      await expect(lateRow.locator('[data-attempts]')).toHaveText('4×')
+      await expect(lateRow.locator('[data-attempts-offer]')).toHaveCount(0)
+      // An undated task past a month: the age label, no tab.
+      const undatedRow = page.locator(`#task-row-${undated}`)
+      await expect(undatedRow.locator('[data-age-label]')).toHaveText('>1 mo')
+      await expect(undatedRow.locator('[data-attempts]')).toHaveCount(0)
+      // At 3×+ the row offers to drop the target — one tap, never automatic.
+      const offer = row.locator('[data-attempts-offer="remove"]')
+      await expect(offer).toHaveText('Remove target?')
+      await offer.click()
+      await expect
+        .poll(
+          async () => (await (await page.request.get(`/api/tasks/${aged}`)).json()).data.target_at,
+        )
+        .toBeNull()
+      await expect(row.locator('[data-attempts]')).toHaveCount(0)
     } finally {
-      await trash(page, [aged, late])
+      await trash(page, [aged, late, undated])
     }
   })
 })

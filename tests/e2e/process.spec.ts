@@ -11,10 +11,12 @@
  */
 import path from 'path'
 import Database from 'better-sqlite3'
+import { DateTime } from 'luxon'
 import type { Page } from '@playwright/test'
 import { test, expect, uniqueTitle } from './fixtures'
 
 const DAY = 24 * 60 * 60 * 1000
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
 async function createTask(page: Page, data: Record<string, unknown>): Promise<number> {
   const res = await page.request.post('/api/tasks', { data })
@@ -27,14 +29,17 @@ async function getTask(page: Page, id: number) {
   return (await res.json()).data
 }
 
-/** The growth clock can't be set over the API. */
+/**
+ * The growth clock can't be set over the API — nor when a target was set
+ * (attempts never count before it, spec §7).
+ */
 function backdate(id: number, days: number) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
-    db.prepare('UPDATE tasks SET created_at = ?, horizon_set_at = NULL WHERE id = ?').run(
-      new Date(Date.now() - days * DAY).toISOString(),
-      id,
-    )
+    const when = new Date(Date.now() - days * DAY).toISOString()
+    db.prepare(
+      'UPDATE tasks SET created_at = ?, target_set_at = ?, horizon_set_at = NULL WHERE id = ?',
+    ).run(when, when, id)
   } finally {
     db.close()
   }
@@ -47,6 +52,7 @@ async function openProcess(page: Page) {
 }
 
 test.describe('Process', () => {
+  test.use({ timezoneId: TEST_TZ })
   test('sorts the Inbox, grows a horizon, removes an old target with Undo', async ({
     authenticatedPage: page,
   }) => {
@@ -56,14 +62,21 @@ test.describe('Process', () => {
     const inboxId = await createTask(page, { title: inboxTitle, project_id: 1 })
     const growId = await createTask(page, { title: growTitle, project_id: 3 })
     backdate(growId, 61)
-    const staleTarget = new Date(Date.now() - 10 * DAY).toISOString()
+    // Noon, ten local days ago in the user's zone: 11 local days over target
+    // (spec §7 attempts) at any hour.
+    const staleTarget = DateTime.now()
+      .setZone(TEST_TZ)
+      .minus({ days: 10 })
+      .set({ hour: 12, minute: 0, second: 0, millisecond: 0 })
+      .toUTC()
+      .toISO()!
     const targetId = await createTask(page, {
       title: targetTitle,
       project_id: 3,
       target_at: staleTarget,
     })
-    // Written down a month ago: a target's age never counts from before the
-    // task existed (2026-10-11). Under 60 days, so no growth ask for it.
+    // Written down (and targeted) a month ago: attempts never count from
+    // before either. A target of its own: never a growth ask.
     backdate(targetId, 30)
 
     try {
@@ -108,7 +121,7 @@ test.describe('Process', () => {
       // 4. Old targets: only ours checked; remove, then Undo from the toast.
       await modal.getByRole('tab', { name: /Old targets/ }).click()
       const targetRow = modal.locator(`[data-process-target-row="${targetId}"]`)
-      await expect(targetRow).toContainText('10d')
+      await expect(targetRow).toContainText('11×')
       for (const row of await modal.locator('[data-process-target-row]').all()) {
         const checkbox = row.getByRole('checkbox')
         const mine = (await row.getAttribute('data-process-target-row')) === String(targetId)
