@@ -41,6 +41,9 @@ const VALID_TASK_COLUMNS = new Set([
   'last_considered_at',
   'segment_deferred_at',
   'segment_targeted_at',
+  // Upcoming (2026-10-12): every target/deadline write stamps it, so every
+  // such undo restores it — missing here would throw and wedge the stack.
+  'target_set_at',
   'deadline_nag_off',
   'deleted_at',
   'archived_at',

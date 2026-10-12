@@ -10,6 +10,7 @@ import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
 import { advanceDeadline } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
+import { TARGET_SET_FIELD } from '../target-set'
 
 export interface MarkDoneStats {
   completionCount: number
@@ -100,6 +101,9 @@ export function computeMarkDone(
         'completion_count',
         'first_completed_at',
         'last_completed_at',
+        // Upcoming (2026-10-12): the advance sets the next occurrence's
+        // target, so its wait counts from the completion.
+        TARGET_SET_FIELD,
       ],
     }
   } else {

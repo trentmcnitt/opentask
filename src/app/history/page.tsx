@@ -488,6 +488,7 @@ function formatEditDetails(
       case 'anchor_dom':
       case 'snoozed_from': // legacy field name
       case 'original_due_at': // current field name
+      case 'target_set_at': // Upcoming's wait anchor, moves with every target write
       case 'updated_at':
         break
       default:
@@ -856,7 +857,14 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
   // Filter out internal fields that shouldn't be shown to users
   const displayFields = fields_changed.filter(
     (f) =>
-      !['anchor_time', 'anchor_dow', 'anchor_dom', 'updated_at', 'original_due_at'].includes(f),
+      ![
+        'anchor_time',
+        'anchor_dow',
+        'anchor_dom',
+        'updated_at',
+        'original_due_at',
+        'target_set_at',
+      ].includes(f),
   )
 
   return (
