@@ -9,9 +9,17 @@ import SwiftUI
 /// "All over target (N): ⏭ 4:30 PM · +1h".
 struct MenuBarPanel: View {
     /// Over target (2026-10-11): the calm plum the widgets and the web use
-    /// (`WidgetTheme.overTarget`, `--over-target`) — never red.
-    static let overTarget = Color(red: 0.62, green: 0.27, blue: 0.58)
+    /// (`WidgetTheme.overTarget`, `--over-target`) — never red. Lifted in
+    /// dark mode since 2026-10-12 (the light plum on the dark panel was
+    /// 3.0:1 as text; lifted, 6.0:1). The same values as
+    /// `WidgetTheme.overTarget(_:)`, which this target doesn't compile.
+    private var overTarget: Color {
+        colorScheme == .dark
+            ? Color(red: 0xC9 / 255, green: 0x7C / 255, blue: 0xD5 / 255)
+            : Color(red: 0x9E / 255, green: 0x45 / 255, blue: 0x94 / 255)
+    }
 
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: MenuBarModel
     @FocusState private var addFocused: Bool
 
@@ -53,7 +61,7 @@ struct MenuBarPanel: View {
                 Text("OpenTask").font(.headline)
                 Text(summary)
                     .font(.caption)
-                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : MenuBarPanel.overTarget)
+                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : overTarget)
             }
             Spacer()
             Button {
@@ -153,9 +161,25 @@ struct MenuBarPanel: View {
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if let due = task.dueDate {
-                        Text(dueText(due, isOverdue: isOverdue))
-                            .font(.caption)
-                            .foregroundStyle(isOverdue ? MenuBarPanel.overTarget : Color.secondary)
+                        // The attempts badge (spec §7, 2026-10-12): the
+                        // server's "3×" after the time, plum semibold — label
+                        // only (the web's 3× offer stays in the app). The
+                        // panel had no age tab before; this is its first badge.
+                        let time = Text(dueText(due, isOverdue: isOverdue))
+                            .foregroundStyle(isOverdue ? overTarget : Color.secondary)
+                        Group {
+                            if let badge = TargetAge.attemptsBadge(task) {
+                                time + Text("  ") + Text(badge).fontWeight(.semibold).foregroundStyle(overTarget)
+                            } else {
+                                time
+                            }
+                        }
+                        .font(.caption)
+                        .accessibilityLabel(Text(
+                            TargetAge.attemptsBadge(task) == nil
+                                ? dueText(due, isOverdue: isOverdue)
+                                : "\(dueText(due, isOverdue: isOverdue)), \(TaskWording.overTargetLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")"
+                        ))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

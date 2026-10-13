@@ -472,6 +472,34 @@ struct SegmentRowView: View {
         return NotesGlyph.accessibilityLabel("\(task.title)\(words)", hasNotes: task.hasNotes)
     }
 
+    /// The small words, the attempts badge ("3×", always last) in plum like
+    /// the phone widget's row; the age label stays secondary.
+    private func metaText(_ words: String) -> Text {
+        if let badge = TargetAge.attemptsBadge(task), words.hasSuffix(badge) {
+            return Text(String(words.dropLast(badge.count))).font(.caption2).foregroundStyle(.secondary)
+                + Text(badge).font(.caption2.weight(.semibold)).foregroundStyle(WatchTheme.overdue)
+        }
+        return Text(words).font(.caption2).foregroundStyle(.secondary)
+    }
+
+    /// An Upcoming row's words on ONE line (2026-10-12, Trent's review of
+    /// #251): the first `UpcomingMetaForm` whose words fit the row's width
+    /// on one line — `ViewThatFits` compares each one-line candidate's
+    /// ideal width — and the shortest, wrapping, when none does (the
+    /// accessibility sizes).
+    private var upcomingWords: some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach(UpcomingMetaForm.allCases, id: \.self) { form in
+                if let words = task.segmentMeta(segmentHorizon: segmentHorizon, upcomingForm: form) {
+                    metaText(words).lineLimit(1).fixedSize()
+                }
+            }
+            if let words = task.segmentMeta(segmentHorizon: segmentHorizon, upcomingForm: .short) {
+                metaText(words)
+            }
+        }
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
             Button(action: consider) {
@@ -485,10 +513,10 @@ struct SegmentRowView: View {
                             .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let meta {
-                            Text(meta)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                        if segmentHorizon == SegmentKind.upcomingRaw {
+                            upcomingWords
+                        } else if let meta {
+                            metaText(meta)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -116,8 +116,24 @@ enum WidgetTheme {
     static let takebackTint = Color.red
 
     /// Over target (2026-10-11): a calm plum, the web's `--over-target` —
-    /// never red, which is kept for a passed deadline only (Trent).
-    static let overTarget = Color(red: 0.62, green: 0.27, blue: 0.58)
+    /// never red, which is kept for a passed deadline only (Trent). Plum TEXT
+    /// and the attempts tab's tint. Lifted in dark mode like the web's dark
+    /// token (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on
+    /// the dark card measured 3.0:1 as text and 2.7:1 on its own tab tint;
+    /// lifted it is 6.0:1 and ≥4.7:1. Light mode is unchanged (#9E4594, 5.6:1
+    /// on white, ≥4.5:1 on its tints). Resolved from the view's
+    /// `colorScheme` (see `taskSegmentColor`), not a dynamic platform color.
+    static func overTarget(_ scheme: ColorScheme) -> Color {
+        rgb(scheme == .dark ? 0xC97CD5 : 0x9E4594)
+    }
+
+    /// A SOLID plum under white text — the attempts tab's 7+ step, the web's
+    /// `--over-target-badge`: the plum itself in light mode (white on it
+    /// 5.6:1), a darker one in dark mode (oklch(0.52 0.16 322) ≈ #92429E,
+    /// white on it 6.0:1), since white on the lifted text plum would fail.
+    static func overTargetBadge(_ scheme: ColorScheme) -> Color {
+        rgb(scheme == .dark ? 0x92429E : 0x9E4594)
+    }
 
     /// A task segment's teal (2026-10-11, Trent's pick: mockup
     /// task-segment-colors-2 option 3) — its strip bar's fill while a row
@@ -618,7 +634,9 @@ enum WidgetTheme {
     /// is an explicit line break, never a wrap, so the
     /// label's width and height are exactly what `TasksListView.layout
     /// (for:)` measured.
-    static func dueLabelText(for task: TaskDTO, now: Date = Date(), stacked: Bool = false) -> Text {
+    static func dueLabelText(
+        for task: TaskDTO, now: Date = Date(), stacked: Bool = false, scheme: ColorScheme
+    ) -> Text {
         guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
@@ -627,7 +645,7 @@ enum WidgetTheme {
             // "Sep 12") is part of what's late, so it wears the same tint as
             // the time, stacked over it exactly like an upcoming label. Plum,
             // not red, since 2026-10-11 (WidgetTheme.overTarget).
-            let red = WidgetTheme.overTarget
+            let red = WidgetTheme.overTarget(scheme)
             var text: Text?
             if let dayWord = parts.dayWord { text = Text(dayWord).foregroundStyle(red) }
             if let time = parts.time {

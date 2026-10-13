@@ -135,15 +135,6 @@ private struct TaskRow: View {
     let task: TaskDTO
     let project: ProjectDTO?
 
-    /// The plum's depth for each age step (`TargetAge.Tone`), 2026-10-11.
-    static func tint(_ tone: TargetAge.Tone) -> Color {
-        switch tone {
-        case .light: return WatchTheme.overdue.opacity(0.75)
-        case .medium: return WatchTheme.overdue
-        case .strong: return WatchTheme.overdue
-        }
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             // The project's color — or plum once the task is over target, the
@@ -163,20 +154,27 @@ private struct TaskRow: View {
                         Text(WatchFormatting.dueLine(for: due))
                             .font(.caption2)
                             .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)
-                        // The target-age badge (2026-10-10, spec §4): "2d"
-                        // since the FIRST target, toned in three depths of
-                        // plum (1–2 light, 3–6 medium, 7+ strong); blank on
-                        // the target day. Then a red flag once the deadline
-                        // has passed (red is for a passed deadline only).
-                        if let days = TargetAge.days(task) {
-                            Text(TargetAge.badgeText(days: days))
+                        // The attempts badge (spec §7, 2026-10-12): the
+                        // server's "3×" (`attempts_label`) — the days the task
+                        // was over target, never counted here — in the
+                        // Tasks widget's tab: plum on a plum tint for 1–6,
+                        // white on solid plum for 7+. It replaced the
+                        // device-computed "2d" age tab. Then a red flag once
+                        // the deadline has passed (red is for that only).
+                        if let label = TargetAge.attemptsBadge(task) {
+                            let strong = TargetAge.tone(attempts: task.attempts) == .strong
+                            let medium = TargetAge.tone(attempts: task.attempts) == .medium
+                            Text(label)
                                 .font(.caption2.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(Self.tint(TargetAge.tone(days: days)))
+                                .foregroundStyle(strong ? Color.white : WatchTheme.overdue)
                                 .padding(.horizontal, 3)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 3).fill(Self.tint(TargetAge.tone(days: days)).opacity(0.2))
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(strong ? WatchTheme.overTargetBadge : WatchTheme.overdue.opacity(medium ? 0.15 : 0.08))
                                 )
-                                .accessibilityLabel(Text("\(days) days \(TaskWording.overTargetLower)"))
+                                .accessibilityLabel(
+                                    Text("\(TaskWording.overTarget) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
+                                )
                         }
                         if TargetAge.isPastDeadline(task) {
                             Image(systemName: "flag.fill")
