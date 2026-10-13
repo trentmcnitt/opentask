@@ -153,10 +153,12 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
    - "every Monday" → FREQ=WEEKLY;BYDAY=MO
    - "every weekday" → FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
    - "every month on the 1st" → FREQ=MONTHLY;BYMONTHDAY=1
-   - "every 2 weeks" → FREQ=WEEKLY;INTERVAL=2;BYDAY=MO (must include BYDAY)
+   - "every 2 weeks" / "every other week" / "biweekly", no day named → FREQ=WEEKLY;INTERVAL=2;BYDAY=<today's weekday> (must include BYDAY; today is the weekday in "Current local time" — on a Thursday, BYDAY=TH)
    - "twice a week" → FREQ=WEEKLY;INTERVAL=1;BYDAY=TU,TH (pick two spread-out days when the user doesn't specify)
    - "twice a month" → FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=1,15
-   - "every quarter" / "every 3 months" → FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1 (must include BYMONTHDAY)
+   - "every month", no date named → FREQ=MONTHLY;BYMONTHDAY=<today's day of the month> (on the 12th, BYMONTHDAY=12)
+   - "every quarter" / "every 3 months", no date named → FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=<today's day of the month> (must include BYMONTHDAY)
+   A weekly or monthly repeat with no day or date named starts from today: use today's weekday or day of the month, never a default Monday or 1st.
    - "every 4 hours" → use auto_snooze_minutes: 240 (sub-daily repeats are auto-snooze, not rrule)
    - "every 90 minutes" → use auto_snooze_minutes: 90 (sub-daily repeats are auto-snooze, not rrule)
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.

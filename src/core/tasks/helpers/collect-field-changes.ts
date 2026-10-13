@@ -9,7 +9,7 @@
 
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
-import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
+import { deriveAnchorFields, computeFirstOccurrence, fillRuleTime } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import {
   QUOTA_DUE_DATE_MESSAGE,
@@ -146,14 +146,19 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // it, `effectiveDueAt` asks rrule.js for today's occurrence of a bare weekly
   // rule, which lands on an arbitrary weekday. Clearing it here rather than in
   // updateTask means bulk edit retires correctly too.
-  const retired: FieldChangesInput =
+  const ctx = options.targetCtx ?? getTargetContext(task.user_id)
+  const retired = withRuleTime(
+    task,
     wasTracked && !willBeTracked && options.input.rrule === undefined
       ? { ...options.input, rrule: null }
-      : options.input
+      : options.input,
+    willBeTracked,
+    { morningTime: ctx.morningTime, timezone: userTimezone },
+  )
   const target = resolveTargetInput(task, retired, {
     willBeTracked,
     willBeReminder,
-    ctx: options.targetCtx ?? getTargetContext(task.user_id),
+    ctx,
     now,
   })
   const input = target.input
@@ -225,6 +230,37 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   stampTargetSet(data, task, now.toISOString())
 
   return data
+}
+
+/**
+ * Every non-quota rule has a time of day (2026-10-12, `fillRuleTime` in
+ * `src/core/recurrence/rule-time.ts`): a NEW rule sent without BYHOUR takes
+ * the time of a date sent with it, else the task's `anchor_time`, else its
+ * current date's time, else the user's Morning time. Done here, before
+ * anything else reads `input.rrule`, so the rule change, its anchors, the
+ * occurrence it schedules and the undo snapshot all see the stored form — and
+ * a timeless client re-sending a rule the row already stores with its time
+ * fills to that same string and changes nothing.
+ *
+ * Judged on the RESULTING row: a quota (`willBeTracked`) keeps its bare
+ * period rule, even when this request is what makes it one. A rule sent
+ * exactly as stored is left alone — re-sending an unchanged (legacy,
+ * timeless) rule is not a schedule change.
+ */
+function withRuleTime(
+  task: Task,
+  input: FieldChangesInput,
+  willBeTracked: boolean,
+  user: { morningTime: string; timezone: string },
+): FieldChangesInput {
+  if (!input.rrule || input.rrule === task.rrule) return input
+  const rrule = fillRuleTime(input.rrule, willBeTracked, {
+    requestDueAt: input.due_at ?? null,
+    anchorTime: task.anchor_time,
+    existingDueAt: task.due_at,
+    ...user,
+  })
+  return rrule === input.rrule ? input : { ...input, rrule }
 }
 
 /**

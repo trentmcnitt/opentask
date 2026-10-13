@@ -179,7 +179,8 @@ describe('PATCH with rrule and due_at together', () => {
       input: { rrule: 'FREQ=WEEKLY;BYDAY=MO', due_at: monday },
     })
 
-    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
+    // The timeless rule takes the time of the date sent with it (2026-10-12).
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=18;BYMINUTE=30')
     expect(after.due_at).toBe(monday)
     expect(after.anchor_time).toBe('18:30')
     expect(fieldsChanged).toContain('due_at')

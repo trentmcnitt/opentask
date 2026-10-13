@@ -451,12 +451,15 @@ describe('A quota always has a period (Trent, 2026-09-25)', () => {
 
   test('QPM-017: bulk edit refuses the whole batch; a legacy period-less quota stays editable', () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
-    const plain = createTask({ ...base, input: { title: 'Plain task', rrule: 'FREQ=DAILY' } })
+    const plain = createTask({
+      ...base,
+      input: { title: 'Plain task', rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
+    })
     expect(() =>
       bulkEdit({ ...base, taskIds: [q.id, plain.id], changes: { rrule: null } }),
     ).toThrow(QUOTA_PERIOD_MESSAGE)
     // All or nothing: the plain task kept its rule too.
-    expect(getTaskById(plain.id)!.rrule).toBe('FREQ=DAILY')
+    expect(getTaskById(plain.id)!.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
     expect(getTaskById(q.id)!.rrule).toBe('FREQ=WEEKLY')
 
     // A legacy row (none in production) can still be renamed and re-slotted,

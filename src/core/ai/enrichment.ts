@@ -43,6 +43,7 @@ import {
   deriveAnchorFields,
   parseRRule,
   getDayOfWeek,
+  fillRuleTime,
 } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { stampTargetSet } from '@/core/tasks/target-set'
@@ -748,16 +749,25 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
     throw new Error('Failed to parse enrichment result')
   }
 
-  if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, defaultSlotLabel)
-  else {
-    parsed = alignTaskModelDates(
-      resolveDateOnlyTarget(
-        sanitizeTaskModelFields(parsed, textToEnrich, row.id),
-        textToEnrich,
+  if (isReminder) {
+    parsed = sanitizeReminderEnrichment(
+      pinUnnamedDay(parsed, textToEnrich, user.timezone),
+      slots,
+      defaultSlotLabel,
+    )
+  } else {
+    parsed = pinUnnamedDay(
+      alignTaskModelDates(
+        resolveDateOnlyTarget(
+          sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+          textToEnrich,
+          user.timezone,
+          user.morning_time,
+          targetTodayTime(user.id, user.timezone),
+        ),
         user.timezone,
-        user.morning_time,
-        targetTodayTime(user.id, user.timezone),
       ),
+      textToEnrich,
       user.timezone,
     )
   }
@@ -951,6 +961,102 @@ export function resolveDateOnlyTarget(
     ...enrichment,
     due_at: local.toISO({ includeOffset: false, suppressMilliseconds: true })!,
   }
+}
+
+/**
+ * Words that name a weekday ("every other Friday", "biweekly on weds", "every
+ * 2 weeks on the weekend"). With one, the model's BYDAY is the user's.
+ */
+const WEEKDAY_NAMED =
+  /\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|days|nesday|nesdays|sday|sdays|urday|urdays)?\b|\bweekdays?\b|\bweekends?\b/i
+
+/**
+ * Words that name a day of the month ("the 15th", "on the 1st", "first of the
+ * month", "end of the month", "mid-month", "payday"). With one, the model's
+ * BYMONTHDAY is the user's.
+ */
+const MONTHDAY_NAMED =
+  /\b\d{1,2}(st|nd|rd|th)\b|\bthe \d{1,2}\b|\b(first|second|third|fourth|fifth|last|end|beginning|start|middle|mid|half)\b|\bmid-month\b/i
+
+const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
+
+/**
+ * Words that say when a repeat STARTS ("starting tomorrow", "from next week",
+ * "this Friday", "in November"). With one, the model's first date (due_at) is
+ * the user's, and the unnamed day is that date's.
+ */
+const START_CUE =
+  /\b(today|tonight|tomorrow|next|starting|starts?|beginning|from|jan|january|feb|february|mar|march|apr|april|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i
+
+/** Which part of a rule `pinUnnamedDay` would pin, or null when none. */
+function unnamedDayPart(parts: string[], inputText: string): 'BYDAY' | 'BYMONTHDAY' | null {
+  const get = (key: string) =>
+    parts.find((p) => p.toUpperCase().startsWith(`${key}=`))?.split('=')[1]
+  const freq = get('FREQ')?.toUpperCase()
+  if (freq === 'WEEKLY' && !WEEKDAY_NAMED.test(inputText)) {
+    return /^[A-Z]{2}$/i.test(get('BYDAY') ?? '') ? 'BYDAY' : null
+  }
+  if (freq === 'MONTHLY' && !MONTHDAY_NAMED.test(inputText)) {
+    const single = /^-?\d{1,2}$/.test(get('BYMONTHDAY') ?? '')
+    return single && !get('BYDAY') && !get('BYSETPOS') ? 'BYMONTHDAY' : null
+  }
+  return null
+}
+
+/**
+ * A repeat with no day named starts from today (Trent, 2026-10-12). "Every 2
+ * weeks" / "every other week" / "biweekly" said on a Thursday is every other
+ * THURSDAY (BYDAY=TH), and "every month" / "every quarter" / "every 3 months"
+ * said on the 12th repeats on the 12th — the creation day is day 0, as for a
+ * floating rule (docs/TASK-MODEL.md § Recurrence Model). The prompt used to
+ * teach BYDAY=MO and BYMONTHDAY=1 for these; it now asks for today, and this
+ * makes it so whatever the model answered:
+ *
+ * - a WEEKLY rule with exactly one plain BYDAY, when the input names no
+ *   weekday, and a MONTHLY rule with exactly one BYMONTHDAY (no BYDAY or
+ *   BYSETPOS), when the input names no day of the month, are pinned to the
+ *   day the repeat starts: TODAY in the user's zone — or, when the input says
+ *   when it starts ("every 2 weeks starting tomorrow"), the model's due_at.
+ * - With no start named, a due_at the model added (a time, or a guessed first
+ *   day) is folded into the rule — its time becomes BYHOUR/BYMINUTE — and
+ *   dropped, so the first occurrence is the creation day's (or, if that time
+ *   has passed, the next on the grid) and never a guessed Monday.
+ * - The last day of a month becomes BYMONTHDAY=-1 (the last day), so a rule
+ *   made on Oct 31 does not skip every shorter month. A 29th or 30th that is
+ *   not the month's last day stays as is: rrule skips the months without it.
+ *
+ * Several days ("twice a week" → TU,TH), a stated day, and every other
+ * frequency are left as the model wrote them. Runs on the model's LOCAL
+ * due_at, before `toUtcTimes`. Reminders too: their prompt has no clock, so
+ * the model cannot know today (their due_at is always null). Exported for the
+ * quality harness, which must judge what production stores.
+ */
+export function pinUnnamedDay(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  if (!enrichment.rrule) return enrichment
+  let parts = enrichment.rrule.split(';')
+  const part = unnamedDayPart(parts, inputText)
+  if (!part) return enrichment
+
+  const due = enrichment.due_at ? parseLocalDateTime(enrichment.due_at, timezone) : null
+  const keepDue = due !== null && START_CUE.test(inputText)
+  const day = keepDue ? due : DateTime.fromJSDate(now).setZone(timezone)
+  const pinned =
+    part === 'BYDAY'
+      ? RRULE_DAYS[day.weekday - 1]
+      : day.day === day.daysInMonth && day.day > 28
+        ? '-1'
+        : String(day.day)
+  parts = parts.map((p) => (p.toUpperCase().startsWith(`${part}=`) ? `${part}=${pinned}` : p))
+  if (due && !keepDue && !parts.some((p) => /^BYHOUR=/i.test(p))) {
+    parts = parts.filter((p) => !/^BYMINUTE=/i.test(p))
+    parts.push(`BYHOUR=${due.hour}`, `BYMINUTE=${due.minute}`)
+  }
+  return { ...enrichment, rrule: parts.join(';'), due_at: keepDue ? enrichment.due_at : null }
 }
 
 /** The word that licenses a date-only target of today (`resolveDateOnlyTarget`). */
@@ -1498,7 +1604,12 @@ function applyEnrichment(
   const task = getTaskById(row.id)
   if (!task) return []
 
-  const changes = collectEnrichmentChanges(task, enrichment, user, inputText)
+  const changes = collectEnrichmentChanges(
+    task,
+    withEnrichmentRuleTime(task, enrichment, user),
+    user,
+    inputText,
+  )
 
   if (changes.fieldsChanged.length === 0) {
     // No field changes, but still need to remove ai-to-process label
@@ -1552,6 +1663,31 @@ function applyEnrichment(
 
   // Return user-facing fields (filter out anchor internals) for toast description
   return changes.fieldsChanged.filter((f) => !INTERNAL_FIELDS.includes(f))
+}
+
+/**
+ * Every non-quota rule has a time of day (2026-10-12, `fillRuleTime` in
+ * `src/core/recurrence/rule-time.ts`). The task prompt keeps a rule bare and
+ * puts the time in due_at ("every Monday at 9am" → `FREQ=WEEKLY;BYDAY=MO`,
+ * due_at Monday 9:00), so the rule takes that date's time; with no date, the
+ * task's anchor, its current date's time, else the user's Morning time. A
+ * reminder's rule is already timed (`sanitizeReminderEnrichment`). The quota
+ * test is the row's at write time — `task` is the re-read in `applyEnrichment`,
+ * as `collectEnrichmentChanges` asks it. `enrichment.due_at` is UTC by now.
+ */
+function withEnrichmentRuleTime(
+  task: Task,
+  enrichment: EnrichmentResult,
+  user: { id: number; timezone: string },
+): EnrichmentResult {
+  const rrule = fillRuleTime(enrichment.rrule, isTracked(task), {
+    requestDueAt: enrichment.due_at,
+    anchorTime: task.anchor_time,
+    existingDueAt: task.due_at,
+    morningTime: getTargetContext(user.id).morningTime,
+    timezone: user.timezone,
+  })
+  return rrule === enrichment.rrule ? enrichment : { ...enrichment, rrule }
 }
 
 interface PendingTaskRow {

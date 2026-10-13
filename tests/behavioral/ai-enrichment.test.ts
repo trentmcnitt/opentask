@@ -315,7 +315,9 @@ describe('enrichment success path', () => {
     await processEnrichmentQueue()
 
     const after = getTaskById(task.id)!
-    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TU')
+    // The rule takes the time of the date the model sent (09:00, 2026-10-12).
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0')
+    expect(after.anchor_time).toBe('09:00')
     expect(after.anchor_dow).not.toBeNull()
     expect(after.labels).not.toContain('ai-to-process')
   })
@@ -1024,7 +1026,7 @@ describe('local→UTC timezone conversion', () => {
     const after = getTaskById(task.id)!
     // Snapped forward to Thursday Apr 23 at 9 AM CDT = 14:00 UTC.
     expect(after.due_at).toBe('2026-04-23T14:00:00.000Z')
-    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TH')
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TH;BYHOUR=9;BYMINUTE=0')
   })
 
   test('does not snap due_at when weekday already matches BYDAY', async () => {
@@ -1139,7 +1141,7 @@ describe('new enrichment fields', () => {
 
     const after = getTaskById(task.id)!
     expect(after.recurrence_mode).toBe('from_completion')
-    expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3')
+    expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3;BYHOUR=8;BYMINUTE=0')
   })
 
   test('an every-N rule with no date starts on the enrichment day (creation day is day 0, 2026-10-12)', async () => {
@@ -1437,5 +1439,104 @@ describe('enrichment leaves a quota dateless', () => {
     expect(after.title).toBe('Eat beef')
     expect(after.priority).toBe(2)
     expect(after.labels).not.toContain('ai-to-process')
+  })
+})
+
+describe('every rule has a time; a repeat with no day starts today (2026-10-12)', () => {
+  beforeEach(() => clearPendingEnrichment())
+  afterEach(() => vi.useRealTimers())
+
+  test("a timeless rule with no date takes the user's Morning time (every rule has a time, 2026-10-12)", async () => {
+    // Mon Oct 12 2026, 07:00 Chicago; Morning time 08:30 (Trent's own).
+    vi.setSystemTime(new Date('2026-10-12T12:00:00Z'))
+    const db = getDb()
+    const before = db.prepare('SELECT morning_time FROM users WHERE id = ?').get(TEST_USER_ID) as {
+      morning_time: string
+    }
+    db.prepare("UPDATE users SET morning_time = '08:30' WHERE id = ?").run(TEST_USER_ID)
+    try {
+      const task = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'stretch every day' },
+      })
+      mockEnrichmentQuery.mockResolvedValueOnce(
+        mockResult({
+          title: 'Stretch',
+          priority: 0,
+          due_at: null,
+          labels: [],
+          rrule: 'FREQ=DAILY',
+        }),
+      )
+
+      await processEnrichmentQueue()
+
+      const after = getTaskById(task.id)!
+      expect(after.rrule).toBe('FREQ=DAILY;BYHOUR=8;BYMINUTE=30')
+      expect(after.anchor_time).toBe('08:30')
+      // Today at 08:30 CDT = 13:30 UTC: before its time, so the creation day.
+      expect(after.due_at).toBe('2026-10-12T13:30:00.000Z')
+    } finally {
+      db.prepare('UPDATE users SET morning_time = ? WHERE id = ?').run(
+        before.morning_time,
+        TEST_USER_ID,
+      )
+    }
+  })
+
+  test('a quota re-enriched with a bare period rule keeps it bare', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Run', rrule: 'FREQ=WEEKLY', progress_target: 3 },
+    })
+    getDb().prepare(`UPDATE tasks SET labels = '["ai-to-process"]' WHERE id = ?`).run(task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Run',
+        priority: 0,
+        due_at: null,
+        labels: [],
+        rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    // §5: enrichment leaves a quota's schedule alone entirely.
+    expect(getTaskById(task.id)!.rrule).toBe('FREQ=WEEKLY')
+  })
+
+  test('"every 2 weeks" with no day starts today: the model\'s Monday becomes Thursday (2026-10-12)', async () => {
+    // Thu Oct 15 2026, 07:00 Chicago — before the 09:00 Morning time.
+    vi.setSystemTime(new Date('2026-10-15T12:00:00Z'))
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'clean the fish tank every 2 weeks' },
+    })
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Clean the fish tank',
+        priority: 0,
+        due_at: null,
+        labels: [],
+        rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    const morning = (
+      getDb().prepare('SELECT morning_time FROM users WHERE id = ?').get(TEST_USER_ID) as {
+        morning_time: string
+      }
+    ).morning_time
+    const [h, m] = morning.split(':').map(Number)
+    expect(after.rrule).toBe(`FREQ=WEEKLY;INTERVAL=2;BYDAY=TH;BYHOUR=${h};BYMINUTE=${m}`)
+    // The creation day is day 0: today, at Morning time.
+    expect(after.due_at!.slice(0, 10)).toBe('2026-10-15')
   })
 })

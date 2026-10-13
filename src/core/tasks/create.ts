@@ -4,11 +4,11 @@
 
 import { TARGET_SET_FIELD } from './target-set'
 import { getTargetContext } from './target-context'
-import { resolveTarget } from '@/lib/task-segments'
+import { resolveTarget, type TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
-import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
+import { computeFirstOccurrence, deriveAnchorFields, fillRuleTime } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
@@ -72,6 +72,26 @@ function scheduleFor(
 }
 
 /**
+ * The rule the new row stores: `scheduleFor`'s, with its time of day filled
+ * in (every non-quota rule has one, `fillRuleTime`: the time of a date sent
+ * with it, else the user's Morning time). Before the first occurrence is
+ * computed — a timeless rule would start at local midnight, a period late.
+ */
+function timedSchedule(
+  userId: number,
+  input: TaskCreateInput,
+  tracked: boolean,
+  ctx: TargetContext,
+  timezone: string,
+): string | null | undefined {
+  return fillRuleTime(scheduleFor(userId, input, tracked), tracked, {
+    requestDueAt: input.due_at ?? null,
+    morningTime: ctx.morningTime,
+    timezone,
+  })
+}
+
+/**
  * Create a new task
  *
  * @returns The created task
@@ -123,7 +143,8 @@ export function createTask(options: CreateTaskOptions): Task {
     !input.deadline_at &&
     !input.horizon
 
-  const rrule = scheduleFor(userId, input, tracked)
+  const targetCtx = getTargetContext(userId)
+  const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone)
 
   // Compute due_at if rrule provided but no due_at.
   //
@@ -149,7 +170,7 @@ export function createTask(options: CreateTaskOptions): Task {
       deadlineChanged: false,
       autoEligible: !rrule && !tracked && !input.is_reminder,
     },
-    getTargetContext(userId),
+    targetCtx,
   )
   dueAt = target.dueAt
 

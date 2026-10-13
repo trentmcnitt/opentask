@@ -4738,6 +4738,14 @@ components:
           description: |
             RFC 5545 recurrence rule.
 
+            Every repeating task or reminder has a time of day (2026-10-12). A
+            rule sent without `BYHOUR` is stored with `BYHOUR`/`BYMINUTE` added:
+            the local time of a `due_at` sent in the same request, else the
+            user's Morning time (`morning_time` in the user preferences) - e.g.
+            `FREQ=DAILY` becomes `FREQ=DAILY;BYHOUR=8;BYMINUTE=30`. A quota
+            (`progress_target` > 1 or `is_tracked`) is exempt: its rule is a bare
+            period rule (`FREQ=WEEKLY`) and is stored as sent.
+
             On a reminder (`is_reminder: true`), OMITTING `rrule` (with no
             `due_at`) puts the reminder in the user's default reminder slot -
             daily at that slot's start, e.g. `FREQ=DAILY;BYHOUR=9;BYMINUTE=0` -
@@ -4745,7 +4753,8 @@ components:
             reminder is still sent to AI enrichment (when AI is on), which moves
             it if the text names a time or cadence. An explicit `rrule: null`
             means "no schedule" (a one-time reminder), and a supplied rule is
-            used as sent. A user with no time slots gets no default.
+            used as sent (with its time filled in, as above). A user with no
+            time slots gets no default.
         recurrence_mode:
           type: string
           enum: [from_due, from_completion]
@@ -4958,6 +4967,14 @@ components:
           maximum: 4
         rrule:
           type: [string, 'null']
+          description: |
+            RFC 5545 recurrence rule. A NEW rule sent without `BYHOUR` on a task
+            or reminder is stored with `BYHOUR`/`BYMINUTE` added (2026-10-12):
+            the local time of a `due_at` sent with it, else the task's
+            `anchor_time`, else its current `due_at`'s time, else the user's
+            Morning time. A rule identical to the stored one is no change. A
+            quota's bare period rule is stored as sent - judged on the task the
+            request leaves (a request that makes it a quota keeps the bare rule).
         recurrence_mode:
           type: string
           enum: [from_due, from_completion]

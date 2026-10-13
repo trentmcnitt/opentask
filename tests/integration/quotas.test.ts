@@ -406,7 +406,10 @@ describe('A quota needs a period', () => {
       progress_target: 3,
       rrule: 'FREQ=WEEKLY',
     })
-    const plain = await create({ title: 'Bulk plain probe', rrule: 'FREQ=DAILY' })
+    const plain = await create({
+      title: 'Bulk plain probe',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+    })
 
     await expectPeriodRefusal(
       await apiFetch('/api/tasks/bulk/edit', {
@@ -416,7 +419,7 @@ describe('A quota needs a period', () => {
     )
     // All or nothing: the plain task kept its rule too.
     const plainAfter = (await (await apiFetch(`/api/tasks/${plain.id}`)).json()).data
-    expect(plainAfter.rrule).toBe('FREQ=DAILY')
+    expect(plainAfter.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
     const quotaAfter = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
     expect(quotaAfter.rrule).toBe('FREQ=WEEKLY')
   })
