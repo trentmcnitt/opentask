@@ -1234,6 +1234,38 @@ describe('new enrichment fields', () => {
     expect(getTaskById(task.id)!.rrule).toBe('FREQ=WEEKLY')
   })
 
+  test('"every 2 weeks" with no day starts today: the model\'s Monday becomes Thursday (2026-10-12)', async () => {
+    // Thu Oct 15 2026, 07:00 Chicago — before the 09:00 Morning time.
+    vi.setSystemTime(new Date('2026-10-15T12:00:00Z'))
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'clean the fish tank every 2 weeks' },
+    })
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Clean the fish tank',
+        priority: 0,
+        due_at: null,
+        labels: [],
+        rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    const morning = (
+      getDb().prepare('SELECT morning_time FROM users WHERE id = ?').get(TEST_USER_ID) as {
+        morning_time: string
+      }
+    ).morning_time
+    const [h, m] = morning.split(':').map(Number)
+    expect(after.rrule).toBe(`FREQ=WEEKLY;INTERVAL=2;BYDAY=TH;BYHOUR=${h};BYMINUTE=${m}`)
+    // The creation day is day 0: today, at Morning time.
+    expect(after.due_at!.slice(0, 10)).toBe('2026-10-15')
+  })
+
   test('applies notes from enrichment', async () => {
     const task = createTask({
       userId: TEST_USER_ID,

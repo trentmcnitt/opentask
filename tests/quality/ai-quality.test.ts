@@ -461,6 +461,7 @@ async function runEnrichment(
     sanitizeTaskModelFields,
     alignTaskModelDates,
     resolveDateOnlyTarget,
+    pinUnnamedDay,
   } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
@@ -473,16 +474,26 @@ async function runEnrichment(
   // Same for the task model's deadline/horizon guard (2026-10-10): judged on
   // what production stores, with the raw answer logged when the guard changed it.
   // A date-only target ("today", no time) is placed the way production places it.
-  const taskModel = alignTaskModelDates(
-    resolveDateOnlyTarget(
-      sanitizeTaskModelFields(parsed, input.text),
-      input.text,
+  // A repeat with no day named is pinned to today (`pinUnnamedDay`, 2026-10-12).
+  const taskModel = pinUnnamedDay(
+    alignTaskModelDates(
+      resolveDateOnlyTarget(
+        sanitizeTaskModelFields(parsed, input.text),
+        input.text,
+        input.timezone,
+        input.morningTime ?? '09:00',
+        targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
+      ),
       input.timezone,
-      input.morningTime ?? '09:00',
-      targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
     ),
+    input.text,
     input.timezone,
   )
+  if (taskModel.rrule !== parsed.rrule) {
+    console.log(
+      `[quality] day pin changed rrule "${parsed.rrule}" → "${taskModel.rrule}" for: ${input.text}`,
+    )
+  }
   if (
     taskModel.deadline_at !== parsed.deadline_at ||
     taskModel.horizon !== parsed.horizon ||
@@ -513,7 +524,7 @@ async function runReminderEnrichment(
   const { aiQuery } = await import('@/core/ai/sdk')
   const { EnrichmentResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
-  const { sanitizeReminderEnrichment } = await import('@/core/ai/enrichment')
+  const { sanitizeReminderEnrichment, pinUnnamedDay } = await import('@/core/ai/enrichment')
   const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
   const { z } = await import('zod')
 
@@ -552,8 +563,9 @@ async function runReminderEnrichment(
     throw new Error(`AI query failed: ${result.error || 'No output'}`)
   }
 
+  // Production order: the day pin (`pinUnnamedDay`), then the reminder sanitizer.
   const sanitized = sanitizeReminderEnrichment(
-    parsed,
+    pinUnnamedDay(parsed, input.text, input.timezone),
     slots.map((slot, index) => ({
       id: index + 1,
       user_id: QUALITY_TEST_USER_ID,
@@ -1113,6 +1125,17 @@ function checkSpecialExpectation(id: string, key: string, expected: string, actu
   }
   if (expected === '~notnull') {
     if (actual == null) throw new Error(`[${id}] Expected ${key} to be set, got ${actual}`)
+    return
+  }
+  // '~rrule-has:FREQ=WEEKLY;INTERVAL=2;BYDAY=TH' — every listed part is in
+  // the rule, in any order (other parts, e.g. a BYHOUR, may be there too).
+  if (expected.startsWith('~rrule-has:')) {
+    const want = expected.slice('~rrule-has:'.length).toUpperCase().split(';')
+    const have = typeof actual === 'string' ? actual.toUpperCase().split(';') : []
+    const missing = want.filter((part) => !have.includes(part))
+    if (missing.length > 0) {
+      throw new Error(`[${id}] Expected ${key} to have ${missing.join(';')}, got ${actual}`)
+    }
     return
   }
   throw new Error(`[${id}] Unknown matcher ${expected} for ${key}`)

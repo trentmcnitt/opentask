@@ -6,7 +6,19 @@
  * yearly, every other day, twice a week, multi-day complex, hourly.
  */
 
+import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
+
+/**
+ * A repeat with no day named starts from today (Trent, 2026-10-12): "every 2
+ * weeks" said on a Thursday is BYDAY=TH, "every month" said on the 12th is
+ * BYMONTHDAY=12 (the last day of a month is -1). Read when the run starts, in
+ * the scenarios' zone, like the prompt's own "Current local time".
+ */
+const TODAY = DateTime.now().setZone('America/Chicago')
+const TODAY_BYDAY = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][TODAY.weekday - 1]
+const TODAY_BYMONTHDAY =
+  TODAY.day === TODAY.daysInMonth && TODAY.day > 28 ? '-1' : String(TODAY.day)
 
 export const enrichmentRecurrenceScenarios: AITestScenario[] = [
   {
@@ -104,10 +116,72 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         labels: [],
+        rrule: `~rrule-has:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=${TODAY_BYMONTHDAY}`,
       },
       quality_notes:
         'Title: "File quarterly taxes" (recurrence phrase removed). ' +
-        'rrule should be FREQ=MONTHLY;INTERVAL=3.',
+        `rrule should be FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=${TODAY_BYMONTHDAY} — no date is ` +
+        "named, so it repeats on today's day of the month (never a default 1st).",
+    },
+  },
+  {
+    id: 'enrich-recurrence-every-2-weeks-no-day',
+    feature: 'enrichment',
+    description: 'Every 2 weeks with no day named — starts today (BYDAY = today)',
+    input: {
+      text: 'clean the fish tank every 2 weeks',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+        rrule: `~rrule-has:FREQ=WEEKLY;INTERVAL=2;BYDAY=${TODAY_BYDAY}`,
+      },
+      quality_notes:
+        'Title: "Clean the fish tank" (recurrence phrase removed). ' +
+        `rrule should be FREQ=WEEKLY;INTERVAL=2;BYDAY=${TODAY_BYDAY} — no weekday is named, so ` +
+        "it is today's weekday (never a default Monday). due_at null or today; no deadline, " +
+        'no horizon.',
+    },
+  },
+  {
+    id: 'enrich-recurrence-every-other-week-no-day',
+    feature: 'enrichment',
+    description: 'Every other week with no day named — starts today (BYDAY = today)',
+    input: {
+      text: 'take the recycling out every other week',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+        rrule: `~rrule-has:FREQ=WEEKLY;INTERVAL=2;BYDAY=${TODAY_BYDAY}`,
+      },
+      quality_notes:
+        'Title: "Take the recycling out" or similar (recurrence phrase removed). ' +
+        `rrule should be FREQ=WEEKLY;INTERVAL=2;BYDAY=${TODAY_BYDAY} (today's weekday).`,
+    },
+  },
+  {
+    id: 'enrich-recurrence-every-month-no-date',
+    feature: 'enrichment',
+    description: 'Every month with no date named — starts today (BYMONTHDAY = today)',
+    input: {
+      text: 'review the household budget every month',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+        rrule: `~rrule-has:FREQ=MONTHLY;BYMONTHDAY=${TODAY_BYMONTHDAY}`,
+      },
+      quality_notes:
+        'Title: "Review the household budget" (recurrence phrase removed). ' +
+        `rrule should be FREQ=MONTHLY;BYMONTHDAY=${TODAY_BYMONTHDAY} (today's day of the ` +
+        'month, never a default 1st).',
     },
   },
   {
