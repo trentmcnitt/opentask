@@ -1142,6 +1142,34 @@ describe('new enrichment fields', () => {
     expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3')
   })
 
+  test('an every-N rule with no date starts on the enrichment day (creation day is day 0, 2026-10-12)', async () => {
+    // Mon Oct 12 2026, 10:00 Chicago. Before its 8 PM → today; the 2020 epoch's
+    // grid used to say Oct 22.
+    vi.setSystemTime(new Date('2026-10-12T15:00:00Z'))
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'check the water softener every 22 days at 8pm' },
+    })
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Check the water softener',
+        priority: 0,
+        due_at: null,
+        labels: [],
+        rrule: 'FREQ=DAILY;INTERVAL=22;BYHOUR=20;BYMINUTE=0',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=22;BYHOUR=20;BYMINUTE=0')
+    // 8 PM CDT = 01:00 UTC the next day.
+    expect(after.due_at).toBe('2026-10-13T01:00:00.000Z')
+    expect(after.occurrence_at).toBe(after.due_at)
+  })
+
   test('applies notes from enrichment', async () => {
     const task = createTask({
       userId: TEST_USER_ID,

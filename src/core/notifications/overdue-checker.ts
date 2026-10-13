@@ -62,7 +62,7 @@ interface OverdueTask {
   rrule: string | null
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
-  /** Anchors an "every N" rule's grid when there is no due_at (`todaysOccurrence`). */
+  /** Anchors a floating rule's grid (every N, or bare) when there is no due_at (`todaysOccurrence`). */
   occurrence_at?: string | null
   timezone: string
   /**

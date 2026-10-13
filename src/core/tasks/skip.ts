@@ -101,7 +101,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
             timezone: userTimezone,
             completedAt: new Date(),
             prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
-            // An "every N" rule's grid runs from the task's own occurrence.
+            // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
             anchorAt: prevOccurrence ? new Date(prevOccurrence) : null,
           }).toISOString()
       // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`).

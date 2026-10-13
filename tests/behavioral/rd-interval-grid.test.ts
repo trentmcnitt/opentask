@@ -6,7 +6,9 @@
  * 2020 epoch. The golden suite found the old bug: every 22 days, first target
  * Nov 3 → it came again Nov 13 (the epoch grid's next day), not Nov 25.
  *
- * INTERVAL=1 rules, and calls with no anchor, are unchanged (the epoch).
+ * INTERVAL=1 rules that pin their day, and calls with no anchor, are
+ * unchanged (the epoch). A bare rule with no day (FREQ=WEEKLY) follows its
+ * anchor too since the creation-day ruling (rd-creation-day.test.ts).
  * Every date is a LOCAL time in America/Chicago.
  */
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest'
@@ -129,21 +131,20 @@ describe('RD-GRID: an every-N rule runs on its own grid', () => {
   })
 })
 
-describe('RD-GRID: INTERVAL=1 is exactly as before (regression)', () => {
+describe('RD-GRID: an INTERVAL=1 rule that pins its phase is exactly as before (regression)', () => {
+  // A bare FREQ=WEEKLY / MONTHLY / YEARLY (no day) is NOT here: since the
+  // creation-day ruling (2026-10-12) it takes its day from its own anchor —
+  // RD-GRID-011 and tests/behavioral/rd-creation-day.test.ts.
   const RULES = [
     'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
     'FREQ=DAILY',
     'FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=7;BYMINUTE=30',
-    'FREQ=WEEKLY', // no BYDAY: the weekday comes from dtstart — must not move
-    'FREQ=WEEKLY;BYHOUR=18;BYMINUTE=0',
     'FREQ=MONTHLY;BYMONTHDAY=15;BYHOUR=12;BYMINUTE=0',
     'FREQ=MONTHLY;BYMONTHDAY=-1;BYHOUR=9;BYMINUTE=0',
     'FREQ=MONTHLY;BYDAY=FR;BYSETPOS=-1;BYHOUR=17;BYMINUTE=0',
-    'FREQ=MONTHLY', // no BYMONTHDAY: the day comes from dtstart — must not move
-    'FREQ=YEARLY;BYHOUR=9;BYMINUTE=0',
     'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0',
   ]
-  test('RD-GRID-010: an anchor changes nothing for an INTERVAL=1 rule', () => {
+  test('RD-GRID-010: an anchor changes nothing for a pinned INTERVAL=1 rule', () => {
     const anchors = ['2026-11-03T09:00', '2025-02-28T23:30', '2027-07-31T06:15']
     let checked = 0
     for (const rrule of RULES) {
@@ -171,6 +172,23 @@ describe('RD-GRID: INTERVAL=1 is exactly as before (regression)', () => {
       }
     }
     expect(checked).toBeGreaterThan(1000)
+  })
+
+  test('RD-GRID-011: a bare rule (no day) follows its anchor; without one, the epoch as before', () => {
+    // Anchored on a Sunday: weekly → Sundays; monthly → the 11th; yearly → Oct 11.
+    expect(next('FREQ=WEEKLY;BYHOUR=18;BYMINUTE=0', '2026-10-11T18:00')).toBe('2026-10-18T18:00')
+    expect(next('FREQ=MONTHLY;BYHOUR=18;BYMINUTE=0', '2026-10-11T18:00')).toBe('2026-11-11T18:00')
+    expect(next('FREQ=YEARLY;BYHOUR=18;BYMINUTE=0', '2026-10-11T18:00')).toBe('2027-10-11T18:00')
+    // No anchor: the epoch's Wednesday, the 1st, Jan 1 — unchanged.
+    expect(next('FREQ=WEEKLY;BYHOUR=18;BYMINUTE=0', '2026-10-11T18:00', false)).toBe(
+      '2026-10-14T18:00',
+    )
+    expect(next('FREQ=MONTHLY;BYHOUR=18;BYMINUTE=0', '2026-10-11T18:00', false)).toBe(
+      '2026-11-01T18:00',
+    )
+    expect(next('FREQ=YEARLY;BYHOUR=18;BYMINUTE=0', '2026-10-11T18:00', false)).toBe(
+      '2027-01-01T18:00',
+    )
   })
 })
 

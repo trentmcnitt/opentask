@@ -15,7 +15,7 @@
 
 import { RRule, Weekday } from 'rrule'
 import { DateTime } from 'luxon'
-import { parseRRule } from './rrule-builder'
+import { parseRRule, type RRuleComponents } from './rrule-builder'
 import { parseAnchorTime } from './timezone'
 import { toNaiveLocal, fromNaiveLocal } from './utils'
 
@@ -41,11 +41,13 @@ const FREQ_MAP: Record<string, number> = {
 }
 
 /**
- * The pattern's epoch, for a rule with no grid of its own: every INTERVAL=1
- * rule, and an "every N" rule asked without an anchor (a first occurrence, a
- * row with no date). Fixed so that the answer never depends on when it is
- * asked. INTERVAL=1 rules always use it: a bare FREQ=WEEKLY (no BYDAY) takes
- * its weekday from dtstart, so anchoring those would move them.
+ * The pattern's epoch, for a rule with no grid of its own: a rule that pins
+ * its own phase (every INTERVAL=1 rule with a day — `FREQ=DAILY`,
+ * `BYDAY=SU`, `BYMONTHDAY=1` — lands on the same days from any dtstart), and
+ * a floating rule asked without an anchor (a row with no date at all, e.g. a
+ * quota's bare period rule, or a dateless row's "is there one today?").
+ * Fixed so that the answer never depends on when it is asked. A floating rule
+ * WITH an anchor never reads it — see `phaseFloats`.
  */
 const PATTERN_EPOCH_YEAR = 2020
 
@@ -121,34 +123,65 @@ export function advanceDtstart(
 }
 
 /**
- * THE EVERY-N GRID (2026-10-12, Trent): an "every N" rule (INTERVAL > 1 —
- * every 22 days, every 2 weeks, every 3 months) runs on a grid anchored at
- * the task's OWN occurrence (`occurrence_at`, which starts at the task's first
- * date), not at the 2020 epoch. Before, a first target set off the epoch's
- * grid made the second occurrence come early: every 22 days, first Nov 3 →
- * again Nov 13 (the next epoch-grid day), not Nov 25.
+ * Whether a rule's phase floats — whether it needs a grid of its own because
+ * nothing in the rule says which days it lands on:
+ *   - an "every N" rule (INTERVAL > 1: every 22 days, every 2 weeks, every 3
+ *     months) — which day/week/month of the N is the first;
+ *   - a BARE rule with no day (`FREQ=WEEKLY`, `FREQ=MONTHLY`, `FREQ=YEARLY`,
+ *     no BYDAY / BYMONTHDAY) — rrule.js takes its weekday / day of month /
+ *     date from dtstart.
+ * Every other rule pins its own phase (`FREQ=DAILY`, `FREQ=WEEKLY;BYDAY=SU`,
+ * `FREQ=MONTHLY;BYMONTHDAY=1`) and gives the same days from any dtstart, so it
+ * keeps the epoch. (Bare WEEKLY/MONTHLY are refused on a task by validation —
+ * they are a quota's period rule — so on a task the bare case is FREQ=YEARLY
+ * or a row from before that rule; the engine handles them all the same.)
+ */
+export function phaseFloats(components: RRuleComponents): boolean {
+  if ((components.interval ?? 1) > 1) return true
+  if (components.freq === 'DAILY') return false
+  return !pinsDays(components)
+}
+
+/** The rule names its days itself (BYDAY or BYMONTHDAY). */
+function pinsDays(components: RRuleComponents): boolean {
+  return (components.byday?.length ?? 0) > 0 || components.bymonthday !== undefined
+}
+
+/**
+ * THE TASK'S OWN GRID (2026-10-12, Trent): a rule whose phase floats
+ * (`phaseFloats`) runs on a grid anchored at the task's OWN occurrence
+ * (`occurrence_at`, which starts at the task's first date), not at the 2020
+ * epoch. Before, a first target set off the epoch's grid made the second
+ * occurrence come early: every 22 days, first Nov 3 → again Nov 13 (the next
+ * epoch-grid day), not Nov 25; and a bare FREQ=WEEKLY always landed on the
+ * epoch's Wednesday.
  *
  * The anchor's local date becomes dtstart's date (at the rule's time of day,
  * as for the epoch), so the anchor is period 0: for DAILY the grid is
  * anchor + k·N days, for WEEKLY the anchor's week (weeks start Monday) + k·N
- * weeks, for MONTHLY/YEARLY the anchor's month/year + k·N. Each advance writes
- * an occurrence on that grid back to `occurrence_at`, so the grid holds from
- * occurrence to occurrence. `advanceDtstart` then slides it (both ways) next to
- * the reference, keeping every call O(1).
+ * weeks — on the anchor's weekday when the rule has no BYDAY —, for
+ * MONTHLY/YEARLY the anchor's month/year + k·N (on the anchor's day / date
+ * when the rule names none). Each advance writes an occurrence on that grid
+ * back to `occurrence_at`, so the grid holds from occurrence to occurrence.
+ * `advanceDtstart` then slides it (both ways) next to the reference, keeping
+ * every call O(1).
  *
- * INTERVAL=1 rules and anchorless calls get the fixed epoch, exactly as before.
+ * A first occurrence (no date yet) is anchored at the creation day — see
+ * `computeFirstOccurrence`. Rules that pin their phase, and anchorless calls,
+ * get the fixed epoch, exactly as before.
  */
 function gridDtstart(
-  freq: string,
-  interval: number,
+  components: RRuleComponents,
   hour: number,
   minute: number,
   timezone: string,
   refNaive: Date,
   anchorAt: Date | null | undefined,
 ): Date {
+  const freq = components.freq
+  const interval = components.interval || 1
   const anchorDt =
-    interval > 1 && anchorAt && !Number.isNaN(anchorAt.getTime())
+    phaseFloats(components) && anchorAt && !Number.isNaN(anchorAt.getTime())
       ? DateTime.fromJSDate(anchorAt).setZone(timezone)
       : null
   if (!anchorDt?.isValid) {
@@ -174,8 +207,9 @@ export interface ComputeNextOptions {
   prevDueAt?: Date | null
   /**
    * An occurrence on the task's own grid — its `occurrence_at` (else its
-   * `due_at`). Read only by an "every N" rule (INTERVAL > 1) in 'from_due'
-   * mode, whose grid it anchors (`gridDtstart`). Omitted: the fixed epoch.
+   * `due_at`). Read only by a rule whose phase floats (`phaseFloats`: every N,
+   * or a bare rule with no day) in 'from_due' mode, whose grid it anchors
+   * (`gridDtstart`). Omitted: the fixed epoch.
    */
   anchorAt?: Date | null
 }
@@ -250,15 +284,7 @@ function computeFromDue(
   // see gridDtstart); either is then slid toward the reference (see
   // advanceDtstart) so rrule.js does not iterate years of occurrences to answer
   // a question about this week.
-  const dtstart = gridDtstart(
-    components.freq,
-    components.interval || 1,
-    hour,
-    minute,
-    timezone,
-    refNaive,
-    anchorAt,
-  )
+  const dtstart = gridDtstart(components, hour, minute, timezone, refNaive, anchorAt)
 
   // Build RRule options - NO BYHOUR/BYMINUTE, time comes from dtstart
   const ruleOptions: Partial<InstanceType<typeof RRule>['options']> = {
@@ -377,13 +403,60 @@ export function isRecurring(rrule: string | null): boolean {
 }
 
 /**
- * Compute the first occurrence of a recurring task from now
- * Used when creating a new recurring task without an explicit due_at
+ * Compute the first occurrence of a recurring task from now.
+ * Used when a repeating task gets its rule with no date: created without one,
+ * re-ruled (PATCH / bulk edit) without one, or ruled by AI enrichment.
+ *
+ * THE CREATION DAY IS DAY 0 (Trent, 2026-10-12): "If I create it on a Sunday
+ * and it's every 7 days, and I complete it on that Thursday, then it should
+ * pop up on the Sunday." For a rule whose phase floats (`phaseFloats`) the
+ * grid is anchored at the day the rule is set, and that day is itself the
+ * first occurrence if its time has not yet passed — every 22 days made Mon
+ * Oct 12 at 10:00 for 9 PM → Oct 12 at 9 PM; made at 10 PM → Nov 3, the next
+ * grid point. A bare FREQ=WEEKLY made on a Sunday repeats on Sundays. Every
+ * later occurrence is on that grid (`occurrence_at` anchors it), whenever it
+ * is done. Before, the first occurrence came from the 2020 epoch's grid (Oct
+ * 12, every 22 days → Oct 22).
+ *
+ * A floating rule that names its days (every 2 weeks on Monday, every 3
+ * months on the 1st) can't make an arbitrary creation day period 0 — the day
+ * may not match. Its day 0 is the first matching day on or after today (the
+ * rule at INTERVAL=1, from the start of today), so the first occurrence is
+ * never later than the plain weekly/monthly rule's: every 2 weeks on Monday
+ * made Sunday → tomorrow, then every 2 weeks from there; every 3 months on
+ * the 1st made Oct 12 → Nov 1, then Feb 1. Made ON a matching day after its
+ * time → the next grid point (two weeks on), as for a bare rule.
+ *
+ * A rule with no time of day (no BYHOUR and no `anchorTime`) is at local
+ * midnight, which has always passed, so it starts one period on.
+ *
+ * Rules that pin their own phase (FREQ=DAILY, BYDAY=SU, BYMONTHDAY=1 at
+ * INTERVAL=1) are exactly as before: the next matching time after now.
+ *
+ * `now` is injectable for tests; callers use the clock.
  */
 export function computeFirstOccurrence(
   rruleStr: string,
   anchorTime: string | null,
   timezone: string,
+  now: Date = new Date(),
 ): Date {
-  return computeFromDue(rruleStr, anchorTime, timezone, new Date(), null)
+  const components = parseRRule(rruleStr)
+  if (!phaseFloats(components)) {
+    return computeFromDue(rruleStr, anchorTime, timezone, now, null)
+  }
+  let day0 = now
+  if (pinsDays(components)) {
+    const startOfToday = DateTime.fromJSDate(now)
+      .setZone(timezone)
+      .startOf('day')
+      .minus({ milliseconds: 1 })
+      .toJSDate()
+    const everyPeriod = rruleStr
+      .split(';')
+      .filter((part) => !/^INTERVAL=/i.test(part))
+      .join(';')
+    day0 = computeFromDue(everyPeriod, anchorTime, timezone, startOfToday, null)
+  }
+  return computeFromDue(rruleStr, anchorTime, timezone, now, null, day0)
 }
