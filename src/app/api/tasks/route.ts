@@ -89,7 +89,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       offset,
     })
 
-    const formattedTasks = formatTasksResponse(tasks)
+    const formattedTasks = formatTasksResponse(tasks, user.timezone)
 
     return success({
       tasks: formattedTasks,
@@ -128,7 +128,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     }
 
     notifyDemoEngagement(user.name, 'create')
-    return success(formatTaskResponse(task), 201)
+    return success(formatTaskResponse(task, user.timezone), 201)
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)

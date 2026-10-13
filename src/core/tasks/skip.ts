@@ -186,7 +186,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
 
   // §7.5: a skip is NOT a completion. Anything downstream that counts
   // completions must never see this as one.
-  dispatchWebhookEvent(userId, 'task.skipped', { task: formatTaskResponse(result) })
+  dispatchWebhookEvent(userId, 'task.skipped', { task: formatTaskResponse(result, userTimezone) })
 
   return {
     task: result,

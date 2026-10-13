@@ -24,7 +24,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     if (taskId === null) return badRequest('Invalid task ID')
 
     const { task, confirmed } = confirmTaskProvenance(user.id, user.timezone, taskId)
-    return success({ ...formatTaskResponse(task), confirmed })
+    return success({ ...formatTaskResponse(task, user.timezone), confirmed })
   } catch (err) {
     // A task the user can't access answers 404, like a missing one — this
     // endpoint doesn't reveal that the id exists.

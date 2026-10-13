@@ -7,6 +7,7 @@
 import { getDb } from '@/core/db'
 import { getProjects } from '@/core/projects'
 import { formatTaskResponse, type FormattedTask } from '@/lib/format-task'
+import { ownerTimezone } from '@/core/tasks/progress'
 import type { Project, Task } from '@/types'
 
 interface Completion {
@@ -59,6 +60,9 @@ export function exportUserData(userId: number): ExportData {
     )
     .all(userId) as TaskRow[]
 
+  // The badges (`age_label`) are the user's local calendar math.
+  const timezone = ownerTimezone(userId)
+
   // Convert raw DB rows to typed Task objects (matches rowToTask pattern in create.ts)
   const allTasks: FormattedTask[] = allRawTasks.map((row) => {
     const task: Task = {
@@ -67,7 +71,7 @@ export function exportUserData(userId: number): ExportData {
       labels: JSON.parse(row.labels),
       recurrence_mode: row.recurrence_mode as 'from_due' | 'from_completion',
     }
-    return formatTaskResponse(task)
+    return formatTaskResponse(task, timezone)
   })
 
   const projects = getProjects(userId)

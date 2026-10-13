@@ -52,7 +52,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     notifyDemoEngagement(user.name, 'update')
 
     return success({
-      task: formatTaskResponse(result.task),
+      task: formatTaskResponse(result.task, user.timezone),
       previous_due_at: result.previousDueAt,
       original_due_at: result.originalDueAt,
       description: result.description,

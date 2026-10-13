@@ -41,12 +41,12 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       promptsConsideredTotal += prompts.length - waiting
       return {
         slot: g.slot,
-        reminders: g.reminders.map(formatTaskResponse),
+        reminders: g.reminders.map((t) => formatTaskResponse(t, user.timezone)),
         count: g.reminders.length,
         // Considered today in this slot — feeds the progress bars (§6) — and
         // the items themselves, so one can be put back (POST /tasks/:id/undone).
         considered: g.considered,
-        considered_items: g.consideredItems.map(formatTaskResponse),
+        considered_items: g.consideredItems.map((t) => formatTaskResponse(t, user.timezone)),
         prompts,
         prompts_waiting: waiting,
         prompts_considered: prompts.length - waiting,
@@ -57,7 +57,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       groups: payloadGroups,
       // Reminders with no occurrence today (a weekly one on its off day), so
       // every thought stays reachable from its own surface. Not in the counts.
-      not_today: notToday.map(formatTaskResponse),
+      not_today: notToday.map((t) => formatTaskResponse(t, user.timezone)),
       total: groups.reduce((sum, g) => sum + g.reminders.length, 0),
       considered_total: groups.reduce((sum, g) => sum + g.considered, 0),
       prompts_total: promptsTotal,
@@ -73,7 +73,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       task_segments: getTaskSegments(user.id, user.timezone, now).map((seg) => ({
         horizon: seg.horizon,
         tasks: seg.tasks.map(({ task, state }) => ({
-          ...formatTaskResponse(task),
+          ...formatTaskResponse(task, user.timezone),
           segment_state: state,
           // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
           // hide Today, its picker and Remove target on these rows: target-today

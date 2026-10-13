@@ -28,7 +28,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     const result = restorePrompts({ userId: user.id, userTimezone: user.timezone, keys })
     return success({
       restored: result.restored,
-      tasks: result.tasks.map(formatTaskResponse),
+      tasks: result.tasks.map((t) => formatTaskResponse(t, user.timezone)),
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

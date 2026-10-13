@@ -207,11 +207,11 @@ describe("TM8: the deadline's automatic target", () => {
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-12T15:00'))
       // Shipped native builds read `deadline_nag_off: true` for a target past
       // a passed deadline, which makes their own implied-target rule honor it.
-      expect(formatTaskResponse(getTaskById(t.id)!).deadline_nag_off).toBe(true)
+      expect(formatTaskResponse(getTaskById(t.id)!, tz).deadline_nag_off).toBe(true)
       patch(t.id, { due_at: at('2026-10-10T09:00') })
-      expect(formatTaskResponse(getTaskById(t.id)!).deadline_nag_off).toBe(false)
+      expect(formatTaskResponse(getTaskById(t.id)!, tz).deadline_nag_off).toBe(false)
       const ahead = make({ deadline_at: at('2026-10-20T17:00') })
-      expect(formatTaskResponse(ahead).deadline_nag_off).toBe(false)
+      expect(formatTaskResponse(ahead, tz).deadline_nag_off).toBe(false)
     })
 
     test('TM8-014: Today with a time after the deadline (the picker) stops at it', () => {
@@ -352,7 +352,7 @@ describe("TM8: the deadline's automatic target", () => {
       const t = make({ due_at: at('2026-10-14T10:00'), deadline_at: at('2026-10-23T23:59') })
       const r = patch(t.id, { due_at: null, deadline_nag_off: true })
       expect(r.task.target_auto).toBe(true)
-      expect(formatTaskResponse(r.task).deadline_nag_off).toBe(false)
+      expect(formatTaskResponse(r.task, tz).deadline_nag_off).toBe(false)
     })
 
     test('TM8-022: what each target offers (ruling Q9)', () => {

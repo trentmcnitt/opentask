@@ -31,7 +31,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     return success({
       considered: result.considered,
       did: result.did,
-      tasks: result.tasks.map(formatTaskResponse),
+      tasks: result.tasks.map((t) => formatTaskResponse(t, user.timezone)),
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
