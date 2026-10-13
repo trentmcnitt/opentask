@@ -1172,6 +1172,68 @@ describe('new enrichment fields', () => {
     expect(after.occurrence_at).toBe(after.due_at)
   })
 
+  test("a timeless rule with no date takes the user's Morning time (every rule has a time, 2026-10-12)", async () => {
+    // Mon Oct 12 2026, 07:00 Chicago; Morning time 08:30 (Trent's own).
+    vi.setSystemTime(new Date('2026-10-12T12:00:00Z'))
+    const db = getDb()
+    const before = db.prepare('SELECT morning_time FROM users WHERE id = ?').get(TEST_USER_ID) as {
+      morning_time: string
+    }
+    db.prepare("UPDATE users SET morning_time = '08:30' WHERE id = ?").run(TEST_USER_ID)
+    try {
+      const task = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'stretch every day' },
+      })
+      mockEnrichmentQuery.mockResolvedValueOnce(
+        mockResult({
+          title: 'Stretch',
+          priority: 0,
+          due_at: null,
+          labels: [],
+          rrule: 'FREQ=DAILY',
+        }),
+      )
+
+      await processEnrichmentQueue()
+
+      const after = getTaskById(task.id)!
+      expect(after.rrule).toBe('FREQ=DAILY;BYHOUR=8;BYMINUTE=30')
+      expect(after.anchor_time).toBe('08:30')
+      // Today at 08:30 CDT = 13:30 UTC: before its time, so the creation day.
+      expect(after.due_at).toBe('2026-10-12T13:30:00.000Z')
+    } finally {
+      db.prepare('UPDATE users SET morning_time = ? WHERE id = ?').run(
+        before.morning_time,
+        TEST_USER_ID,
+      )
+    }
+  })
+
+  test('a quota re-enriched with a bare period rule keeps it bare', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Run', rrule: 'FREQ=WEEKLY', progress_target: 3 },
+    })
+    getDb().prepare(`UPDATE tasks SET labels = '["ai-to-process"]' WHERE id = ?`).run(task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Run',
+        priority: 0,
+        due_at: null,
+        labels: [],
+        rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    // §5: enrichment leaves a quota's schedule alone entirely.
+    expect(getTaskById(task.id)!.rrule).toBe('FREQ=WEEKLY')
+  })
+
   test('applies notes from enrichment', async () => {
     const task = createTask({
       userId: TEST_USER_ID,
