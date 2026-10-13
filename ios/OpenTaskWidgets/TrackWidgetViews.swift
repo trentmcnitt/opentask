@@ -493,7 +493,6 @@ private struct QuotaChip: View {
     let wrapWidth: CGFloat?
     let takeback: Bool
 
-    private var fraction: Double { item.doneFraction }
     /// Drawing the red "│ −1" — and, identically, being a `−1` button.
     private var takesBack: Bool { QuotaMetrics.showsTakeBack(item, takeback: takeback) }
     /// Takeback mode, on a chip at 0: dimmed and inert.
@@ -521,7 +520,11 @@ private struct QuotaChip: View {
     }
 
     private var accessibilityText: String {
-        let count = "\(item.task.progressCurrent) of \(item.task.progressTarget)"
+        // "1 of 2" — no period: the section heading names it (the segments'
+        // one label, `QuotaCount.spokenLabel`).
+        let count = QuotaCount.spokenLabel(
+            current: item.task.progressCurrent, target: item.task.progressTarget, period: nil
+        )
         if isInert { return "\(item.task.displayTitle) — \(count), nothing to take back" }
         return "\(takesBack ? "Take one back from" : "Log one more for") \(item.task.displayTitle) — \(count)"
     }
@@ -541,7 +544,7 @@ private struct QuotaChip: View {
     }
 
     private func content(lines: Int) -> some View {
-        HStack(spacing: QuotaMetrics.chipTitleCountGap) {
+        HStack(alignment: .firstTextBaseline, spacing: QuotaMetrics.chipTitleCountGap) {
             Text(item.task.displayTitle)
                 .font(QuotaMetrics.chipTitleFont)
                 .foregroundStyle(.primary)
@@ -555,12 +558,27 @@ private struct QuotaChip: View {
         .padding(.trailing, QuotaMetrics.chipTrailingPadding)
     }
 
+    /// The count: N skewed segments (indigo per completion, all green once
+    /// met; no period word — the section header names it), or "3/7" above
+    /// six (`QuotaMetrics.countForm`), exactly `QuotaMetrics.countWidth`
+    /// wide. The chip's progress FILL is gone (2026-10-13): the segments say
+    /// how far along it is.
     private var count: some View {
-        HStack(spacing: 0) {
-            Text("\(item.task.progressCurrent)")
-                .font(QuotaMetrics.chipCurrentFont)
-            Text("/\(item.task.progressTarget)")
-                .font(QuotaMetrics.chipTargetFont)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            switch QuotaMetrics.countForm(for: item) {
+            case .segments:
+                QuotaSegmentsText.segments(
+                    current: item.task.progressCurrent, target: item.task.progressTarget, word: nil,
+                    em: QuotaMetrics.chipTitleSize, wordSize: QuotaMetrics.chipCountSize,
+                    scale: QuotaMetrics.segmentScale
+                )
+                .font(QuotaMetrics.chipTitleFont)
+            case .text:
+                Text("\(item.task.progressCurrent)")
+                    .font(QuotaMetrics.chipCurrentFont)
+                Text("/\(item.task.progressTarget)")
+                    .font(QuotaMetrics.chipTargetFont)
+            }
             if takesBack {
                 // "│ −1" — exactly `QuotaMetrics.takeBackWidth`: gap,
                 // hairline, gap, label (see `chipWidth(for:takeback:)`).
@@ -580,12 +598,11 @@ private struct QuotaChip: View {
         .fixedSize()
     }
 
-    /// The chip's base fill, the progress fill (indigo, green once met — a
-    /// STRONGER opacity than the section bar's own fill: the mockup and the
-    /// original spec prose both call for a bolder progress fill on the chip
-    /// specifically), and the label's 3pt leading stripe, painted AFTER the
-    /// fill so a fully-met chip's fill never tints the stripe green
-    /// underneath it.
+    /// The chip's base fill and the label's 3pt leading stripe. The progress
+    /// fill that used to sweep across the chip (indigo, green once met) was
+    /// removed with the quota segments (2026-10-13): the count's segments
+    /// carry progress now, and a met chip still says so with its green
+    /// border and green segments.
     ///
     /// Base is `.fill.secondary` (an adaptive system fill), not a literal
     /// dark gray: WidgetKit's `.containerBackground` already makes this card
@@ -597,11 +614,6 @@ private struct QuotaChip: View {
     private var fillAndStripe: some View {
         ZStack(alignment: .leading) {
             Rectangle().fill(.fill.secondary)
-            GeometryReader { geo in
-                (item.isMet ? WidgetTheme.trackMetTint : WidgetTheme.indigoAccent)
-                    .opacity(item.isMet ? 0.30 : 0.45)
-                    .frame(width: max(geo.size.width * fraction, 0))
-            }
             HStack(spacing: 0) {
                 Rectangle()
                     .fill(WidgetTheme.projectColor(color))

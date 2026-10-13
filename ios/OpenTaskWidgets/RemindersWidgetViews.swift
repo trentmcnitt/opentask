@@ -251,6 +251,9 @@ private struct ReminderRowLayout {
     /// How short an Upcoming row's words are (2026-10-12): the first
     /// `UpcomingMetaForm` whose words fit ONE line at the row's width.
     var upcomingForm: UpcomingMetaForm = .full
+    /// A quota prompt row's count form (2026-10-13): segments or the text
+    /// fallback, decided before measuring (`WidgetTextMetrics.promptCountForm`).
+    var countForm: QuotaCount.Form = .segments
 }
 
 /// The Home Screen list.
@@ -491,27 +494,29 @@ private struct RemindersListView: View {
             if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
             return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
         case .prompt(let prompt):
-            // The label is ONE string, title and count together
-            // (`QuotaPromptDTO.labelText`), measured at the column the row
+            // The label is ONE run, title then count (segments and word, or
+            // "3/7 today" — 2026-10-13), measured at the column the row
             // really gives it: the card minus the stripe, and minus BOTH
             // trailing controls — the did-it square and the consider circle
             // (`PromptRowMetrics.titleWidth`). Same floor as a reminder row.
-            let fit = metrics.titleLines(
-                prompt.labelText, width: PromptRowMetrics.titleWidth(in: width), weight: .regular, maxHeight: budget,
-                hasNotes: prompt.hasNotes
-            )
+            let column = PromptRowMetrics.titleWidth(in: width)
+            let form = metrics.promptCountForm(prompt, width: column)
+            let fit = metrics.promptLines(prompt, form: form, width: column, maxHeight: budget)
             if fit.shrinks {
-                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true)
+                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true, countForm: form)
             }
-            return ReminderRowLayout(lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), rowFloor))
+            return ReminderRowLayout(
+                lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), rowFloor), countForm: form
+            )
         case .donePrompt(let prompt):
             // DONE rows have one trailing marker, like `DoneReminderRow`.
-            let fit = metrics.titleLines(
-                prompt.labelText, width: PromptRowMetrics.doneTitleWidth(in: width), weight: .regular,
-                maxHeight: budget, hasNotes: prompt.hasNotes
-            )
-            if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
-            return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
+            let column = PromptRowMetrics.doneTitleWidth(in: width)
+            let form = metrics.promptCountForm(prompt, width: column)
+            let fit = metrics.promptLines(prompt, form: form, width: column, maxHeight: budget)
+            if fit.shrinks {
+                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true, countForm: form)
+            }
+            return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines), countForm: form)
         }
     }
 
@@ -536,13 +541,13 @@ private struct RemindersListView: View {
             PromptRow(
                 prompt: prompt, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
                 firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
-                notesGlyphSize: metrics.notesGlyphSize(hasNotes: prompt.hasNotes)
+                label: PromptLabel(prompt: prompt, form: layout.countForm, metrics: metrics)
             )
         case .donePrompt(let prompt):
             DonePromptRow(
                 prompt: prompt, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
                 firstLineHeight: metrics.titleHeight(lines: 1),
-                notesGlyphSize: metrics.notesGlyphSize(hasNotes: prompt.hasNotes)
+                label: PromptLabel(prompt: prompt, form: layout.countForm, metrics: metrics)
             )
         }
     }
@@ -1258,6 +1263,47 @@ enum PromptRowMetrics {
     }
 }
 
+/// A prompt row's label (2026-10-13, quota segments): the title, then the
+/// count — N skewed segments and the period word ("▰▱ today"), or the text
+/// fallback "3/7 today" when `form` says so — then the notes glyph. The ONE
+/// builder both rows draw with, and it draws exactly what
+/// `WidgetTextMetrics.promptLines` measured: same breaking space, same box
+/// width (`QuotaSegmentsDrawing.boxesWidth`), same word joiner and sizes.
+/// The " · " separator went with the old "· 1/2 today" (the web drops it
+/// too: the segments set the count apart on their own).
+struct PromptLabel {
+    let prompt: QuotaPromptDTO
+    let form: QuotaCount.Form
+    let metrics: WidgetTextMetrics
+
+    /// "1 of 2 today" / "1 of 2 this week".
+    var spokenCount: String {
+        QuotaCount.spokenLabel(current: prompt.current, target: prompt.target, period: prompt.period)
+    }
+
+    /// "Piano Scales, 1 of 2 today" (+ ", has notes").
+    var spoken: String {
+        NotesGlyph.accessibilityLabel("\(prompt.title), \(spokenCount)", hasNotes: prompt.hasNotes)
+    }
+
+    /// `struck`: a DONE row — the TITLE is struck through and muted; the
+    /// count keeps its colors (a handled did-it reads green when met), so the
+    /// strike never runs through the boxes.
+    func text(struck: Bool) -> Text {
+        let title = struck
+            ? Text(prompt.title).strikethrough().foregroundStyle(.secondary)
+            : Text(prompt.title).foregroundStyle(.primary)
+        let count = QuotaSegmentsText.count(
+            form, current: prompt.current, target: prompt.target, word: QuotaCount.word(period: prompt.period),
+            em: metrics.titlePointSize, wordSize: metrics.promptCountWordSize,
+            lead: form == .segments ? metrics.promptCountLead : 0, scale: metrics.displayScale
+        )
+        return WidgetTheme.titleText(
+            title + Text(" ") + count, notesGlyphSize: metrics.notesGlyphSize(hasNotes: prompt.hasNotes)
+        )
+    }
+}
+
 /// One waiting quota PROMPT — drawn AS a reminder row (`ReminderRow` is the
 /// sibling, and everything not listed here is copied from it: the title
 /// `Link`, the full wrap, the trailing marker with its bleed).
@@ -1287,16 +1333,13 @@ private struct PromptRow: View {
     var shrinks = false
     let firstLineHeight: CGFloat
     let markerBleed: CGFloat
-    /// The notes glyph's size, drawn after the COUNT (the web's
-    /// `QuotaPromptRow` order: title · count, then the mark); nil when the
-    /// quota has no notes. See `ReminderRow.notesGlyphSize`.
-    let notesGlyphSize: CGFloat?
+    /// Title, count (segments or text) and notes glyph — exactly what the
+    /// pager measured (`PromptLabel`).
+    let label: PromptLabel
 
-    /// "Piano Scales, 1/2 today" (+ ", has notes") — what VoiceOver reads for
-    /// the label and names each control by.
-    private var spokenLabel: String {
-        NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
-    }
+    /// "Piano Scales, 1 of 2 today" (+ ", has notes") — what VoiceOver reads
+    /// for the label and names each control by.
+    private var spokenLabel: String { label.spoken }
 
     var body: some View {
         HStack(alignment: .top, spacing: PromptRowMetrics.controlGap) {
@@ -1306,11 +1349,7 @@ private struct PromptRow: View {
                     .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
                     .padding(.top, 2)
                 Link(destination: WidgetLink.prompt(prompt.promptKey)) {
-                    WidgetTheme.titleText(
-                        Text(prompt.title).foregroundStyle(.primary)
-                            + Text("\(QuotaPromptDTO.countSeparator)\(prompt.countText)").foregroundStyle(.secondary),
-                        notesGlyphSize: notesGlyphSize
-                    )
+                    label.text(struck: false)
                         .font(.subheadline)
                         // A P0 reminder title's weight and opacity.
                         .opacity(WidgetTheme.priorityOpacity(0))
@@ -1371,8 +1410,8 @@ private struct DonePromptRow: View {
     let height: CGFloat
     let shrinks: Bool
     let firstLineHeight: CGFloat
-    /// See `PromptRow.notesGlyphSize`.
-    let notesGlyphSize: CGFloat?
+    /// See `PromptRow.label`.
+    let label: PromptLabel
 
     var body: some View {
         HStack(alignment: .top, spacing: PromptRowMetrics.controlGap) {
@@ -1382,16 +1421,11 @@ private struct DonePromptRow: View {
                     .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
                     .padding(.top, 2)
                 Link(destination: WidgetLink.prompt(prompt.promptKey)) {
-                    WidgetTheme.titleText(Text(prompt.labelText).strikethrough(), notesGlyphSize: notesGlyphSize)
+                    label.text(struck: true)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
                         .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                         .contentShape(Rectangle())
-                        .accessibilityLabel(
-                            Text(NotesGlyph.accessibilityLabel(
-                                "\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes
-                            ))
-                        )
+                        .accessibilityLabel(Text(label.spoken))
                 }
             }
 
@@ -1406,7 +1440,7 @@ private struct DonePromptRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Put back: \(prompt.title), \(prompt.countText)"))
+            .accessibilityLabel(Text("Put back: \(prompt.title), \(label.spokenCount)"))
         }
     }
 }

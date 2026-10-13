@@ -19,9 +19,9 @@ final class QuotaPromptDTOTests: XCTestCase {
 
     func testCountTextNamesThePeriod() {
         XCTAssertEqual(prompt(period: "DAILY").countText, "1/2\(nbsp)today")
-        XCTAssertEqual(prompt(period: "WEEKLY").countText, "1/2\(nbsp)this\(nbsp)week")
-        XCTAssertEqual(prompt(period: "MONTHLY").countText, "1/2\(nbsp)this\(nbsp)month")
-        XCTAssertEqual(prompt(period: "YEARLY").countText, "1/2\(nbsp)this\(nbsp)year")
+        XCTAssertEqual(prompt(period: "WEEKLY").countText, "1/2\(nbsp)week")
+        XCTAssertEqual(prompt(period: "MONTHLY").countText, "1/2\(nbsp)month")
+        XCTAssertEqual(prompt(period: "YEARLY").countText, "1/2\(nbsp)year")
         XCTAssertEqual(prompt(period: nil).countText, "1/2")
         XCTAssertEqual(prompt(period: "HOURLY").countText, "1/2", "an unknown period shows the count alone")
         // The count and its words are ONE unbreakable run.
@@ -45,7 +45,7 @@ final class QuotaPromptDTOTests: XCTestCase {
     func testCountSeparatorPlacement() {
         XCTAssertEqual(QuotaPromptDTO.countSeparator, " ·\(nbsp)")
         let label = prompt(period: "WEEKLY").labelText
-        XCTAssertEqual(label, "Read ·\(nbsp)1/2\(nbsp)this\(nbsp)week")
+        XCTAssertEqual(label, "Read ·\(nbsp)1/2\(nbsp)week")
         // Exactly one breakable space: between the title and the dot.
         XCTAssertEqual(label.filter { $0 == " " }.count, 1)
         XCTAssertTrue(label.hasPrefix("Read ·"))

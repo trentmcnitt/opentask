@@ -719,10 +719,45 @@ enum QuotaMetrics {
     /// own doc for why that sharing is the whole point.
     static func chipWidth(for item: TrackItem, takeback: Bool) -> CGFloat {
         let title = WidgetTheme.measuredWidth(for: item.task.displayTitle, font: chipTitleMeasureFont)
-        let current = WidgetTheme.measuredWidth(for: "\(item.task.progressCurrent)", font: chipCurrentMeasureFont)
-        let target = WidgetTheme.measuredWidth(for: "/\(item.task.progressTarget)", font: chipTargetMeasureFont)
-        return chipLeadingPadding + title + chipTitleCountGap + current + target
+        return chipLeadingPadding + title + chipTitleCountGap + countWidth(for: item)
             + (showsTakeBack(item, takeback: takeback) ? takeBackWidth : 0) + chipTrailingPadding
+    }
+
+    // MARK: The count (2026-10-13, quota segments)
+    //
+    // A chip's count is N skewed segments (`QuotaSegmentsText`, no period
+    // word — the section header names the period), sized in the chip
+    // title's em; above `QuotaCount.maxSegments` it stays the text "3/7".
+    // A chip is laid out at its own width (`.fixedSize()`), so the only rule
+    // that applies is "more than six".
+
+    /// Segments or text — `QuotaCount.chooseForm` with no width to fit.
+    static func countForm(for item: TrackItem) -> QuotaCount.Form {
+        QuotaCount.chooseForm(target: item.task.progressTarget)
+    }
+
+    /// The scale the chip's segments rasterize at — FIXED per platform (the
+    /// phone's 3×, the Mac's 2×) rather than read from the environment, so
+    /// the flow's width and the drawn image are the same number.
+    #if os(iOS)
+    static let segmentScale: CGFloat = 3
+    #else
+    static let segmentScale: CGFloat = 2
+    #endif
+
+    /// The count's width: the segment images' advance, or "cur" + "/target"
+    /// measured as two runs (they render at different weights).
+    static func countWidth(for item: TrackItem) -> CGFloat {
+        switch countForm(for: item) {
+        case .segments:
+            return QuotaSegmentsDrawing.boxesWidth(
+                current: item.task.progressCurrent, target: item.task.progressTarget, hasWord: false,
+                em: chipTitleSize, lead: 0, scale: segmentScale
+            )
+        case .text:
+            return WidgetTheme.measuredWidth(for: "\(item.task.progressCurrent)", font: chipCurrentMeasureFont)
+                + WidgetTheme.measuredWidth(for: "/\(item.task.progressTarget)", font: chipTargetMeasureFont)
+        }
     }
 
     /// Whether a chip draws the trailing red "│ −1": in Takeback mode, and
