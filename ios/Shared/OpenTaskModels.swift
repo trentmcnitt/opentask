@@ -934,7 +934,7 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     var kind: SegmentKind? { SegmentKind(raw: horizon) }
 
     /// The Upcoming segment (2026-10-12): targeted tasks on their heads-up
-    /// days. Its rows show the target date, and a repeating row has no Today.
+    /// days. Its rows show the target date, and every row offers Today (repeating ones too, since 2026-10-12).
     var isUpcoming: Bool { kind == .upcoming }
 
     /// "Days", "Weeks", "Upcoming", … — the segment's page title.

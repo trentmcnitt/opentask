@@ -540,16 +540,27 @@ private enum ReminderPreviewData {
                 SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Book the dentist for the kids — ask about the Saturday morning slots before the school term starts again", hasNotes: true, horizon: "weeks"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9105, title: "Return the library books", dueAt: iso(daysFromNow: 22), horizon: "days"), state: .considered),
             ]),
-            // Upcoming (2026-10-12), after Days as the server sends it: a
-            // one-off with a deadline (Target today offered), a repeating
-            // task (no Target today), and a one-off with only a target.
+            // Upcoming (2026-10-12), after Days as the server sends it —
+            // the #251 review set, long titles included: one-offs with a
+            // deadline (one wearing "3×"), repeating tasks whose schedule
+            // has to shorten to fit one line (weekly at a time, every 2
+            // weeks on a day at a time, monthly on the 1st), a deadline
+            // before its target, and a plain target. Every row offers
+            // Target today, the repeating ones too.
             TaskSegmentDTO(horizon: "upcoming", tasks: [
-                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Renew the car registration before the reminder letter's date", priority: 2, dueAt: iso(daysFromNow: 1), deadlineAt: iso(daysFromNow: 5, hour: 17), horizon: "weeks"), state: .waiting, recurring: false),
-                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the balcony plants", dueAt: iso(daysFromNow: 2), rrule: "FREQ=DAILY;INTERVAL=3"), state: .waiting, recurring: true),
-                SegmentTaskDTO(task: TaskDTO(id: 9303, title: "Pick up the framed print from the shop", dueAt: iso(daysFromNow: 2, hour: 15)), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Call the insurance office about the renewal paperwork for the car", priority: 2, dueAt: iso(daysFromNow: 2), deadlineAt: iso(daysFromNow: 5, hour: 17), horizon: "weeks"), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the porch plants", dueAt: iso(daysFromNow: 2), rrule: "FREQ=WEEKLY;BYDAY=WE", anchorTime: "09:00"), state: .waiting, recurring: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9303, title: "Take the recycling and the yard waste bins out to the curb", dueAt: iso(daysFromNow: 2, hour: 7), rrule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE", anchorTime: "07:00"), state: .waiting, recurring: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9304, title: "Send the signed lease renewal back to the property manager", dueAt: iso(daysFromNow: 3), deadlineAt: iso(daysFromNow: 6, hour: 17), attempts: 3, attemptsLabel: "3×"), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9305, title: "Pay the water bill", dueAt: iso(daysFromNow: 20, hour: 12), rrule: "FREQ=MONTHLY;BYMONTHDAY=1", anchorTime: "12:00"), state: .waiting, recurring: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9306, title: "Book the follow-up appointment once the clinic posts November's schedule", dueAt: iso(daysFromNow: 4), deadlineAt: iso(daysFromNow: -1, hour: 17)), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9307, title: "Pick up the framed print from the shop", dueAt: iso(daysFromNow: 2, hour: 15)), state: .waiting, recurring: false),
+                SegmentTaskDTO(task: TaskDTO(id: 9308, title: "Drop the donation boxes at the community center on the way to work", dueAt: iso(daysFromNow: 6), deadlineAt: iso(daysFromNow: 9, hour: 17)), state: .waiting, recurring: false),
             ]),
             TaskSegmentDTO(horizon: "weeks", tasks: [
-                SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks"), state: .waiting),
+                // Undated and past its horizon's threshold: the age label (the
+                // server's `age_label`).
+                SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks", ageLabel: ">1 mo"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9202, title: "Research a new laptop bag", dueAt: iso(daysFromNow: 12), horizon: "months"), state: .waiting),
             ]),
         ]
@@ -633,12 +644,44 @@ private enum ReminderPreviewData {
     ReminderPreviewData.segmentEntry(key: -14)
 }
 
+#Preview("Reminders Large — task segment (Upcoming) page 2", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false, slotKey: -14)
+    ReminderPreviewData.segmentEntry(key: -14)
+}
+
+#Preview("Reminders Large — task segment (Upcoming) page 3", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false, slotKey: -14)
+    ReminderPreviewData.segmentEntry(key: -14)
+}
+
+#Preview("Reminders Large — task segment (Upcoming) page 4", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 3, showCompleted: false, slotKey: -14)
+    ReminderPreviewData.segmentEntry(key: -14)
+}
+
 #Preview("Reminders Medium — task segment (Upcoming)", as: .systemMedium) {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.clearSlotOverride()
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14)
     ReminderPreviewData.segmentEntry(key: -14)
+}
+
+#Preview("Reminders Large — task segment (Weeks)", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -11)
+    ReminderPreviewData.segmentEntry(key: -11)
 }
 
 #Preview("Reminders Medium — task segment (Days)", as: .systemMedium) {

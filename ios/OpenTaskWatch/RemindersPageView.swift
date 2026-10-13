@@ -494,7 +494,7 @@ struct SegmentRowView: View {
                     metaText(words).lineLimit(1).fixedSize()
                 }
             }
-            if let words = task.segmentMeta(segmentHorizon: segmentHorizon, upcomingForm: .short) {
+            if let words = task.segmentMeta(segmentHorizon: segmentHorizon, upcomingForm: .shortest) {
                 metaText(words)
             }
         }

@@ -1629,9 +1629,11 @@ private struct TaskSegmentListView: View {
     /// placement, an Upcoming row picks the first `UpcomingMetaForm` whose
     /// words ALONE measure one line at the title's width — "Wed Oct 14 ·
     /// deadline Sat Oct 17", then the schedule without its time, then
-    /// without its "on …", then no weekdays ("Oct 14 · deadline Oct 17").
-    /// At the default Large text size the first or second fits; only at the
-    /// accessibility sizes does even the shortest wrap, and the placement
+    /// without its "on …", then no weekdays ("Oct 14 · deadline Oct 17"),
+    /// then no "(deadline first)". At the default Large text size one of them
+    /// fits (a long one-off with a deadline usually loses its weekdays in a
+    /// three-control row); only at the accessibility sizes does even the
+    /// shortest wrap, and the placement
     /// below then gives each part its own line. The chosen form travels in
     /// the layout, so the row draws exactly the measured words.
     private func layout(
@@ -1657,7 +1659,7 @@ private struct TaskSegmentListView: View {
                 form = UpcomingMetaForm.allCases.first { candidate in
                     guard let words = meta(candidate) else { return true }
                     return lines(words, hasNotes: false).lines == 1
-                } ?? .short
+                } ?? .shortest
             }
             var placement = SegmentMetaPlacement.inline
             var fit = lines(label(task, placement: .inline, form: form), hasNotes: task.hasNotes)

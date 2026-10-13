@@ -391,6 +391,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
             before.upcomingMeta(calendar: cal, form: .short),
             words("Oct 26") + dot + words("deadline Oct 23 (deadline first)")
         )
+        XCTAssertEqual(before.upcomingMeta(calendar: cal, form: .shortest), words("Oct 26") + dot + words("deadline Oct 23"))
+        XCTAssertEqual(gap.upcomingMeta(calendar: cal, form: .shortest), gap.upcomingMeta(calendar: cal, form: .short))
 
         let repeating = TaskDTO(id: 5, title: "Plants", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=DAILY;INTERVAL=3")
         XCTAssertEqual(repeating.upcomingMeta(calendar: cal), words("Wed Oct 14") + dot + words("every 3 days"))

@@ -91,7 +91,7 @@ enum TargetAge {
 /// #251: "the Upcoming row meta must fit on ONE line"). The widget row
 /// measures and takes the FIRST form whose words fit on one line
 /// (`TaskSegmentListView.layout`); surfaces that can't measure pick one
-/// (the watch row `.full` inside a `ViewThatFits` ladder, the Smart Stack
+/// (the watch row by `ViewThatFits` over the same ladder, the Smart Stack
 /// card `.short`). A one-off's forms differ only in the dates and the
 /// deadline-before-target words, so neighbouring forms can be equal.
 enum UpcomingMetaForm: Int, CaseIterable, Equatable {
@@ -104,11 +104,23 @@ enum UpcomingMetaForm: Int, CaseIterable, Equatable {
     case noScheduleOn
     /// No weekdays on the dates: "Oct 14 · deadline Oct 17".
     case short
+    /// No words after a deadline that falls before the target — the two
+    /// dates already show the order ("Oct 16 · deadline Oct 11"). Only that
+    /// row differs from `.short`; its "(deadline first)" wrapped at the
+    /// default Large text size in a 3-control row (render, 2026-10-12).
+    case shortest
 
-    var includesWeekdays: Bool { self != .short }
+    var includesWeekdays: Bool { self.rawValue < UpcomingMetaForm.short.rawValue }
     var scheduleIncludesTime: Bool { self == .full }
     var scheduleIncludesOn: Bool { self == .full || self == .noScheduleTime }
-    var deadlineFirstWords: String { self == .full ? "(deadline before target)" : "(deadline first)" }
+    /// The words after a deadline before its target; nil = none.
+    var deadlineFirstWords: String? {
+        switch self {
+        case .full, .noScheduleTime: return "(deadline before target)"
+        case .noScheduleOn, .short: return "(deadline first)"
+        case .shortest: return nil
+        }
+    }
 }
 
 extension TaskDTO {
@@ -152,7 +164,7 @@ extension TaskDTO {
     /// "(+3d)" gap (Trent didn't know what it meant) and no "(same day)" (both
     /// dates are already shown); a deadline before the target — only possible
     /// once the deadline has passed — says "(deadline before target)", or
-    /// "(deadline first)" in the shorter forms. No horizon word: a targeted
+    /// "(deadline first)" in the shorter forms, nothing in the shortest. No horizon word: a targeted
     /// task's horizon decides nothing until the target is removed (spec §1).
     /// Days are local calendar days in `calendar`'s zone. See
     /// `UpcomingMetaForm` for what each form drops.
@@ -172,8 +184,8 @@ extension TaskDTO {
         var deadline: String?
         if let deadlineDate {
             deadline = "deadline \(day(deadlineDate))"
-            if let due = dueDate, deadlineDate < due {
-                deadline! += " \(form.deadlineFirstWords)"
+            if let due = dueDate, deadlineDate < due, let words = form.deadlineFirstWords {
+                deadline! += " \(words)"
             }
         }
         let repeats = rrule != nil && target != nil
