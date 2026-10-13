@@ -158,7 +158,7 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
    - "twice a month" → FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=1,15
    - "every month", no date named → FREQ=MONTHLY;BYMONTHDAY=<today's day of the month> (on the 12th, BYMONTHDAY=12)
    - "every quarter" / "every 3 months", no date named → FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=<today's day of the month> (must include BYMONTHDAY)
-   A repeat with no day or date named starts from today: use today's weekday or day of the month, never a default Monday or 1st.
+   A weekly or monthly repeat with no day or date named starts from today: use today's weekday or day of the month, never a default Monday or 1st.
    - "every 4 hours" → use auto_snooze_minutes: 240 (sub-daily repeats are auto-snooze, not rrule)
    - "every 90 minutes" → use auto_snooze_minutes: 90 (sub-daily repeats are auto-snooze, not rrule)
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
