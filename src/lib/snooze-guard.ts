@@ -73,7 +73,7 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
       timezone,
       completedAt: dueAt,
       prevDueAt: dueAt,
-      // An "every N" rule's grid runs from the scheduled occurrence, never
+      // A floating rule's grid (every N, or bare) runs from the scheduled occurrence, never
       // from a moved target.
       anchorAt: new Date(task.occurrence_at ?? task.due_at),
     })

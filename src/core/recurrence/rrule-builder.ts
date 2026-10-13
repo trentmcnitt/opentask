@@ -123,9 +123,11 @@ export function parseRRule(rrule: string): RRuleComponents {
  * Validate parsed RRULE components against allowed ranges and semantic rules.
  *
  * Beyond range checks, enforces:
- * - FREQ=WEEKLY requires at least one BYDAY (without it, rrule.js defaults to
- *   the dtstart day-of-week, which is always Wednesday — a silent data corruption)
- * - FREQ=MONTHLY requires BYMONTHDAY or BYDAY (same dtstart-default problem)
+ * - FREQ=WEEKLY requires at least one BYDAY (without it, rrule.js takes the
+ *   weekday from dtstart — the task's own day since 2026-10-12, the 2020
+ *   epoch's Wednesday for a row with no date; the bare form is a quota's
+ *   period rule, `isPeriodRRule`)
+ * - FREQ=MONTHLY requires BYMONTHDAY or BYDAY (same dtstart default)
  * - BYMONTHDAY=0 is invalid per RFC 5545 (valid range: -31..-1, 1..31)
  * - INTERVAL capped at 365 to prevent effectively non-recurring tasks
  * - COUNT/UNTIL rejected (OpenTask only supports infinite recurrence)
@@ -146,11 +148,15 @@ function validateComponents(components: RRuleComponents): boolean {
     if (days.some((day) => day === 0 || day < -31 || day > 31)) return false
   }
 
-  // FREQ=WEEKLY requires BYDAY — without it, rrule.js uses dtstart's day (always Wednesday)
+  // FREQ=WEEKLY requires BYDAY. Without it rrule.js takes the weekday from
+  // dtstart: since 2026-10-12 that is the task's own day (its occurrence, or
+  // the creation day — `phaseFloats` in compute-next.ts), but with no date at
+  // all it is the 2020 epoch's Wednesday. The bare form stays a quota's period
+  // rule (`isPeriodRRule`), refused on a task by validation; a task names its day.
   if (components.freq === 'WEEKLY' && (!components.byday || components.byday.length === 0))
     return false
 
-  // FREQ=MONTHLY requires BYMONTHDAY or BYDAY — without it, defaults to dtstart's day-of-month
+  // FREQ=MONTHLY requires BYMONTHDAY or BYDAY — likewise (dtstart's day of month)
   if (
     components.freq === 'MONTHLY' &&
     components.bymonthday === undefined &&

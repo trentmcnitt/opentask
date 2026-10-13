@@ -58,11 +58,11 @@ export interface OccurrenceTask {
   rrule: string | null
   recurrence_mode?: 'from_due' | 'from_completion' | null
   anchor_time: string | null
-  /** The scheduled occurrence: anchors an "every N" rule's grid (compute-next `gridDtstart`). */
+  /** The scheduled occurrence: anchors a floating rule's grid (every N or bare; compute-next `phaseFloats`, `gridDtstart`). */
   occurrence_at?: string | null
 }
 
-/** The occurrence an "every N" rule's grid is anchored at, if the item has one. */
+/** The occurrence a floating rule's grid (every N, or bare) is anchored at, if the item has one. */
 function anchorOf(task: OccurrenceTask): Date | null {
   const iso = task.occurrence_at ?? task.due_at
   return iso ? new Date(iso) : null
@@ -99,7 +99,7 @@ export function todaysOccurrence(
       timezone,
       completedAt: justBeforeToday,
       prevDueAt: justBeforeToday,
-      // An "every N" rule runs on the item's own grid (its scheduled
+      // A floating rule (every N, or bare) runs on the item's own grid (its scheduled
       // occurrence, else its date); without either, the fixed epoch.
       anchorAt: anchorOf(task),
     })
