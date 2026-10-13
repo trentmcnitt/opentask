@@ -245,7 +245,8 @@ describe('recurrence_mode via API', () => {
     const { data } = await res.json()
 
     expect(data.recurrence_mode).toBe('from_completion')
-    expect(data.rrule).toBe('FREQ=DAILY;INTERVAL=3')
+    // Sent with no time, it is stored at the user's Morning time (2026-10-12).
+    expect(data.rrule).toMatch(/^FREQ=DAILY;INTERVAL=3;BYHOUR=\d+;BYMINUTE=\d+$/)
   })
 
   test('PATCH recurrence_mode changes value', async () => {

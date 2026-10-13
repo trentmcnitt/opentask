@@ -120,7 +120,8 @@ describe('API guards', () => {
     })
     expect(res.status).toBe(200)
     const after = (await res.json()).data
-    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
+    // The timeless rule takes the date's time (every rule has a time, 2026-10-12).
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=18;BYMINUTE=30')
     expect(after.due_at).toBe(when)
     expect(after.fields_changed).toContain('due_at')
   })
