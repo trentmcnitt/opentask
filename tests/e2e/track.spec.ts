@@ -150,7 +150,7 @@ test.describe('Track', () => {
       await expect(night).toContainText('Date night')
       // No period suffix on the chip's own count — the section it sits in
       // says the period now (Trent, 2026-09-23, the period-first redesign).
-      await expect(night.locator('[data-track-count]')).toHaveText('0/1')
+      await expect(night.locator('[data-track-count]')).toHaveAttribute('data-count', '0/1')
       // Each quota sits in ITS OWN period's section, not a shared one — a
       // monthly quota and a weekly quota never share a `data-quota-period`.
       // Scoped assertions rather than exact panel-wide counts throughout this
@@ -186,7 +186,7 @@ test.describe('Track', () => {
       await expect(panel.locator('[data-track-heading]')).not.toContainText('this')
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveAttribute('data-count', '0/2')
 
       // Tap: +1, with a toast whose Undo takes it back — and the server ends
       // where the chip says it does.
@@ -210,13 +210,13 @@ test.describe('Track', () => {
       }
       page.on('response', countLogs)
       await chip.click()
-      await expect(chipCount).toHaveText('1/2')
+      await expect(chipCount).toHaveAttribute('data-count', '1/2')
       const toast = page
         .locator('[data-sonner-toast]')
         .filter({ hasText: 'Logged one for \u201cEggs for the kids\u201d \u00b7 1/2' })
       await expect(toast).toBeVisible()
       await toast.getByRole('button', { name: 'Undo' }).click()
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveAttribute('data-count', '0/2')
       await expect.poll(() => settledLogs).toBe(2)
       page.off('response', countLogs)
       expect(
@@ -230,11 +230,11 @@ test.describe('Track', () => {
       // Met DURING the session: it stays put, green, for its 5-second
       // countdown — and taking it back below target (the next line, well
       // inside the 5s) cancels that, so it never leaves.
-      await expect(chipCount).toHaveText('2/2')
+      await expect(chipCount).toHaveAttribute('data-count', '2/2')
       await chip.click({ modifiers: ['Shift'] })
-      await expect(chipCount).toHaveText('1/2')
+      await expect(chipCount).toHaveAttribute('data-count', '1/2')
       await chip.click({ button: 'right' })
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveAttribute('data-count', '0/2')
 
       // A hold opens a popover anchored to the chip — the shape Trent asked
       // for on 2026-09-06 ("still the same concept but not hover"). It reads,
@@ -244,7 +244,7 @@ test.describe('Track', () => {
       await expect(pop).toBeVisible()
       await expect(pop).toContainText('Never yet')
       await expect(pop.getByRole('textbox')).toHaveCount(0)
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveAttribute('data-count', '0/2')
 
       // Open is the answer to "how do I even edit the Track items": a quota is
       // an ordinary task, and it gets its OWN editor — no due date, no snooze
@@ -278,16 +278,16 @@ test.describe('Track', () => {
       await expect(todayToggle).toHaveAttribute('aria-pressed', 'true')
       await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
       await expect(chip).toBeVisible()
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveAttribute('data-count', '0/2')
 
       // Reaching the target is "met": a state, not an exit — and overflow
       // stays observable (Trent, Jul 26): the third egg shows as 3/2. Back to
       // back, well inside the met chip's 5-second countdown.
       await chip.click()
       await chip.click()
-      await expect(chipCount).toHaveText('2/2')
+      await expect(chipCount).toHaveAttribute('data-count', '2/2')
       await chip.click()
-      await expect(chipCount).toHaveText('3/2')
+      await expect(chipCount).toHaveAttribute('data-count', '3/2')
 
       // The task itself is still open — progress is not completion. Polled, not
       // read once: the count on screen is optimistic and the +1 behind it is
@@ -592,15 +592,16 @@ test.describe('Track', () => {
     }
     await expect(weekSection.locator(`[data-track-chip="${monthlyId}"]`)).toHaveCount(0)
     await expect(monthSection.locator(`[data-track-chip="${monthlyId}"]`)).toBeVisible()
-    await expect(stream.locator(`[data-track-chip="${devId}"] [data-track-count]`)).toHaveText(
+    await expect(stream.locator(`[data-track-chip="${devId}"] [data-track-count]`)).toHaveAttribute(
+      'data-count',
       '0/2',
     )
-    await expect(stream.locator(`[data-track-chip="${workId}"] [data-track-count]`)).toHaveText(
-      '0/3',
-    )
-    await expect(stream.locator(`[data-track-chip="${bareId}"] [data-track-count]`)).toHaveText(
-      '0/1',
-    )
+    await expect(
+      stream.locator(`[data-track-chip="${workId}"] [data-track-count]`),
+    ).toHaveAttribute('data-count', '0/3')
+    await expect(
+      stream.locator(`[data-track-chip="${bareId}"] [data-track-count]`),
+    ).toHaveAttribute('data-count', '0/1')
   })
 
   /**
@@ -662,7 +663,7 @@ test.describe('Track', () => {
     // is put away without a reload (Trent, 2026-09-28), taking the finished
     // label with it: no chip, no box, nothing else takes its place.
     await openChip.click()
-    await expect(openChip.locator('[data-track-count]')).toHaveText('1/1')
+    await expect(openChip.locator('[data-track-count]')).toHaveAttribute('data-count', '1/1')
     await expect(openChip).toBeVisible()
     await expect(cluster).toBeVisible()
     await expect(
@@ -764,7 +765,7 @@ test.describe('Track', () => {
       // ...and the panel above the list still has it, with its count.
       const chip = page.locator(`[data-track-chip="${id}"]`)
       await expect(chip).toBeVisible()
-      await expect(chip.locator('[data-track-count]')).toHaveText('1/3')
+      await expect(chip.locator('[data-track-count]')).toHaveAttribute('data-count', '1/3')
     } finally {
       if (before && before !== 'All') await switchView(page, before)
       if (siblingProjectId !== null) await page.request.delete(`/api/projects/${siblingProjectId}`)
@@ -894,7 +895,7 @@ test.describe('Track — moving a quota reminder from its chip', () => {
     await expect(pop).toHaveCount(0)
     expect((await (await saved).json()).data.quota_prompt_config).toEqual({ slot_id: last.id })
     // The hold neither logged nor lost a count.
-    await expect(count).toHaveText('0/3')
+    await expect(count).toHaveAttribute('data-count', '0/3')
 
     const toast = page.locator('[data-sonner-toast]', {
       hasText: `Moved “${title}” to ${last.label}`,
@@ -921,9 +922,9 @@ test.describe('Track — moving a quota reminder from its chip', () => {
 
     // The chip's own gestures are untouched: tap +1, right-click −1.
     await chip.click()
-    await expect(count).toHaveText('1/3')
+    await expect(count).toHaveAttribute('data-count', '1/3')
     await chip.click({ button: 'right' })
-    await expect(count).toHaveText('0/3')
+    await expect(count).toHaveAttribute('data-count', '0/3')
   })
 
   test('no period chips when the quota, or Settings, has quota reminders off', async ({
@@ -1233,7 +1234,7 @@ test.describe('Quotas page', () => {
     const unlabelled = view.locator('[data-quota-group="unlabelled"]')
     await expect(unlabelled).toContainText('Unlabelled')
     await expect(unlabelled.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(1)
-    await expect(row.locator('[data-quota-period]')).toHaveText('· week')
+    await expect(row.locator('[data-quota-count]')).toHaveText('week')
 
     // The house selection model: a plain click selects EXACTLY one and never
     // navigates. It does not accumulate — which is what it wrongly did when
@@ -1275,7 +1276,10 @@ test.describe('Quotas page', () => {
     )
     await bulk.getByRole('button', { name: 'Save' }).click()
     expect((await edited).status()).toBe(200)
-    await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toContainText('/ 7')
+    await expect(page.locator(`[data-quota-row="${ids[0]}"] [data-quota-count]`)).toHaveAttribute(
+      'data-count',
+      /\/7$/,
+    )
 
     // A double-click opens the editor as a MODAL and stays on the surface —
     // the same contract reminders have.
@@ -1371,12 +1375,12 @@ test.describe('Quotas page', () => {
     })
     await gotoQuotasDetails(page)
     const row = page.locator(`[data-quota-row="${id}"]`)
-    await expect(row.locator('[data-quota-count]')).toHaveText('0 / 5')
+    await expect(row.locator('[data-quota-count]')).toHaveAttribute('data-count', '0/5')
 
     await row.getByRole('button', { name: /Log one more/ }).dblclick()
 
     // Both taps counted...
-    await expect(row.locator('[data-quota-count]')).toHaveText('2 / 5')
+    await expect(row.locator('[data-quota-count]')).toHaveAttribute('data-count', '2/5')
     // ...and nothing opened on top of them.
     await expect(page.getByRole('dialog')).toHaveCount(0)
 
@@ -1495,16 +1499,16 @@ test.describe('Quotas page — summary and details', () => {
       // Tap +1, right-click −1, hold for the bubble — nothing logged by the hold.
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const count = chip.locator('[data-track-count]')
-      await expect(count).toHaveText('0/3')
+      await expect(count).toHaveAttribute('data-count', '0/3')
       await chip.click()
-      await expect(count).toHaveText('1/3')
+      await expect(count).toHaveAttribute('data-count', '1/3')
       await chip.click({ button: 'right' })
-      await expect(count).toHaveText('0/3')
+      await expect(count).toHaveAttribute('data-count', '0/3')
       const pop = await holdChipOpen(page, chip)
       await expect(pop).toContainText('Periods met')
       await page.keyboard.press('Escape')
       await expect(pop).toHaveCount(0)
-      await expect(count).toHaveText('0/3')
+      await expect(count).toHaveAttribute('data-count', '0/3')
     })
   })
 

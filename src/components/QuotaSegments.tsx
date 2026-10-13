@@ -36,8 +36,11 @@ import {
  *   point, and nothing before it reflows (hosts must not use `text-pretty`,
  *   which rebalances lines by what follows). So `available` = the line's right
  *   edge − the anchor, and a choice can never invalidate itself.
- * - The width each form needs is read from an invisible twin of each (in a
- *   0×0 clipped box, so it cannot add scroll), the space before it included.
+ * - The width each form needs is read from an invisible twin of each, the
+ *   space before it included. The twins sit out of flow at the top-left of
+ *   the host's positioned row (a few em wide, so inside it). Not clipped into
+ *   a 0×0 box: a clipped span is what the chips' "nothing clipped" check
+ *   looks for.
  * - Measured before paint (`useLayoutEffect`), on every render (a new title
  *   moves the anchor), and again from a `ResizeObserver` on the line box and
  *   on both twins — the twins change size when a web font swaps in.
@@ -52,7 +55,8 @@ import {
  *
  * TEST HOOKS. `data-quota-segments`, `data-count="3/7"` and
  * `data-count-form="segments" | "text"` sit on the group, beside any `data-*`
- * the host passes through.
+ * the host passes through; each box inside it carries `data-seg="empty" |
+ * "filled" | "met"`. (The measuring twins sit outside the group.)
  */
 export interface QuotaSegmentsProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   current: number
@@ -178,6 +182,7 @@ function SegmentsForm({
         {fills.map((fill, i) => (
           <span
             key={i}
+            data-seg={fill}
             className={cn(
               'inline-block h-[0.45em] w-[0.65em] skew-x-[-16deg] rounded-[1.5px] border',
               SEG_FILL_CLASS[fill],
@@ -281,10 +286,10 @@ export function QuotaSegments({
       {/* The anchor: the end of the title, before the break point. */}
       <span ref={anchorRef} aria-hidden="true" /> {group}
       {/* The twins each form is measured by — the space before it included
-          (a no-break space is a space's width). Clipped to 0×0. */}
+          (a no-break space is a space's width). Out of flow, invisible. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden"
+        className="pointer-events-none invisible absolute top-0 left-0 w-max"
       >
         <span ref={segGhostRef} className="block w-max whitespace-nowrap tabular-nums">
           {' '}
