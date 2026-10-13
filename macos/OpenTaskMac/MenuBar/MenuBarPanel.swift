@@ -161,15 +161,19 @@ struct MenuBarPanel: View {
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if let due = task.dueDate {
-                        // The attempts badge (spec §7, 2026-10-12): the
-                        // server's "3×" after the time, plum semibold — label
-                        // only (the web's 3× offer stays in the app). The
-                        // panel had no age tab before; this is its first badge.
+                        // The attempts count (spec §7, 2026-10-12): the
+                        // server's "3×" folded into the time, "Thu 9:00 AM ·
+                        // 3×" — the Tasks widget's form: plum, semibold,
+                        // heavy from 7×, no pill. Label only (the web's 3×
+                        // offer stays in the app).
                         let time = Text(dueText(due, isOverdue: isOverdue))
                             .foregroundStyle(isOverdue ? overTarget : Color.secondary)
                         Group {
                             if let badge = TargetAge.attemptsBadge(task) {
-                                time + Text("  ") + Text(badge).fontWeight(.semibold).foregroundStyle(overTarget)
+                                time + Text(" · ").foregroundStyle(overTarget)
+                                    + Text(badge)
+                                    .fontWeight(TargetAge.tone(attempts: task.attempts) == .strong ? .heavy : .semibold)
+                                    .foregroundStyle(overTarget)
                             } else {
                                 time
                             }

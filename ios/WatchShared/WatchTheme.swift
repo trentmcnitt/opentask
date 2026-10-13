@@ -48,12 +48,6 @@ enum WatchTheme {
     /// nothing about an arrived target to signal that anything is wrong.
     static let overdue = Color(red: 0.78, green: 0.45, blue: 0.74)
 
-    /// A SOLID plum under white text — the attempts tab's 7+ step (the web's
-    /// dark `--over-target-badge`, oklch(0.52 0.16 322) ≈ #92429E; white on
-    /// it 6.0:1). `overdue` itself is for plum on black (6.6:1) and its tints
-    /// (≥5.7:1), not under white.
-    static let overTargetBadge = Color(red: 0x92 / 255, green: 0x42 / 255, blue: 0x9E / 255)
-
     /// Quotas' Takeback mode (`QuotasPageView`): the armed ⊖ toggle and each
     /// row's "−1". Same value as the phone widget's `WidgetTheme.
     /// takebackTint` — an ACTION color (this tap removes one), not a state

@@ -118,16 +118,16 @@ final class WidgetRenderTests: XCTestCase {
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
 
-        // Tasks: the default page (Overdue while anything is), Today, and a
-        // finished day (every task due today completed, nothing overdue).
+        // Tasks: the Over target page, Today (the default page), and a
+        // finished day (every task due today completed, nothing over).
         let provider = TasksProvider()
         let snapshot = TaskFeed.Snapshot(
             tasks: tasks, projects: projects, completions: completions, staleSince: nil, isSignedOut: false
         )
+        WidgetStore.setTasksStoredPage(WidgetStore.overdueScope)
         let tasksDefault = provider.makeEntry(snapshot, now: env.now)
-        WidgetStore.setTasksScopeChoice(WidgetStore.allProjects, naturalScope: tasksDefault.scope)
+        WidgetStore.setTasksStoredPage(WidgetStore.allProjects)
         let tasksToday = provider.makeEntry(snapshot, now: env.now)
-        WidgetStore.clearTasksScopeChoice()
         let endOfDay = Calendar.current.date(bySettingHour: 18, minute: 5, second: 0, of: env.now)!
         let finishing = TasksTimeline.todaysTasks(from: tasks, now: endOfDay)
         let finishedIds = Set(finishing.map(\.id))
@@ -183,7 +183,7 @@ final class WidgetRenderTests: XCTestCase {
                     TasksWidgetView(entry: tasksDefault, familyOverride: family), size: size, scheme: scheme,
                     wash: tasksDefault.isDayComplete,
                     name: "widget-tasks-\(familyName)-\(theme)",
-                    shows: "Tasks widget, \(familyName), default page (Overdue while anything is)", theme: theme, env: env
+                    shows: "Tasks widget, \(familyName), the Over target page", theme: theme, env: env
                 )
                 try render(
                     TasksWidgetView(entry: tasksToday, familyOverride: family), size: size, scheme: scheme,
