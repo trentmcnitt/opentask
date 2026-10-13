@@ -13,7 +13,9 @@ import type { AITestScenario } from '../types'
  * A repeat with no day named starts from today (Trent, 2026-10-12): "every 2
  * weeks" said on a Thursday is BYDAY=TH, "every month" said on the 12th is
  * BYMONTHDAY=12 (the last day of a month is -1). Read when the run starts, in
- * the scenarios' zone, like the prompt's own "Current local time".
+ * the scenarios' zone, like the prompt's own "Current local time". A yearly
+ * repeat in a named month with no day is the exception: the 1st ("every year
+ * in March" → BYMONTH=3;BYMONTHDAY=1; Trent, 2026-10-13).
  */
 const TODAY = DateTime.now().setZone('America/Chicago')
 const TODAY_BYDAY = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][TODAY.weekday - 1]
@@ -187,7 +189,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
   {
     id: 'enrich-recurrence-yearly',
     feature: 'enrichment',
-    description: 'Yearly recurrence',
+    description: 'Yearly in a named month with no day — starts on the 1st, not today’s date',
     input: {
       text: 'renew car registration every year in March',
       timezone: 'America/Chicago',
@@ -196,11 +198,35 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         labels: [],
+        rrule: '~rrule-has:FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1',
       },
       quality_notes:
         'Title: "Renew car registration" (recurrence phrase removed). ' +
-        'rrule should be FREQ=YEARLY or FREQ=MONTHLY;INTERVAL=12. ' +
-        'due_at should be in March.',
+        'rrule should be FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1 — March 1st: a month with no day ' +
+        "named is the 1st, never March <today's date> (Trent, 2026-10-13). A BYHOUR/BYMINUTE " +
+        'may be present. due_at is null after the post-process (the rule gives the first ' +
+        'occurrence, the next March 1st); no deadline, no horizon.',
+    },
+  },
+  {
+    id: 'enrich-recurrence-yearly-named-day',
+    feature: 'enrichment',
+    description: 'Yearly on a named month and day — the stated day is kept',
+    input: {
+      text: 'pay the property tax every year on March 15',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+        rrule: '~rrule-has:FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15',
+      },
+      quality_notes:
+        'Title: "Pay the property tax" (recurrence phrase removed). ' +
+        'rrule should be FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15 (the stated day, not the 1st and ' +
+        "not today's date). A BYHOUR/BYMINUTE may be present. due_at null or the next March 15 " +
+        '(2027); no deadline (no cutoff wording), no horizon.',
     },
   },
   {
