@@ -104,7 +104,11 @@ test.describe('Upcoming', () => {
       ])
       // The gap text.
       await expect(row(page, t.withDeadline).locator('[data-upcoming-gap]')).toContainText(
-        /Target \w{3} \w{3} \d+\s*·\s*deadline \w{3} \w{3} \d+ \(\+4d\)/,
+        /Target \w{3} \w{3} \d+\s*·\s*deadline \w{3} \w{3} \d+$/,
+      )
+      // The repeating row names its schedule, never a bare "repeats".
+      await expect(row(page, t.repeating).locator('[data-upcoming-gap]')).not.toContainText(
+        'repeats',
       )
       await expect(row(page, t.plain).locator('[data-upcoming-gap]')).toContainText(
         /Target \w{3} \w{3} \d+/,

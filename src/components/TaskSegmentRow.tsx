@@ -4,6 +4,7 @@ import { Check, CalendarClock, ChevronDown, FolderOpen } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { formatRRuleCompact } from '@/lib/format-rrule'
 import { DateTimePicker } from '@/components/DateTimePicker'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { getPriorityOption } from '@/lib/priority'
@@ -540,7 +541,7 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
  * (`targetReset`, §8.3): on a one-off with no deadline, "Remove target"
  * (back to its horizon segment); on one with a deadline, "Back to auto" (the
  * deadline's automatic target again — which leaves Upcoming). Undo on the
- * toast either way. A repeating row's chip says "repeats" and does nothing.
+ * toast either way. A repeating row's chip names its schedule ("every Wed") and does nothing.
  */
 function UpcomingMeta({
   row,
@@ -599,7 +600,12 @@ function UpcomingMeta({
         ) : (
           <span data-target-chip className="text-foreground/70">
             {gap.target}
-            {row.recurring && <span className="text-muted-foreground"> · repeats</span>}
+            {row.recurring && task.rrule && (
+              <span className="text-muted-foreground">
+                {' · '}
+                {lowerFirst(formatRRuleCompact(task.rrule, task.anchor_time))}
+              </span>
+            )}
           </span>
         ))}
       {gap.target && gap.deadline && (
@@ -725,4 +731,9 @@ export function ConsideredSegmentRow({
       </p>
     </li>
   )
+}
+
+/** "Wednesdays" → "wednesdays": the schedule reads mid-sentence after the date. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
 }
