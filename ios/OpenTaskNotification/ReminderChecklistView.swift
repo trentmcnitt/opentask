@@ -158,6 +158,10 @@ final class ReminderChecklistModel: ObservableObject {
 }
 
 struct ReminderChecklistView: View {
+    @Environment(\.displayScale) private var displayScale
+    /// A prompt count's em: `.caption` (12pt at the default size), scaled
+    /// with the view's own Dynamic Type.
+    @ScaledMetric(relativeTo: .caption) private var countEm: CGFloat = 12
 
     @ObservedObject var model: ReminderChecklistModel
 
@@ -319,6 +323,18 @@ struct ReminderChecklistView: View {
     /// plus the quota's label-color stripe on the leading edge, the count after the title, and a square on the trailing edge
     /// (stage DID IT). The square is its own button beside the row's, not
     /// nested in it; both only stage (see the file doc).
+    /// A prompt's count in the `.caption` row's em — `QuotaSegmentsText`,
+    /// the same builder the widget row draws with. This view can't be
+    /// rendered in a preview (a content extension), so sharing the builder
+    /// is its verification.
+    private func promptCount(_ prompt: QuotaPromptDTO) -> Text {
+        let em = countEm
+        return QuotaSegmentsText.count(
+            QuotaCount.chooseForm(target: prompt.target), current: prompt.current, target: prompt.target,
+            word: QuotaCount.word(period: prompt.period), em: em, wordSize: em * 0.85, scale: displayScale
+        )
+    }
+
     private func promptRow(_ prompt: QuotaPromptDTO) -> some View {
         let choice = model.promptChoice(prompt.promptKey)
         let staged = choice != nil
@@ -334,10 +350,10 @@ struct ReminderChecklistView: View {
                         .foregroundColor(staged && !did ? .green : .secondary)
 
                     // A staged did-it previews the count it will log (the
-                    // server's rule: a daily #k rises to k, else +1).
-                    (Text(prompt.title)
-                        + Text("\(QuotaPromptDTO.countSeparator)\((did ? prompt.handled(did: true) : prompt).countText)")
-                            .foregroundColor(.secondary))
+                    // server's rule: a daily #k rises to k, else +1). The
+                    // count is the widget row's: segments and the period
+                    // word, or "3/7 today" above six (2026-10-13).
+                    (Text(prompt.title) + Text(" ") + promptCount(did ? prompt.handled(did: true) : prompt))
                         .font(.caption)
                         .foregroundColor(staged ? .secondary : .primary)
                         .strikethrough(staged, color: .secondary)
@@ -350,7 +366,7 @@ struct ReminderChecklistView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+            .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.spokenCount)"))
 
             Button {
                 model.choose(prompt: prompt.promptKey, did: true)

@@ -760,29 +760,29 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// Still waiting for today — the server's `promptWaiting`.
     var isWaiting: Bool { !considered && !done }
 
-    /// "1/2 today" — the count every prompt surface shows beside the title
-    /// ("Piano Scales · 1/2 today"): the count, then the period it covers
-    /// (2026-09-25, Trent: "0/1" alone doesn't say whether it's today's, the
-    /// week's or the month's). The web uses the same words. Joined with
-    /// non-breaking spaces, "this week" included, so the count and its period
-    /// wrap as ONE unit and never split across lines. No period, count only.
+    /// "1/2 today", "1/2 week" — the count as TEXT, the period it covers
+    /// after it (2026-09-25, Trent: "0/1" alone doesn't say whether it's
+    /// today's, the week's or the month's). Since the quota segments
+    /// (2026-10-13) the rows draw segments instead (`QuotaSegmentsText`) and
+    /// this is the text form's words wherever text is still drawn — the 2×2,
+    /// the Lock Screen, the Smart Stack card — with the segments' short words
+    /// ("week", not "this week"; the web's `quotaCountText`). Joined with a
+    /// non-breaking space, so the count and its word wrap as ONE unit. No
+    /// period, count only.
     var countText: String {
         let count = "\(current)/\(target)"
-        guard let words = periodWords else { return count }
-        return "\(count)\u{00A0}\(words.replacingOccurrences(of: " ", with: "\u{00A0}"))"
+        guard let word = QuotaCount.word(period: period) else { return count }
+        return "\(count)\u{00A0}\(word)"
     }
 
-    /// The period `countText` names: "today", "this week", "this month",
-    /// "this year" — nil when the quota has none (or an unknown one).
-    var periodWords: String? {
-        switch period {
-        case "DAILY": return "today"
-        case "WEEKLY": return "this week"
-        case "MONTHLY": return "this month"
-        case "YEARLY": return "this year"
-        default: return nil
-        }
-    }
+    /// The period in natural words, for VoiceOver: "today", "this week",
+    /// "this month", "this year" — nil when the quota has none (or an
+    /// unknown one). See `spokenCount`.
+    var periodWords: String? { QuotaCount.spokenPeriod(period: period) }
+
+    /// "1 of 2 today", "1 of 2 this week" — the count's ONE accessibility
+    /// label, whichever form it draws (`QuotaCount.spokenLabel`).
+    var spokenCount: String { QuotaCount.spokenLabel(current: current, target: target, period: period) }
 
     /// The count alone, "1/2" — for a surface that sets the period beside it
     /// itself (the Smart Stack card, `compactPeriodWord`).

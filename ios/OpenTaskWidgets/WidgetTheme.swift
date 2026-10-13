@@ -815,7 +815,12 @@ struct WidgetTextMetrics {
     /// One `.subheadline` line (row titles) as drawn, unrounded — the line
     /// pitch every row height is built from.
     let titleLineHeight: CGFloat
-    private let titlePointSize: CGFloat
+    /// The `.subheadline` title's DRAWN point size — the em a quota count's
+    /// segments are sized in (`QuotaSegmentsText`).
+    let titlePointSize: CGFloat
+    /// The display scale the quota segments rasterize at, so the pager
+    /// measures the images' real (whole-pixel) width.
+    let displayScale: CGFloat
     /// The `.caption2` font, at its drawn size, with monospaced digits — due
     /// times render `.monospacedDigit()`, and a proportional "1" is narrower
     /// than the digit actually drawn.
@@ -825,7 +830,11 @@ struct WidgetTextMetrics {
     /// `title`/`caption2`: what `RenderedTextReader` read back from SwiftUI.
     /// `nil` uses the platform fonts as-is — correct for the text size,
     /// slightly large for SwiftUI's drawing (see this struct's doc).
-    init(dynamicTypeSize: DynamicTypeSize, title: RenderedTextSample? = nil, caption2: RenderedTextSample? = nil) {
+    init(
+        dynamicTypeSize: DynamicTypeSize, title: RenderedTextSample? = nil, caption2: RenderedTextSample? = nil,
+        displayScale: CGFloat = 2
+    ) {
+        self.displayScale = displayScale
         #if os(iOS)
         let traits = UITraitCollection(preferredContentSizeCategory: Self.category(for: dynamicTypeSize))
         let baseTitle = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
@@ -906,6 +915,108 @@ struct WidgetTextMetrics {
         return (min(real, fitting), real > fitting)
     }
 
+    // MARK: Quota prompt label (2026-10-13, quota segments)
+
+    /// A prompt row's count, in the title's em: the segments' word and the
+    /// text form at 0.85× (the mockup's `.qc{font-size:.85em}`).
+    var promptCountWordSize: CGFloat { titlePointSize * 0.85 }
+
+    /// Air between the title and the count, beyond the breaking space and
+    /// the boxes' own 0.05em. A tenth of an em: with the space, the boxes
+    /// sit about a third of an em after the title, as in the r4 mockup's
+    /// widget rows (a third of an em MORE, the web's `ml-[5px]`, read as a
+    /// gap in the first render).
+    var promptCountLead: CGFloat { titlePointSize / 10 }
+
+    /// Which form a prompt's count takes in a row whose title column is
+    /// `width` wide — `QuotaCount.chooseForm` with the widths this row would
+    /// draw: text above six, else segments unless the whole unit is wider
+    /// than the column while the text fits. Decided BEFORE measuring, so the
+    /// pager and the row draw the same thing (a pre-measured row can't use
+    /// `ViewThatFits`).
+    func promptCountForm(_ prompt: QuotaPromptDTO, width: CGFloat) -> QuotaCount.Form {
+        let word = QuotaCount.word(period: prompt.period)
+        let segments = QuotaSegmentsDrawing.boxesWidth(
+            current: prompt.current, target: prompt.target, hasWord: word != nil, em: titlePointSize,
+            lead: promptCountLead, scale: displayScale
+        ) + (word.map { WidgetTheme.measuredWidth(for: $0, font: wordFont(weight: .regular)) } ?? 0)
+        let text = promptTextFormWidth(prompt, word: word)
+        return QuotaCount.chooseForm(target: prompt.target, available: width, segmentsWidth: segments, textWidth: text)
+    }
+
+    /// How many lines a prompt row's label takes — title, breaking space,
+    /// then the count in `form` (the boxes as an inline box of their exact
+    /// width, joined to their word), then the notes glyph. The prompt twin
+    /// of `titleLines`, with the same clamp; `WidgetTheme.promptLabelText`
+    /// draws exactly this.
+    func promptLines(
+        _ prompt: QuotaPromptDTO, form: QuotaCount.Form, width: CGFloat, maxHeight: CGFloat
+    ) -> (lines: Int, shrinks: Bool) {
+        guard width > 0 else { return (1, false) }
+        let font = titleFont(weight: .regular)
+        let word = QuotaCount.word(period: prompt.period)
+        let string = NSMutableAttributedString(string: prompt.title + " ", attributes: [.font: font])
+        switch form {
+        case .segments:
+            let box = NSTextAttachment()
+            box.bounds = CGRect(
+                x: 0, y: 0,
+                width: QuotaSegmentsDrawing.boxesWidth(
+                    current: prompt.current, target: prompt.target, hasWord: word != nil, em: titlePointSize,
+                    lead: promptCountLead, scale: displayScale
+                ),
+                height: 1
+            )
+            string.append(NSAttributedString(attachment: box))
+            string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+            if let word {
+                string.append(NSAttributedString(
+                    string: QuotaSegmentsText.joiner + word, attributes: [.font: wordFont(weight: .regular)]
+                ))
+            }
+        case .text:
+            string.append(NSAttributedString(
+                string: "\(prompt.current)", attributes: [.font: wordFont(weight: .medium)]
+            ))
+            string.append(NSAttributedString(
+                string: "/\(prompt.target)" + (word.map { "\u{00A0}\($0)" } ?? ""),
+                attributes: [.font: wordFont(weight: .regular)]
+            ))
+        }
+        if let glyph = notesGlyphSize(hasNotes: prompt.hasNotes) {
+            string.append(NSAttributedString(string: "\u{00A0}", attributes: [.font: font]))
+            let attachment = NSTextAttachment()
+            attachment.bounds = CGRect(x: 0, y: 0, width: WidgetTheme.notesGlyphWidth(pointSize: glyph), height: 1)
+            string.append(NSAttributedString(attachment: attachment))
+            string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+        }
+        let bounds = string.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        )
+        let real = max(1, Int((bounds.height / WidgetTheme.lineHeight(of: font)).rounded()))
+        let fitting = maxHeight.isFinite ? max(1, Int(maxHeight / titleLineHeight)) : real
+        return (min(real, fitting), real > fitting)
+    }
+
+    /// The text form's width, "3/7 today" (the number medium, the rest
+    /// regular, both at the word size).
+    private func promptTextFormWidth(_ prompt: QuotaPromptDTO, word: String?) -> CGFloat {
+        WidgetTheme.measuredWidth(for: "\(prompt.current)", font: wordFont(weight: .medium))
+            + WidgetTheme.measuredWidth(
+                for: "/\(prompt.target)" + (word.map { "\u{00A0}\($0)" } ?? ""), font: wordFont(weight: .regular)
+            )
+    }
+
+    private func wordFont(weight: Font.Weight) -> WidgetTheme.PlatformFont {
+        #if os(iOS)
+        UIFont.systemFont(ofSize: promptCountWordSize, weight: WidgetTheme.uiWeight(weight))
+        #else
+        NSFont.systemFont(ofSize: promptCountWordSize, weight: WidgetTheme.nsWeight(weight))
+        #endif
+    }
+
     /// The exact height `lines` title lines take — the number a row is
     /// FRAMED to, and the number the pager adds up. Rounded up once for the
     /// whole block (not per line), so three 24.13pt lines cost 73, not 75.
@@ -966,6 +1077,7 @@ struct WidgetTextMetrics {
 /// kind of measurement a widget's single render allows.
 struct RenderedTextReader<Content: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.displayScale) private var displayScale
     @ViewBuilder let content: (CGSize, WidgetTextMetrics) -> Content
 
     var body: some View {
@@ -974,7 +1086,10 @@ struct RenderedTextReader<Content: View>: View {
                 probe(.caption2) { caption in
                     content(
                         region.size,
-                        WidgetTextMetrics(dynamicTypeSize: dynamicTypeSize, title: title, caption2: caption)
+                        WidgetTextMetrics(
+                            dynamicTypeSize: dynamicTypeSize, title: title, caption2: caption,
+                            displayScale: displayScale
+                        )
                     )
                     .frame(width: region.size.width, height: region.size.height, alignment: .topLeading)
                 }

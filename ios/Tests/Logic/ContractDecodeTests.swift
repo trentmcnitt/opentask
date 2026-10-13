@@ -75,11 +75,11 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertFalse(weekly.hasNotes)
         XCTAssertTrue(weekly.done)
         XCTAssertTrue(weekly.considered)
-        XCTAssertEqual(weekly.countText, "1/3\u{00A0}this\u{00A0}week")
+        XCTAssertEqual(weekly.countText, "1/3\u{00A0}week")
 
         let monthly = try Fixtures.prompt(Fixtures.promptKey(Fixtures.monthly, 0))
         XCTAssertTrue(monthly.isWaiting)
-        XCTAssertEqual(monthly.countText, "0/2\u{00A0}this\u{00A0}month")
+        XCTAssertEqual(monthly.countText, "0/2\u{00A0}month")
         XCTAssertEqual(monthly.slotId, 11)
     }
 
