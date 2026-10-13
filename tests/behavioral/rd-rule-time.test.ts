@@ -78,7 +78,7 @@ describe('RD-RT: the helper', () => {
   })
 })
 
-describe('RD-RT: the writers', () => {
+describe('RD-RT: create', () => {
   beforeEach(() => {
     vi.setSystemTime(NOW)
     setupTestDb()
@@ -135,6 +135,18 @@ describe('RD-RT: the writers', () => {
     })
     expect(reminder.rrule).toBe('FREQ=DAILY;BYHOUR=8;BYMINUTE=30')
     expect(reminder.anchor_time).toBe('08:30')
+  })
+})
+
+describe('RD-RT: PATCH and bulk edit', () => {
+  beforeEach(() => {
+    vi.setSystemTime(NOW)
+    setupTestDb()
+    setMorning('08:30')
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
   })
 
   test('RD-RT-020: PATCH — an undated one-off given a timeless rule gets Morning time', () => {

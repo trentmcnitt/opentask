@@ -99,42 +99,6 @@ test.describe('Task editor sheet on a phone', () => {
     }
   })
 
-  test("a new rule on an undated task starts at the user's Morning time, not 9:00", async ({
-    authenticatedPage: page,
-  }) => {
-    // Every repeating task has a time (2026-10-12); the picker's starting time
-    // is the task's anchor, else its date's time, else the Morning setting.
-    const title = uniqueTitle('Stretch')
-    const id = await createTask(page, { title })
-    try {
-      await withPreferences(
-        page,
-        { default_grouping: 'unified', morning_time: '08:30' },
-        async () => {
-          const sheet = await openEditor(page, id)
-          await sheet.getByRole('button', { name: 'Edit recurrence', exact: true }).tap()
-          const editor = sheet.locator('#quick-panel-recurrence-editor')
-          await expect(editor).toBeVisible()
-          await editor.getByRole('combobox').first().tap()
-          await page.getByRole('option', { name: 'Daily', exact: true }).tap()
-          const selects = editor.getByRole('combobox')
-          await expect(selects.filter({ hasText: /^8$/ })).toHaveCount(1)
-          await expect(selects.filter({ hasText: /^30$/ })).toHaveCount(1)
-          await expect(selects.filter({ hasText: /^AM$/ })).toHaveCount(1)
-
-          await sheet.getByRole('button', { name: 'Save' }).tap()
-          await expect
-            .poll(
-              async () => (await (await page.request.get(`/api/tasks/${id}`)).json()).data.rrule,
-            )
-            .toBe('FREQ=DAILY;BYHOUR=8;BYMINUTE=30')
-        },
-      )
-    } finally {
-      await page.request.delete(`/api/tasks/${id}`)
-    }
-  })
-
   test('a recurring task: deadline moves with each week, and no Horizon row', async ({
     authenticatedPage: page,
   }) => {
@@ -219,6 +183,44 @@ test.describe('Task editor sheet on a phone', () => {
         await expect(target).toContainText('(4 days before deadline)')
         await expect(target).not.toContainText('No target')
       })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+})
+
+test.describe('Recurrence editor on a phone: the starting time', () => {
+  test("a new rule on an undated task starts at the user's Morning time, not 9:00", async ({
+    authenticatedPage: page,
+  }) => {
+    // Every repeating task has a time (2026-10-12); the picker's starting time
+    // is the task's anchor, else its date's time, else the Morning setting.
+    const title = uniqueTitle('Stretch')
+    const id = await createTask(page, { title })
+    try {
+      await withPreferences(
+        page,
+        { default_grouping: 'unified', morning_time: '08:30' },
+        async () => {
+          const sheet = await openEditor(page, id)
+          await sheet.getByRole('button', { name: 'Edit recurrence', exact: true }).tap()
+          const editor = sheet.locator('#quick-panel-recurrence-editor')
+          await expect(editor).toBeVisible()
+          await editor.getByRole('combobox').first().tap()
+          await page.getByRole('option', { name: 'Daily', exact: true }).tap()
+          const selects = editor.getByRole('combobox')
+          await expect(selects.filter({ hasText: /^8$/ })).toHaveCount(1)
+          await expect(selects.filter({ hasText: /^30$/ })).toHaveCount(1)
+          await expect(selects.filter({ hasText: /^AM$/ })).toHaveCount(1)
+
+          await sheet.getByRole('button', { name: 'Save' }).tap()
+          await expect
+            .poll(
+              async () => (await (await page.request.get(`/api/tasks/${id}`)).json()).data.rrule,
+            )
+            .toBe('FREQ=DAILY;BYHOUR=8;BYMINUTE=30')
+        },
+      )
     } finally {
       await page.request.delete(`/api/tasks/${id}`)
     }

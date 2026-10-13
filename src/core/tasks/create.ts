@@ -4,7 +4,7 @@
 
 import { TARGET_SET_FIELD } from './target-set'
 import { getTargetContext } from './target-context'
-import { resolveTarget } from '@/lib/task-segments'
+import { resolveTarget, type TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -72,6 +72,26 @@ function scheduleFor(
 }
 
 /**
+ * The rule the new row stores: `scheduleFor`'s, with its time of day filled
+ * in (every non-quota rule has one, `fillRuleTime`: the time of a date sent
+ * with it, else the user's Morning time). Before the first occurrence is
+ * computed — a timeless rule would start at local midnight, a period late.
+ */
+function timedSchedule(
+  userId: number,
+  input: TaskCreateInput,
+  tracked: boolean,
+  ctx: TargetContext,
+  timezone: string,
+): string | null | undefined {
+  return fillRuleTime(scheduleFor(userId, input, tracked), tracked, {
+    requestDueAt: input.due_at ?? null,
+    morningTime: ctx.morningTime,
+    timezone,
+  })
+}
+
+/**
  * Create a new task
  *
  * @returns The created task
@@ -124,13 +144,7 @@ export function createTask(options: CreateTaskOptions): Task {
     !input.horizon
 
   const targetCtx = getTargetContext(userId)
-  // Every non-quota rule has a time (`fillRuleTime`), set before the first
-  // occurrence is computed — a timeless rule would start a period late.
-  const rrule = fillRuleTime(scheduleFor(userId, input, tracked), tracked, {
-    requestDueAt: input.due_at ?? null,
-    morningTime: targetCtx.morningTime,
-    timezone: userTimezone,
-  })
+  const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone)
 
   // Compute due_at if rrule provided but no due_at.
   //
