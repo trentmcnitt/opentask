@@ -315,7 +315,9 @@ describe('enrichment success path', () => {
     await processEnrichmentQueue()
 
     const after = getTaskById(task.id)!
-    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TU')
+    // The rule takes the time of the date the model sent (09:00, 2026-10-12).
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0')
+    expect(after.anchor_time).toBe('09:00')
     expect(after.anchor_dow).not.toBeNull()
     expect(after.labels).not.toContain('ai-to-process')
   })
@@ -1024,7 +1026,7 @@ describe('local→UTC timezone conversion', () => {
     const after = getTaskById(task.id)!
     // Snapped forward to Thursday Apr 23 at 9 AM CDT = 14:00 UTC.
     expect(after.due_at).toBe('2026-04-23T14:00:00.000Z')
-    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TH')
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TH;BYHOUR=9;BYMINUTE=0')
   })
 
   test('does not snap due_at when weekday already matches BYDAY', async () => {
@@ -1139,7 +1141,7 @@ describe('new enrichment fields', () => {
 
     const after = getTaskById(task.id)!
     expect(after.recurrence_mode).toBe('from_completion')
-    expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3')
+    expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3;BYHOUR=8;BYMINUTE=0')
   })
 
   test('an every-N rule with no date starts on the enrichment day (creation day is day 0, 2026-10-12)', async () => {

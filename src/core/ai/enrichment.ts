@@ -43,6 +43,7 @@ import {
   deriveAnchorFields,
   parseRRule,
   getDayOfWeek,
+  fillRuleTime,
 } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { stampTargetSet } from '@/core/tasks/target-set'
@@ -1498,7 +1499,12 @@ function applyEnrichment(
   const task = getTaskById(row.id)
   if (!task) return []
 
-  const changes = collectEnrichmentChanges(task, enrichment, user, inputText)
+  const changes = collectEnrichmentChanges(
+    task,
+    withEnrichmentRuleTime(task, enrichment, user),
+    user,
+    inputText,
+  )
 
   if (changes.fieldsChanged.length === 0) {
     // No field changes, but still need to remove ai-to-process label
@@ -1552,6 +1558,31 @@ function applyEnrichment(
 
   // Return user-facing fields (filter out anchor internals) for toast description
   return changes.fieldsChanged.filter((f) => !INTERNAL_FIELDS.includes(f))
+}
+
+/**
+ * Every non-quota rule has a time of day (2026-10-12, `fillRuleTime` in
+ * `src/core/recurrence/rule-time.ts`). The task prompt keeps a rule bare and
+ * puts the time in due_at ("every Monday at 9am" → `FREQ=WEEKLY;BYDAY=MO`,
+ * due_at Monday 9:00), so the rule takes that date's time; with no date, the
+ * task's anchor, its current date's time, else the user's Morning time. A
+ * reminder's rule is already timed (`sanitizeReminderEnrichment`). The quota
+ * test is the row's at write time — `task` is the re-read in `applyEnrichment`,
+ * as `collectEnrichmentChanges` asks it. `enrichment.due_at` is UTC by now.
+ */
+function withEnrichmentRuleTime(
+  task: Task,
+  enrichment: EnrichmentResult,
+  user: { id: number; timezone: string },
+): EnrichmentResult {
+  const rrule = fillRuleTime(enrichment.rrule, isTracked(task), {
+    requestDueAt: enrichment.due_at,
+    anchorTime: task.anchor_time,
+    existingDueAt: task.due_at,
+    morningTime: getTargetContext(user.id).morningTime,
+    timezone: user.timezone,
+  })
+  return rrule === enrichment.rrule ? enrichment : { ...enrichment, rrule }
 }
 
 interface PendingTaskRow {

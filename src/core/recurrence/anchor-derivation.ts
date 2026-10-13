@@ -118,23 +118,3 @@ export function extractTimeOfDay(
 
   return null
 }
-
-/**
- * Update RRULE with explicit BYHOUR/BYMINUTE if missing
- * This ensures the RRULE has the time embedded for anti-drift
- */
-export function ensureTimeInRRule(rrule: string, hour: number, minute: number): string {
-  const components = parseRRule(rrule)
-
-  // Already has time
-  if (components.byhour !== undefined) {
-    return rrule
-  }
-
-  // Add time components
-  const parts = rrule.split(';')
-  parts.push(`BYHOUR=${hour}`)
-  parts.push(`BYMINUTE=${minute}`)
-
-  return parts.join(';')
-}

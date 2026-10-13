@@ -463,6 +463,16 @@ export function QuickActionPanel({
     return RRULE_DAYS[weekday - 1]
   }, [effectiveTask, timezone])
 
+  // The recurrence picker's starting time — the server's own order for a rule
+  // sent without one (`ruleTimeFor`, 2026-10-12): the task's anchor, else its
+  // date's time (a one-off at 3 PM made repeating keeps 3 PM), else the user's
+  // Morning time. Every repeating task has a time; the picker always writes one.
+  const recurrenceInitialTime =
+    effectiveTask?.anchor_time ??
+    (effectiveTask?.due_at
+      ? DateTime.fromISO(effectiveTask.due_at).setZone(timezone).toFormat('HH:mm')
+      : morningTime)
+
   // Per-field dirty flags, one per staged field. Each drives that field's blue
   // "modified" indicator; fieldDirty below combines them into the panel's dirty
   // state (Save and Reset enablement, and the unsaved-changes guards).
@@ -1800,7 +1810,7 @@ export function QuickActionPanel({
           <RecurrencePicker
             value={displayRrule}
             recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
-            initialTime={effectiveTask?.anchor_time}
+            initialTime={recurrenceInitialTime}
             defaultDayOfWeek={defaultDayOfWeek}
             onChange={(rrule, mode) => {
               setPendingRrule(rrule)

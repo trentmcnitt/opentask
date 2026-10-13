@@ -29,12 +29,10 @@ export {
 } from './rrule-builder'
 
 // Anchor field derivation
-export {
-  deriveAnchorFields,
-  extractTimeOfDay,
-  ensureTimeInRRule,
-  type AnchorFields,
-} from './anchor-derivation'
+export { deriveAnchorFields, extractTimeOfDay, type AnchorFields } from './anchor-derivation'
+
+// Every non-quota rule has a time of day (2026-10-12)
+export { ensureRuleTime, ruleTimeFor, fillRuleTime, type RuleTimeSources } from './rule-time'
 
 // Core computation
 export {

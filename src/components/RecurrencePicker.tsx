@@ -309,7 +309,11 @@ export interface RecurrencePickerProps {
   value?: string | null
   /** Recurrence mode: 'from_due' (fixed schedule) or 'from_completion' (flexible) */
   recurrenceMode?: RecurrenceMode
-  /** Initial time in HH:MM format for defaulting the time picker */
+  /**
+   * Initial time in HH:MM format for defaulting the time picker. Callers pass
+   * the task's anchor_time, else the user's Morning time; 9:00 is only the
+   * last resort when neither is known.
+   */
   initialTime?: string | null
   /** RRULE day abbreviation (e.g., 'WE') to auto-select when switching to Weekly with no days */
   defaultDayOfWeek?: string

@@ -8,7 +8,7 @@ import { resolveTarget } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
-import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
+import { computeFirstOccurrence, deriveAnchorFields, fillRuleTime } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
@@ -123,7 +123,14 @@ export function createTask(options: CreateTaskOptions): Task {
     !input.deadline_at &&
     !input.horizon
 
-  const rrule = scheduleFor(userId, input, tracked)
+  const targetCtx = getTargetContext(userId)
+  // Every non-quota rule has a time (`fillRuleTime`), set before the first
+  // occurrence is computed — a timeless rule would start a period late.
+  const rrule = fillRuleTime(scheduleFor(userId, input, tracked), tracked, {
+    requestDueAt: input.due_at ?? null,
+    morningTime: targetCtx.morningTime,
+    timezone: userTimezone,
+  })
 
   // Compute due_at if rrule provided but no due_at.
   //
@@ -149,7 +156,7 @@ export function createTask(options: CreateTaskOptions): Task {
       deadlineChanged: false,
       autoEligible: !rrule && !tracked && !input.is_reminder,
     },
-    getTargetContext(userId),
+    targetCtx,
   )
   dueAt = target.dueAt
 
