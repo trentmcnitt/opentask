@@ -619,7 +619,7 @@ enum WidgetTheme {
     /// label's width and height are exactly what `TasksListView.layout
     /// (for:)` measured.
     static func dueLabelText(for task: TaskDTO, now: Date = Date(), stacked: Bool = false) -> Text {
-        guard let due = task.effectiveTargetDate else { return Text("") }
+        guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
         if overdue {

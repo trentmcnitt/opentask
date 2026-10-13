@@ -340,9 +340,10 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
 
     // MARK: Upcoming (2026-10-12)
 
-    /// Upcoming's words: the target date always (it is the whole point of the
-    /// segment), the deadline's gap, the schedule of a repeating one — never
-    /// the task's horizon.
+    /// Upcoming's words (one line since 2026-10-12, Trent's review of #251):
+    /// the target's day with no "Target" word, the schedule of a repeating
+    /// one, the deadline — no "(+Nd)", no "(same day)" — and never the task's
+    /// horizon. Each `UpcomingMetaForm` drops a little more.
     func testUpcomingRowWords() {
         let now = DateHelpers.parseISO("2026-10-12T15:00:00.000Z")!
         var cal = Calendar(identifier: .gregorian)
@@ -352,45 +353,95 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         func words(_ s: String) -> String { s.replacingOccurrences(of: " ", with: nb) }
 
         let plain = TaskDTO(id: 1, title: "Renew", dueAt: "2026-10-13T14:00:00.000Z", horizon: "weeks")
-        XCTAssertEqual(plain.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal), words("Target Tue Oct 13"))
+        XCTAssertEqual(plain.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal), words("Tue Oct 13"))
+        XCTAssertEqual(
+            plain.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal, upcomingForm: .short), words("Oct 13")
+        )
 
         let gap = TaskDTO(
             id: 2, title: "Passport", dueAt: "2026-10-13T14:00:00.000Z", deadlineAt: "2026-10-17T22:00:00.000Z"
         )
         XCTAssertEqual(
             gap.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal),
-            words("Target Tue Oct 13") + dot + words("deadline Sat Oct 17 (+4d)")
+            words("Tue Oct 13") + dot + words("deadline Sat Oct 17")
         )
         XCTAssertEqual(
             gap.segmentLabelText(segmentHorizon: "upcoming", now: now, calendar: cal),
-            "Passport" + dot + words("Target Tue Oct 13") + dot + words("deadline Sat Oct 17 (+4d)")
+            "Passport" + dot + words("Tue Oct 13") + dot + words("deadline Sat Oct 17")
         )
+        XCTAssertEqual(gap.upcomingMeta(calendar: cal, form: .short), words("Oct 13") + dot + words("deadline Oct 17"))
 
         let sameDay = TaskDTO(
             id: 3, title: "Same", dueAt: "2026-10-13T14:00:00.000Z", deadlineAt: "2026-10-13T22:00:00.000Z"
         )
-        XCTAssertEqual(
-            sameDay.upcomingMeta(calendar: cal),
-            words("Target Tue Oct 13") + dot + words("deadline Tue Oct 13 (same day)")
-        )
+        XCTAssertEqual(sameDay.upcomingMeta(calendar: cal), words("Tue Oct 13") + dot + words("deadline Tue Oct 13"))
 
         let before = TaskDTO(
             id: 4, title: "Late", dueAt: "2026-10-26T14:00:00.000Z", deadlineAt: "2026-10-23T22:00:00.000Z"
         )
         XCTAssertEqual(
             before.upcomingMeta(calendar: cal),
-            words("Target Mon Oct 26") + dot + words("deadline Fri Oct 23 (deadline before target)")
+            words("Mon Oct 26") + dot + words("deadline Fri Oct 23 (deadline before target)")
+        )
+        XCTAssertEqual(
+            before.upcomingMeta(calendar: cal, form: .noScheduleOn),
+            words("Mon Oct 26") + dot + words("deadline Fri Oct 23 (deadline first)")
+        )
+        XCTAssertEqual(
+            before.upcomingMeta(calendar: cal, form: .short),
+            words("Oct 26") + dot + words("deadline Oct 23 (deadline first)")
         )
 
         let repeating = TaskDTO(id: 5, title: "Plants", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=DAILY;INTERVAL=3")
-        // "repeats" said when (2026-10-12): the schedule, from the rrule.
-        XCTAssertEqual(repeating.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + words("every 3 days"))
+        XCTAssertEqual(repeating.upcomingMeta(calendar: cal), words("Wed Oct 14") + dot + words("every 3 days"))
         let weekly = TaskDTO(
             id: 6, title: "Bins", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=WEEKLY;BYDAY=WE", anchorTime: "09:00"
         )
-        XCTAssertEqual(weekly.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + words("every Wed at 9 AM"))
+        XCTAssertEqual(weekly.upcomingMeta(calendar: cal), words("Wed Oct 14") + dot + words("every Wed at 9 AM"))
+        XCTAssertEqual(
+            weekly.upcomingMeta(calendar: cal, form: .noScheduleTime), words("Wed Oct 14") + dot + words("every Wed")
+        )
+        let biweekly = TaskDTO(
+            id: 8, title: "Recycling", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE",
+            anchorTime: "07:00"
+        )
+        XCTAssertEqual(
+            biweekly.upcomingMeta(calendar: cal), words("Wed Oct 14") + dot + words("every 2 weeks on Wed at 7 AM")
+        )
+        XCTAssertEqual(
+            biweekly.upcomingMeta(calendar: cal, form: .noScheduleTime),
+            words("Wed Oct 14") + dot + words("every 2 weeks on Wed")
+        )
+        XCTAssertEqual(
+            biweekly.upcomingMeta(calendar: cal, form: .noScheduleOn), words("Wed Oct 14") + dot + words("every 2 weeks")
+        )
+        XCTAssertEqual(biweekly.upcomingMeta(calendar: cal, form: .short), words("Oct 14") + dot + words("every 2 weeks"))
         let unreadable = TaskDTO(id: 7, title: "Odd", dueAt: "2026-10-14T14:00:00.000Z", rrule: "FREQ=HOURLY")
-        XCTAssertEqual(unreadable.upcomingMeta(calendar: cal), words("Target Wed Oct 14") + dot + "repeats")
+        XCTAssertEqual(unreadable.upcomingMeta(calendar: cal), words("Wed Oct 14") + dot + "repeats")
+    }
+
+    /// The two badges ride at the end of a segment row's words (the web's
+    /// `BadgeChips`): the server's attempts label on a row with a target, the
+    /// age label on an undated one — the server's strings, never recounted.
+    func testSegmentRowsCarryTheBadges() {
+        let now = DateHelpers.parseISO("2026-10-12T15:00:00.000Z")!
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Chicago")!
+        let nb = "\u{00A0}"
+        let dot = "\(nb)· "
+        let undated = TaskDTO(id: 1, title: "Garage", horizon: "weeks", ageLabel: ">1 mo")
+        XCTAssertEqual(undated.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), ">1\(nb)mo")
+        let moved = TaskDTO(
+            id: 2, title: "Hinges", dueAt: "2026-10-14T14:00:00.000Z", deadlineAt: "2026-10-17T22:00:00.000Z",
+            attempts: 3, attemptsLabel: "3×"
+        )
+        XCTAssertEqual(
+            moved.segmentMeta(segmentHorizon: "upcoming", now: now, calendar: cal),
+            "Wed\(nb)Oct\(nb)14" + dot + "deadline\(nb)Sat\(nb)Oct\(nb)17" + dot + "3×"
+        )
+        // No target, no attempts badge, whatever the label says.
+        let noTarget = TaskDTO(id: 3, title: "X", horizon: "days", attemptsLabel: "2×")
+        XCTAssertNil(noTarget.segmentMeta(segmentHorizon: "days", now: now, calendar: cal))
     }
 
     /// Upcoming is its own kind: its own page key, label and colour — never a
@@ -421,13 +472,16 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(bars.map(\.label), ["Tasks · Days", "Tasks · Upcoming"])
     }
 
-    /// A repeating row has no Today: `recurring` from the wire, else its rrule.
-    func testARepeatingRowOffersNoTargetToday() throws {
+    /// Every row offers Today, repeating ones included (batch 2, 2026-10-12:
+    /// the server keeps the occurrence apart from the target), and
+    /// `recurring` still decodes — from the wire, else the rrule.
+    func testEveryRowOffersTargetToday() throws {
         let oneOff = SegmentTaskDTO(task: TaskDTO(id: 1, title: "A"), state: .waiting)
         XCTAssertTrue(oneOff.offersTargetToday)
         let repeating = SegmentTaskDTO(task: TaskDTO(id: 2, title: "B", rrule: "FREQ=DAILY"), state: .waiting)
-        XCTAssertFalse(repeating.offersTargetToday)
-        XCTAssertFalse(repeating.with(state: .considered).offersTargetToday, "with(state:) keeps it")
+        XCTAssertTrue(repeating.recurring)
+        XCTAssertTrue(repeating.offersTargetToday)
+        XCTAssertTrue(repeating.with(state: .considered).offersTargetToday)
         // An older cache with no `recurring` key falls back to the rrule.
         let json = #"{"id": 3, "title": "C", "rrule": "FREQ=WEEKLY", "segment_state": "waiting"}"#
         XCTAssertTrue(try JSONDecoder().decode(SegmentTaskDTO.self, from: Data(json.utf8)).recurring)

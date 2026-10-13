@@ -158,7 +158,7 @@ private struct TaskRow: View {
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
 
-                if let due = task.effectiveTargetDate {
+                if let due = task.dueDate {
                     HStack(spacing: 4) {
                         Text(WatchFormatting.dueLine(for: due))
                             .font(.caption2)

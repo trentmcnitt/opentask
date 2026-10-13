@@ -264,6 +264,10 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(completions.map(\.isQuota), [false, false])
         XCTAssertEqual(completions.map(\.projectId), [1, 1])
         XCTAssertNotNil(completions[0].completedDate)
+        // Completions carry the attempts at completion (2026-10-12).
+        XCTAssertEqual(completions.map(\.attempts), [0, 0])
+        let raw = try XCTUnwrap(try Fixtures.object("completions")["completions"] as? [[String: Any]])
+        XCTAssertEqual(raw.compactMap { $0["attempts"] as? Int }, completions.map(\.attempts))
     }
 
     func testUndoStatus() throws {
@@ -297,14 +301,14 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(row.horizon, "days")
         XCTAssertEqual(row.horizonLabel, "Days")
         // Since 2026-10-12 (§8) a deadline always carries a stored target —
-        // the AUTOMATIC one (`target_auto`, which this DTO doesn't decode) —
-        // so the row has a due date and a first-target date, and
-        // `deadline_nag_off` is always false. Its automatic target keeps it
-        // in its horizon segment.
+        // the AUTOMATIC one (`target_auto`) — so the row has a due date. Its
+        // automatic target keeps it in its horizon segment.
         XCTAssertEqual(row.dueAt, Fixtures.pinnedTimestamp)
         XCTAssertEqual(row.deadlineAt, Fixtures.pinnedTimestamp)
-        XCTAssertEqual(row.originalDueAt, Fixtures.pinnedTimestamp)
-        XCTAssertFalse(row.deadlineNagOff)
+        XCTAssertTrue(row.targetAuto)
+        XCTAssertEqual(row.attempts, 0)
+        XCTAssertNil(row.attemptsLabel)
+        XCTAssertNil(row.ageLabel)
         XCTAssertFalse(row.isReminder)
 
         // Field by field against the raw JSON — a renamed key would otherwise
@@ -318,9 +322,9 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(rawTask["segment_state"] as? String, "considered")
         XCTAssertEqual(rawTask["horizon"] as? String, row.horizon)
         XCTAssertEqual(rawTask["deadline_at"] as? String, row.deadlineAt)
-        XCTAssertEqual(rawTask["deadline_nag_off"] as? Bool, row.deadlineNagOff)
         XCTAssertEqual(rawTask["target_at"] as? String, row.dueAt, "target_at mirrors due_at")
-        XCTAssertEqual(rawTask["target_auto"] as? Bool, true, "the deadline's automatic target")
+        XCTAssertEqual(rawTask["target_auto"] as? Bool, row.targetAuto, "the deadline's automatic target")
+        XCTAssertEqual(rawTask["attempts"] as? Int, row.attempts)
 
         // Segments stay out of every group, and out of every reminders count.
         let groupIds = Set(payload.groups.flatMap { $0.reminders + $0.consideredItems }.map(\.id))
@@ -366,7 +370,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(upcoming.tasks.map(\.id), [Fixtures.passport, Fixtures.plantsRecurring])
         XCTAssertEqual(upcoming.tasks.map(\.state), [.waiting, .waiting])
         XCTAssertEqual(upcoming.tasks.map(\.recurring), [false, true])
-        XCTAssertEqual(upcoming.tasks.map(\.offersTargetToday), [true, false])
+        XCTAssertEqual(upcoming.tasks.map(\.offersTargetToday), [true, true], "Today on every row since batch 2")
         XCTAssertEqual(upcoming.waitingCount, 2)
         XCTAssertTrue(upcoming.isListed)
 
@@ -434,18 +438,87 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let raw = try XCTUnwrap(try Fixtures.object("tasks")["tasks"] as? [[String: Any]])
         for task in raw {
             for key in [
-                "target_at", "deadline_at", "horizon", "original_due_at", "deadline_nag_off", "target_set_at",
+                "target_at", "deadline_at", "horizon", "target_set_at", "target_auto", "occurrence_at", "attempts",
+                "attempts_counted_through", "attempts_label", "attempts_offer", "age_label", "growth_kept_at",
             ] {
                 XCTAssertTrue(task.keys.contains(key), "task \(task["id"] ?? "?") lacks \(key)")
             }
             XCTAssertEqual(task["target_at"] as? String, task["due_at"] as? String, "target_at == due_at")
+            // No snooze state since 2026-10-12 (§6).
+            XCTAssertFalse(task.keys.contains("is_snoozed"))
+            XCTAssertFalse(task.keys.contains("snooze_count"))
         }
         let tasks = try Fixtures.decode(TasksPage.self, "tasks").tasks
         let dated = try XCTUnwrap(tasks.first { $0.id == Fixtures.stretch })
-        XCTAssertEqual(dated.originalDueAt, Fixtures.pinnedTimestamp)
         XCTAssertEqual(dated.targetSetAt, Fixtures.pinnedTimestamp)
         XCTAssertNil(dated.horizon)
         XCTAssertNil(dated.horizonLabel, "unset shows as nothing, never as Weeks")
+        // A repeating task's scheduled occurrence, apart from its target (§6).
+        XCTAssertEqual(dated.occurrenceAt, Fixtures.pinnedTimestamp)
+        XCTAssertFalse(dated.targetAuto)
+        XCTAssertEqual(dated.attempts, 0)
+        XCTAssertNil(dated.attemptsLabel)
+        let rawStretch = try XCTUnwrap(raw.first { $0["id"] as? Int == Fixtures.stretch })
+        XCTAssertEqual(rawStretch["occurrence_at"] as? String, dated.occurrenceAt)
+    }
+
+    // MARK: The two badges (2026-10-12, task-badges.json)
+
+    /// `GET /api/tasks/{id}` for three tasks: undated and a month old (age),
+    /// over target on three days with no deadline (offer "remove"), and the
+    /// same with a deadline (offer "auto"). Values, then each against its raw
+    /// key — the DTO defaults every one of these, so a renamed key would
+    /// otherwise decode as nil/0 and the badge would silently vanish.
+    func testTaskBadges() throws {
+        let data = try Fixtures.data("task-badges")
+        let envelopes = try JSONDecoder().decode([String: APIEnvelope<TaskDTO>].self, from: data)
+        XCTAssertEqual(Set(envelopes.keys), ["age", "attempts", "attempts_deadline"])
+        let age = try XCTUnwrap(envelopes["age"]).data
+        let attempts = try XCTUnwrap(envelopes["attempts"]).data
+        let deadline = try XCTUnwrap(envelopes["attempts_deadline"]).data
+
+        XCTAssertEqual(age.title, "Clear out the garage")
+        XCTAssertNil(age.dueAt)
+        XCTAssertEqual(age.ageLabel, ">1 mo")
+        XCTAssertEqual(age.attempts, 0)
+        XCTAssertNil(age.attemptsLabel)
+        XCTAssertNil(age.attemptsOffer)
+        XCTAssertNil(TargetAge.attemptsBadge(age))
+        XCTAssertEqual(age.segmentMeta(segmentHorizon: "weeks"), ">1\u{00A0}mo", "the age chip ends the row's words")
+
+        XCTAssertEqual(attempts.title, "Oil the hinges")
+        XCTAssertEqual(attempts.attempts, 3)
+        XCTAssertEqual(attempts.attemptsCountedThrough, Fixtures.pinnedDate)
+        XCTAssertEqual(attempts.attemptsLabel, "3×")
+        XCTAssertEqual(attempts.attemptsOffer, "remove")
+        XCTAssertNil(attempts.ageLabel)
+        XCTAssertFalse(attempts.targetAuto)
+        XCTAssertNil(attempts.occurrenceAt)
+        XCTAssertNil(attempts.growthKeptAt)
+        XCTAssertEqual(TargetAge.attemptsBadge(attempts), "3×")
+        XCTAssertEqual(TargetAge.tone(attempts: attempts.attempts), .medium)
+
+        XCTAssertEqual(deadline.title, "Book the inspection")
+        XCTAssertEqual(deadline.deadlineAt, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(deadline.attemptsLabel, "3×")
+        XCTAssertEqual(deadline.attemptsOffer, "auto")
+
+        let raw = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: [String: Any]])
+        for (name, task) in [("age", age), ("attempts", attempts), ("attempts_deadline", deadline)] {
+            let fields = try XCTUnwrap(raw[name]?["data"] as? [String: Any], name)
+            XCTAssertEqual(fields["attempts"] as? Int, task.attempts, name)
+            XCTAssertEqual(fields["attempts_counted_through"] as? String, task.attemptsCountedThrough, name)
+            XCTAssertEqual(fields["attempts_label"] as? String, task.attemptsLabel, name)
+            XCTAssertEqual(fields["attempts_offer"] as? String, task.attemptsOffer, name)
+            XCTAssertEqual(fields["age_label"] as? String, task.ageLabel, name)
+            XCTAssertEqual(fields["growth_kept_at"] as? String, task.growthKeptAt, name)
+            XCTAssertEqual(fields["target_auto"] as? Bool, task.targetAuto, name)
+            XCTAssertEqual(fields["occurrence_at"] as? String, task.occurrenceAt, name)
+        }
+
+        // The cache round trip keeps every badge field.
+        let back = try JSONDecoder().decode(TaskDTO.self, from: JSONEncoder().encode(deadline))
+        XCTAssertEqual(back, deadline)
     }
 
     // MARK: GET /api/tasks/counts (the foreground badge)
