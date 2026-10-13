@@ -119,6 +119,7 @@
 		7429BAC05E3C53F944D56312 /* WatchAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC3579E8F57FB1C23A5ADE1 /* WatchAppDelegate.swift */; };
 		74F89484C1A845E89C760DD7 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
 		76D83632FD8B18895F9E99E7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */; };
+		76EA5A4B242F069CB8E9D904 /* QuotaSegmentsPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */; };
 		7EF1A071E6614B5836955CA3 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 479167B600656D8A1F161597 /* TargetAge.swift */; };
 		7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B872742B2A8BD9EA4734A7 /* QuickActionHandler.swift */; };
 		80594A9F5EDE4FB3E31684EE /* WatchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9681162F97176C33B61407A /* WatchCache.swift */; };
@@ -311,6 +312,7 @@
 		4ED94027914BC15E39E2469B /* SweepSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepSummary.swift; sourceTree = "<group>"; };
 		5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWidgetBundle.swift; sourceTree = "<group>"; };
 		56DAD630482D315A1F294B8F /* WebViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewManager.swift; sourceTree = "<group>"; };
+		58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSegmentsPreviews.swift; sourceTree = "<group>"; };
 		5E25F7569216C1C32AADD88F /* WidgetOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetOutbox.swift; sourceTree = "<group>"; };
 		6014FAABE0C945E0B82A726F /* OpenTaskWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OpenTaskWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		613B60F9999A8718BB9EA210 /* QuickActionSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionSceneDelegate.swift; sourceTree = "<group>"; };
@@ -493,6 +495,7 @@
 				9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */,
 				B0BA880E80F8E982F77B4147 /* NotesGlyphPreviews.swift */,
 				5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */,
+				58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */,
 				0606D2DEED3C84F0971B9DC9 /* RemindersTimeline.swift */,
 				A44BF1E5D3EAA30D3259E9BE /* RemindersWidget.swift */,
 				DD91DE11F4F065B831544415 /* RemindersWidgetViews.swift */,
@@ -874,6 +877,7 @@
 				4CD6B738761136FEF9C3BAF6 /* QuotaCount.swift in Sources */,
 				4A6E1467539DCA234BB4D10B /* QuotaRules.swift in Sources */,
 				221BA88F89AE9F422DDDAD1B /* QuotaSegments.swift in Sources */,
+				76EA5A4B242F069CB8E9D904 /* QuotaSegmentsPreviews.swift in Sources */,
 				5F0B9CA06A0179D74BBCBAA7 /* RecurrenceSummary.swift in Sources */,
 				440A98EA687A8E35950CA98D /* ReminderDayProgress.swift in Sources */,
 				CFA96438104E39CC31A0D909 /* RemindersTimeline.swift in Sources */,

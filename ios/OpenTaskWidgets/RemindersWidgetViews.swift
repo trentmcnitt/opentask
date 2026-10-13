@@ -110,6 +110,8 @@ struct RemindersWidgetView: View {
 /// single tap into the Reminders surface.
 private struct RemindersSmallView: View {
     let entry: RemindersEntry
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.displayScale) private var displayScale
 
     /// Reminders AND waiting quota prompts (2026-09-24) — a prompt counts
     /// exactly like a reminder.
@@ -155,7 +157,7 @@ private struct RemindersSmallView: View {
                     // the 2×2 has a fixed card, so a long title SHRINKS into
                     // what's left under the count instead of ending in "…"
                     // ("Breakfast ( Oatmeal, Berri…" at XXX Large).
-                    Text(firstItem.text)
+                    firstItemText(firstItem.text)
                         .font(.caption2)
                         .fontWeight(firstItem.weight)
                         .foregroundStyle(.primary)
@@ -171,6 +173,22 @@ private struct RemindersSmallView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .widgetURL(WidgetLink.reminders)
         }
+    }
+
+    /// The first item's line. A quota prompt draws its count as segments
+    /// (2026-10-13) in the caption2 line's em — the rows' look in small —
+    /// or "3/7 today" above six. Text alone for a reminder.
+    private func firstItemText(_ text: String) -> Text {
+        guard entry.group?.reminders.first == nil, let prompt = entry.group?.waitingPrompts.first else {
+            return Text(text)
+        }
+        let em = WidgetTextMetrics(dynamicTypeSize: dynamicTypeSize).caption2Font.pointSize
+        let count = QuotaSegmentsText.count(
+            QuotaCount.chooseForm(target: prompt.target), current: prompt.current, target: prompt.target,
+            word: QuotaCount.word(period: prompt.period), em: em, wordSize: em, scale: displayScale
+        )
+        return (Text(prompt.title) + Text(" ") + count)
+            .accessibilityLabel(Text("\(prompt.title), \(prompt.spokenCount)"))
     }
 
     /// Nothing waiting in the on-screen period — the 2×2 keeps its one

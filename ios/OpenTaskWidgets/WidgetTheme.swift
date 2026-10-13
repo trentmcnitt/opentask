@@ -921,9 +921,12 @@ struct WidgetTextMetrics {
     /// text form at 0.85× (the mockup's `.qc{font-size:.85em}`).
     var promptCountWordSize: CGFloat { titlePointSize * 0.85 }
 
-    /// Air between the title and the count, beyond the breaking space (the
-    /// web's `ml-[5px]` at a 15px row: a third of an em).
-    var promptCountLead: CGFloat { titlePointSize / 3 }
+    /// Air between the title and the count, beyond the breaking space and
+    /// the boxes' own 0.05em. A tenth of an em: with the space, the boxes
+    /// sit about a third of an em after the title, as in the r4 mockup's
+    /// widget rows (a third of an em MORE, the web's `ml-[5px]`, read as a
+    /// gap in the first render).
+    var promptCountLead: CGFloat { titlePointSize / 10 }
 
     /// Which form a prompt's count takes in a row whose title column is
     /// `width` wide — `QuotaCount.chooseForm` with the widths this row would
