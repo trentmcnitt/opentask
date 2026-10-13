@@ -116,19 +116,20 @@ enum WidgetTheme {
     static let takebackTint = Color.red
 
     /// Over target (2026-10-11): a calm plum, the web's `--over-target` —
-    /// never red, which is kept for a passed deadline only (Trent). Plum TEXT
-    /// and the attempts tab's tint. Lifted in dark mode like the web's dark
-    /// token (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on
-    /// the dark card measured 3.0:1 as text and 2.7:1 on its own tab tint;
-    /// lifted it is 6.0:1 and ≥4.7:1. Light mode is unchanged (#9E4594, 5.6:1
-    /// on white, ≥4.5:1 on its tints). Resolved from the view's
+    /// never red, which is kept for a passed deadline only (Trent). Plum TEXT:
+    /// the over-target time and the attempts count folded into it ("Thu ·
+    /// 3×", `AttemptsInTime`). Lifted in dark mode like the web's dark token
+    /// (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on the
+    /// dark card measured 3.0:1 as text; lifted it is 6.0:1. Light mode is
+    /// unchanged (#9E4594, 5.6:1 on white). Resolved from the view's
     /// `colorScheme` (see `taskSegmentColor`), not a dynamic platform color.
     static func overTarget(_ scheme: ColorScheme) -> Color {
         rgb(scheme == .dark ? 0xC97CD5 : 0x9E4594)
     }
 
-    /// A SOLID plum under white text — the attempts tab's 7+ step, the web's
-    /// `--over-target-badge`: the plum itself in light mode (white on it
+    /// A SOLID plum under white text — the Over segment's selected fill
+    /// (`TasksPageControl`), the web's `--over-target-badge`: the plum itself
+    /// in light mode (white on it
     /// 5.6:1), a darker one in dark mode (oklch(0.52 0.16 322) ≈ #92429E,
     /// white on it 6.0:1), since white on the lifted text plum would fail.
     static func overTargetBadge(_ scheme: ColorScheme) -> Color {
@@ -635,34 +636,30 @@ enum WidgetTheme {
     /// label's width and height are exactly what `TasksListView.layout
     /// (for:)` measured.
     static func dueLabelText(
-        for task: TaskDTO, now: Date = Date(), stacked: Bool = false, scheme: ColorScheme
+        for task: TaskDTO, now: Date = Date(), stacked: Bool = false, scheme: ColorScheme,
+        firstLineSuffix: Text? = nil
     ) -> Text {
         guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
-        if overdue {
-            // All one color (2026-09-25): the day word ("Yesterday", "Wed",
-            // "Sep 12") is part of what's late, so it wears the same tint as
-            // the time, stacked over it exactly like an upcoming label. Plum,
-            // not red, since 2026-10-11 (WidgetTheme.overTarget).
-            let red = WidgetTheme.overTarget(scheme)
-            var text: Text?
-            if let dayWord = parts.dayWord { text = Text(dayWord).foregroundStyle(red) }
-            if let time = parts.time {
-                let timeText = Text(time).foregroundStyle(red)
-                text = text.map { $0 + Text(stacked ? "\n" : " ") + timeText } ?? timeText
-            }
-            return text ?? Text("")
+        // All one color when overdue (2026-09-25): the day word
+        // ("Yesterday", "Wed", "Sep 12") is part of what's late, so it wears
+        // the same tint as the time, stacked over it exactly like an
+        // upcoming label. Plum, not red, since 2026-10-11
+        // (WidgetTheme.overTarget).
+        let dayTint = overdue ? WidgetTheme.overTarget(scheme) : dueDayWordTint
+        let timeTint = overdue ? WidgetTheme.overTarget(scheme) : Color.secondary
+        let day = parts.dayWord.map { Text($0).foregroundStyle(dayTint) }
+        let time = parts.time.map { Text($0).foregroundStyle(timeTint) }
+        // `firstLineSuffix` (the attempts count, `AttemptsInTime`) ends the
+        // FIRST line: after the day word when stacked, else after the label.
+        if stacked, let day, let time {
+            return day + (firstLineSuffix ?? Text("")) + Text("\n") + time
         }
-        var text: Text?
-        if let dayWord = parts.dayWord {
-            text = Text(dayWord).foregroundStyle(dueDayWordTint)
+        let line = [day, time].compactMap { $0 }.reduce(nil as Text?) { joined, part in
+            joined.map { $0 + Text(" ") + part } ?? part
         }
-        if let time = parts.time {
-            let timeText = Text(time).foregroundStyle(Color.secondary)
-            text = text.map { $0 + Text(stacked ? "\n" : " ") + timeText } ?? timeText
-        }
-        return text ?? Text("")
+        return (line ?? Text("")) + (firstLineSuffix ?? Text(""))
     }
 
     // MARK: - List paging (2026-09-24, height-based)

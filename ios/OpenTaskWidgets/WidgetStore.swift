@@ -1682,8 +1682,8 @@ enum WidgetStore {
     // MARK: - Tasks project scope
 
     private static let projectScopeKey = "widget.tasks.projectId"
-    /// The natural default a stored scope was chosen against (2026-09-25) —
-    /// see `TasksScopeChoice`.
+    /// The natural default a stored scope was chosen against (2026-09-25 to
+    /// 2026-10-12) — no longer read; cleared when a page is stored.
     private static let projectScopeAnchorKey = "widget.tasks.projectId.naturalScope"
 
     /// Project id the Tasks widget is scoped to, or `overdueScope`/
@@ -1700,44 +1700,25 @@ enum WidgetStore {
     /// sentinel additionally drops `todaysTasks`' end-of-day cutoff.
     static let upNextScope = -2
 
-    /// The "Overdue" unified page (2026-09-25) — `TasksTimeline.overdueTasks`.
-    /// In the ring only while something is overdue, and the default page
-    /// whenever it is (`TasksTimeline.naturalScope`).
+    /// The "Over target" view page (2026-09-25) — `TasksTimeline.overdueTasks`.
+    /// Always one of the three view segments since 2026-10-12.
     static let overdueScope = -3
 
-    /// The user's explicit chevron choice, paired with the natural default
-    /// (`TasksTimeline.naturalScope`: Overdue while anything is overdue, else
-    /// Today) that was showing when they made it — the same "pair a value
-    /// with the state it was set against" trick `SlotOverride` uses, and for
-    /// the same reason: the pairing makes the choice self-expiring.
-    /// `TasksTimeline.resolveScope` honors it only while the natural default
-    /// is unchanged, so overdue appearing takes the widget to Overdue, and
-    /// the last overdue task going takes it back to Today, whatever was
-    /// chosen before.
-    struct TasksScopeChoice: Equatable {
-        let scope: Int
-        let naturalScope: Int
-    }
-
-    /// Nil when the user has never chevroned. A scope stored before the
-    /// anchor existed (an upgraded install) reads as chosen against Today —
-    /// the only default there was — so it survives the upgrade until overdue
-    /// next appears.
-    static func tasksScopeChoice() -> TasksScopeChoice? {
+    /// The page the user last picked — a view key above or a project id —
+    /// or nil when they never have. Kept until they pick another (2026-10-12,
+    /// mockup B-3): `TasksTimeline.resolvePage` falls back to Today only when
+    /// it names a project that no longer exists. Until that date the choice
+    /// was paired with a "natural default" (`projectScopeAnchorKey`) and
+    /// lapsed whenever something went over target or the last such task
+    /// went — the auto-jump Trent lost his spot to. A value stored back then
+    /// is read as a plain page.
+    static func tasksStoredPage() -> Int? {
         guard let defaults, defaults.object(forKey: projectScopeKey) != nil else { return nil }
-        let natural = defaults.object(forKey: projectScopeAnchorKey) != nil
-            ? defaults.integer(forKey: projectScopeAnchorKey)
-            : allProjects
-        return TasksScopeChoice(scope: defaults.integer(forKey: projectScopeKey), naturalScope: natural)
+        return defaults.integer(forKey: projectScopeKey)
     }
 
-    static func setTasksScopeChoice(_ scope: Int, naturalScope: Int) {
-        defaults?.set(scope, forKey: projectScopeKey)
-        defaults?.set(naturalScope, forKey: projectScopeAnchorKey)
-    }
-
-    static func clearTasksScopeChoice() {
-        defaults?.removeObject(forKey: projectScopeKey)
+    static func setTasksStoredPage(_ page: Int) {
+        defaults?.set(page, forKey: projectScopeKey)
         defaults?.removeObject(forKey: projectScopeAnchorKey)
     }
 
@@ -1745,8 +1726,8 @@ enum WidgetStore {
     //
     // The Tasks twin of "Reminders list paging" above — same pairing trick,
     // scoped to the project (or `allProjects`) on screen instead of a slot
-    // key, so paging resets whenever `ShiftProjectScopeIntent` moves the
-    // scope.
+    // key, so paging resets whenever the page changes (the view segments or
+    // the Projects chip).
 
     private static let tasksPageKey = "widget.tasks.page"
     private static let tasksPageScopeKey = "widget.tasks.page.scope"

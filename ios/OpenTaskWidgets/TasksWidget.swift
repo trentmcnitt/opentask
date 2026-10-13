@@ -9,10 +9,12 @@ struct TasksEntry: TimelineEntry {
     /// for `allProjects` or a project, or every dated open task for
     /// `upNextScope` (2026-09-23, item 4).
     let tasks: [TaskDTO]
-    /// The projects the scope chevrons cycle through, in server order.
+    /// The projects the "Projects ›" chip steps through (2026-10-12,
+    /// `TasksTimeline.projectPages`: those with something due today or over
+    /// target), in server order.
     let projects: [ProjectDTO]
-    /// A project id, or `WidgetStore.allProjects`/`upNextScope` for one of
-    /// the two unified pages.
+    /// The page on screen: a project id, or `WidgetStore.overdueScope`/
+    /// `allProjects`/`upNextScope` for one of the three view pages.
     let scope: Int
     let staleSince: Date?
     let isSignedOut: Bool
@@ -25,8 +27,8 @@ struct TasksEntry: TimelineEntry {
     /// The header subtitle's "Undid: …" / "Redid: …" indication — see
     /// `RemindersEntry.actionDescription`'s doc.
     let actionDescription: String?
-    /// EVERY project, for color lookups — `projects` above is only the ones
-    /// with something due today (it is the chevrons' ring). Up next shows
+    /// EVERY project, for color and name lookups — `projects` above is only
+    /// the ones with something due today (the chip's list). Up next shows
     /// tasks from any project, so looking colors up in the ring painted a
     /// project with nothing due today gray: Trent's red Work tasks
     /// (2026-09-23). Defaulted so sample entries needn't pass it; empty
@@ -56,7 +58,9 @@ struct TasksEntry: TimelineEntry {
         if scope == WidgetStore.overdueScope { return TaskWording.overTarget }
         if scope == WidgetStore.upNextScope { return "Up next" }
         guard scope != WidgetStore.allProjects else { return "Today" }
-        return projects.first(where: { $0.id == scope })?.name ?? "Today"
+        // From EVERY project: a project page stays on screen after its last
+        // task due today is done (2026-10-12), when it has left `projects`.
+        return currentProject?.name ?? "Today"
     }
 
     /// Whether this is one of the unified pages (Overdue / Today / Up next)
@@ -84,7 +88,7 @@ struct TasksEntry: TimelineEntry {
 
     var scopeColor: Color {
         guard !isUnifiedScope else { return .secondary }
-        return WidgetTheme.projectColor(projects.first(where: { $0.id == scope })?.color)
+        return WidgetTheme.projectColor(currentProject?.color)
     }
 
     /// A task's own project color, for `TaskRow`'s trailing checkbox
@@ -103,8 +107,7 @@ struct TasksEntry: TimelineEntry {
     /// carries a bare `projectId` rather than a full `TaskDTO`, so this is
     /// the same lookup addressed by id directly.
     func projectColor(forProjectId projectId: Int) -> Color {
-        let all = colorProjects.isEmpty ? projects : colorProjects
-        return WidgetTheme.projectColor(all.first(where: { $0.id == projectId })?.color)
+        WidgetTheme.projectColor(allProjects.first(where: { $0.id == projectId })?.color)
     }
 
     func overdueCount(now: Date = Date()) -> Int {
@@ -133,6 +136,24 @@ struct TasksEntry: TimelineEntry {
     /// every entry, so it carries three tasks only when they are drawn.
     /// Built by `TasksTimeline.upcomingForEmptyToday`.
     var upcoming: [TaskDTO] = []
+    /// The Today segment's count (2026-10-12): Today's whole set, from the
+    /// full cache like `overdueTotalCount` (the Over segment's count) — not
+    /// `tasks`, which is whatever page is on screen.
+    var todayTotalCount = 0
+
+    /// Every project, for lookups by id — `colorProjects`, else `projects`.
+    private var allProjects: [ProjectDTO] { colorProjects.isEmpty ? projects : colorProjects }
+
+    /// The project on screen, nil on a view page.
+    var currentProject: ProjectDTO? {
+        isUnifiedScope ? nil : allProjects.first(where: { $0.id == scope })
+    }
+
+    /// Where the "Projects ›" chip goes from here — nil when nowhere (it
+    /// dims). The same function the chip's intent runs at tap time.
+    var nextProjectId: Int? {
+        TasksTimeline.nextProject(after: scope, pages: projects, allProjects: allProjects)
+    }
 
     // MARK: Day complete (2026-09-29) — see `TaskDayProgress`
 
@@ -216,7 +237,8 @@ struct TasksProvider: TimelineProvider {
                         doneTasks: entry.doneTasks,
                         overdueSweepCount: entry.overdueSweepCount,
                         overdueTotalCount: entry.overdueTotalCount,
-                        upcoming: entry.upcoming
+                        upcoming: entry.upcoming,
+                        todayTotalCount: entry.todayTotalCount
                     )
                 )
             }
@@ -262,33 +284,21 @@ struct TasksProvider: TimelineProvider {
             )
             return (signedOut, nil)
         }
-        let entry = makeEntry(snapshot, now: now)
-        // A chevron choice that no longer holds — its natural default changed
-        // (overdue appeared, or the last overdue task went), or its project
-        // has nothing due today any more — is forgotten here, as of now, so
-        // it can't come back when the default flips back: "when overdue drops
-        // to 0, it falls back to the normal default", not to whatever was
-        // chosen before overdue appeared. Only for the entry drawn NOW; the
-        // future entries above resolve without writing.
-        if let choice = WidgetStore.tasksScopeChoice(), choice.scope != entry.scope {
-            WidgetStore.clearTasksScopeChoice()
-        }
-        return (entry, snapshot)
+        // The stored page is never cleared here (2026-10-12): the page the
+        // user picked stays until they pick another.
+        return (makeEntry(snapshot, now: now), snapshot)
     }
 
     /// Read-only: the page is resolved by `TasksTimeline.scopeState` (the
-    /// user's chevron choice while it holds, else Overdue while anything is
-    /// overdue, else Today), so the same snapshot can be drawn as of any
-    /// moment.
+    /// page the user last picked, else Today), so the same snapshot can be
+    /// drawn as of any moment.
     ///
     /// Internal, not private, so the screenshot renderer (`ios/Tests/Renders/`)
     /// builds its entries exactly as the widget does.
     func makeEntry(_ snapshot: TaskFeed.Snapshot, now: Date) -> TasksEntry {
         let tasks = snapshot.tasks
-        let ringProjects = TasksTimeline.scopedProjects(
-            tasks: tasks, projects: snapshot.projects, now: now
-        )
-        let scope = TasksTimeline.scopeState(tasks: tasks, projects: snapshot.projects, now: now).scope
+        let state = TasksTimeline.scopeState(tasks: tasks, projects: snapshot.projects, now: now)
+        let scope = state.scope
 
         // Three unified pages — Overdue (2026-09-25, `overdueTasks`), Today
         // (`todaysTasks`, the same end-of-day cutoff every per-project page
@@ -309,7 +319,7 @@ struct TasksProvider: TimelineProvider {
         return TasksEntry(
             date: now,
             tasks: displayedTasks,
-            projects: ringProjects,
+            projects: state.projectPages,
             scope: scope,
             staleSince: snapshot.staleSince,
             isSignedOut: false,
@@ -325,7 +335,8 @@ struct TasksProvider: TimelineProvider {
             overdueTotalCount: TaskLists.overdue(tasks, now: now).count,
             upcoming: TasksTimeline.upcomingForEmptyToday(
                 scope: scope, openOnPage: displayedTasks, allTasks: tasks, now: now
-            )
+            ),
+            todayTotalCount: state.todayCount
         )
     }
 }
@@ -356,7 +367,7 @@ struct TasksWidget: Widget {
                 TasksWidgetView(entry: entry)
             }
             .configurationDisplayName("Today's Tasks")
-            .description("Today's tasks, with chevrons to page through your projects.")
+            .description("Today's tasks: over target, today, up next, and each project.")
             // systemLarge first: it is the primary layout (§8 — the user pointed
             // at a 4x4 Weather widget), and the gallery leads with the first entry.
             // See RemindersWidget for why this is a closure rather than #if inside
@@ -374,7 +385,7 @@ struct TasksWidget: Widget {
                 TasksWidgetView(entry: entry)
             }
             .configurationDisplayName("Today's Tasks")
-            .description("Today's tasks, with chevrons to page through your projects.")
+            .description("Today's tasks: over target, today, up next, and each project.")
             .supportedFamilies({
                 var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
                 #if os(iOS)
@@ -847,7 +858,7 @@ private enum DayCompletePreviewData {
         return TasksEntry(
             date: now,
             tasks: today,
-            projects: TasksTimeline.scopedProjects(tasks: open, projects: projects, now: now),
+            projects: TasksTimeline.projectPages(tasks: open, projects: projects, now: now),
             scope: scope,
             staleSince: nil,
             isSignedOut: false,
@@ -866,12 +877,11 @@ private enum DayCompletePreviewData {
     static var nothingDue: TasksEntry { entry(open: later, done: []) }
     static var midDay: TasksEntry { entry(open: dueToday + later, done: Array(done.prefix(2))) }
 
-    /// Today, page 0, no chevron choice, every mode off — then the done
-    /// filter as asked.
+    /// Today, page 0, every mode off — then the done filter as asked.
     static func prepare(showCompleted: Bool = false) {
         resetTasksPreviewState()
         WidgetStore.setTasksPage(0, for: WidgetStore.allProjects)
-        WidgetStore.clearTasksScopeChoice()
+        WidgetStore.setTasksStoredPage(WidgetStore.allProjects)
         WidgetStore.setShowCompleted(showCompleted, for: TasksWidget.kind)
     }
 }

@@ -803,45 +803,53 @@ struct JumpToReminderSlotIntent: AppIntent {
     }
 }
 
-// MARK: - Tasks project paging
+// MARK: - Tasks page navigation (2026-10-12, mockup B-3)
 
-/// Cycle the Tasks widget's scope: Overdue (while anything is, 2026-09-25) →
-/// Today → Up next → each project with something due today → back to the
-/// start (2026-09-23, item 4 — the unified pages up front, then the
-/// per-project pages as before). The ring is `TasksTimeline.scopeRing`.
-///
-/// The project list comes entirely from the cached payload. Nothing here knows
-/// any project's name or how many there are (§7.1 leaves the project set open).
-struct ShiftProjectScopeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Change Project"
+/// A view segment of the Tasks widget's page control — "Over · Today ·
+/// Next" (`TasksTimeline.viewPages`) — jumps straight to its page. Addressed
+/// by the page's stable KEY, never an index: the widget on screen may have
+/// been drawn from a cache older than the one this runs against, and a key
+/// still names the same page there. The `JumpToReminderSlotIntent` shape.
+struct JumpToTasksPageIntent: AppIntent {
+    static var title: LocalizedStringResource = "Show Tasks Page"
     static var isDiscoverable: Bool { false }
 
-    @Parameter(title: "Offset")
-    var offset: Int
+    @Parameter(title: "Page")
+    var page: Int
 
     init() {}
 
-    init(offset: Int) {
-        self.offset = offset
+    init(page: Int) {
+        self.page = page
     }
 
     func perform() async throws -> some IntentResult {
-        // The ring and the page on screen come from the same resolution the
-        // provider draws with (`TasksTimeline.scopeState` — Overdue first
-        // while anything is overdue, then Today, Up next, each project with
-        // something due today), so "one step from here" is one step from what
-        // the user is looking at, not from a stale stored choice.
-        guard let state = TasksTimeline.currentScopeState(), state.ring.count > 1 else { return .result() }
-
-        let ring = state.ring
-        let current = ring.firstIndex(of: state.scope) ?? 0
-        let count = ring.count
-        // Stored WITH the natural default it was chosen against, so it lapses
-        // when that changes — see `WidgetStore.TasksScopeChoice`.
-        WidgetStore.setTasksScopeChoice(
-            ring[((current + offset) % count + count) % count], naturalScope: state.natural
-        )
+        // A view key always lands; a project id only while the project
+        // exists (a tap drawn before it was deleted does nothing).
+        let valid = TasksTimeline.currentScopeState()?.pages ?? TasksTimeline.viewPages
+        guard valid.contains(page) else { return .result() }
+        WidgetStore.setTasksStoredPage(page)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadTappedWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// The "Projects ›" chip: off a project page, the first project with
+/// something on it; on one, the next (wrapping). Carries no parameter on
+/// purpose — where "next" is depends on what the cache holds when the tap
+/// runs, not when the widget was drawn, so it is worked out here from the
+/// page on screen (`TasksTimeline.nextProject`).
+struct StepTasksProjectIntent: AppIntent {
+    static var title: LocalizedStringResource = "Next Project"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        guard let next = TasksTimeline.currentScopeState()?.nextProject else { return .result() }
+        WidgetStore.setTasksStoredPage(next)
         WidgetStore.markInteraction()
         await reloadTappedWidget(kind: TasksWidget.kind)
         return .result()
