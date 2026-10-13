@@ -132,6 +132,16 @@ export function parseRRule(rrule: string): RRuleComponents {
   return result
 }
 
+/** BYMONTH in 1..12; BYMONTHDAY in -31..-1 or 1..31 (0 is invalid per RFC 5545). */
+function monthFieldsValid(components: RRuleComponents): boolean {
+  if (components.bymonth?.some((m) => !Number.isInteger(m) || m < 1 || m > 12)) return false
+  if (components.bymonthday === undefined) return true
+  const days = Array.isArray(components.bymonthday)
+    ? components.bymonthday
+    : [components.bymonthday]
+  return !days.some((day) => day === 0 || day < -31 || day > 31)
+}
+
 /**
  * Validate parsed RRULE components against allowed ranges and semantic rules.
  *
@@ -155,13 +165,7 @@ function validateComponents(components: RRuleComponents): boolean {
   if (components.byminute !== undefined && (components.byminute < 0 || components.byminute > 59))
     return false
   if (components.byday?.some((dow) => dow < 0 || dow > 6)) return false
-  if (components.bymonth?.some((m) => !Number.isInteger(m) || m < 1 || m > 12)) return false
-  if (components.bymonthday !== undefined) {
-    const days = Array.isArray(components.bymonthday)
-      ? components.bymonthday
-      : [components.bymonthday]
-    if (days.some((day) => day === 0 || day < -31 || day > 31)) return false
-  }
+  if (!monthFieldsValid(components)) return false
 
   // FREQ=WEEKLY requires BYDAY. Without it rrule.js takes the weekday from
   // dtstart: since 2026-10-12 that is the task's own day (its occurrence, or
