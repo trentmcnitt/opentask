@@ -988,6 +988,70 @@ const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
 const START_CUE =
   /\b(today|tonight|tomorrow|next|starting|starts?|beginning|from|jan|january|feb|february|mar|march|apr|april|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i
 
+/** Month names (and their short forms) — a yearly rule's month is the user's. */
+const MONTH_WORD =
+  '(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)'
+const MONTH_NAMED = new RegExp(`\\b${MONTH_WORD}\\b`, 'i')
+
+/**
+ * A day of the month written next to a month ("March 15", "Mar. 15", "15
+ * March", "15th of March") or as a numeric date ("3/15"). Only a numeral
+ * beside a month name counts, so "every year in March at 10am" names no day.
+ * Used with MONTHDAY_NAMED ("the 15th", "end of", "mid-") for yearly rules.
+ */
+const YEARLY_DAY_NAMED = new RegExp(
+  `\\b${MONTH_WORD}\\.?\\s+\\d{1,2}\\b|\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_WORD}\\b|\\b\\d{1,2}/\\d{1,2}\\b`,
+  'i',
+)
+
+/**
+ * A yearly rule that names a month but no day starts on the 1st (Trent,
+ * 2026-10-13): "every year in March" is March 1st, never March <today's date>.
+ * Today's date is for the OPEN rules only (weekly with no day, monthly or
+ * quarterly with no date — `unnamedDayPart`).
+ *
+ * Applies to FREQ=YEARLY with BYMONTH, when the input names a month and no day
+ * of the month (nor a weekday, as in "the first Monday of March"), whatever
+ * day the model gave: BYMONTHDAY becomes 1 and any BYDAY/BYSETPOS goes. The
+ * model's due_at is dropped and its time folded into BYHOUR/BYMINUTE, so the
+ * first occurrence is the next 1st of that month (a due_at on March 13 would
+ * otherwise be the first occurrence). Several months ("March and September")
+ * all start on the 1st.
+ *
+ * "Every year" with no month named is left as the model wrote it: a bare
+ * FREQ=YEARLY floats from the creation day (the anniversary of today, like the
+ * open weekly and monthly rules), and a BYMONTH the model filled in from today
+ * is not the user's month, so it is not moved to the 1st.
+ */
+function pinYearlyFirstOfMonth(
+  enrichment: EnrichmentResult,
+  parts: string[],
+  inputText: string,
+  timezone: string,
+): EnrichmentResult {
+  const get = (key: string) =>
+    parts.find((p) => p.toUpperCase().startsWith(`${key}=`))?.split('=')[1]
+  if (
+    !get('BYMONTH') ||
+    !MONTH_NAMED.test(inputText) ||
+    MONTHDAY_NAMED.test(inputText) ||
+    YEARLY_DAY_NAMED.test(inputText) ||
+    WEEKDAY_NAMED.test(inputText)
+  ) {
+    return enrichment
+  }
+  let out = parts.filter((p) => !/^(BYMONTHDAY|BYDAY|BYSETPOS)=/i.test(p))
+  out.push('BYMONTHDAY=1')
+  const due = enrichment.due_at ? parseLocalDateTime(enrichment.due_at, timezone) : null
+  if (due && !out.some((p) => /^BYHOUR=/i.test(p))) {
+    out = out.filter((p) => !/^BYMINUTE=/i.test(p))
+    out.push(`BYHOUR=${due.hour}`, `BYMINUTE=${due.minute}`)
+  }
+  const rrule = out.join(';')
+  if (rrule === enrichment.rrule && enrichment.due_at === null) return enrichment
+  return { ...enrichment, rrule, due_at: null }
+}
+
 /** Which part of a rule `pinUnnamedDay` would pin, or null when none. */
 function unnamedDayPart(parts: string[], inputText: string): 'BYDAY' | 'BYMONTHDAY' | null {
   const get = (key: string) =>
@@ -1025,6 +1089,9 @@ function unnamedDayPart(parts: string[], inputText: string): 'BYDAY' | 'BYMONTHD
  *   made on Oct 31 does not skip every shorter month. A 29th or 30th that is
  *   not the month's last day stays as is: rrule skips the months without it.
  *
+ * A YEARLY rule is the exception: one that names a month but no day starts
+ * on the 1st, never today's date (`pinYearlyFirstOfMonth`, 2026-10-13).
+ *
  * Several days ("twice a week" → TU,TH), a stated day, and every other
  * frequency are left as the model wrote them. Runs on the model's LOCAL
  * due_at, before `toUtcTimes`. Reminders too: their prompt has no clock, so
@@ -1039,6 +1106,9 @@ export function pinUnnamedDay(
 ): EnrichmentResult {
   if (!enrichment.rrule) return enrichment
   let parts = enrichment.rrule.split(';')
+  if (parts.some((p) => /^FREQ=YEARLY$/i.test(p))) {
+    return pinYearlyFirstOfMonth(enrichment, parts, inputText, timezone)
+  }
   const part = unnamedDayPart(parts, inputText)
   if (!part) return enrichment
 
