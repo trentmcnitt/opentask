@@ -340,9 +340,9 @@ struct PromptRowView: View {
     /// Touch and hold: the period list. `nil` = no periods to offer.
     var hold: (() -> Void)?
 
-    /// "Piano Scales, 1/2 today" (+ ", has notes") — both buttons' label.
+    /// "Piano Scales, 1 of 2 today" (+ ", has notes") — both buttons' label.
     private var spokenLabel: String {
-        NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
+        NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.spokenCount)", hasNotes: prompt.hasNotes)
     }
 
     var body: some View {
@@ -381,9 +381,16 @@ struct PromptRowView: View {
 
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    Text(prompt.countText)
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    // The phone's segments (2026-10-13): this count has a
+                    // line of its own, right-aligned beside ☐, so even six
+                    // boxes and "month" fit at XXX Large on the 44mm SE;
+                    // `QuotaSegments`' `ViewThatFits` falls back to "3/7
+                    // today" if they ever don't, and above six.
+                    QuotaSegments(
+                        current: prompt.current, target: prompt.target, period: prompt.period,
+                        em: UIFont.preferredFont(forTextStyle: .body).pointSize,
+                        palette: .init(fill: WatchTheme.accent, met: WatchTheme.done, metText: WatchTheme.done)
+                    )
                     Button(action: didIt) {
                         Image(systemName: "square")
                             .font(.body)
