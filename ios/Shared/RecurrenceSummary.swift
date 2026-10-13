@@ -47,23 +47,27 @@ enum RRuleParts {
 enum RecurrenceSummary {
     static let fallback = "repeats"
 
-    static func text(rrule: String?, anchorTime: String? = nil) -> String {
+    /// `includeTime: false` drops " at 9 AM"; `includeOn: false` drops the
+    /// "on …" clause too ("every 2 weeks on Wed" → "every 2 weeks", "monthly
+    /// on the 1st" → "monthly") — the shorter forms an Upcoming row falls back
+    /// to so its words fit one line (`UpcomingMetaForm`, 2026-10-12).
+    static func text(rrule: String?, anchorTime: String? = nil, includeTime: Bool = true, includeOn: Bool = true) -> String {
         guard let rrule, !rrule.isEmpty else { return fallback }
-        return summary(rrule: rrule, anchorTime: anchorTime) ?? fallback
+        return summary(rrule: rrule, anchorTime: anchorTime, includeTime: includeTime, includeOn: includeOn) ?? fallback
     }
 
     private static let shortDays = ["MO": "Mon", "TU": "Tue", "WE": "Wed", "TH": "Thu", "FR": "Fri", "SA": "Sat", "SU": "Sun"]
     private static let dayOrder = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
     private static let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    private static func summary(rrule: String, anchorTime: String?) -> String? {
+    private static func summary(rrule: String, anchorTime: String?, includeTime: Bool, includeOn: Bool) -> String? {
         let parts = RRuleParts.parse(rrule)
         guard let freq = parts["FREQ"]?.uppercased() else { return nil }
         let interval = parts["INTERVAL"].flatMap { Int($0) } ?? 1
         guard interval >= 1 else { return nil }
         let byDay = (parts["BYDAY"]?.uppercased()).map { $0.split(separator: ",").map(String.init) } ?? []
         let byMonthDay = parts["BYMONTHDAY"].map { $0.split(separator: ",").compactMap { Int($0) } } ?? []
-        let time = timeText(parts: parts, anchorTime: anchorTime).map { " at \($0)" } ?? ""
+        let time = includeTime ? timeText(parts: parts, anchorTime: anchorTime).map { " at \($0)" } ?? "" : ""
 
         let base: String?
         switch freq {
@@ -78,7 +82,9 @@ enum RecurrenceSummary {
         default:
             base = nil
         }
-        return base.map { $0 + time }
+        guard var base else { return nil }
+        if !includeOn, let on = base.range(of: " on ") { base = String(base[..<on.lowerBound]) }
+        return base + time
     }
 
     private static func weekly(interval: Int, byDay: [String]) -> String? {

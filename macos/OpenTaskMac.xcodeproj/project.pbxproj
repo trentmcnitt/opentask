@@ -233,6 +233,7 @@
 		F98C44868E3AA34930C5D2B4 /* RemindersTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8978A06D1EC922FE90F1F98 /* RemindersTimeline.swift */; };
 		FA63DF44534D4DD08E7F4116 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
 		FA7BA42783C7FA87612704DB /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
+		FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */ = {isa = PBXBuildFile; fileRef = E3290E5D7B8A509F3BA310ED /* task-badges.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -371,6 +372,7 @@
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
 		E06CA39C19D4AF5FADD8BA98 /* RecurrenceSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceSummary.swift; sourceTree = "<group>"; };
+		E3290E5D7B8A509F3BA310ED /* task-badges.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-badges.json"; sourceTree = "<group>"; };
 		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
 		F18E00062C7779D38C364472 /* task-counts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-counts.json"; sourceTree = "<group>"; };
 		F1B46ABD580807D58325D969 /* TaskDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDayProgress.swift; sourceTree = "<group>"; };
@@ -415,6 +417,7 @@
 				20094FA70C6D6907002B24FA /* reminders-segments.json */,
 				856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
+				E3290E5D7B8A509F3BA310ED /* task-badges.json */,
 				F18E00062C7779D38C364472 /* task-counts.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
 				0FB8808D7E3324C55F3E06A1 /* task-segments-consider.json */,
@@ -779,6 +782,7 @@
 				A7A7013390BB2D8ED7765AAB /* reminders-segments.json in Resources */,
 				53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
+				FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */,
 				04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
 				DFD0535376C465799D675624 /* task-segments-consider.json in Resources */,

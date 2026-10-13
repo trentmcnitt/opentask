@@ -737,9 +737,6 @@ final class APIClient {
     /// label-config-only endpoint server-side.
     func fetchLabelConfig() async throws -> [LabelConfigDTO] {
         let page = try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
-        // The same payload carries the morning time the implied deadline
-        // target is read on — cache it for every target (2026-10-11).
-        TargetContextStore.save(morningTime: page.morningTime)
         return page.labelConfig
     }
 
