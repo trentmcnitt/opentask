@@ -28,7 +28,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const quotas = getQuotas(user.id)
 
     return success({
-      quotas: quotas.map(formatTaskResponse),
+      quotas: quotas.map((t) => formatTaskResponse(t, user.timezone)),
       total: quotas.length,
       // Nothing renders this directly — it only picks which empty state the
       // surface shows. Same contract as `has_any` on /api/reminders.

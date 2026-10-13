@@ -49,7 +49,7 @@ export const GET = withLogging(async function GET(request: NextRequest, context:
       return notFound('Task not found', { task_id: taskId })
     }
 
-    return success(formatTaskResponse(task))
+    return success(formatTaskResponse(task, user.timezone))
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'GET /api/tasks/:id error:', err)
     return handleError(err)
@@ -88,7 +88,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
 
     notifyDemoEngagement(user.name, 'update')
     return success({
-      ...formatTaskResponse(task),
+      ...formatTaskResponse(task, user.timezone),
       fields_changed: fieldsChanged,
       description,
       capped_at_deadline: cappedAtDeadline === true,
@@ -123,7 +123,7 @@ export const DELETE = withLogging(async function DELETE(
 
     notifyDemoEngagement(user.name, 'delete')
     return success({
-      ...formatTaskResponse(task),
+      ...formatTaskResponse(task, user.timezone),
       message: 'Task moved to trash',
     })
   } catch (err) {

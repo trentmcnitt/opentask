@@ -35,7 +35,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     })
 
     notifyDemoEngagement(user.name, 'update')
-    return success(formatTaskResponse(task))
+    return success(formatTaskResponse(task, user.timezone))
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/undone error:', err)
     return handleError(err)

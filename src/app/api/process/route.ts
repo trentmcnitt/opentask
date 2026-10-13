@@ -25,10 +25,12 @@ import { withLogging } from '@/lib/with-logging'
 import { getProcessData } from '@/core/tasks/process'
 import type { Task } from '@/types'
 
-const aged = ({ task, attempts }: { task: Task; attempts: number }) => ({
-  task: formatTaskResponse(task),
-  attempts,
-})
+const aged =
+  (timezone: string) =>
+  ({ task, attempts }: { task: Task; attempts: number }) => ({
+    task: formatTaskResponse(task, timezone),
+    attempts,
+  })
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
@@ -36,10 +38,13 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const data = getProcessData(user.id, user.timezone)
     return success({
       inbox_project_id: data.inbox_project_id,
-      inbox: data.inbox.map(formatTaskResponse),
-      growth: data.growth.map(({ task, ...ask }) => ({ task: formatTaskResponse(task), ...ask })),
-      stale_targets: data.stale_targets.map(aged),
-      stale_targets_with_deadline: data.stale_targets_with_deadline.map(aged),
+      inbox: data.inbox.map((t) => formatTaskResponse(t, user.timezone)),
+      growth: data.growth.map(({ task, ...ask }) => ({
+        task: formatTaskResponse(task, user.timezone),
+        ...ask,
+      })),
+      stale_targets: data.stale_targets.map(aged(user.timezone)),
+      stale_targets_with_deadline: data.stale_targets_with_deadline.map(aged(user.timezone)),
     })
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'GET /api/process error:', err)

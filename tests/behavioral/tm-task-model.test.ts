@@ -267,7 +267,7 @@ describe('Task model', () => {
       // Redo brings it back with the target.
       executeRedo(TEST_USER_ID)
       expect(getTaskById(t.id)!.segment_targeted_at).toBe(first)
-      expect(formatTaskResponse(getTaskById(t.id)!).segment_targeted_at).toBe(first)
+      expect(formatTaskResponse(getTaskById(t.id)!, tz).segment_targeted_at).toBe(first)
     })
 
     test('TM-023: only the segment action stamps it — not a snooze, an edit or a create', () => {
@@ -401,7 +401,7 @@ describe('Task model', () => {
       // "Overdue" in the counts is strictly past, so a minute on.
       const minuteOn = new Date(SAT.getTime() + 60_000)
       expect(countTasks([getTaskById(t.id)!], tz, minuteOn).overdue).toBe(1)
-      expect(formatTaskResponse(getTaskById(t.id)!).deadline_nag_off).toBe(false)
+      expect(formatTaskResponse(getTaskById(t.id)!, tz).deadline_nag_off).toBe(false)
 
       // A picked target replaces it.
       const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
@@ -580,7 +580,7 @@ describe('Task model', () => {
       expect(retargeted.original_due_at).toBe(at('2026-10-07T09:00'))
       // Moved to tomorrow: frozen at 4 until it arrives, then 5.
       expect(retargeted.attempts).toBe(4)
-      expect(formatTaskResponse(retargeted).attempts_label).toBe('4×')
+      expect(formatTaskResponse(retargeted, tz).attempts_label).toBe('4×')
       vi.setSystemTime(new Date(at('2026-10-11T07:59')))
       expect(getTaskById(t.id)!.attempts).toBe(4)
       vi.setSystemTime(new Date(at('2026-10-11T08:00')))
@@ -594,7 +594,7 @@ describe('Task model', () => {
       // Oct 8, 9, 10 counted at the removal; no target, no badge, no new days.
       let r = getTaskById(t.id)!
       expect(r.attempts).toBe(3)
-      expect(formatTaskResponse(r).attempts_label).toBeNull()
+      expect(formatTaskResponse(r, tz).attempts_label).toBeNull()
       vi.setSystemTime(new Date(at('2026-10-14T10:00')))
       expect(getTaskById(t.id)!.attempts).toBe(3)
       // Re-set to a moment already past: today counts (once), the days it
@@ -628,7 +628,7 @@ describe('Task model', () => {
       })
       expect(() => normalizeTargetAliases({ target_at: 'x', due_at: 'y' })).toThrow(ValidationError)
       const t = make({ due_at: at('2026-10-12T09:00') })
-      const out = formatTaskResponse(t)
+      const out = formatTaskResponse(t, tz)
       expect(out.target_at).toBe(out.due_at)
     })
 

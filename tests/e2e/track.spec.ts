@@ -340,6 +340,33 @@ test.describe('Track', () => {
     await expect(page.locator('[data-track-view-switch], [data-track-view-toggle]')).toHaveCount(0)
   })
 
+  test('a long title wraps onto a second line instead of ellipsising', async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent, 2026-10-12: long quota titles used to wrap; "…" hid what they were.
+    await page.setViewportSize({ width: 390, height: 844 })
+    const title = 'Probe wrap — 30 min: inbound replies, one application, refresh the career notes'
+    const id = await createTask(page, { title, progress_target: 2, rrule: 'FREQ=WEEKLY' })
+    await page.goto('/')
+    const panel = page.getByRole('region', { name: 'Quotas' })
+    const chip = panel.locator(`[data-track-chip="${id}"]`)
+    // A phone folds each period to its bar; open them so the chip is drawn.
+    await expect(panel.locator('[data-track-period-toggle]').first()).toBeVisible()
+    for (const toggle of await panel
+      .locator('[data-track-period-toggle][aria-expanded="false"]')
+      .all()) {
+      await toggle.click()
+    }
+    await expect(chip).toBeVisible()
+    await expect(chip).toContainText(title)
+    // Taller than the one-line 28px chip, and nothing clipped.
+    expect((await chip.boundingBox())!.height).toBeGreaterThan(30)
+    const clipped = await chip.evaluate((el) =>
+      Array.from(el.querySelectorAll('span')).some((s) => s.scrollWidth > s.clientWidth + 1),
+    )
+    expect(clipped).toBe(false)
+  })
+
   test("deletes a quota from the chip's modal, with an Undo", async ({
     authenticatedPage: page,
   }) => {

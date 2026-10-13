@@ -196,7 +196,7 @@ describe('Process: affirm_horizon ("keep")', () => {
     expect(growthOf(t.id)).toBeNull()
     vi.setSystemTime(new Date('2026-11-11T16:00:00Z'))
     expect(growthOf(t.id)).toMatchObject({ from: 'weeks', to: 'months' })
-    expect(formatTaskResponse(getTaskById(t.id)!).age_label).toBe('>1 mo')
+    expect(formatTaskResponse(getTaskById(t.id)!, tz).age_label).toBe('>1 mo')
   })
 
   test('PC-011b: single PATCH too — what "Raise" sends with the new priority', () => {

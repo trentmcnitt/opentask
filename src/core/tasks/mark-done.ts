@@ -119,7 +119,9 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   emitSyncEvent(userId)
   // The task is handled, so its banner goes on every device (and the badge follows).
   dismissNotificationsForTasks(userId, [taskId])
-  dispatchWebhookEvent(userId, 'task.completed', { task: formatTaskResponse(result.task) })
+  dispatchWebhookEvent(userId, 'task.completed', {
+    task: formatTaskResponse(result.task, userTimezone),
+  })
   return result
 }
 

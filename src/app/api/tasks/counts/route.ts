@@ -26,9 +26,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // within a period rather than due on a day). Both live on their own
     // surfaces — see the `visibleTasks` filter in DashboardClient, which this
     // has to agree with to the digit.
-    const tasks = formatTasksResponse(getTasks({ userId: user.id, limit: 1000 })).filter(
-      (t) => !t.is_reminder && !isTracked(t),
-    )
+    const tasks = formatTasksResponse(
+      getTasks({ userId: user.id, limit: 1000 }),
+      user.timezone,
+    ).filter((t) => !t.is_reminder && !isTracked(t))
     return success(countTasks(tasks, user.timezone, new Date()))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

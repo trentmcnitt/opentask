@@ -55,6 +55,7 @@ export interface FormattedTask extends Task {
    *   an automatic target, or a repeating task).
    * - `age_label`: ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo" on a task with
    *   neither a target nor a deadline, past its horizon's threshold; else null.
+   *   Calendar math in the user's timezone, as the web row computes it.
    */
   attempts_label: string | null
   attempts_offer: 'remove' | 'auto' | null
@@ -84,8 +85,13 @@ function nativeNagOff(task: Task, now: Date): boolean {
  * Format a task for API response by adding computed fields. `is_snoozed` and
  * `snooze_count` left the response on 2026-10-12 (§6: no snooze state); no
  * native build decodes either.
+ *
+ * `timezone` is the user's (the reader's — a route passes `user.timezone`; a
+ * webhook or export, the owner's): `age_label` is calendar math in it, exactly
+ * as the web row computes it (`ageLabel(task, now, timezone)` in TaskRow), so
+ * a "month" ends at the same local moment on every client.
  */
-export function formatTaskResponse(task: Task): FormattedTask {
+export function formatTaskResponse(task: Task, timezone: string): FormattedTask {
   const now = new Date()
   return {
     ...task,
@@ -94,15 +100,15 @@ export function formatTaskResponse(task: Task): FormattedTask {
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),
     attempts_offer: attemptsOffer(task, now),
-    age_label: ageLabel(task, now),
+    age_label: ageLabel(task, now, timezone),
   }
 }
 
 /**
  * Format multiple tasks for API response
  */
-export function formatTasksResponse(tasks: Task[]): FormattedTask[] {
-  return tasks.map(formatTaskResponse)
+export function formatTasksResponse(tasks: Task[], timezone: string): FormattedTask[] {
+  return tasks.map((task) => formatTaskResponse(task, timezone))
 }
 
 /**

@@ -31,7 +31,11 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       taskId,
     })
 
-    return success({ ...formatTaskResponse(task), was_recurring: wasRecurring, description })
+    return success({
+      ...formatTaskResponse(task, user.timezone),
+      was_recurring: wasRecurring,
+      description,
+    })
   } catch (err) {
     if (!(err instanceof AppError))
       log.error('api', 'POST /api/tasks/:id/skip-occurrence error:', err)

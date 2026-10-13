@@ -41,7 +41,8 @@ export type SnoozeGuard =
   | { kind: 'no-due-date' }
 
 /** The subset of a task the guard needs. Keeps callers free of full Task objects in tests. */
-export type SnoozeGuardTask = Pick<Task, 'due_at' | 'rrule' | 'recurrence_mode' | 'anchor_time'>
+export type SnoozeGuardTask = Pick<Task, 'due_at' | 'rrule' | 'recurrence_mode' | 'anchor_time'> &
+  Partial<Pick<Task, 'occurrence_at'>>
 
 /**
  * Compute a task's next scheduled occurrence strictly after its current due_at.
@@ -72,6 +73,9 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
       timezone,
       completedAt: dueAt,
       prevDueAt: dueAt,
+      // An "every N" rule's grid runs from the scheduled occurrence, never
+      // from a moved target.
+      anchorAt: new Date(task.occurrence_at ?? task.due_at),
     })
   } catch {
     // A schedule we can't evaluate is not grounds for blocking the user.

@@ -57,7 +57,7 @@ describe('BG: attempts', () => {
     // The moment it goes over target, the day counts (ruling Q5).
     clock('2026-10-13T09:00')
     expect(attemptsOf(t.id)).toBe(1)
-    expect(formatTaskResponse(getTaskById(t.id)!).attempts_label).toBe('1×')
+    expect(formatTaskResponse(getTaskById(t.id)!, tz).attempts_label).toBe('1×')
     clock('2026-10-13T10:00')
     updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-17T09:00') } })
     // The checkpoint was written by the move itself, before any cron.
@@ -69,7 +69,7 @@ describe('BG: attempts', () => {
     clock('2026-10-17T09:00')
     expect(attemptsOf(t.id)).toBe(2)
     clock('2026-10-18T07:00')
-    const sun = formatTaskResponse(getTaskById(t.id)!)
+    const sun = formatTaskResponse(getTaskById(t.id)!, tz)
     expect(sun.attempts).toBe(3)
     expect(sun.attempts_label).toBe('3×')
     expect(sun.attempts_offer).toBe('remove')
@@ -152,7 +152,7 @@ describe('BG: attempts', () => {
     const t = make({ due_at: at('2026-10-12T08:00') })
     clock('2026-10-13T09:00')
     updateTask({ ...u, taskId: t.id, input: { due_at: null } })
-    let f = formatTaskResponse(getTaskById(t.id)!)
+    let f = formatTaskResponse(getTaskById(t.id)!, tz)
     expect(f.attempts).toBe(2)
     expect(f.attempts_label).toBeNull()
     expect(f.attempts_offer).toBeNull()
@@ -160,7 +160,7 @@ describe('BG: attempts', () => {
     expect(attemptsOf(t.id)).toBe(2)
     updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-21T09:00') } })
     clock('2026-10-21T09:00')
-    f = formatTaskResponse(getTaskById(t.id)!)
+    f = formatTaskResponse(getTaskById(t.id)!, tz)
     expect(f.attempts).toBe(3)
     expect(f.attempts_offer).toBe('remove')
   })
@@ -173,7 +173,7 @@ describe('BG: attempts', () => {
     expect(auto.target_auto).toBe(true)
     const repeating = make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' })
     clock('2026-10-12T12:00')
-    const offer = (id: number) => formatTaskResponse(getTaskById(id)!).attempts_offer
+    const offer = (id: number) => formatTaskResponse(getTaskById(id)!, tz).attempts_offer
     expect(offer(plain.id)).toBe('remove')
     expect(offer(picked.id)).toBe('auto')
     expect(attemptsOf(auto.id)).toBeGreaterThanOrEqual(3)
@@ -275,12 +275,34 @@ describe('BG: age', () => {
     const created = at('2026-01-01T09:00')
     const t = make({})
     getDb().prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(created, t.id)
-    expect(formatTaskResponse(getTaskById(t.id)!).age_label).toBe('>1 mo')
+    expect(formatTaskResponse(getTaskById(t.id)!, tz).age_label).toBe('>1 mo')
     const base = { created_at: created, due_at: null, deadline_at: null, horizon: null }
     expect(ageLabel({ ...base, due_at: at('2026-10-20T09:00') }, new Date())).toBeNull()
     expect(ageLabel({ ...base, deadline_at: at('2026-12-20T09:00') }, new Date())).toBeNull()
     expect(ageLabel({ ...base, rrule: 'FREQ=DAILY' }, new Date())).toBeNull()
     expect(ageLabel({ ...base, is_reminder: true }, new Date())).toBeNull()
     expect(ageLabel({ ...base, is_tracked: true }, new Date())).toBeNull()
+  })
+
+  test("BG-022: age_label is the user's calendar month, not UTC's — and the web row's answer", () => {
+    // Made Fri Oct 30 at 10 PM in Chicago = Oct 31 03:00 UTC. A UTC month
+    // ends Nov 30 03:00 UTC; the user's month ends Mon Nov 30 at 10 PM CST
+    // (Dec 1 04:00 UTC). Month-end is where the two zones' months differ.
+    const t = make({})
+    getDb()
+      .prepare('UPDATE tasks SET created_at = ? WHERE id = ?')
+      .run(at('2026-10-30T22:00'), t.id)
+    const label = () => formatTaskResponse(getTaskById(t.id)!, tz).age_label
+    // Nov 30 at 6 AM Chicago (12:00 UTC): past the UTC month, not the local one.
+    clock('2026-11-30T06:00')
+    const task = getTaskById(t.id)!
+    expect(ageLabel(task, new Date(), 'utc')).toBe('>1 mo') // what the server used to send
+    expect(label()).toBeNull()
+    expect(label()).toBe(ageLabel(task, new Date(), tz)) // the web row (TaskRow)
+    // Exactly at the local threshold: not yet; a minute past: >1 mo.
+    clock('2026-11-30T22:00')
+    expect(label()).toBeNull()
+    clock('2026-11-30T22:01')
+    expect(label()).toBe('>1 mo')
   })
 })

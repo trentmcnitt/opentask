@@ -37,7 +37,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       })
     }
 
-    return success(formatTaskResponse(task))
+    return success(formatTaskResponse(task, user.timezone))
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/reprocess error:', err)
     return handleError(err)

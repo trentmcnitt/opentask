@@ -315,13 +315,13 @@ function applyChanges(
   return { snapshots, fields: [...fields] }
 }
 
-function notifyMoved(userId: number, outcome: MoveOutcome): void {
+function notifyMoved(userId: number, timezone: string, outcome: MoveOutcome): void {
   emitSyncEvent(userId)
   for (const snapshot of outcome.snapshots) {
     const fresh = getTaskById(snapshot.task_id)
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.updated', {
-        task: formatTaskResponse(fresh),
+        task: formatTaskResponse(fresh, timezone),
         // This task's own fields — its snapshot holds exactly those (plus
         // title, which createSnapshot always includes for display).
         fields_changed: Object.keys(snapshot.after_state).filter(
@@ -401,7 +401,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     })
   })
 
-  notifyMoved(userId, outcome)
+  notifyMoved(userId, userTimezone, outcome)
   return {
     slot: after,
     reminders_moved: outcome.snapshots.length,
@@ -496,7 +496,7 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
     )
   })
 
-  notifyMoved(userId, outcome)
+  notifyMoved(userId, userTimezone, outcome)
   return {
     slot: before,
     reminders_moved: remindersMoved,

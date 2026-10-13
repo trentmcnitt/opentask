@@ -39,6 +39,7 @@ import { createQuotaSnapshot, logAction } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { ownerTimezone } from './progress'
 import { formatTaskResponse } from '@/lib/format-task'
 import {
   brokenDids,
@@ -273,7 +274,7 @@ export function describePromptActions(considered: number, did: number, title?: s
 export function dispatchProgressed(userId: number, tasks: Task[]): void {
   for (const task of tasks) {
     dispatchWebhookEvent(userId, 'task.progressed', {
-      task: formatTaskResponse(task),
+      task: formatTaskResponse(task, ownerTimezone(task.user_id)),
       progress_current: task.progress_current,
       progress_target: task.progress_target,
       met: task.progress_current >= task.progress_target,

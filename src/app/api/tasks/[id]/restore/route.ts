@@ -31,7 +31,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     })
 
     return success({
-      ...formatTaskResponse(task),
+      ...formatTaskResponse(task, user.timezone),
       message: 'Task restored from trash',
     })
   } catch (err) {
