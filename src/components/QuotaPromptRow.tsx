@@ -10,6 +10,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { NotesMarker } from '@/components/NotesMarker'
+import { QuotaSegments } from '@/components/QuotaSegments'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
@@ -48,11 +49,13 @@ import type { Task } from '@/types'
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
- * - The label carries progress and the period it covers, "Piano Scales · 1/2
+ * - The label carries progress and the period it covers, "Piano Scales ▰▱
  *   today" — never "#1". Trent, 2026-09-25: "Dust the bookshelf · 0/1" did not
- *   say whether that was today's one or this month's. The words are the Quotas
- *   panel's own section headings (`freqLabel`), so the two never disagree; a
- *   period-less quota shows the count alone.
+ *   say whether that was today's one or this month's. Since 2026-10-13 the
+ *   count is segments with a short period word (`QuotaSegments`: "today",
+ *   "week", "month"), falling back to "1/2 today" text; the words come from
+ *   the one period table (`QUOTA_PERIODS`), so they never disagree with the
+ *   Quotas panel's headings. A period-less quota shows the count alone.
  * - SELECTABLE BESIDE REMINDERS, keyed by `prompt_key` (2026-09-25; before
  *   that, not selectable at all). A daily quota can wait in several periods
  *   at once, one row per number, so the task id would not say WHICH row. The
@@ -121,7 +124,7 @@ export interface QuotaPromptRowProps {
   bubble?: (row: React.ReactElement) => React.ReactNode
 }
 
-/** "3/5 this week" — the prompt's own count and its period, as the label shows it. */
+/** "3/5 this week" — the prompt's own count and its period, for the did-it button's name. */
 function countText(prompt: QuotaPrompt): string {
   const period = freqLabel(prompt.period)
   return `${prompt.current}/${prompt.target}${period ? ` ${period}` : ''}`
@@ -245,12 +248,11 @@ export function QuotaPromptRow({
           completing && 'text-muted-foreground line-through',
         )}
       >
-        {prompt.title}{' '}
-        {/* The space above is the break point: the count wraps as a unit on
-            its own, never dragging the title's last word with it. */}
-        <span className="text-muted-foreground ml-1 text-[0.85em] whitespace-nowrap tabular-nums">
-          &middot; {countText(prompt)}
-        </span>
+        {prompt.title}
+        {/* The count as segments (`QuotaSegments`), or "0/2 today" when they
+            don't fit. Its own space is the break point: the count wraps as a
+            unit on its own, never dragging the title's last word with it. */}
+        <QuotaSegments current={prompt.current} target={prompt.target} freq={prompt.period} />
         {/* The quota's notes, marked exactly as a reminder row marks its own
             (2026-09-25) — after the count, as a reminder's comes after its
             cadence mark. The bubble a hold opens is where they are read. */}
@@ -322,14 +324,14 @@ export function ConsideredPromptRow({
       </button>
       <p
         className={cn(
-          'text-muted-foreground min-w-0 flex-1 text-pretty',
+          // No text-pretty: it rebalances the title's lines by what follows,
+          // and `QuotaSegments` measures the line the count starts on.
+          'text-muted-foreground min-w-0 flex-1',
           panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
         )}
       >
         {prompt.title}
-        <span className="ml-1.5 text-[0.85em] whitespace-nowrap tabular-nums">
-          &middot; {countText(prompt)}
-        </span>
+        <QuotaSegments current={prompt.current} target={prompt.target} freq={prompt.period} />
         {prompt.has_notes && <NotesMarker />}
       </p>
     </li>

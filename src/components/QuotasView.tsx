@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
-import { quotaGroupSummary, groupByLabel, periodLabel, periodShort } from '@/lib/track'
+import { quotaGroupSummary, groupByLabel, quotaFreqOf } from '@/lib/track'
+import { QuotaSegments } from '@/components/QuotaSegments'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
@@ -386,7 +387,7 @@ function QuotaRow({
   // `state` already reflects the optimistic count — re-wrapping it in
   // trackState was a no-op.
   const { state, log: logProgress } = useTrackProgress(task)
-  const period = periodLabel(task.rrule)
+  const freq = quotaFreqOf(task.rrule)
 
   return (
     <li
@@ -448,26 +449,25 @@ function QuotaRow({
           />
         </div>
 
-        <span
-          data-quota-count
-          className={cn(
-            'w-12 shrink-0 text-right text-sm tabular-nums',
-            state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
-          )}
-        >
-          <span className="text-foreground font-medium">{state.current}</span> / {state.target}
-        </span>
-
-        {/* The period, on the row rather than on the card: the groups are
-            labels now, so a card holds a daily quota next to a monthly one and
-            "0 / 2" alone would not say which. Deliberately OUTSIDE
-            `data-quota-count` — that hook is asserted on exactly. A quota with
-            no rule says so instead of showing a blank column. */}
-        <span
-          data-quota-period
-          className="text-muted-foreground w-16 shrink-0 text-xs whitespace-nowrap"
-        >
-          · {period ? periodShort(period) : 'no period'}
+        {/* The count as segments, then the period word — "▰▰▱ week"
+            (`QuotaSegments`; "12/30 month" text past six). Its own column, so
+            only the "more than six" rule applies, and a fixed width keeps the
+            buttons in one column down the page. `data-quota-count` carries
+            `data-count="2/5"` for the tests. The period is on the row rather
+            than on the card: the groups are labels, so a card holds a daily
+            quota next to a monthly one. A quota with no rule says so instead
+            of showing no word. */}
+        <span className="flex w-30 shrink-0 items-baseline text-sm">
+          <QuotaSegments
+            data-quota-count
+            current={state.current}
+            target={state.target}
+            freq={freq}
+            inline={false}
+            emphasizeCurrent
+            textClassName="text-xs"
+          />
+          {!freq && <span className="text-muted-foreground ml-1.5 text-xs">no period</span>}
         </span>
 
         {/* Both directions. This was the only surface where a mis-log could not

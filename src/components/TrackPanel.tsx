@@ -12,6 +12,7 @@ import {
   trackState,
   trackStream,
   trackStripeClass,
+  quotaFreqOf,
   TRACK_NOTCH_CLASS,
   type TrackSection,
   type TrackStreamItem,
@@ -34,6 +35,7 @@ import {
   type FoldState,
 } from '@/hooks/useResponsiveFold'
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
+import { QuotaSegments } from '@/components/QuotaSegments'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
@@ -1312,6 +1314,26 @@ function ClusterTitleShell({
 }
 
 /**
+ * Where a chip's title line can END, for `QuotaSegments`' fit rule. The title
+ * span shrinks to its content, so its own right edge is no limit; the limit is
+ * the widest the title could be — the chips' list (the chip is `max-w-full` of
+ * it) less the chip's own padding and border — measured from where the title
+ * starts. None of that moves with the count's form, so the choice is stable.
+ */
+function chipLineEnd(title: HTMLElement): { right: number; resizeTarget: Element } {
+  const chip = title.parentElement
+  const list = chip?.closest('ul')
+  if (!chip || !list) {
+    return { right: title.getBoundingClientRect().right, resizeTarget: title }
+  }
+  const style = getComputedStyle(list)
+  const listContent =
+    list.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+  const chrome = chip.getBoundingClientRect().width - title.getBoundingClientRect().width
+  return { right: title.getBoundingClientRect().left + listContent - chrome, resizeTarget: list }
+}
+
+/**
  * One quota as a chip.
  *
  * The gestures, and why each one (Trent, 2026-09-06):
@@ -1323,8 +1345,8 @@ function ClusterTitleShell({
  *   press and hold     open the detail sheet — this REPLACED hold-to-subtract,
  *                      which is why swipe had to take over −1 first
  *
- * The fill behind the text is the count over the target. Long titles wrap the
- * row, never the chip's text.
+ * The count is segments after the title (`QuotaSegments`). Long titles wrap
+ * inside the chip, never ellipsise.
  */
 function TrackChip({
   task,
@@ -1427,38 +1449,32 @@ function TrackChip({
             state.met && 'border-green-600/30',
           )}
         >
-          <span
-            aria-hidden="true"
-            className={cn(
-              'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
-              state.met ? 'bg-green-600/15' : 'bg-foreground/10',
-            )}
-            style={{ width: `${state.fraction * 100}%` }}
-          />
-          {/* After the fill, not before it: a met chip's fill runs the whole
-              width, and underneath it the stripe would be tinted green. */}
+          {/* No progress fill behind the chip since 2026-10-13: the segments
+              carry the count, and a fill under them said it twice. */}
           <span
             aria-hidden="true"
             className={cn('absolute inset-y-0 left-0 w-[3px]', trackStripeClass(color))}
           />
           {/* Wraps, never ellipsises (Trent, 2026-10-12: long titles used to
               wrap to a second line — the old rows layout did — and "…" hid
-              the part that says what the quota is). */}
-          <span className="relative min-w-0 break-words">{task.title}</span>
-          <span
-            data-track-count
-            className={cn(
-              'relative text-xs whitespace-nowrap tabular-nums',
-              state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
-            )}
-          >
-            {/* No period suffix as of the 2026-09-23 redesign — the section
-                this chip sits in already says the period (`PeriodHeading`),
-                so repeating it on every chip was the afterthought that
-                started the redesign. Sighted-only either way: the button's
-                `aria-label` below still spells the period out in full for a
-                screen reader, since nothing else on the chip does. */}
-            <span className="text-foreground font-medium">{state.current}</span>/{state.target}
+              the part that says what the quota is). The count follows the
+              title inline, as segments ("3/7" text past six, or when they
+              don't fit the line), so it obeys the same fit rule as a prompt
+              row's. No period word: the section this chip sits in already
+              says the period (`PeriodHeading`); the button's `aria-label`
+              spells it out for a screen reader. */}
+          <span className="relative min-w-0 break-words">
+            {task.title}
+            <QuotaSegments
+              data-track-count
+              current={state.current}
+              target={state.target}
+              freq={quotaFreqOf(task.rrule)}
+              showWord={false}
+              emphasizeCurrent
+              textClassName="text-xs"
+              lineEnd={chipLineEnd}
+            />
           </span>
         </button>
       </TrackChipPopover>
