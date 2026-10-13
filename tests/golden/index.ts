@@ -4,6 +4,7 @@ import { repeatingScenarios } from './repeating'
 import { caseScenarios } from './cases'
 import { creationDayScenarios } from './creation-day'
 import { ruleTimeScenarios } from './rule-time'
+import { yearlyScenarios } from './yearly'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -11,4 +12,5 @@ export const goldenScenarios = [
   ...caseScenarios,
   ...creationDayScenarios,
   ...ruleTimeScenarios,
+  ...yearlyScenarios,
 ]

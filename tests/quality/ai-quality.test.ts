@@ -474,7 +474,8 @@ async function runEnrichment(
   // Same for the task model's deadline/horizon guard (2026-10-10): judged on
   // what production stores, with the raw answer logged when the guard changed it.
   // A date-only target ("today", no time) is placed the way production places it.
-  // A repeat with no day named is pinned to today (`pinUnnamedDay`, 2026-10-12).
+  // A repeat with no day named is pinned to today (`pinUnnamedDay`, 2026-10-12);
+  // a yearly rule in a named month with no day, to the 1st (2026-10-13).
   const taskModel = pinUnnamedDay(
     alignTaskModelDates(
       resolveDateOnlyTarget(

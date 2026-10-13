@@ -130,3 +130,76 @@ describe('AI-PIN: everything else', () => {
     expect(pinUnnamedDay(r, 'every 2 weeks', TZ, THURSDAY)).toEqual(r)
   })
 })
+
+/**
+ * A yearly rule that names a month but no day starts on the 1st (Trent,
+ * 2026-10-13): "every year in March" is March 1st — never March <today's date>,
+ * which the today rule taught the model. Today's date is for the open weekly
+ * and monthly rules only. "Every year" with no month is left as the model
+ * wrote it: a bare FREQ=YEARLY floats from the creation day (its anniversary).
+ */
+describe('AI-PIN: yearly in a named month with no day', () => {
+  test('AI-PIN-030: "every year in March" → BYMONTHDAY=1, whatever day the model gave', () => {
+    const text = 'renew car registration every year in March'
+    expect(pin(text, 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15').rrule).toBe(
+      'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1',
+    )
+    expect(pin(text, 'FREQ=YEARLY;BYMONTH=3').rrule).toBe('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1')
+    expect(pin(text, 'FREQ=YEARLY;BYMONTH=3;BYDAY=1MO').rrule).toBe(
+      'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1',
+    )
+  })
+
+  test('AI-PIN-031: the model’s due_at (March <today>) is dropped and its time folded into the rule', () => {
+    const out = pin(
+      'renew car registration every year in March',
+      'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15',
+      '2027-03-15T09:00:00',
+    )
+    expect(out.rrule).toBe('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0')
+    expect(out.due_at).toBeNull()
+  })
+
+  test('AI-PIN-032: a stated rule time is kept; the due_at still goes', () => {
+    const out = pin(
+      'every year in March at 10am renew the registration',
+      'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15;BYHOUR=10;BYMINUTE=0',
+      '2027-03-15T10:00:00',
+    )
+    expect(out.rrule).toBe('FREQ=YEARLY;BYMONTH=3;BYHOUR=10;BYMINUTE=0;BYMONTHDAY=1')
+    expect(out.due_at).toBeNull()
+  })
+
+  test('AI-PIN-033: several months all start on the 1st', () => {
+    expect(
+      pin('service the furnace every year in March and September', 'FREQ=YEARLY;BYMONTH=3,9').rrule,
+    ).toBe('FREQ=YEARLY;BYMONTH=3,9;BYMONTHDAY=1')
+  })
+
+  test.each([
+    ['every year on March 15', 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15'],
+    ['every year on Mar. 15 pay the property tax', 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15'],
+    ['every year on 15 March', 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15'],
+    ['every year on the 15th of March', 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15'],
+    ['every year on 3/15', 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15'],
+    ['every year at the end of March', 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=-1'],
+    ['every year on the first Monday of March', 'FREQ=YEARLY;BYMONTH=3;BYDAY=1MO'],
+  ])('AI-PIN-034: a named day is the user’s — "%s" left alone', (text, rrule) => {
+    const out = pin(text, rrule, '2027-03-15T09:00:00')
+    expect(out.rrule).toBe(rrule)
+    expect(out.due_at).toBe('2027-03-15T09:00:00')
+  })
+
+  test('AI-PIN-035: "every year" with no month named is left as the model wrote it', () => {
+    expect(pin('renew the domain every year', 'FREQ=YEARLY').rrule).toBe('FREQ=YEARLY')
+    // A month and day the model filled in from today are not the user's month:
+    // not moved to the 1st (Oct 1 would already have passed).
+    const r = result('FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=15', '2026-10-15T09:00:00')
+    expect(pinUnnamedDay(r, 'renew the domain every year', TZ, THURSDAY)).toEqual(r)
+  })
+
+  test('AI-PIN-036: a rule already on the 1st with no due_at is returned as is', () => {
+    const r = result('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1')
+    expect(pinUnnamedDay(r, 'every year in March', TZ, THURSDAY)).toEqual(r)
+  })
+})
