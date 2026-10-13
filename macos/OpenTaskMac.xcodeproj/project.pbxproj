@@ -37,6 +37,7 @@
 		1D457179C4A93CDCB0FFFCA7 /* RecurrenceSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700281E5CE4D89D08424F789 /* RecurrenceSummaryTests.swift */; };
 		1E09B45CC465F173871345A1 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */; };
 		1E7A850A44554A92F783BB60 /* NotificationActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE74638B34B5131EFCBDEF6A /* NotificationActionRunner.swift */; };
+		1F6D46E0790911A72820963E /* TasksPageControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A465FB343DC09F05B9CAF017 /* TasksPageControl.swift */; };
 		1F72F1ABDCE460D6BB84FED1 /* user-preferences.json in Resources */ = {isa = PBXBuildFile; fileRef = B494CCB1EBBEBD1900184F2D /* user-preferences.json */; };
 		21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		22056523029F9E6121394470 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
@@ -233,6 +234,8 @@
 		F98C44868E3AA34930C5D2B4 /* RemindersTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8978A06D1EC922FE90F1F98 /* RemindersTimeline.swift */; };
 		FA63DF44534D4DD08E7F4116 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
 		FA7BA42783C7FA87612704DB /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
+		FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */ = {isa = PBXBuildFile; fileRef = E3290E5D7B8A509F3BA310ED /* task-badges.json */; };
+		FF3F98E6426867E259E59B7D /* TasksPageControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A465FB343DC09F05B9CAF017 /* TasksPageControl.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -342,6 +345,7 @@
 		A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlan.swift; sourceTree = "<group>"; };
 		A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewLocalData.swift; sourceTree = "<group>"; };
 		A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAge.swift; sourceTree = "<group>"; };
+		A465FB343DC09F05B9CAF017 /* TasksPageControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksPageControl.swift; sourceTree = "<group>"; };
 		A535170EA850BA882099BFB1 /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWidthsTests.swift; sourceTree = "<group>"; };
 		A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidgetViews.swift; sourceTree = "<group>"; };
@@ -371,6 +375,7 @@
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
 		E06CA39C19D4AF5FADD8BA98 /* RecurrenceSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceSummary.swift; sourceTree = "<group>"; };
+		E3290E5D7B8A509F3BA310ED /* task-badges.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-badges.json"; sourceTree = "<group>"; };
 		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
 		F18E00062C7779D38C364472 /* task-counts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-counts.json"; sourceTree = "<group>"; };
 		F1B46ABD580807D58325D969 /* TaskDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDayProgress.swift; sourceTree = "<group>"; };
@@ -415,6 +420,7 @@
 				20094FA70C6D6907002B24FA /* reminders-segments.json */,
 				856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
+				E3290E5D7B8A509F3BA310ED /* task-badges.json */,
 				F18E00062C7779D38C364472 /* task-counts.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
 				0FB8808D7E3324C55F3E06A1 /* task-segments-consider.json */,
@@ -563,6 +569,7 @@
 				A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */,
 				063D351611FEE1FDCC48702D /* SampleData.swift */,
 				86C87419D6853F3A661B2252 /* TaskFeed.swift */,
+				A465FB343DC09F05B9CAF017 /* TasksPageControl.swift */,
 				B0431240DA3532D2272FDFAC /* TasksTimeline.swift */,
 				16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */,
 				F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */,
@@ -779,6 +786,7 @@
 				A7A7013390BB2D8ED7765AAB /* reminders-segments.json in Resources */,
 				53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
+				FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */,
 				04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
 				DFD0535376C465799D675624 /* task-segments-consider.json in Resources */,
@@ -855,6 +863,7 @@
 				D09FE2DF9244C2099B0FA227 /* TaskFeed.swift in Sources */,
 				92C4BEE80620D8082FFF06FE /* TaskLists.swift in Sources */,
 				EA277B98984D91CFC54CB091 /* TaskSnoozePlan.swift in Sources */,
+				1F6D46E0790911A72820963E /* TasksPageControl.swift in Sources */,
 				19D659B8320BA4F9368D43E2 /* TasksTimeline.swift in Sources */,
 				3384ABB58FC0D799FE4A2038 /* TasksWidget.swift in Sources */,
 				B7A6C49AEC224FA14079678E /* TasksWidgetViews.swift in Sources */,
@@ -1022,6 +1031,7 @@
 				B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */,
 				D9EF8BAF2B05017FFE43DA89 /* TaskLists.swift in Sources */,
 				317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */,
+				FF3F98E6426867E259E59B7D /* TasksPageControl.swift in Sources */,
 				5CD4762477A148AB18B23334 /* TasksTimeline.swift in Sources */,
 				33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */,
 				1A1131E268CC52CAA6F32234 /* TasksWidgetViews.swift in Sources */,

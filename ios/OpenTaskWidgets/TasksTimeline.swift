@@ -43,23 +43,6 @@ enum TasksTimeline {
         TaskLists.upNext(tasks)
     }
 
-    /// Projects that actually have something in TODAY's set, in the order
-    /// the server returned them — still the ring `todaysTasks` uses. Per-
-    /// project pages are unchanged by item 4 ("Then the per-project pages as
-    /// now"), so this stays scoped to `todaysTasks`, not `upNextTasks`.
-    ///
-    /// Derived entirely from the payload — nothing on the client knows a
-    /// project name or how many there are. §7.1 explicitly leaves the project
-    /// set open, so any hardcoded list would go stale by design.
-    static func scopedProjects(
-        tasks: [TaskDTO],
-        projects: [ProjectDTO],
-        now: Date = Date()
-    ) -> [ProjectDTO] {
-        let present = Set(todaysTasks(from: tasks, now: now).map(\.projectId))
-        return projects.filter { present.contains($0.id) }
-    }
-
     /// The DONE list for "show completed" (2026-09-23) — today's completions,
     /// scoped the same way `todaysTasks`/`upNextTasks` scope the OPEN list:
     /// reminders and tracked items are excluded ALWAYS (their own widgets own
@@ -119,8 +102,8 @@ enum TasksTimeline {
     /// The Today page's finished states — `TaskDayProgress` (ios/Shared) has
     /// the rules; these gate them to the Today page. Day complete, the green
     /// wash and "N of M" belong to Today alone: an empty Up next or project
-    /// page says nothing about the day. (The Overdue page is never empty —
-    /// it leaves the ring when nothing is overdue.)
+    /// page says nothing about the day, and neither does an empty Over
+    /// target page (it stays on screen at 0 since 2026-10-12).
     static func isDayComplete(scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date) -> Bool {
         scope == WidgetStore.allProjects
             && TaskDayProgress.isDayComplete(
@@ -145,88 +128,128 @@ enum TasksTimeline {
         return TaskDayProgress.upcoming(allTasks, now: now)
     }
 
-    // MARK: Overdue (2026-09-25)
+    // MARK: Over target (2026-09-25)
 
-    /// The "Overdue" page — Trent: "if things are overdue, I'd like that to be
-    /// the default widget screen for the tasks." `TaskLists.overdue`: every
-    /// eligible task whose due time has passed, most overdue first (the
-    /// order every other Tasks page uses). Its doc has why that matches the
-    /// web dashboard's Overdue chip, which the header link opens.
+    /// The "Over target" page. `TaskLists.overdue`: every eligible task whose
+    /// due time has passed, most overdue first (the order every other Tasks
+    /// page uses). Its doc has why that matches the web dashboard's Overdue
+    /// chip, which the header link opens.
     static func overdueTasks(from tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
         TaskLists.overdue(tasks, now: now)
     }
 
-    /// The page the widget opens on when the user hasn't chosen one (or their
-    /// choice has lapsed — see `resolveScope`): Overdue while anything is
-    /// overdue, else Today, which is what it always was.
-    static func naturalScope(overdueCount: Int) -> Int {
-        overdueCount > 0 ? WidgetStore.overdueScope : WidgetStore.allProjects
+    // MARK: Navigation (2026-10-12, mockup B-3 "fixed views plus project chip")
+    //
+    // Trent, on the old chevron ring (Over target only while something was,
+    // then Today, Up next, then each project with something due — pages
+    // appearing and disappearing mid-ring, Over target jumping in on its own,
+    // and nothing showing where you were): "I lose my spot." What replaced it:
+    //
+    // - Three FIXED view segments, "Over · Today · Next", always present in
+    //   that order (Over dims at 0 rather than leaving), plus ONE "Projects ›"
+    //   chip that steps through projects. Each control names its page by a
+    //   stable KEY (−3/−1/−2, or a project id), never an index into a list
+    //   that may have changed since the widget was drawn.
+    // - The page the user picked is stored and kept. Nothing moves them: not
+    //   something going over target (the Over segment's count is the signal),
+    //   not the page emptying (it shows its empty state). The one exception is
+    //   a project that no longer exists at all, which falls back to Today.
+    // - With nothing stored (a fresh widget) the page is Today. It used to be
+    //   Over target whenever anything was (2026-09-25), which meant a
+    //   never-touched widget flipped to Over the minute a task tipped over —
+    //   the same auto-jump in another form.
+
+    /// The three view pages, in the control's order.
+    static let viewPages = [WidgetStore.overdueScope, WidgetStore.allProjects, WidgetStore.upNextScope]
+
+    /// The projects the "Projects ›" chip steps through: every project with
+    /// something on its page — something due today or over target
+    /// (`todaysTasks`, which is what a project page shows) — in the server's
+    /// order (`sort_order`, then name).
+    ///
+    /// Why not every project: at 12–20 projects most taps would land on an
+    /// empty page. Why this is still stable: the chip steps by KEY, relative
+    /// to the FULL project order (`nextProject`), so a project joining or
+    /// leaving this list never moves the page on screen, and stepping on from
+    /// a project that just emptied continues to the next one in sort order
+    /// rather than starting over.
+    static func projectPages(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date()) -> [ProjectDTO] {
+        let present = Set(todaysTasks(from: tasks, now: now).map(\.projectId))
+        return projects.filter { present.contains($0.id) }
     }
 
-    /// The chevrons' ring, in order: Overdue (only while something is — no
-    /// page for nothing, Trent's "no chrome for something that isn't there"),
-    /// Today, Up next, then every project with something due today.
-    ///
-    /// The ONE place the ring is built: `ShiftProjectScopeIntent` cycles it
-    /// and `resolveScope` checks a stored choice against it, and two copies
-    /// would drift on the first change.
-    static func scopeRing(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date()) -> [Int] {
-        let overdue = overdueTasks(from: tasks, now: now).isEmpty ? [] : [WidgetStore.overdueScope]
-        return overdue + [WidgetStore.allProjects, WidgetStore.upNextScope]
-            + scopedProjects(tasks: tasks, projects: projects, now: now).map(\.id)
+    /// The page to show: the stored page while it still names something,
+    /// else Today. A view key always does; a project id does while the
+    /// project exists, whether or not anything is due in it.
+    static func resolvePage(stored: Int?, projects: [ProjectDTO]) -> Int {
+        guard let stored else { return WidgetStore.allProjects }
+        if viewPages.contains(stored) { return stored }
+        return projects.contains(where: { $0.id == stored }) ? stored : WidgetStore.allProjects
     }
 
-    /// Which page to show: the user's chevron choice while it still holds,
-    /// else the natural default.
-    ///
-    /// A choice is paired with the natural default it was made against
-    /// (`WidgetStore.TasksScopeChoice`) — the Reminders slot override's
-    /// self-expiring trick. While the natural default is unchanged the choice
-    /// is honored ("I chevroned to Up next, leave me there"); the moment it
-    /// changes — overdue appears, so the default becomes Overdue, or the last
-    /// overdue task is done or snoozed, so it drops back to Today — the choice
-    /// lapses and the new default shows, with no timer or reset anywhere.
-    /// A choice no longer in the ring (a project with nothing due today any
-    /// more, or Overdue once nothing is) lapses too, rather than stranding
-    /// the widget on an empty page it can only escape by chevroning.
-    static func resolveScope(choice: WidgetStore.TasksScopeChoice?, natural: Int, ring: [Int]) -> Int {
-        guard let choice, choice.naturalScope == natural, ring.contains(choice.scope) else {
-            return natural
+    /// Where the "Projects ›" chip goes from `current`: off a project page,
+    /// the first project with something on it; on one, the next such project
+    /// after it in the full server order, wrapping round to the first. Nil
+    /// when there is nowhere else to go — no project has anything, or the
+    /// only one that does is already on screen — so the chip can dim rather
+    /// than be a button that does nothing.
+    static func nextProject(after current: Int, pages: [ProjectDTO], allProjects: [ProjectDTO]) -> Int? {
+        guard let first = pages.first else { return nil }
+        guard let position = allProjects.firstIndex(where: { $0.id == current }) else {
+            return first.id
         }
-        return choice.scope
+        var order: [Int: Int] = [:]
+        for (index, project) in allProjects.enumerated() where order[project.id] == nil {
+            order[project.id] = index
+        }
+        let next = pages.first { (order[$0.id] ?? -1) > position } ?? first
+        return next.id == current ? nil : next.id
     }
 
-    /// Everything `resolveScope` needs, from one set of tasks — the scope on
-    /// screen, the ring around it, and the natural default the ring's
-    /// chevrons should anchor a new choice to.
+    /// Everything the widget needs to draw and act on its page, from one set
+    /// of tasks.
     struct ScopeState: Equatable {
+        /// The page on screen.
         let scope: Int
-        let ring: [Int]
-        let natural: Int
+        /// Every page a jump may land on: the three views, then every project
+        /// (so a tap on a project that has since emptied still lands, and
+        /// shows that project's empty state).
+        let pages: [Int]
+        /// The chip's projects (`projectPages`), in server order.
+        let projectPages: [ProjectDTO]
+        /// Where the chip goes from here (`nextProject`).
+        let nextProject: Int?
+        /// The segments' counts.
+        let overCount: Int
+        let todayCount: Int
     }
 
     static func scopeState(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date()) -> ScopeState {
-        let ring = scopeRing(tasks: tasks, projects: projects, now: now)
-        let natural = naturalScope(overdueCount: overdueTasks(from: tasks, now: now).count)
-        let scope = resolveScope(choice: WidgetStore.tasksScopeChoice(), natural: natural, ring: ring)
-        return ScopeState(scope: scope, ring: ring, natural: natural)
+        let scope = resolvePage(stored: WidgetStore.tasksStoredPage(), projects: projects)
+        let chipProjects = projectPages(tasks: tasks, projects: projects, now: now)
+        return ScopeState(
+            scope: scope,
+            pages: viewPages + projects.map(\.id),
+            projectPages: chipProjects,
+            nextProject: nextProject(after: scope, pages: chipProjects, allProjects: projects),
+            overCount: overdueTasks(from: tasks, now: now).count,
+            todayCount: todaysTasks(from: tasks, now: now).count
+        )
     }
 
-    /// The scope on screen right now, for the intents that key state by it
-    /// (the page, the bulk-select picks, the chevrons). Built from the same
-    /// cache the provider's interaction fast path repaints from, with the
-    /// same completion tombstones applied (`WidgetStore.filterPending`), so
-    /// an intent and the render it triggers agree on the page — including
-    /// the tap that checks off the last overdue task and drops the widget
-    /// back to Today.
+    /// The page on screen right now, for the intents that key state by it
+    /// (the page, the bulk-select picks, the jump and the chip). Built from
+    /// the same cache the provider's interaction fast path repaints from,
+    /// with the same completion tombstones applied (`WidgetStore.
+    /// filterPending`), so an intent and the render it triggers agree.
     static func currentScopeState(now: Date = Date()) -> ScopeState? {
         guard let cache = WidgetStore.loadTasks()?.value else { return nil }
         return scopeState(tasks: WidgetStore.filterPending(cache.tasks, now: now), projects: cache.projects, now: now)
     }
 
-    /// `currentScopeState`'s scope, or Today before any payload was cached.
+    /// `currentScopeState`'s scope; before any payload was cached, the
+    /// stored page (else Today).
     static func currentScope(now: Date = Date()) -> Int {
-        currentScopeState(now: now)?.scope ?? WidgetStore.allProjects
+        currentScopeState(now: now)?.scope ?? (WidgetStore.tasksStoredPage() ?? WidgetStore.allProjects)
     }
 }
-

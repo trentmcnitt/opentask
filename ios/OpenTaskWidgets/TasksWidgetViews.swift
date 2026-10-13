@@ -237,12 +237,6 @@ private struct TasksListView: View {
     /// the DONE section, snooze/select modes and the bottom row.
     let isLarge: Bool
 
-    /// The scope ring is Today + Up next + every project with something due
-    /// (2026-09-23, item 4), and it wraps (`ShiftProjectScopeIntent`) — the
-    /// two unified pages always exist, so the ring never has fewer than 2
-    /// entries and the chevrons are always live.
-    private var canPage: Bool { true }
-
     private var snoozeMode: Bool { isLarge && WidgetStore.tasksSnoozeMode }
     private var selectMode: Bool { isLarge && WidgetStore.tasksSelectMode }
 
@@ -319,7 +313,23 @@ private struct TasksListView: View {
             // No `.widgetURL` here (removed 2026-09-22, the misclick fix) —
             // see `RemindersListView.body`.
             VStack(alignment: .leading, spacing: rowSpacing) {
-                header
+                // systemLarge: the header, then the page control on its own
+                // row. systemMedium: the control IS the header — see
+                // `mediumHeader`.
+                if isLarge {
+                    header
+                    TasksPageControl(entry: entry)
+                        // The control is `TasksPageControl.hitHeight` tall
+                        // (its tap target) but draws a 28pt capsule; it
+                        // bleeds 4pt into each EMPTY row gap around it, so
+                        // it costs the list 32pt. Nothing tappable sits in
+                        // those gaps: the header's title `Link` is above a
+                        // full 10pt gap, and the first row's check-off bleed
+                        // (`markerBleed`, 5pt) leaves 1pt clear below.
+                        .padding(.vertical, -TasksPageControl.largeBleed)
+                } else {
+                    mediumHeader
+                }
 
                 // The header's real height is laid out, not estimated, and
                 // the title line pitch is SwiftUI's own — see
@@ -706,7 +716,8 @@ private struct TasksListView: View {
     ///    ~80pt body holds the seal and one line, and a single squeezed row
     ///    would read as a mistake more than a preview.
     ///
-    /// Every other page keeps the original "Nothing for today".
+    /// Over target says "Nothing over target", Up next "Nothing coming up", a
+    /// project page the original "Nothing for today".
     @ViewBuilder
     private var emptyBody: some View {
         if entry.todayCount != nil {
@@ -723,6 +734,12 @@ private struct TasksListView: View {
             case .nothingDue:
                 TodayNothingDueView(entry: entry, isLarge: isLarge)
             }
+        } else if entry.isOverdueScope {
+            // The page stays when its last task goes (2026-10-12) — say so
+            // rather than eject the user to another page.
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing \(TaskWording.overTargetLower)")
+        } else if entry.scope == WidgetStore.upNextScope {
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing coming up")
         } else {
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing for today")
         }
@@ -746,9 +763,9 @@ private struct TasksListView: View {
     /// `fixedSize` horizontally, layout priority on its block, and the
     /// header thinned: the eye is now the completed dot in the bottom row,
     /// and the icon cluster sits in its own tight `HStack` instead of paying
-    /// `headerSpacing` (12pt) between every button. The ‹ › stay — they
-    /// switch the SCOPE (Today, Up next, then each project with something
-    /// due), which nothing else on the card does.
+    /// `headerSpacing` (12pt) between every button. The ‹ › that switched
+    /// the page are gone (2026-10-12): `TasksPageControl` under the header
+    /// does that. systemLarge only — systemMedium uses `mediumHeader`.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
             Link(destination: headerDestination) {
@@ -796,17 +813,22 @@ private struct TasksListView: View {
                 }
                 // See `UndoRedoButtons`' doc.
                 UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: TasksWidget.kind)
-                ChevronPager(
-                    previous: ShiftProjectScopeIntent(offset: -1),
-                    next: ShiftProjectScopeIntent(offset: 1),
-                    hasPrevious: canPage,
-                    hasNext: canPage
-                )
             }
         }
-        // systemMedium gets none — see `RemindersListView`: on a 128pt card
-        // those 6pt cost a whole row.
-        .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
+        .padding(.top, WidgetTheme.headerTopPadding)
+    }
+
+    /// systemMedium's header (2026-10-12): the page control and Undo/Redo
+    /// on ONE 40pt line, no title. The selected segment ("Over 6") or the
+    /// project chip ("● Work") already names the page, and a title line on
+    /// top of the control's own row left an iPhone medium card (138pt of
+    /// content) room for one task row instead of two. The card's background
+    /// tap still opens the dashboard on iOS (`backgroundTapOpens`).
+    private var mediumHeader: some View {
+        HStack(spacing: 4) {
+            TasksPageControl(entry: entry, compact: true)
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: TasksWidget.kind)
+        }
     }
 
     /// The header title `Link`'s destination — see `TasksEntry.headerLink`.
