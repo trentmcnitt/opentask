@@ -21,7 +21,7 @@ import {
   uniqueTitle,
   waitForGetsSettled,
 } from './fixtures'
-import type { Page, Request } from '@playwright/test'
+import type { Locator, Page, Request } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 /** The seeded user's timezone — must track globalSetup.ts's `E2E_TZ`. */
@@ -42,6 +42,11 @@ async function makeQuota(page: Page, title: string, rrule = 'FREQ=WEEKLY', targe
 async function progressOf(page: Page, id: number): Promise<number> {
   const res = await page.request.get(`/api/tasks/${id}`)
   return (await res.json()).data.progress_current as number
+}
+
+/** The row's count, by its accessible name ("0 of 3 this week") — the segments carry no text. */
+async function expectCount(row: Locator, label: string) {
+  await expect(row.locator('[data-quota-segments]')).toHaveAttribute('aria-label', label)
 }
 
 function promptRow(page: Page, title: string) {
@@ -98,7 +103,7 @@ test.describe('Quota prompts', () => {
     await page.goto('/reminders')
     const row = promptRow(page, 'E2E prompt consider')
     await expect(row).toBeVisible()
-    await expect(row).toContainText('0/3 this week')
+    await expectCount(row, '0 of 3 this week')
     // A dashed circle, not the reminder's solid one: on a prompt it means
     // "seen", not "done".
     await expect(row.locator('[data-prompt-consider] svg[data-dashed-ring]')).toBeVisible()
@@ -142,7 +147,7 @@ test.describe('Quota prompts', () => {
     await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
     await undone
     await expect(promptRow(page, 'E2E prompt did')).toBeVisible()
-    await expect(promptRow(page, 'E2E prompt did')).toContainText('0/3 this week')
+    await expectCount(promptRow(page, 'E2E prompt did'), '0 of 3 this week')
     expect(await progressOf(page, id)).toBe(0)
   })
 
@@ -226,8 +231,8 @@ test.describe('Quota prompts', () => {
     const more = panel.getByRole('button', { name: /show more/i })
     if (await more.isVisible()) await more.click()
     const row = (title: string) => panel.locator('li[data-prompt-key]', { hasText: title })
-    await expect(row(monthly)).toContainText('0/2 this month')
-    await expect(row(yearly)).toContainText('0/2 this year')
+    await expectCount(row(monthly), '0 of 2 this month')
+    await expectCount(row(yearly), '0 of 2 this year')
   })
 
   /**
@@ -346,7 +351,7 @@ test.describe('Quota prompts — moving', () => {
       const row = promptIn(page, second.label, 'E2E prompt daily')
       await expect(row).toBeVisible()
       // The count says which period it is counting: a daily quota's is today.
-      await expect(row).toContainText('0/2 today')
+      await expectCount(row, '0 of 2 today')
 
       const bubble = await holdOpen(page, row)
       await expect(bubble.locator('[data-prompt-periods]')).toContainText(
@@ -960,7 +965,7 @@ test.describe('Quota prompts — put back', () => {
     const slotCard = page.locator(`[data-slot-group="${slot}"]`)
     await slotCard.getByRole('button', { name: /^Show \d+ considered$/ }).click()
     const handled = slotCard.locator('li[data-considered-prompt]', { hasText: title })
-    await expect(handled).toContainText('1/3 this week')
+    await expectCount(handled, '1 of 3 this week')
     const putBack = handled.getByRole('button', { name: `Put back "${title}"` })
     await expect(putBack.locator('svg[data-dashed-ring]')).toBeVisible()
 
@@ -969,7 +974,7 @@ test.describe('Quota prompts — put back', () => {
     expect((await restore).ok()).toBeTruthy()
     // Never /undone: a quota refuses it.
     await expect(promptRow(page, title)).toBeVisible()
-    await expect(promptRow(page, title)).toContainText('0/3 this week')
+    await expectCount(promptRow(page, title), '0 of 3 this week')
     await expect(handled).toHaveCount(0)
     expect(await progressOf(page, id)).toBe(0)
 
@@ -1009,7 +1014,7 @@ test.describe('Quota prompts — put back', () => {
 
     await panel.locator('[data-considered-toggle]').click()
     const handled = panel.locator('li[data-considered-prompt]', { hasText: title })
-    await expect(handled).toContainText('0/3 this week')
+    await expectCount(handled, '0 of 3 this week')
     const restore = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/restore'))
     await handled.getByRole('button', { name: `Put back "${title}"` }).click()
     expect((await restore).ok()).toBeTruthy()

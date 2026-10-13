@@ -73,6 +73,7 @@ export const QUOTA_PERIODS = [
   {
     freq: 'DAILY',
     label: 'today',
+    word: 'today',
     short: 'day',
     suffix: 'd',
     editor: 'Every day',
@@ -81,6 +82,7 @@ export const QUOTA_PERIODS = [
   {
     freq: 'WEEKLY',
     label: 'this week',
+    word: 'week',
     short: 'week',
     suffix: 'wk',
     editor: 'Every week',
@@ -89,6 +91,7 @@ export const QUOTA_PERIODS = [
   {
     freq: 'MONTHLY',
     label: 'this month',
+    word: 'month',
     short: 'month',
     suffix: 'mo',
     editor: 'Every month',
@@ -97,6 +100,7 @@ export const QUOTA_PERIODS = [
   {
     freq: 'YEARLY',
     label: 'this year',
+    word: 'year',
     short: 'year',
     suffix: 'yr',
     editor: 'Every year',
