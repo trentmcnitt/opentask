@@ -135,6 +135,36 @@ private struct TaskRow: View {
     let task: TaskDTO
     let project: ProjectDTO?
 
+    /// The due line, then the attempts count folded into it (spec §7,
+    /// 2026-10-12, the Tasks widget's "Thu · 3×"): the server's "3×"
+    /// (`attempts_label`) — the days the task was over target, never counted
+    /// here — plum, semibold, heavy from 7×, no pill. Then a red flag once
+    /// the deadline has passed (red is for that only).
+    private func dueLine(_ due: Date) -> Text {
+        let overdue = task.isOverdue()
+        var line = Text(WatchFormatting.dueLine(for: due))
+            .foregroundStyle(overdue ? WatchTheme.overdue : .secondary)
+        if let label = TargetAge.attemptsBadge(task) {
+            let weight: Font.Weight = TargetAge.tone(attempts: task.attempts) == .strong ? .heavy : .semibold
+            line = line + Text(" · ").foregroundStyle(WatchTheme.overdue)
+                + Text(label).fontWeight(weight).monospacedDigit().foregroundStyle(WatchTheme.overdue)
+        }
+        if TargetAge.isPastDeadline(task) {
+            line = line + Text("\u{00A0}")
+                + Text(Image(systemName: "flag.fill")).font(.system(size: 9, weight: .semibold)).foregroundStyle(.red)
+        }
+        return line
+    }
+
+    private func spokenDueLine(_ due: Date) -> String {
+        var words = [WatchFormatting.dueLine(for: due)]
+        if TargetAge.attemptsBadge(task) != nil {
+            words.append("\(TaskWording.overTargetLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
+        }
+        if TargetAge.isPastDeadline(task) { words.append(TaskWording.pastDeadline) }
+        return words.joined(separator: ", ")
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             // The project's color — or plum once the task is over target, the
@@ -150,39 +180,9 @@ private struct TaskRow: View {
                     .multilineTextAlignment(.leading)
 
                 if let due = task.dueDate {
-                    HStack(spacing: 4) {
-                        Text(WatchFormatting.dueLine(for: due))
-                            .font(.caption2)
-                            .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)
-                        // The attempts badge (spec §7, 2026-10-12): the
-                        // server's "3×" (`attempts_label`) — the days the task
-                        // was over target, never counted here — in the
-                        // Tasks widget's tab: plum on a plum tint for 1–6,
-                        // white on solid plum for 7+. It replaced the
-                        // device-computed "2d" age tab. Then a red flag once
-                        // the deadline has passed (red is for that only).
-                        if let label = TargetAge.attemptsBadge(task) {
-                            let strong = TargetAge.tone(attempts: task.attempts) == .strong
-                            let medium = TargetAge.tone(attempts: task.attempts) == .medium
-                            Text(label)
-                                .font(.caption2.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(strong ? Color.white : WatchTheme.overdue)
-                                .padding(.horizontal, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(strong ? WatchTheme.overTargetBadge : WatchTheme.overdue.opacity(medium ? 0.15 : 0.08))
-                                )
-                                .accessibilityLabel(
-                                    Text("\(TaskWording.overTarget) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
-                                )
-                        }
-                        if TargetAge.isPastDeadline(task) {
-                            Image(systemName: "flag.fill")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.red)
-                                .accessibilityLabel(Text(TaskWording.pastDeadline))
-                        }
-                    }
+                    dueLine(due)
+                        .font(.caption2)
+                        .accessibilityLabel(Text(spokenDueLine(due)))
                 }
             }
         }

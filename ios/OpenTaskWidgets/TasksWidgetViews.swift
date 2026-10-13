@@ -470,9 +470,10 @@ private struct TasksListView: View {
             let stackedDueHeight = ceil(2 * metrics.caption2LineHeight)
             var column = width - TaskRow.trailingControlWidth(for: mode) - 10
             if isLarge, entry.isUnifiedScope { column -= 3 + 8 }
-            // The target-age badge (2026-10-10) takes its own width from the
-            // title's column — the exact width `TargetAgeBadge` draws.
-            column -= TargetAgeBadge.reservedWidth(for: task, now: entry.date, metrics: metrics)
+            // The attempts count (" · 3×", and the past-deadline flag) rides
+            // on the due label's FIRST line (`AttemptsInTime`), so it widens
+            // only that line — by exactly what it draws.
+            let foldedWidth = AttemptsInTime.width(for: task, now: entry.date, metrics: metrics)
             let text: (lines: Int, height: CGFloat, dueStacked: Bool, shrinks: Bool)
             if let parts = dueParts(for: task) {
                 if parts.hasTwoParts {
@@ -480,7 +481,7 @@ private struct TasksListView: View {
                     // LONGER half, and the row holds two caption2 lines even
                     // beside a one-line title.
                     let half = max(
-                        WidgetTheme.measuredWidth(for: parts.dayWord ?? "", font: metrics.caption2Font),
+                        WidgetTheme.measuredWidth(for: parts.dayWord ?? "", font: metrics.caption2Font) + foldedWidth,
                         WidgetTheme.measuredWidth(for: parts.time ?? "", font: metrics.caption2Font)
                     )
                     let stacked = titleLayout(
@@ -491,7 +492,8 @@ private struct TasksListView: View {
                 } else {
                     let inline = titleLayout(
                         task,
-                        column: column - WidgetTheme.measuredWidth(for: parts.plainString, font: metrics.caption2Font) - 8,
+                        column: column - WidgetTheme.measuredWidth(for: parts.plainString, font: metrics.caption2Font)
+                            - foldedWidth - 8,
                         labelHeight: 0, budget: budget, metrics: metrics
                     )
                     text = (inline.lines, inline.height, false, inline.shrinks)
@@ -1121,8 +1123,6 @@ private struct TaskRow: View {
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                 .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
 
-            TargetAgeBadge(task: task, now: now)
-
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
@@ -1137,12 +1137,19 @@ private struct TaskRow: View {
                 // wrap it on its own ("Tomorrow / 4:00 pm") and hand the
                 // freed width to a title whose line count had been measured
                 // without it — the row kept an empty third line.
-                WidgetTheme.dueLabelText(for: task, now: now, stacked: dueStacked, scheme: colorScheme)
+                //
+                // The attempts count follows the first line ("Thu · 3×",
+                // then the flag) — see `AttemptsInTime`.
+                WidgetTheme.dueLabelText(
+                    for: task, now: now, stacked: dueStacked, scheme: colorScheme,
+                    firstLineSuffix: AttemptsInTime.text(for: task, now: now, scheme: colorScheme)
+                )
                     .font(.caption2)
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
                     .lineLimit(dueStacked ? 2 : 1)
                     .fixedSize()
+                    .accessibilityLabel(Text(AttemptsInTime.spokenDueLabel(for: task, now: now)))
             }
         }
         .contentShape(Rectangle())
@@ -1217,97 +1224,108 @@ private struct TaskRow: View {
     }
 }
 
-/// The attempts badge and past-deadline marker (spec §7, 2026-10-12) on a
-/// row, just left of the due label: "3×" — the server's `attempts_label`,
-/// the local days the task has been over target (`TargetAge.attemptsBadge`;
-/// never counted on the device) — in a small tab in three depths of plum
-/// (`TargetAge.tone(attempts:)`: 1–2 light, 3–6 medium, 7+ strong, the web's
-/// `AttemptsTab`), and a red flag once the deadline has passed. It replaced
-/// the device-computed target-age tab ("2d") of 2026-10-10. Label only: the
-/// web's "Remove target?" / "Back to auto?" offer at 3× is not drawn here.
+/// The attempts count and past-deadline flag (spec §7, 2026-10-12) on a
+/// Tasks widget row, FOLDED INTO THE DUE LABEL'S FIRST LINE (Trent's pick
+/// (c), 2026-10-12): "Thu · 3×" over "8:45 am", then a red flag once the
+/// deadline has passed. "3×" is the server's `attempts_label` — the local
+/// days the task has been over target (`TargetAge.attemptsBadge`; never
+/// counted on the device). No pill and no solid tab at any count: the
+/// count is plum (`WidgetTheme.overTarget`, the over-target time's colour,
+/// ≥4.5:1 on the card in both appearances), semibold, heavy from 7×
+/// (`TargetAge.tone`'s strong depth). The "·" is plum too, so the line reads
+/// as one over-target phrase. Label only: the web's "Remove target?" /
+/// "Back to auto?" offer at 3× is not drawn here. Segment rows (Reminders
+/// widget) end their words with the same plain plum "· 3×".
 ///
-/// One line of caption2, never taller than a title line, so it costs the row
-/// no height — only width, which `reservedWidth` gives the pager exactly
-/// (the "one function" rule: measure what is drawn).
-private struct TargetAgeBadge: View {
-    let task: TaskDTO
-    let now: Date
+/// It costs the row no height — the label's first line just gets wider —
+/// and `width(for:)` is EXACTLY what `text(for:)` draws (the "one function"
+/// rule: measure what is drawn), in the weights and the tabular digits it
+/// is drawn in, the flag measured as the symbol it is.
+enum AttemptsInTime {
+    /// The flag's symbol and size — a 9pt semibold `flag.fill`.
+    private static let flagSymbol = "flag.fill"
+    private static let flagPointSize: CGFloat = 9
+    private static let separator = " · "
+    private static let flagGap = "\u{00A0}"
 
-    static let horizontalPadding: CGFloat = 4
-    static let flagWidth: CGFloat = 11
-    static let innerSpacing: CGFloat = 3
-    /// The `HStack` gap the badge adds beside the title.
-    static let gap: CGFloat = 8
+    /// The count's weight: semibold, heavy from 7×.
+    private static func countWeight(_ attempts: Int) -> Font.Weight {
+        TargetAge.tone(attempts: attempts) == .strong ? .heavy : .semibold
+    }
 
-    /// The width the badge takes from the title's column, 0 when it draws
-    /// nothing.
-    static func reservedWidth(for task: TaskDTO, now: Date, metrics: WidgetTextMetrics) -> CGFloat {
+    private static func countFontWeight(_ attempts: Int) -> WidgetTheme.PlatformFont.Weight {
+        TargetAge.tone(attempts: attempts) == .strong ? .heavy : .semibold
+    }
+
+    /// What follows the label's first line — nil when the row has neither a
+    /// count nor a passed deadline.
+    static func text(for task: TaskDTO, now: Date, scheme: ColorScheme) -> Text? {
+        let label = TargetAge.attemptsBadge(task)
+        let past = TargetAge.isPastDeadline(task, now: now)
+        guard label != nil || past else { return nil }
+        var run = Text("")
+        if let label {
+            let plum = WidgetTheme.overTarget(scheme)
+            run = Text(separator).foregroundStyle(plum)
+                + Text(label).fontWeight(countWeight(task.attempts)).foregroundStyle(plum)
+        }
+        if past {
+            run = run + Text(flagGap)
+                + Text(Image(systemName: flagSymbol))
+                .font(.system(size: flagPointSize, weight: .semibold))
+                .foregroundStyle(.red)
+        }
+        return run
+    }
+
+    /// `text(for:)`'s width — 0 when it draws nothing.
+    static func width(for task: TaskDTO, now: Date, metrics: WidgetTextMetrics) -> CGFloat {
         let label = TargetAge.attemptsBadge(task)
         let past = TargetAge.isPastDeadline(task, now: now)
         guard label != nil || past else { return 0 }
+        let size = metrics.caption2Font.pointSize
         var width: CGFloat = 0
         if let label {
-            // Measured in the weight it is drawn in (caption2 SEMIBOLD) —
-            // the regular caption2 would budget a point or two short.
-            let font = WidgetTheme.PlatformFont.systemFont(ofSize: metrics.caption2Font.pointSize, weight: .semibold)
-            width += WidgetTheme.measuredWidth(for: label, font: font) + 2 * horizontalPadding
-        }
-        if past { width += flagWidth + (label != nil ? innerSpacing : 0) }
-        return ceil(width) + gap
-    }
-
-    var body: some View {
-        let label = TargetAge.attemptsBadge(task)
-        let past = TargetAge.isPastDeadline(task, now: now)
-        if label != nil || past {
-            HStack(spacing: Self.innerSpacing) {
-                if let label {
-                    AttemptsTab(label: label, attempts: task.attempts)
-                }
-                if past {
-                    Image(systemName: "flag.fill")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.red)
-                        .frame(width: Self.flagWidth)
-                        .accessibilityLabel(Text(TaskWording.pastDeadline))
-                }
-            }
-            .fixedSize()
-        }
-    }
-}
-
-/// The "3×" tab itself (the web's `AttemptsTab`): plum text on a light plum
-/// tint for 1–6, white on a solid plum for 7+. Every pair clears 4.5:1 on the
-/// widget card in both appearances (`WidgetTheme.overTarget` /
-/// `overTargetBadge`; measured 2026-10-12: light 5.0 / 4.5 / 5.6:1, dark
-/// 5.3 / 4.7 / 6.0:1 for the 8% and 15% tints and the solid tab).
-/// Its padding is `TargetAgeBadge.horizontalPadding`, which `reservedWidth`
-/// counts.
-private struct AttemptsTab: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let label: String
-    let attempts: Int
-
-    var body: some View {
-        let tone = TargetAge.tone(attempts: attempts)
-        Text(label)
-            .font(.caption2.weight(.semibold))
-            .monospacedDigit()
-            .foregroundStyle(tone == .strong ? Color.white : WidgetTheme.overTarget(colorScheme))
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, TargetAgeBadge.horizontalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(
-                        tone == .strong
-                            ? WidgetTheme.overTargetBadge(colorScheme)
-                            : WidgetTheme.overTarget(colorScheme).opacity(tone == .medium ? 0.15 : 0.08)
-                    )
+            let digits = WidgetTheme.PlatformFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+            let count = WidgetTheme.PlatformFont.monospacedDigitSystemFont(
+                ofSize: size, weight: countFontWeight(task.attempts)
             )
-            .accessibilityLabel(Text("\(TaskWording.overTarget) on \(attempts) day\(attempts == 1 ? "" : "s")"))
+            width += WidgetTheme.measuredWidth(for: separator, font: digits)
+                + WidgetTheme.measuredWidth(for: label, font: count)
+        }
+        if past {
+            width += WidgetTheme.measuredWidth(for: flagGap, font: metrics.caption2Font) + flagWidth
+        }
+        return ceil(width)
+    }
+
+    /// The flag symbol's drawn width at its point size and weight.
+    private static var flagWidth: CGFloat {
+        #if os(iOS)
+        let config = UIImage.SymbolConfiguration(
+            font: UIFont.systemFont(ofSize: flagPointSize, weight: .semibold)
+        )
+        return ceil(UIImage(systemName: flagSymbol, withConfiguration: config)?.size.width ?? flagPointSize)
+        #else
+        let config = NSImage.SymbolConfiguration(pointSize: flagPointSize, weight: .semibold)
+        let image = NSImage(systemSymbolName: flagSymbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        return ceil(image?.size.width ?? flagPointSize)
+        #endif
+    }
+
+    /// The whole due label as VoiceOver reads it: the due words, then "over
+    /// target on 3 days" and "past deadline" when shown.
+    static func spokenDueLabel(for task: TaskDTO, now: Date) -> String {
+        guard let due = task.dueDate else { return "" }
+        var words = [
+            WidgetTheme.dueLabelParts(for: due, now: now, isOverdue: task.isOverdue(now: now)).plainString,
+        ]
+        if TargetAge.attemptsBadge(task) != nil {
+            words.append("\(TaskWording.overTargetLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
+        }
+        if TargetAge.isPastDeadline(task, now: now) { words.append(TaskWording.pastDeadline) }
+        return words.joined(separator: ", ")
     }
 }
 
