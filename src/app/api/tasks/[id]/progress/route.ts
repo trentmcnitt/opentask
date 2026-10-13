@@ -41,7 +41,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       delta,
     })
 
-    return success({ ...formatTaskResponse(task), met, description })
+    return success({ ...formatTaskResponse(task, user.timezone), met, description })
   } catch (err) {
     if (err instanceof ZodError) return handleZodError(err)
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/progress error:', err)

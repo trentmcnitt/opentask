@@ -188,7 +188,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event
   if (!skipWebhookDispatch) {
     dispatchWebhookEvent(userId, 'task.updated', {
-      task: formatTaskResponse(result.task),
+      task: formatTaskResponse(result.task, userTimezone),
       fields_changed: result.fieldsChanged,
     })
   }

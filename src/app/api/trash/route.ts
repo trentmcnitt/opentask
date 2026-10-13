@@ -31,7 +31,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       limit,
     })
 
-    const formattedTasks = formatTasksResponse(tasks)
+    const formattedTasks = formatTasksResponse(tasks, user.timezone)
 
     return success({
       tasks: formattedTasks,

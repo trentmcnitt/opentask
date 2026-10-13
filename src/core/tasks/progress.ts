@@ -148,7 +148,7 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
   // §5: progress is NOT completion. Firing task.completed here would make every
   // downstream counter over-count by the target.
   dispatchWebhookEvent(userId, 'task.progressed', {
-    task: formatTaskResponse(updated),
+    task: formatTaskResponse(updated, ownerTimezone(task.user_id)),
     progress_current: next,
     progress_target: task.progress_target,
     met,

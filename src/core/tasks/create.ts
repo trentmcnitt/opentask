@@ -301,7 +301,9 @@ export function createTask(options: CreateTaskOptions): Task {
   emitSyncEvent(userId)
   emitTaskCreatedEvent(userId, { taskId: createdTask.id, title: createdTask.title })
   syncBadgeIfBornOverdue(userId, createdTask)
-  dispatchWebhookEvent(userId, 'task.created', { task: formatTaskResponse(createdTask) })
+  dispatchWebhookEvent(userId, 'task.created', {
+    task: formatTaskResponse(createdTask, userTimezone),
+  })
 
   return createdTask
 }

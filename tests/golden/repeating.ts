@@ -135,8 +135,9 @@ export const repeatingScenarios: GoldenScenario[] = [
     'rep-every-10-days',
     'Every 10 days (from completion) over 5 cycles — 3 days before and the day before each',
     // v7's "from Thu Oct 8" is counted from each completion, so this is the
-    // from-completion mode. A from-due rule keeps the 2020-epoch grid instead
-    // (see rep-every-22-days).
+    // from-completion mode. (A from-due rule runs on the task's own grid from
+    // its first date — see rep-every-22-days — and gives the same days here,
+    // each done on its day.)
     'v7 every 10 days; Trent 10-12',
     '2026-10-08',
     '2026-11-27',
@@ -168,35 +169,26 @@ export const repeatingScenarios: GoldenScenario[] = [
   ),
   repeating(
     'rep-every-22-days',
-    'Every 22 days (from due) — first on its grid (wait 10), then wait 22: 4 days before',
-    // A from-due interval rule keeps the phase of a fixed 2020 epoch
-    // (`PATTERN_EPOCH_YEAR`, compute-next.ts), so the first occurrence is the
-    // next grid day after creation: Thu Oct 22 here, not v7's Nov 3. (A first
-    // target set OFF the grid — Nov 3 — makes the next one come early, Nov 13:
-    // flagged for Trent, not changed here.)
+    'Every 22 days (from due), first target Tue Nov 3 — next Nov 25, Dec 17; wait 22: 4 days before',
+    // An "every N" rule runs on the task's OWN grid, anchored at its first
+    // target (`gridDtstart`, compute-next.ts; Trent 10-12). Before, the grid
+    // was a fixed 2020 epoch's, and a first target off it — Nov 3 — made the
+    // next one come early: Nov 13, not Nov 25.
     'v7 every 22 days; Trent 10-12',
     '2026-10-12',
-    '2026-12-27',
+    '2026-12-17',
     {
       name: 'task',
       created: '2026-10-12T10:00',
       input: {
         title: 'Synthetic 22-day task',
         rrule: 'FREQ=DAILY;INTERVAL=22;BYHOUR=9;BYMINUTE=0',
+        due_at: iso('2026-11-03T09:00'),
       },
     },
     cycles(
-      [
-        '2026-10-19',
-        '2026-10-21',
-        '2026-11-09',
-        '2026-11-12',
-        '2026-12-01',
-        '2026-12-04',
-        '2026-12-23',
-        '2026-12-26',
-      ],
-      ['2026-10-22', '2026-11-13', '2026-12-05', '2026-12-27'],
+      ['2026-10-30', '2026-11-02', '2026-11-21', '2026-11-24', '2026-12-13', '2026-12-16'],
+      ['2026-11-03', '2026-11-25', '2026-12-17'],
     ),
   ),
   repeating(

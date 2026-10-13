@@ -62,7 +62,7 @@ describe('Explicit reschedule vs snooze', () => {
     const task = createTask({ ...base, input: { title: 'Fresh', due_at: at(9, 1) } })
     // createTask sets the origin to the first due date.
     expect(task.original_due_at).toBe(task.due_at)
-    const formatted = formatTaskResponse(task)
+    const formatted = formatTaskResponse(task, TEST_TIMEZONE)
     expect(formatted).not.toHaveProperty('is_snoozed')
     expect(formatted).not.toHaveProperty('snooze_count')
   })

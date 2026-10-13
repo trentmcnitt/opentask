@@ -84,7 +84,7 @@ describe('TM6: the occurrence apart from the target', () => {
     expect(r.task.occurrence_at).toBe(at('2026-10-18T12:00'))
     expect(r.task.original_due_at).toBe(at('2026-10-18T12:00'))
     // No snooze state anywhere (§6, ruling Q1).
-    const json: object = formatTaskResponse(r.task)
+    const json: object = formatTaskResponse(r.task, tz)
     expect(json).not.toHaveProperty('is_snoozed')
     expect(json).not.toHaveProperty('snooze_count')
   })

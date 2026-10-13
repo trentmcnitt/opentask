@@ -41,14 +41,17 @@ const FREQ_MAP: Record<string, number> = {
 }
 
 /**
- * The pattern's epoch. Fixed so that a rule's phase (which weeks an
- * every-other-week rule lands on, which months a quarterly one does) never
- * depends on when the task was created or last edited.
+ * The pattern's epoch, for a rule with no grid of its own: every INTERVAL=1
+ * rule, and an "every N" rule asked without an anchor (a first occurrence, a
+ * row with no date). Fixed so that the answer never depends on when it is
+ * asked. INTERVAL=1 rules always use it: a bare FREQ=WEEKLY (no BYDAY) takes
+ * its weekday from dtstart, so anchoring those would move them.
  */
 const PATTERN_EPOCH_YEAR = 2020
 
 /**
- * Advance the fixed epoch dtstart toward `ref` in whole periods of the rule.
+ * Move dtstart by whole periods of the rule so it sits a couple of periods
+ * before `ref`.
  *
  * rrule.js finds `after(ref)` by iterating occurrences forward from dtstart,
  * so a DAILY rule anchored in 2020 walks ~2,500 days for every single "is this
@@ -58,54 +61,102 @@ const PATTERN_EPOCH_YEAR = 2020
  * to a couple of periods before `ref` makes each call O(1) while leaving the
  * answer identical: shifting by an exact multiple of the interval keeps a
  * WEEKLY/INTERVAL=2 rule on the same weeks and a MONTHLY/INTERVAL=3 rule on the
- * same months. Weekly shifts move by whole weeks, so the epoch's weekday is
- * preserved too (rrule.js reads it when BYDAY is absent).
+ * same months. Weekly shifts move by whole weeks, so the base's weekday is
+ * preserved too (rrule.js reads it when BYDAY is absent), and monthly/yearly
+ * shifts keep the base's day of month — a shift that would land on a day the
+ * month lacks (a 31st, Feb 29) steps one more period back instead, so the
+ * phase and the day rrule.js reads are never changed.
+ *
+ * `rewind` (an every-N grid anchored on the task's own occurrence, see
+ * `gridDtstart`) also moves dtstart BACK when the base is after `ref`: the
+ * grid runs both ways from the anchor. The fixed epoch never rewinds — it is
+ * the start of its pattern.
  *
  * Works in the same naive-UTC representation as dtstart itself, so no DST
  * arithmetic is involved.
  */
-export function advanceDtstart(base: Date, freq: string, interval: number, ref: Date): Date {
+export function advanceDtstart(
+  base: Date,
+  freq: string,
+  interval: number,
+  ref: Date,
+  rewind = false,
+): Date {
   const n = Math.max(1, Math.floor(interval))
   // Leave at least two full periods of runway before `ref`, so rrule's
   // "strictly after" search sees the same neighbourhood it would have from 2020.
   const MARGIN = 2
   const hour = base.getUTCHours()
   const minute = base.getUTCMinutes()
+  const usable = (periods: number) => periods > 0 || (rewind && periods < 0)
 
   if (freq === 'DAILY' || freq === 'WEEKLY') {
     const periodMs = (freq === 'DAILY' ? 1 : 7) * n * 86_400_000
     const periods = Math.floor((ref.getTime() - base.getTime()) / periodMs) - MARGIN
-    return periods > 0 ? new Date(base.getTime() + periods * periodMs) : base
+    return usable(periods) ? new Date(base.getTime() + periods * periodMs) : base
   }
-  if (freq === 'MONTHLY') {
+  if (freq === 'MONTHLY' || freq === 'YEARLY') {
+    const monthsPerPeriod = (freq === 'MONTHLY' ? 1 : 12) * n
     const months =
       (ref.getUTCFullYear() - base.getUTCFullYear()) * 12 + (ref.getUTCMonth() - base.getUTCMonth())
-    const periods = Math.floor(months / n) - MARGIN
-    if (periods <= 0) return base
-    return new Date(
-      Date.UTC(
-        base.getUTCFullYear(),
-        base.getUTCMonth() + periods * n,
-        base.getUTCDate(),
-        hour,
-        minute,
-      ),
-    )
-  }
-  if (freq === 'YEARLY') {
-    const periods = Math.floor((ref.getUTCFullYear() - base.getUTCFullYear()) / n) - MARGIN
-    if (periods <= 0) return base
-    return new Date(
-      Date.UTC(
-        base.getUTCFullYear() + periods * n,
-        base.getUTCMonth(),
-        base.getUTCDate(),
-        hour,
-        minute,
-      ),
-    )
+    let periods = Math.floor(months / monthsPerPeriod) - MARGIN
+    // A day the landing month lacks would roll over into the next month:
+    // step back a period at a time until the day exists (a few steps at most).
+    for (;;) {
+      if (!usable(periods)) return base
+      const shifted = new Date(
+        Date.UTC(
+          base.getUTCFullYear(),
+          base.getUTCMonth() + periods * monthsPerPeriod,
+          base.getUTCDate(),
+          hour,
+          minute,
+        ),
+      )
+      if (shifted.getUTCDate() === base.getUTCDate()) return shifted
+      periods -= 1
+    }
   }
   return base
+}
+
+/**
+ * THE EVERY-N GRID (2026-10-12, Trent): an "every N" rule (INTERVAL > 1 —
+ * every 22 days, every 2 weeks, every 3 months) runs on a grid anchored at
+ * the task's OWN occurrence (`occurrence_at`, which starts at the task's first
+ * date), not at the 2020 epoch. Before, a first target set off the epoch's
+ * grid made the second occurrence come early: every 22 days, first Nov 3 →
+ * again Nov 13 (the next epoch-grid day), not Nov 25.
+ *
+ * The anchor's local date becomes dtstart's date (at the rule's time of day,
+ * as for the epoch), so the anchor is period 0: for DAILY the grid is
+ * anchor + k·N days, for WEEKLY the anchor's week (weeks start Monday) + k·N
+ * weeks, for MONTHLY/YEARLY the anchor's month/year + k·N. Each advance writes
+ * an occurrence on that grid back to `occurrence_at`, so the grid holds from
+ * occurrence to occurrence. `advanceDtstart` then slides it (both ways) next to
+ * the reference, keeping every call O(1).
+ *
+ * INTERVAL=1 rules and anchorless calls get the fixed epoch, exactly as before.
+ */
+function gridDtstart(
+  freq: string,
+  interval: number,
+  hour: number,
+  minute: number,
+  timezone: string,
+  refNaive: Date,
+  anchorAt: Date | null | undefined,
+): Date {
+  const anchorDt =
+    interval > 1 && anchorAt && !Number.isNaN(anchorAt.getTime())
+      ? DateTime.fromJSDate(anchorAt).setZone(timezone)
+      : null
+  if (!anchorDt?.isValid) {
+    const epoch = new Date(Date.UTC(PATTERN_EPOCH_YEAR, 0, 1, hour, minute, 0, 0))
+    return advanceDtstart(epoch, freq, interval, refNaive)
+  }
+  const base = new Date(Date.UTC(anchorDt.year, anchorDt.month - 1, anchorDt.day, hour, minute))
+  return advanceDtstart(base, freq, interval, refNaive, true)
 }
 
 export interface ComputeNextOptions {
@@ -121,6 +172,12 @@ export interface ComputeNextOptions {
    * can return the same occurrence and leave the task stuck.
    */
   prevDueAt?: Date | null
+  /**
+   * An occurrence on the task's own grid — its `occurrence_at` (else its
+   * `due_at`). Read only by an "every N" rule (INTERVAL > 1) in 'from_due'
+   * mode, whose grid it anchors (`gridDtstart`). Omitted: the fixed epoch.
+   */
+  anchorAt?: Date | null
 }
 
 /**
@@ -135,13 +192,13 @@ export interface ComputeNextOptions {
  * - Snaps to anchor_time
  */
 export function computeNextOccurrence(options: ComputeNextOptions): Date {
-  const { rrule, recurrenceMode, anchorTime, timezone, completedAt, prevDueAt } = options
+  const { rrule, recurrenceMode, anchorTime, timezone, completedAt, prevDueAt, anchorAt } = options
 
   if (recurrenceMode === 'from_completion') {
     return computeFromCompletion(rrule, anchorTime, timezone, completedAt)
   }
 
-  return computeFromDue(rrule, anchorTime, timezone, completedAt, prevDueAt ?? null)
+  return computeFromDue(rrule, anchorTime, timezone, completedAt, prevDueAt ?? null, anchorAt)
 }
 
 /**
@@ -161,6 +218,7 @@ function computeFromDue(
   timezone: string,
   completedAt: Date,
   prevDueAt: Date | null,
+  anchorAt?: Date | null,
 ): Date {
   const components = parseRRule(rruleStr)
 
@@ -187,11 +245,20 @@ function computeFromDue(
   // Create DTSTART in "naive" format (UTC slot) with the anchor time. Using
   // Date.UTC keeps the pattern independent of the server's local timezone —
   // critical on DST-observing hosts where new Date(2020,0,1,h,m) would carry
-  // the winter UTC offset and drift from summer target dates. The epoch is then
-  // slid forward toward the reference (see advanceDtstart) so rrule.js does not
-  // iterate years of occurrences to answer a question about this week.
-  const epoch = new Date(Date.UTC(PATTERN_EPOCH_YEAR, 0, 1, hour, minute, 0, 0))
-  const dtstart = advanceDtstart(epoch, components.freq, components.interval || 1, refNaive)
+  // the winter UTC offset and drift from summer target dates. Its date is the
+  // 2020 epoch, or for an "every N" rule the task's own occurrence (the grid,
+  // see gridDtstart); either is then slid toward the reference (see
+  // advanceDtstart) so rrule.js does not iterate years of occurrences to answer
+  // a question about this week.
+  const dtstart = gridDtstart(
+    components.freq,
+    components.interval || 1,
+    hour,
+    minute,
+    timezone,
+    refNaive,
+    anchorAt,
+  )
 
   // Build RRule options - NO BYHOUR/BYMINUTE, time comes from dtstart
   const ruleOptions: Partial<InstanceType<typeof RRule>['options']> = {

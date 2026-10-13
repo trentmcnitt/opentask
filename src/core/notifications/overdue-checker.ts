@@ -62,6 +62,8 @@ interface OverdueTask {
   rrule: string | null
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
+  /** Anchors an "every N" rule's grid when there is no due_at (`todaysOccurrence`). */
+  occurrence_at?: string | null
   timezone: string
   /**
    * The due time this task is actually being notified about, from
@@ -305,7 +307,7 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         `
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
-               t.rrule, t.recurrence_mode, t.anchor_time,
+               t.rrule, t.recurrence_mode, t.anchor_time, t.occurrence_at,
                u.timezone,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,

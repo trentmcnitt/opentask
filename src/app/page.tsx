@@ -32,7 +32,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   const userId = Number(session.user.id)
   // 1000 is the API's ceiling. The page used to ask for 500 and silently
   // dropped whatever came after; Trent crossed 500 active tasks in Sep 2026.
-  const tasks = formatTasksResponse(getTasks({ userId, limit: 1000 }))
+  const tasks = formatTasksResponse(getTasks({ userId, limit: 1000 }), session.user.timezone)
   // Slots ride along with the tasks. Fetched client-side they arrived a beat
   // after the first paint, and for that beat the whole day sat under
   // one un-slotted group before regrouping — the load flash Trent noticed.

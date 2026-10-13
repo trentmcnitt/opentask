@@ -265,7 +265,9 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   for (const task of tasks) {
     const fresh = getTaskById(task.id)
     if (fresh) {
-      dispatchWebhookEvent(userId, 'task.completed', { task: formatTaskResponse(fresh) })
+      dispatchWebhookEvent(userId, 'task.completed', {
+        task: formatTaskResponse(fresh, userTimezone),
+      })
     }
   }
 
@@ -649,7 +651,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     const fresh = getTaskById(task.id)
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.snoozed', {
-        task: formatTaskResponse(fresh),
+        task: formatTaskResponse(fresh, userTimezone),
         previous_due_at: task.due_at,
       })
     }
@@ -1088,7 +1090,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     const fresh = getTaskById(snapshot.task_id)
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.updated', {
-        task: formatTaskResponse(fresh),
+        task: formatTaskResponse(fresh, userTimezone),
         fields_changed: perTaskFields.get(snapshot.task_id) ?? Array.from(allFieldsChanged),
       })
     }

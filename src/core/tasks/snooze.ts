@@ -102,7 +102,7 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   })
 
   dispatchWebhookEvent(userId, 'task.snoozed', {
-    task: formatTaskResponse(updatedTask),
+    task: formatTaskResponse(updatedTask, userTimezone),
     previous_due_at: previousDueAt,
   })
 

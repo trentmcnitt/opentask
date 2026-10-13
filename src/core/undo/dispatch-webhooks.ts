@@ -8,6 +8,7 @@
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from '@/core/tasks/create'
+import { ownerTimezone } from '@/core/tasks/progress'
 import type { UndoSnapshot } from '@/types'
 
 /**
@@ -28,7 +29,7 @@ export function dispatchUndoRedoWebhooks(
     const task = getTaskById(snapshot.task_id)
     if (task) {
       dispatchWebhookEvent(userId, 'task.updated', {
-        task: formatTaskResponse(task),
+        task: formatTaskResponse(task, ownerTimezone(task.user_id)),
         fields_changed: fieldsChanged,
         trigger,
       })
