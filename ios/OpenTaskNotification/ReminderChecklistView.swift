@@ -159,6 +159,9 @@ final class ReminderChecklistModel: ObservableObject {
 
 struct ReminderChecklistView: View {
     @Environment(\.displayScale) private var displayScale
+    /// A prompt count's em: `.caption` (12pt at the default size), scaled
+    /// with the view's own Dynamic Type.
+    @ScaledMetric(relativeTo: .caption) private var countEm: CGFloat = 12
 
     @ObservedObject var model: ReminderChecklistModel
 
@@ -325,7 +328,7 @@ struct ReminderChecklistView: View {
     /// rendered in a preview (a content extension), so sharing the builder
     /// is its verification.
     private func promptCount(_ prompt: QuotaPromptDTO) -> Text {
-        let em = UIFont.preferredFont(forTextStyle: .caption1).pointSize
+        let em = countEm
         return QuotaSegmentsText.count(
             QuotaCount.chooseForm(target: prompt.target), current: prompt.current, target: prompt.target,
             word: QuotaCount.word(period: prompt.period), em: em, wordSize: em * 0.85, scale: displayScale

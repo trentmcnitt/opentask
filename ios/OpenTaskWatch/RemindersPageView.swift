@@ -339,6 +339,10 @@ struct PromptRowView: View {
     let didIt: () -> Void
     /// Touch and hold: the period list. `nil` = no periods to offer.
     var hold: (() -> Void)?
+    /// The count's em: `.body`, scaled with the wearer's text size from
+    /// watchOS's default 17pt (`@ScaledMetric` follows the view's own
+    /// Dynamic Type, which a process-wide `UIFont` lookup doesn't).
+    @ScaledMetric(relativeTo: .body) private var countEm: CGFloat = 17
 
     /// "Piano Scales, 1 of 2 today" (+ ", has notes") — both buttons' label.
     private var spokenLabel: String {
@@ -388,7 +392,7 @@ struct PromptRowView: View {
                     // today" if they ever don't, and above six.
                     QuotaSegments(
                         current: prompt.current, target: prompt.target, period: prompt.period,
-                        em: UIFont.preferredFont(forTextStyle: .body).pointSize,
+                        em: countEm,
                         palette: .init(fill: WatchTheme.accent, met: WatchTheme.done, metText: WatchTheme.done)
                     )
                     Button(action: didIt) {
