@@ -310,6 +310,12 @@ function computeFromDue(
     ruleOptions.bymonthday = monthdays
   }
 
+  // Add the month(s) for yearly patterns ("every year on March 1st"). Without
+  // it rrule.js expands a YEARLY;BYMONTHDAY=1 rule to the 1st of every month.
+  if (components.bymonth && components.bymonth.length > 0) {
+    ruleOptions.bymonth = components.bymonth
+  }
+
   // Add BYSETPOS for patterns like "last Friday"
   if (components.bysetpos !== undefined) {
     ruleOptions.bysetpos = [components.bysetpos]

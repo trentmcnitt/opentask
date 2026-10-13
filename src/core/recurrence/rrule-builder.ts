@@ -15,6 +15,12 @@ export interface RRuleComponents {
   byday?: number[] // 0=Mon..6=Sun
   bymonthday?: number | number[] // 1-31 or -1 for last day
   bysetpos?: number // For patterns like "last Friday" (-1)
+  /**
+   * 1-12. A yearly rule's month(s): "every year on March 1st" is
+   * FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1. Until 2026-10-13 it was dropped here,
+   * so that rule ran on the 1st of EVERY month.
+   */
+  bymonth?: number[]
   /** Set by parseRRule when COUNT or UNTIL is found in the input string */
   hasUnsupportedTerminator?: boolean
 }
@@ -32,6 +38,10 @@ export function buildRRule(components: RRuleComponents): string {
   if (components.byday && components.byday.length > 0) {
     const days = components.byday.map(dowToRRuleDay).join(',')
     parts.push(`BYDAY=${days}`)
+  }
+
+  if (components.bymonth && components.bymonth.length > 0) {
+    parts.push(`BYMONTH=${components.bymonth.join(',')}`)
   }
 
   if (components.bymonthday !== undefined) {
@@ -107,6 +117,9 @@ export function parseRRule(rrule: string): RRuleComponents {
       case 'BYSETPOS':
         result.bysetpos = parseInt(value, 10)
         break
+      case 'BYMONTH':
+        result.bymonth = value.split(',').map((m) => parseInt(m, 10))
+        break
       case 'COUNT':
       case 'UNTIL':
         // OpenTask does not support finite recurrence (COUNT/UNTIL). Flag so
@@ -129,6 +142,7 @@ export function parseRRule(rrule: string): RRuleComponents {
  *   period rule, `isPeriodRRule`)
  * - FREQ=MONTHLY requires BYMONTHDAY or BYDAY (same dtstart default)
  * - BYMONTHDAY=0 is invalid per RFC 5545 (valid range: -31..-1, 1..31)
+ * - BYMONTH must be 1..12
  * - INTERVAL capped at 365 to prevent effectively non-recurring tasks
  * - COUNT/UNTIL rejected (OpenTask only supports infinite recurrence)
  */
@@ -141,6 +155,7 @@ function validateComponents(components: RRuleComponents): boolean {
   if (components.byminute !== undefined && (components.byminute < 0 || components.byminute > 59))
     return false
   if (components.byday?.some((dow) => dow < 0 || dow > 6)) return false
+  if (components.bymonth?.some((m) => !Number.isInteger(m) || m < 1 || m > 12)) return false
   if (components.bymonthday !== undefined) {
     const days = Array.isArray(components.bymonthday)
       ? components.bymonthday

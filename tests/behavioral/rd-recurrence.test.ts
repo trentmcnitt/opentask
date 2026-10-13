@@ -10,6 +10,10 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import {
   computeNextOccurrence,
+  computeFirstOccurrence,
+  buildRRule,
+  parseRRule,
+  isValidRRule,
   isRecurring,
   deriveAnchorFields,
   RRulePatterns,
@@ -716,5 +720,60 @@ describe('RD-014: prevDueAt advances past early completion', () => {
     const nextLocal = getLocalTime(next)
     expect(nextLocal.day).toBe(16) // Thu Apr 16
     expect(nextLocal.hour).toBe(9)
+  })
+})
+
+/**
+ * A yearly rule's month (BYMONTH) is part of the rule (2026-10-13). Until then
+ * parseRRule dropped it, so FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1 ("every year
+ * on March 1st") ran on the 1st of every month.
+ */
+describe('RD-015: yearly rules keep their month (BYMONTH)', () => {
+  const MARCH_1ST = 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0'
+
+  test('parse and build round-trip BYMONTH', () => {
+    expect(parseRRule(MARCH_1ST).bymonth).toEqual([3])
+    expect(buildRRule(parseRRule('FREQ=YEARLY;BYMONTH=3,9;BYMONTHDAY=1'))).toBe(
+      'FREQ=YEARLY;BYMONTH=3,9;BYMONTHDAY=1',
+    )
+  })
+
+  test('BYMONTH outside 1..12 is invalid', () => {
+    expect(isValidRRule('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1')).toBe(true)
+    expect(isValidRRule('FREQ=YEARLY;BYMONTH=13;BYMONTHDAY=1')).toBe(false)
+    expect(isValidRRule('FREQ=YEARLY;BYMONTH=0;BYMONTHDAY=1')).toBe(false)
+  })
+
+  test('the first occurrence is the next March 1st, not the next 1st of a month', () => {
+    const first = computeFirstOccurrence(MARCH_1ST, null, TIMEZONE, localDate(2026, 10, 13, 10, 0))
+    expect(DateTime.fromJSDate(first).setZone(TIMEZONE).toISO({ includeOffset: false })).toBe(
+      '2027-03-01T09:00:00.000',
+    )
+  })
+
+  test('done on March 1st → the March 1st a year on', () => {
+    const next = computeNextOccurrence({
+      rrule: MARCH_1ST,
+      recurrenceMode: 'from_due',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt: localDate(2027, 3, 1, 12, 0),
+      prevDueAt: localDate(2027, 3, 1, 9, 0),
+    })
+    expect(DateTime.fromJSDate(next).setZone(TIMEZONE).toISO({ includeOffset: false })).toBe(
+      '2028-03-01T09:00:00.000',
+    )
+  })
+
+  test('several months: the next of them', () => {
+    const next = computeNextOccurrence({
+      rrule: 'FREQ=YEARLY;BYMONTH=3,9;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0',
+      recurrenceMode: 'from_due',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt: localDate(2027, 3, 1, 12, 0),
+      prevDueAt: localDate(2027, 3, 1, 9, 0),
+    })
+    expect(getLocalTime(next)).toMatchObject({ month: 9, day: 1, hour: 9 })
   })
 })
