@@ -97,6 +97,8 @@ export function computeMarkDone(
           timezone: userTimezone,
           completedAt,
           prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
+          // An "every N" rule's grid runs from the task's own occurrence.
+          anchorAt: prevOccurrence ? new Date(prevOccurrence) : null,
         })
 
     const nextOccurrenceAt = nextOccurrence?.toISOString() ?? null
