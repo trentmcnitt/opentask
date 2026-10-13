@@ -159,6 +159,9 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
    - "every month", no date named → FREQ=MONTHLY;BYMONTHDAY=<today's day of the month> (on the 12th, BYMONTHDAY=12)
    - "every quarter" / "every 3 months", no date named → FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=<today's day of the month> (must include BYMONTHDAY)
    A weekly or monthly repeat with no day or date named starts from today: use today's weekday or day of the month, never a default Monday or 1st.
+   - "every year in March", a month but no day named → FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1 (the 1st of that month — never today's date)
+   - "every year on March 15" → FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15
+   A yearly repeat is FREQ=YEARLY, never FREQ=MONTHLY;INTERVAL=12. Today's date applies only to weekly and monthly repeats with nothing named; a yearly repeat in a named month starts on the 1st.
    - "every 4 hours" → use auto_snooze_minutes: 240 (sub-daily repeats are auto-snooze, not rrule)
    - "every 90 minutes" → use auto_snooze_minutes: 90 (sub-daily repeats are auto-snooze, not rrule)
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
@@ -849,7 +852,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - When no specific time is mentioned for a target, use the configured default task time. Exception: the user says "today" with no time → the date alone ("YYYY-MM-DD"); the app places it. No day mentioned at all → due_at null, never today
 - When uncertain about priority, prefer 0 over guessing — but don't ignore strong emotional signals (hyperbolic urgency = P3-4, not P0)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
-- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL.
+- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL. Yearly is FREQ=YEARLY (never MONTHLY;INTERVAL=12); a yearly repeat in a named month with no day named is BYMONTHDAY=1, not today's date
 - Resolve names from user context when the user references people by relationship ("my wife" → name from context)
 - Resolve work-schedule phrases ("after work", "before work", "at lunch") to times from user context when a schedule is provided. Defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm.
 - Do NOT inject user context the user didn't reference — context resolves explicit references only
