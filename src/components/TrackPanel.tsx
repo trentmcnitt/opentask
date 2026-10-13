@@ -59,9 +59,9 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   runs out (Trent, 2026-09-05: eight open rows pushed the first task of the
  *   day below the fold on his phone, and a folded one-liner hid the quotas).
  *   A chip is as wide as its title needs, up to the card; past that the title
- *   ellipsises, which on a phone the longest few do. The count never
- *   truncates — it is the thing the chip is for. Hold a chip to read a title
- *   in full. Tap a chip: +1. Hold, or shift-click: −1. The chip's background
+ *   WRAPS onto a second line and the chip grows (2026-10-12 — it used to
+ *   ellipsise, which hid what the longest quotas were). The count never
+ *   wraps or truncates — it is the thing the chip is for. Tap a chip: +1. Hold, or shift-click: −1. The chip's background
  *   fills as the count climbs and turns green at the target, so each chip is
  *   its own bar.
  * - CHIPS ONLY (Trent, 2026-09-29). There used to be a second, "rows" layout —
@@ -1422,7 +1422,7 @@ function TrackChip({
             // rounded-[10px] rather than a full pill, and an extra 2px of left
             // padding: at pill radius the 3px stripe is clipped into a crescent
             // and stops reading as a stripe.
-            'relative flex h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-[10px] border pr-2.5 pl-3 text-[13px] leading-5 transition-colors select-none',
+            'relative flex min-h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-[10px] border py-1 pr-2.5 pl-3 text-left text-[13px] leading-5 transition-colors select-none',
             'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
             state.met && 'border-green-600/30',
           )}
@@ -1441,7 +1441,10 @@ function TrackChip({
             aria-hidden="true"
             className={cn('absolute inset-y-0 left-0 w-[3px]', trackStripeClass(color))}
           />
-          <span className="relative truncate">{task.title}</span>
+          {/* Wraps, never ellipsises (Trent, 2026-10-12: long titles used to
+              wrap to a second line — the old rows layout did — and "…" hid
+              the part that says what the quota is). */}
+          <span className="relative min-w-0 break-words">{task.title}</span>
           <span
             data-track-count
             className={cn(
