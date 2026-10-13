@@ -87,20 +87,51 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// treated as weeks by the server's segment rules, but must be SHOWN as
     /// unset, never as "weeks" (spec §2) — read it through `horizonLabel`.
     let horizon: String?
-    /// UTC ISO 8601 — the FIRST-TARGET date: kept by a snooze, reset by a
-    /// deliberate re-target. The target-age badge's clock (`TargetAge`).
-    let originalDueAt: String?
-    /// Remove-target turned off the deadline's implied nag for this task
-    /// (`TargetAge.impliedTarget`).
-    let deadlineNagOff: Bool
-    /// UTC ISO 8601 — when the task was created. The target age never counts
-    /// from before it (`TargetAge.days`). Optional: an older cache has none.
+    /// UTC ISO 8601 — when the task was created. Decoded for the contract;
+    /// nothing native reads it (the age badge is the server's `age_label`).
     let createdAt: String?
     /// UTC ISO 8601 — when the target was last set, by any path (2026-10-12,
     /// docs/TASK-MODEL.md § Upcoming): the day Upcoming's heads-up days count
     /// from. Nil for a task with no target, and from an older server or cache.
     /// The server decides who is in Upcoming; nothing native reads it yet.
     let targetSetAt: String?
+
+    // MARK: The two badges and the stored target (2026-10-12, docs/TASK-MODEL.md
+    // § The two badges, § Deadline). All decoded with defaults: an older
+    // server (or a cache written by an older build) leaves them empty, and
+    // the rows then simply draw no badge.
+
+    /// Local days on which the task was over target (as of the server's read).
+    /// Drives the badge's depth (`TargetAge.tone(attempts:)`); the text is
+    /// `attemptsLabel`.
+    let attempts: Int
+    /// The local date (yyyy-MM-dd) `attempts` was last checkpointed through.
+    /// Decoded for the contract; the server adds the days since it on every
+    /// read, so nothing native recounts.
+    let attemptsCountedThrough: String?
+    /// The attempts badge's text, "3×", or nil (no target, or no attempt yet).
+    /// The server's `attemptsLabel` — the ONLY source of the text: the native
+    /// rows never count attempts themselves. A cache drawn the next day is a
+    /// day behind until the next fetch, like every cached render.
+    let attemptsLabel: String?
+    /// "remove" / "auto" / nil — what the web row offers at 3×. Kept as a
+    /// string (an unknown value must never fail a decode); no native surface
+    /// offers it (the offer lives in the app).
+    let attemptsOffer: String?
+    /// The age badge, ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo", on a task with
+    /// neither a target nor a deadline, past its horizon's threshold; else nil.
+    let ageLabel: String?
+    /// UTC ISO 8601 — Process's "keep" on a growth ask. Decoded for the
+    /// contract only.
+    let growthKeptAt: String?
+    /// The target (`due_at`) is the deadline's AUTOMATIC one (§8), not one the
+    /// user picked. Decoded; no native surface labels a target (the web says
+    /// "auto" only in its editor and snooze menu, not on rows).
+    let targetAuto: Bool
+    /// UTC ISO 8601 — a repeating task's scheduled occurrence, kept apart from
+    /// its target (`due_at`) since §6. Decoded for the contract; the native
+    /// rows show the target.
+    let occurrenceAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -120,10 +151,16 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case hasNotes = "has_notes"
         case deadlineAt = "deadline_at"
         case horizon
-        case originalDueAt = "original_due_at"
-        case deadlineNagOff = "deadline_nag_off"
         case createdAt = "created_at"
         case targetSetAt = "target_set_at"
+        case attempts
+        case attemptsCountedThrough = "attempts_counted_through"
+        case attemptsLabel = "attempts_label"
+        case attemptsOffer = "attempts_offer"
+        case ageLabel = "age_label"
+        case growthKeptAt = "growth_kept_at"
+        case targetAuto = "target_auto"
+        case occurrenceAt = "occurrence_at"
     }
 
     /// Decode-only: the server's raw `notes`. Deliberately NOT in
@@ -165,10 +202,16 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         }
         deadlineAt = try c.decodeIfPresent(String.self, forKey: .deadlineAt)
         horizon = try c.decodeIfPresent(String.self, forKey: .horizon)
-        originalDueAt = try c.decodeIfPresent(String.self, forKey: .originalDueAt)
-        deadlineNagOff = try c.decodeIfPresent(Bool.self, forKey: .deadlineNagOff) ?? false
         createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
         targetSetAt = try c.decodeIfPresent(String.self, forKey: .targetSetAt)
+        attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
+        attemptsCountedThrough = try c.decodeIfPresent(String.self, forKey: .attemptsCountedThrough)
+        attemptsLabel = try c.decodeIfPresent(String.self, forKey: .attemptsLabel)
+        attemptsOffer = try c.decodeIfPresent(String.self, forKey: .attemptsOffer)
+        ageLabel = try c.decodeIfPresent(String.self, forKey: .ageLabel)
+        growthKeptAt = try c.decodeIfPresent(String.self, forKey: .growthKeptAt)
+        targetAuto = try c.decodeIfPresent(Bool.self, forKey: .targetAuto) ?? false
+        occurrenceAt = try c.decodeIfPresent(String.self, forKey: .occurrenceAt)
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -195,10 +238,16 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         hasNotes: Bool = false,
         deadlineAt: String? = nil,
         horizon: String? = nil,
-        originalDueAt: String? = nil,
-        deadlineNagOff: Bool = false,
         createdAt: String? = nil,
-        targetSetAt: String? = nil
+        targetSetAt: String? = nil,
+        attempts: Int = 0,
+        attemptsCountedThrough: String? = nil,
+        attemptsLabel: String? = nil,
+        attemptsOffer: String? = nil,
+        ageLabel: String? = nil,
+        growthKeptAt: String? = nil,
+        targetAuto: Bool = false,
+        occurrenceAt: String? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -217,10 +266,16 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.hasNotes = hasNotes
         self.deadlineAt = deadlineAt
         self.horizon = horizon
-        self.originalDueAt = originalDueAt
-        self.deadlineNagOff = deadlineNagOff
         self.createdAt = createdAt
         self.targetSetAt = targetSetAt
+        self.attempts = attempts
+        self.attemptsCountedThrough = attemptsCountedThrough
+        self.attemptsLabel = attemptsLabel
+        self.attemptsOffer = attemptsOffer
+        self.ageLabel = ageLabel
+        self.growthKeptAt = growthKeptAt
+        self.targetAuto = targetAuto
+        self.occurrenceAt = occurrenceAt
     }
 
     var dueDate: Date? {
@@ -275,18 +330,14 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     }
 
     /// "Over target" (2026-10-10 — what used to be "overdue"; the user-facing
-    /// words live in `TaskWording`): the EFFECTIVE target has passed. That is
-    /// `due_at`, or for a deadline-only task the deadline's implied target
-    /// (`TargetAge.effectiveTargetDate`), which the server nags from while
-    /// `due_at` stays null — so a plain `due_at < now` would miss it.
+    /// words live in `TaskWording`): the target (`due_at`) has passed. Since
+    /// 2026-10-12 a deadline's target is STORED (`target_auto`), so `due_at`
+    /// is the whole answer — the native implied-target rule is gone (see
+    /// `TargetAge`).
     func isOverdue(now: Date = Date()) -> Bool {
-        guard let target = effectiveTargetDate else { return false }
+        guard let target = dueDate else { return false }
         return target < now
     }
-
-    /// The target the task nags from: its own `due_at`, else the deadline's
-    /// implied one. See `TargetAge`.
-    var effectiveTargetDate: Date? { TargetAge.effectiveTargetDate(self) }
 
     var deadlineDate: Date? {
         guard let deadlineAt else { return nil }
@@ -883,7 +934,7 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     var kind: SegmentKind? { SegmentKind(raw: horizon) }
 
     /// The Upcoming segment (2026-10-12): targeted tasks on their heads-up
-    /// days. Its rows show the target date, and a repeating row has no Today.
+    /// days. Its rows show the target date, and every row offers Today (repeating ones too, since 2026-10-12).
     var isUpcoming: Bool { kind == .upcoming }
 
     /// "Days", "Weeks", "Upcoming", … — the segment's page title.
@@ -975,8 +1026,14 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     }
 
     /// Whether the row offers "Target today" — the web's
-    /// `upcomingRowActions(row).today`: every row but a repeating one.
-    var offersTargetToday: Bool { !recurring }
+    /// `upcomingRowActions(row).today`: EVERY row, repeating ones included
+    /// (2026-10-12, batch 2). Since §6 the server keeps a repeating task's
+    /// schedule in `occurrence_at` apart from its target, so Today moves only
+    /// the target and done still advances to the next scheduled occurrence.
+    /// It was `!recurring` while Today on a repeating task could reset its
+    /// schedule. Kept as a property (and `recurring` kept decoded) so a row
+    /// that ever needs to hide it again has one place to say so.
+    var offersTargetToday: Bool { true }
 }
 
 // MARK: - Completions
@@ -1003,6 +1060,9 @@ struct CompletionDTO: Codable, Identifiable, Hashable {
     let isReminder: Bool
     let isTracked: Bool
     let progressTarget: Int
+    /// The task's attempts when it was completed (2026-10-12; the web's
+    /// History "· 3×"). 0 from an older server. Decoded for the contract.
+    let attempts: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1013,6 +1073,7 @@ struct CompletionDTO: Codable, Identifiable, Hashable {
         case isReminder = "is_reminder"
         case isTracked = "is_tracked"
         case progressTarget = "progress_target"
+        case attempts
     }
 
     init(from decoder: Decoder) throws {
@@ -1025,6 +1086,7 @@ struct CompletionDTO: Codable, Identifiable, Hashable {
         isReminder = try c.decodeIfPresent(Bool.self, forKey: .isReminder) ?? false
         isTracked = try c.decodeIfPresent(Bool.self, forKey: .isTracked) ?? false
         progressTarget = try c.decodeIfPresent(Int.self, forKey: .progressTarget) ?? 1
+        attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
     }
 
     /// Memberwise init for sample data and `WidgetStore.confirmCompletion`'s
@@ -1040,7 +1102,8 @@ struct CompletionDTO: Codable, Identifiable, Hashable {
         projectId: Int = 0,
         isReminder: Bool = false,
         isTracked: Bool = false,
-        progressTarget: Int = 1
+        progressTarget: Int = 1,
+        attempts: Int = 0
     ) {
         self.id = id
         self.taskId = taskId
@@ -1050,6 +1113,7 @@ struct CompletionDTO: Codable, Identifiable, Hashable {
         self.isReminder = isReminder
         self.isTracked = isTracked
         self.progressTarget = progressTarget
+        self.attempts = attempts
     }
 
     var completedDate: Date? {
@@ -1152,8 +1216,9 @@ struct LabelConfigDTO: Codable, Hashable {
 /// the whole preferences fetch.
 struct UserPreferencesLabelConfigPage: Decodable {
     let labelConfig: [LabelConfigDTO]
-    /// `morning_time` ("HH:MM", 2026-10-11) — the clock the implied deadline
-    /// target is read on (`TargetContextStore`). Nil from an older server.
+    /// `morning_time` ("HH:MM", 2026-10-11). Decoded for the contract; nothing
+    /// native reads it since 2026-10-12 (a deadline's target is stored, so the
+    /// native implied-target rule it fed is gone). Nil from an older server.
     let morningTime: String?
     /// `check_in_day` (2026-10-12): the weekday the Weeks and Months segments
     /// come round on, Luxon numbering (1 = Monday … 7 = Sunday; default 6,

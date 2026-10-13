@@ -82,7 +82,7 @@ enum TaskDayProgress {
         guard let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else {
             return []
         }
-        let later = TaskLists.eligible(tasks).filter { ($0.effectiveTargetDate ?? .distantPast) >= startOfTomorrow }
+        let later = TaskLists.eligible(tasks).filter { ($0.dueDate ?? .distantPast) >= startOfTomorrow }
         return Array(TaskLists.sortedSoonestFirst(later).prefix(max(limit, 0)))
     }
 

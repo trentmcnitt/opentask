@@ -248,6 +248,9 @@ private struct ReminderRowLayout {
     /// title, on their own line, or one part per line — whichever leaves no
     /// "·" at either end of a line (`SegmentMetaPlacement`).
     var metaPlacement: SegmentMetaPlacement = .inline
+    /// How short an Upcoming row's words are (2026-10-12): the first
+    /// `UpcomingMetaForm` whose words fit ONE line at the row's width.
+    var upcomingForm: UpcomingMetaForm = .full
 }
 
 /// The Home Screen list.
@@ -1442,9 +1445,10 @@ enum SegmentRowMetrics {
     /// the Reminders have it"): title from the card's leading edge, then the
     /// 10pt gap, then the controls flush right — Target today, the done
     /// checkbox, and the consider circle in the reminder circle's own
-    /// trailing 36pt column. A row with no Target today (a repeating task on
-    /// Upcoming, 2026-10-12) gives that column to its title — the row and
-    /// the pager pass the same `showsTargetToday`.
+    /// trailing 36pt column. A row with no Target today would give that
+    /// column to its title — the row and the pager pass the same
+    /// `showsTargetToday` (every row offers it since 2026-10-12; repeating
+    /// Upcoming rows were the one exception until then).
     static func titleWidth(in width: CGFloat, showsTargetToday: Bool = true) -> CGFloat {
         width - 2 * WidgetTheme.rowMarkerSize - (showsTargetToday ? targetTodayWidth : 0) - gap
     }
@@ -1465,7 +1469,9 @@ enum SegmentRowMetrics {
 ///   carries small secondary words, the web row's rule (`TaskDTO.
 ///   segmentMeta`): the task's set horizon only when it differs from the
 ///   page's, a future target's day, the deadline ("Fix the gate · Nov 1 ·
-///   deadline Nov 4"); an unset horizon shows nothing. The title links to the task on the dashboard, where its
+///   deadline Nov 4"); an unset horizon shows nothing; then the server's
+///   badge, "3×" in plum or an undated task's ">1 mo" (2026-10-12, label
+///   only — no in-widget offer). The title links to the task on the dashboard, where its
 ///   horizon and target can be changed (deep link in place of in-widget
 ///   controls, amendment 16).
 /// - Order is the server's (priority, then id) and fixed: a considered row
@@ -1600,8 +1606,8 @@ private struct TaskSegmentListView: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    private func label(_ task: TaskDTO, placement: SegmentMetaPlacement) -> String {
-        task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date, placement: placement)
+    private func label(_ task: TaskDTO, placement: SegmentMetaPlacement, form: UpcomingMetaForm) -> String {
+        task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date, placement: placement, upcomingForm: form)
     }
 
     /// WHERE THE SMALL WORDS GO (2026-10-12, "· Target Wed Oct 14 · repeats"
@@ -1618,6 +1624,18 @@ private struct TaskSegmentListView: View {
     /// little wider than the regular-weight words: any error leans toward
     /// more lines, never toward a wrap mid-line (and `TaskDTO.metaJoiner`
     /// can only break AFTER a dot, so even then no line starts with one).
+    ///
+    /// ONE LINE ON UPCOMING (2026-10-12, Trent's review of #251): before the
+    /// placement, an Upcoming row picks the first `UpcomingMetaForm` whose
+    /// words ALONE measure one line at the title's width — "Wed Oct 14 ·
+    /// deadline Sat Oct 17", then the schedule without its time, then
+    /// without its "on …", then no weekdays ("Oct 14 · deadline Oct 17"),
+    /// then no "(deadline first)". At the default Large text size one of them
+    /// fits (a long one-off with a deadline usually loses its weekdays in a
+    /// three-control row); only at the accessibility sizes does even the
+    /// shortest wrap, and the placement
+    /// below then gives each part its own line. The chosen form travels in
+    /// the layout, so the row draws exactly the measured words.
     private func layout(
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
@@ -1633,19 +1651,30 @@ private struct TaskSegmentListView: View {
             func lines(_ text: String, hasNotes: Bool) -> (lines: Int, shrinks: Bool) {
                 metrics.titleLines(text, width: titleWidth, weight: weight, maxHeight: budget, hasNotes: hasNotes)
             }
+            func meta(_ form: UpcomingMetaForm) -> String? {
+                task.segmentMeta(segmentHorizon: segment.horizon, now: entry.date, upcomingForm: form)
+            }
+            var form = UpcomingMetaForm.full
+            if segment.horizon == SegmentKind.upcomingRaw {
+                form = UpcomingMetaForm.allCases.first { candidate in
+                    guard let words = meta(candidate) else { return true }
+                    return lines(words, hasNotes: false).lines == 1
+                } ?? .shortest
+            }
             var placement = SegmentMetaPlacement.inline
-            var fit = lines(label(task, placement: .inline), hasNotes: task.hasNotes)
-            if let meta = task.segmentMeta(segmentHorizon: segment.horizon, now: entry.date),
-               fit.lines > lines(task.title, hasNotes: false).lines {
-                placement = lines(meta, hasNotes: false).lines > 1 ? .partsOnOwnLines : .ownLine
-                fit = lines(label(task, placement: placement), hasNotes: task.hasNotes)
+            var fit = lines(label(task, placement: .inline, form: form), hasNotes: task.hasNotes)
+            if let words = meta(form), fit.lines > lines(task.title, hasNotes: false).lines {
+                placement = lines(words, hasNotes: false).lines > 1 ? .partsOnOwnLines : .ownLine
+                fit = lines(label(task, placement: placement, form: form), hasNotes: task.hasNotes)
             }
             if fit.shrinks {
-                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true, metaPlacement: placement)
+                return ReminderRowLayout(
+                    lines: fit.lines, height: budget, shrinks: true, metaPlacement: placement, upcomingForm: form
+                )
             }
             return ReminderRowLayout(
                 lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), isWaiting ? rowFloor : 0),
-                metaPlacement: placement
+                metaPlacement: placement, upcomingForm: form
             )
         }
     }
@@ -1658,14 +1687,16 @@ private struct TaskSegmentListView: View {
         case .waiting(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                considered: false, now: entry.date, metaPlacement: layout.metaPlacement, lines: layout.lines, height: layout.height,
+                considered: false, now: entry.date, metaPlacement: layout.metaPlacement,
+                upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
         case .considered(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                considered: true, now: entry.date, metaPlacement: layout.metaPlacement, lines: layout.lines, height: layout.height,
+                considered: true, now: entry.date, metaPlacement: layout.metaPlacement,
+                upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: row.task.hasNotes)
             )
@@ -1836,10 +1867,13 @@ private struct TaskSegmentListView: View {
 /// there is no un-consider — the header's Undo takes a misfire back. Their
 /// checkbox stays live: a considered task is still open, and done is done.
 private struct SegmentTaskRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let task: TaskDTO
-    /// False on a repeating Upcoming row (2026-10-12, `SegmentTaskDTO.
-    /// offersTargetToday`): the server would skip it, so the row has the
-    /// circle and done only, and its title takes the column.
+    /// `SegmentTaskDTO.offersTargetToday` — every row since 2026-10-12
+    /// (repeating Upcoming rows included: Today moves only the target, the
+    /// schedule is kept in `occurrence_at`). False would give the 28pt
+    /// column to the title; the row and the pager pass the same value.
     let showsTargetToday: Bool
     /// The page's horizon — the row names its own only when it differs.
     let segmentHorizon: String
@@ -1848,6 +1882,8 @@ private struct SegmentTaskRow: View {
     /// Where the small words go (`ReminderRowLayout.metaPlacement`, measured
     /// by the list) — never a "·" at either end of a line.
     let metaPlacement: SegmentMetaPlacement
+    /// The Upcoming words' form the list measured (`ReminderRowLayout.upcomingForm`).
+    let upcomingForm: UpcomingMetaForm
     let lines: Int
     let height: CGFloat
     let shrinks: Bool
@@ -1855,8 +1891,12 @@ private struct SegmentTaskRow: View {
     let markerBleed: CGFloat
     let notesGlyphSize: CGFloat?
 
+    private var meta: String? {
+        task.segmentMeta(segmentHorizon: segmentHorizon, now: now, upcomingForm: upcomingForm)
+    }
+
     private var spoken: String {
-        let meta = task.segmentMeta(segmentHorizon: segmentHorizon, now: now).map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
+        let meta = meta.map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
         return NotesGlyph.accessibilityLabel("\(task.title)\(meta)", hasNotes: task.hasNotes)
     }
 
@@ -1925,14 +1965,23 @@ private struct SegmentTaskRow: View {
 
     /// Title in the row's weight, then the horizon / target words small and
     /// secondary — the exact string `segmentLabelText` measured. On Upcoming
-    /// (2026-10-12) the words are the target date and the deadline's gap
-    /// (`TaskDTO.upcomingMeta`).
+    /// (2026-10-12) the words are the target date, a repeating task's
+    /// schedule and the deadline (`TaskDTO.upcomingMeta`, in the measured
+    /// `upcomingForm`). The attempts badge ("3×", always LAST in the words)
+    /// is drawn plum, the web's `BadgeChips`; colour only, so the measured
+    /// characters and weight are unchanged. The age label stays secondary.
     private var titleText: Text {
         let title = Text(task.title)
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
             .foregroundStyle(considered ? Color.secondary : Color.primary)
-        guard let meta = task.segmentMeta(segmentHorizon: segmentHorizon, now: now) else { return title }
-        return title + Text(metaPlacement.joined(meta: meta)).foregroundStyle(.secondary)
+        guard let meta else { return title }
+        let words = metaPlacement.joined(meta: meta)
+        if let badge = TargetAge.attemptsBadge(task), words.hasSuffix(badge) {
+            let rest = String(words.dropLast(badge.count))
+            return title + Text(rest).foregroundStyle(.secondary)
+                + Text(badge).foregroundStyle(WidgetTheme.overTarget(colorScheme))
+        }
+        return title + Text(words).foregroundStyle(.secondary)
     }
 
     /// `ReminderRow`'s two frames: centred on line 1, target the row's full

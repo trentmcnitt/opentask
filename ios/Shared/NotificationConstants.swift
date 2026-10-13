@@ -288,10 +288,6 @@ func refreshBadgeFromServer() async {
 /// fetch) are left exactly as they are.
 func refreshSlotActions() async {
     guard APIClient.shared.isConfigured else { return }
-    // The morning time the implied deadline target is read on (2026-10-11,
-    // `TargetContextStore`) — refreshed on the same launch/foreground beat,
-    // so the widgets have it without a request of their own.
-    _ = try? await APIClient.shared.fetchLabelConfig()
     guard let slots = try? await APIClient.shared.fetchTimeSlots() else { return }
     TimeSlotStore.save(slots)
     registerNotificationCategories()

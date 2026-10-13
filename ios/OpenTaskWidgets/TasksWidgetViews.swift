@@ -88,6 +88,8 @@ struct TasksWidgetView: View {
 /// targets would be cramped enough to complete the wrong task, so the whole
 /// card is one tap into the dashboard instead.
 private struct TasksSmallView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let entry: TasksEntry
 
     var body: some View {
@@ -130,13 +132,13 @@ private struct TasksSmallView: View {
                         .foregroundStyle(.primary)
                         .minimumScaleFactor(WidgetTheme.overflowTitleScale)
 
-                    if next.effectiveTargetDate != nil {
+                    if next.dueDate != nil {
                         // Day-naming (2026-09-23) — see `WidgetTheme.
                         // dueLabelText`'s doc; "anywhere a task time shows"
                         // includes this 2×2's "next up" line.
                         // Stacked like every row (2026-09-25: a day word
                         // always sits above the time).
-                        WidgetTheme.dueLabelText(for: next, now: entry.date, stacked: true)
+                        WidgetTheme.dueLabelText(for: next, now: entry.date, stacked: true, scheme: colorScheme)
                             .font(.caption2)
                             .monospacedDigit()
                             // Both lines always show ("Yesterday" /
@@ -544,7 +546,7 @@ private struct TasksListView: View {
 
     /// `task`'s due label, split — `nil` when it has no due date.
     private func dueParts(for task: TaskDTO) -> WidgetTheme.DueLabelParts? {
-        guard let due = task.effectiveTargetDate else { return nil }
+        guard let due = task.dueDate else { return nil }
         return WidgetTheme.dueLabelParts(for: due, now: entry.date, isOverdue: task.isOverdue(now: entry.date))
     }
 
@@ -947,6 +949,8 @@ private struct TodayNothingDueView: View {
 /// that task in the app (`WidgetLink.task`, as a row's title does). One line
 /// per title — a long one ends in "…"; the task opens in full on a tap.
 private struct UpNextList: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let entry: TasksEntry
     let tasks: [TaskDTO]
 
@@ -974,7 +978,7 @@ private struct UpNextList: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        WidgetTheme.dueLabelText(for: task, now: entry.date, stacked: false)
+                        WidgetTheme.dueLabelText(for: task, now: entry.date, stacked: false, scheme: colorScheme)
                             .font(.caption2)
                             .monospacedDigit()
                             .lineLimit(1)
@@ -1024,6 +1028,8 @@ private enum TaskRowMode {
 /// `TasksListView.layout(for:)`, the same numbers the pager added up; see
 /// `ReminderRow`'s identical note.
 private struct TaskRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let task: TaskDTO
     let now: Date
     let lines: Int
@@ -1117,7 +1123,7 @@ private struct TaskRow: View {
 
             TargetAgeBadge(task: task, now: now)
 
-            if task.effectiveTargetDate != nil {
+            if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
                 // AM" (further), "Oct 2" (date-only). Overdue (2026-09-25):
@@ -1131,7 +1137,7 @@ private struct TaskRow: View {
                 // wrap it on its own ("Tomorrow / 4:00 pm") and hand the
                 // freed width to a title whose line count had been measured
                 // without it — the row kept an empty third line.
-                WidgetTheme.dueLabelText(for: task, now: now, stacked: dueStacked)
+                WidgetTheme.dueLabelText(for: task, now: now, stacked: dueStacked, scheme: colorScheme)
                     .font(.caption2)
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
@@ -1211,13 +1217,14 @@ private struct TaskRow: View {
     }
 }
 
-/// The target-age badge and past-deadline marker (2026-10-10, spec §4) on an
-/// over-target row, just left of the due label: "2d" — whole local days since
-/// the task's FIRST target (`TargetAge.days`; a snooze keeps the clock, a
-/// deliberate re-target resets it), blank on the target day — in a small
-/// tinted tab in three depths of plum (1–2 light, 3–6 medium, 7+ strong). A red flag follows when the
-/// deadline has passed (nagging continues past a deadline; the flag is how
-/// the row says so).
+/// The attempts badge and past-deadline marker (spec §7, 2026-10-12) on a
+/// row, just left of the due label: "3×" — the server's `attempts_label`,
+/// the local days the task has been over target (`TargetAge.attemptsBadge`;
+/// never counted on the device) — in a small tab in three depths of plum
+/// (`TargetAge.tone(attempts:)`: 1–2 light, 3–6 medium, 7+ strong, the web's
+/// `AttemptsTab`), and a red flag once the deadline has passed. It replaced
+/// the device-computed target-age tab ("2d") of 2026-10-10. Label only: the
+/// web's "Remove target?" / "Back to auto?" offer at 3× is not drawn here.
 ///
 /// One line of caption2, never taller than a title line, so it costs the row
 /// no height — only width, which `reservedWidth` gives the pager exactly
@@ -1235,49 +1242,27 @@ private struct TargetAgeBadge: View {
     /// The width the badge takes from the title's column, 0 when it draws
     /// nothing.
     static func reservedWidth(for task: TaskDTO, now: Date, metrics: WidgetTextMetrics) -> CGFloat {
-        let days = TargetAge.days(task, now: now)
+        let label = TargetAge.attemptsBadge(task)
         let past = TargetAge.isPastDeadline(task, now: now)
-        guard days != nil || past else { return 0 }
+        guard label != nil || past else { return 0 }
         var width: CGFloat = 0
-        if let days {
+        if let label {
             // Measured in the weight it is drawn in (caption2 SEMIBOLD) —
             // the regular caption2 would budget a point or two short.
             let font = WidgetTheme.PlatformFont.systemFont(ofSize: metrics.caption2Font.pointSize, weight: .semibold)
-            width += WidgetTheme.measuredWidth(for: TargetAge.badgeText(days: days), font: font)
-                + 2 * horizontalPadding
+            width += WidgetTheme.measuredWidth(for: label, font: font) + 2 * horizontalPadding
         }
-        if past { width += flagWidth + (days != nil ? innerSpacing : 0) }
+        if past { width += flagWidth + (label != nil ? innerSpacing : 0) }
         return ceil(width) + gap
     }
 
-    /// The plum's depth for each age step (`TargetAge.Tone`).
-    private func tint(_ tone: TargetAge.Tone) -> Color {
-        switch tone {
-        case .light: return WidgetTheme.overTarget.opacity(0.75)
-        case .medium: return WidgetTheme.overTarget
-        case .strong: return WidgetTheme.overTarget
-        }
-    }
-
     var body: some View {
-        let days = TargetAge.days(task, now: now)
+        let label = TargetAge.attemptsBadge(task)
         let past = TargetAge.isPastDeadline(task, now: now)
-        if days != nil || past {
+        if label != nil || past {
             HStack(spacing: Self.innerSpacing) {
-                if let days {
-                    let tone = TargetAge.tone(days: days)
-                    Text(TargetAge.badgeText(days: days))
-                        .font(.caption2.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(tint(tone))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.horizontal, Self.horizontalPadding)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(tint(tone).opacity(tone == .strong ? 0.35 : 0.15))
-                        )
-                        .accessibilityLabel(Text("\(days) days \(TaskWording.overTargetLower)"))
+                if let label {
+                    AttemptsTab(label: label, attempts: task.attempts)
                 }
                 if past {
                     Image(systemName: "flag.fill")
@@ -1289,6 +1274,40 @@ private struct TargetAgeBadge: View {
             }
             .fixedSize()
         }
+    }
+}
+
+/// The "3×" tab itself (the web's `AttemptsTab`): plum text on a light plum
+/// tint for 1–6, white on a solid plum for 7+. Every pair clears 4.5:1 on the
+/// widget card in both appearances (`WidgetTheme.overTarget` /
+/// `overTargetBadge`; measured 2026-10-12: light 5.0 / 4.5 / 5.6:1, dark
+/// 5.3 / 4.7 / 6.0:1 for the 8% and 15% tints and the solid tab).
+/// Its padding is `TargetAgeBadge.horizontalPadding`, which `reservedWidth`
+/// counts.
+private struct AttemptsTab: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let label: String
+    let attempts: Int
+
+    var body: some View {
+        let tone = TargetAge.tone(attempts: attempts)
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(tone == .strong ? Color.white : WidgetTheme.overTarget(colorScheme))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, TargetAgeBadge.horizontalPadding)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(
+                        tone == .strong
+                            ? WidgetTheme.overTargetBadge(colorScheme)
+                            : WidgetTheme.overTarget(colorScheme).opacity(tone == .medium ? 0.15 : 0.08)
+                    )
+            )
+            .accessibilityLabel(Text("\(TaskWording.overTarget) on \(attempts) day\(attempts == 1 ? "" : "s")"))
     }
 }
 

@@ -33,6 +33,7 @@ struct TasksPageControl: View {
     /// systemMedium: shares its line with Undo/Redo, so it gives up counts
     /// and the chip's words first when the line is short.
     var compact = false
+    @Environment(\.colorScheme) private var colorScheme
 
     /// The tap target's height — see the type's doc.
     static let hitHeight: CGFloat = 40
@@ -87,8 +88,10 @@ struct TasksPageControl: View {
             segment(
                 page: WidgetStore.overdueScope, word: "Over",
                 count: counts == .none ? nil : entry.overdueTotalCount,
-                countTint: WidgetTheme.overTarget,
-                selectedFill: WidgetTheme.overTarget,
+                countTint: WidgetTheme.overTarget(colorScheme),
+                // White text on it, so the solid plum (`overTargetBadge`), not
+                // the lifted dark-mode text plum.
+                selectedFill: WidgetTheme.overTargetBadge(colorScheme),
                 dimmed: entry.overdueTotalCount == 0,
                 label: "\(TaskWording.overTarget), \(entry.overdueTotalCount)"
             )
