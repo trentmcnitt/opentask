@@ -333,11 +333,11 @@ describe('Upcoming', () => {
       expect(upcomingDays(t.id, '2026-10-12', '2026-10-23')).toEqual(['2026-10-20', '2026-10-22'])
       expect(upcomingGap(stored, tz)).toEqual({
         target: 'Target Fri Oct 23',
-        deadline: 'deadline Fri Oct 23 (same day)',
+        deadline: 'deadline Fri Oct 23',
       })
       expect(
         upcomingGap({ due_at: at('2026-11-03T09:00'), deadline_at: at('2026-11-07T23:59') }, tz),
-      ).toEqual({ target: 'Target Tue Nov 3', deadline: 'deadline Sat Nov 7 (+4d)' })
+      ).toEqual({ target: 'Target Tue Nov 3', deadline: 'deadline Sat Nov 7' })
       expect(upcomingGap({ due_at: at('2026-11-03T09:00'), deadline_at: null }, tz)).toEqual({
         target: 'Target Tue Nov 3',
         deadline: null,

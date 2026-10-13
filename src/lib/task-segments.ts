@@ -857,10 +857,11 @@ export function upcomingState(
 }
 
 /**
- * The row's gap text (spec §2): "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)".
- * No deadline: "Target Tue Nov 3". A deadline the same day as the target:
- * "(same day)". The target is never after the deadline (§8.2). Returned in
- * parts so the row can make the target a chip.
+ * The row's gap text (spec §2): "Target Tue Nov 3 · deadline Sat Nov 7".
+ * No deadline: "Target Tue Nov 3". No "(+4d)" / "(same day)" gap count: Trent,
+ * 2026-10-12, "I don't even know what +3 days means" — the two dates say it.
+ * The target is never after a deadline still ahead (§8.2). Returned in parts
+ * so the row can make the target a chip.
  */
 export function upcomingGap(
   task: Pick<TargetFields, 'due_at' | 'deadline_at'>,
@@ -870,10 +871,7 @@ export function upcomingGap(
     DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
   const target = task.due_at ? `Target ${fmt(task.due_at)}` : null
   if (!task.deadline_at) return { target, deadline: null }
-  const deadline = `deadline ${fmt(task.deadline_at)}`
-  if (!task.due_at) return { target, deadline }
-  const gap = waitDays(localDay(task.deadline_at, timezone), localDay(task.due_at, timezone))
-  return { target, deadline: gap <= 0 ? `${deadline} (same day)` : `${deadline} (+${gap}d)` }
+  return { target, deadline: `deadline ${fmt(task.deadline_at)}` }
 }
 
 /**
