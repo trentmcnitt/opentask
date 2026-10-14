@@ -225,8 +225,12 @@ export function DateTimePicker({
       ) : (
         <PopoverTrigger asChild>{children}</PopoverTrigger>
       )}
+      {/* Never taller than the room on its side of the trigger: opened from a
+          row in the middle of a phone's screen (the segment rows' Target menu,
+          Custom...) it ran past the bottom with Set target out of reach. It
+          scrolls inside instead. */}
       <PopoverContent
-        className="w-auto p-0"
+        className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto p-0"
         align="start"
         sideOffset={4}
         onInteractOutside={keepOpenOnAnchor}

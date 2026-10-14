@@ -345,9 +345,14 @@ test.describe('Recently targeted: the Today picker on a desktop', () => {
       await expect(targetMenu(page)).toHaveCount(0)
       await expect(segmentRow(page, id)).toHaveCount(0)
       await expect.poll(async () => (await stateOf(page, id)).target_at).not.toBeNull()
+      const after = Date.now()
+      // "1 hour" is the bulk snooze's: an hour from the click, snapped to an
+      // hour (`snapToHour`, which rounds up from :35) — so on the hour, 25 to
+      // 85 minutes after the click, which fell between `before` and `after`.
       const target = Date.parse((await stateOf(page, id)).target_at as string)
-      expect(target - before).toBeGreaterThan(30 * 60_000)
-      expect(target - before).toBeLessThanOrEqual(90 * 60_000)
+      expect(target % 3_600_000).toBe(0)
+      expect(target).toBeGreaterThanOrEqual(before + 25 * 60_000)
+      expect(target).toBeLessThanOrEqual(after + 85 * 60_000)
     } finally {
       await trash(page, [id])
     }
