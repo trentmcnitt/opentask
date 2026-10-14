@@ -29,12 +29,16 @@ import { formatDueTimeParts } from '@/lib/format-date'
 import {
   ageLabel,
   attemptsOffer,
-  attemptsTone,
   effectiveAttempts,
   isPastDeadline,
   targetReset,
+  type HorizonValue,
 } from '@/lib/task-segments'
 import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/lib/row-corner'
+import { RowCorner } from '@/components/RowCorner'
+import { TargetTodayButton } from '@/components/TargetMenu'
+import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
@@ -47,7 +51,7 @@ import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
-import type { Task, LabelConfig, LabelColor } from '@/types'
+import type { Task, LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 /**
  * TaskRow visual reference — complete rendered examples:
@@ -90,6 +94,17 @@ interface TaskRowProps {
   onSnooze: (taskId: number, until: string) => void
   /** Remove the target (2026-10-10) — offered in the snooze hold menu. */
   onRemoveTarget?: (task: Task) => void
+  /**
+   * Change the horizon from the corner dot's menu (2026-10-14). Without it
+   * the dot is drawn, with its tooltip, but opens nothing.
+   */
+  onSetHorizon?: (task: Task, horizon: HorizonValue | null) => void
+  /**
+   * Target the task (2026-10-14, the hover "Today" button): no `at` is "today"
+   * at the server's Snooze-all time; an `at` is a time chosen from the Target
+   * menu. Without it the row has no Today button.
+   */
+  onTargetAt?: (task: Task, at?: string) => void
   isOverdue?: boolean
   isSelected?: boolean
   isSelectionMode?: boolean
@@ -205,6 +220,8 @@ export function TaskRow({
   onDone,
   onSnooze,
   onRemoveTarget,
+  onSetHorizon,
+  onTargetAt,
   isOverdue,
   isSelected = false,
   isSelectionMode = false,
@@ -354,8 +371,6 @@ export function TaskRow({
     [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, onDoubleClick, pointer],
   )
 
-  const priorityBadge = getPriorityBadge(task.priority)
-  const priorityIcon = getPriorityIcon(task.priority)
   const priorityColors = getPriorityColors(task.priority)
   const isAiProcessing = task.labels.includes('ai-to-process')
   const tracked = isTracked(task)
@@ -373,12 +388,25 @@ export function TaskRow({
   const attempts = effectiveAttempts(task, timezone, new Date()).attempts
   const offer =
     onRemoveTarget && !isSelectionMode && !tracked ? attemptsOffer({ ...task, attempts }) : null
+  const corner = rowCorner({
+    task,
+    attempts: !tracked && task.due_at !== null ? attempts : 0,
+    priorityDisplay,
+    isSelectionMode,
+  })
+  // The target time is a control (Remove target / Move…, `TargetTimeText`)
+  // wherever the row can act on it: not in selection mode, where a press on
+  // the row selects.
+  const timeControl = !isSelectionMode && !tracked && task.due_at !== null
+  const showToday = !isSelectionMode && !!onTargetAt && offersTargetToday(task)
+  const cornerPresent = corner.dot || corner.attempts >= 1 || corner.priority !== null
+  // The meta segments after the target time (the recurrence, the deadline,
+  // the age), or all of them when the time is plain text.
+  const restSegments = timeControl ? metaSegments.filter((seg) => !seg.target) : metaSegments
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
-  const hasPriorityIndicator = priorityDisplay.trailingDot && (priorityBadge || priorityIcon)
   const hasIndicators =
-    !!hasPriorityIndicator ||
     !!task.rrule ||
     task.auto_snooze_minutes !== null ||
     !!(task.notes && task.notes.trim()) ||
@@ -452,12 +480,17 @@ export function TaskRow({
         highlighted && 'animate-row-highlight',
       )}
     >
-      {/* ATTEMPTS (spec §7, 2026-10-12; replaced the "2d" target-age tab): a
-          tab flush with the corner on any row with a target and at least one
-          attempt ("3×" = three local days over target). A moved-ahead task
-          keeps it, so the row still says it has slipped. Shown past the
-          deadline too: it is a count, not a second alarm beside the red. */}
-      {!tracked && task.due_at !== null && attempts >= 1 && <AttemptsTab attempts={attempts} />}
+      {/* The corner (2026-10-14): horizon dot · attempts · priority tab —
+          see `RowCorner` and `rowCorner` below. */}
+      <RowCorner
+        task={task}
+        dot={corner.dot}
+        attempts={corner.attempts}
+        priority={corner.priority}
+        onHorizonChange={
+          onSetHorizon && !isSelectionMode ? (h) => onSetHorizon(task, h) : undefined
+        }
+      />
       {/* Selection checkbox (shown in selection mode) or Done button */}
       {isSelectionMode ? (
         <Checkbox
@@ -508,6 +541,7 @@ export function TaskRow({
                 priorityDisplay.colorTitle && priorityColors?.text,
               )}
             >
+              {corner.spacer}
               {task.title}
             </span>
           ) : (
@@ -523,6 +557,7 @@ export function TaskRow({
                 e.stopPropagation()
               }}
             >
+              {corner.spacer}
               {task.title}
             </Link>
           )}
@@ -544,15 +579,26 @@ export function TaskRow({
 
         {(metaSegments.length > 0 || offer) && (
           <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
-            {metaSegments.map((seg, i) => (
+            {timeControl && (
+              <TargetTimeText
+                task={task}
+                timezone={timezone}
+                relative={metaSegments[0].text}
+                absolute={metaSegments[1]?.target ? metaSegments[1].text : null}
+                relativeClassName={metaSegments[0].className}
+                onMove={(until) => onSnooze(task.id, until)}
+                onRemoveTarget={onRemoveTarget}
+              />
+            )}
+            {restSegments.map((seg, i) => (
               <span key={i} className="contents">
+                {(i > 0 || timeControl) && <span className="text-muted-foreground/50">·</span>}
                 <span
                   className={cn('whitespace-nowrap', seg.className)}
                   data-age-label={seg.ageLabel ? seg.text : undefined}
                 >
                   {seg.text}
                 </span>
-                {i < metaSegments.length - 1 && <span className="text-muted-foreground/50">·</span>}
               </span>
             ))}
             {offer && (
@@ -576,29 +622,6 @@ export function TaskRow({
 
         {hasIndicators && (
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            {priorityDisplay.trailingDot &&
-              (priorityDisplay.badgeStyle === 'icons' && priorityIcon ? (
-                <span
-                  className={cn(priorityIcon.className, priorityIcon.color)}
-                  title={priorityIcon.title}
-                >
-                  {priorityIcon.icon}
-                </span>
-              ) : (
-                priorityBadge && (
-                  <span
-                    className={cn(
-                      'rounded px-1 py-0.5 text-[10px] leading-none font-semibold',
-                      priorityBadge.bg,
-                      priorityBadge.text,
-                    )}
-                    title={priorityBadge.title}
-                  >
-                    {priorityBadge.label}
-                  </span>
-                )
-              ))}
-
             {task.rrule && (
               <span className="text-muted-foreground inline-flex items-center" title="Recurring">
                 <Repeat className="size-3" />
@@ -709,43 +732,66 @@ export function TaskRow({
         </span>
       )}
 
-      {/* Snooze button (hidden in selection mode and on mobile — swipe-to-snooze is the mobile interaction).
-          Tap: immediate snooze with the default duration (menu if not yet due).
-          Long-press (400ms): opens SnoozeMenu. See `snoozePress`. */}
+      {/* The hover buttons, Today and Snooze (hidden in selection mode, and
+          on a phone — swipe and the row's own gestures cover both there).
+          Under a corner they sit 7px lower (`mt-3.5` on a centred item), so
+          the 18px tabs never clip them on a one-line row. */}
       {!isSelectionMode && (
-        <SnoozeMenu
-          open={snoozeMenuOpen}
-          onOpenChange={setSnoozeMenuOpen}
-          onSnooze={(until) => onSnooze(task.id, until)}
-          // Remove target, or "Back to auto" on a deadline task whose target
-          // the user picked; nothing on an automatic target (§8.3, Q9).
-          targetReset={onRemoveTarget ? targetReset(task) : null}
-          onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
-          deadlineAt={task.deadline_at}
+        <div
+          className={cn(
+            'hidden shrink-0 items-center gap-1 md:flex pointer-fine:flex',
+            cornerPresent && 'mt-3.5',
+          )}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={(e) => {
-              e.stopPropagation()
-              snoozePress.onClick()
-            }}
-            onPointerDown={(e) => {
-              e.stopPropagation()
-              snoozePress.onPointerDown(e)
-            }}
-            onPointerUp={(e) => {
-              e.stopPropagation()
-              snoozePress.onPointerUp(e)
-            }}
-            onPointerLeave={snoozePress.onPointerLeave}
-            aria-label={`Snooze "${task.title}"`}
-            className="hidden flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 md:flex"
-            title="Snooze (hold for options)"
+          {/* TODAY (2026-10-14): on an untargeted row, the segment rows' own
+              Today (`TargetTodayButton`) — a tap targets it today, a hold or
+              a right-click opens the Target menu. Mouse only: a finger has
+              the row's swipe and editor. */}
+          {showToday && (
+            <TargetTodayButton
+              task={task}
+              timezone={timezone}
+              onTargetToday={(t) => onTargetAt?.(t)}
+              onTargetAt={(t, at) => onTargetAt?.(t, at)}
+              stopPointerDown
+              className="hidden size-9 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-fine:flex"
+              iconClassName="size-4"
+            />
+          )}
+          <SnoozeMenu
+            open={snoozeMenuOpen}
+            onOpenChange={setSnoozeMenuOpen}
+            onSnooze={(until) => onSnooze(task.id, until)}
+            // Remove target, or "Back to auto" on a deadline task whose target
+            // the user picked; nothing on an automatic target (§8.3, Q9).
+            targetReset={onRemoveTarget ? targetReset(task) : null}
+            onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
+            deadlineAt={task.deadline_at}
           >
-            <Clock className="size-4" />
-          </Button>
-        </SnoozeMenu>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation()
+                snoozePress.onClick()
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                snoozePress.onPointerDown(e)
+              }}
+              onPointerUp={(e) => {
+                e.stopPropagation()
+                snoozePress.onPointerUp(e)
+              }}
+              onPointerLeave={snoozePress.onPointerLeave}
+              aria-label={`Snooze "${task.title}"`}
+              className="hidden flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 md:flex"
+              title="Snooze (hold for options)"
+            >
+              <Clock className="size-4" />
+            </Button>
+          </SnoozeMenu>
+        </div>
       )}
     </div>
   )
@@ -821,6 +867,8 @@ interface MetaSegment {
   className?: string
   /** The age badge (`data-age-label`). */
   ageLabel?: boolean
+  /** Part of the target time ("3h ago", "9:00 AM") — `TargetTimeText`. */
+  target?: boolean
 }
 
 /** "2 / 4 this week" — a quota's standing, as its row's only metadata. */
@@ -845,8 +893,9 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     segments.push({
       text: dueParts.relative,
       className: isOverdue ? 'text-over-target font-medium' : undefined,
+      target: true,
     })
-    if (dueParts.absolute) segments.push({ text: dueParts.absolute })
+    if (dueParts.absolute) segments.push({ text: dueParts.absolute, target: true })
   }
 
   if (task.rrule) {
@@ -888,27 +937,6 @@ function deadlineSegment(task: Task, timezone: string): MetaSegment | null {
     text: `deadline ${when.relative}`,
     className: 'text-amber-700 dark:text-amber-400 font-medium',
   }
-}
-
-/** The attempts tab — see the render site. */
-function AttemptsTab({ attempts }: { attempts: number }) {
-  const tone = attemptsTone(attempts)
-  return (
-    <span
-      data-attempts={attempts}
-      title={`Over target on ${attempts} day${attempts === 1 ? '' : 's'}`}
-      className={cn(
-        // A true corner tab (mockup C): flush with the card's top-right
-        // corner, over its border, sharing its rounded corner.
-        'pointer-events-none absolute -top-px -right-px rounded-tr-lg rounded-bl-md px-2 py-1 text-[11px] leading-none font-semibold tabular-nums',
-        tone === 'light' && 'bg-over-target/10 text-over-target',
-        tone === 'medium' && 'bg-over-target/25 text-over-target',
-        tone === 'strong' && 'bg-over-target-badge text-white',
-      )}
-    >
-      {attempts}×
-    </span>
-  )
 }
 
 /**
@@ -963,76 +991,67 @@ function getPriorityColors(priority: number): {
 }
 
 /**
- * Priority badge for the indicators line — spelled-out label with colored background.
+ * What the row's corner shows (2026-10-14, `src/lib/row-corner.ts`), plus the
+ * title's FLOAT SPACER: an invisible `float: right` box at the start of the
+ * title, so a long title wraps around the corner tabs instead of running
+ * under them. It is as wide as the part of the corner that reaches over the
+ * title's column — the tabs' estimated width (`cornerWidth`), plus the dot's
+ * enlarged hit box to its left, less what already sits to the right of the
+ * title (the row's 12px padding; from `md` up, the snooze button and its gap
+ * too) — and as tall as the tabs, or the dot's hit box (32px with a mouse,
+ * 44px with a finger, measured from the row's top border).
+ *
+ * Priority Display preferences (Settings), now that the tab shows priority:
+ * - `trailingDot` ("Show priority indicator") turns the corner tab on or
+ *   off — it was the indicators line's word or icon, which the tab replaces.
+ * - `badgeStyle` ("Words" / "Icons") is what the tab says: "High", or "!".
+ * - Low priority no longer shows anything there (Trent's E2b pick: Low and
+ *   None get no tab). `colorTitle`, `rightBorder` and `colorCheckbox` are
+ *   unchanged, Low included.
  */
-function getPriorityBadge(
-  priority: number,
-): { label: string; bg: string; text: string; title: string } | null {
-  switch (priority) {
-    case 1:
-      return { label: 'Low', bg: 'bg-zinc-500/15', text: 'text-zinc-500', title: 'Low priority' }
-    case 2:
-      return {
-        label: 'Medium',
-        bg: 'bg-amber-500/15',
-        text: 'text-amber-600 dark:text-amber-400',
-        title: 'Medium priority',
-      }
-    case 3:
-      return {
-        label: 'High',
-        bg: 'bg-orange-500/15',
-        text: 'text-orange-600 dark:text-orange-400',
-        title: 'High priority',
-      }
-    case 4:
-      return {
-        label: 'Urgent',
-        bg: 'bg-red-500/15',
-        text: 'text-red-600 dark:text-red-400',
-        title: 'Urgent priority',
-      }
-    default:
-      return null
-  }
-}
-
-/**
- * Priority icon indicator — compact symbols: ● for Low/Medium, ! for High, !! for Urgent.
- */
-function getPriorityIcon(
-  priority: number,
-): { icon: string; color: string; title: string; className: string } | null {
-  switch (priority) {
-    case 1:
-      return {
-        icon: '●',
-        color: 'text-zinc-400',
-        title: 'Low priority',
-        className: 'text-[10px]',
-      }
-    case 2:
-      return {
-        icon: '●',
-        color: 'text-amber-500',
-        title: 'Medium priority',
-        className: 'text-[10px]',
-      }
-    case 3:
-      return {
-        icon: '!',
-        color: 'text-orange-500',
-        title: 'High priority',
-        className: 'text-sm font-bold',
-      }
-    case 4:
-      return {
-        icon: '!!',
-        color: 'text-red-500',
-        title: 'Urgent priority',
-        className: 'text-sm font-bold',
-      }
-    default:
-      return null
-  }
+function rowCorner({
+  task,
+  attempts,
+  priorityDisplay,
+  isSelectionMode,
+}: {
+  task: Task
+  attempts: number
+  priorityDisplay: PriorityDisplayConfig
+  isSelectionMode: boolean
+}): {
+  dot: boolean
+  attempts: number
+  priority: ReturnType<typeof priorityTab>
+  spacer: React.ReactNode
+} {
+  const dot = showsHorizonDot(task)
+  const priority = priorityDisplay.trailingDot
+    ? priorityTab(task.priority, priorityDisplay.badgeStyle)
+    : null
+  const width = cornerWidth({ dot, attempts, priorityText: priority?.text ?? null })
+  if (width === 0) return { dot, attempts, priority, spacer: null }
+  const insetNarrow = 12
+  const insetWide = isSelectionMode ? 12 : 12 + 12 + 36
+  const reach = (inset: number, ext: number) => `${Math.max(0, width + (dot ? ext : 0) - inset)}px`
+  const style = {
+    '--sw-f': reach(insetNarrow, 8),
+    '--sw-c': reach(insetNarrow, 20),
+    '--sw-mf': reach(insetWide, 8),
+    '--sw-mc': reach(insetWide, 20),
+  } as React.CSSProperties
+  const spacer = (
+    <span
+      aria-hidden
+      data-corner-spacer
+      style={style}
+      className={cn(
+        'float-right w-(--sw-f) md:w-(--sw-mf) pointer-coarse:w-(--sw-c) md:pointer-coarse:w-(--sw-mc)',
+        // Content starts 13px below the row's outer top (1px border + 12px
+        // padding): the tabs end 4px in, the dot's hit box 18px / 30px in.
+        dot ? 'h-[19px] pointer-coarse:h-[31px]' : 'h-1',
+      )}
+    />
+  )
+  return { dot, attempts, priority, spacer }
 }
