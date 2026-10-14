@@ -47,6 +47,34 @@ const PLACEHOLDER_EXAMPLES = [
 ]
 const PLACEHOLDER_ROTATE_MS = 3200
 
+/**
+ * The demo's rotating examples, CROSSFADING (Trent, 2026-10-14: "it just
+ * switches with no fade or anything so it's kind of cheap-looking"). A native
+ * placeholder can't animate, so while rotating the input has none and every
+ * example sits stacked over it: the current one in place, the rest faded out a
+ * few pixels below, each moving over 300ms. Reduced motion swaps them without
+ * moving. Shown only while the field is empty; the input's own aria-label
+ * names it, so this is hidden from screen readers.
+ */
+function RotatingPlaceholder({ index }: { index: number }) {
+  return (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+      {PLACEHOLDER_EXAMPLES.map((example, i) => (
+        <span
+          key={example}
+          data-quick-add-example={i === index ? 'current' : undefined}
+          className={cn(
+            'text-muted-foreground absolute inset-0 flex items-center truncate text-base transition-[opacity,translate] duration-300 ease-out motion-reduce:transition-none md:text-sm',
+            i === index ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-0',
+          )}
+        >
+          {example}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 export function QuickAdd({
   onAdd,
   onOpenAddForm,
@@ -161,22 +189,25 @@ export function QuickAdd({
         >
           <Plus className="size-5" />
         </button>
-        <Input
-          ref={inputRef}
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              handleSubmit()
-            }
-          }}
-          placeholder={placeholder ?? PLACEHOLDER_EXAMPLES[placeholderIndex]}
-          className="h-auto flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
-          aria-label={ariaLabel ?? 'Quick add task'}
-          disabled={submitting}
-        />
+        <div className="relative flex min-w-0 flex-1 items-center">
+          {rotate && !title && <RotatingPlaceholder index={placeholderIndex} />}
+          <Input
+            ref={inputRef}
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleSubmit()
+              }
+            }}
+            placeholder={rotate ? undefined : (placeholder ?? PLACEHOLDER_EXAMPLES[0])}
+            className="relative h-auto flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+            aria-label={ariaLabel ?? 'Quick add task'}
+            disabled={submitting}
+          />
+        </div>
         {isSupported && (
           <button
             type="button"
