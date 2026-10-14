@@ -30,7 +30,8 @@
  *
  * "N of M now · Show all M" beside the view switch: Show all lifts every fold
  * for the visit — the old All, with its `project_preview_count` cap — until
- * "Show N now" (or the Dashboard tab) puts Now back. Not saved.
+ * "Show N now" (or the Dashboard tab) puts Now back. Not saved. With nothing
+ * folded (every row relevant, or no rows) the strip is not shown.
  *
  * WHILE ANYTHING NARROWS THE LIST (search, filter chips, the AI filter or
  * signal chips), the folds are off: the user asked for exactly those rows, and

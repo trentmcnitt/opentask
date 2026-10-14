@@ -1,7 +1,10 @@
-import { test, expect } from './fixtures'
+import { test, expect, showAllNow } from './fixtures'
 
 test.describe('Swipe gestures', () => {
   test('right swipe past threshold triggers done action', async ({ authenticatedPage: page }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     // Use "Weekly standup" — a recurring task (won't disappear on done)
     await expect(page.getByText('Weekly standup')).toBeVisible({ timeout: 5000 })
 
@@ -56,6 +59,9 @@ test.describe('Swipe gestures', () => {
   test('left swipe on future task opens edit panel instead of snoozing', async ({
     authenticatedPage: page,
   }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     // "Morning routine" is future-dated (tomorrow) — swipe left should open QuickActionPanel
     await expect(page.getByText('Morning routine')).toBeVisible({ timeout: 5000 })
 

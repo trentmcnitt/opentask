@@ -1,7 +1,10 @@
-import { test, expect } from './fixtures'
+import { test, expect, showAllNow } from './fixtures'
 
 test.describe('Search', () => {
   test('search filters task list, clear restores it', async ({ authenticatedPage: page }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     // Verify initial tasks are visible
     await expect(page.getByText('Morning routine')).toBeVisible({ timeout: 5000 })
     await expect(page.getByText('Review PRs')).toBeVisible()

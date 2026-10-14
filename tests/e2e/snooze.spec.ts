@@ -2,6 +2,7 @@ import {
   test,
   expect,
   holdUntil,
+  showAllNow,
   uniqueTitle,
   waitForPrefsLoaded,
   withPreferences,
@@ -26,6 +27,9 @@ test.describe('Snooze', () => {
   test('quick tap on future task opens snooze menu instead of instant snooze', async ({
     authenticatedPage: page,
   }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     // "Buy groceries" is future-dated — quick-tap should open menu, not instant-snooze
     await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
 
@@ -38,6 +42,9 @@ test.describe('Snooze', () => {
   })
 
   test('long-press opens snooze menu', async ({ authenticatedPage: page }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     await expect(page.getByText('Review PRs')).toBeVisible({ timeout: 5000 })
 
     // Hover the task row to make the snooze button visible

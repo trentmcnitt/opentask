@@ -14,8 +14,9 @@ export interface NowSummaryState {
  * Now's strip beside the view switch (mockup E1, 2026-10-14): "14 of 42 now ·
  * Show all 42". Show all lifts every project's fold for the visit — the old
  * All — and the strip then offers the way back: "All 42 · Show 14 now". Not
- * shown outside Now, or while a search or filter narrows the list (the folds
- * are off then, so there is nothing to lift). The rule: `src/lib/now-view.ts`.
+ * shown outside Now, while a search or filter narrows the list (the folds
+ * are off then), or when nothing is folded (every row relevant, or an empty
+ * list): there is nothing to lift. The rule: `src/lib/now-view.ts`.
  */
 export function NowSummary({ relevant, total, showAll, onShowAllChange }: NowSummaryState) {
   return (
