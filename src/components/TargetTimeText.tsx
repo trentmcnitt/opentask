@@ -29,9 +29,12 @@ import type { Task } from '@/types'
  * through `onRemoveTarget` (a PATCH), Move… through `onMove` (the row's
  * snooze) — so each one toasts with Undo.
  *
- * Presses never reach the row: pointerdown is stopped (Radix opens on it, and
- * the row would start a long-press selection or a swipe), and clicks and keys
- * from the portalled menus are stopped by the wrapper, as on the Today button.
+ * Presses never act on the row: clicks and keys (from the portalled menus
+ * too) are stopped by the wrapper, as on the Today button, and
+ * `data-no-row-press` keeps the row's long-press (selection) from starting
+ * here. Pointerdown itself is NOT stopped: the row's swipe (use-gesture with
+ * `filterTaps`) swallows any click whose pointerdown it never saw — the menu's
+ * items and the × would never fire.
  */
 export function TargetTimeText({
   task,
@@ -55,7 +58,6 @@ export function TargetTimeText({
   const resetWord =
     onRemoveTarget && reset ? (reset === 'auto' ? BACK_TO_AUTO : 'Remove target') : null
   const label = absolute ? `${relative} · ${absolute}` : relative
-  const stopPointer = (e: React.PointerEvent) => e.stopPropagation()
   return (
     <span
       className="contents"
@@ -74,8 +76,8 @@ export function TargetTimeText({
           <DropdownMenu>
             <DropdownMenuTrigger
               data-target-time
+              data-no-row-press
               onClick={(e) => e.stopPropagation()}
-              onPointerDown={stopPointer}
               aria-label={`Target ${label}. Options`}
               className="hover:bg-foreground/5 data-[state=open]:bg-foreground/10 -mx-1 -my-0.5 inline-flex touch-manipulation items-center gap-1 rounded px-1 py-0.5 whitespace-nowrap"
             >
@@ -89,8 +91,8 @@ export function TargetTimeText({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
+              data-no-row-press
               onClick={(e) => e.stopPropagation()}
-              onPointerDown={stopPointer}
             >
               {resetWord && (
                 <DropdownMenuItem
@@ -110,11 +112,11 @@ export function TargetTimeText({
             <button
               type="button"
               data-remove-target-x
+              data-no-row-press
               onClick={(e) => {
                 e.stopPropagation()
                 onRemoveTarget?.(task)
               }}
-              onPointerDown={stopPointer}
               title={resetWord}
               aria-label={`${resetWord}: "${task.title}"`}
               className={cn(

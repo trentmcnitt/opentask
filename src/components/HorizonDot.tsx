@@ -90,8 +90,9 @@ export function HorizonMenuContent({
       className="min-w-52"
       // Portalled, but React events still bubble to the row, whose click
       // selects or opens the task (dashboard) or considers it (segments).
+      // Not pointerdown: see `HorizonDotButton`.
+      data-no-row-press
       onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
     >
       <DropdownMenuLabel>{HORIZON_WORD}</DropdownMenuLabel>
       <DropdownMenuRadioGroup
@@ -128,9 +129,11 @@ export function HorizonMenuContent({
  * the gap or the row above). The inline dot is a 32/44px box pulled back to
  * the row's line height by negative margins, as the segment rows' Today does.
  *
- * Pointerdown is stopped as well as click: Radix opens the menu on
- * pointerdown, and the dashboard row's long-press (selection) and the swipe
- * underneath it must never see this press.
+ * Clicks never reach the row. Pointerdown is stopped only on the segment rows
+ * (as their chevron did): on the dashboard row the swipe (use-gesture with
+ * `filterTaps`) swallows any click whose pointerdown it never saw, which would
+ * eat the menu's choices — so there it passes, and `data-no-row-press` keeps
+ * the row's long-press (selection) from starting instead.
  *
  * Without `onChange` (a host that does not wire horizon changes) it is the
  * same mark with its tooltip, and nothing to press.
@@ -168,8 +171,9 @@ export function HorizonDotButton({
     <DropdownMenu>
       <DropdownMenuTrigger
         {...data}
+        data-no-row-press
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={variant === 'inline' ? (e) => e.stopPropagation() : undefined}
         title={title}
         aria-label={`${HORIZON_WORD}: ${title}. Change`}
         className={cn(

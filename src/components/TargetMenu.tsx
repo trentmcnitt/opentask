@@ -105,10 +105,11 @@ export function TargetMenu({
  * (dashboard) the task, and whose Enter/Space too — so the wrapper stops
  * clicks and keys from them reaching it.
  *
- * `stopPointerDown`: the dashboard row long-presses into selection on
- * pointerdown, so its Today stops it there (like the row's snooze button).
- * The segment rows leave it alone: the panel pager's swipe may start here, and
- * a swipe's move abandons the hold.
+ * Its pointerdown is NOT stopped: the dashboard row's swipe (use-gesture with
+ * `filterTaps`) swallows any click whose pointerdown it never saw, which would
+ * eat the tap; on the segment rows the panel pager's swipe may start here, and
+ * a swipe's move abandons the hold. `data-no-row-press` tells the dashboard
+ * row not to start its own long-press (selection) from it instead.
  */
 export function TargetTodayButton({
   task,
@@ -118,7 +119,6 @@ export function TargetTodayButton({
   className,
   iconClassName,
   showLabel = false,
-  stopPointerDown = false,
 }: {
   task: Task
   timezone: string
@@ -129,7 +129,6 @@ export function TargetTodayButton({
   iconClassName?: string
   /** Show the word "Today" from `sm` up (segment rows); icon-only otherwise. */
   showLabel?: boolean
-  stopPointerDown?: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const press = useSimpleLongPress({
@@ -139,9 +138,6 @@ export function TargetTodayButton({
     // click that follows land on the next row's Today (see `tapOn`).
     tapOn: 'click',
   })
-  const stop = (e: React.PointerEvent) => {
-    if (stopPointerDown) e.stopPropagation()
-  }
   return (
     <span
       className="contents"
@@ -158,18 +154,13 @@ export function TargetTodayButton({
         <button
           type="button"
           data-target-today
+          data-no-row-press
           onClick={(e) => {
             e.stopPropagation()
             press.onClick()
           }}
-          onPointerDown={(e) => {
-            stop(e)
-            press.onPointerDown(e)
-          }}
-          onPointerUp={(e) => {
-            stop(e)
-            press.onPointerUp(e)
-          }}
+          onPointerDown={press.onPointerDown}
+          onPointerUp={press.onPointerUp}
           onPointerLeave={press.onPointerLeave}
           onPointerMove={press.onPointerMove}
           onPointerCancel={press.onPointerCancel}
