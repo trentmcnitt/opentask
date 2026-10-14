@@ -145,7 +145,6 @@ export function RemindersView({
   // after the slots (2026-10-11). Never counted in the headline or the badge.
   const segments = useTaskSegments({
     segments: taskSegments,
-    timeSlots,
     timezone,
     refresh,
     onUndo,

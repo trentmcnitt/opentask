@@ -66,7 +66,7 @@ export function SelectionBarShell({
     <div
       data-selection-sheet
       {...attrs}
-      className="animate-slide-up fixed bottom-20 left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 md:bottom-6"
+      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-fit max-w-[calc(100vw-2rem)] md:bottom-6"
       onClickCapture={(e) => {
         if (e.detail < 2) return
         e.preventDefault()
@@ -75,10 +75,16 @@ export function SelectionBarShell({
       }}
     >
       <div
-        className="bg-primary text-primary-foreground rounded-xl px-4 py-3 shadow-xl"
+        className="bg-primary text-primary-foreground rounded-xl px-3 py-3 shadow-xl sm:px-4"
         aria-live="polite"
       >
-        <div className="flex items-center gap-2">
+        {/* Wraps rather than overflowing: the bar is capped at the screen's
+            width, and a verb pushed past it was cut off with Clear out of
+            reach (iPhone at a larger text size, 2026-10-14). Centred with
+            `inset-x-0 mx-auto w-fit`, not `left-1/2 -translate-x-1/2`: a
+            fixed box at `left: 50%` may only grow to half the screen, so a
+            row allowed to wrap would wrap at half width. */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
           {count > 1 && (
             <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
           )}

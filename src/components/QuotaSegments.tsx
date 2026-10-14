@@ -263,7 +263,7 @@ export function QuotaSegments({
     />
   )
   // The unit's own box: the gap before it and `nowrap`, so it moves as one.
-  const unitClass = cn('whitespace-nowrap tabular-nums', inline && 'ml-[5px]')
+  const unitClass = cn('whitespace-nowrap tabular-nums', inline && 'ml-[1px]')
 
   const group = (
     <span
@@ -293,11 +293,11 @@ export function QuotaSegments({
       >
         <span ref={segGhostRef} className="block w-max whitespace-nowrap tabular-nums">
           {' '}
-          <span className="ml-[5px]">{segments}</span>
+          <span className="ml-[1px]">{segments}</span>
         </span>
         <span ref={textGhostRef} className="block w-max whitespace-nowrap tabular-nums">
           {' '}
-          <span className="ml-[5px]">{text}</span>
+          <span className="ml-[1px]">{text}</span>
         </span>
       </span>
     </>

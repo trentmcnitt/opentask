@@ -6,6 +6,8 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
 import { DateTimePicker } from '@/components/DateTimePicker'
+import { SnoozeMenu } from '@/components/SnoozeMenu'
+import { computeSnoozeTime } from '@/lib/snooze'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
@@ -295,11 +297,15 @@ export function TaskSegmentRow({
 /**
  * "Today": a tap targets the task today at the time Snooze-all would go to
  * (`targetTodayTime`) — unchanged. A HOLD (touch or mouse, the app's 400ms
- * long-press, `useSimpleLongPress`) or a RIGHT-CLICK opens the date-time
- * picker instead, on today at that same time, so "today, but at 3" or "Tuesday
- * morning" is one gesture (Trent, 2026-10-12). Choosing a time sends the same
- * request with `at`, so the stamp, the undo entry, the sync and the toast all
- * come from the one server path.
+ * long-press, `useSimpleLongPress`) or a RIGHT-CLICK opens the TARGET MENU —
+ * the bulk snooze's own list (`SnoozeMenu`: next period, 1 and 2 hours, the
+ * other periods, tomorrow morning, the deadline's day) titled "Target" — and
+ * its Custom... opens the date-time picker on tomorrow at the user's morning
+ * time (Trent, 2026-10-14: the hold used to open the picker straight away, on
+ * the Snooze-all time — 9 PM in the evening — "I'd rather have a dropdown that
+ * allowed me to target different periods, the same way the bulk snooze does").
+ * Every choice sends the same request with `at`, so the stamp, the undo entry,
+ * the sync and the toast all come from the one server path.
  *
  * The hold never also taps: once it fires, the pointerup and the click are
  * swallowed. A finger that moves (a scroll or a swipe of the panel pager)
@@ -307,9 +313,9 @@ export function TaskSegmentRow({
  * only). The affordance is in the words, not a glyph (Trent's rule): the
  * tooltip and the accessible name say "hold for a time".
  *
- * The picker is portalled, but React events still bubble through the tree to
- * the row, whose click CONSIDERS the task and whose Enter/Space too — so the
- * wrapper stops clicks and keys from the picker reaching it.
+ * The menu and the picker are portalled, but React events still bubble
+ * through the tree to the row, whose click CONSIDERS the task and whose
+ * Enter/Space too — so the wrapper stops clicks and keys from them reaching it.
  */
 function TargetTodayButton({
   task,
@@ -322,18 +328,19 @@ function TargetTodayButton({
   timezone: string
   panel: boolean
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [anchor, setAnchor] = useState<string | null>(null)
   const { morningTime } = useSnoozePreferences()
   // "Deadline day" (ruling Q8), read as the picker opens.
   const [deadlineDay, setDeadlineDay] = useState<{ label: string; at: string } | null>(null)
   const openPicker = () => {
-    setAnchor(actions.targetTodayAnchor())
+    setAnchor(computeSnoozeTime('tomorrow', timezone, morningTime))
     setDeadlineDay(deadlineDayPick(task.deadline_at, { timezone, morningTime }))
     setPickerOpen(true)
   }
   const press = useSimpleLongPress({
-    onLongPress: openPicker,
+    onLongPress: () => setMenuOpen(true),
     onShortPress: () => void actions.targetToday(task),
     // The tap takes this row off the list; acting on pointerup let the
     // click that follows land on the next row's Today (see `tapOn`).
@@ -345,52 +352,61 @@ function TargetTodayButton({
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <DateTimePicker
-        value={null}
-        emptyAnchor={anchor}
-        timezone={timezone}
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        allowClear={false}
-        quickPick={deadlineDay}
-        submitLabel="Set target"
-        onChange={(at) => {
-          if (at) void actions.targetAt(task, at)
-        }}
+      <SnoozeMenu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        title="Target"
+        deadlineAt={task.deadline_at}
+        onSnooze={(at) => void actions.targetAt(task, at)}
+        onCustom={openPicker}
       >
-        <button
-          type="button"
-          data-target-today
-          onClick={(e) => {
-            e.stopPropagation()
-            press.onClick()
+        <DateTimePicker
+          value={null}
+          emptyAnchor={anchor}
+          timezone={timezone}
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          allowClear={false}
+          quickPick={deadlineDay}
+          submitLabel="Set target"
+          onChange={(at) => {
+            if (at) void actions.targetAt(task, at)
           }}
-          // Not stopped: the panel pager's swipe may start here, and a
-          // swipe's move abandons the hold.
-          onPointerDown={press.onPointerDown}
-          onPointerUp={press.onPointerUp}
-          onPointerLeave={press.onPointerLeave}
-          onPointerMove={press.onPointerMove}
-          onPointerCancel={press.onPointerCancel}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            openPicker()
-          }}
-          title="Target today · hold for a time"
-          aria-label={`Target "${task.title}" today (hold for a time)`}
-          // No text selection or iOS callout under a held finger.
-          // A full 44px hit target around a glyph the size of the circle and
-          // the done square; the negative margin keeps the row's height. The
-          // 12px `mr-3` after it is dead space, so its hit area never touches
-          // the done square's (Trent mis-tapped Today for done, 2026-10-12).
-          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 -my-3 mr-3 flex h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none] sm:px-2"
         >
-          <CalendarClock className={panel ? 'size-[19px]' : 'size-6'} strokeWidth={1.75} />
-          {/* Icon-only on a phone, so the title keeps the width. */}
-          <span className="sr-only sm:not-sr-only">Today</span>
-        </button>
-      </DateTimePicker>
+          <button
+            type="button"
+            data-target-today
+            onClick={(e) => {
+              e.stopPropagation()
+              press.onClick()
+            }}
+            // Not stopped: the panel pager's swipe may start here, and a
+            // swipe's move abandons the hold.
+            onPointerDown={press.onPointerDown}
+            onPointerUp={press.onPointerUp}
+            onPointerLeave={press.onPointerLeave}
+            onPointerMove={press.onPointerMove}
+            onPointerCancel={press.onPointerCancel}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuOpen(true)
+            }}
+            title="Target today · hold for a time"
+            aria-label={`Target "${task.title}" today (hold for a time)`}
+            // No text selection or iOS callout under a held finger.
+            // A full 44px hit target around a glyph the size of the circle and
+            // the done square; the negative margin keeps the row's height. The
+            // 12px `mr-3` after it is dead space, so its hit area never touches
+            // the done square's (Trent mis-tapped Today for done, 2026-10-12).
+            className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 -my-3 mr-3 flex h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none] sm:px-2"
+          >
+            <CalendarClock className={panel ? 'size-[19px]' : 'size-6'} strokeWidth={1.75} />
+            {/* Icon-only on a phone, so the title keeps the width. */}
+            <span className="sr-only sm:not-sr-only">Today</span>
+          </button>
+        </DateTimePicker>
+      </SnoozeMenu>
     </span>
   )
 }

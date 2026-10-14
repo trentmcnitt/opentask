@@ -60,6 +60,13 @@ const picker = (page: Page) =>
   page.locator('[data-slot="popover-content"]').filter({
     has: page.getByRole('button', { name: 'Set target' }),
   })
+/** The hold's Target menu: a bottom sheet on a phone, a dropdown on a desktop. */
+const targetMenu = (page: Page) =>
+  page
+    .getByRole('dialog', { name: 'Target' })
+    .or(page.getByRole('menu', { name: 'Target options' }))
+const menuChoice = (page: Page, name: string | RegExp) =>
+  targetMenu(page).getByRole(page.viewportSize()!.width < 768 ? 'button' : 'menuitem', { name })
 const entry = (page: Page, id: number) => page.locator(`[data-just-added-entry="${id}"]`)
 
 /** The card's entries, as task ids in on-screen order. */
@@ -85,7 +92,7 @@ async function touch(
   await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })
 }
 
-/** Pick 11:45 PM on the day the picker opened on (today). */
+/** Pick 11:45 PM on the day the picker opened on (tomorrow, Custom's default). */
 async function pickLateTonight(page: Page) {
   const p = picker(page)
   await p.getByLabel('Hour').fill('11')
@@ -95,9 +102,10 @@ async function pickLateTonight(page: Page) {
   await expect(ampm).toHaveText('PM')
 }
 
-const tonight2345 = () =>
+const tomorrow2345 = () =>
   DateTime.now()
     .setZone(TEST_TZ)
+    .plus({ days: 1 })
     .set({ hour: 23, minute: 45, second: 0, millisecond: 0 })
     .toUTC()
     .toISO()
@@ -189,7 +197,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
     }
   })
 
-  test('a hold opens the picker without targeting; a picked time targets the task then', async ({
+  test('a hold opens the Target menu without targeting; Custom... opens the picker, whose time targets the task', async ({
     authenticatedPage: page,
   }) => {
     const id = await segmentTask(page, 'RT held')
@@ -198,12 +206,18 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
       const cdp = await page.context().newCDPSession(page)
       const at = await centre(todayButton(page, id))
       await touch(cdp, 'touchStart', [at])
-      await expect(picker(page)).toBeVisible()
+      await expect(targetMenu(page)).toBeVisible()
       await touch(cdp, 'touchEnd', [])
 
       // The hold did not also tap: still waiting in its segment, untargeted.
       await expect(segmentRow(page, id)).toHaveAttribute('data-segment-state', 'waiting')
       expect((await stateOf(page, id)).segment_targeted_at).toBeNull()
+
+      // The bulk snooze's periods, then Custom... for the picker.
+      await expect(menuChoice(page, '1 hour')).toBeVisible()
+      await menuChoice(page, 'Custom...').click()
+      await expect(targetMenu(page)).toHaveCount(0)
+      await expect(picker(page)).toBeVisible()
 
       // Using the picker never reaches the row (whose click would consider it).
       await pickLateTonight(page)
@@ -212,7 +226,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
       await picker(page).getByRole('button', { name: 'Set target' }).click()
       await expect(picker(page)).toHaveCount(0)
       await expect(segmentRow(page, id)).toHaveCount(0)
-      await expect.poll(async () => (await stateOf(page, id)).target_at).toBe(tonight2345())
+      await expect.poll(async () => (await stateOf(page, id)).target_at).toBe(tomorrow2345())
       expect((await stateOf(page, id)).segment_targeted_at).not.toBeNull()
 
       await withPreferences(page, FLAT, async () => {
@@ -271,6 +285,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
       await touch(cdp, 'touchEnd', [])
       // Well past the hold's 400ms: nothing opened, nothing was targeted.
       await page.clock.runFor(1500)
+      await expect(targetMenu(page)).toHaveCount(0)
       await expect(picker(page)).toHaveCount(0)
       await expect(segmentRow(page, id)).toHaveAttribute('data-segment-state', 'waiting')
       expect((await stateOf(page, id)).target_at).toBeNull()
@@ -288,7 +303,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
 test.describe('Recently targeted: the Today picker on a desktop', () => {
   test.use({ viewport: { width: 1280, height: 800 }, timezoneId: TEST_TZ })
 
-  test('a right-click opens the picker and never targets; a plain click still does', async ({
+  test('a right-click opens the Target menu and never targets; Custom... and a plain click still do', async ({
     authenticatedPage: page,
   }) => {
     const [held, clicked] = [
@@ -298,21 +313,48 @@ test.describe('Recently targeted: the Today picker on a desktop', () => {
     try {
       await page.goto('/reminders')
       await todayButton(page, held).click({ button: 'right' })
-      await expect(picker(page)).toBeVisible()
+      await expect(targetMenu(page)).toBeVisible()
       await expect(segmentRow(page, held)).toHaveAttribute('data-segment-state', 'waiting')
       expect((await stateOf(page, held)).target_at).toBeNull()
 
+      await menuChoice(page, 'Custom...').click()
+      await expect(picker(page)).toBeVisible()
       await pickLateTonight(page)
       await picker(page).getByRole('button', { name: 'Set target' }).click()
       await expect(segmentRow(page, held)).toHaveCount(0)
-      await expect.poll(async () => (await stateOf(page, held)).target_at).toBe(tonight2345())
+      await expect.poll(async () => (await stateOf(page, held)).target_at).toBe(tomorrow2345())
 
       await todayButton(page, clicked).click()
       await expect(segmentRow(page, clicked)).toHaveCount(0)
       await expect.poll(async () => (await stateOf(page, clicked)).target_at).not.toBeNull()
-      expect((await stateOf(page, clicked)).target_at).not.toBe(tonight2345())
+      expect((await stateOf(page, clicked)).target_at).not.toBe(tomorrow2345())
     } finally {
       await trash(page, [held, clicked])
+    }
+  })
+
+  test('a choice in the Target menu targets the task at that time', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await segmentTask(page, 'RT menu hour')
+    try {
+      await page.goto('/reminders')
+      await todayButton(page, id).click({ button: 'right' })
+      const before = Date.now()
+      await menuChoice(page, '1 hour').click()
+      await expect(targetMenu(page)).toHaveCount(0)
+      await expect(segmentRow(page, id)).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, id)).target_at).not.toBeNull()
+      const after = Date.now()
+      // "1 hour" is the bulk snooze's: an hour from the click, snapped to an
+      // hour (`snapToHour`, which rounds up from :35) — so on the hour, 25 to
+      // 85 minutes after the click, which fell between `before` and `after`.
+      const target = Date.parse((await stateOf(page, id)).target_at as string)
+      expect(target % 3_600_000).toBe(0)
+      expect(target).toBeGreaterThanOrEqual(before + 25 * 60_000)
+      expect(target).toBeLessThanOrEqual(after + 85 * 60_000)
+    } finally {
+      await trash(page, [id])
     }
   })
 })
