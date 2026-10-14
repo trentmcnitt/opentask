@@ -40,6 +40,7 @@ import {
   sanitizeReminderEnrichment,
   alignTaskModelDates,
   resolveDateOnlyTarget,
+  resolveBareTime,
   _resetCircuitBreaker,
   _resetProcessingState,
 } from '@/core/ai/enrichment'
@@ -420,5 +421,57 @@ describe('a target with a day but no time (resolveDateOnlyTarget)', () => {
         today,
       ).due_at,
     ).toBe('2026-10-13T08:30:00')
+  })
+})
+
+describe('a time with no day (resolveBareTime)', () => {
+  // Pure: each call passes its own `now`. Wed Oct 14 2026, Chicago (UTC-5).
+  const at = (local: string) => new Date(`${local}-05:00`)
+  const bare = (due_at: string | null, text: string, now: string, rrule: string | null = null) =>
+    resolveBareTime(result({ due_at, rrule }), text, 'America/Chicago', at(now)).due_at
+
+  test('a time still ahead today stays today; one already passed moves to tomorrow', () => {
+    expect(bare('2026-10-14T08:30:00', 'Add Matthew time 8:30am', '2026-10-14T05:37:00')).toBe(
+      '2026-10-14T08:30:00',
+    )
+    expect(bare('2026-10-14T08:30:00', 'Add Matthew time 8:30am', '2026-10-14T10:00:00')).toBe(
+      '2026-10-15T08:30:00',
+    )
+    // The model counted wrong the other way: tomorrow while today's is ahead.
+    expect(bare('2026-10-15T19:00:00', 'call mom 7pm', '2026-10-14T15:00:00')).toBe(
+      '2026-10-14T19:00:00',
+    )
+    // Exactly now is not ahead.
+    expect(bare('2026-10-14T19:00:00', 'call mom 7pm', '2026-10-14T19:00:00')).toBe(
+      '2026-10-15T19:00:00',
+    )
+  })
+
+  test('the hour and minute stay the model\'s; no-colon and "at" times count', () => {
+    expect(bare('2026-10-13T08:30:00', 'Review the slides 830am', '2026-10-14T07:00:00')).toBe(
+      '2026-10-14T08:30:00',
+    )
+    expect(bare('2026-10-13T15:00:00', 'Call the bank at 3', '2026-10-14T16:00:00')).toBe(
+      '2026-10-15T15:00:00',
+    )
+  })
+
+  test('words that name a day, a null target, a repeat, or no clock time are left alone', () => {
+    expect(
+      bare('2026-10-14T21:00:00', 'at 9 tonight take out the trash', '2026-10-14T22:00:00'),
+    ).toBe('2026-10-14T21:00:00')
+    expect(
+      bare('2026-10-16T15:00:00', 'call the plumber Friday at 3pm', '2026-10-14T10:00:00'),
+    ).toBe('2026-10-16T15:00:00')
+    expect(bare('2026-10-14T08:30:00', 'standup tomorrow 830am', '2026-10-14T10:00:00')).toBe(
+      '2026-10-14T08:30:00',
+    )
+    expect(bare(null, 'Add Matthew time 8:30am', '2026-10-14T10:00:00')).toBeNull()
+    expect(
+      bare('2026-10-14T07:00:00', 'take meds 7am every day', '2026-10-14T10:00:00', 'FREQ=DAILY'),
+    ).toBe('2026-10-14T07:00:00')
+    expect(bare('2026-10-14T09:00:00', 'check the mail', '2026-10-14T10:00:00')).toBe(
+      '2026-10-14T09:00:00',
+    )
   })
 })

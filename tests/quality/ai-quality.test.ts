@@ -461,6 +461,7 @@ async function runEnrichment(
     sanitizeTaskModelFields,
     alignTaskModelDates,
     resolveDateOnlyTarget,
+    resolveBareTime,
     pinUnnamedDay,
   } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
@@ -478,12 +479,16 @@ async function runEnrichment(
   // a yearly rule in a named month with no day, to the 1st (2026-10-13).
   const taskModel = pinUnnamedDay(
     alignTaskModelDates(
-      resolveDateOnlyTarget(
-        sanitizeTaskModelFields(parsed, input.text),
+      resolveBareTime(
+        resolveDateOnlyTarget(
+          sanitizeTaskModelFields(parsed, input.text),
+          input.text,
+          input.timezone,
+          input.morningTime ?? '09:00',
+          targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
+        ),
         input.text,
         input.timezone,
-        input.morningTime ?? '09:00',
-        targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
       ),
       input.timezone,
     ),
@@ -1114,6 +1119,8 @@ function validateProcessExpectations(
  * `must_include` matchers for values a scenario cannot spell exactly:
  * - `~date:YYYY-MM-DD` — a local datetime on that day, any time (scenarios
  *   compute the day relative to the run; the time is left to Layer 2 notes)
+ * - `~datetime:YYYY-MM-DDTHH:MM` — a local datetime at that minute (seconds
+ *   free): a time with no day, whose day depends on when the run starts
  * - `~notnull` — set to anything
  */
 function checkSpecialExpectation(id: string, key: string, expected: string, actual: unknown): void {
@@ -1121,6 +1128,13 @@ function checkSpecialExpectation(id: string, key: string, expected: string, actu
     const day = expected.slice('~date:'.length)
     if (typeof actual !== 'string' || actual.slice(0, 10) !== day) {
       throw new Error(`[${id}] Expected ${key} on ${day}, got ${JSON.stringify(actual)}`)
+    }
+    return
+  }
+  if (expected.startsWith('~datetime:')) {
+    const minute = expected.slice('~datetime:'.length)
+    if (typeof actual !== 'string' || actual.slice(0, 16) !== minute) {
+      throw new Error(`[${id}] Expected ${key} at ${minute}, got ${JSON.stringify(actual)}`)
     }
     return
   }
