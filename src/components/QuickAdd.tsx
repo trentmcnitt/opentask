@@ -64,11 +64,12 @@ function RotatingPlaceholder({ index }: { index: number }) {
           key={example}
           data-quick-add-example={i === index ? 'current' : undefined}
           className={cn(
-            'text-muted-foreground absolute inset-0 flex items-center truncate text-base transition-[opacity,translate] duration-300 ease-out motion-reduce:transition-none md:text-sm',
+            'text-muted-foreground absolute inset-0 flex items-center text-base transition-[opacity,translate] duration-300 ease-out motion-reduce:transition-none md:text-sm',
             i === index ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-0',
           )}
         >
-          {example}
+          {/* Its own box, so a long example ends in an ellipsis on a phone. */}
+          <span className="min-w-0 truncate">{example}</span>
         </span>
       ))}
     </span>
