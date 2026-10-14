@@ -313,8 +313,11 @@ function useTargetPicker(run: RunSegmentAction, timezone: string) {
   return { targetAt }
 }
 
-/** "today 3:00 PM", "tomorrow 9:00 AM", "Tue, Oct 13 3:00 PM" — the picker's toast. */
-function targetWhen(when: DateTime, today: DateTime): string {
+/**
+ * "today 3:00 PM", "tomorrow 9:00 AM", "Tue, Oct 13 3:00 PM" — the picker's
+ * toast. Also the dashboard rows' Today toast (`useTaskActions.handleTargetAt`).
+ */
+export function targetWhen(when: DateTime, today: DateTime): string {
   const time = when.toFormat('h:mm a')
   if (when.hasSame(today, 'day')) return `today ${time}`
   if (when.hasSame(today.plus({ days: 1 }), 'day')) return `tomorrow ${time}`

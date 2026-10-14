@@ -1,24 +1,17 @@
 'use client'
 
-import { Check, CalendarClock, ChevronDown, FolderOpen } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen } from 'lucide-react'
 import { DateTime } from 'luxon'
-import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
-import { DateTimePicker } from '@/components/DateTimePicker'
-import { SnoozeMenu } from '@/components/SnoozeMenu'
-import { computeSnoozeTime } from '@/lib/snooze'
-import { useSimpleLongPress } from '@/hooks/useLongPress'
+import { TargetTodayButton } from '@/components/TargetMenu'
+import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -31,15 +24,13 @@ import {
   horizonHints,
 } from '@/lib/task-model-words'
 import {
-  HORIZON_ORDER,
   SEGMENT_NUDGE_THRESHOLD,
   type CheckInDay,
   type HorizonValue,
   type SegmentKind,
 } from '@/lib/task-segments'
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
-import { useCheckInDay, useSnoozePreferences } from '@/components/PreferencesProvider'
-import { deadlineDayPick } from '@/lib/editor-target-labels'
+import { useCheckInDay } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -295,123 +286,6 @@ export function TaskSegmentRow({
 }
 
 /**
- * "Today": a tap targets the task today at the time Snooze-all would go to
- * (`targetTodayTime`) — unchanged. A HOLD (touch or mouse, the app's 400ms
- * long-press, `useSimpleLongPress`) or a RIGHT-CLICK opens the TARGET MENU —
- * the bulk snooze's own list (`SnoozeMenu`: next period, 1 and 2 hours, the
- * other periods, tomorrow morning, the deadline's day) titled "Target" — and
- * its Custom... opens the date-time picker on tomorrow at the user's morning
- * time (Trent, 2026-10-14: the hold used to open the picker straight away, on
- * the Snooze-all time — 9 PM in the evening — "I'd rather have a dropdown that
- * allowed me to target different periods, the same way the bulk snooze does").
- * Every choice sends the same request with `at`, so the stamp, the undo entry,
- * the sync and the toast all come from the one server path.
- *
- * The hold never also taps: once it fires, the pointerup and the click are
- * swallowed. A finger that moves (a scroll or a swipe of the panel pager)
- * abandons the press — neither fires. Right-click never taps (primary button
- * only). The affordance is in the words, not a glyph (Trent's rule): the
- * tooltip and the accessible name say "hold for a time".
- *
- * The menu and the picker are portalled, but React events still bubble
- * through the tree to the row, whose click CONSIDERS the task and whose
- * Enter/Space too — so the wrapper stops clicks and keys from them reaching it.
- */
-function TargetTodayButton({
-  task,
-  actions,
-  timezone,
-  panel,
-}: {
-  task: Task
-  actions: TaskSegmentActions
-  timezone: string
-  panel: boolean
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [anchor, setAnchor] = useState<string | null>(null)
-  const { morningTime } = useSnoozePreferences()
-  // "Deadline day" (ruling Q8), read as the picker opens.
-  const [deadlineDay, setDeadlineDay] = useState<{ label: string; at: string } | null>(null)
-  const openPicker = () => {
-    setAnchor(computeSnoozeTime('tomorrow', timezone, morningTime))
-    setDeadlineDay(deadlineDayPick(task.deadline_at, { timezone, morningTime }))
-    setPickerOpen(true)
-  }
-  const press = useSimpleLongPress({
-    onLongPress: () => setMenuOpen(true),
-    onShortPress: () => void actions.targetToday(task),
-    // The tap takes this row off the list; acting on pointerup let the
-    // click that follows land on the next row's Today (see `tapOn`).
-    tapOn: 'click',
-  })
-  return (
-    <span
-      className="contents"
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <SnoozeMenu
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-        title="Target"
-        deadlineAt={task.deadline_at}
-        onSnooze={(at) => void actions.targetAt(task, at)}
-        onCustom={openPicker}
-      >
-        <DateTimePicker
-          value={null}
-          emptyAnchor={anchor}
-          timezone={timezone}
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          allowClear={false}
-          quickPick={deadlineDay}
-          submitLabel="Set target"
-          onChange={(at) => {
-            if (at) void actions.targetAt(task, at)
-          }}
-        >
-          <button
-            type="button"
-            data-target-today
-            onClick={(e) => {
-              e.stopPropagation()
-              press.onClick()
-            }}
-            // Not stopped: the panel pager's swipe may start here, and a
-            // swipe's move abandons the hold.
-            onPointerDown={press.onPointerDown}
-            onPointerUp={press.onPointerUp}
-            onPointerLeave={press.onPointerLeave}
-            onPointerMove={press.onPointerMove}
-            onPointerCancel={press.onPointerCancel}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setMenuOpen(true)
-            }}
-            title="Target today · hold for a time"
-            aria-label={`Target "${task.title}" today (hold for a time)`}
-            // No text selection or iOS callout under a held finger.
-            // A full 44px hit target around a glyph the size of the circle and
-            // the done square; the negative margin keeps the row's height. The
-            // 12px `mr-3` after it is dead space, so its hit area never touches
-            // the done square's (Trent mis-tapped Today for done, 2026-10-12).
-            className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 -my-3 mr-3 flex h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none] sm:px-2"
-          >
-            <CalendarClock className={panel ? 'size-[19px]' : 'size-6'} strokeWidth={1.75} />
-            {/* Icon-only on a phone, so the title keeps the width. */}
-            <span className="sr-only sm:not-sr-only">Today</span>
-          </button>
-        </DateTimePicker>
-      </SnoozeMenu>
-    </span>
-  )
-}
-
-/**
  * The row's right side: horizon chip, "Today", and the done square.
  *
  * On an UPCOMING row (2026-10-12) there is no horizon chip — a targeted task's
@@ -441,15 +315,30 @@ function TaskSegmentRowActions({
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
+      {/* The horizon dot (2026-10-14; it replaced the chevron chip): the
+          segment header names the segment, the dot the task's own horizon —
+          a bigger dot than its neighbours' when a deadline pulled it in. */}
       {segmentHorizon !== 'upcoming' && (
-        <HorizonChip
+        <HorizonDotButton
           task={task}
-          segmentHorizon={segmentHorizon}
+          variant="inline"
           onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
         />
       )}
       {showToday && (
-        <TargetTodayButton task={task} actions={actions} timezone={timezone} panel={panel} />
+        <TargetTodayButton
+          task={task}
+          timezone={timezone}
+          onTargetToday={(t) => void actions.targetToday(t)}
+          onTargetAt={(t, at) => void actions.targetAt(t, at)}
+          showLabel
+          // A full 44px hit target around a glyph the size of the circle and
+          // the done square; the negative margin keeps the row's height. The
+          // 12px `mr-3` after it is dead space, so its hit area never touches
+          // the done square's (Trent mis-tapped Today for done, 2026-10-12).
+          className="-my-3 mr-3 h-11 min-w-11 sm:px-2"
+          iconClassName={panel ? 'size-[19px]' : 'size-6'}
+        />
       )}
       {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
           stock checkbox: same size, radius, border and no shadow. */}
@@ -640,27 +529,20 @@ function UpcomingMeta({
 }
 
 /**
- * The horizon, visible and changeable (spec §3). Unset is never reported as if
- * the user had said "weeks".
- *
- * On a segment row (`segmentHorizon` given) the segment header already names
- * the horizon, so the chip is quiet: its word shows only when the task's own
- * horizon differs from the segment's (a deadline pulled it in), a faint dot
- * marks unset, and otherwise it is just the small chevron — still one tap to
- * change. In the editor it always shows its word.
+ * The horizon, visible and changeable (spec §3), in the editor
+ * (`TaskModelFields`): its word and a chevron, opening the shared horizon menu
+ * (`HorizonMenuContent`, each option with its dot). Unset is never reported as
+ * if the user had said "weeks". The rows use the dot itself instead
+ * (`HorizonDotButton`).
  */
 export function HorizonChip({
   task,
   onChange,
-  segmentHorizon,
 }: {
   task: Pick<Task, 'horizon' | 'title'>
   onChange: (horizon: HorizonValue | null) => void
-  segmentHorizon?: HorizonValue
 }) {
   const label = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
-  const quiet = segmentHorizon !== undefined
-  const shown = !quiet || (task.horizon !== null && task.horizon !== segmentHorizon)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -674,27 +556,10 @@ export function HorizonChip({
           task.horizon ? 'text-foreground/60' : 'text-muted-foreground/70 italic',
         )}
       >
-        {quiet && !task.horizon && (
-          <span aria-hidden className="bg-muted-foreground/40 size-1.5 rounded-full" />
-        )}
-        {shown && label}
+        {label}
         <ChevronDown className="size-3" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuLabel>{HORIZON_WORD}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={task.horizon ?? 'unset'}
-          onValueChange={(v) => onChange(v === 'unset' ? null : (v as HorizonValue))}
-        >
-          {HORIZON_ORDER.map((h) => (
-            <DropdownMenuRadioItem key={h} value={h}>
-              {HORIZON_LABELS[h]}
-            </DropdownMenuRadioItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuRadioItem value="unset">{HORIZON_UNSET_LABEL} (weeks)</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
+      <HorizonMenuContent value={task.horizon} onChange={onChange} align="start" />
     </DropdownMenu>
   )
 }

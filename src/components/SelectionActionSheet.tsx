@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Check, FileText, Trash2 } from 'lucide-react'
+import { Check, FileText, Trash2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -38,6 +38,8 @@ import { formatTimeInTimezone } from '@/lib/format-date'
 import { taskWord } from '@/lib/utils'
 import { DirtyCard } from '@/components/DirtyCard'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
+import { removableTargetIds } from '@/lib/row-corner'
+import { BACK_TO_AUTO } from '@/lib/task-model-words'
 import type { Task, Project } from '@/types'
 
 interface SnoozeCategories {
@@ -374,6 +376,15 @@ export function SelectionActionSheet({
 
   const panelContent = (
     <DirtyCard dirty={isPanelDirty} className="space-y-3">
+      <BulkRemoveTarget
+        selectedTasks={selectedTasks}
+        disabled={isPanelDirty}
+        onSaveAll={onSaveAll}
+        onFinished={() => {
+          setSheetOpen(false)
+          onClear()
+        }}
+      />
       <QuickActionPanel
         task={null}
         selectedTasks={selectedTasks}
@@ -573,5 +584,69 @@ export function SelectionActionSheet({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+/**
+ * REMOVE TARGET for the whole selection (2026-10-14), at the top of the More
+ * sheet: the bulk form of the row's own "Remove target" / "Back to auto".
+ *
+ * It applies to the selected tasks whose row would offer it
+ * (`removableTargetIds`): a one-off with a target the user picked. With no
+ * deadline the target goes; with one, the server puts the deadline's automatic
+ * target back (§8.3). Repeating tasks, reminders, quotas, automatic targets
+ * and undated tasks are left as they are, and the button says how many it will
+ * change when that is not all of them.
+ *
+ * It rides the sheet's one save path (`onSaveAll` → `saveQuickPanelChanges`):
+ * `{ due_at: null }` scoped to those ids, which for several tasks is ONE
+ * bulk/edit request — one transaction, one undo entry (`bulk_edit`), with
+ * `include_task_ids` so High and Urgent picks are not held back by the sweep
+ * filter — and the dashboard's toast with Undo. Disabled while the panel
+ * below has unsaved edits, which this would otherwise drop.
+ */
+function BulkRemoveTarget({
+  selectedTasks,
+  disabled,
+  onSaveAll,
+  onFinished,
+}: {
+  selectedTasks: Task[]
+  disabled: boolean
+  onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
+  onFinished: () => void
+}) {
+  const ids = removableTargetIds(selectedTasks)
+  if (ids.length === 0) return null
+  const allAuto = selectedTasks.filter((t) => ids.includes(t.id)).every((t) => t.deadline_at)
+  const word = allAuto ? BACK_TO_AUTO : 'Remove target'
+  const count = ids.length < selectedTasks.length ? ` (${ids.length})` : ''
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      data-bulk-remove-target
+      disabled={disabled}
+      title={
+        disabled
+          ? 'Save or reset your changes first'
+          : 'Tasks with a deadline go back to their automatic target'
+      }
+      onClick={async () => {
+        try {
+          await onSaveAll({ due_at: null }, ids)
+        } catch {
+          // The parent has already toasted why; the sheet and selection stay.
+          return
+        }
+        onFinished()
+      }}
+      className="w-full justify-start"
+    >
+      <XCircle className="mr-1 size-4" />
+      {word}
+      {count}
+    </Button>
   )
 }

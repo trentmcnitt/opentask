@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   type Dispatch,
   type MutableRefObject,
@@ -12,6 +13,9 @@ import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { showSaveError, showToast } from '@/lib/toast'
 import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { saveTaskChanges } from '@/lib/save-task-changes'
+import { targetWhen } from '@/hooks/useTaskSegments'
+import { useTimezone } from '@/hooks/useTimezone'
+import { DateTime } from 'luxon'
 
 /**
  * Shared task action handlers used by the dashboard and the task detail page.
@@ -51,6 +55,62 @@ interface UseTaskActionsSingleConfig {
 }
 
 type UseTaskActionsConfig = UseTaskActionsListConfig | UseTaskActionsSingleConfig
+
+/**
+ * Target a task (2026-10-14, the dashboard row's hover Today): with no `at`,
+ * today at the time Snooze-all would go to; with one, the time picked from the
+ * Target menu. The segment rows' own request (`POST
+ * /api/task-segments/target-today`), so the target stamp, the one undo entry
+ * and the sync are the server's; the toast names the time it got, in the
+ * user's timezone (kept in a ref, like the config, so the handler is stable;
+ * written in an effect, since the React Compiler lint refuses a ref write
+ * during render). List mode only.
+ */
+function useHandleTargetAt(
+  configRef: MutableRefObject<UseTaskActionsConfig>,
+  bumpUndoCount: () => void,
+  handleUndoRef: MutableRefObject<(() => Promise<void>) | null>,
+) {
+  const timezone = useTimezone()
+  const timezoneRef = useRef(timezone)
+  useEffect(() => {
+    timezoneRef.current = timezone
+  })
+  return useCallback(
+    async (task: Task, at?: string) => {
+      const cfg = configRef.current
+      if (cfg.mode !== 'list') return
+      try {
+        const res = await fetch('/api/task-segments/target-today', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [task.id], ...(at ? { at } : {}) }),
+        })
+        const json = (await res.json().catch(() => null)) as {
+          data?: { until?: string }
+          error?: string
+        } | null
+        if (!res.ok) throw new Error(json?.error || 'Could not set the target')
+        cfg.onRefresh()
+        bumpUndoCount()
+        const until = json?.data?.until ?? at
+        const zone = timezoneRef.current
+        const when = until
+          ? targetWhen(DateTime.fromISO(until).setZone(zone), DateTime.now().setZone(zone))
+          : 'today'
+        showToast({
+          message: `Targeted ${when}: “${task.title}”`,
+          type: 'success',
+          action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+        })
+      } catch (err) {
+        cfg.onRefresh()
+        showSaveError(err)
+      }
+    },
+    [configRef, bumpUndoCount, handleUndoRef],
+  )
+}
 
 export function useTaskActions(config: UseTaskActionsConfig) {
   // Store config in a ref so callbacks always see the latest values without
@@ -148,6 +208,8 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     [bumpUndoCount, handleUndoRef],
   )
 
+  const handleTargetAt = useHandleTargetAt(configRef, bumpUndoCount, handleUndoRef)
+
   const handleSaveAllChangesList = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
       const cfg = configRef.current
@@ -213,6 +275,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       ...undoRedo,
       handleDone: handleDoneList,
       handleSnooze,
+      handleTargetAt,
       handleSaveAllChanges: handleSaveAllChangesList,
     }
   }
@@ -232,6 +295,7 @@ export type ListTaskActionsReturn = {
   handleRedoRef: MutableRefObject<(() => Promise<void>) | null>
   handleDone: (taskId: number) => Promise<void>
   handleSnooze: (taskId: number, until: string) => Promise<void>
+  handleTargetAt: (task: Task, at?: string) => Promise<void>
   handleSaveAllChanges: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   undoCount: number
   redoCount: number

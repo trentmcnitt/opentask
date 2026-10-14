@@ -25,6 +25,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProjectPreviewCount, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
+import type { HorizonValue } from '@/lib/task-segments'
 import { justAddedTag } from '@/lib/just-added'
 
 /**
@@ -88,6 +89,15 @@ interface TaskListProps {
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
   onRemoveTarget?: (task: Task) => void
+  /**
+   * The row's horizon dot menu and its hover Today (2026-10-14), passed to
+   * each `TaskRow`. Optional: without them the dot is a mark with a tooltip
+   * and the row has no Today button. The dashboard wires them to
+   * `actions.handleSaveAllChanges(task.id, { horizon })` and
+   * `actions.handleTargetAt` (`useTaskActions`).
+   */
+  onSetHorizon?: (task: Task, horizon: HorizonValue | null) => void
+  onTargetAt?: (task: Task, at?: string) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -202,6 +212,8 @@ export function TaskList({
   onDone,
   onSnooze,
   onRemoveTarget,
+  onSetHorizon,
+  onTargetAt,
   onLabelClick,
   onTaskFocus,
   keyboardFocusedId,
@@ -412,6 +424,8 @@ export function TaskList({
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
           onRemoveTarget={onRemoveTarget}
+          onSetHorizon={onSetHorizon}
+          onTargetAt={onTargetAt}
           // `isOverdue` is the Tasks page's one definition (the
           // top bar's pills use it too). §5: it never counts a
           // quota — its period is what is "due", and the bar
