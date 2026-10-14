@@ -2,7 +2,7 @@
 
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { GuardedLink } from './GuardedLink'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   History,
@@ -23,7 +23,9 @@ import { useDashboardTabClick } from '@/hooks/useDashboardTabClick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
-import { AiContextStaleSidebarLink } from '@/components/AiContextStaleLink'
+import { useNavigationGuard } from '@/components/NavigationGuardProvider'
+import { addActionLabel } from '@/lib/add-action'
+import { PROCESS_ACTION, requestOpenProcess } from '@/lib/process-client'
 
 interface SidebarProps {
   onAddClick?: () => void
@@ -118,13 +120,6 @@ export function Sidebar({ onAddClick }: SidebarProps) {
           })}
         </div>
 
-        {/* Process (2026-10-12, spec §1): Trent never found it in the ☰ menu —
-            "I think a process belongs somewhere on the dashboard… a button on
-            the left-hand panel". The same Process the menu opens: the top
-            bar's `open-process` listener (Header), so one modal, one flow.
-            Dashboard only; its mobile place is the dashboard redesign's. */}
-        {pathname === '/' && <SidebarProcessButton />}
-
         {/* Build info - at bottom of scrollable nav area */}
         <div className="mt-auto pt-4 text-center">
           <span className="text-muted-foreground/60 text-[11px]">
@@ -147,14 +142,19 @@ export function Sidebar({ onAddClick }: SidebarProps) {
         <div className="border-t px-2 py-3">
           <Button variant="outline" className="w-full justify-start gap-2" onClick={onAddClick}>
             <Plus className="size-4" />
-            {pathname.startsWith('/reminders')
-              ? 'Add Reminder'
-              : pathname.startsWith('/quotas')
-                ? 'Add Quota'
-                : 'Add Task'}
+            {addActionLabel(pathname)}
           </Button>
         </div>
       )}
+
+      {/* Process (2026-10-14, mockup P1): its own block between dividers,
+          below Add Task — "Add Task and Process are not in the same cage".
+          A plain nav-weight row: no count, no subtitle (Trent: "I don't like
+          the count… don't think we need all that text"). Shown on every page;
+          see `SidebarProcessButton` for how it opens off the dashboard. */}
+      <div className="border-t px-2 py-3">
+        <SidebarProcessButton />
+      </div>
 
       {/* Pinned bottom nav — outside scrollable area */}
       <div className="space-y-1 border-t px-2 py-3">
@@ -178,7 +178,6 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             </GuardedLink>
           )
         })}
-        <AiContextStaleSidebarLink />
         <a
           href={DOCS_URL}
           target="_blank"
@@ -193,19 +192,31 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   )
 }
 
-/** The dashboard's Process button — opens the one Process modal (Header's `open-process`). */
+/**
+ * The left bar's Process — the one Process modal the ☰ menu opens, which lives
+ * in the top bar (`Header`). On the dashboard, Reminders and Quotas the top bar
+ * is mounted and opens it in place; on a page without one (History, Settings,
+ * …) nothing answers the event, so it goes to the dashboard with
+ * `?action=process` and the top bar opens it there (`requestOpenProcess`,
+ * `PROCESS_ACTION` in src/lib/process-client.ts).
+ */
 function SidebarProcessButton() {
+  const router = useRouter()
+  const { requestNavigation } = useNavigationGuard()
+  const onClick = () => {
+    if (requestOpenProcess()) return
+    const href = `/?action=${PROCESS_ACTION}`
+    if (requestNavigation(href)) router.push(href)
+  }
   return (
-    <div className="mt-3 border-t pt-3">
-      <button
-        type="button"
-        data-sidebar-process
-        onClick={() => window.dispatchEvent(new CustomEvent('open-process'))}
-        className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
-      >
-        <ListChecks className="size-4" />
-        Process
-      </button>
-    </div>
+    <button
+      type="button"
+      data-sidebar-process
+      onClick={onClick}
+      className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
+    >
+      <ListChecks className="size-4" />
+      Process
+    </button>
   )
 }

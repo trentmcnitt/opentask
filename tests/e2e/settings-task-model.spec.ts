@@ -6,9 +6,10 @@
  *    of the next period (not +1 hour).
  * 2. Settings → Projects: a project's description, added with a live
  *    character count, saved, shown under the name after a reload, and cleared.
- * 3. The AI-context staleness nudge stays out of the left bar while AI is off
- *    (E2E runs without OPENTASK_AI_ENABLED; the shown case is unit-tested in
- *    tests/behavioral/ai-context-staleness.test.ts).
+ *
+ * The AI-context staleness nudge's left-bar test moved to
+ * process-nav-and-ai-context.spec.ts (2026-10-14): the link is gone, and the
+ * nudge now lives in Settings › AI.
  *
  * The E2E database is shared by every spec, so each test puts back what it
  * changed.
@@ -144,22 +145,4 @@ test('Project description: add with a live count, read back, clear', async ({
   } finally {
     await page.request.delete(`/api/projects/${id}`)
   }
-})
-
-test('the AI-context nudge stays out of the left bar while AI is off', async ({
-  authenticatedPage: page,
-}) => {
-  // Never set (null stamp) would be stale — it is AI being off that hides it.
-  const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
-  expect(prefs.ai_available).toBe(false)
-  expect(prefs).toHaveProperty('ai_context_updated_at')
-  // Wait for the preferences to load: before they do, AI reads as off
-  // whatever the server says, and this would pass for the wrong reason.
-  await waitForPrefsLoaded(
-    page,
-    () => page.goto('/settings'),
-    page.getByRole('heading', { name: 'Settings' }),
-  )
-  await expect(page.locator('aside').getByRole('link', { name: 'Settings' })).toBeVisible()
-  await expect(page.locator('[data-ai-context-stale]')).toHaveCount(0)
 })

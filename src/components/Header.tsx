@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   Undo2,
   Redo2,
@@ -19,6 +19,7 @@ import {
   Moon,
   Monitor,
   BookOpen,
+  Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -50,7 +51,8 @@ import { ProcessModal } from '@/components/process/ProcessModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { DOCS_URL } from '@/lib/docs-url'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
-import { AiContextStaleMenuItem } from '@/components/AiContextStaleLink'
+import { OPEN_PROCESS_EVENT, PROCESS_ACTION } from '@/lib/process-client'
+import { OPEN_ADD_EVENT, addActionLabel } from '@/lib/add-action'
 
 interface HeaderProps {
   title?: string
@@ -145,26 +147,36 @@ export function Header({
   searchSubject,
   wideAtXl = false,
 }: HeaderProps) {
-  const { data: session } = useSession()
-  const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
   const [processOpen, setProcessOpen] = useState(false)
   // Bumped on each opening: the modal remounts, so every Process starts fresh.
   const [processSession, setProcessSession] = useState(0)
-  // A task segment's "over 50" nudge (`SegmentNudge` in TaskSegmentRow) asks for Process.
+  // Process asked for from outside this menu: a task segment's "over 50"
+  // nudge (`SegmentNudge` in TaskSegmentRow) and the left bar's Process row.
+  // Cancelling the event tells the left bar it opened here; on a page with no
+  // top bar it goes to `/?action=process` instead, opened below on arrival
+  // (src/lib/process-client.ts). Only with a `timezone`, without which there
+  // is no modal to open.
   useEffect(() => {
-    const open = () => {
+    if (!timezone) return
+    const openProcess = () => {
       setProcessSession((n) => n + 1)
       setProcessOpen(true)
     }
-    window.addEventListener('open-process', open)
-    return () => window.removeEventListener('open-process', open)
-  }, [])
-  const [menuOpened, setMenuOpened] = useState(false)
-  const aiAvailable = useAiAvailable()
-  // The AI Status item's dot: fetched the first time the menu opens, then kept.
-  const aiSlotState = useAiSlotState({ enabled: menuOpened })
+    const onRequest = (e: Event) => {
+      e.preventDefault()
+      openProcess()
+    }
+    window.addEventListener(OPEN_PROCESS_EVENT, onRequest)
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('action') === PROCESS_ACTION) {
+      // Raw history rewrite, like the dashboard's `?action=quick-add`.
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+      openProcess()
+    }
+    return () => window.removeEventListener(OPEN_PROCESS_EVENT, onRequest)
+  }, [timezone])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -300,115 +312,17 @@ export function Header({
             </Tooltip>
 
             {/* Hamburger menu */}
-            <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Menu">
-                  <Menu className="size-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="max-w-48">
-                {session?.user?.name && (
-                  <>
-                    <DropdownMenuLabel className="text-muted-foreground line-clamp-2 text-xs font-normal break-all">
-                      Signed in as {session.user.name}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                <DropdownMenuItem onClick={onRedo}>
-                  <Redo2 className="size-4" />
-                  Redo
-                  {redoCount > 0 && (
-                    <span className="text-muted-foreground ml-1 text-xs">({redoCount})</span>
-                  )}
-                  <span className="text-muted-foreground ml-auto hidden text-xs md:inline">
-                    ⌘⇧Z
-                  </span>
-                </DropdownMenuItem>
-                {onShowKeyboardShortcuts && (
-                  <DropdownMenuItem onClick={onShowKeyboardShortcuts} className="hidden md:flex">
-                    <Keyboard className="size-4" />
-                    Shortcuts
-                    <span className="text-muted-foreground ml-auto text-xs">?</span>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                {timezone && (
-                  <ProcessMenuItem
-                    onSelect={() => {
-                      setProcessSession((n) => n + 1)
-                      setProcessOpen(true)
-                    }}
-                  />
-                )}
-                {aiAvailable && (
-                  <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
-                    <Bot className="size-4" />
-                    AI Status
-                    {aiSlotState && aiSlotState !== 'disabled' && (
-                      <AIStatusDot state={aiSlotState} className="ml-auto" />
-                    )}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    {resolvedTheme === 'dark' ? (
-                      <Moon className="size-4" />
-                    ) : (
-                      <Sun className="size-4" />
-                    )}
-                    Theme
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
-                      <DropdownMenuRadioItem value="light">
-                        <Sun className="size-4" />
-                        Light
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="dark">
-                        <Moon className="size-4" />
-                        Dark
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="system">
-                        <Monitor className="size-4" />
-                        System
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                {/* Archive, Trash and Settings live here because the mobile tab
-                    bar has five slots and spends them on daily destinations.
-                    This menu is the only overflow surface on mobile, so it is
-                    also the only route to these there — the desktop sidebar
-                    still lists all three. Archive moved here on 2026-09-06 when
-                    Quotas took its tab. */}
-                <DropdownMenuItem asChild>
-                  <GuardedLink href="/archive">
-                    <Archive className="size-4" />
-                    Archive
-                  </GuardedLink>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <GuardedLink href="/trash">
-                    <Trash2 className="size-4" />
-                    Trash
-                  </GuardedLink>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <GuardedLink href="/settings">
-                    <Settings className="size-4" />
-                    Settings
-                  </GuardedLink>
-                </DropdownMenuItem>
-                <AiContextStaleMenuItem />
-                <DropdownMenuItem asChild>
-                  <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
-                    <BookOpen className="size-4" />
-                    Docs
-                  </a>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <HeaderMenu
+              onRedo={onRedo}
+              redoCount={redoCount}
+              onShowKeyboardShortcuts={onShowKeyboardShortcuts}
+              timezone={timezone}
+              onOpenProcess={() => {
+                setProcessSession((n) => n + 1)
+                setProcessOpen(true)
+              }}
+              onOpenAiStatus={() => setAiStatusOpen(true)}
+            />
           </div>
         </div>
       </header>
@@ -425,6 +339,152 @@ export function Header({
         />
       )}
     </TooltipProvider>
+  )
+}
+
+/**
+ * The top bar's ☰ menu. Order (2026-10-14, mockup P1): Add Task (phone only),
+ * divider, Process, divider, the destinations (Archive, Trash, Settings,
+ * Docs), divider, then the tools (Redo, Shortcuts, AI Status, Theme).
+ */
+function HeaderMenu({
+  onRedo,
+  redoCount,
+  onShowKeyboardShortcuts,
+  timezone,
+  onOpenProcess,
+  onOpenAiStatus,
+}: {
+  onRedo: () => void
+  redoCount: number
+  onShowKeyboardShortcuts?: () => void
+  timezone?: string
+  onOpenProcess: () => void
+  onOpenAiStatus: () => void
+}) {
+  const { data: session } = useSession()
+  const pathname = usePathname()
+  const { theme, setTheme, resolvedTheme } = useTheme()
+  const [menuOpened, setMenuOpened] = useState(false)
+  const aiAvailable = useAiAvailable()
+  // The AI Status item's dot: fetched the first time the menu opens, then kept.
+  const aiSlotState = useAiSlotState({ enabled: menuOpened })
+
+  return (
+    <DropdownMenu onOpenChange={(open) => open && setMenuOpened(true)}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Menu">
+          <Menu className="size-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-w-48">
+        {session?.user?.name && (
+          <>
+            <DropdownMenuLabel className="text-muted-foreground line-clamp-2 text-xs font-normal break-all">
+              Signed in as {session.user.name}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {/* Order (2026-10-14, mockup P1): Add Task, divider, Process,
+            divider, then the destinations; the tools (Redo, Shortcuts,
+            AI Status, Theme) follow below one more divider. Add Task is
+            phone-only: from `md` up the left bar's button sits right
+            there. It runs the left bar's handler (`OPEN_ADD_EVENT`). */}
+        <DropdownMenuItem
+          onClick={() => window.dispatchEvent(new CustomEvent(OPEN_ADD_EVENT))}
+          className="md:hidden"
+          data-menu-add
+        >
+          <Plus className="size-4" />
+          {addActionLabel(pathname)}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="md:hidden" />
+        {timezone && (
+          <>
+            <ProcessMenuItem onSelect={onOpenProcess} />
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {/* Archive, Trash and Settings live here because the mobile tab
+            bar has five slots and spends them on daily destinations.
+            This menu is the only overflow surface on mobile, so it is
+            also the only route to these there — the desktop sidebar
+            still lists all three. Archive moved here on 2026-09-06 when
+            Quotas took its tab. */}
+        <DropdownMenuItem asChild>
+          <GuardedLink href="/archive">
+            <Archive className="size-4" />
+            Archive
+          </GuardedLink>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <GuardedLink href="/trash">
+            <Trash2 className="size-4" />
+            Trash
+          </GuardedLink>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <GuardedLink href="/settings">
+            <Settings className="size-4" />
+            Settings
+          </GuardedLink>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+            <BookOpen className="size-4" />
+            Docs
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onRedo}>
+          <Redo2 className="size-4" />
+          Redo
+          {redoCount > 0 && (
+            <span className="text-muted-foreground ml-1 text-xs">({redoCount})</span>
+          )}
+          <span className="text-muted-foreground ml-auto hidden text-xs md:inline">⌘⇧Z</span>
+        </DropdownMenuItem>
+        {onShowKeyboardShortcuts && (
+          <DropdownMenuItem onClick={onShowKeyboardShortcuts} className="hidden md:flex">
+            <Keyboard className="size-4" />
+            Shortcuts
+            <span className="text-muted-foreground ml-auto text-xs">?</span>
+          </DropdownMenuItem>
+        )}
+        {aiAvailable && (
+          <DropdownMenuItem onClick={onOpenAiStatus}>
+            <Bot className="size-4" />
+            AI Status
+            {aiSlotState && aiSlotState !== 'disabled' && (
+              <AIStatusDot state={aiSlotState} className="ml-auto" />
+            )}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            {resolvedTheme === 'dark' ? <Moon className="size-4" /> : <Sun className="size-4" />}
+            Theme
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+              <DropdownMenuRadioItem value="light">
+                <Sun className="size-4" />
+                Light
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark">
+                <Moon className="size-4" />
+                Dark
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system">
+                <Monitor className="size-4" />
+                System
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
