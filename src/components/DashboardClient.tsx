@@ -2441,6 +2441,13 @@ function DashboardView({
             onRemoveTarget={(task) =>
               void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
             }
+            // The row's horizon dot menu and its hover Today (and the Today
+            // hold's Target menu) — on every row, the ones inside an open Now
+            // fold included.
+            onSetHorizon={(task, horizon) =>
+              void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
+            }
+            onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}
             keyboardFocusedId={keyboardFocusedId}
