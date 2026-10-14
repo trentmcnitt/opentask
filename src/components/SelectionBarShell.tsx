@@ -75,10 +75,13 @@ export function SelectionBarShell({
       }}
     >
       <div
-        className="bg-primary text-primary-foreground rounded-xl px-4 py-3 shadow-xl"
+        className="bg-primary text-primary-foreground rounded-xl px-3 py-3 shadow-xl sm:px-4"
         aria-live="polite"
       >
-        <div className="flex items-center gap-2">
+        {/* Wraps rather than overflowing: the bar is capped at the screen's
+            width, and a verb pushed past it was cut off with Clear out of
+            reach (iPhone at a larger text size, 2026-10-14). */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
           {count > 1 && (
             <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
           )}

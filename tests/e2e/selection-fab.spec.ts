@@ -130,3 +130,31 @@ test.describe('Selection and the floating bar', () => {
     })
   })
 })
+
+test.describe('The floating bar on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('every verb and Clear stay on screen, at a larger text size too', async ({
+    authenticatedPage: page,
+  }) => {
+    // The bar used to run off the right edge on an iPhone at a larger text
+    // size, with Trash cut off and Clear out of reach (2026-10-14).
+    await withTasks(page, 1, async ([id]) => {
+      for (const rootSize of ['16px', '20px']) {
+        await page.evaluate((size) => (document.documentElement.style.fontSize = size), rootSize)
+        await cmdClickRow(row(page, id))
+        await expect(bar(page)).toBeVisible()
+        const buttons = bar(page).getByRole('button')
+        await expect(buttons.filter({ hasText: 'Done' })).toBeVisible()
+        const width = page.viewportSize()!.width
+        for (const button of await buttons.all()) {
+          const box = (await button.boundingBox())!
+          expect(box.x).toBeGreaterThanOrEqual(0)
+          expect(box.x + box.width).toBeLessThanOrEqual(width)
+        }
+        await bar(page).getByRole('button', { name: 'Clear selection' }).click()
+        await expect(bar(page)).toHaveCount(0)
+      }
+    })
+  })
+})

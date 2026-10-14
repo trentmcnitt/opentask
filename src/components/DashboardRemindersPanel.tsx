@@ -185,7 +185,6 @@ export function DashboardRemindersPanel({
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
   const segments = useTaskSegments({
     segments: reminders.taskSegments,
-    timeSlots,
     timezone,
     refresh,
     onUndo,

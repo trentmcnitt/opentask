@@ -3,9 +3,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
-import { targetTodayTimeFor } from '@/lib/snooze'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
-import type { TimeSlot } from '@/lib/time-slot-assign'
 import {
   effectiveHorizon,
   type HorizonValue,
@@ -65,8 +62,7 @@ export interface SegmentView {
 
 interface UseTaskSegmentsOptions {
   segments: TaskSegmentPayload[]
-  /** The user's periods and timezone — where the Today picker opens (`targetTodayTimeFor`). */
-  timeSlots: TimeSlot[]
+  /** The user's timezone, for the Today menu's toast. */
   timezone: string
   refresh: () => Promise<void>
   onUndo: () => void
@@ -86,7 +82,6 @@ async function post(url: string, body: unknown): Promise<unknown> {
 
 export function useTaskSegments({
   segments,
-  timeSlots,
   timezone,
   refresh,
   onUndo,
@@ -185,7 +180,7 @@ export function useTaskSegments({
       ),
     [run],
   )
-  const picker = useTargetPicker(run, timeSlots, timezone)
+  const picker = useTargetPicker(run, timezone)
   const deferAll = useCallback(
     (segment: SegmentView) => {
       const ids = segment.rows.filter((r) => r.state === 'waiting').map((r) => r.task.id)
@@ -295,21 +290,10 @@ async function patchTask(id: number, body: unknown): Promise<unknown> {
 }
 
 /**
- * The Today button's picker (2026-10-12): where it opens — the moment a plain
- * tap would target, computed at the hold so "now" is the moment of it — and
- * the targeting it sends (`at`), through the same optimistic `run`.
+ * The Today button's menu and picker (2026-10-12, a menu since 10-14): the
+ * targeting each choice sends (`at`), through the same optimistic `run`.
  */
-function useTargetPicker(run: RunSegmentAction, timeSlots: TimeSlot[], timezone: string) {
-  const { bulkSnoozeDefault, defaultSnoozeOption, morningTime } = useSnoozePreferences()
-  const targetTodayAnchor = useCallback(
-    () =>
-      targetTodayTimeFor(
-        { bulkSnoozeDefault, defaultSnoozeOption, morningTime },
-        timeSlots,
-        timezone,
-      ),
-    [bulkSnoozeDefault, defaultSnoozeOption, morningTime, timeSlots, timezone],
-  )
+function useTargetPicker(run: RunSegmentAction, timezone: string) {
   const targetAt = useCallback(
     (task: Task, at: string) => {
       const when = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone)
@@ -326,7 +310,7 @@ function useTargetPicker(run: RunSegmentAction, timeSlots: TimeSlot[], timezone:
     },
     [run, timezone],
   )
-  return { targetTodayAnchor, targetAt }
+  return { targetAt }
 }
 
 /** "today 3:00 PM", "tomorrow 9:00 AM", "Tue, Oct 13 3:00 PM" — the picker's toast. */

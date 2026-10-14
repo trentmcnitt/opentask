@@ -415,11 +415,18 @@ export function SelectionActionSheet({
           Done
         </Button>
 
-        {/* Details button - only show for single task selection */}
+        {/* Details button - only show for single task selection. Icon-only on
+            a phone, where Done, Details, More, Trash and Clear did not fit
+            across the screen at a larger text size (2026-10-14). */}
         {openDetails && (
-          <Button size="sm" variant="secondary" onClick={handleNavigateToDetail}>
-            <FileText className="mr-1 size-4" />
-            Details
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleNavigateToDetail}
+            aria-label="Details"
+          >
+            <FileText className="size-4 sm:mr-1" />
+            <span className="hidden sm:inline">Details</span>
           </Button>
         )}
 

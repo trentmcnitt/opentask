@@ -67,6 +67,28 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
   return slots
 }
 
+/**
+ * Whether a click on an option is a real choice. A menu opened by a HOLD
+ * opens under the finger that is still down: on a phone the sheet slides up
+ * beneath it, and lifting that finger clicks whichever option is now there —
+ * the Today button's hold picked "Next period" that way (2026-10-14). So an
+ * option only counts once a new press has begun since the menu opened; a
+ * keyboard's click (`detail` 0) always counts.
+ */
+function useChoiceGuard(open: boolean): (e: React.MouseEvent) => boolean {
+  const armed = useRef(false)
+  useEffect(() => {
+    if (!open) return
+    armed.current = false
+    const arm = () => {
+      armed.current = true
+    }
+    document.addEventListener('pointerdown', arm, true)
+    return () => document.removeEventListener('pointerdown', arm, true)
+  }, [open])
+  return (e) => armed.current || e.detail === 0
+}
+
 /** The menu's remove-target / back-to-auto entry (not a snooze option). */
 const REMOVE_TARGET = 'remove-target'
 /** "Back to auto" (§8.3): the same clear as Remove target, drawn as a reset. */
@@ -103,6 +125,14 @@ interface SnoozeMenuProps {
    * and every option stops at it anyway (the server caps, §8.2).
    */
   deadlineAt?: string | null
+  /** The sheet's title and the menu's accessible name: "Snooze" by default; Today's menu says "Target". */
+  title?: string
+  /**
+   * Custom... opens the caller's own picker instead of the snooze dialog. The
+   * segment rows' Today menu uses it for its "Set target" picker, which knows
+   * the deadline (ruling Q8).
+   */
+  onCustom?: () => void
 }
 
 /**
@@ -119,6 +149,8 @@ export function SnoozeMenu({
   onRemoveTarget,
   targetReset = 'remove',
   deadlineAt = null,
+  title = 'Snooze',
+  onCustom,
 }: SnoozeMenuProps) {
   const isMobile = useIsMobile()
   const timezone = useTimezone()
@@ -127,6 +159,7 @@ export function SnoozeMenu({
   const [customPickerOpen, setCustomPickerOpen] = useState(false)
 
   const slots = useSlotsWhenOpen(open)
+  const isChoice = useChoiceGuard(open)
 
   // THE USER'S TIME SLOTS ARE SNOOZE TARGETS (Trent, 2026-09-22: "snooze till
   // tomorrow morning (early), tomorrow morning… midday, afternoon, evening").
@@ -197,7 +230,8 @@ export function SnoozeMenu({
     }
     if (option === 'custom') {
       onOpenChange(false)
-      setCustomPickerOpen(true)
+      if (onCustom) onCustom()
+      else setCustomPickerOpen(true)
       return
     }
     onSnooze(
@@ -220,15 +254,17 @@ export function SnoozeMenu({
         <Sheet open={open} onOpenChange={onOpenChange}>
           <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
             <SheetHeader>
-              <SheetTitle>Snooze</SheetTitle>
-              <SheetDescription className="sr-only">Choose snooze duration</SheetDescription>
+              <SheetTitle>{title}</SheetTitle>
+              <SheetDescription className="sr-only">Choose when</SheetDescription>
             </SheetHeader>
             <div className="space-y-1 px-4 pb-4">
               {options.map((opt) => (
                 <button
                   key={opt.option}
                   type="button"
-                  onClick={() => handleSelect(opt.option)}
+                  onClick={(e) => {
+                    if (isChoice(e)) handleSelect(opt.option)
+                  }}
                   className="hover:bg-accent active:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors"
                 >
                   <OptionIcon option={opt.option} className="text-muted-foreground size-4" />
@@ -259,7 +295,9 @@ export function SnoozeMenu({
         <SnoozeDropdown
           triggerRef={triggerRef}
           options={options}
+          label={`${title} options`}
           onSelect={handleSelect}
+          isChoice={isChoice}
           onClose={() => onOpenChange(false)}
         />
       )}
@@ -285,12 +323,16 @@ export function SnoozeMenu({
 function SnoozeDropdown({
   triggerRef,
   options,
+  label,
   onSelect,
+  isChoice,
   onClose,
 }: {
   triggerRef: React.RefObject<HTMLDivElement | null>
   options: { label: string; option: string }[]
+  label: string
   onSelect: (option: string) => void
+  isChoice: (e: React.MouseEvent) => boolean
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -347,7 +389,7 @@ function SnoozeDropdown({
     <div
       ref={ref}
       role="menu"
-      aria-label="Snooze options"
+      aria-label={label}
       className="bg-popover text-popover-foreground fixed z-50 min-w-[200px] rounded-md border p-1 shadow-md"
       style={{ transform: 'translateX(-100%)' }}
     >
@@ -356,7 +398,9 @@ function SnoozeDropdown({
           key={opt.option}
           role="menuitem"
           type="button"
-          onClick={() => onSelect(opt.option)}
+          onClick={(e) => {
+            if (isChoice(e)) onSelect(opt.option)
+          }}
           className="hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors"
         >
           <OptionIcon option={opt.option} className="size-4 flex-shrink-0" />
