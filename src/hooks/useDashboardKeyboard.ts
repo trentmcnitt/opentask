@@ -2,7 +2,7 @@
 
 import type React from 'react'
 import { useEffect } from 'react'
-import type { SortOption, SortedTaskGroup } from '@/lib/task-grouping'
+import { shownGroupTasks, type SortOption, type SortedTaskGroup } from '@/lib/task-grouping'
 import type { Project } from '@/types'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { showToast } from '@/lib/toast'
@@ -109,7 +109,7 @@ export function useDashboardKeyboard({
         e.preventDefault()
         const clipboardGroups: ClipboardGroup[] = sortedGroups
           .map((g) => {
-            const selected = g.sortedTasks.filter((t) => selection.selectedIds.has(t.id))
+            const selected = shownGroupTasks(g, true).filter((t) => selection.selectedIds.has(t.id))
             return { label: g.label, tasks: selected, sort: sortOption, reversed }
           })
           .filter((g) => g.tasks.length > 0)

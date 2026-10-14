@@ -1,10 +1,12 @@
 /**
- * All groups by project and caps each project group, with everything one tap
- * away (2026-09-23: "cap the number of to-dos that are shown at 10… otherwise
- * it's too hard to scroll through the projects when it's not in unified
- * mode"). Since 2026-09-30 the cap is a setting — Settings → Projects → "Tasks
- * shown per project" (`project_preview_count`, default 6). Today's time slots
- * keep their own cap of 5. The flat views (New, Unified) are not capped.
+ * Grouped by project, with Now's folds lifted (here by the `?project=` filter;
+ * "Show all" does the same — the old All), each project group is capped, with
+ * everything one tap away (2026-09-23: "cap the number of to-dos that are
+ * shown at 10… otherwise it's too hard to scroll through the projects when
+ * it's not in unified mode"). Since 2026-09-30 the cap is a setting —
+ * Settings → Projects → "Tasks shown per project" (`project_preview_count`,
+ * default 6). The flat views (Newest, Unified) are not capped, and neither
+ * are Now's own relevant rows (its fold is what hides rows there).
  *
  * The test's tasks are the only ones on screen (`?project=` filter), so the
  * group holding them holds nothing else.
@@ -14,7 +16,7 @@ import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 async function pressedView(page: Page): Promise<string | null> {
-  for (const v of ['Today', 'All', 'Newest']) {
+  for (const v of ['Now', 'Newest']) {
     const b = page.getByRole('button', { name: v, exact: true })
     if ((await b.getAttribute('aria-pressed')) === 'true') return v
   }
@@ -64,12 +66,12 @@ async function withTwelveTasks(
   }
 }
 
-test('All shows 6 per project by default with the rest behind "Show all"; New shows every row', async ({
+test('a filtered project shows 6 by default with the rest behind "Show all"; Newest shows every row', async ({
   authenticatedPage: page,
 }) => {
   await withTwelveTasks(page, async (projectId, tag) => {
     await page.goto(`/?project=${projectId}`)
-    await switchView(page, 'All')
+    await switchView(page, 'Now')
     // The group is the project itself, headed by its name.
     await expect(page.getByRole('button', { name: `Collapse ${tag}`, exact: true })).toBeVisible()
     const rows = page.getByText(new RegExp(`^${tag} task`))
@@ -98,7 +100,7 @@ test('the per-project cap follows the Settings choice', async ({ authenticatedPa
       await saved
 
       await page.goto(`/?project=${projectId}`)
-      await switchView(page, 'All')
+      await switchView(page, 'Now')
       const rows = page.getByText(new RegExp(`^${tag} task`))
       await expect(rows).toHaveCount(8)
       await expect(page.getByRole('button', { name: /Show all 12/ })).toBeVisible()
@@ -113,7 +115,7 @@ test('with the Overdue filter on, every overdue task shows: no "Show all" cap', 
     page,
     async (projectId, tag) => {
       await page.goto(`/?project=${projectId}`)
-      await switchView(page, 'All')
+      await switchView(page, 'Now')
       const rows = page.getByText(new RegExp(`^${tag} task`))
       await expect(rows).toHaveCount(6)
 

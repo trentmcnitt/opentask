@@ -1,12 +1,11 @@
 /**
  * `resolveTaskLink` (src/lib/task-link.ts) — what the dashboard does with a
  * notification tap's `/?task=<id>`, one step per render: show and select the
- * row, or first clear what hides it (search/filters, then the Today view),
- * send a reminder or quota to its own surface, and give up with a toast
- * rather than loop.
+ * row, or first clear what hides it (search/filters), send a reminder or
+ * quota to its own surface, and give up with a toast rather than loop.
  *
- * Real `buildTaskGroups` output for the groups, so "Today drops a task due
- * next week" is the real view's rule, not a stub's.
+ * Real `buildTaskGroups` output for the groups, so "Now's fold keeps a task
+ * due next week in its project's group" is the real view's rule, not a stub's.
  */
 import { describe, test, expect } from 'vitest'
 import { resolveTaskLink, missingTaskMessage, type TaskLinkInput } from '@/lib/task-link'
@@ -83,21 +82,20 @@ function input(
   taskId: number,
   grouping: GroupingMode,
   listed: Task[] = listable,
-  tried = { narrowing: false, view: false },
+  tried = { narrowing: false },
 ): TaskLinkInput {
   return {
     taskId,
     tasks: all,
     listed,
-    groups: buildTaskGroups(listed, PROJECTS, grouping, TZ, [], NOW),
-    grouping,
+    groups: buildTaskGroups(listed, PROJECTS, grouping),
     tried,
   }
 }
 
 describe('resolveTaskLink', () => {
   test('a row in the current view is shown, with its group', () => {
-    const step = resolveTaskLink(input(1, 'slot'))
+    const step = resolveTaskLink(input(1, 'project'))
     expect(step.kind).toBe('show')
     if (step.kind === 'show') expect(step.task.id).toBe(1)
   })
@@ -114,27 +112,21 @@ describe('resolveTaskLink', () => {
   test('a search or filter hiding it is cleared first — once', () => {
     const narrowed = [dueToday]
     expect(resolveTaskLink(input(2, 'project', narrowed)).kind).toBe('clear-narrowing')
-    expect(
-      resolveTaskLink(input(2, 'project', narrowed, { narrowing: true, view: false })).kind,
-    ).toBe('unreachable')
-  })
-
-  test('Today drops a task due next week, so the view switches — once', () => {
-    expect(resolveTaskLink(input(2, 'slot')).kind).toBe('switch-view')
-    // After the switch the same task is a row in All.
-    expect(resolveTaskLink(input(2, 'project')).kind).toBe('show')
-    // A switch that somehow didn't help doesn't loop.
-    expect(resolveTaskLink(input(2, 'slot', listable, { narrowing: false, view: true })).kind).toBe(
+    expect(resolveTaskLink(input(2, 'project', narrowed, { narrowing: true })).kind).toBe(
       'unreachable',
     )
   })
 
-  test('filters are cleared before the view is switched', () => {
-    // Hidden by a filter AND by Today: step one is the filter.
-    expect(resolveTaskLink(input(2, 'slot', [dueToday])).kind).toBe('clear-narrowing')
+  test("Now keeps a task behind its project's fold in the group, so it is shown", () => {
+    // Due next week: not relevant now, so it is folded — but still in the
+    // Inbox group, and the caller opens the fold (2026-10-14; the Today view
+    // used to drop it and switch views).
+    const step = resolveTaskLink(input(2, 'project'))
+    expect(step.kind).toBe('show')
+    if (step.kind === 'show') expect(step.groupLabel).toBe('Inbox')
   })
 
-  test('flat views hold every listed task, so they never switch', () => {
+  test('flat views hold every listed task too', () => {
     expect(resolveTaskLink(input(2, 'new')).kind).toBe('show')
     expect(resolveTaskLink(input(2, 'unified')).kind).toBe('show')
   })

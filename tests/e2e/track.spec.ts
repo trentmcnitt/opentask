@@ -3,7 +3,7 @@
  * count, bar, +1 and −1 — and reaching the target reads as "met" without
  * closing the task.
  */
-import { test, expect, waitForPreferenceSave, gotoQuotasDetails } from './fixtures'
+import { test, expect, waitForPreferenceSave, gotoQuotasDetails, showAllNow } from './fixtures'
 import { request as apiRequest, type Page, type Response } from '@playwright/test'
 
 /**
@@ -103,7 +103,7 @@ test.beforeAll(async () => {
   }
 })
 
-const VIEWS = ['Today', 'All', 'Newest'] as const
+const VIEWS = ['Now', 'Newest'] as const
 type View = (typeof VIEWS)[number]
 /** The view toggle persists server-side for the shared test user; tests put it back. */
 async function pressedView(page: Page): Promise<View | null> {
@@ -270,12 +270,13 @@ test.describe('Track', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog')).toHaveCount(0)
 
-      // On the Today view it is not also a row in the day's groups: the panel
-      // is its only home there.
+      // In Now, with every fold lifted, it is not also a row in the list: the
+      // panel is its only home there.
       viewBefore = await pressedView(page)
-      const todayToggle = page.getByRole('button', { name: 'Today', exact: true })
-      await todayToggle.click()
-      await expect(todayToggle).toHaveAttribute('aria-pressed', 'true')
+      const nowToggle = page.getByRole('button', { name: 'Now', exact: true })
+      if (viewBefore !== 'Now') await switchView(page, 'Now')
+      await expect(nowToggle).toHaveAttribute('aria-pressed', 'true')
+      await showAllNow(page)
       await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
       await expect(chip).toBeVisible()
       await expect(chipCount).toHaveAttribute('data-count', '0/2')
@@ -302,7 +303,7 @@ test.describe('Track', () => {
         .toEqual({ done: false, progress_current: 3 })
     } finally {
       // The view toggle persists server-side; put it back for later tests.
-      if (viewBefore && viewBefore !== 'Today') await switchView(page, viewBefore)
+      if (viewBefore && viewBefore !== 'Now') await switchView(page, viewBefore)
     }
   })
 
@@ -703,19 +704,17 @@ test.describe('Track', () => {
     let before: View | null = null
     try {
       await page.goto('/')
-      await expect(page.getByRole('button', { name: 'Today', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Now', exact: true })).toBeVisible()
       before = await pressedView(page)
-      if (before !== 'Today') await switchView(page, 'Today')
-      // Undated one-offs sit in the day's folded "Undated" group (§7.3).
-      const fold = page.getByRole('button', { name: 'Expand Undated' })
-      await expect(fold).toBeVisible()
-      await fold.click()
-      await expect(page.getByRole('button', { name: 'Collapse Undated' })).toBeVisible()
+      if (before !== 'Now') await switchView(page, 'Now')
+      // An undated, unprioritised one-off isn't relevant now: it sits behind
+      // its project's "+ N more" fold, which Show all lifts.
+      await showAllNow(page)
       const row = page.locator(`#task-row-${id}`)
       await expect(row).toBeVisible()
       await expect(page.locator(`[data-track-chip="${id}"]`)).toHaveCount(0)
     } finally {
-      if (before && before !== 'Today') await switchView(page, before)
+      if (before && before !== 'Now') await switchView(page, before)
     }
   })
 
@@ -726,7 +725,7 @@ test.describe('Track', () => {
    * with no due date, no snooze and no Done in among things that have all
    * three. This pins both halves: gone from the list, still in the panel.
    */
-  test('a quota is absent from the All list but still in the Track panel', async ({
+  test('a quota is absent from the task list but still in the Track panel', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, {
@@ -740,14 +739,14 @@ test.describe('Track', () => {
       const logged = await page.request.post(`/api/tasks/${id}/progress`, { data: { delta: 1 } })
       expect(logged.ok()).toBeTruthy()
       await page.goto('/')
-      await expect(page.getByRole('button', { name: 'All', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Now', exact: true })).toBeVisible()
       before = await pressedView(page)
-      if (before !== 'All') await switchView(page, 'All')
+      if (before !== 'Now') await switchView(page, 'Now')
 
       // A plain task is here, so an empty assertion below cannot pass by the
-      // list simply not having rendered. In a project of its own: All caps
-      // each project group (`project_preview_count`), and the shared user's
-      // Inbox holds more than that.
+      // list simply not having rendered. In a project of its own: Show all
+      // caps each project group (`project_preview_count`), and the shared
+      // user's Inbox holds more than that.
       const project = await page.request.post('/api/projects', {
         data: { name: `Track sibling ${Date.now()}` },
       })
@@ -758,7 +757,8 @@ test.describe('Track', () => {
         project_id: siblingProjectId,
       })
       await page.reload()
-      if ((await pressedView(page)) !== 'All') await switchView(page, 'All')
+      if ((await pressedView(page)) !== 'Now') await switchView(page, 'Now')
+      await showAllNow(page)
       await expect(page.locator(`#task-row-${plainId}`)).toBeVisible()
       await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
 
@@ -767,7 +767,7 @@ test.describe('Track', () => {
       await expect(chip).toBeVisible()
       await expect(chip.locator('[data-track-count]')).toHaveAttribute('data-count', '1/3')
     } finally {
-      if (before && before !== 'All') await switchView(page, before)
+      if (before && before !== 'Now') await switchView(page, before)
       if (siblingProjectId !== null) await page.request.delete(`/api/projects/${siblingProjectId}`)
     }
   })

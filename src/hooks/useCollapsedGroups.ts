@@ -8,9 +8,9 @@ import { useState, useCallback } from 'react'
  * State resets on page refresh.
  *
  * `defaultCollapsed` names groups that start folded (the Today view's
- * "Undated" pile); a tap on the header opens them like any other, and
- * `expand` opens one from code — used when something new lands in a folded
- * group so it doesn't vanish under the user's finger.
+ * "Undated" pile used it until that view was dropped, 2026-10-14); a tap on
+ * the header opens them like any other, and `expand` opens one from code —
+ * a notification or Just now tap revealing a row in a folded group.
  */
 export function useCollapsedGroups(defaultCollapsed: readonly string[] = []) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(defaultCollapsed))

@@ -1,8 +1,10 @@
 /**
- * DV-010..012: tracked items (Track, §5) never enter the day's slot groups,
- * and always come back from `trackedItems` for the Track panel — regardless of
- * what their rrule says about today. That panel is how §7.3's "they must not
- * become invisible from the front door" is met.
+ * DV-010, DV-012, DV-014: tracked items (Track, §5) always come back from
+ * `trackedItems` for the Track panel — regardless of what their rrule says
+ * about today. That panel is how §7.3's "they must not become invisible from
+ * the front door" is met. (They are never dashboard rows at all: the
+ * dashboard drops them before grouping. DV-011 and DV-013 pinned the Today
+ * view's time-slot groups, which went with that view on 2026-10-14.)
  *
  * Why this needs pinning: the §9 migration rewrote quota rules to the bare
  * period ("FREQ=WEEKLY"), which rrule.js places on one weekday. Read as an
@@ -10,17 +12,9 @@
  * counter over the week, so the week containing today is its day, every day.
  */
 import { describe, expect, test } from 'vitest'
-import { groupByTimeSlot, trackedItems, UNDATED_LABEL, earlySlotLabel } from '@/lib/slot-view'
+import { trackedItems } from '@/lib/slot-view'
 import { trackSummary } from '@/lib/track'
-import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
-
-const TZ = 'America/Chicago'
-const NOW = new Date('2026-09-03T16:00:00Z') // Thursday, 11:00 local
-const SLOTS: TimeSlot[] = [
-  { id: 1, user_id: 1, label: 'Early morning', start_time: '07:00', sort_order: 0, created_at: '' },
-  { id: 2, user_id: 1, label: 'Midday', start_time: '12:00', sort_order: 1, created_at: '' },
-]
 
 let nextId = 1
 function task(overrides: Partial<Task>): Task {
@@ -59,8 +53,8 @@ function task(overrides: Partial<Task>): Task {
   } as Task
 }
 
-describe('Tracked items and the Today front door', () => {
-  test('DV-010: a weekly quota is never day-grouped, and is always in the panel set', () => {
+describe('Tracked items and the front door', () => {
+  test('DV-010: a weekly quota is always in the panel set, whatever its rule says about today', () => {
     // FREQ=WEEKLY with no BYDAY occurs on the epoch weekday (a Wednesday);
     // today is Thursday. The stale due_at is last week's 1:00 PM.
     const eggs = task({
@@ -70,53 +64,10 @@ describe('Tracked items and the Today front door', () => {
       progress_target: 2,
       progress_current: 1,
     })
-    // Control: the same rule on an ordinary task IS on the front door — it was
-    // due last Wednesday and never done, so it is overdue (§4.6 as amended
-    // 2026-09-07: a task carries debt). The quota beside it is not, because a
-    // counter over the week has no day to be overdue from.
+    // Control: the same rule on an ordinary task is not a quota.
     const routine = task({ title: 'Wednesday thing', rrule: 'FREQ=WEEKLY', due_at: eggs.due_at })
 
-    const groups = groupByTimeSlot([routine, eggs], SLOTS, TZ, NOW)
-    expect(groups.flatMap((g) => g.tasks).map((t) => t.title)).toEqual(['Wednesday thing'])
     expect(trackedItems([routine, eggs]).map((t) => t.title)).toEqual(['Eggs'])
-  })
-
-  test('DV-011: a quota with a due time today still stays out of the slots', () => {
-    const eggs = task({
-      title: 'Eggs',
-      rrule: 'FREQ=WEEKLY',
-      due_at: '2026-09-03T18:00:00.000Z',
-      progress_target: 2,
-    })
-    const undated = task({ title: 'Undated one-off' })
-    const midday = task({
-      title: 'Lunch walk',
-      anchor_time: '12:30',
-      due_at: '2026-09-03T17:30:00.000Z',
-    })
-
-    const groups = groupByTimeSlot([undated, midday, eggs], SLOTS, TZ, NOW)
-    expect(groups.map((g) => g.label)).toEqual(['Midday', UNDATED_LABEL])
-    expect(groups.find((g) => g.label === 'Midday')?.tasks.map((t) => t.title)).toEqual([
-      'Lunch walk',
-    ])
-    expect(groups.find((g) => g.label === UNDATED_LABEL)?.tasks.map((t) => t.title)).toEqual([
-      'Undated one-off',
-    ])
-  })
-
-  test('DV-013: undated one-offs are "Undated", last; pre-dawn timed items are "Before 7:00 AM", first', () => {
-    const undated = task({ title: 'Someday' })
-    const dawn = task({ title: 'Dawn walk', due_at: '2026-09-03T11:15:00.000Z' }) // 06:15 Chicago
-    const noon = task({ title: 'Lunch', due_at: '2026-09-03T17:30:00.000Z' })
-
-    const groups = groupByTimeSlot([undated, noon, dawn], SLOTS, TZ, NOW)
-    expect(earlySlotLabel(SLOTS)).toBe('Before 7:00 AM')
-    // Only periods with something due get a group (an empty period is left
-    // out); the two synthetic groups bracket them: earliest first, undated last.
-    expect(groups.map((g) => g.label)).toEqual(['Before 7:00 AM', 'Midday', UNDATED_LABEL])
-    expect(groups[0].tasks.map((t) => t.title)).toEqual(['Dawn walk'])
-    expect(groups.at(-1)?.tasks.map((t) => t.title)).toEqual(['Someday'])
   })
 
   test('DV-014: the folded summary caps each quota at its target', () => {

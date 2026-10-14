@@ -2793,12 +2793,13 @@ paths:
                         description: IANA time zone
                       default_grouping:
                         type: string
-                        enum: [slot, project, new, unified]
+                        enum: [project, new, unified]
                         description: |
-                          Dashboard view: `slot` = Today, `project` = All
-                          (grouped by project), `new` = New (flat, newest added
-                          first); `unified` is the AI-sorted / "Unified" flat
-                          list. The retired `time` is returned as `project`.
+                          Dashboard view: `project` = Now (grouped by project,
+                          showing what is relevant now), `new` = Newest (flat,
+                          newest added first); `unified` is the AI-sorted / "Unified" flat
+                          list. The retired `slot` (Today) and `time` are
+                          returned as `project`.
                       is_demo:
                         type: boolean
         '401':
@@ -4155,27 +4156,32 @@ components:
       properties:
         default_grouping:
           type: string
-          enum: [slot, project, new, unified]
+          enum: [project, new, unified]
           description: |
-            The dashboard view the switch last chose: `slot` = Today (today's
-            tasks by time of day), `project` = All (every open task, grouped
-            by project, each group showing `project_preview_count` rows before
-            "Show all"), `new` = New (every open task in one flat list, newest
-            added first, each row naming its project; ignores
-            `default_sort`). `unified` is the flat list the AI-sort toggle and
-            the list's "Unified" button switch to.
+            The dashboard view the switch last chose: `project` = Now (every
+            open task, grouped by project; each project shows what is relevant
+            now — over target, targeted today, in today's Upcoming heads-up,
+            or undated High/Urgent — and folds the rest behind "+ N more";
+            "Show all" lifts the folds, each group then showing
+            `project_preview_count` rows before "Show all"), `new` = Newest
+            (every open task in one flat list, newest added first, each row
+            naming its project; ignores `default_sort`). `unified` is the flat
+            list the AI-sort toggle and the list's "Unified" button switch to.
 
-            `time` (All grouped by due date, 2026-09-29 to 2026-09-30) is
-            retired: still accepted on PATCH so older clients don't get a 400,
-            but stored and returned as `project`. Any other value is a 400.
+            `slot` (the Today view, today's tasks by time of day, dropped
+            2026-10-14) and `time` (All grouped by due date, 2026-09-29 to
+            2026-09-30) are retired: still accepted on PATCH so older clients
+            don't get a 400, but stored and returned as `project`. Any other
+            value is a 400.
         project_preview_count:
           type: integer
           minimum: 1
           maximum: 50
           default: 6
           description: |
-            How many tasks each project group in the All view shows before its
-            "Show all" button. Today's time slots are not affected.
+            How many tasks each project group shows, with Now's folds lifted
+            ("Show all", the old All view), before its "Show all" button.
+            Now's own rows are not capped.
         auto_snooze_minutes:
           type: integer
           minimum: 1

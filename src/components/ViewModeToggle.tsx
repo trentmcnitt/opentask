@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDownWideNarrow, List, Sun } from 'lucide-react'
+import { ArrowDownWideNarrow, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { GroupingMode } from '@/lib/grouping'
 
@@ -22,8 +22,7 @@ export const VIEW_MODE_OPTIONS: readonly {
   icon: typeof List
   hint: string
 }[] = [
-  { value: 'project', label: 'All', icon: List, hint: 'Everything, grouped by project' },
-  { value: 'slot', label: 'Today', icon: Sun, hint: "Today's tasks by time of day" },
+  { value: 'project', label: 'Now', icon: List, hint: 'What matters now, grouped by project' },
   {
     value: 'new',
     label: 'Newest',
@@ -33,36 +32,31 @@ export const VIEW_MODE_OPTIONS: readonly {
 ]
 
 /**
- * Switches how the task list is grouped (REDESIGN-V03 §7.3).
+ * Switches how the task list is grouped: Now · Newest (2026-10-14).
  *
- * "Today" is the front door: today's work grouped by time slot, so opening the
- * app answers "what now" without scanning. The other two exist because §7.3 is
- * equally explicit that the corpus stays fully accessible — it just isn't what
- * greets you. Without a visible control the old views would be unreachable,
- * which would trade one kind of stuck for another.
+ * **Now** (`'project'`) is the front door: every open task grouped by project,
+ * each project showing what matters now and folding the rest behind "+ N more
+ * in <Project>" (the rule: `src/lib/now-view.ts`). The "N of M now · Show all
+ * M" strip beside this switch lifts the folds — the old All.
+ *
+ * **Newest** (`'new'`) is one tap to everything newest-added first (a flat
+ * list, each row naming its project — `src/lib/grouping.ts`).
  *
  * Deliberately few options, not a dropdown of every permutation: the point of
- * the redesign is fewer decisions at the front door, and a picker with six
- * entries would just be the 20-filter-chip problem in miniature.
+ * the redesign (REDESIGN-V03 §7.3) is fewer decisions at the front door, and a
+ * picker with six entries would just be the 20-filter-chip problem in
+ * miniature. 'unified' is driven by the AI-sort toggle elsewhere; showing it
+ * here as an extra option would let the two controls disagree about what's
+ * active. The Reminders surface (§6) once rode along as a chip too — it is a
+ * real route (`/reminders`) with its own tab.
  *
- * Every option here is a view of the same task list. The Reminders surface
- * (§6) used to ride along as a fourth chip — it is now a real route (`/reminders`)
- * with its own tab, so this control is back to doing exactly one job.
- *
- * All · Today · Newest (2026-09-29 — in that order; "Newest", not "New").
- * Newest is one tap to everything newest-added first (a flat list, each row
- * naming its project — `'new'` in `src/lib/grouping.ts`).
- *
- * All is everything grouped by project (`'project'`). On 2026-09-29 the
- * Projects view was retired by mistake and All showed due-date groups; "All"
- * had been meant as the by-project view, so it was restored as All on
- * 2026-09-30 and the due-date grouping went away. Newest's icon is
- * a sort arrow, not Sparkles: Sparkles means AI across the app, and most new
- * tasks aren't AI-made (Trent picked the sort arrow from a mockup, 09-29).
- * Today's icon is a sun, not a calendar-clock: the Overdue FAB already uses
- * CalendarClock, and the view-mode FAB (which takes its icon from these
- * options) would otherwise sit right above it wearing the same icon (Trent,
- * 09-29).
+ * History: All · Today · Newest from 2026-09-29. Today was the §7.3 front door
+ * (today's tasks by time of day); All was everything grouped by project. On
+ * 2026-10-14 All became Now — showing only what is relevant now — and Today
+ * was dropped (Trent: "drop the separate Today view"), so Now answers "what
+ * now" by itself. Newest's icon is a sort arrow, not Sparkles: Sparkles means
+ * AI across the app, and most new tasks aren't AI-made (Trent picked the sort
+ * arrow from a mockup, 09-29).
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
   return (

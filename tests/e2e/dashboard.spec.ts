@@ -57,9 +57,20 @@ async function clickFiltersToggle(page: Page): Promise<void> {
 
 test.describe('Dashboard', () => {
   test('tasks are displayed on the dashboard', async ({ authenticatedPage: page }) => {
-    // Should see task titles from seed
-    await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText('Morning routine')).toBeVisible()
+    await withPreferences(page, { default_grouping: 'project' }, async () => {
+      // Now shows the seeded task that is over target...
+      const overdue = page.getByText('Reply to email')
+      await waitForPrefsLoaded(page, () => page.goto('/'), overdue)
+      await expect(overdue).toBeVisible()
+      // ...and Show all every other seeded task (they are due later, so in Now
+      // they sit behind their projects' folds).
+      await page
+        .locator('[data-now-summary]')
+        .getByRole('button', { name: /^Show all \d+$/ })
+        .click()
+      await expect(page.getByText('Buy groceries')).toBeVisible()
+      await expect(page.getByText('Morning routine')).toBeVisible()
+    })
   })
 
   test('the nav carries the top bar\u2019s overdue and today numbers', async ({
@@ -85,65 +96,44 @@ test.describe('Dashboard', () => {
 })
 
 /**
- * §7.3 — one-offs that never had a date are not "today". They sit last under
- * "Undated", folded, so the day reads as a day; adding one from the quick-add
- * opens the group so the new task doesn't vanish under the user's finger.
+ * Now (2026-10-14): a one-off with no date and no High/Urgent priority is not
+ * relevant now, so it sits behind its project's "+ N more" fold. Adding one
+ * from the quick add does NOT open the fold — the Just now card lists it, and
+ * the card's tap opens the fold to show the real row. (Until 2026-10-14 the
+ * Today view had an "Undated" pile that an add opened instead.)
  */
-test.describe('Undated pile', () => {
-  test('sits last, folded, and a newly added undated task opens it', async ({
+async function taskIdByTitle(page: Page, title: string): Promise<number | null> {
+  const res = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
+  const tasks = (await res.json()).data.tasks as { id: number; title: string }[]
+  return tasks.find((t) => t.title === title)?.id ?? null
+}
+
+test.describe('Now: a dateless task lands behind the fold', () => {
+  test('quick add lists it in the Just now card; the tap opens its fold', async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    const res = await page.request.post('/api/tasks', {
-      data: { title: 'A thought with no date yet' },
-    })
-    expect(res.ok()).toBeTruthy()
-    const ids = [(await res.json()).data.id as number]
-    // Not "just added", or its preview above the list would show the title
-    // while the group is folded (src/lib/just-added.ts).
-    backdateCreated(ids)
-    // The view toggle persists server-side for the shared test user, so the
-    // view this test finds is put back at the end for the specs that follow.
-    const views = ['Today', 'All', 'Newest'] as const
-    const pressedView = async () => {
-      for (const v of views) {
-        const b = page.getByRole('button', { name: v, exact: true })
-        if ((await b.getAttribute('aria-pressed')) === 'true') return v
+    const title = uniqueTitle('Another dateless thought')
+    await withPreferences(page, { default_grouping: 'project' }, async () => {
+      let id: number | null = null
+      try {
+        const add = page.getByRole('textbox', { name: 'Quick add task' })
+        await waitForPrefsLoaded(page, () => page.goto('/'), add)
+        await add.fill(title)
+        await page.keyboard.press('Enter')
+        const list = page.getByRole('listbox', { name: 'Task list' })
+        await expect.poll(() => taskIdByTitle(page, title)).not.toBeNull()
+        id = await taskIdByTitle(page, title)
+        const entry = page.locator(`[data-just-added-entry="${id}"]`)
+        await expect(entry).toBeVisible()
+        await expect(list.locator(`#task-row-${id}`)).toHaveCount(0)
+        await entry.click()
+        await expect(list.locator(`#task-row-${id}`)).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Show fewer' }).first()).toBeVisible()
+      } finally {
+        if (id !== null) await page.request.delete(`/api/tasks/${id}`)
       }
-      return null
-    }
-    const switchTo = async (v: (typeof views)[number]) => {
-      const saved = waitForPreferenceSave(page, 'default_grouping')
-      await page.getByRole('button', { name: v, exact: true }).click()
-      await saved
-    }
-    await page.reload()
-    await expect(page.getByRole('button', { name: 'Today', exact: true })).toBeVisible()
-    const before = await pressedView()
-    try {
-      if (before !== 'Today') await switchTo('Today')
-
-      const fold = page.getByRole('button', { name: 'Expand Undated' })
-      await expect(fold).toBeVisible()
-      await expect(page.getByText('A thought with no date yet')).toHaveCount(0)
-      await fold.click()
-      await expect(page.getByText('A thought with no date yet')).toBeVisible()
-
-      await page.getByRole('button', { name: 'Collapse Undated' }).click()
-      await expect(page.getByText('A thought with no date yet')).toHaveCount(0)
-      await page.getByRole('textbox', { name: 'Quick add task' }).fill('Another dateless thought')
-      await page.keyboard.press('Enter')
-      // Its row's title link: the new task's preview repeats the title as text.
-      await expect(page.getByRole('link', { name: 'Another dateless thought' })).toBeVisible()
-      await expect(page.getByText('A thought with no date yet')).toBeVisible()
-
-      const list = (await (await page.request.get('/api/tasks?limit=500')).json()).data.tasks
-      const other = list.find((t: { title: string }) => t.title === 'Another dateless thought')
-      if (other) ids.push(other.id)
-    } finally {
-      if (before && before !== 'Today') await switchTo(before)
-      for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
-    }
+    })
   })
 })
 
@@ -320,12 +310,12 @@ test.describe('?task=<id> deep link', () => {
   // section tests above: `default_grouping` is a server preference on the one
   // test user every spec in the run shares, so "a project group exists to find
   // the row in" is only true here if nothing earlier in the run left it on
-  // New/Unified. Restored in `finally`. All (`'project'`) is also capped per
-  // project (`project_preview_count`), and the shared user's Inbox holds more
-  // than the cap — so these also cover a link to a row past "Show all".
+  // New/Unified. Restored in `finally`. Now (`'project'`) folds what isn't
+  // relevant now behind each project's "+ N more", so these also cover a
+  // link to a row behind a shut fold.
   async function withGrouping(
     page: Page,
-    grouping: 'project' | 'slot',
+    grouping: 'project',
     run: () => Promise<void>,
   ): Promise<void> {
     const before = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -373,7 +363,7 @@ test.describe('?task=<id> deep link', () => {
     })
   })
 
-  test('&highlight=1 opens a collapsed group to reach the row (Undated)', async ({
+  test("&highlight=1 opens the project's Now fold to reach the row (undated)", async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -385,50 +375,6 @@ test.describe('?task=<id> deep link', () => {
 
         await page.goto(`/?task=${id}&highlight=1`)
         const row = page.locator(`#task-row-${id}`)
-        await expect(row).toHaveAttribute('data-task-highlight', '')
-        await expect(row).toBeInViewport()
-        await expect(page.getByRole('dialog')).toHaveCount(0)
-      } finally {
-        await deleteTasks(page, ids)
-      }
-    })
-  })
-
-  /**
-   * `grouping === 'slot'` — the owner's own default view (Today's tasks by
-   * time of day) — has a SECOND cap `&highlight=1` has to clear besides a
-   * folded group: each slot only shows its first `SLOT_PREVIEW_COUNT` (5)
-   * tasks, expanded via a "Show all" button that lives entirely in
-   * `TaskList`'s own local state. A row past that cap is un-collapsed (the
-   * slot itself is open) but still not rendered, so a highlight that only
-   * cleared `isCollapsed` would resolve to nothing on screen. Caught live by
-   * browser-verifying against Trent's real dev account, which defaults to
-   * this grouping. (All's project groups have the same kind of cap, at the
-   * user's `project_preview_count`.)
-   */
-  test('&highlight=1 opens the "Show all" preview cap on a slot-grouped view', async ({
-    authenticatedPage: page,
-  }) => {
-    await page.setViewportSize({ width: 1280, height: 800 })
-    const ids: number[] = []
-    await withGrouping(page, 'slot', async () => {
-      try {
-        // Six in the same slot: SLOT_PREVIEW_COUNT (5) shows only the first
-        // five, so the sixth — staggered latest, sorts last by due date — is
-        // the one past the cap.
-        const base = DateTime.now().setZone(TEST_TZ).set({ hour: 13, minute: 0, second: 0 })
-        for (let i = 0; i < 6; i++) {
-          ids.push(
-            await createTask(page, {
-              title: `Widget-linked slot task ${i}`,
-              due_at: base.plus({ minutes: i }).toUTC().toISO(),
-            }),
-          )
-        }
-        const target = ids[5]
-
-        await page.goto(`/?task=${target}&highlight=1`)
-        const row = page.locator(`#task-row-${target}`)
         await expect(row).toHaveAttribute('data-task-highlight', '')
         await expect(row).toBeInViewport()
         await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -473,7 +419,7 @@ test.describe('?task=<id> deep link', () => {
     })
   })
 
-  test('a notification tap unfolds a collapsed group to select the row (Undated)', async ({
+  test("a notification tap opens the project's Now fold to select the row (undated)", async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -491,15 +437,16 @@ test.describe('?task=<id> deep link', () => {
     })
   })
 
-  test('a notification tap on a task Today leaves out shows All for the visit', async ({
+  test('a notification tap on a task due next week opens its fold, and the view stays Now', async ({
     authenticatedPage: page,
   }) => {
-    // The "AI finished" case: a task just added for next week has no row in
-    // Today. The tap switches this visit to All — without saving it, so the
-    // next load is Today again.
+    // The "AI finished" case: a task just added for next week is not relevant
+    // now, so its row is behind its project's fold. The tap opens the fold and
+    // selects the row; the saved view is untouched. (Until 2026-10-14 the
+    // Today view had no row for it, and the tap switched the visit to All.)
     await page.setViewportSize({ width: 1280, height: 800 })
     const ids: number[] = []
-    await withGrouping(page, 'slot', async () => {
+    await withAllGrouping(page, async () => {
       try {
         const nextWeek = DateTime.now().setZone(TEST_TZ).plus({ days: 7 }).set({ hour: 9 })
         const id = await createTask(page, {
@@ -510,11 +457,8 @@ test.describe('?task=<id> deep link', () => {
 
         await page.goto(`/?task=${id}`)
         await expectSelectedAndShown(page, id)
-
         const saved = (await (await page.request.get('/api/user/preferences')).json()).data
-        expect(saved.default_grouping).toBe('slot')
-        await page.reload()
-        await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
+        expect(saved.default_grouping).toBe('project')
       } finally {
         await deleteTasks(page, ids)
       }
@@ -802,11 +746,11 @@ test.describe('?project=<id> deep link', () => {
 })
 
 /**
- * The top bar's "N total tasks" pill counts the list on screen. In the Today
- * view (`grouping === 'slot'`) that list stops at the end of today, so a task
- * due next week is not on it and must not be in the number — it used to be,
- * because the pill read the filtered corpus instead of the rendered groups.
- * See `shownTaskCount` in `DashboardClient.tsx`.
+ * The top bar's "N total tasks" pill counts the list the view holds. In Now,
+ * a task behind a project's "+ N more" fold is in the list one tap away, so it
+ * counts. (The Today view, dropped 2026-10-14, stopped at the end of today and
+ * left later tasks out of the number; see `shownTaskCount` in
+ * `DashboardClient.tsx`.)
  */
 test.describe('Top bar total', () => {
   async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {
@@ -828,64 +772,37 @@ test.describe('Top bar total', () => {
     return n
   }
 
-  async function setGrouping(page: Page, grouping: string): Promise<void> {
-    const res = await page.request.patch('/api/user/preferences', {
-      data: { default_grouping: grouping },
-    })
-    expect(res.ok()).toBeTruthy()
-  }
-
-  /**
-   * Reload into a view and wait until the page is IN it. Until the
-   * preferences fetch settles the dashboard groups by the `'project'`
-   * fallback (see `useDefaultGrouping`), and a count read in that window is
-   * All's, not the one asked for.
-   */
-  async function reloadInto(page: Page, view: 'Today' | 'All'): Promise<void> {
-    await page.reload()
-    await expect(page.getByRole('button', { name: view, exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-  }
-
-  test('counts only what the Today view shows', async ({ authenticatedPage: page }) => {
+  test('counts the tasks behind the folds in Now', async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    const before = (await (await page.request.get('/api/user/preferences')).json()).data
-      .default_grouping as string
     const ids: number[] = []
-    try {
-      await setGrouping(page, 'slot')
-      await reloadInto(page, 'Today')
-      const baseline = await readTotal(page)
+    await withPreferences(page, { default_grouping: 'project' }, async () => {
+      try {
+        const now = page.getByRole('button', { name: 'Now', exact: true })
+        await waitForPrefsLoaded(page, () => page.goto('/'), now)
+        await expect(now).toHaveAttribute('aria-pressed', 'true')
+        const baseline = await readTotal(page)
 
-      // Due a week out: in the corpus, not on today's list.
-      const later = await createTask(page, {
-        title: 'Top bar probe next week',
-        due_at: DateTime.now()
-          .setZone(TEST_TZ)
-          .plus({ days: 7 })
-          .set({ hour: 12, minute: 0 })
-          .toUTC()
-          .toISO(),
-      })
-      ids.push(later)
-      // Undated: the Today view keeps these, so this one does count.
-      ids.push(await createTask(page, { title: 'Top bar probe undated' }))
+        // Due a week out, and undated: neither is relevant now, both fold.
+        const later = await createTask(page, {
+          title: 'Top bar probe next week',
+          due_at: DateTime.now()
+            .setZone(TEST_TZ)
+            .plus({ days: 7 })
+            .set({ hour: 12, minute: 0 })
+            .toUTC()
+            .toISO(),
+        })
+        ids.push(later)
+        ids.push(await createTask(page, { title: 'Top bar probe undated' }))
+        backdateCreated(ids)
 
-      await reloadInto(page, 'Today')
-      await expect(page.locator(`#task-row-${later}`)).toHaveCount(0)
-      expect(await readTotal(page)).toBe(baseline + 1)
-
-      // The All view shows the whole corpus, so the week-out task counts there.
-      await setGrouping(page, 'project')
-      // (Its row may sit in a folded group, so only the number is asserted.)
-      await reloadInto(page, 'All')
-      expect(await readTotal(page)).toBeGreaterThanOrEqual(baseline + 2)
-    } finally {
-      for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
-      await setGrouping(page, before)
-    }
+        await waitForPrefsLoaded(page, () => page.reload(), now)
+        await expect(page.locator(`#task-row-${later}`)).toHaveCount(0)
+        expect(await readTotal(page)).toBe(baseline + 2)
+      } finally {
+        for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+      }
+    })
   })
 })
 

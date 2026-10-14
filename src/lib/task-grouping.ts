@@ -9,15 +9,14 @@
  * and shift-click ranges, and `useDashboardKeyboard` copies from it. Sorting
  * separately in each of those once let them drift: under the AI sort the list
  * was drawn by score while the keyboard and clipboard ran in due-date order.
- * The grouping modes themselves are defined in `src/lib/grouping.ts`; the Today
- * view's slot grouping lives in `src/lib/slot-view.ts`.
+ * The grouping modes themselves are defined in `src/lib/grouping.ts`; Now's
+ * "relevant now" rule and its folds in `src/lib/now-view.ts`.
  */
 import { effectiveHorizon, HORIZON_ORDER } from '@/lib/task-segments'
 import { isOverdue } from '@/lib/task-counts'
 import type { LabelColor, Project, Task } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
-import { groupByTimeSlot } from '@/lib/slot-view'
-import type { TimeSlot } from '@/lib/time-slot-assign'
+import { splitNow, type NowSplit } from '@/lib/now-view'
 
 /**
  * The sort options for a task list. Default directions (reversed flips them;
@@ -55,7 +54,7 @@ export function isFlatGrouping(grouping: GroupingMode): boolean {
  * The sort a list is actually drawn in. New is newest-added first, always: the
  * `age` sort unreversed, whatever the saved sort preference says — that order
  * is what makes it New (Trent, 2026-09-29). The saved preference is left alone,
- * so All and Unified still get the user's own sort. The list, keyboard order
+ * so Now and Unified still get the user's own sort. The list, keyboard order
  * and every other reader of the visual order must go through this, or arrow
  * keys and the visual order disagree in New.
  */
@@ -158,10 +157,12 @@ export interface TaskGroup {
   tasks: Task[]
   /** The project's color, on project groups — drawn as the heading's tag. */
   color?: LabelColor | null
+  /** The project's id, on project groups — what Now's fold state is keyed by. */
+  projectId?: number
 }
 
 /**
- * All (`'project'`): one group per project that has open tasks, in the order
+ * Now (`'project'`): one group per project that has open tasks, in the order
  * Settings lists projects — `sort_order`, then name, the same rule as the
  * server's project list (`ORDER BY sort_order, name` in core/projects). It
  * used to break ties by insertion order, which followed the tasks' soonest-
@@ -196,6 +197,7 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
       label: project?.name || `Project ${projectId}`,
       tasks: byProject.get(projectId) ?? [],
       color: project?.color ?? null,
+      projectId,
     }
   })
 }
@@ -204,46 +206,34 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
  * Build task groups from tasks array. Used by the list itself and by keyboard
  * navigation to compute orderedIds and find first task in group after completion.
  *
- * - New and Unified (`isFlatGrouping`): one flat group.
- * - All (`'project'`): one group per project (`groupByProject`).
- * - Today (`'slot'`): today's tasks by time slot (`groupByTimeSlot` in
- *   `src/lib/slot-view.ts`).
+ * - Newest and Unified (`isFlatGrouping`): one flat group.
+ * - Now (`'project'`): one group per project (`groupByProject`), holding EVERY
+ *   open task of the project — Now's folds are applied after sorting
+ *   (`applyNowFolds`), so lookups by group (a notification's `?task=`, the
+ *   Just now card's tap, the "N total" pill) still find a folded row.
  *
- * The `slot` branch groups today's tasks into time slots (§7.3), and must not
- * do two things:
- *
- * 1. Drop the un-slotted items. Anything with no time of day — which is most
- *    Track items — goes into an explicit "Undated" group rendered AFTER
- *    the timed slots. §7.3 is explicit that they must not become invisible
- *    from the front door.
- * 2. Hide empty slots... except when the whole day is empty. A slot the user
- *    defined is part of how they read their day, so an empty "Midday" still
- *    renders as a container. But rendering five empty containers when there is
- *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
- *    so a fully-empty day collapses to no groups and the caught-up state shows.
- *
- * There is no due-date grouping any more. All used to be one (Overdue / Today
- * / Tomorrow / This Week / Later / No Due Date, stored as `'time'`) beside a
- * separate Projects view; since 2026-09-30 All IS the by-project grouping and
- * the due-date one is gone. The date filter chips still narrow any view by
- * due date.
+ * There is no Today (time-slot) grouping any more (dropped 2026-10-14, see
+ * `src/lib/grouping.ts`) and no due-date grouping (gone 2026-09-30). The date
+ * filter chips still narrow any view by due date.
  */
 export function buildTaskGroups(
   tasks: Task[],
   projects: Project[],
   grouping: GroupingMode,
-  timezone: string,
-  timeSlots: TimeSlot[] = [],
-  now: Date = new Date(),
 ): TaskGroup[] {
   if (isFlatGrouping(grouping)) return [{ label: '_unified', tasks }]
-  if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone, now)
   return groupByProject(tasks, projects)
 }
 
 /** A group with its rows in the order the list draws them. */
 export interface SortedTaskGroup extends TaskGroup {
   sortedTasks: Task[]
+  /**
+   * Now's split of `sortedTasks` (`src/lib/now-view.ts`) — set only while the
+   * folds are on (Now, nothing narrowing the list, Show all off). The list
+   * draws `relevant`, then the fold row, then `more` when the fold is open.
+   */
+  now?: NowSplit
 }
 
 /**
@@ -264,15 +254,46 @@ export function sortTaskGroups(
 }
 
 /**
+ * Now's folds (`src/lib/now-view.ts`): split every project group's sorted rows
+ * into the relevant ones and the rest. The caller decides WHETHER the folds
+ * are on (Now, nothing narrowing the list, Show all off).
+ */
+export function applyNowFolds(
+  groups: SortedTaskGroup[],
+  timezone: string,
+  now: Date,
+): SortedTaskGroup[] {
+  return groups.map((g) => ({ ...g, now: splitNow(g.sortedTasks, timezone, now) }))
+}
+
+/**
+ * The rows a group draws, top to bottom: with Now's folds, the relevant rows
+ * and — only while its fold is open — the rest after them; otherwise every row.
+ */
+export function shownGroupTasks(group: SortedTaskGroup, foldOpen: boolean): Task[] {
+  if (!group.now) return group.sortedTasks
+  return foldOpen ? [...group.now.relevant, ...group.now.more] : group.now.relevant
+}
+
+/** Now's fold key for a group: its project id (a rename keeps the fold), else its label. */
+export function nowFoldKey(group: Pick<TaskGroup, 'label' | 'projectId'>): string {
+  return group.projectId !== undefined ? String(group.projectId) : group.label
+}
+
+/**
  * The ids of the rows a user can reach, top to bottom: a collapsed group's
- * rows are off screen, so keyboard navigation and shift-click ranges skip
- * them. Rows past a group's "Show all" preview cap are included.
+ * rows are off screen, and so are the rows behind a shut Now fold, so
+ * keyboard navigation and shift-click ranges skip them. Rows past a group's
+ * "Show all" preview cap are included.
  */
 export function orderedTaskIds(
   sortedGroups: SortedTaskGroup[],
   isCollapsed: (label: string) => boolean,
+  isFoldOpen: (key: string) => boolean = () => false,
 ): number[] {
-  return sortedGroups.flatMap((g) => (isCollapsed(g.label) ? [] : g.sortedTasks.map((t) => t.id)))
+  return sortedGroups.flatMap((g) =>
+    isCollapsed(g.label) ? [] : shownGroupTasks(g, isFoldOpen(nowFoldKey(g))).map((t) => t.id),
+  )
 }
 
 /**

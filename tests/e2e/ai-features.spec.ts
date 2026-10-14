@@ -40,8 +40,12 @@ test.describe('AI features (disabled)', () => {
     await quickAddInput.fill(taskTitle)
     await quickAddInput.press('Enter')
 
-    // The new task should appear in the task list (its row's title link — the
-    // just-added preview above the list shows the same title as plain text)
-    await expect(page.getByRole('link', { name: taskTitle })).toBeVisible({ timeout: 10000 })
+    // The new task is listed in the Just now card, and the card's tap shows
+    // its real row (the title link). An undated task isn't relevant now, so
+    // in Now the row starts behind its project's "+ N more" fold.
+    const entry = page.locator('[data-just-added-card]').getByText(taskTitle)
+    await expect(entry).toBeVisible({ timeout: 10000 })
+    await entry.click()
+    await expect(page.getByRole('link', { name: taskTitle })).toBeVisible()
   })
 })

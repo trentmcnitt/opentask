@@ -11,7 +11,7 @@ import { isTracked } from '@/lib/track'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { validateTaskCreate, validateTaskUpdate } from '@/core/validation'
 import { PERIOD_RULE_MESSAGE, TRACKED_REMINDER_MESSAGE } from '@/core/validation/task'
-import { groupByTimeSlot, trackedItems } from '@/lib/slot-view'
+import { trackedItems } from '@/lib/slot-view'
 import { ZodError } from 'zod'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -80,7 +80,6 @@ describe('Tracked flag', () => {
     expect(isTracked(stored)).toBe(true)
 
     expect(trackedItems([stored]).map((t) => t.id)).toEqual([night.id])
-    expect(groupByTimeSlot([stored], [], TEST_TIMEZONE, NOW)).toEqual([])
     expect(getCurrentlyDueTaskIds(TEST_USER_ID, NOW)).not.toContain(night.id)
   })
 

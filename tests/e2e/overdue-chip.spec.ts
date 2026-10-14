@@ -52,16 +52,16 @@ async function leadingNumber(text: Promise<string | null>): Promise<number> {
 
 test.describe('One-tap overdue / today filters', () => {
   let ids: number[] = []
-  let grouping = 'slot'
+  let grouping = 'project'
 
   test.beforeEach(async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
       .default_grouping as string
     // Establish the preconditions rather than inherit them from earlier specs:
-    // chip section collapsed, Today view (overdue and due-today rows show).
+    // chip section collapsed, Now view (overdue and due-today rows show).
     const written = await page.request.patch('/api/user/preferences', {
-      data: { filters_expanded: false, default_grouping: 'slot' },
+      data: { filters_expanded: false, default_grouping: 'project' },
     })
     expect(written.ok()).toBeTruthy()
 
@@ -85,7 +85,7 @@ test.describe('One-tap overdue / today filters', () => {
       }),
     ]
     await page.reload()
-    await expect(page.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Now', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     )

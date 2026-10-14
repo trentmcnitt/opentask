@@ -54,7 +54,7 @@ interface PreferencesContextValue {
   /** The horizon segments' weekday (Settings → "Check-in day", 2026-10-12). */
   checkInDay: CheckInDay
   setCheckInDay: (value: CheckInDay) => void
-  /** All's per-project cap before "Show all" (Settings → Projects). */
+  /** Show all's per-project cap before "Show all N" (Settings → Projects). */
   projectPreviewCount: number
   setProjectPreviewCount: (value: number) => void
   morningTime: string
@@ -553,8 +553,8 @@ export function useSchedulePreferences() {
  * groups tasks BY `defaultGrouping` to find and expand the linked row, and
  * resolving that against the fallback (rather than waiting a beat for the
  * real value) can expand the wrong group for anyone on another view — found
- * by browser-verifying against a dev account whose real default (`'slot'`)
- * differed from the fallback.
+ * by browser-verifying against a dev account whose real default (then the
+ * since-retired `'slot'`) differed from the fallback.
  */
 export function useDefaultGrouping() {
   const { defaultGrouping, setDefaultGrouping, preferencesLoaded } = useContext(PreferencesContext)

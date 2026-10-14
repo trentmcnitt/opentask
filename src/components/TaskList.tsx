@@ -3,7 +3,7 @@
 // Selection integration via context
 import { HORIZON_WORD } from '@/lib/task-model-words'
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { ArrowUpDown, ChevronDown, Layers } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, ChevronUp, Layers, Plus } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,13 @@ import type { Task, Project } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
-import { isFlatGrouping, type SortOption, type SortedTaskGroup } from '@/lib/task-grouping'
+import {
+  isFlatGrouping,
+  nowFoldKey,
+  shownGroupTasks,
+  type SortOption,
+  type SortedTaskGroup,
+} from '@/lib/task-grouping'
 import { isOverdue } from '@/lib/task-counts'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -27,27 +33,21 @@ import { computeSnoozeTime } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { HorizonValue } from '@/lib/task-segments'
 import { justAddedTag } from '@/lib/just-added'
+import type { NowSplit } from '@/lib/now-view'
 
-/**
- * §7.3: items with no time of day (most Track items) get their own group after
- * the timed slots rather than being dropped from the front door.
- */
-
-/**
- * How many tasks a group shows before "show all" (§7.3).
+/*
+ * How many rows a group shows before "Show all" (§7.3) — only with Now's
+ * folds lifted (Show all, a search or a filter): each project group shows the
+ * user's `project_preview_count` (Settings → Projects, default 6), via
+ * `useProjectPreviewCount`. The cap began as a fixed 10 (2026-09-23:
+ * "otherwise it's too hard to scroll through the projects when it's not in
+ * unified mode") and became a setting on 2026-09-30. The flat lists (Newest,
+ * Unified) are not capped, and neither are Now's relevant rows: there the
+ * fold is the one thing that hides rows (`src/lib/now-view.ts`).
  *
  * The point is that the view scales to ANY group size without truncating
  * content — §1.1's founding constraint is that the harness adapts to the scale,
  * so nothing is ever hidden permanently, just collapsed behind one tap.
- */
-/** Today's time slots show this many before "Show more" (§7.3). */
-const SLOT_PREVIEW_COUNT = 5
-/*
- * All's project groups show the user's `project_preview_count` (Settings →
- * Projects, default 6) before "Show all" — `useProjectPreviewCount`. The cap
- * began as a fixed 10 (2026-09-23: "otherwise it's too hard to scroll through
- * the projects when it's not in unified mode") and became a setting on
- * 2026-09-30. The flat lists (New, Unified) are not capped.
  */
 
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
@@ -124,6 +124,13 @@ interface TaskListProps {
   isCollapsed: (groupLabel: string) => boolean
   /** Toggle collapse for a group (lifted from useCollapsedGroups in the dashboard) */
   toggleCollapse: (groupLabel: string) => void
+  /**
+   * Now's folds (`src/lib/now-view.ts`), keyed by `nowFoldKey` — lifted into
+   * the dashboard (`useNowFolds`) because the keyboard order depends on them.
+   * Only read for groups carrying a `now` split.
+   */
+  isFoldOpen?: (key: string) => boolean
+  onToggleFold?: (key: string) => void
   /** Map of taskId -> AI annotation text */
   annotationMap?: Map<number, string>
   /** Whether to show annotation text below task metadata (sparkle icon always shows) */
@@ -199,6 +206,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
 
 /** One stable empty list, so a caller without periods doesn't change the callbacks' deps. */
 const NO_SLOTS: TimeSlot[] = []
+const NEVER_OPEN = () => false
 
 export function TaskList({
   tasks,
@@ -228,6 +236,8 @@ export function TaskList({
   onDoubleClick,
   isCollapsed,
   toggleCollapse,
+  isFoldOpen = NEVER_OPEN,
+  onToggleFold,
   annotationMap,
   showAnnotations = false,
   wnTaskIds,
@@ -255,13 +265,9 @@ export function TaskList({
   const timezone = useTimezone()
   const isMobile = useIsMobile()
   const { projectPreviewCount } = useProjectPreviewCount()
-  // Today's slots preview 5 (§7.3); All's project groups the user's setting;
-  // no cap at all while `uncapped` (the Overdue filter).
-  const previewCount = uncapped
-    ? Infinity
-    : grouping === 'slot'
-      ? SLOT_PREVIEW_COUNT
-      : projectPreviewCount
+  // Project groups preview the user's setting; no cap at all while
+  // `uncapped` (the Overdue filter), nor on Now's relevant rows (below).
+  const previewCount = uncapped ? Infinity : projectPreviewCount
   const listRef = useRef<HTMLDivElement>(null)
 
   // Focus the listbox when entering selection mode (e.g., when clicking a task)
@@ -284,7 +290,7 @@ export function TaskList({
   // which must never modal-block.
   const { requestSnooze, dialogProps } = useSnoozeGuard(timezone, onSnooze)
 
-  // Which slot groups have been expanded past their preview (§7.3). Local
+  // Which groups have been expanded past their preview (§7.3). Local
   // state, not persisted: expansion is a momentary "show me the rest", not a
   // preference worth remembering across sessions.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -317,11 +323,10 @@ export function TaskList({
   }, [])
 
   // `highlightTaskId` (the widget's `?task=<id>&highlight=1` link) can land
-  // on a row past the slot preview cap — `grouping === 'slot'` is Trent's own
-  // default view, and a 12-item slot only shows its first 5. The caller
-  // (`DashboardClient`) already un-collapses the group's HEADER via
-  // `isCollapsed`/`expand`; this is the second, independent cap — the
-  // preview — that only this component's own `expandedGroups` controls.
+  // on a row past a group's preview cap. The caller (`DashboardClient`)
+  // already un-collapses the group's HEADER via `isCollapsed`/`expand`, and
+  // opens Now's fold; this is the other, independent cap — the preview —
+  // that only this component's own `expandedGroups` controls.
   //
   // Adjusted during render, not in an effect: this is pure derived state (no
   // external system involved, just `tasks`/`grouping`/etc that are already
@@ -354,11 +359,11 @@ export function TaskList({
   )
 
   /**
-   * The Just added card's tap: bring the task's real row on screen and flash
-   * it — unfolding its group and lifting the group's "Show all" cap first if
-   * either hides it. A task with no row in this view (Today, and a task due
-   * next week; or one a filter hides) opens its quick panel instead, the same
-   * thing a tap on a row does on mobile. Handed to the card through
+   * The Just now card's tap: bring the task's real row on screen and flash
+   * it — unfolding its group, opening Now's fold, and lifting the group's
+   * "Show all" cap first if any of them hides it. A task with no row in this
+   * view (one a filter hides) opens its quick panel instead, the same thing a
+   * tap on a row does on mobile. Handed to the card through
    * `revealRef` after each render, so it always reads this render's groups.
    */
   useEffect(() => {
@@ -371,9 +376,14 @@ export function TaskList({
         return
       }
       if (!unified && isCollapsed(group.label)) toggleCollapse(group.label)
-      const index = group.sortedTasks.findIndex((t) => t.id === task.id)
-      if (!unified && index >= previewCount && !expandedGroups.has(group.label)) {
-        toggleGroupExpanded(group.label)
+      if (group.now) {
+        const key = nowFoldKey(group)
+        if (group.now.more.some((t) => t.id === task.id) && !isFoldOpen(key)) onToggleFold?.(key)
+      } else {
+        const index = group.sortedTasks.findIndex((t) => t.id === task.id)
+        if (!unified && index >= previewCount && !expandedGroups.has(group.label)) {
+          toggleGroupExpanded(group.label)
+        }
       }
       setFlashTaskId(task.id)
     }
@@ -385,13 +395,7 @@ export function TaskList({
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="mb-4 text-4xl">&#x2705;</div>
           <h2 className="text-foreground text-xl font-medium">All caught up!</h2>
-          <p className="text-muted-foreground mt-1">
-            {grouping === 'slot'
-              ? // §7.3 explicitly wants the inbox-zero feeling for TODAY, while
-                // being honest that later-today items still pend.
-                'Nothing left for today.'
-              : 'No tasks due right now.'}
-          </p>
+          <p className="text-muted-foreground mt-1">No tasks due right now.</p>
         </div>
       </>
     )
@@ -523,20 +527,28 @@ export function TaskList({
       </div>
       <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
         {sortedGroups.map((group) => {
-          const { sortedTasks } = group
+          const { sortedTasks, now: nowSplit } = group
           const collapsed = !isFlat && isCollapsed(group.label)
+
+          // Now (`src/lib/now-view.ts`): the relevant rows, uncapped, then the
+          // fold. Open, the rest of the project follows as ordinary rows.
+          const foldKey = nowFoldKey(group)
+          const foldOpen = !!nowSplit && isFoldOpen(foldKey)
+          // The rows on screen — what the heading's and the checkbox's
+          // select-all take: a shut fold's rows are not on screen.
+          const shownTasks = shownGroupTasks(group, foldOpen)
 
           // §7.3: show the first N, with everything else one tap away. Nothing
           // is ever truncated permanently — §1.1's constraint is that the
-          // harness adapts to the scale, so a 40-item slot stays fully
-          // reachable while the day still reads at a glance. Every grouped view
-          // previews — Today's slots at 5, All's projects at the user's
-          // `project_preview_count` — and only the flat lists show everything.
-          const previewed = !isFlat
+          // harness adapts to the scale, so a 40-item project stays fully
+          // reachable while the list still reads at a glance. Project groups
+          // preview at the user's `project_preview_count` while Now's folds
+          // are lifted; the flat lists and Now's own rows show everything.
+          const previewed = !isFlat && !nowSplit
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
-            previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : sortedTasks
-          const hiddenCount = sortedTasks.length - visibleTasks.length
+            previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : shownTasks
+          const hiddenCount = previewed ? sortedTasks.length - visibleTasks.length : 0
 
           return (
             // `data-task-group` + `scroll-below-header`: the dashboard's
@@ -562,7 +574,7 @@ export function TaskList({
                     </button>
                     {!collapsed && selection.isSelectionMode && (
                       <GroupCheckbox
-                        groupTaskIds={sortedTasks.map((t) => t.id)}
+                        groupTaskIds={shownTasks.map((t) => t.id)}
                         selection={selection}
                       />
                     )}
@@ -574,7 +586,7 @@ export function TaskList({
                           toggleCollapse(group.label)
                           return
                         }
-                        const ids = sortedTasks.map((t) => t.id)
+                        const ids = shownTasks.map((t) => t.id)
                         if (selection.isSelectionMode) {
                           // Toggle: if all selected, deselect all; otherwise select all
                           const allSelected = ids.every((id) => selection.selectedIds.has(id))
@@ -610,7 +622,7 @@ export function TaskList({
                       ) : (
                         group.label
                       )}
-                      <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
+                      <GroupCount total={group.tasks.length} nowSplit={nowSplit} />
                     </button>
                   </div>
                 </div>
@@ -618,6 +630,15 @@ export function TaskList({
               {!collapsed && (
                 <div className="space-y-1">
                   {visibleTasks.map((task) => renderTaskRow(task))}
+                  {nowSplit && (
+                    <NowFoldRow
+                      projectLabel={group.label}
+                      moreCount={nowSplit.more.length}
+                      nothingRelevant={nowSplit.relevant.length === 0}
+                      open={foldOpen}
+                      onToggle={() => onToggleFold?.(foldKey)}
+                    />
+                  )}
                   {hiddenCount > 0 && (
                     <button
                       type="button"
@@ -628,7 +649,7 @@ export function TaskList({
                       <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
                     </button>
                   )}
-                  {isExpanded && sortedTasks.length > previewCount && (
+                  {previewed && isExpanded && sortedTasks.length > previewCount && (
                     <button
                       type="button"
                       onClick={() => toggleGroupExpanded(group.label)}
@@ -645,6 +666,74 @@ export function TaskList({
       </div>
       <SnoozeGuardDialog {...dialogProps} />
     </div>
+  )
+}
+
+/**
+ * A group heading's count: the group's size, or in Now "1 of 5" — the
+ * project's rows relevant now, of its open tasks (mockup E1).
+ */
+function GroupCount({ total, nowSplit }: { total: number; nowSplit?: NowSplit }) {
+  if (!nowSplit) return <span className="text-muted-foreground/60 ml-2">{total}</span>
+  return (
+    <span
+      data-now-count
+      className="text-muted-foreground/60 ml-2 font-normal tracking-normal normal-case"
+    >
+      {nowSplit.relevant.length} of {total}
+    </span>
+  )
+}
+
+/**
+ * Now's fold row under a project's relevant rows (mockup E1): shut, a dashed
+ * "+ N more in <Project>" — with "· nothing due" when the project has nothing
+ * relevant, so a project that is all fold still says why it is quiet; open, a
+ * "Show fewer" row after the rest of the project's rows. Nothing when every
+ * row of the project is relevant. See `src/lib/now-view.ts`.
+ */
+function NowFoldRow({
+  projectLabel,
+  moreCount,
+  nothingRelevant,
+  open,
+  onToggle,
+}: {
+  projectLabel: string
+  moreCount: number
+  nothingRelevant: boolean
+  open: boolean
+  onToggle: () => void
+}) {
+  if (moreCount === 0) return null
+  if (open) {
+    return (
+      <button
+        type="button"
+        data-now-fold="open"
+        onClick={onToggle}
+        aria-expanded
+        className="border-border text-foreground hover:bg-muted/50 flex w-full items-center gap-1.5 rounded-lg border px-3 py-1.5 text-left text-xs font-medium transition-colors"
+      >
+        <ChevronUp className="size-3.5" aria-hidden />
+        Show fewer
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      data-now-fold="shut"
+      onClick={onToggle}
+      aria-expanded={false}
+      className="border-border text-foreground hover:bg-muted/50 flex w-full items-center gap-1.5 rounded-lg border border-dashed px-3 py-1.5 text-left text-xs transition-colors"
+    >
+      <Plus className="size-3.5" aria-hidden />
+      <span className="font-medium">
+        {moreCount} more in {projectLabel}
+      </span>
+      {nothingRelevant && <span className="text-muted-foreground">· nothing due</span>}
+    </button>
   )
 }
 

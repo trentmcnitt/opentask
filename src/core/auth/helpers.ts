@@ -17,10 +17,10 @@ interface UserRow {
 /**
  * Convert a database user row to an AuthUser, coercing default_grouping to its
  * union type with the dashboard's own rule (`coerceGrouping`,
- * `src/lib/grouping.ts`): the retired 'time' becomes 'project' (All), and any
- * other value the union no longer covers — 'reminders', from when the §6
+ * `src/lib/grouping.ts`): any value the union no longer covers — the retired
+ * 'slot' (Today) and 'time' (due-date All), 'reminders', from when the §6
  * surface persisted as a dashboard view, and 'recent', the short-lived "Recent"
- * view — becomes 'slot'. This value is only echoed back to callers, never used
+ * view — becomes 'project' (Now). This value is only echoed back to callers, never used
  * to choose a view (see the type), so the coercion is about keeping the union
  * honest and agreeing with what the dashboard shows.
  */

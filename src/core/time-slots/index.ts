@@ -50,10 +50,8 @@
  *   both write the slot's exact start into the rule, and `describeTimeOfDay`
  *   shows such a reminder as just the slot's name ("Morning") versus
  *   "Morning, 10:15 AM" for one inside the slot.
- * - Dashboard Today grouping (§7.3, `groupBySlot` in DashboardClient/TaskList
- *   via `useTimeSlots`) groups ALL of today's items, tasks included, by the
- *   same rule. Tasks are not moved when slots change: their due time is a real
- *   time, and they simply regroup.
+ * - The dashboard's Today view grouped today's tasks by the same rule until it
+ *   was dropped (2026-10-14); tasks were never moved when slots changed.
  * - Reminders surface / widgets: `getRemindersBySlot` groups server-side;
  *   `/api/reminders` hands each group its slot, so the phone Reminders widget
  *   gets new labels/starts with its next timeline reload.

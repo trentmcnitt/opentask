@@ -274,6 +274,18 @@ export async function gotoQuotasDetails(page: Page, path = '/quotas'): Promise<v
 }
 
 /**
+ * Now's "Show all" (the dashboard, `default_grouping = 'project'`): lift every
+ * project's "+ N more" fold, for a spec whose subject is a row that isn't
+ * relevant now (undated, or due later). Since 2026-10-14 Now shows only what
+ * is relevant now, so such a row is behind its project's fold until this.
+ */
+export async function showAllNow(page: Page): Promise<void> {
+  const summary = page.locator('[data-now-summary]')
+  await summary.getByRole('button', { name: /^Show all \d+$/ }).click()
+  await expect(summary.getByRole('button', { name: /^Show \d+ now$/ })).toBeVisible()
+}
+
+/**
  * Run `run` with these server preferences set, and put the old values back
  * afterwards — pass or fail.
  *
