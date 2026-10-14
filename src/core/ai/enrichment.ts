@@ -758,12 +758,16 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   } else {
     parsed = pinUnnamedDay(
       alignTaskModelDates(
-        resolveDateOnlyTarget(
-          sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+        resolveBareTime(
+          resolveDateOnlyTarget(
+            sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+            textToEnrich,
+            user.timezone,
+            user.morning_time,
+            targetTodayTime(user.id, user.timezone),
+          ),
           textToEnrich,
           user.timezone,
-          user.morning_time,
-          targetTodayTime(user.id, user.timezone),
         ),
         user.timezone,
       ),
@@ -961,6 +965,67 @@ export function resolveDateOnlyTarget(
     ...enrichment,
     due_at: local.toISO({ includeOffset: false, suppressMilliseconds: true })!,
   }
+}
+
+/**
+ * A clock time in the input: "8:30am", "830am", "7pm", "7 p.m.", "at 9",
+ * "at 10:15", "noon", "midnight".
+ */
+const CLOCK_TIME =
+  /\b\d{1,2}(:?\d{2})?\s*(a\.?m\.?|p\.?m\.?)(?![a-z])|\bat \d{1,2}(:\d{2})?\b|\b(noon|midnight)\b/i
+
+/**
+ * Words that name a day, or a part of today ("tonight", "this afternoon"):
+ * with one, the model's date is the user's and a bare time is not bare.
+ */
+const DAY_NAMED =
+  /\b(today|tonight|tomorrow|tmrw|tomm?orr?ow|yesterday|next|this|weekend|week|month|year|days?|weeks?|months?)\b|\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|nesday|sday|urday)?\b|\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\bin \d+ (minutes?|hours?|mins?|hrs?)\b|\bin an? (hour|minute)\b/i
+
+/**
+ * A TIME WITH NO DAY is its next occurrence (Trent, 2026-10-14: "Add Matthew
+ * time 8:30am … It's supposed to actually be at 8:30 am this morning"): today
+ * while that time is still ahead, otherwise tomorrow. The prompt says so; this
+ * catches the model returning one already passed ("8:30am" said at 10 AM, given
+ * today at 8:30), which would land over target the moment it is made.
+ *
+ * FORWARD ONLY: a target still ahead is never pulled earlier. Whether the
+ * words name a day is a regex's guess, and a day it can't read — "tommorow at
+ * 3pm" — is still a day: pulling the model's correct "tomorrow" back to today
+ * was the first version's bug (quality run, 2026-10-14).
+ *
+ * Only a one-off whose input names a clock time (`CLOCK_TIME`) and no day
+ * (`DAY_NAMED`) is touched, and only its DATE: the hour and minute stay the
+ * model's, which read the time. A repeating task's first date is the rule's
+ * business (`pinUnnamedDay`). A null target stays null: setting one here
+ * would mean parsing times out of titles, where "the 7pm news" and "Matthew
+ * time" can be either the task or the time to do it — the prompt decides.
+ *
+ * Runs on the model's LOCAL value, after `resolveDateOnlyTarget` and before
+ * `alignTaskModelDates`. Pure apart from `now`; exported for the quality
+ * harness and tests.
+ */
+export function resolveBareTime(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || enrichment.rrule) return enrichment
+  if (!CLOCK_TIME.test(inputText) || DAY_NAMED.test(inputText)) return enrichment
+  const local = parseLocalDateTime(value, timezone)
+  if (!local) return enrichment
+  const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
+  let next = nowLocal.set({
+    hour: local.hour,
+    minute: local.minute,
+    second: 0,
+    millisecond: 0,
+  })
+  if (local > nowLocal) return enrichment
+  if (next <= nowLocal) next = next.plus({ days: 1 })
+  log.info('ai', 'Enrichment: moved a time with no day to its next occurrence')
+  return { ...enrichment, due_at: toLocalIso(next, value) }
 }
 
 /**

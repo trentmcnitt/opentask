@@ -44,6 +44,22 @@ const ordinal = (n: number) => {
   return `${d}${suffix}`
 }
 const iso = (n: number) => `~date:${day(n).toFormat('yyyy-MM-dd')}`
+/**
+ * A time with no day (2026-10-14): its next occurrence from the run's start —
+ * today while still ahead, else tomorrow. "~datetime:2026-10-14T19:00".
+ */
+const nextAt = (hour: number, minute = 0) => {
+  const now = DateTime.now().setZone(TZ)
+  let at = now.set({ hour, minute, second: 0, millisecond: 0 })
+  if (at <= now) at = at.plus({ days: 1 })
+  return `~datetime:${at.toFormat("yyyy-MM-dd'T'HH:mm")}`
+}
+/** Which day `nextAt` picked, for the notes. */
+const nextDayWord = (hour: number, minute = 0) =>
+  nextAt(hour, minute).slice('~datetime:'.length, '~datetime:'.length + 10) ===
+  today.toFormat('yyyy-MM-dd')
+    ? 'today'
+    : 'tomorrow'
 
 export const enrichmentTaskModelScenarios: AITestScenario[] = [
   // ---------------------------------------------------------------------------
@@ -624,6 +640,70 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
       quality_notes:
         `due_at (the target) = the coming ${weekday(5)} at 3:00 PM local; deadline_at = ${monthDay(9)}, end of day. ` +
         'Both must be set and not swapped; the target is before the deadline. Title "Send the invoice".',
+    },
+  },
+  // ---------------------------------------------------------------------------
+  // A time with no day (2026-10-14, Trent: "Add Matthew time 8:30am never got
+  // converted. It's supposed to actually be at 8:30 am this morning.") — its
+  // next occurrence: today while still ahead, otherwise tomorrow.
+  // ---------------------------------------------------------------------------
+  {
+    id: 'enrich-bt-name-and-time',
+    feature: 'enrichment',
+    description:
+      'A time beside a name ("Matthew time 8:30am") is the target, not part of the title',
+    input: { text: 'Add Matthew time 8:30am', timezone: TZ, projects: INBOX },
+    requirements: {
+      must_include: { due_at: nextAt(8, 30), deadline_at: null, horizon: null, rrule: null },
+      quality_notes:
+        `due_at = ${nextDayWord(8, 30)} at 8:30 AM local (the next 8:30 AM from the current time). ` +
+        'The time is when to do it, not part of what is being added. Title "Add Matthew time" — "8:30am" removed. No deadline.',
+    },
+  },
+  {
+    id: 'enrich-bt-no-colon',
+    feature: 'enrichment',
+    description: 'Dictated time with no colon ("830am") and no day → next 8:30 AM',
+    input: { text: 'Review the slides 830am', timezone: TZ, projects: INBOX },
+    requirements: {
+      must_include: { due_at: nextAt(8, 30), deadline_at: null, horizon: null, rrule: null },
+      quality_notes: `"830am" is 8:30 AM. due_at = ${nextDayWord(8, 30)} at 8:30 AM local. Title "Review the slides", the time removed.`,
+    },
+  },
+  {
+    id: 'enrich-bt-at-3',
+    feature: 'enrichment',
+    description: '"at 3" with no am/pm and no day → the next 3:00 in waking hours (3 PM)',
+    input: { text: 'Call the bank at 3', timezone: TZ, projects: INBOX },
+    requirements: {
+      must_include: { due_at: nextAt(15), deadline_at: null, horizon: null, rrule: null },
+      quality_notes: `"at 3" between 7 AM and 11 PM is 3 PM. due_at = ${nextDayWord(15)} at 3:00 PM local. Title "Call the bank".`,
+    },
+  },
+  {
+    id: 'enrich-bt-call-mom-7pm',
+    feature: 'enrichment',
+    description: '"call mom 7pm" → the next 7 PM',
+    input: { text: 'call mom 7pm', timezone: TZ, projects: INBOX },
+    requirements: {
+      must_include: { due_at: nextAt(19), deadline_at: null, horizon: null, rrule: null },
+      quality_notes: `due_at = ${nextDayWord(19)} at 7:00 PM local. Title "Call mom".`,
+    },
+  },
+  {
+    id: 'enrich-bt-at-9-tonight',
+    feature: 'enrichment',
+    description: '"at 9 tonight" names the day → today at 9 PM',
+    input: { text: 'at 9 tonight take out the trash', timezone: TZ, projects: INBOX },
+    requirements: {
+      must_include: {
+        due_at: `~datetime:${today.toFormat('yyyy-MM-dd')}T21:00`,
+        deadline_at: null,
+        horizon: null,
+        rrule: null,
+      },
+      quality_notes:
+        '"tonight" names today, and "at 9" tonight is 9 PM: due_at = today at 9:00 PM local. Title "Take out the trash".',
     },
   },
 ]
