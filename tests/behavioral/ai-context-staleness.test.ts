@@ -1,8 +1,8 @@
 /**
  * The global AI context's age (task-model redesign, 2026-10-10):
  * `updatePreferences` stamps `ai_context_updated_at` when — and only when —
- * the text changes, and `aiContextStaleness` reads it for the left bar's and
- * the phone menu's warning (stale after AI_CONTEXT_STALE_DAYS, or never stamped).
+ * the text changes, and Settings › AI reads it for the context's age and its
+ * stale emphasis (stale after AI_CONTEXT_STALE_DAYS, or never stamped).
  */
 
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
@@ -10,9 +10,8 @@ import { setupTestDb, teardownTestDb, TEST_USER_ID } from '../helpers/setup'
 import { getPreferences, updatePreferences } from '@/core/users/preferences'
 import {
   AI_CONTEXT_STALE_DAYS,
-  aiContextStaleness,
-  aiContextStalenessLabel,
-  formatAiContextAge,
+  aiContextAgeLabel,
+  isAiContextStale,
 } from '@/lib/ai-context-staleness'
 
 beforeAll(() => {
@@ -74,43 +73,57 @@ describe('ai_context_updated_at is stamped by updatePreferences', () => {
   })
 })
 
-describe('aiContextStaleness', () => {
+describe('isAiContextStale', () => {
   const now = new Date('2026-10-30T12:00:00Z')
+  const day = 24 * 60 * 60 * 1000
+  const at = (days: number) => new Date(now.getTime() - days * day).toISOString()
 
-  test('never stamped is stale, with or without context', () => {
-    expect(aiContextStaleness('ctx', null, now)).toEqual({ ageDays: null, hasContext: true })
-    expect(aiContextStaleness(null, null, now)).toEqual({ ageDays: null, hasContext: false })
-    expect(aiContextStaleness('   ', null, now)).toEqual({ ageDays: null, hasContext: false })
+  test('never stamped (or an unreadable stamp) is stale', () => {
+    expect(isAiContextStale(null, now)).toBe(true)
+    expect(isAiContextStale('not a date', now)).toBe(true)
   })
 
   test(`fresh until ${AI_CONTEXT_STALE_DAYS} days, stale from then`, () => {
-    const day = 24 * 60 * 60 * 1000
-    const at = (days: number) => new Date(now.getTime() - days * day).toISOString()
-    expect(aiContextStaleness('ctx', at(AI_CONTEXT_STALE_DAYS - 1), now)).toBeNull()
-    expect(aiContextStaleness('ctx', at(AI_CONTEXT_STALE_DAYS), now)).toEqual({
-      ageDays: AI_CONTEXT_STALE_DAYS,
-      hasContext: true,
-    })
+    expect(isAiContextStale(at(0), now)).toBe(false)
+    expect(isAiContextStale(at(AI_CONTEXT_STALE_DAYS - 1), now)).toBe(false)
+    expect(isAiContextStale(at(AI_CONTEXT_STALE_DAYS), now)).toBe(true)
   })
 
-  test('a recently cleared context is fresh; once old it asks to be added', () => {
-    expect(aiContextStaleness(null, '2026-10-29T12:00:00Z', now)).toBeNull()
-    const s = aiContextStaleness(null, '2026-09-01T12:00:00Z', now)
-    expect(s).not.toBeNull()
-    expect(aiContextStalenessLabel(s!)).toBe('Add AI context')
+  test('a stamp a moment after `now` (just marked "Still accurate") is fresh', () => {
+    expect(isAiContextStale(new Date(now.getTime() + 500).toISOString(), now)).toBe(false)
+  })
+})
+
+describe('aiContextAgeLabel', () => {
+  const now = new Date('2026-10-30T12:00:00Z')
+  const day = 24 * 60 * 60 * 1000
+  const at = (days: number) => new Date(now.getTime() - days * day).toISOString()
+
+  test('no stamp reads "No update date"', () => {
+    expect(aiContextAgeLabel(null, now)).toBe('No update date')
+    expect(aiContextAgeLabel('not a date', now)).toBe('No update date')
   })
 
-  test('labels', () => {
-    expect(aiContextStalenessLabel({ ageDays: 29, hasContext: true })).toBe(
-      'AI context: 4 weeks old',
+  test('days up to two weeks', () => {
+    expect(aiContextAgeLabel('2026-10-30T08:00:00Z', now)).toBe('Updated today')
+    expect(aiContextAgeLabel(new Date(now.getTime() + 500).toISOString(), now)).toBe(
+      'Updated today',
     )
-    expect(aiContextStalenessLabel({ ageDays: null, hasContext: true })).toBe('Review AI context')
-    expect(aiContextStalenessLabel({ ageDays: null, hasContext: false })).toBe('Add AI context')
+    expect(aiContextAgeLabel('2026-10-29T08:00:00Z', now)).toBe('Updated yesterday')
+    expect(aiContextAgeLabel('2026-10-18T08:00:00Z', now)).toBe('Updated 12 days ago')
+    expect(aiContextAgeLabel(at(13), now)).toBe('Updated 13 days ago')
   })
 
-  test('formatAiContextAge', () => {
-    expect(formatAiContextAge('2026-10-30T08:00:00Z', now)).toBe('today')
-    expect(formatAiContextAge('2026-10-29T08:00:00Z', now)).toBe('yesterday')
-    expect(formatAiContextAge('2026-10-18T08:00:00Z', now)).toBe('12 days ago')
+  test('weeks up to two months, so the stale threshold reads in weeks', () => {
+    expect(aiContextAgeLabel(at(14), now)).toBe('Updated 2 weeks ago')
+    expect(aiContextAgeLabel(at(AI_CONTEXT_STALE_DAYS), now)).toBe('Updated 3 weeks ago')
+    expect(aiContextAgeLabel(at(25), now)).toBe('Updated 3 weeks ago')
+    expect(aiContextAgeLabel(at(59), now)).toBe('Updated 8 weeks ago')
+  })
+
+  test('months up to a year, then "over a year"', () => {
+    expect(aiContextAgeLabel(at(60), now)).toBe('Updated 2 months ago')
+    expect(aiContextAgeLabel(at(364), now)).toBe('Updated 12 months ago')
+    expect(aiContextAgeLabel(at(365), now)).toBe('Updated over a year ago')
   })
 })

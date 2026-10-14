@@ -63,17 +63,6 @@ export interface DuplicateGroup {
   reason: string
 }
 
-/** How many things Process has to work through (the menu's count hint). */
-export function processItemCount(data: ProcessData): number {
-  // A task can be asked about in more than one step; count it once.
-  return new Set([
-    ...data.inbox.map((t) => t.id),
-    ...data.growth.map((g) => g.task.id),
-    ...data.stale_targets.map((s) => s.task.id),
-    ...data.stale_targets_with_deadline.map((s) => s.task.id),
-  ]).size
-}
-
 /**
  * The last answer, kept for the session so reopening paints at once while the
  * fresh read runs (the app's stale-while-revalidate pattern, as in
@@ -223,4 +212,23 @@ export async function undoEntries(count: number): Promise<string | null> {
   const res = await fetch('/api/undo/batch', jsonInit('POST', { count }))
   if (!res.ok) return null
   return `${count} changes`
+}
+
+/**
+ * Opening Process from outside the top bar (2026-10-14). The modal lives in
+ * `Header`, which only the dashboard, Reminders and Quotas render; its
+ * listener for `OPEN_PROCESS_EVENT` cancels the event to say "opened". The
+ * left bar shows Process on every page, so where nothing cancels it (History,
+ * Settings, …) it navigates to `/?action=process`, and the dashboard's top bar
+ * opens Process on arrival (`PROCESS_ACTION`) — the same in-place modal the ☰
+ * menu opens, never a second copy.
+ */
+export const OPEN_PROCESS_EVENT = 'open-process'
+
+/** `/?action=process`: open Process once the dashboard's top bar mounts. */
+export const PROCESS_ACTION = 'process'
+
+/** Ask the mounted top bar for Process; true when one opened it. */
+export function requestOpenProcess(): boolean {
+  return !window.dispatchEvent(new CustomEvent(OPEN_PROCESS_EVENT, { cancelable: true }))
 }

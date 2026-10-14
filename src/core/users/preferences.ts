@@ -55,8 +55,8 @@ export interface PreferencesRow {
   ai_context: string | null
   /**
    * When `ai_context` last changed (2026-10-10). Server-stamped by
-   * `updatePreferences`, never written by a client: the staleness warning
-   * (`src/lib/ai-context-staleness.ts`) reads it.
+   * `updatePreferences`, never written by a client: Settings › AI shows its
+   * age and staleness (`src/lib/ai-context-staleness.ts`).
    */
   ai_context_updated_at: string | null
   ai_mode: string

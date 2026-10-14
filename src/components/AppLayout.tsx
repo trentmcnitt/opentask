@@ -8,6 +8,7 @@ import { BottomTabs } from './BottomTabs'
 import { OfflineBanner } from './OfflineBanner'
 import { useProjects } from './ProjectsProvider'
 import { FOCUS_QUICK_ADD_EVENT, QUICK_ADD_ACTION } from './QuickAdd'
+import { OPEN_ADD_EVENT } from '@/lib/add-action'
 import dynamic from 'next/dynamic'
 
 const CreateTaskPanel = dynamic(() =>
@@ -45,6 +46,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
     setShowAddForm(true)
   }, [pathname, router])
+
+  // The top bar's ☰ menu "Add Task" (`OPEN_ADD_EVENT`, src/lib/add-action.ts)
+  // is the left bar's button, so it runs the same handler.
+  useEffect(() => {
+    const handler = () => handleAddClick()
+    window.addEventListener(OPEN_ADD_EVENT, handler)
+    return () => window.removeEventListener(OPEN_ADD_EVENT, handler)
+  }, [handleAddClick])
 
   // The phone tab bar's `+` (Trent, 2026-09-30): on the dashboard it focuses
   // the add field at the top of the page (the same one desktop uses, with its

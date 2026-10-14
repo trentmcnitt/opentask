@@ -10,7 +10,7 @@ import type { FeatureMode, FeatureInfo, FeatureInfoMap } from '@/components/Pref
 import { savePreference } from '@/lib/save-preference'
 import { showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
-import { aiContextStaleness, formatAiContextAge } from '@/lib/ai-context-staleness'
+import { aiContextAgeLabel, isAiContextStale } from '@/lib/ai-context-staleness'
 import { SettingsSection } from './SettingsSection'
 
 type FeatureKey = 'enrichment' | 'quicktake' | 'whats_next' | 'insights'
@@ -65,12 +65,12 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
   const dirty = value !== (aiContext ?? '')
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const [now] = useState(() => new Date())
-  const stale = aiContextStaleness(aiContext, aiContextUpdatedAt, now) !== null
+  const stale = isAiContextStale(aiContextUpdatedAt, now)
 
-  // The staleness warning (left bar, phone menu) links to
-  // `/settings#ai-context`. The page renders this section only once the
-  // preferences have loaded, after the browser's own jump-to-hash has come
-  // and gone, so bring the field into view and focus it here.
+  // `/settings#ai-context` lands on the field. The page renders this section
+  // only once the preferences have loaded, after the browser's own
+  // jump-to-hash has come and gone, so bring the field into view and focus it
+  // here.
   useEffect(() => {
     if (window.location.hash !== '#ai-context') return
     fieldRef.current?.scrollIntoView({ block: 'center' })
@@ -93,8 +93,8 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
         errorMessage: 'Failed to save AI context',
       },
     )
-    // The server stamps the change; take its time so the staleness warning
-    // clears now rather than on the next load.
+    // The server stamps the change; take its time so the age and the stale
+    // emphasis update now rather than on the next load.
     if (data && data.ai_context_updated_at !== undefined) {
       setAiContextUpdatedAt(data.ai_context_updated_at)
     }
@@ -104,7 +104,7 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
   }
 
   // A review without an edit: the context is still right, so restamp it
-  // (`ai_context_reviewed`) and the nudge goes away for another three weeks.
+  // (`ai_context_reviewed`): "Updated today", not stale for another three weeks.
   const handleReviewed = async () => {
     if (isDemo) {
       showDemoToast()
@@ -142,20 +142,24 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
         disabled={isDemo}
       />
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-zinc-400">
-          {value.length}/1000
-          {/* Its age, so the left bar's "4 weeks old" has an answer here.
-              Darker (not a new hue) once it is stale. */}
-          {aiContextUpdatedAt && (
-            <span data-ai-context-age className={cn(stale && 'text-zinc-600 dark:text-zinc-300')}>
-              {' '}
-              · updated {formatAiContextAge(aiContextUpdatedAt, now)}
-            </span>
-          )}
+        <span className="min-w-0 text-xs text-zinc-400">
+          {value.length}/1000 ·{' '}
+          {/* The staleness nudge's only home (2026-10-14; it used to be a
+              link in the left bar and the ☰ menu): the context's age, or "No
+              update date" when it was never stamped. Stale (21+ days, or no
+              date) reads darker and a touch heavier — not a new hue: nothing
+              is broken, it is due a look. */}
+          <span
+            data-ai-context-age
+            data-stale={stale || undefined}
+            className={cn(stale && 'font-medium text-zinc-600 dark:text-zinc-300')}
+          >
+            {aiContextAgeLabel(aiContextUpdatedAt, now)}
+          </span>
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-shrink-0 items-center gap-2">
           {/* Only while stale and unedited: an edit's Save restamps anyway.
-              Plain text, like the nudge that led here. */}
+              Plain text, quiet like the age beside it. */}
           {stale && !dirty && !isDemo && (
             <button
               type="button"
