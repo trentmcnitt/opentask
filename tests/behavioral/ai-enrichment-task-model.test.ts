@@ -437,10 +437,14 @@ describe('a time with no day (resolveBareTime)', () => {
     expect(bare('2026-10-14T08:30:00', 'Add Matthew time 8:30am', '2026-10-14T10:00:00')).toBe(
       '2026-10-15T08:30:00',
     )
-    // The model counted wrong the other way: tomorrow while today's is ahead.
+    // Forward only: a target still ahead is never pulled earlier — a day the
+    // regex can't read ("tommorow") is still a day.
     expect(bare('2026-10-15T19:00:00', 'call mom 7pm', '2026-10-14T15:00:00')).toBe(
-      '2026-10-14T19:00:00',
+      '2026-10-15T19:00:00',
     )
+    expect(
+      bare('2026-10-15T15:00:00', 'dentist appointment tommorow at 3pm', '2026-10-14T10:00:00'),
+    ).toBe('2026-10-15T15:00:00')
     // Exactly now is not ahead.
     expect(bare('2026-10-14T19:00:00', 'call mom 7pm', '2026-10-14T19:00:00')).toBe(
       '2026-10-15T19:00:00',

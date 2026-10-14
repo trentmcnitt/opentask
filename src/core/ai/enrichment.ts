@@ -979,15 +979,19 @@ const CLOCK_TIME =
  * with one, the model's date is the user's and a bare time is not bare.
  */
 const DAY_NAMED =
-  /\b(today|tonight|tomorrow|tmrw|yesterday|next|this|weekend|week|month|year|days?|weeks?|months?)\b|\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|nesday|sday|urday)?\b|\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\bin \d+ (minutes?|hours?|mins?|hrs?)\b|\bin an? (hour|minute)\b/i
+  /\b(today|tonight|tomorrow|tmrw|tomm?orr?ow|yesterday|next|this|weekend|week|month|year|days?|weeks?|months?)\b|\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|nesday|sday|urday)?\b|\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\bin \d+ (minutes?|hours?|mins?|hrs?)\b|\bin an? (hour|minute)\b/i
 
 /**
  * A TIME WITH NO DAY is its next occurrence (Trent, 2026-10-14: "Add Matthew
  * time 8:30am … It's supposed to actually be at 8:30 am this morning"): today
  * while that time is still ahead, otherwise tomorrow. The prompt says so; this
- * holds the model to the day it picks, since the quality runs show a model
- * miscounting "the next 8:30" — returning a time already passed, or tomorrow
- * when today's was still ahead.
+ * catches the model returning one already passed ("8:30am" said at 10 AM, given
+ * today at 8:30), which would land over target the moment it is made.
+ *
+ * FORWARD ONLY: a target still ahead is never pulled earlier. Whether the
+ * words name a day is a regex's guess, and a day it can't read — "tommorow at
+ * 3pm" — is still a day: pulling the model's correct "tomorrow" back to today
+ * was the first version's bug (quality run, 2026-10-14).
  *
  * Only a one-off whose input names a clock time (`CLOCK_TIME`) and no day
  * (`DAY_NAMED`) is touched, and only its DATE: the hour and minute stay the
@@ -1018,8 +1022,8 @@ export function resolveBareTime(
     second: 0,
     millisecond: 0,
   })
+  if (local > nowLocal) return enrichment
   if (next <= nowLocal) next = next.plus({ days: 1 })
-  if (next.hasSame(local, 'day')) return enrichment
   log.info('ai', 'Enrichment: moved a time with no day to its next occurrence')
   return { ...enrichment, due_at: toLocalIso(next, value) }
 }
