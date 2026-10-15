@@ -342,7 +342,7 @@ test.describe('Tasks page layout — phone', () => {
 
         // The add-a-task row and the view tabs never fold.
         await expect(page.getByRole('textbox', { name: 'Quick add task' })).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Today', exact: true })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Now', exact: true })).toBeVisible()
 
         // Shutting still works, and is still per-group — the default moved,
         // the mechanism did not.

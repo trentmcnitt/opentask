@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect } from './fixtures'
+import { test, expect, showAllNow } from './fixtures'
 
 async function createTask(
   page: Page,
@@ -37,6 +37,9 @@ test.describe('Task detail', () => {
   test('clicking task title navigates to detail page with fields visible', async ({
     authenticatedPage: page,
   }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     const taskLink = page.getByRole('link', { name: 'Review PRs' })
     await expect(taskLink).toBeVisible({ timeout: 5000 })
     await taskLink.click()
@@ -58,6 +61,9 @@ test.describe('Task detail', () => {
   })
 
   test('edit title on detail page persists after reload', async ({ authenticatedPage: page }) => {
+    // Seeded tasks due later sit behind their projects' folds in Now (the
+    // dashboard's default view): lift them.
+    await showAllNow(page)
     // Navigate to "Buy groceries" detail
     const taskLink = page.getByRole('link', { name: 'Buy groceries' })
     await expect(taskLink).toBeVisible({ timeout: 5000 })

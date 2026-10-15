@@ -390,12 +390,13 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
     `docs:public/images/concepts/web-quotas-${theme}.png`,
   ])
 
-  // The Today and Newest views. The toggle saves `default_grouping` on the
-  // (throwaway) account, so put All back at the end.
+  // The Newest view (Now is the dashboard shot above). The toggle saves
+  // `default_grouping` on the (throwaway) account, so put Now back at the end.
+  // There is no Today view since 2026-10-14.
   await gotoAndSettle(page, '/', dashboardReady(page))
   await clearJustAdded(page)
   const views = page.getByRole('group', { name: 'View mode' })
-  for (const view of ['Today', 'Newest'] as const) {
+  for (const view of ['Newest'] as const) {
     await views.getByRole('button', { name: view }).click()
     await views.getByRole('button', { name: view, pressed: true }).waitFor()
     await settle(page)
@@ -407,8 +408,8 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
     ])
   }
   await page.evaluate(() => window.scrollTo(0, 0))
-  await views.getByRole('button', { name: 'All' }).click()
-  await views.getByRole('button', { name: 'All', pressed: true }).waitFor()
+  await views.getByRole('button', { name: 'Now' }).click()
+  await views.getByRole('button', { name: 'Now', pressed: true }).waitFor()
   await settle(page)
   await page.context().close()
 }

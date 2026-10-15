@@ -175,8 +175,8 @@ export function ProjectsSection() {
 const PREVIEW_COUNT_PRESETS = [3, 4, 5, 6, 8, 10, 15, 20, 30, 50]
 
 /**
- * How many tasks each project group in the dashboard's All view shows before
- * its "Show all" button (`project_preview_count`, default 6). A preset select
+ * How many tasks each project group in the dashboard's Now view shows, with
+ * its folds lifted ("Show all"), before its "Show all N" button (`project_preview_count`, default 6). A preset select
  * like the other Settings choices; a value set through the API that isn't a
  * preset is listed too, so the select never shows a value it doesn't hold.
  */

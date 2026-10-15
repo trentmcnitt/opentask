@@ -70,7 +70,7 @@ async function layoutWidth(page: Page): Promise<number> {
   return page.evaluate(() => document.body.clientWidth)
 }
 
-async function viewButton(page: Page, name: 'All' | 'Today' | 'Newest') {
+async function viewButton(page: Page, name: 'Now' | 'Newest') {
   return page.getByRole('group', { name: 'View mode' }).getByRole('button', { name, exact: true })
 }
 
@@ -81,7 +81,7 @@ async function viewButton(page: Page, name: 'All' | 'Today' | 'Newest') {
  */
 function usePhoneSeed(): number[] {
   const taskIds: number[] = []
-  let grouping = 'slot'
+  let grouping = 'project'
 
   test.beforeEach(async ({ authenticatedPage: page }) => {
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -271,26 +271,18 @@ test.describe('FAB column — phone: the stack and the view button', () => {
     }
   })
 
-  test('the view button shows in Newest and Today with their icons, not in All; a tap goes to All', async ({
+  test('the view button shows in Newest with its icon, not in Now; a tap goes to Now', async ({
     authenticatedPage: page,
   }) => {
     // Newest (from beforeEach).
     const fab = viewFab(page)
     await expect(fab).toBeVisible()
     await expect(fab).toHaveAttribute('data-view-mode-fab', 'new')
-    await expect(fab).toHaveAttribute('aria-label', 'Viewing Newest — tap to show All')
+    await expect(fab).toHaveAttribute('aria-label', 'Viewing Newest — tap to show Now')
     await expect(fab.locator('svg')).toHaveClass(/lucide-arrow-down-wide-narrow/)
     // Drawn pressed: a ring around it, like the lit overdue button.
     await expect(fab).toHaveClass(/(^|\s)ring-2(\s|$)/)
     await expect(fab).toHaveClass(/(^|\s)ring-offset-2(\s|$)/)
-
-    // Today.
-    let saved = waitForPreferenceSave(page, 'default_grouping')
-    await (await viewButton(page, 'Today')).click()
-    await saved
-    await expect(fab).toHaveAttribute('data-view-mode-fab', 'slot')
-    await expect(fab).toHaveAttribute('aria-label', 'Viewing Today — tap to show All')
-    await expect(fab.locator('svg')).toHaveClass(/lucide-sun/)
 
     // Independent of the Overdue filter: both lit together.
     await overdueFab(page).click()
@@ -299,18 +291,18 @@ test.describe('FAB column — phone: the stack and the view button', () => {
     await overdueFab(page).click()
     await expect(overdueFab(page)).toHaveAttribute('aria-pressed', 'false')
 
-    // Tap: back to All, saved like a click on the toggle's "All".
-    saved = waitForPreferenceSave(page, 'default_grouping')
+    // Tap: back to Now, saved like a click on the toggle's "Now".
+    const saved = waitForPreferenceSave(page, 'default_grouping')
     await fab.click()
     await saved
-    await expect(await viewButton(page, 'All')).toHaveAttribute('aria-pressed', 'true')
+    await expect(await viewButton(page, 'Now')).toHaveAttribute('aria-pressed', 'true')
     await expect(viewFab(page)).toHaveCount(0)
     const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
     expect(prefs.default_grouping).toBe('project')
 
-    // Survives a reload: still All, still no button.
+    // Survives a reload: still Now, still no button.
     await page.reload()
-    await expect(await viewButton(page, 'All')).toHaveAttribute('aria-pressed', 'true')
+    await expect(await viewButton(page, 'Now')).toHaveAttribute('aria-pressed', 'true')
     await expect(viewFab(page)).toHaveCount(0)
     await expect(snoozeFab(page)).toBeVisible()
   })
@@ -334,7 +326,7 @@ test.describe('FAB column — desktop', () => {
   test.use({ viewport: { width: 1512, height: 900 } })
 
   let taskIds: number[] = []
-  let grouping = 'slot'
+  let grouping = 'project'
 
   test.beforeEach(async ({ authenticatedPage: page }) => {
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -352,13 +344,10 @@ test.describe('FAB column — desktop', () => {
     await page.request.patch('/api/user/preferences', { data: { default_grouping: grouping } })
   })
 
-  test('the view button joins the bottom-right stack in Today and Newest, not in All', async ({
+  test('the view button joins the bottom-right stack in Newest, not in Now', async ({
     authenticatedPage: page,
   }) => {
-    for (const [view, value] of [
-      ['new', 'new'],
-      ['slot', 'slot'],
-    ] as const) {
+    for (const [view, value] of [['new', 'new']] as const) {
       const res = await page.request.patch('/api/user/preferences', {
         data: { default_grouping: view },
       })

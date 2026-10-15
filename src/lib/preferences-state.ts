@@ -70,7 +70,7 @@ export interface Prefs {
   defaultSort: SortOption
   defaultSortReversed: boolean
   filtersExpanded: boolean
-  /** All's per-project cap before "Show all" (`project_preview_count`). */
+  /** Show all's per-project cap before "Show all N" (`project_preview_count`). */
   projectPreviewCount: number
   quotasDetails: boolean
   notificationsEnabled: boolean

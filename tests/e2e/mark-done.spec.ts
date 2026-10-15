@@ -1,4 +1,4 @@
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, showAllNow, uniqueTitle } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -12,6 +12,10 @@ const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
  * The Undo is looked up inside the toast: the top bar has its own always-present
  * "Undo" button, so a page-wide `getByText('Undo')` passed whether or not the
  * toast ever appeared (plan §2 #15, 2026-09-25).
+ *
+ * Both tasks are due later, so in Now (the dashboard's default view) their
+ * rows are behind their projects' "+ N more" folds: each test lifts them with
+ * Show all first (`showAllNow`).
  */
 
 // Seed id (globalSetup.ts): a one-off that other specs don't depend on.
@@ -33,6 +37,7 @@ test.describe('Mark done', () => {
     authenticatedPage: page,
   }) => {
     expect((await taskOf(page, PREPARE_SLIDES)).done).toBe(false)
+    await showAllNow(page)
     const doneBtn = page.getByRole('button', { name: /mark "Prepare slides" as done/i })
     await expect(doneBtn).toBeVisible({ timeout: 5000 })
 
@@ -76,6 +81,7 @@ test.describe('Mark done', () => {
     try {
       const before = await taskOf(page, id)
       await page.reload()
+      await showAllNow(page)
       const doneBtn = page
         .locator(`#task-row-${id}`)
         .getByRole('button', { name: new RegExp(`advance "${title}"`, 'i') })

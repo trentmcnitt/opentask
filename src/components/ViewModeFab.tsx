@@ -7,7 +7,7 @@ interface ViewModeFabProps {
   /** The dashboard's effective grouping — the one `ViewModeToggle` shows. */
   grouping: GroupingMode
   isSelectionMode: boolean
-  /** Back to All — the same `onGroupingChange('project')` a tap on "All" makes. */
+  /** Back to Now — the same `onGroupingChange('project')` a tap on "Now" makes. */
   onShowAll: () => void
 }
 
@@ -16,8 +16,9 @@ interface ViewModeFabProps {
  * in Newest without noticing — the view toggle is up by the filters and
  * scrolls away, so nothing on screen said the list was a narrower view).
  *
- * **When it shows.** While the view is Today (`'slot'`) or Newest (`'new'`) —
- * every view but All. Not for `'unified'` (the AI-sort toggle's flat list,
+ * **When it shows.** While the view is Newest (`'new'`) — the one view switch
+ * option that isn't Now (Today, `'slot'`, was the other until it was dropped
+ * on 2026-10-14). Not for `'unified'` (the AI-sort toggle's flat list,
  * which has its own control and isn't a `ViewModeToggle` option). Hidden in
  * selection mode, like the rest of the FAB column. Independent of the
  * Overdue filter: that is a filter over any view, so the two buttons can both
@@ -30,14 +31,14 @@ interface ViewModeFabProps {
  * coloured disc with a blue icon. A solid blue disc would be a twin of the
  * snooze FAB just below it (the reason the overdue button isn't blue either).
  *
- * **Tap:** back to All, through the same `onGroupingChange` the toggle's "All"
+ * **Tap:** back to Now, through the same `onGroupingChange` the toggle's "Now"
  * uses — so the preference is saved and AI-sort's unified override is cleared
- * exactly as a click on "All" would. The button then disappears.
+ * exactly as a click on "Now" would. The button then disappears.
  *
  * It sits in `DashboardFabStack`, which places it; this component only draws.
  */
 export function ViewModeFab({ grouping, isSelectionMode, onShowAll }: ViewModeFabProps) {
-  if (isSelectionMode || (grouping !== 'slot' && grouping !== 'new')) return null
+  if (isSelectionMode || grouping !== 'new') return null
   const option = VIEW_MODE_OPTIONS.find((o) => o.value === grouping)
   if (!option) return null
   const Icon = option.icon
@@ -45,8 +46,8 @@ export function ViewModeFab({ grouping, isSelectionMode, onShowAll }: ViewModeFa
     <button
       type="button"
       onClick={onShowAll}
-      aria-label={`Viewing ${option.label} — tap to show All`}
-      title={`Viewing ${option.label} — tap to show All`}
+      aria-label={`Viewing ${option.label} — tap to show Now`}
+      title={`Viewing ${option.label} — tap to show Now`}
       data-view-mode-fab={grouping}
       className="bg-background ring-offset-background pointer-events-auto flex size-12 cursor-pointer items-center justify-center rounded-full text-blue-600 shadow-md ring-2 ring-blue-500 ring-offset-2 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/60"
     >

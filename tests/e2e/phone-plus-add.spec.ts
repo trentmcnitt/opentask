@@ -17,8 +17,7 @@ import { DateTime } from 'luxon'
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 const VIEWPORT = { width: 375, height: 812 }
 const VIEWS = [
-  { grouping: 'time', label: 'All' },
-  { grouping: 'slot', label: 'Today' },
+  { grouping: 'project', label: 'Now' },
   { grouping: 'new', label: 'Newest' },
 ] as const
 
@@ -52,9 +51,9 @@ async function expectFieldFocusedBelowHeader(page: Page) {
 test.describe('Phone + focuses the dashboard add field', () => {
   test.use({ viewport: VIEWPORT })
   const taskIds: number[] = []
-  let grouping = 'time'
+  let grouping = 'project'
 
-  // Enough rows (every one due today, so they show in Today too) that the
+  // Enough rows (every one due at today's midnight — over target, so Now shows them) that the
   // page scrolls in every view, and the `+` has something to scroll back from.
   test.beforeEach(async ({ authenticatedPage: page }) => {
     grouping = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -118,8 +117,8 @@ test.describe('Phone + focuses the dashboard add field', () => {
     await expect(page.locator('[data-just-added-card]').getByText(title)).toBeVisible({
       timeout: 5000,
     })
-    // The Just added card is the check that it landed on screen: under All a
-    // new Inbox task's own row can sit past the group's "Show all" cap.
+    // The Just now card is the check that it landed on screen: in Now a new
+    // undated Inbox task's own row sits behind the Inbox's "+ N more" fold.
     const res = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
     const created = ((await res.json()).data.tasks as { id: number; title: string }[]).find(
       (t) => t.title === title,

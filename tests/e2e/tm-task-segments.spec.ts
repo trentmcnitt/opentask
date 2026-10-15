@@ -14,7 +14,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
+import { test, expect, backdateCreated, showAllNow, uniqueTitle } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -371,6 +371,9 @@ test.describe('Dashboard over-target marks', () => {
     }
     try {
       await page.goto('/')
+      // The undated row is behind its project's fold in Now, and the aged
+      // one joins it once its target is removed: lift the folds.
+      await showAllNow(page)
       const row = page.locator(`#task-row-${aged}`)
       await expect(row).toBeVisible()
       await expect(row.locator('[data-attempts]')).toHaveText('4×')

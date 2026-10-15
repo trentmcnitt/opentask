@@ -23,7 +23,7 @@ import {
 const SERVER = {
   filters_expanded: false,
   quotas_details: true,
-  default_grouping: 'slot',
+  default_grouping: 'new',
   default_sort: 'priority',
   default_sort_reversed: true,
   morning_time: '08:30',
@@ -48,7 +48,7 @@ describe('mergeLoadedPrefs', () => {
     const merged = mergeLoadedPrefs(local, dirty.take(), parseServerPrefs(SERVER))
     expect(merged.filtersExpanded).toBe(true) // the click, not the server's false
     expect(merged.quotasDetails).toBe(true) // untouched → server
-    expect(merged.defaultGrouping).toBe('slot')
+    expect(merged.defaultGrouping).toBe('new')
     expect(merged.defaultSort).toBe('priority')
     expect(merged.morningTime).toBe('08:30')
   })
@@ -81,7 +81,7 @@ describe('mergeLoadedPrefs', () => {
     expect(merged).toMatchObject({
       filtersExpanded: true,
       quotasDetails: true,
-      defaultGrouping: 'slot',
+      defaultGrouping: 'new',
       defaultSort: 'priority',
       defaultSortReversed: true,
       morningTime: '08:30',
@@ -112,7 +112,7 @@ describe('parseServerPrefs', () => {
       bulk_snooze_default: 'default_option',
       week_start: 'monday',
     })
-    expect(parsed.defaultGrouping).toBe('slot')
+    expect(parsed.defaultGrouping).toBe('project')
     expect(parsed.aiMode).toBe('on')
     expect('aiEnrichmentMode' in parsed).toBe(false)
     expect('autoSnoozeDefault' in parsed).toBe(false)
@@ -125,11 +125,12 @@ describe('parseServerPrefs', () => {
   })
 
   test('the retired Recent view lands on the front door', () => {
-    expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('slot')
+    expect(parseServerPrefs({ default_grouping: 'recent' }).defaultGrouping).toBe('project')
   })
 
-  test('the retired due-date grouping lands on All (by project); New is kept', () => {
+  test('the retired due-date grouping and Today view land on Now (by project); New is kept', () => {
     expect(parseServerPrefs({ default_grouping: 'time' }).defaultGrouping).toBe('project')
+    expect(parseServerPrefs({ default_grouping: 'slot' }).defaultGrouping).toBe('project')
     expect(parseServerPrefs({ default_grouping: 'project' }).defaultGrouping).toBe('project')
     expect(parseServerPrefs({ default_grouping: 'new' }).defaultGrouping).toBe('new')
   })

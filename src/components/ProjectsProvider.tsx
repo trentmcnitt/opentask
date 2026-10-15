@@ -8,7 +8,7 @@ import type { Project } from '@/types'
 interface ProjectsContextValue {
   projects: Project[]
   /**
-   * The first load has finished (successfully or not). The dashboard's All view
+   * The first load has finished (successfully or not). The dashboard's Now view
    * names each group after its project, so it waits for this rather than
    * rendering placeholder "Project 12" headings for a moment.
    */

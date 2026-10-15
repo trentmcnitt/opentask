@@ -398,7 +398,7 @@ describe('combined preference updates', () => {
  * render and the API must stop accepting it.
  */
 describe('default_grouping preference', () => {
-  test.each(['project', 'new', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
+  test.each(['project', 'new', 'unified'])('PATCH accepts %s', async (grouping) => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: { default_grouping: grouping },
@@ -408,24 +408,27 @@ describe('default_grouping preference', () => {
     expect(body.data.default_grouping).toBe(grouping)
   })
 
-  // All is the by-project view again since 2026-09-30, and the due-date
-  // grouping ('time', All from 2026-09-29) is retired. An old client may still
-  // send 'time': it is accepted, not refused, and stored as 'project' (All), so
-  // the next GET — and the dashboard — say All.
-  test('PATCH with the retired "time" value is stored as project', async () => {
-    await apiFetch('/api/user/preferences', {
-      method: 'PATCH',
-      body: { default_grouping: 'slot' },
-    })
-    const res = await apiFetch('/api/user/preferences', {
-      method: 'PATCH',
-      body: { default_grouping: 'time' },
-    })
-    expect(res.status).toBe(200)
-    expect((await res.json()).data.default_grouping).toBe('project')
-    const getRes = await apiFetch('/api/user/preferences')
-    expect((await getRes.json()).data.default_grouping).toBe('project')
-  })
+  // Two retired values: the due-date grouping ('time', All from 2026-09-29 to
+  // 2026-09-30) and the Today view ('slot', dropped 2026-10-14 when All became
+  // Now). An old client may still send either: it is accepted, not refused,
+  // and stored as 'project' (Now), so the next GET — and the dashboard — say Now.
+  test.each(['time', 'slot'])(
+    'PATCH with the retired "%s" value is stored as project',
+    async (retired) => {
+      await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { default_grouping: 'new' },
+      })
+      const res = await apiFetch('/api/user/preferences', {
+        method: 'PATCH',
+        body: { default_grouping: retired },
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).data.default_grouping).toBe('project')
+      const getRes = await apiFetch('/api/user/preferences')
+      expect((await getRes.json()).data.default_grouping).toBe('project')
+    },
+  )
 
   // 'recent' was the short-lived "Recent" view, replaced by just-added pinning.
   test.each(['reminders', 'recent'])(
@@ -455,8 +458,8 @@ describe('default_grouping preference', () => {
 })
 
 /**
- * `project_preview_count`: how many tasks each project group in All shows
- * before "Show all". Default 6; an integer from 1 to 50.
+ * `project_preview_count`: how many tasks each project group shows before
+ * "Show all" while Now's folds are lifted (the old All). Default 6; an integer from 1 to 50.
  */
 describe('project_preview_count preference', () => {
   test('defaults to 6', async () => {

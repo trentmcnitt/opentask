@@ -38,9 +38,9 @@
  * replaced that.
  *
  * Population: the dashboard's unfiltered open tasks (reminders and quotas are
- * not dashboard tasks), NOT the filter-chip result and not the Today view's
- * narrowing — a brand-new task hidden by a filter or by the view is exactly
- * the "did it land?" case. Hidden while searching (the results are the
+ * not dashboard tasks), NOT the filter-chip result and not Now's folds — a
+ * brand-new task hidden by a filter or behind a project's "+ N more" is
+ * exactly the "did it land?" case. Hidden while searching (the results are the
  * question then).
  *
  * Event times are server clock. One a moment ahead of this device's clock is

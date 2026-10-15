@@ -18,18 +18,19 @@
  * 2. `quota` / `reminder`: not a dashboard row at all (§5, §6). The caller
  *    sends it to its own surface (`/quotas?quota=`, `/reminders?reminder=`).
  * 3. `show`: the row is in a group of the list as drawn. The caller unfolds
- *    the group, flashes and scrolls to the row, and selects it.
+ *    the group — and its Now fold, when the row is behind one — flashes and
+ *    scrolls to the row, and selects it.
  * 4. `clear-narrowing`: a search, filter chip or AI chip hides it. Cleared
  *    only then — "only if necessary" — and once.
- * 5. `switch-view`: the list has it but the view drops it. Only Today does
- *    that (it keeps what is due by the end of today), so the caller shows All
- *    for this visit, without saving it as the preference. Once.
- * 6. `unreachable`: both corrections are spent and there is still no row.
+ * 5. `unreachable`: the correction is spent and there is still no row.
  *    Should not happen; the caller toasts rather than loop.
+ *
+ * Every view's groups hold every listed task (Now's folds hide rows but keep
+ * them in their project's group), so no view drops a listed task. There used
+ * to be a `switch-view` step for the Today view, which kept only what was due
+ * by the end of today; it went with that view (2026-10-14).
  */
 
-import type { GroupingMode } from '@/lib/grouping'
-import { isFlatGrouping } from '@/lib/task-grouping'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 
@@ -39,7 +40,6 @@ export type TaskLinkStep =
   | { kind: 'reminder'; task: Task }
   | { kind: 'show'; task: Task; groupLabel: string }
   | { kind: 'clear-narrowing' }
-  | { kind: 'switch-view' }
   | { kind: 'unreachable'; task: Task }
 
 export interface TaskLinkInput {
@@ -50,13 +50,12 @@ export interface TaskLinkInput {
   listed: Task[]
   /** The list's groups as drawn in the current view. */
   groups: { label: string; tasks: Task[] }[]
-  grouping: GroupingMode
   /** Corrections already made for this link. */
-  tried: { narrowing: boolean; view: boolean }
+  tried: { narrowing: boolean }
 }
 
 export function resolveTaskLink(input: TaskLinkInput): TaskLinkStep {
-  const { taskId, tasks, listed, groups, grouping, tried } = input
+  const { taskId, tasks, listed, groups, tried } = input
   const task = tasks.find((t) => t.id === taskId)
   if (!task) return { kind: 'missing' }
   if (isTracked(task)) return { kind: 'quota', task }
@@ -65,11 +64,8 @@ export function resolveTaskLink(input: TaskLinkInput): TaskLinkStep {
   const group = groups.find((g) => g.tasks.some((t) => t.id === taskId))
   if (group) return { kind: 'show', task, groupLabel: group.label }
 
-  if (!listed.some((t) => t.id === taskId)) {
-    return tried.narrowing ? { kind: 'unreachable', task } : { kind: 'clear-narrowing' }
-  }
-  if (!tried.view && grouping !== 'project' && !isFlatGrouping(grouping)) {
-    return { kind: 'switch-view' }
+  if (!listed.some((t) => t.id === taskId) && !tried.narrowing) {
+    return { kind: 'clear-narrowing' }
   }
   return { kind: 'unreachable', task }
 }

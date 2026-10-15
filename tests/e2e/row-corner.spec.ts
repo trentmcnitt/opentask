@@ -10,9 +10,9 @@
  *   desktop hover ×, each with Undo;
  * - the action bar's More sheet: Remove target for the whole selection;
  * - the segment rows' dot (it replaced the chevron) and its menu, with Undo;
- * - the hover Today and the dot's menu on the DASHBOARD rows, which need the
- *   dashboard to pass `onTargetAt` / `onSetHorizon` to its TaskList — they
- *   skip themselves until it does (see the PR).
+ * - the hover Today and the dot's menu on the DASHBOARD rows (the dashboard
+ *   passes `onTargetAt` / `onSetHorizon` to its TaskList), checked on rows
+ *   inside an open Now fold.
  *
  * At 1280×800 and 375×812, in light and dark. Screenshots go to `.tmp/`.
  * Isolation: every task is made here under a unique title and trashed after.
@@ -25,19 +25,40 @@ const DAY = 24 * 60 * 60 * 1000
 const SHOTS = '.tmp/row-corner'
 
 /**
- * Each test's tasks go in a project of their own, so its group shows them all
- * (a group shows its first `project_preview_count` rows before "Show all").
+ * Each test's tasks go in a project of their own, so its group holds them all.
+ * The dashboard's Now view folds a project's rows that aren't relevant now
+ * behind "+ N more in <Project>"; `gotoDashboard` opens that fold, so every
+ * row of the test is on screen (most of them from inside the open fold).
  */
-const projects = new Map<string, number>()
+const projects = new Map<string, { id: number; name: string }>()
 async function projectFor(page: Page): Promise<number> {
   const key = test.info().testId
   const known = projects.get(key)
-  if (known !== undefined) return known
-  const res = await page.request.post('/api/projects', { data: { name: uniqueTitle('RC') } })
+  if (known !== undefined) return known.id
+  const name = uniqueTitle('RC')
+  const res = await page.request.post('/api/projects', { data: { name } })
   expect(res.ok()).toBeTruthy()
   const id = (await res.json()).data.id as number
-  projects.set(key, id)
+  projects.set(key, { id, name })
   return id
+}
+
+/** The test's project group on the dashboard. */
+function projectGroup(page: Page): Locator {
+  const project = projects.get(test.info().testId)!
+  return page.locator('section[data-task-group]', {
+    has: page.getByRole('button', { name: `Collapse ${project.name}`, exact: true }),
+  })
+}
+
+/** Load the dashboard and open the test's project fold, if it has one. */
+async function gotoDashboard(page: Page) {
+  await page.goto('/')
+  const group = projectGroup(page)
+  await expect(group).toBeVisible()
+  const shut = group.locator('[data-now-fold="shut"]')
+  if ((await shut.count()) > 0) await shut.click()
+  await expect(shut).toHaveCount(0)
 }
 
 async function create(page: Page, data: Record<string, unknown>): Promise<number> {
@@ -58,7 +79,7 @@ async function trash(page: Page, ids: number[]) {
   const key = test.info().testId
   const project = projects.get(key)
   if (project !== undefined) {
-    await page.request.delete(`/api/projects/${project}`)
+    await page.request.delete(`/api/projects/${project.id}`)
     projects.delete(key)
   }
 }
@@ -123,7 +144,7 @@ test.describe('Row corner · desktop', () => {
       ids[p] = await create(page, { title: uniqueTitle(`RC prio ${p}`), priority: p })
     }
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       for (const p of [0, 1, 2, 3, 4]) await expect(taskRow(page, ids[p])).toBeVisible()
       await themes(page, async (theme) => {
         const tab = (p: number) => taskRow(page, ids[p]).locator('[data-priority-tab]')
@@ -176,7 +197,7 @@ test.describe('Row corner · desktop', () => {
       target_at: tomorrowAt10(),
     })
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       const dot = (h: string) => taskRow(page, ids.get(h)!).locator('[data-horizon-dot]')
       await expect(dot('days')).toHaveAttribute('data-horizon-dot', 'days')
       const radius = async (h: string) => Number(await dot(h).locator('circle').getAttribute('r'))
@@ -227,7 +248,7 @@ test.describe('Row corner · desktop', () => {
       deadline_at: new Date(Date.now() + 2 * DAY).toISOString(),
     })
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       const corner = taskRow(page, id).locator('[data-row-corner]')
       await expect(corner.locator('[data-attempts]')).toHaveText('1×')
       const order = await corner.evaluate((el) =>
@@ -275,7 +296,7 @@ test.describe('Row corner · target time and segments', () => {
       target_at: tomorrowAt10(),
     })
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       // Remove target → no target; Undo puts it back.
       const before = (await stateOf(page, plain)).target_at
       await (await timeOf(page, plain)).click()
@@ -335,7 +356,7 @@ test.describe('Row corner · target time and segments', () => {
     })
     const c = await create(page, { title: uniqueTitle('RC bulk none') })
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       for (const id of [a, b, c]) await cmdClickRow(taskRow(page, id))
       await page.getByRole('button', { name: 'More', exact: true }).click()
       const remove = page.locator('[data-bulk-remove-target]')
@@ -397,7 +418,7 @@ test.describe('Row corner · desktop at 2x', () => {
       ids.set(String(h), await create(page, { title: uniqueTitle(`RC 2x ${h}`), horizon: h }))
     }
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       await themes(page, async (theme) => {
         for (const [h, id] of ids) {
           const corner = taskRow(page, id).locator('[data-row-corner]')
@@ -412,10 +433,11 @@ test.describe('Row corner · desktop at 2x', () => {
 })
 
 /**
- * The dashboard rows' horizon menu and hover Today. They run once the
- * dashboard passes `onSetHorizon` / `onTargetAt` to its TaskList (the dot is
- * then a button); until then the dot is a mark with its tooltip and the row
- * has no Today, and these skip.
+ * The dashboard rows' horizon menu and hover Today (the dashboard passes
+ * `onSetHorizon` / `onTargetAt` to its TaskList, so the dot is a button). The
+ * three tasks are undated with no priority — not relevant now — so their rows
+ * are inside the project's open Now fold: the fold renders ordinary rows,
+ * actions included.
  */
 test.describe('Row corner · dashboard actions', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
@@ -427,11 +449,14 @@ test.describe('Row corner · dashboard actions', () => {
     const tapTask = await create(page, { title: uniqueTitle('RC dash today') })
     const holdTask = await create(page, { title: uniqueTitle('RC dash hold') })
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
+      // All three rows are behind the fold, now open.
+      const group = projectGroup(page)
+      await expect(group.locator('[data-now-count]')).toHaveText('0 of 3')
+      await expect(group.locator('[data-now-fold="open"]')).toBeVisible()
       const dot = taskRow(page, dotTask).locator('[data-horizon-dot]')
       await expect(dot).toBeVisible()
-      const wired = await dot.evaluate((el) => el.tagName === 'BUTTON')
-      test.skip(!wired, 'The dashboard does not pass onSetHorizon / onTargetAt yet')
+      expect(await dot.evaluate((el) => el.tagName)).toBe('BUTTON')
 
       // The corner dot's hit box is 32×32 though the tab is 24×18: a press
       // 12px below the tab and 6px left of it still lands on the dot.
@@ -490,7 +515,7 @@ test.describe('Row corner · phone', () => {
       target_at: tomorrowAt10(),
     })
     try {
-      await page.goto('/')
+      await gotoDashboard(page)
       await expect(taskRow(page, urgent).locator('[data-priority-tab]')).toHaveText('Urgent')
       await expect(taskRow(page, urgent).locator('[data-horizon-dot]')).toHaveAttribute(
         'data-horizon-dot',
@@ -523,19 +548,18 @@ test.describe('Row corner · phone', () => {
       await expect(taskRow(page, urgent).locator('[data-target-today]')).toBeHidden()
       await expect(taskRow(page, timed).locator('[data-remove-target-x]')).toBeHidden()
 
-      // Where the dashboard wires the dot (see 'dashboard actions'), it is a
-      // 44px target for a finger: a tap 20px below the tab and 16px to its
-      // left opens the horizon menu, not the editor.
+      // The dashboard wires the dot (see 'dashboard actions'): it is a 44px
+      // target for a finger: a tap 20px below the tab and 16px to its left
+      // opens the horizon menu, not the editor.
       const dot = taskRow(page, urgent).locator('[data-horizon-dot]')
-      if (await dot.evaluate((el) => el.tagName === 'BUTTON')) {
-        await dot.evaluate((el) => el.scrollIntoView({ block: 'center' }))
-        const box = (await dot.boundingBox())!
-        await page.touchscreen.tap(box.x - 16, box.y + box.height + 20)
-        await expect(page.getByRole('menuitemradio', { name: /^Weeks/ })).toBeVisible()
-        await expect(page.getByRole('dialog')).toHaveCount(0)
-        await page.screenshot({ path: `${SHOTS}/phone-dot-menu.png`, animations: 'disabled' })
-        await page.keyboard.press('Escape')
-      }
+      expect(await dot.evaluate((el) => el.tagName)).toBe('BUTTON')
+      await dot.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+      const box = (await dot.boundingBox())!
+      await page.touchscreen.tap(box.x - 16, box.y + box.height + 20)
+      await expect(page.getByRole('menuitemradio', { name: /^Weeks/ })).toBeVisible()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await page.screenshot({ path: `${SHOTS}/phone-dot-menu.png`, animations: 'disabled' })
+      await page.keyboard.press('Escape')
 
       await themes(page, async (theme) => {
         await taskRow(page, urgent).screenshot({ path: `${SHOTS}/phone-urgent-${theme}.png` })

@@ -17,10 +17,10 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  * open on the dashboard regroups by the new boundaries instead of grouping
  * fresh tasks by stale ones.
  *
- * Failure returns an empty array rather than throwing. An empty slot list makes
- * `groupByTimeSlot` put everything in one un-slotted group, which is a degraded but
- * honest view; a thrown error would take down the whole dashboard over what is
- * effectively presentation metadata. A failed REFRESH keeps the slots already
+ * Failure returns an empty array rather than throwing. An empty slot list
+ * leaves the surfaces that group by period with one un-slotted group, which is
+ * a degraded but honest view; a thrown error would take down the whole
+ * dashboard over what is effectively presentation metadata. A failed REFRESH keeps the slots already
  * held rather than blanking them.
  */
 export function useTimeSlots(initial?: TimeSlot[]): {

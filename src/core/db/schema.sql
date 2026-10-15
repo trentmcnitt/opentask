@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   ntfy_server   TEXT,           -- Vestigial (ntfy removed); kept for existing DB compat
   pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat
   pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
-  default_grouping TEXT NOT NULL DEFAULT 'project', -- All (by project); 'time' is retired and read as 'project', see src/lib/grouping.ts
+  default_grouping TEXT NOT NULL DEFAULT 'project', -- Now (by project); 'slot' and 'time' are retired and read as 'project', see src/lib/grouping.ts
   -- 'horizon' (effective horizon → deadline → priority → recency) is the
   -- default since 2026-10-11 (Trent); a saved sort is never changed.
   default_sort TEXT NOT NULL DEFAULT 'horizon',
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- §7.3: dashboard filter-chip section starts collapsed; this remembers the
   -- user's explicit choice to keep it open.
   filters_expanded INTEGER NOT NULL DEFAULT 0,
-  -- The All view: how many tasks each project group shows before "Show all"
+  -- Now with its folds lifted (Show all): how many tasks each project group shows before "Show all"
   -- (1-50, validated by the preferences route).
   project_preview_count INTEGER NOT NULL DEFAULT 6,
   -- §5: the Track panel on the Tasks page starts folded to one line; this

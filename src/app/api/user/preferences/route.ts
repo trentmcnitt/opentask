@@ -35,13 +35,14 @@ import {
 } from '@/core/users/preferences'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
-// `default_grouping` accepts the live groupings (`GROUPINGS`: slot, project, new,
-// unified) plus the retired 'time', which is stored as 'project' so an old
-// client's PATCH doesn't 400 (All is the by-project view again since
-// 2026-09-30 and the due-date grouping is gone; see `src/lib/grouping.ts`). 'reminders' was briefly valid here, back when the §6
-// Reminders surface rode in the dashboard's view toggle; it and 'recent' (the
-// short-lived "Recent" view, replaced by just-added previews) are refused with
-// 400 — clients coerce any lingering stored value to 'slot'.
+// `default_grouping` accepts the live groupings (`GROUPINGS`: project, new,
+// unified) plus the retired 'slot' (Today, dropped 2026-10-14) and 'time' (the
+// due-date All, retired 2026-09-30), both stored as 'project' (Now) so an old
+// client's PATCH doesn't 400 — see `src/lib/grouping.ts`. 'reminders' was
+// briefly valid here, back when the §6 Reminders surface rode in the
+// dashboard's view toggle; it and 'recent' (the short-lived "Recent" view,
+// replaced by the Just now card) are refused with 400 — clients coerce any
+// lingering stored value to 'project'.
 const VALID_SORT_OPTIONS = [
   'due_date',
   'priority',
@@ -172,7 +173,7 @@ function hhmm(val: unknown, field: string): string | null {
   return null
 }
 
-/** The All view's per-project cap (`PROJECT_PREVIEW_MIN`..`PROJECT_PREVIEW_MAX`). */
+/** Show all's per-project cap (Now with its folds lifted) (`PROJECT_PREVIEW_MIN`..`PROJECT_PREVIEW_MAX`). */
 function validateProjectPreviewCount(
   body: Record<string, unknown>,
   changes: PreferenceChanges,

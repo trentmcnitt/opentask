@@ -40,7 +40,7 @@ async function cleanup(page: Page, taskIds: number[], projectId: number | null) 
   if (projectId !== null) await page.request.delete(`/api/projects/${projectId}`)
 }
 
-/** A grouped view's group (All's project groups here), found by its collapse button. */
+/** A grouped view's group (Now's project groups here), found by its collapse button. */
 function group(page: Page, name: string): Locator {
   return page.locator('section[data-task-group]', {
     has: page.getByRole('button', { name: `Collapse ${name}`, exact: true }),
@@ -61,15 +61,16 @@ function rowOrder(section: Locator): Promise<string[]> {
 /**
  * One flat list in due-date order: every open task has a row (no group cap to
  * hide one behind "Show all"), and a fresh task's row sits where the sort puts
- * it — so "not pulled to the top" is observable. (All, grouped by project,
- * caps each project behind "Show all", so it can't promise every row.)
+ * it — so "not pulled to the top" is observable. (Now, grouped by project,
+ * folds what isn't relevant now behind "+ N more", so it can't promise every
+ * row.)
  */
 const FLAT_BY_DUE = {
   default_grouping: 'unified',
   default_sort: 'due_date',
   default_sort_reversed: false,
 }
-/** All's project groups, for the one test that needs a group to fold. */
+/** Now's project groups, for the tests that need a group to fold. */
 const ALL_BY_DUE = { ...FLAT_BY_DUE, default_grouping: 'project' }
 const taskList = (page: Page) => page.getByRole('listbox', { name: 'Task list' })
 
@@ -199,8 +200,9 @@ test.describe('Just added: tapping through', () => {
       })
       ids.push(id)
 
-      // Its row is in All's group for its own project — folded here, which
-      // the tap must undo.
+      // Its row is in Now's group for its own project — collapsed here, and
+      // behind the project's "+ N more" fold too (undated, no priority): the
+      // tap must undo both.
       await withPreferences(page, ALL_BY_DUE, async () => {
         const own = group(page, name)
         await waitForPrefsLoaded(page, () => page.goto('/'), own)
@@ -219,10 +221,15 @@ test.describe('Just added: tapping through', () => {
     }
   })
 
-  test('in Today, a task with no row there opens on tap', async ({ authenticatedPage: page }) => {
+  test("in Now, a task behind its project's fold: the tap opens the fold", async ({
+    authenticatedPage: page,
+  }) => {
+    // Due next week: not relevant now, so its row is behind the Inbox's
+    // "+ N more" fold (the Today view, until 2026-10-14, had no row for it at
+    // all, and the tap opened the task instead).
     const ids: number[] = []
     try {
-      await withPreferences(page, { default_grouping: 'slot' }, async () => {
+      await withPreferences(page, ALL_BY_DUE, async () => {
         const title = uniqueTitle('Next week fresh')
         const id = await post(page, '/api/tasks', { title, due_at: inDays(7) })
         ids.push(id)
@@ -230,8 +237,9 @@ test.describe('Just added: tapping through', () => {
         await expect(realRow(page, id)).toHaveCount(0)
 
         await entry(page, id).click()
-        await expect(page.getByRole('dialog')).toContainText(title)
-        await page.keyboard.press('Escape')
+        await expect(realRow(page, id)).toBeVisible()
+        await expect(realRow(page, id)).toHaveAttribute('data-task-highlight', '')
+        await expect(page.getByRole('dialog')).toHaveCount(0)
       })
     } finally {
       await cleanup(page, ids, null)
@@ -294,6 +302,6 @@ test.describe('Just added: age-out', () => {
 
   test('the Recent view is gone from the view switch', async ({ authenticatedPage: page }) => {
     const toggle = page.getByRole('group', { name: 'View mode' })
-    await expect(toggle.getByRole('button')).toHaveText(['All', 'Today', 'Newest'])
+    await expect(toggle.getByRole('button')).toHaveText(['Now', 'Newest'])
   })
 })

@@ -1,13 +1,15 @@
 /**
- * The dashboard's view switch is All · Today · New (2026-09-29; All grouped by
- * project again since 2026-09-30 — see dv-project-group-order.test.ts).
+ * The dashboard's view switch is Now · Newest (2026-10-14; it was All · Today ·
+ * New from 2026-09-29, All grouped by project again since 2026-09-30 — see
+ * dv-project-group-order.test.ts; Now's rule is pinned in dv-now-view.test.ts).
  *
  * - New is every open task in one flat list, newest-added first, whatever the
  *   saved sort says (`effectiveSort`), and the flat list shows project names
  *   (`isFlatGrouping`).
- * - The due-date grouping is retired: a stored or submitted 'time' becomes
- *   'project' (All) — in `coerceGrouping`, in `toAuthUser`, and in the column
- *   itself via the idempotent startup step `restoreProjectGrouping`.
+ * - The due-date grouping and the Today view are retired: a stored or
+ *   submitted 'time' or 'slot' becomes 'project' (Now) — in `coerceGrouping`,
+ *   in `toAuthUser`, and in the column itself via the idempotent startup step
+ *   `restoreProjectGrouping`.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'vitest'
 import {
@@ -45,13 +47,12 @@ describe('DV-NEW: the New view', () => {
   ]
 
   test('is one flat group holding every task', () => {
-    const groups = buildTaskGroups(tasks, [], 'new', TEST_TIMEZONE, [])
+    const groups = buildTaskGroups(tasks, [], 'new')
     expect(groups).toHaveLength(1)
     expect(groups[0].tasks.map((t) => t.id).sort()).toEqual([1, 2, 3])
     expect(isFlatGrouping('new')).toBe(true)
     expect(isFlatGrouping('unified')).toBe(true)
     expect(isFlatGrouping('project')).toBe(false)
-    expect(isFlatGrouping('slot')).toBe(false)
   })
 
   test('sorts newest-added first whatever the saved sort is', () => {
@@ -68,7 +69,7 @@ describe('DV-NEW: the New view', () => {
   })
 
   test('leaves the saved sort alone in every other view', () => {
-    for (const g of ['slot', 'project', 'unified'] as const) {
+    for (const g of ['project', 'unified'] as const) {
       expect(effectiveSort(g, 'priority', true)).toEqual({ sortOption: 'priority', reversed: true })
     }
   })
@@ -122,25 +123,29 @@ describe('DV-ORDER: one visual order for the list, keyboard and clipboard', () =
   })
 })
 
-describe('DV-PROJ: the retired due-date grouping lands on All (by project)', () => {
-  test('coerceGrouping: time → project, live values kept, other unknowns → slot', () => {
+describe('DV-PROJ: the retired groupings land on Now (by project)', () => {
+  test('coerceGrouping: time and slot → project, live values kept, other unknowns → project', () => {
     expect(coerceGrouping('time')).toBe('project')
+    expect(coerceGrouping('slot')).toBe('project')
     for (const g of GROUPINGS) expect(coerceGrouping(g)).toBe(g)
-    expect(coerceGrouping('reminders')).toBe('slot')
-    expect(coerceGrouping('recent')).toBe('slot')
-    expect(coerceGrouping(undefined)).toBe('slot')
+    expect(GROUPINGS).not.toContain('slot')
+    expect(coerceGrouping('reminders')).toBe('project')
+    expect(coerceGrouping('recent')).toBe('project')
+    expect(coerceGrouping(undefined)).toBe('project')
   })
 
-  test('toAuthUser echoes time as project', () => {
-    const user = toAuthUser({
-      id: 1,
-      email: 'a@example.com',
-      name: 'a',
-      timezone: TEST_TIMEZONE,
-      default_grouping: 'time',
-      is_demo: 0,
-    })
-    expect(user.default_grouping).toBe('project')
+  test('toAuthUser echoes time and slot as project', () => {
+    for (const retired of ['time', 'slot']) {
+      const user = toAuthUser({
+        id: 1,
+        email: 'a@example.com',
+        name: 'a',
+        timezone: TEST_TIMEZONE,
+        default_grouping: retired,
+        is_demo: 0,
+      })
+      expect(user.default_grouping).toBe('project')
+    }
   })
 
   describe('restoreProjectGrouping (startup data step)', () => {
@@ -154,16 +159,20 @@ describe('DV-PROJ: the retired due-date grouping lands on All (by project)', () 
         }
       ).default_grouping
 
-    test('rewrites a stored time to project, idempotently', () => {
-      getDb().prepare("UPDATE users SET default_grouping = 'time' WHERE id = ?").run(TEST_USER_ID)
-      restoreProjectGrouping(getDb())
-      expect(stored()).toBe('project')
-      restoreProjectGrouping(getDb())
-      expect(stored()).toBe('project')
+    test('rewrites a stored time or slot to project, idempotently', () => {
+      for (const retired of ['time', 'slot']) {
+        getDb()
+          .prepare('UPDATE users SET default_grouping = ? WHERE id = ?')
+          .run(retired, TEST_USER_ID)
+        restoreProjectGrouping(getDb())
+        expect(stored()).toBe('project')
+        restoreProjectGrouping(getDb())
+        expect(stored()).toBe('project')
+      }
     })
 
-    test('leaves every other value alone', () => {
-      for (const g of ['slot', 'new', 'unified', 'project']) {
+    test('leaves every live value alone', () => {
+      for (const g of ['new', 'unified', 'project']) {
         getDb().prepare('UPDATE users SET default_grouping = ? WHERE id = ?').run(g, TEST_USER_ID)
         restoreProjectGrouping(getDb())
         expect(stored()).toBe(g)

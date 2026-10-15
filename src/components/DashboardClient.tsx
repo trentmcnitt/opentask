@@ -6,19 +6,23 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList } from '@/components/TaskList'
 import {
+  applyNowFolds,
   buildTaskGroups,
   effectiveSort,
+  nowFoldKey,
   orderedTaskIds,
   sortTaskGroups,
   type SortOption,
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
+import { useNowFolds } from '@/hooks/useNowFolds'
+import { isRelevantNow } from '@/lib/now-view'
+import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
 import type { GroupingMode } from '@/lib/grouping'
 import { resolveTaskLink, missingTaskMessage } from '@/lib/task-link'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useJustAddedClock } from '@/hooks/useJustAddedClock'
 import { useStickyColumn } from '@/hooks/useStickyColumn'
-import { UNDATED_LABEL } from '@/lib/slot-view'
 import { isTracked } from '@/lib/track'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
 import { TrackPanel } from '@/components/TrackPanel'
@@ -447,21 +451,16 @@ function HomeContent({
       )
     },
   })
-  // The "Undated" pile starts folded so Today reads as a day. A task added
-  // with no date would land inside it unseen, so adding one opens it.
-  const { isCollapsed, toggleCollapse, expand } = useCollapsedGroups([UNDATED_LABEL])
-  const onCreated = useCallback(
-    (task: Task) => {
-      if (!task.due_at) expand(UNDATED_LABEL)
-    },
-    [expand],
-  )
+  // A task added into a project group the user has collapsed stays there
+  // folded; the Just now card lists it, and a tap on that entry opens the
+  // group (and Now's fold) to show it.
+  const { isCollapsed, toggleCollapse, expand } = useCollapsedGroups()
   // `?task=<id>&highlight=1` — the widget's task deep link. Mirrors
   // RemindersView's `highlightId`/`clearHighlight`; see the `?task=` effect
   // below for the full rationale.
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null)
   const clearHighlight = useCallback(() => setHighlightTaskId(null), [])
-  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask, onCreated)
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
 
   const handleQuickAddWithQuickTake = useCallback(
     async (title: string) => {
@@ -617,12 +616,12 @@ function HomeContent({
   // AI sort auto-switches to unified as a local override (not persisted to DB).
   // This preserves the user's real grouping preference for when AI sort is disabled.
   const [aiSortUnified, setAiSortUnified] = useState(false)
-  // A notification tap on a task the current view can't show (Today drops
-  // anything due after today) switches this page to All for the visit — NOT
-  // persisted, so the saved view is back on the next load. Cleared the moment
-  // the user picks a view or taps the dashboard tab. See the `?task=` effect.
-  const [viewOverride, setViewOverride] = useState<GroupingMode | null>(null)
-  const grouping: GroupingMode = aiSortUnified ? 'unified' : (viewOverride ?? defaultGrouping)
+  const grouping: GroupingMode = aiSortUnified ? 'unified' : defaultGrouping
+  // Now's "Show all" (`src/lib/now-view.ts`): lifts every fold for the visit.
+  // Plain state, not saved — the next load (and the Dashboard tab) is Now again.
+  const [nowShowAll, setNowShowAll] = useState(false)
+  // Which project folds are open: per project, for the browser session.
+  const { isFoldOpen, toggleFold, openFold } = useNowFolds()
   // The order the list is DRAWN in: New pins newest-added first over the saved
   // sort (`effectiveSort`). Keyboard order and the group math below use this;
   // the sort dropdown and the saved preference keep `sortOption`/`reversed`.
@@ -983,26 +982,21 @@ function HomeContent({
   // Full view reset: clears everything including search (triggered by tapping Dashboard tab)
   const handleDashboardReset = useCallback(() => {
     clearListNarrowing()
-    setViewOverride(null)
+    setNowShowAll(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [clearListNarrowing])
 
   // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
-    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots, now),
-    [tasks_, projects, grouping, timezone, timeSlots, now],
+    () => buildTaskGroups(tasks_, projects, grouping),
+    [tasks_, projects, grouping],
   )
   /**
-   * The top bar's "N total tasks" pill counts what the list is SHOWING, which
-   * is `taskGroups`, not `tasks_`. The two differ in exactly one view: Today
-   * (`grouping === 'slot'`), where `groupByTimeSlot` keeps only what is due by
-   * the end of today and drops everything later. Counting `tasks_` there put
-   * next week's tasks into the number over a list that did not hold them.
-   * Reminders, quotas, search, filter chips and AI chips are already out of
-   * `tasks_`, so every other view gives the same number either way.
-   *
-   * A folded group, or a slot past its "Show all" preview cap, still counts:
-   * its rows are on the page one tap away, and the group header says so.
+   * The top bar's "N total tasks" pill counts what the list holds: every
+   * group's tasks. Reminders, quotas, search, filter chips and AI chips are
+   * already out of `tasks_`. A collapsed group, a row behind Now's fold, or
+   * one past a group's "Show all" preview cap still counts: it is on the page
+   * one tap away, and the group says so.
    */
   const shownTaskCount = useMemo(
     () => taskGroups.reduce((n, g) => n + g.tasks.length, 0),
@@ -1018,9 +1012,9 @@ function HomeContent({
    *   `enrichment-failed-notify.ts`, `notifications/test/route.ts`). Brings the row into view, flashes it and
    *   SELECTS it, so the action bar is up for the task the notification was
    *   about. Opens nothing (Trent, 2026-09-29; it used to open the quick
-   *   panel). If a search, filter or the Today view hides the task, that is
-   *   undone first — see `resolveTaskLink` (`src/lib/task-link.ts`) for the
-   *   steps. A reminder goes to `/reminders?reminder=<id>&select=1`, a quota to
+   *   panel). If a search or filter hides the task, that is undone first,
+   *   and a row behind Now's fold has its fold opened — see `resolveTaskLink`
+   *   (`src/lib/task-link.ts`) for the steps. A reminder goes to `/reminders?reminder=<id>&select=1`, a quota to
    *   `/quotas?quota=<id>`; a task that is done, deleted or gone gets a toast.
    * - `?task=<id>&highlight=1`: the widget's deep link
    *   (`WidgetLink.task`/`OpenTaskApp.handleWidgetLink`). Brings the row into
@@ -1048,16 +1042,19 @@ function HomeContent({
    * the new `tasks_`/`taskGroups`.
    */
   const taskParamProcessed = useRef(false)
-  const taskLinkTried = useRef({ narrowing: false, view: false })
-  // Unfold the row's group and flash it. `TaskList` lifts the group's "Show
-  // all" cap for the highlighted row, and `TaskRow` scrolls it into view — the
-  // reveal the Just added card's tap uses, minus its quick-panel fallback.
+  const taskLinkTried = useRef({ narrowing: false })
+  // Unfold the row's group — and its Now fold, if the row is behind one — and
+  // flash it. `TaskList` lifts the group's "Show all" cap for the highlighted
+  // row, and `TaskRow` scrolls it into view — the reveal the Just now card's
+  // tap uses, minus its quick-panel fallback.
   const revealRow = useCallback(
     (taskId: number, groupLabel: string) => {
       if (isCollapsed(groupLabel)) expand(groupLabel)
+      const group = taskGroups.find((g) => g.label === groupLabel)
+      if (group) openFold(nowFoldKey(group))
       setHighlightTaskId(taskId)
     },
-    [isCollapsed, expand],
+    [isCollapsed, expand, taskGroups, openFold],
   )
   useEffect(() => {
     if (taskParamProcessed.current || loading) return
@@ -1080,7 +1077,6 @@ function HomeContent({
       tasks,
       listed: tasks_,
       groups: taskGroups,
-      grouping,
       tried: taskLinkTried.current,
     })
     // The row's group depends on the view, and `defaultGrouping` starts at a
@@ -1104,10 +1100,6 @@ function HomeContent({
       case 'clear-narrowing':
         taskLinkTried.current.narrowing = true
         clearListNarrowing()
-        return
-      case 'switch-view':
-        taskLinkTried.current.view = true
-        setViewOverride('project')
         return
       case 'show':
         revealRow(step.task.id, step.groupLabel)
@@ -1153,19 +1145,50 @@ function HomeContent({
   const justAddedNow = useJustAddedClock(visibleTasks)
   const justAddedSource = searchQuery ? null : visibleTasks
 
+  // Now's folds are on in Now, unless Show all is, or anything narrows the
+  // list — search, filter chips, the AI filter or signal chips: the user
+  // asked for exactly those rows, and a match behind "+ N more" would read
+  // as no match (see `src/lib/now-view.ts`).
+  const listNarrowed =
+    !!searchQuery ||
+    activeFilterCount > 0 ||
+    (aiMode !== 'off' && (aiFilterActive || selectedSignals.length > 0))
+  const nowAvailable = grouping === 'project' && !listNarrowed
+  // "N of M now": the rows relevant now, out of the whole list.
+  const nowRelevantCount = useMemo(
+    () => (nowAvailable ? tasks_.filter((t) => isRelevantNow(t, timezone, now)).length : 0),
+    [nowAvailable, tasks_, timezone, now],
+  )
+  // Something is folded. When nothing is (every row relevant, or no rows),
+  // there is no fold to lift: the strip hides, and Show all — which would
+  // only bring the preview cap back — has no effect.
+  const nowHasFolds = nowAvailable && nowRelevantCount < shownTaskCount
+  const nowFolds = nowAvailable && !(nowShowAll && nowHasFolds)
+
   // THE visual order, computed once (`src/lib/task-grouping.ts`): TaskList
   // draws these groups, and the keyboard, shift-click ranges and Cmd+C read
   // the same order — including the AI sort, which needs the score map the
-  // rows show. Collapsed groups drop out of `orderedIds` so navigation skips
-  // them.
+  // rows show, and Now's split (relevant rows, then the fold). Collapsed
+  // groups and shut folds drop out of `orderedIds` so navigation skips them.
   const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
-  const sortedGroups = useMemo(
-    () => sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap),
-    [taskGroups, listSort, listReversed, listScoreMap],
-  )
+  const sortedGroups = useMemo(() => {
+    const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
+    return nowFolds ? applyNowFolds(sorted, timezone, now) : sorted
+  }, [taskGroups, listSort, listReversed, listScoreMap, nowFolds, timezone, now])
   const orderedIds = useMemo(
-    () => orderedTaskIds(sortedGroups, isCollapsed),
-    [sortedGroups, isCollapsed],
+    () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),
+    [sortedGroups, isCollapsed, isFoldOpen],
+  )
+  // Shutting a fold deselects the rows it hides, as collapsing a group does.
+  const handleToggleFold = useCallback(
+    (key: string) => {
+      if (isFoldOpen(key) && selection.isSelectionMode) {
+        const group = sortedGroups.find((g) => nowFoldKey(g) === key)
+        if (group?.now) selection.removeAll(group.now.more.map((t) => t.id))
+      }
+      toggleFold(key)
+    },
+    [isFoldOpen, toggleFold, sortedGroups, selection],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -1448,10 +1471,23 @@ function HomeContent({
         onGroupingChange={(next) => {
           // Selecting a view explicitly turns off AI-sort's unified override —
           // otherwise the toggle would show a selection that isn't in effect.
+          // Picking Now (even again) puts its folds back.
           setAiSortUnified(false)
-          setViewOverride(null)
+          setNowShowAll(false)
           setDefaultGrouping(next)
         }}
+        nowSummary={
+          nowHasFolds
+            ? {
+                relevant: nowRelevantCount,
+                total: shownTaskCount,
+                showAll: nowShowAll,
+                onShowAllChange: setNowShowAll,
+              }
+            : null
+        }
+        isFoldOpen={isFoldOpen}
+        onToggleFold={handleToggleFold}
         timeSlots={timeSlots}
         searchQuery={searchQuery}
         searchHits={searchResults}
@@ -1568,7 +1604,6 @@ function HomeContent({
         }
         onTrackRefresh={refreshAll}
         onUnifiedChange={(unified) => {
-          setViewOverride(null)
           if (sortOption === 'ai_insights') {
             // During AI sort: only toggle local override, don't persist to DB
             setAiSortUnified(unified)
@@ -1578,8 +1613,8 @@ function HomeContent({
             setDefaultGrouping('unified')
           } else {
             // Manual unified off: restore previous grouping. With nothing to
-            // restore (Unified was the saved view on load), land on All — the
-            // grouped view nearest a flat list of everything.
+            // restore (Unified was the saved view on load), land on Now — the
+            // grouped view.
             setDefaultGrouping(prevNonUnifiedGrouping.current || 'project')
             prevNonUnifiedGrouping.current = null
           }
@@ -1805,6 +1840,9 @@ function DashboardView({
   justAddedSource,
   justAddedNow,
   onGroupingChange,
+  nowSummary,
+  isFoldOpen,
+  onToggleFold,
   timeSlots,
   searchQuery,
   searchHits,
@@ -1933,7 +1971,12 @@ function DashboardView({
   /** Just-added previews' clock. See `useJustAddedClock`. */
   justAddedNow: number
   onGroupingChange: (grouping: GroupingMode) => void
-  /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
+  /** Now's "N of M now · Show all" strip; null outside Now or while the list is narrowed. */
+  nowSummary: NowSummaryState | null
+  /** Whether a project's Now fold is open (`useNowFolds`, keyed by `nowFoldKey`). */
+  isFoldOpen: (key: string) => boolean
+  onToggleFold: (key: string) => void
+  /** §6.0 time slots (periods), for "Next period" snoozes. Fetched once by the parent. */
   timeSlots: TimeSlot[]
   searchQuery: string | null
   /**
@@ -2199,7 +2242,7 @@ function DashboardView({
           {/* Quick add + AI chip row */}
           <div className="mb-4 flex items-center gap-3">
             <div className="min-w-0 flex-1">
-              {/* Rendered in every view (All / Today / Newest) and at every
+              {/* Rendered in every view (Now / Newest) and at every
                   scroll position, so the phone `+` always has it to focus. */}
               <QuickAdd
                 focusOnEvent
@@ -2270,9 +2313,10 @@ function DashboardView({
             />
           )}
 
-          {/* §7.3: the front door is "Today", but the corpus stays reachable. */}
+          {/* The front door is Now; Show all and Newest keep the corpus one tap away. */}
           <div className="mb-3 flex items-center justify-between gap-2">
             <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+            {nowSummary && <NowSummary {...nowSummary} />}
           </div>
 
           <FilterBar
@@ -2397,6 +2441,13 @@ function DashboardView({
             onRemoveTarget={(task) =>
               void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
             }
+            // The row's horizon dot menu and its hover Today (and the Today
+            // hold's Target menu) — on every row, the ones inside an open Now
+            // fold included.
+            onSetHorizon={(task, horizon) =>
+              void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
+            }
+            onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}
             keyboardFocusedId={keyboardFocusedId}
@@ -2409,6 +2460,8 @@ function DashboardView({
             setSortOption={setSortOption}
             isCollapsed={isCollapsed}
             toggleCollapse={toggleCollapse}
+            isFoldOpen={isFoldOpen}
+            onToggleFold={onToggleFold}
             onActivate={onActivate}
             onDoubleClick={onDoubleClick}
             annotationMap={effectiveAnnotationMap}
