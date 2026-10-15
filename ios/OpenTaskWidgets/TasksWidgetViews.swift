@@ -212,6 +212,17 @@ private enum TaskListItem: Identifiable {
         case .done(let completion): return "done-\(completion.id)"
         }
     }
+
+    /// The row as the page anchor sees it (`PagedRow`): keyed by `id`,
+    /// identified by the TASK id — a DONE row's too (`CompletionDTO.taskId`,
+    /// not the completion's own id), so checking a task off is not a new item.
+    var pagedRow: PagedRow {
+        switch self {
+        case .open(let task): return PagedRow(keys: [id], identities: ["task:\(task.id)"])
+        case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
+        case .done(let completion): return PagedRow(keys: [id], identities: ["task:\(completion.taskId)"])
+        }
+    }
 }
 
 /// One row's size, decided once and used twice — by the pager and as the
@@ -394,22 +405,31 @@ private struct TasksListView: View {
         // Page assuming the pager's row is there; if that yields one page,
         // it isn't — and one page with MORE room is still one page, so the
         // second pass can't disagree with the first about that.
-        func paginate(withPager: Bool) -> (pages: [Range<Int>], layouts: [TaskRowLayout], bottom: CGFloat) {
+        //
+        // Both passes page through the anchor (2026-10-14, `PageAnchor.swift`
+        // — see `RemindersListView.listBody`); only the pass that is drawn
+        // records it.
+        let rows = items.map(\.pagedRow)
+        func paginate(withPager: Bool, records: Bool) -> (
+            paging: AnchoredPaging.Result, layouts: [TaskRowLayout], bottom: CGFloat
+        ) {
             let bottom = bottomHeight(withPager: withPager, metrics: metrics)
             let budget = max(size.height - (bottom > 0 ? bottom + rowSpacing : 0), 0)
             let layouts = items.map { layout(for: $0, mode: mode, width: size.width, budget: budget, metrics: metrics) }
-            let pages = WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget) {
-                if case .divider = items[$0] { return true }
-                return false
+            let paging = tasksPaging(rows: rows, records: records) { range in
+                WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget, in: range) {
+                    if case .divider = items[$0] { return true }
+                    return false
+                }
             }
-            return (pages, layouts, bottom)
+            return (paging, layouts, bottom)
         }
-        var paged = paginate(withPager: true)
-        if paged.pages.count == 1 { paged = paginate(withPager: false) }
-        let pages = paged.pages
+        var paged = paginate(withPager: true, records: false)
+        paged = paginate(withPager: paged.paging.pages.count > 1, records: true)
+        let pages = paged.paging.pages
         let layouts = paged.layouts
         // systemMedium has no pager, so it always shows the first page.
-        let page = isLarge ? min(max(WidgetStore.tasksPage(for: entry.scope), 0), pages.count - 1) : 0
+        let page = paged.paging.page
 
         return VStack(alignment: .leading, spacing: 0) {
             if items.isEmpty {
@@ -439,6 +459,31 @@ private struct TasksListView: View {
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+
+    /// The list's pages through its page anchor (`WidgetStore.anchoredPages`,
+    /// `PageAnchor.swift`), keyed by the page on screen (`entry.scope`: a
+    /// view or a project) whose stored page index it pairs with. systemMedium
+    /// never pages and records nothing; neither does a future-dated entry
+    /// (see `anchoredPages`' `records`). The page drawn is stored as the page
+    /// index, so ‹ › counts from what is on screen.
+    private func tasksPaging(
+        rows: [PagedRow], records: Bool, plain: (Range<Int>) -> [Range<Int>]
+    ) -> AnchoredPaging.Result {
+        guard isLarge else {
+            return AnchoredPaging.Result(pages: plain(0..<rows.count), page: 0, anchor: nil)
+        }
+        let now = Date()
+        let writes = records && entry.date <= now
+        let stored = WidgetStore.tasksPage(for: entry.scope)
+        let result = WidgetStore.anchoredPages(
+            list: .tasks, pageKey: "tasks:\(entry.scope)", rows: rows, storedPage: stored,
+            records: writes, now: now, plain: plain
+        )
+        if writes, result.page != stored {
+            WidgetStore.setTasksPage(result.page, for: entry.scope)
+        }
+        return result
     }
 
     /// `item`'s lines and exact height at this card's `width`.
