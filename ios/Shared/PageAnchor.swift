@@ -19,11 +19,14 @@ import Foundation
 //   ROW as an anchor. The page starts at the anchor row; if that row left the
 //   list (handled, completed), it starts at the next surviving row that came
 //   after it in the list as it was when the anchor was set. Rows below move
-//   UP within the page (and the next page's rows fill in under them); nothing
-//   ever slides back onto an earlier page. Pages before the anchor are filled
-//   greedily from the top but END just before the anchor row, so the previous
-//   page looks as it did (leftover space at its foot is accepted). The "n/N"
-//   follows from that partition.
+//   UP within the page (and the next page's rows fill in under them). Every
+//   page before the anchor keeps the boundaries it had when the anchor was
+//   set: each starts at its own first row (or the next surviving one) and
+//   ends just before the next page's, so a row handled on page 2 lets page
+//   2's rows move up within page 2 but never onto page 1, and page 3 still
+//   starts at its anchor. Leftover space at a page's foot is accepted. While
+//   the anchor is live nothing crosses a boundary before it in either
+//   direction. The "n/N" follows from that partition.
 // - The anchor LAPSES — plain top-down paging again — when (a) the page key
 //   changes (a Reminders period or task segment, a Tasks page: chevron, slot
 //   jump, auto-advance, the clock crossing into a new slot), (b) an item
@@ -32,10 +35,11 @@ import Foundation
 //   after the last widget tap. Widgets get no lock/unlock signal; the idle
 //   lapse is the agreed stand-in, and it is a plain timestamp comparison
 //   (`WidgetStore.lastWidgetTap()`), no timer.
-// - Paging (‹ ›) with a live anchor moves the anchor to the first row of the
-//   page paged to, in the partition that was on screen, and the list is then
-//   partitioned from that new anchor — so the page you land on is filled
-//   greedily from its own first row and stays put while you work on it.
+// - Paging (‹ ›) never re-anchors: while the anchor is live the partition
+//   is fixed and the pager only moves the page index within it, so paging
+//   back to page 2 shows page 2 exactly as it was, and paging forward again
+//   shows page 3 starting where it did. The anchor is recorded afresh only
+//   when no live anchor exists — after one of the lapses above.
 //
 // Everything here is Foundation-only and pure; `WidgetStore.anchoredPages`
 // does the one read and write of the stored anchor around it, and the list
@@ -67,15 +71,20 @@ struct PageAnchor: Codable, Equatable {
     /// Which page of the widget it was set on — a Reminders period or task
     /// segment, a Tasks page. A different key lapses it (rule a).
     let pageKey: String
-    /// The key of the anchored page's first row.
+    /// The key of the anchored page's first row (the last of `pageStarts`).
     let firstKey: String
+    /// The first row's key of every page up to and including the anchored
+    /// one, when the anchor was set: the boundaries that hold while it is
+    /// live, so no row crosses one in either direction.
+    let pageStarts: [String]
     /// Every row key, in list order, when the anchor was set — what "the next
     /// surviving row after it" is resolved against once `firstKey` is gone.
     let keys: [String]
     /// Every item identity when the anchor was set (rule b).
     let identities: [String]
     /// The anchored page's index the last time the list was drawn. The
-    /// stored page index differing from it means the user paged (‹ ›) since.
+    /// stored page index minus this is how far the user has paged (‹ ›) from
+    /// the anchored page, which paging never changes.
     let page: Int
 
     /// Lapse rule (c): the list is drawn this long after the last widget
@@ -143,26 +152,25 @@ enum AnchoredPaging {
         return rows.allSatisfy { row in row.identities.allSatisfy(known.contains) }
     }
 
-    /// The row index the anchored page starts at: the row holding
-    /// `firstKey`, else the row holding the first key that came AFTER it in
-    /// the anchored list and is still here; `rows.count` when none survives
-    /// (everything from the anchor on was handled — the list is then just
-    /// paged from the top). Steps back over rows that stay with the next one
-    /// (the DONE divider, a cluster title), so they head the anchored page.
-    static func anchoredStart(_ anchor: PageAnchor, rows: [PagedRow]) -> Int {
+    /// The row index a page that started at `key` now starts at: the row
+    /// holding `key`, else the row holding the first key that came AFTER it
+    /// in the anchored list and is still here; `rows.count` when none
+    /// survives. Steps back over rows that stay with the next one (the DONE
+    /// divider, a cluster title), so they head the page.
+    static func resolvedStart(of key: String, _ anchor: PageAnchor, rows: [PagedRow]) -> Int {
         var rowOfKey: [String: Int] = [:]
         for (index, row) in rows.enumerated() {
             for key in row.keys where rowOfKey[key] == nil { rowOfKey[key] = index }
         }
         var start = rows.count
-        if let from = anchor.keys.firstIndex(of: anchor.firstKey) {
-            for key in anchor.keys[from...] {
-                if let index = rowOfKey[key] {
+        if let from = anchor.keys.firstIndex(of: key) {
+            for later in anchor.keys[from...] {
+                if let index = rowOfKey[later] {
                     start = index
                     break
                 }
             }
-        } else if let index = rowOfKey[anchor.firstKey] {
+        } else if let index = rowOfKey[key] {
             start = index
         }
         while start > 0, start < rows.count, rows[start - 1].staysWithNext {
@@ -171,30 +179,52 @@ enum AnchoredPaging {
         return start
     }
 
-    /// Pages before `start` filled greedily from the top and ending just
-    /// before it, then pages filled greedily from `start` on.
+    /// The anchored page's start row (`resolvedStart` of `firstKey`).
+    static func anchoredStart(_ anchor: PageAnchor, rows: [PagedRow]) -> Int {
+        resolvedStart(of: anchor.firstKey, anchor, rows: rows)
+    }
+
+    /// The fixed partition while `anchor` is live: every page up to the
+    /// anchored one between its resolved start and the next one's (a page
+    /// whose rows have all gone disappears), then pages filled greedily from
+    /// the anchored row on. Also the index of the anchored page.
     static func partition(
-        count: Int, from start: Int, plain: (Range<Int>) -> [Range<Int>]
-    ) -> [Range<Int>] {
-        guard count > 0 else { return [0..<0] }
-        let start = min(max(start, 0), count)
+        rows: [PagedRow], anchor: PageAnchor, plain: (Range<Int>) -> [Range<Int>]
+    ) -> (pages: [Range<Int>], anchoredPage: Int) {
+        let count = rows.count
+        let keys = anchor.pageStarts.isEmpty ? [anchor.firstKey] : anchor.pageStarts
+        // Resolved, monotonic, the first page always from row 0.
+        var starts: [Int] = []
+        for (index, key) in keys.enumerated() {
+            var start = index == 0 ? 0 : resolvedStart(of: key, anchor, rows: rows)
+            if let previous = starts.last { start = max(start, previous) }
+            starts.append(min(start, count))
+        }
+        let anchorStart = starts.last ?? 0
         var pages: [Range<Int>] = []
-        if start > 0 { pages += plain(0..<start) }
-        if start < count { pages += plain(start..<count) }
-        return pages
+        for (index, start) in starts.dropLast().enumerated() {
+            let end = starts[index + 1]
+            // Normally exactly one page; a segment can only overflow if a
+            // row grew, and then it splits by the plain rule.
+            if start < end { pages += plain(start..<end) }
+        }
+        if anchorStart < count { pages += plain(anchorStart..<count) }
+        if pages.isEmpty { return ([0..<0], 0) }
+        let anchoredPage = pages.firstIndex { $0.lowerBound == anchorStart } ?? (pages.count - 1)
+        return (pages, anchoredPage)
     }
 
     /// The layout to draw.
     ///
     /// - Not live (no anchor, or it lapsed): the plain partition, the stored
     ///   page clamped to it, and a fresh anchor on that page's first row.
-    /// - Live, not paged since (`storedPage == anchor.page`): the anchored
-    ///   partition, showing the anchored page. The anchor keeps its original
-    ///   row order and identities, so a run of taps keeps resolving against
-    ///   the list as it was when the user started.
-    /// - Live and paged (‹ › moved the stored page): the page that many steps
-    ///   from the anchored page, in the anchored partition, becomes the new
-    ///   anchor — and the list is re-partitioned from it.
+    /// - Live: the fixed partition (`partition`), showing the page as far
+    ///   from the anchored page as the user has paged (stored page minus
+    ///   `anchor.page`). Paging never moves the anchor; the anchor keeps its
+    ///   original row order, identities and boundaries, so a run of taps and
+    ///   pages keeps resolving against the list as it was when the user
+    ///   started. Only `page` is refreshed, to the anchored page's current
+    ///   index (it drops when an earlier page empties).
     ///
     /// `plain` is the list's own greedy partition of a sub-range (the
     /// Reminders/Tasks `ListPaging.pages`, Quotas' `QuotaFlow` pages).
@@ -205,29 +235,14 @@ enum AnchoredPaging {
         guard !rows.isEmpty else { return Result(pages: [0..<0], page: 0, anchor: nil) }
 
         if let anchor, isLive(anchor, pageKey: pageKey, rows: rows, lastTap: lastTap, now: now) {
-            let start = anchoredStart(anchor, rows: rows)
-            var pages = partition(count: rows.count, from: start, plain: plain)
-            let anchoredPage = pageIndex(startingAt: start, in: pages)
-            if storedPage == anchor.page {
-                return Result(pages: pages, page: anchoredPage, anchor: anchor.movedTo(page: anchoredPage))
-            }
-            // Paged: anchor the page the pager moved to, then partition from it.
-            let target = clamp(anchoredPage + (storedPage - anchor.page), pages)
-            let newStart = pages[target].lowerBound
-            pages = partition(count: rows.count, from: newStart, plain: plain)
-            let page = pageIndex(startingAt: newStart, in: pages)
-            return Result(
-                pages: pages, page: page,
-                anchor: makeAnchor(rows: rows, pageKey: pageKey, pageStart: newStart, page: page)
-            )
+            let fixed = partition(rows: rows, anchor: anchor, plain: plain)
+            let page = clamp(fixed.anchoredPage + (storedPage - anchor.page), fixed.pages)
+            return Result(pages: fixed.pages, page: page, anchor: anchor.movedTo(page: fixed.anchoredPage))
         }
 
         let pages = plain(0..<rows.count)
         let page = clamp(storedPage, pages)
-        return Result(
-            pages: pages, page: page,
-            anchor: makeAnchor(rows: rows, pageKey: pageKey, pageStart: pages[page].lowerBound, page: page)
-        )
+        return Result(pages: pages, page: page, anchor: makeAnchor(rows: rows, pageKey: pageKey, pages: pages, page: page))
     }
 
     // MARK: Helpers
@@ -236,24 +251,23 @@ enum AnchoredPaging {
         min(max(page, 0), pages.count - 1)
     }
 
-    /// The page beginning at `start`; the last page when `start` is past the
-    /// end (nothing from the anchor on survived).
-    private static func pageIndex(startingAt start: Int, in pages: [Range<Int>]) -> Int {
-        pages.firstIndex { $0.lowerBound == start } ?? (pages.count - 1)
+    /// The first key at or after row `start` (a divider has no key of its
+    /// own; the row it heads does, and resolving that row steps back over it).
+    private static func firstKey(from start: Int, in rows: [PagedRow]) -> String? {
+        rows[start...].lazy.compactMap(\.keys.first).first
     }
 
-    /// An anchor on the page that begins at row `pageStart`, named by the
-    /// first key at or after it (a divider has no key of its own; the row it
-    /// heads does, and resolving that row steps back over the divider).
-    private static func makeAnchor(rows: [PagedRow], pageKey: String, pageStart: Int, page: Int) -> PageAnchor? {
-        guard let firstKey = rows[pageStart...].lazy.compactMap(\.keys.first).first else { return nil }
+    /// An anchor on page `page` of `pages`, holding every boundary up to it.
+    private static func makeAnchor(rows: [PagedRow], pageKey: String, pages: [Range<Int>], page: Int) -> PageAnchor? {
+        let starts = pages[...page].compactMap { firstKey(from: $0.lowerBound, in: rows) }
+        guard let first = starts.last else { return nil }
         var identities: [String] = []
         var seen = Set<String>()
         for identity in rows.flatMap(\.identities) where seen.insert(identity).inserted {
             identities.append(identity)
         }
         return PageAnchor(
-            pageKey: pageKey, firstKey: firstKey, keys: rows.flatMap(\.keys),
+            pageKey: pageKey, firstKey: first, pageStarts: starts, keys: rows.flatMap(\.keys),
             identities: identities, page: page
         )
     }
@@ -261,6 +275,9 @@ enum AnchoredPaging {
 
 extension PageAnchor {
     fileprivate func movedTo(page: Int) -> PageAnchor {
-        PageAnchor(pageKey: pageKey, firstKey: firstKey, keys: keys, identities: identities, page: page)
+        PageAnchor(
+            pageKey: pageKey, firstKey: firstKey, pageStarts: pageStarts, keys: keys,
+            identities: identities, page: page
+        )
     }
 }

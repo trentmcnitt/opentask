@@ -5,11 +5,11 @@ import XCTest
 /// row's neighbours never slide back onto an earlier page.
 ///
 /// The sample list is Trent's Morning period on 2026-10-14, by shape (sample
-/// titles): budget 100, no gaps. Page 1 is A (60) + B (30); page 2 is C (60)
+/// titles): budget 100, no gaps. Page 1 is A (60) + B (20); page 2 is C (60)
 /// + D (20) = 80, and the two-line Clean (40) doesn't fit under them, so it
 /// starts page 3 with Walks, MDX and Recruiter (20 each) — exactly 100.
 /// Without Clean, Walks fits at the foot of page 2 (80 + 20), which is the
-/// slide the anchor stops.
+/// slide the anchor stops; without C, D fits at the foot of page 1.
 final class PageAnchorTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let budget: CGFloat = 100
@@ -24,7 +24,7 @@ final class PageAnchorTests: XCTestCase {
     private func morning() -> [Row] {
         [
             Row(key: "A", height: 60, identity: "task:1"),
-            Row(key: "B", height: 30, identity: "task:2"),
+            Row(key: "B", height: 20, identity: "task:2"),
             Row(key: "C", height: 60, identity: "task:3"),
             Row(key: "D", height: 20, identity: "task:4"),
             Row(key: "Clean", height: 40, identity: "task:5"),
@@ -73,6 +73,7 @@ final class PageAnchorTests: XCTestCase {
         let anchor = try XCTUnwrap(rest.anchor)
         XCTAssertEqual(anchor.firstKey, "Clean")
         XCTAssertEqual(anchor.page, 2)
+        XCTAssertEqual(anchor.pageStarts, ["A", "C", "Clean"])
         return anchor
     }
 
@@ -84,6 +85,7 @@ final class PageAnchorTests: XCTestCase {
         XCTAssertEqual(pageKeys(result, rows), [["A", "B"], ["C", "D"], ["Clean", "Walks", "MDX", "Recruiter"]])
         XCTAssertEqual(result.page, 1)
         XCTAssertEqual(result.anchor?.firstKey, "C", "a resting draw anchors the page it shows")
+        XCTAssertEqual(result.anchor?.pageStarts, ["A", "C"])
         XCTAssertEqual(result.anchor?.keys, rows.map(\.key))
         // The stored page is clamped to the list.
         XCTAssertEqual(layout(rows, storedPage: 9, anchor: nil).page, 2)
@@ -188,7 +190,7 @@ final class PageAnchorTests: XCTestCase {
             Row(key: "done-B", height: 60, identity: "task:2"),
         ]
         let anchor = PageAnchor(
-            pageKey: "reminders:3", firstKey: "done-B", keys: ["A", "done-B"],
+            pageKey: "reminders:3", firstKey: "done-B", pageStarts: ["A", "done-B"], keys: ["A", "done-B"],
             identities: ["task:1", "task:2"], page: 1
         )
         let result = layout(rows, storedPage: 1, anchor: anchor, lastTap: now)
@@ -198,43 +200,67 @@ final class PageAnchorTests: XCTestCase {
 
     // MARK: - Paging with an anchor
 
-    func testPagingLeftAnchorsTheEarlierPageAndPartitionsFromIt() throws {
+    func testPagingLeftAfterTheTapShowsTheOldPageAndBackShowsTheAnchoredPage() throws {
         let anchor = try restingAnchorOnPage3()
         let after = without("Clean", in: morning())
         let tap = now.addingTimeInterval(-1)
         let held = layout(after, storedPage: 2, anchor: anchor, lastTap: tap)
         XCTAssertEqual(held.page, 2)
 
-        // ‹ : the stored page moves 2 → 1.
+        // ‹ : page 2 exactly as it was, ending just above where Clean was.
         let left = layout(after, storedPage: 1, anchor: held.anchor, lastTap: tap)
         XCTAssertEqual(left.page, 1)
-        XCTAssertEqual(left.anchor?.firstKey, "C")
-        XCTAssertEqual(left.anchor?.page, 1)
-        // The page landed on fills from its own first row — Walks joins it
-        // now, as a navigation, never under a finger on page 3.
-        XCTAssertEqual(pageKeys(left, after), [["A", "B"], ["C", "D", "Walks"], ["MDX", "Recruiter"]])
-        // Page 1 is exactly what it was.
-        XCTAssertEqual(left.pages[0], held.pages[0])
+        XCTAssertEqual(left.pages[1].map { after[$0].key }, ["C", "D"])
+        XCTAssertEqual(left.anchor, held.anchor, "paging never re-anchors")
 
-        // Working on page 2 now can't slide its rows onto page 1: handling C.
-        let afterC = without("C", in: after)
-        let working = layout(afterC, storedPage: 1, anchor: left.anchor, lastTap: tap)
-        XCTAssertEqual(pageKeys(working, afterC), [["A", "B"], ["D", "Walks", "MDX", "Recruiter"]])
-        XCTAssertEqual(working.page, 1)
+        // › again: page 3 still starts at Daily Walks.
+        let back = layout(after, storedPage: 2, anchor: left.anchor, lastTap: tap)
+        XCTAssertEqual(back.page, 2)
+        XCTAssertEqual(back.pages[2].map { after[$0].key }, ["Walks", "MDX", "Recruiter"])
+        XCTAssertEqual(back.anchor, held.anchor)
     }
 
-    func testPagingRightAnchorsTheNextPage() throws {
+    func testHandlingARowOnAnEarlierPageKeepsEveryBoundary() throws {
+        let anchor = try restingAnchorOnPage3()
+        let tap = now.addingTimeInterval(-1)
+        // Clean handled on page 3, then ‹ to page 2 and C (its first row)
+        // handled there.
+        let afterC = without("Clean", "C", in: morning())
+
+        // What plain paging would do: D slides onto page 1, Walks onto page 2.
+        XCTAssertEqual(pageKeys(layout(afterC, storedPage: 1, anchor: nil), afterC)[0], ["A", "B", "D"])
+
+        let result = layout(afterC, storedPage: 1, anchor: anchor.withPage(2), lastTap: tap)
+        XCTAssertEqual(pageKeys(result, afterC), [["A", "B"], ["D"], ["Walks", "MDX", "Recruiter"]])
+        XCTAssertEqual(result.page, 1, "still on page 2, its rows moved up within it")
+        XCTAssertEqual(result.anchor?.firstKey, "Clean", "page 3 still starts at its anchor")
+
+        // A later row on page 2 handled instead: page 2 keeps C first.
+        let afterD = without("Clean", "D", in: morning())
+        let other = layout(afterD, storedPage: 1, anchor: anchor, lastTap: tap)
+        XCTAssertEqual(pageKeys(other, afterD), [["A", "B"], ["C"], ["Walks", "MDX", "Recruiter"]])
+    }
+
+    func testAnEmptiedEarlierPageDisappears() throws {
+        let anchor = try restingAnchorOnPage3()
+        let after = without("C", "D", in: morning())
+        let result = layout(after, storedPage: 2, anchor: anchor, lastTap: now)
+        XCTAssertEqual(pageKeys(result, after), [["A", "B"], ["Clean", "Walks", "MDX", "Recruiter"]])
+        XCTAssertEqual(result.page, 1, "the anchored page, now 2 of 2")
+    }
+
+    func testPagingRightKeepsTheAnchor() throws {
         let rows = morning()
         let rest = layout(rows, storedPage: 1, anchor: nil)
         XCTAssertEqual(rest.anchor?.firstKey, "C")
         let right = layout(rows, storedPage: 2, anchor: rest.anchor, lastTap: now.addingTimeInterval(-1))
         XCTAssertEqual(right.page, 2)
-        XCTAssertEqual(right.anchor?.firstKey, "Clean")
+        XCTAssertEqual(right.anchor, rest.anchor, "paging never re-anchors")
         XCTAssertEqual(pageKeys(right, rows), [["A", "B"], ["C", "D"], ["Clean", "Walks", "MDX", "Recruiter"]])
         // Paging past the end clamps to the last page.
         let past = layout(rows, storedPage: 5, anchor: right.anchor, lastTap: now)
         XCTAssertEqual(past.page, 2)
-        XCTAssertEqual(past.anchor?.firstKey, "Clean")
+        XCTAssertEqual(past.anchor?.firstKey, "C")
     }
 
     func testFewerPagesBeforeTheAnchorMoveTheIndexNotThePage() throws {
@@ -303,7 +329,7 @@ final class PageAnchorTests: XCTestCase {
         // Page 2 began with the line holding chips 7 and 8. Chip 7 is met and
         // hidden; chip 8 now heads a re-wrapped line with chip 9 pulled up.
         let anchor = PageAnchor(
-            pageKey: "quotas", firstKey: "q:7", keys: ["h:week", "t:week:", "q:5", "q:6", "q:7", "q:8", "q:9"],
+            pageKey: "quotas", firstKey: "q:7", pageStarts: ["h:week", "q:7"], keys: ["h:week", "t:week:", "q:5", "q:6", "q:7", "q:8", "q:9"],
             identities: ["q:5", "q:6", "q:7", "q:8", "q:9"], page: 1
         )
         let rows = [
@@ -382,5 +408,15 @@ final class PageAnchorStoreTests: WidgetStoreTestCase {
 
         WidgetStore.setPageAnchor(nil, for: .reminders)
         XCTAssertNil(WidgetStore.pageAnchor(for: .reminders))
+    }
+}
+
+extension PageAnchor {
+    /// The same anchor as last drawn on another page index.
+    fileprivate func withPage(_ page: Int) -> PageAnchor {
+        PageAnchor(
+            pageKey: pageKey, firstKey: firstKey, pageStarts: pageStarts, keys: keys,
+            identities: identities, page: page
+        )
     }
 }
