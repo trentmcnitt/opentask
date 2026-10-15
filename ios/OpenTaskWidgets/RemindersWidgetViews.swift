@@ -214,6 +214,33 @@ private struct RemindersSmallView: View {
     }
 }
 
+/// The Reminders widget's pages through its page anchor
+/// (`WidgetStore.anchoredPages`) — shared by a period's list and a task
+/// segment's, which share one stored page index (`remindersPage(for:)`,
+/// paired with the page key so it resets on a period change) and so one
+/// anchor. Records only from the systemLarge card drawing its CURRENT entry
+/// (see `anchoredPages`' `records`), and then stores the page drawn as the
+/// page index, so ‹ › counts from what is on screen.
+private func remindersPaging(
+    rows: [PagedRow], pageKey: Int, isLarge: Bool, entryDate: Date,
+    plain: (Range<Int>) -> [Range<Int>]
+) -> AnchoredPaging.Result {
+    guard isLarge else {
+        return AnchoredPaging.Result(pages: plain(0..<rows.count), page: 0, anchor: nil)
+    }
+    let now = Date()
+    let records = entryDate <= now
+    let stored = WidgetStore.remindersPage(for: pageKey)
+    let result = WidgetStore.anchoredPages(
+        list: .reminders, pageKey: "reminders:\(pageKey)", rows: rows, storedPage: stored,
+        records: records, now: now, plain: plain
+    )
+    if records, result.page != stored {
+        WidgetStore.setRemindersPage(result.page, for: pageKey)
+    }
+    return result
+}
+
 // MARK: - Home Screen list
 
 /// One row of the combined open+divider+done list (2026-09-23, "show
@@ -248,6 +275,19 @@ private enum ReminderListItem: Identifiable {
         case .divider: return "divider"
         case .done(let reminder): return "done-\(reminder.id)"
         case .donePrompt(let prompt): return "done-prompt-\(prompt.promptKey)"
+        }
+    }
+
+    /// The row as the page anchor sees it (`PagedRow`): keyed by `id` (open
+    /// and done rows differ), identified by the task id or `prompt_key` (the
+    /// same for both — handling a row is not a new item).
+    var pagedRow: PagedRow {
+        switch self {
+        case .open(let reminder): return PagedRow(keys: [id], identities: ["task:\(reminder.id)"])
+        case .prompt(let prompt): return PagedRow(keys: [id], identities: ["prompt:\(prompt.promptKey)"])
+        case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
+        case .done(let reminder): return PagedRow(keys: [id], identities: ["task:\(reminder.id)"])
+        case .donePrompt(let prompt): return PagedRow(keys: [id], identities: ["prompt:\(prompt.promptKey)"])
         }
     }
 }
@@ -422,13 +462,22 @@ private struct RemindersListView: View {
         // come off the row budget.
         let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
         let layouts = items.map { layout(for: $0, width: size.width, budget: budget, metrics: metrics) }
-        let pages = WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget) {
-            if case .divider = items[$0] { return true }
-            return false
+        // Anchored while the user is tapping (2026-10-14, `PageAnchor.swift`):
+        // a handled row's neighbours move up within the page on screen and
+        // never slide back onto the page before it. systemMedium has no
+        // pager, so it always shows the first page and records nothing — the
+        // stored page and its anchor belong to the systemLarge card's pager.
+        let slotKey = entry.group?.slotKey ?? -1
+        let paging = remindersPaging(
+            rows: items.map(\.pagedRow), pageKey: slotKey, isLarge: isLarge, entryDate: entry.date
+        ) { range in
+            WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget, in: range) {
+                if case .divider = items[$0] { return true }
+                return false
+            }
         }
-        // systemMedium has no pager, so it always shows the first page — the
-        // stored page belongs to the systemLarge card's pager.
-        let page = isLarge ? min(max(WidgetStore.remindersPage(for: entry.group?.slotKey ?? -1), 0), pages.count - 1) : 0
+        let pages = paging.pages
+        let page = paging.page
         let range = pages[page]
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -1479,6 +1528,15 @@ private enum SegmentListItem {
         case .considered(let row): return "seg-considered-\(row.id)"
         }
     }
+
+    /// See `ReminderListItem.pagedRow`.
+    var pagedRow: PagedRow {
+        switch self {
+        case .waiting(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
+        case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
+        case .considered(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
+        }
+    }
 }
 
 /// The widths a task segment row spends on things that are not its label —
@@ -1612,11 +1670,17 @@ private struct TaskSegmentListView: View {
         let barHeight = metrics.bottomBarHeight
         let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
         let layouts = items.map { layout(for: $0, width: size.width, budget: budget, metrics: metrics) }
-        let pages = WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget) {
-            if case .divider = items[$0] { return true }
-            return false
+        // Anchored like a period's list (`RemindersListView.listBody`).
+        let paging = remindersPaging(
+            rows: items.map(\.pagedRow), pageKey: segment.pageKey, isLarge: isLarge, entryDate: entry.date
+        ) { range in
+            WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget, in: range) {
+                if case .divider = items[$0] { return true }
+                return false
+            }
         }
-        let page = isLarge ? min(max(WidgetStore.remindersPage(for: segment.pageKey), 0), pages.count - 1) : 0
+        let pages = paging.pages
+        let page = paging.page
         let range = pages[page]
 
         return VStack(alignment: .leading, spacing: 0) {

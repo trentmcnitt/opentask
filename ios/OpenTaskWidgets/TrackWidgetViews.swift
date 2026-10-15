@@ -148,10 +148,11 @@ private struct QuotasSmallView: View {
 /// `QuotaFlow.height(of:isFirstOnPage:)`, which reads the SAME constants the
 /// lines are drawn with.
 ///
-/// PURE OVER `entry`, except the reader's metrics: this view (and
-/// everything below it in this file) reads no `WidgetStore` directly —
+/// PURE OVER `entry`, except the reader's metrics and the page anchor:
 /// `entry.showMet`/`entry.page` are already resolved by the provider, and
-/// `entry.sections` already carry the `showMet` filtering baked in.
+/// `entry.sections` already carry the `showMet` filtering baked in. The one
+/// `WidgetStore` read and write here is `quotasPaging` (2026-10-14), which
+/// can only happen where the pages are measured.
 private struct QuotasListView: View {
     let entry: TrackEntry
     /// systemLarge only. Drives whether paging (and the bottom row) exists
@@ -162,6 +163,35 @@ private struct QuotasListView: View {
     /// and its body.
     private var rowSpacing: CGFloat {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
+    }
+
+    /// The pages through the page anchor (2026-10-14, `PageAnchor.swift`):
+    /// with "met" hidden, the `+1` that meets a quota takes its chip off the
+    /// card, and when that chip was alone on the page's FIRST line (the last
+    /// chip of a cluster, so its title goes too, or of a section) the next,
+    /// shorter line used to fit at the foot of the previous page and slide
+    /// back there — the Reminders bug, one dimension up. Anchored by chip
+    /// (`QuotaFlow.pagedRow`), keyed "quotas" (one page axis); "met" turned
+    /// on and Takeback mode bring met chips back, which are new items and
+    /// lapse it. Medium never pages and records nothing, nor does a
+    /// future-dated entry; the page drawn is stored as `quotasPage`.
+    private func quotasPaging(
+        lines: [QuotaFlow.Line], plain: (Range<Int>) -> [Range<Int>]
+    ) -> AnchoredPaging.Result {
+        // Medium never pages — it always shows whatever fits from the top.
+        guard isLarge else {
+            return AnchoredPaging.Result(pages: plain(0..<lines.count), page: 0, anchor: nil)
+        }
+        let now = Date()
+        let records = entry.date <= now
+        let result = WidgetStore.anchoredPages(
+            list: .quotas, pageKey: "quotas", rows: lines.map(QuotaFlow.pagedRow), storedPage: entry.page,
+            records: records, now: now, plain: plain
+        )
+        if records, result.page != entry.page {
+            WidgetStore.quotasPage = result.page
+        }
+        return result
     }
 
     var body: some View {
@@ -196,12 +226,12 @@ private struct QuotasListView: View {
     private func listBody(size: CGSize, metrics: WidgetTextMetrics) -> some View {
         let barHeight = metrics.bottomBarHeight
         let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
-        let pages = QuotaFlow.paginate(
-            lines: QuotaFlow.lines(sections: entry.sections, width: size.width, takeback: takeback),
-            pageHeight: budget
-        )
-        // Medium never pages — it always shows whatever fits from the top.
-        let page = isLarge ? min(max(entry.page, 0), pages.count - 1) : 0
+        let lines = QuotaFlow.lines(sections: entry.sections, width: size.width, takeback: takeback)
+        let paging = quotasPaging(lines: lines) { range in
+            QuotaFlow.pageRanges(lines: lines, pageHeight: budget, in: range)
+        }
+        let pages = paging.pages.map { Array(lines[$0]) }
+        let page = paging.page
 
         return VStack(alignment: .leading, spacing: 0) {
             if entry.sections.isEmpty {

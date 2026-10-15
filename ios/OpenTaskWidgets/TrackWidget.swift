@@ -898,33 +898,59 @@ enum QuotaFlow {
     /// continuation page, and a `.heading` CAN end up alone at a page's
     /// bottom with its clusters starting fresh, unlabeled, on the next page.
     static func paginate(lines: [Line], pageHeight: CGFloat) -> [[Line]] {
-        guard !lines.isEmpty else { return [[]] }
-        guard pageHeight > 0 else { return [lines] }
+        pageRanges(lines: lines, pageHeight: pageHeight).map { Array(lines[$0]) }
+    }
 
-        var pages: [[Line]] = []
-        var page: [Line] = []
+    /// `paginate`, as index ranges, over `range` (default: every line) —
+    /// what the page anchor partitions with (2026-10-14, `PageAnchor.swift`):
+    /// the lines before the anchor and the lines from it on are each paged by
+    /// exactly these rules. An empty list is one empty page.
+    static func pageRanges(lines: [Line], pageHeight: CGFloat, in range: Range<Int>? = nil) -> [Range<Int>] {
+        let range = range ?? 0..<lines.count
+        guard !range.isEmpty, pageHeight > 0 else { return [range] }
+
+        var pages: [Range<Int>] = []
+        var start = range.lowerBound
         var used: CGFloat = 0
 
-        for line in lines {
-            let lineHeight = height(of: line, isFirstOnPage: page.isEmpty)
-            if !page.isEmpty, used + lineHeight > pageHeight {
-                if case .clusterTitle = page.last {
-                    let strand = page.removeLast()
-                    pages.append(page)
-                    page = [strand, line]
-                    used = height(of: strand, isFirstOnPage: true) + height(of: line, isFirstOnPage: false)
+        for index in range {
+            let line = lines[index]
+            let isFirst = index == start
+            let lineHeight = height(of: line, isFirstOnPage: isFirst)
+            if !isFirst, used + lineHeight > pageHeight {
+                if index - 1 > start, case .clusterTitle = lines[index - 1] {
+                    // The stranded title moves down with its first chip row.
+                    pages.append(start..<(index - 1))
+                    start = index - 1
+                    used = height(of: lines[start], isFirstOnPage: true) + height(of: line, isFirstOnPage: false)
                 } else {
-                    pages.append(page)
-                    page = [line]
+                    pages.append(start..<index)
+                    start = index
                     used = height(of: line, isFirstOnPage: true)
                 }
             } else {
-                page.append(line)
                 used += lineHeight
             }
         }
-        if !page.isEmpty { pages.append(page) }
-        return pages.isEmpty ? [[]] : pages
+        pages.append(start..<range.upperBound)
+        return pages
+    }
+
+    /// A line as the page anchor sees it (`PagedRow`). A chip row is keyed
+    /// and identified by its CHIPS (`q:<task id>`), never its own
+    /// `r:<cluster>:<n>` id: a met chip leaving re-wraps its cluster, and the
+    /// row ids then name different chips. A cluster title stays with the
+    /// chip row under it, as `paginate`'s stranded-title rule keeps it.
+    static func pagedRow(_ line: Line) -> PagedRow {
+        switch line {
+        case .heading(let section):
+            return PagedRow(keys: ["h:\(section.id)"], identities: [])
+        case .clusterTitle(let cluster):
+            return PagedRow(keys: ["t:\(cluster.id)"], identities: [], staysWithNext: true)
+        case .chipRow(_, _, let chips, _):
+            let keys = chips.map { "q:\($0.id)" }
+            return PagedRow(keys: keys, identities: keys)
+        }
     }
 }
 

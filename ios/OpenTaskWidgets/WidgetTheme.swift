@@ -706,28 +706,17 @@ enum WidgetTheme {
     /// budget so that never actually happens (see
     /// `WidgetTextMetrics.titleLines`) — a title longer than the whole card
     /// gets a full page to itself, ending in "…".
+    ///
+    /// The loop itself lives in `ListPaging.pages` (`ios/Shared/PageAnchor.swift`,
+    /// Foundation-only, so `OpenTaskLogicTests` covers it); while the user is
+    /// tapping, the lists page around an ANCHOR instead of strictly from the
+    /// top — `AnchoredPaging`, same file — so a handled row's neighbours never
+    /// slide back onto an earlier page (2026-10-14).
     static func pages(
-        heights: [CGFloat], spacing: CGFloat, budget: CGFloat, isDivider: (Int) -> Bool
+        heights: [CGFloat], spacing: CGFloat, budget: CGFloat,
+        in range: Range<Int>? = nil, isDivider: (Int) -> Bool
     ) -> [Range<Int>] {
-        guard !heights.isEmpty else { return [0..<0] }
-        var pages: [Range<Int>] = []
-        var start = 0
-        while start < heights.count {
-            var end = start
-            var used: CGFloat = 0
-            while end < heights.count {
-                let needed = used + (end > start ? spacing : 0) + heights[end]
-                if end > start, needed > budget { break }
-                used = needed
-                end += 1
-            }
-            if end - start > 1, end < heights.count, isDivider(end - 1) {
-                end -= 1
-            }
-            pages.append(start..<end)
-            start = end
-        }
-        return pages
+        ListPaging.pages(heights: heights, spacing: spacing, budget: budget, in: range, isDivider: isDivider)
     }
 }
 

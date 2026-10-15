@@ -267,6 +267,30 @@ enum WidgetStore {
     /// straight into the cache, so the fast path stays truthful).
     static func markInteraction(now: Date = Date()) {
         defaults?.set(now.timeIntervalSince1970, forKey: lastInteractionKey)
+        noteWidgetTap(now: now)
+    }
+
+    // MARK: Last widget tap (2026-10-14, the page anchor's idle lapse)
+    //
+    // When the user last tapped ANY widget control — every intent stamps it,
+    // through `markInteraction()` or one of the `stagePending…` calls (a
+    // check-off, a prompt action, a segment consider/target, a restore, a
+    // `±1`) or the Undo/Redo claim. Unlike the stamps `hasRecentInteraction`
+    // reads, nothing clears it: `clearInteraction()` (Undo, snooze, restore)
+    // and a confirmed check-off retiring its tombstone are both still taps,
+    // and the page anchor (`AnchoredPaging`, `PageAnchor.swift`) lapses only
+    // `PageAnchor.idleLapse` after the last one. Its own key and no lock: a
+    // plain overwrite, never a read-modify-write.
+
+    private static let lastWidgetTapKey = "widget.lastTap"
+
+    static func noteWidgetTap(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: lastWidgetTapKey)
+    }
+
+    static func lastWidgetTap() -> Date? {
+        guard let stamp = defaults?.object(forKey: lastWidgetTapKey) as? Double else { return nil }
+        return Date(timeIntervalSince1970: stamp)
     }
 
     // MARK: Fetch required (2026-09-24, the stale-count fix)
@@ -308,6 +332,7 @@ enum WidgetStore {
     static func stagePendingCompletion(_ id: Int, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
         var map = pendingMap(pendingCompletionsKey)
         map[String(id)] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingCompletionsKey)
@@ -403,6 +428,7 @@ enum WidgetStore {
     static func stagePendingProgress(_ id: Int, delta: Int = 1, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
 
         var map = progressMap()
         let key = String(id)
@@ -707,6 +733,7 @@ enum WidgetStore {
     static func stagePendingRestore(_ id: Int, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
         var map = pendingMap(pendingRestoresKey)
         map[String(id)] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingRestoresKey)
@@ -896,6 +923,7 @@ enum WidgetStore {
             return false
         }
         defaults?.set(now.timeIntervalSince1970, forKey: undoRedoInFlightKey)
+        noteWidgetTap(now: now)
         return true
     }
 
@@ -1128,6 +1156,7 @@ enum WidgetStore {
     static func stagePendingSegmentConsider(_ id: Int, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
         var map = pendingMap(pendingSegmentConsidersKey)
         map[String(id)] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingSegmentConsidersKey)
@@ -1201,6 +1230,7 @@ enum WidgetStore {
     static func stagePendingSegmentTarget(_ id: Int, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
         var map = pendingMap(pendingSegmentTargetsKey)
         map[String(id)] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingSegmentTargetsKey)
@@ -1288,6 +1318,7 @@ enum WidgetStore {
     static func stagePendingPromptAction(_ key: String, did: Bool, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
         var map = promptActionMap()
         map[key] = [now.timeIntervalSince1970, did ? 1 : 0]
         defaults?.set(map, forKey: pendingPromptActionsKey)
@@ -1344,6 +1375,7 @@ enum WidgetStore {
     static func stagePendingPromptRestore(_ key: String, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        noteWidgetTap(now: now)
         var map = pendingMap(pendingPromptRestoresKey)
         map[key] = now.timeIntervalSince1970
         defaults?.set(map, forKey: pendingPromptRestoresKey)
@@ -1744,6 +1776,68 @@ enum WidgetStore {
     static func setTasksPage(_ page: Int, for scope: Int) {
         defaults?.set(max(0, page), forKey: tasksPageKey)
         defaults?.set(scope, forKey: tasksPageScopeKey)
+    }
+
+    // MARK: - Page anchors (2026-10-14, "Daily Walks disappeared")
+    //
+    // One stored `PageAnchor` per paged list — see `PageAnchor.swift` for the
+    // rule and its lapses. The list views call `anchoredPages` while they
+    // draw (only there is the partition known: it needs the real text
+    // metrics), so the anchor is read and written at render time.
+
+    /// Which list an anchor belongs to. Reminders' period pages and task
+    /// segment pages share one (they share one page index, too); the page
+    /// key tells them apart.
+    enum PagedList: String {
+        case reminders, tasks, quotas
+    }
+
+    private static func pageAnchorKey(_ list: PagedList) -> String { "widget.pageAnchor.\(list.rawValue)" }
+
+    static func pageAnchor(for list: PagedList) -> PageAnchor? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let data = defaults?.data(forKey: pageAnchorKey(list)) else { return nil }
+        return try? JSONDecoder().decode(PageAnchor.self, from: data)
+    }
+
+    static func setPageAnchor(_ anchor: PageAnchor?, for list: PagedList) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let anchor, let data = try? JSONEncoder().encode(anchor) else {
+            defaults?.removeObject(forKey: pageAnchorKey(list))
+            return
+        }
+        defaults?.set(data, forKey: pageAnchorKey(list))
+    }
+
+    /// The pages of one list and the page to draw, with its anchor read
+    /// from and written back to the store (`AnchoredPaging.layout`).
+    ///
+    /// `records` is false for a render that must not touch the stored state:
+    /// a `systemMedium` card (it never pages), and a timeline entry dated in
+    /// the FUTURE — `getTimeline` hands WidgetKit pre-scheduled entries (slot
+    /// boundaries, due times, the "Undid" expiry) whose views can be drawn
+    /// as the timeline is submitted, and one of those, for a later period,
+    /// would otherwise replace the anchor of the page actually on screen.
+    /// Such a render still reads the anchor; it just writes nothing.
+    ///
+    /// The caller writes `result.page` back as its stored page index (its
+    /// own setter: `setRemindersPage`, `setTasksPage`, `quotasPage`) when
+    /// `records` is true, so the pager's next ‹ › counts from the page drawn.
+    static func anchoredPages(
+        list: PagedList, pageKey: String, rows: [PagedRow], storedPage: Int,
+        records: Bool, now: Date = Date(), plain: (Range<Int>) -> [Range<Int>]
+    ) -> AnchoredPaging.Result {
+        let stored = pageAnchor(for: list)
+        let result = AnchoredPaging.layout(
+            rows: rows, pageKey: pageKey, storedPage: storedPage, anchor: stored,
+            lastTap: lastWidgetTap(), now: now, plain: plain
+        )
+        if records, result.anchor != stored {
+            setPageAnchor(result.anchor, for: list)
+        }
+        return result
     }
 
     // MARK: - Tasks snooze mode / bulk select (2026-09-23, Phase 2)
