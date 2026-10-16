@@ -4,9 +4,8 @@ import { Flag } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
-import { HorizonChip } from '@/components/TaskSegmentRow'
 import { DEADLINE_WORD, HORIZON_WORD, targetQuietUntil } from '@/lib/task-model-words'
-import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
+import { isPastDeadline } from '@/lib/task-segments'
 
 /**
  * The editor's deadline and horizon line (2026-10-10, docs/TASK-MODEL.md
@@ -14,8 +13,11 @@ import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
  *
  * The deadline has its OWN picker and no snooze button ever moves it — that is
  * the whole difference between it and the target above. Clearing it is the
- * picker's Clear. The horizon is the same chip the task segments use; unset
- * says so, rather than pretending to be "weeks".
+ * picker's Clear.
+ *
+ * The horizon's own control moved to the chip row (`HorizonPicker`, 2026-10-15,
+ * Trent: "why can't i set the horizon here?") so it is always settable; this
+ * line keeps only the note below when the horizon isn't in effect.
  *
  * Staged like every other field in the panel: blue while dirty, saved with the
  * rest on Save.
@@ -27,31 +29,26 @@ import { isPastDeadline, type HorizonValue } from '@/lib/task-segments'
  * so its horizon does nothing; "Horizon: Unset" there read as broken.
  *
  * A one-off with a target of its own (2026-10-12, spec §1 — a target makes a
- * task quiet until its date): the horizon row is GREYED, not hidden, and says
- * why — "Target set: quiet until Nov 1" (`quietUntil`). Hidden read as a bug;
- * greyed says the horizon is still there and comes back when the target goes.
- * The chip is not offered meanwhile: changing it would do nothing visible.
+ * task quiet until its date): the horizon isn't in effect, and the line says
+ * so — "Horizon not in effect · Target set: quiet until Nov 1" (`quietUntil`).
+ * The chip above still changes it, ready for when the target goes. Only a REAL
+ * target (stored, or one staged in the editor) says this: a task with none
+ * once read "No target" and "quiet until Oct 15" at once (2026-10-15).
  */
 export function TaskModelFields({
   deadline,
-  horizon,
   deadlineDirty,
-  horizonDirty,
   timezone,
   onDeadline,
-  onHorizon,
   repeatLabel = null,
   showHorizon = true,
   emptyAnchor = null,
   quietUntil = null,
 }: {
   deadline: string | null
-  horizon: HorizonValue | null
   deadlineDirty: boolean
-  horizonDirty: boolean
   timezone: string
   onDeadline: (value: string | null) => void
-  onHorizon: (value: HorizonValue | null) => void
   /** "moves with each week": the deadline follows each occurrence (`deadlineRepeatLabel`). */
   repeatLabel?: string | null
   /** False on a recurring task: it never enters a segment, so a horizon means nothing. */
@@ -107,14 +104,8 @@ export function TaskModelFields({
           className="text-muted-foreground/60 inline-flex items-center gap-1"
           title="A target makes a task quiet until its date. Remove the target to use its horizon."
         >
-          <span className="text-muted-foreground/50">{HORIZON_WORD}</span>
+          <span className="text-muted-foreground/50">{HORIZON_WORD} not in effect ·</span>
           {targetQuietUntil(DateTime.fromISO(quietUntil).setZone(timezone).toFormat('LLL d'))}
-        </span>
-      )}
-      {showHorizon && !quietUntil && (
-        <span className={cn('inline-flex items-center gap-1', horizonDirty && 'text-blue-500')}>
-          <span className="text-muted-foreground/70">{HORIZON_WORD}</span>
-          <HorizonChip task={{ horizon, title: '' }} onChange={onHorizon} />
         </span>
       )}
     </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -189,6 +190,48 @@ export function HorizonDotButton({
         <HorizonDotMark horizon={horizon} />
       </DropdownMenuTrigger>
       <HorizonMenuContent value={horizon} onChange={onChange} />
+    </DropdownMenu>
+  )
+}
+
+/**
+ * The task editor's horizon control (2026-10-15, Trent: "why can't i set the
+ * horizon here?"): the dot and the word, in the Quick panel's chip row beside
+ * the project and priority, opening the same menu as the rows' dot. ALWAYS
+ * offered on a one-off: with a target of its own the horizon decides nothing
+ * until the target goes (spec §1), but it is still the task's pace, and
+ * setting it then is how it is ready for when the target is removed — the
+ * line under the chips says it isn't in effect meanwhile (`TaskModelFields`).
+ * Staged like the other chips: a blue dot while dirty, saved with the rest.
+ */
+export function HorizonPicker({
+  value,
+  dirty,
+  onChange,
+}: {
+  value: HorizonValue | null
+  dirty: boolean
+  onChange: (horizon: HorizonValue | null) => void
+}) {
+  const label = value ? HORIZON_LABELS[value] : HORIZON_UNSET_LABEL
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        data-quick-panel-horizon
+        data-horizon-picker={value ?? 'unset'}
+        aria-label={`${HORIZON_WORD}: ${label}. Change`}
+        title={`${HORIZON_WORD}: ${label}`}
+        className={cn(
+          'hover:bg-foreground/5 inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-xs font-medium',
+          value ? 'text-foreground/70' : 'text-muted-foreground/70 italic',
+        )}
+      >
+        {dirty && <span className="mr-0.5 text-blue-500 not-italic">●</span>}
+        <HorizonDotMark horizon={value} />
+        {label}
+        <ChevronDown className="size-3 opacity-50" />
+      </DropdownMenuTrigger>
+      <HorizonMenuContent value={value} onChange={onChange} align="start" />
     </DropdownMenu>
   )
 }
