@@ -36,10 +36,13 @@ export function useQuotaEditor({
   refresh,
   onUndo,
   onCompleted,
+  onWritten,
 }: {
   refresh: () => Promise<void>
   onUndo: () => void
   onCompleted: () => void
+  /** A save or delete went through (`useQuotaMutations`). */
+  onWritten?: () => void
 }) {
   const router = useRouter()
   const { requestNavigation } = useNavigationGuard()
@@ -49,6 +52,7 @@ export function useQuotaEditor({
     refresh,
     onUndo,
     onCompleted,
+    onWritten,
   })
 
   const openEdit = useCallback((tasks: Task[]) => setEditing(tasks), [])
