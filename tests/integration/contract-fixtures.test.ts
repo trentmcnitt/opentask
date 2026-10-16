@@ -204,13 +204,17 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
     }
     return value
   }
-  if (typeof value === 'string') {
-    if (key === 'period_label' && value.startsWith('by ')) return PINNED_PERIOD_LABEL
-    const pk = PROMPT_KEY.exec(value)
-    if (pk) return `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}`
-    if (ISO_DATETIME.test(value)) return PINNED_TIMESTAMP
-    if (ISO_DATE.test(value)) return PINNED_DATE
-  }
+  if (typeof value === 'string') return normaliseString(value, ids, key)
+  return value
+}
+
+/** A string value: prompt keys, ISO timestamps and dates, and a date in words. */
+function normaliseString(value: string, ids: IdMap, key?: string): string {
+  if (key === 'period_label' && value.startsWith('by ')) return PINNED_PERIOD_LABEL
+  const pk = PROMPT_KEY.exec(value)
+  if (pk) return `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}`
+  if (ISO_DATETIME.test(value)) return PINNED_TIMESTAMP
+  if (ISO_DATE.test(value)) return PINNED_DATE
   return value
 }
 

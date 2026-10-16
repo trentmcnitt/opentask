@@ -363,31 +363,6 @@ describe('contract fixtures match the TS types', () => {
     expectShape(task, TASK, 'task-progress')
   })
 
-  test('an interval quota serves its period on the task and on its prompt (2026-10-16)', () => {
-    const task = data('task-interval-quota')
-    expectShape(task, TASK, 'task-interval-quota')
-    expect(task).toMatchObject({
-      rrule: 'FREQ=WEEKLY;INTERVAL=2',
-      period_interval: 2,
-      period_label: 'by Jan 15', // pinned by the fixture writer
-    })
-    expect(task.progress_period_start).not.toBeNull()
-    expect(task.progress_period_end).not.toBeNull()
-    const prompt = groups('reminders-interval')
-      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
-      .find((p) => p.title === 'Deep-clean the oven')!
-    expect(prompt).toMatchObject({
-      period: 'WEEKLY',
-      period_interval: 2,
-      period_label: 'by Jan 15',
-    })
-    // Interval 1 serves no label: clients keep their own words.
-    const run = groups('reminders-interval')
-      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
-      .find((p) => p.title === 'Go for a run')!
-    expect(run).toMatchObject({ period_interval: 1, period_label: null })
-  })
-
   test('every slot is exactly a TimeSlot', () => {
     const slots = data('time-slots').time_slots as Obj[]
     expect(slots.length).toBeGreaterThan(1)
@@ -428,5 +403,32 @@ describe('contract fixtures match the TS types', () => {
     // User B's seeded task (due tomorrow) and the one three days late; the
     // quotas and reminders are not counted.
     expect(counts).toEqual({ total: 2, overdue: 1, today: 0 })
+  })
+})
+
+describe('contract fixtures: interval quotas', () => {
+  test('an interval quota serves its period on the task and on its prompt (2026-10-16)', () => {
+    const task = data('task-interval-quota')
+    expectShape(task, TASK, 'task-interval-quota')
+    expect(task).toMatchObject({
+      rrule: 'FREQ=WEEKLY;INTERVAL=2',
+      period_interval: 2,
+      period_label: 'by Jan 15', // pinned by the fixture writer
+    })
+    expect(task.progress_period_start).not.toBeNull()
+    expect(task.progress_period_end).not.toBeNull()
+    const prompt = groups('reminders-interval')
+      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
+      .find((p) => p.title === 'Deep-clean the oven')!
+    expect(prompt).toMatchObject({
+      period: 'WEEKLY',
+      period_interval: 2,
+      period_label: 'by Jan 15',
+    })
+    // Interval 1 serves no label: clients keep their own words.
+    const run = groups('reminders-interval')
+      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
+      .find((p) => p.title === 'Go for a run')!
+    expect(run).toMatchObject({ period_interval: 1, period_label: null })
   })
 })
