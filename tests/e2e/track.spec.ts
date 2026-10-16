@@ -767,9 +767,19 @@ async function chipOf(page: Page, id: number) {
   return chip
 }
 
-/** Press and hold — the only way into the bubble; the trailing click is not a +1. */
+/**
+ * Into a chip's bubble — the trailing click is never a +1. On the dashboard a
+ * press and hold opens it; on /quotas the hold SELECTS the chip (2026-10-16,
+ * `useQuotaChipSelection`) and the bubble is the selection bar's Details.
+ */
 async function holdChipOpen(page: Page, chip: ReturnType<Page['locator']>) {
   await chip.click({ delay: 500 })
+  if (new URL(page.url()).pathname === '/quotas') {
+    await page
+      .locator('[data-quota-selection-bar]')
+      .getByRole('button', { name: 'Details', exact: true })
+      .click()
+  }
   const pop = page.locator('[data-track-popover]')
   await expect(pop).toBeVisible()
   return pop
@@ -1169,7 +1179,7 @@ test.describe('Track — moving a daily quota reminder, number by number', () =>
  * special view").
  */
 test.describe('Quotas page', () => {
-  test('is the Quotas panel alone, whose chips count, subtract and hold open as on the dashboard', async ({
+  test('is the Quotas panel alone, whose chips count and subtract as on the dashboard', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, {
@@ -1181,7 +1191,8 @@ test.describe('Quotas page', () => {
     const summary = page.locator('[data-quotas-summary]')
     await expect(summary).toBeVisible()
     await expect(summary.getByRole('button', { name: 'New quota' })).toBeVisible()
-    // No Summary/Details switch any more, and no second view behind it.
+    // No Summary/Details switch any more, and no second view behind it. (The
+    // selection bar's Details only exists while chips are selected.)
     await expect(page.getByRole('group', { name: 'Quotas view' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveCount(0)
 
@@ -1194,7 +1205,8 @@ test.describe('Quotas page', () => {
     await expect(panel.locator('[data-track-section-toggle]')).toHaveCount(0)
     await expect(panel.locator('[data-track-heading]')).toHaveCount(0)
 
-    // Tap +1, right-click −1, hold for the bubble — nothing logged by the hold.
+    // Tap +1, right-click −1, hold-then-Details for the bubble — nothing
+    // logged by the hold.
     const chip = panel.locator(`[data-track-chip="${id}"]`)
     const count = chip.locator('[data-track-count]')
     await expect(count).toHaveAttribute('data-count', '0/3')

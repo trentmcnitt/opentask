@@ -24,10 +24,13 @@ export function useQuotaMutations({
   refresh,
   onUndo,
   onCompleted,
+  onWritten,
 }: {
   refresh: () => Promise<void>
   onUndo: () => void
   onCompleted: () => void
+  /** A save or delete went through — the Quotas page clears its selection. */
+  onWritten?: () => void
 }) {
   /** Every one of these goes through an undoable core mutation, so every one
    *  offers the Undo — the same contract `useReminders` keeps. */
@@ -65,9 +68,10 @@ export function useQuotaMutations({
         action: undoAction(),
       })
       onCompleted()
+      onWritten?.()
       await refresh()
     },
-    [refresh, undoAction, onCompleted],
+    [refresh, undoAction, onCompleted, onWritten],
   )
 
   const createQuota = useCallback(
@@ -111,13 +115,14 @@ export function useQuotaMutations({
           action: undoAction(),
         })
         onCompleted()
+        onWritten?.()
         await refresh()
       } catch (err) {
         log.error('ui', 'Deleting quotas failed:', err)
         showToast({ message: 'Could not move those to Trash', type: 'error' })
       }
     },
-    [refresh, undoAction, onCompleted],
+    [refresh, undoAction, onCompleted, onWritten],
   )
 
   return { saveQuotas, createQuota, deleteQuotas }

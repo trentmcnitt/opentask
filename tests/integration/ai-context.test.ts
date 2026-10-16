@@ -66,14 +66,14 @@ describe('AI context preferences', () => {
     expect(body.data.ai_context).toBeNull()
   })
 
-  test('PATCH with >1000 chars returns 400', async () => {
+  test('PATCH with >4000 chars returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_context: 'x'.repeat(1001) },
+      body: { ai_context: 'x'.repeat(4001) },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('1000')
+    expect(body.error).toContain('4000')
   })
 
   test('PATCH with non-string returns 400', async () => {
@@ -86,14 +86,14 @@ describe('AI context preferences', () => {
     expect(body.error).toContain('string')
   })
 
-  test('PATCH with exactly 1000 chars succeeds', async () => {
+  test('PATCH with exactly 4000 chars succeeds', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_context: 'a'.repeat(1000) },
+      body: { ai_context: 'a'.repeat(4000) },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_context).toBe('a'.repeat(1000))
+    expect(body.data.ai_context).toBe('a'.repeat(4000))
 
     // Clean up
     await apiFetch('/api/user/preferences', {

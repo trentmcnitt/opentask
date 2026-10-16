@@ -66,7 +66,7 @@ const DEFAULTS = {
   wakeTime: '07:00',
   sleepTime: '22:00',
   projects: [
-    { id: 1, name: 'Home' },
+    { id: 1, name: 'Home', description: 'House and yard: repairs, chores, bills' },
     { id: 2, name: 'Work' },
   ],
 }
@@ -100,7 +100,7 @@ interface ScenarioInput {
     morningTime?: string
     wakeTime?: string
     sleepTime?: string
-    projects?: Array<{ id: number; name: string; shared?: boolean }>
+    projects?: Array<{ id: number; name: string; shared?: boolean; description?: string | null }>
     slots?: Array<{ label: string; start_time: string }>
     defaultSlotLabel?: string
   }

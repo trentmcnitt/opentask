@@ -63,7 +63,12 @@ test.describe('Interval quotas', () => {
 
     // The chip's bubble: "0 of 1 by Oct 24 · Every 2 weeks", never "this week",
     // and the record (closed periods, whatever their length) reads as for any quota.
+    // On /quotas a hold selects the chip; its bubble is the bar's Details.
     await chip.click({ delay: 500 })
+    await page
+      .locator('[data-quota-selection-bar]')
+      .getByRole('button', { name: 'Details', exact: true })
+      .click()
     const pop = page.locator('[data-track-popover]')
     await expect(pop).toBeVisible()
     await expect(pop).toContainText(`0 of 1 ${label} · Every 2 weeks`)
