@@ -960,6 +960,21 @@ export function QuickActionPanel({
       ? `${selectedCount} tasks selected`
       : (displayTitle ?? 'Set date')
 
+  // "Originally: …" — the raw text the task was created from (usually dictated),
+  // kept in `original_title` when enrichment rewrites the title. Read-only and
+  // outside the form state, so it never makes the panel dirty. Shown only for a
+  // single saved task whose original differs from its saved title (trimmed);
+  // never in create mode, bulk mode or the selection sheet (no title there).
+  const savedOriginal = effectiveTask?.original_title?.trim() ?? ''
+  const originalTitle =
+    !isCreateMode &&
+    !isBulkMode &&
+    !isSelectionSheetMode &&
+    savedOriginal !== '' &&
+    savedOriginal !== effectiveTask?.title.trim()
+      ? savedOriginal
+      : null
+
   // Compute recurrence text for header display
   // In SelectionActionSheet (sheet mode with selectedCount), use the recurrenceSummary prop
   // In other modes, compute from displayRrule (pending or current) or selectedTasks
@@ -1179,6 +1194,14 @@ export function QuickActionPanel({
                       )
                     })()}
                   </div>
+                )}
+                {originalTitle && (
+                  <p
+                    data-quick-panel-original-title
+                    className="text-muted-foreground mt-0.5 text-xs break-words whitespace-pre-wrap select-text"
+                  >
+                    Originally: {originalTitle}
+                  </p>
                 )}
               </>
             )
