@@ -12,6 +12,7 @@
 
 import { describe, test, expect } from 'vitest'
 import { dropUnstatedPastDates, postProcessTaskDates } from '@/core/ai/enrichment'
+import { buildEnrichmentUserPrompt } from '@/core/ai/prompts'
 import type { EnrichmentResult } from '@/core/ai/types'
 
 function result(overrides: Partial<EnrichmentResult>): EnrichmentResult {
@@ -111,6 +112,21 @@ describe('left alone', () => {
   test('nulls and unparseable values pass through', () => {
     expect(guard('call the bank', {})).toEqual(result({}))
     expect(guard('call the bank', { due_at: 'not a date' }).due_at).toBe('not a date')
+  })
+})
+
+describe('the prompt names the year', () => {
+  test('"Current local time" carries it, so a model cannot assume its training year', () => {
+    const prompt = buildEnrichmentUserPrompt({
+      timezone: TZ,
+      morningTime: '09:00',
+      wakeTime: '07:00',
+      sleepTime: '22:00',
+      projects: [{ id: 1, name: 'Inbox' }],
+      taskText: 'call the dentist tomorrow morning',
+      now: NOW,
+    })
+    expect(prompt).toContain('Current local time: Fri, Oct 16, 2026, 2:07 PM')
   })
 })
 
