@@ -28,8 +28,11 @@ enum QuotaCount {
     /// quota's end as `label` ("by Oct 24", 2026-10-16), which is the word
     /// then: "week" would be wrong for a fortnight. The web's
     /// `quotaSegmentWord`.
+    ///
+    /// The label's spaces come back NO-BREAK: "by Oct 24" wraps as one word
+    /// (a prompt row in the Reminders widget drew "by" / "Oct 24" otherwise).
     static func word(period: String?, label: String? = nil) -> String? {
-        if let label { return label }
+        if let label { return label.replacingOccurrences(of: " ", with: "\u{00A0}") }
         switch period {
         case "DAILY": return "today"
         case "WEEKLY": return "week"

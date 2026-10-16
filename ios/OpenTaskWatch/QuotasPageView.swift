@@ -244,6 +244,14 @@ private struct QuotaRow: View {
 // Realistic sample quotas (`WatchPreviewData.quotas`, or local data via
 // `PreviewLocalData`) — the long titles are the point: they're what a watch-width row has to wrap
 // without eating the count.
+// Interval quotas (2026-10-16): "Every 2 weeks" in its own section, after
+// "This month"'s rows are filtered away, so the row's "by Oct 24" is on screen.
+#Preview("Quotas — interval quota") {
+    NavigationStack {
+        QuotasPageView(model: .preview(showMet: true) { $0.rrule?.contains("INTERVAL") ?? false })
+    }
+}
+
 #Preview("Quotas — met hidden") {
     NavigationStack {
         QuotasPageView(model: .preview(showMet: false))

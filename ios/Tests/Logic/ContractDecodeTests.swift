@@ -570,7 +570,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(prompt.periodEnd, Fixtures.pinnedTimestamp)
         XCTAssertEqual(prompt.periodLastDay, Fixtures.pinnedDate)
         XCTAssertEqual(prompt.periodLabel, Fixtures.pinnedPeriodLabel)
-        XCTAssertEqual(prompt.segmentWord, "by Jan 15")
+        XCTAssertEqual(prompt.segmentWord, "by\u{00A0}Jan\u{00A0}15", "unbreakable")
         XCTAssertEqual(prompt.countText, "0/1\u{00A0}by\u{00A0}Jan\u{00A0}15")
         XCTAssertEqual(prompt.spokenCount, "0 of 1 by Jan 15")
         XCTAssertEqual(prompt.compactPeriodWord, "1/15")
