@@ -1248,7 +1248,7 @@ test.describe('Quotas page', () => {
     await expect(record).toHaveAttribute('data-quota-record', 'ready')
     await expect(record.locator('[data-quota-met]')).toHaveText('Never yet')
     await expect(record.locator('[data-quota-missed]')).toHaveText('Never')
-    await expect(record.locator('[data-quota-streak]')).toHaveText('0 in a row')
+    await expect(record.locator('[data-quota-streak]')).toHaveText('None yet')
     await expect(record).toContainText('Tracking since')
 
     // Open is the editor, as a MODAL over the page.

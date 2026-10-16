@@ -299,8 +299,14 @@ function QuotaRecord({ task, state }: { task: Task; state: TrackState }) {
       <div>
         <dt className="text-muted-foreground">Streak</dt>
         <dd className="tabular-nums" data-quota-streak>
+          {/* "None yet" only when there has never been a run; after one, a
+              broken streak still says what the best was. */}
           {show(streak, (n) =>
-            longest !== null && longest > n ? `${n} in a row · best ${longest}` : `${n} in a row`,
+            longest !== null && longest > n
+              ? `${n} in a row · best ${longest}`
+              : n > 0
+                ? `${n} in a row`
+                : 'None yet',
           )}
         </dd>
       </div>
