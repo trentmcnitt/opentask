@@ -103,7 +103,11 @@ enum NotificationActionRunner {
                 return .openDashboard
             case .button(NotificationAction.completeAll):
                 let slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
-                let affected = try await api.completeSlotReminders(slotId: slotId, didKeys: [])
+                // Its prompts are only considered (no progress), but the batch
+                // carries them, so it says where it came from.
+                let affected = try await api.completeSlotReminders(
+                    slotId: slotId, didKeys: [], source: ProgressSource.forNotificationActions
+                )
                 return .slotCompleted(affected: affected)
             case .button:
                 return .ignored
@@ -196,7 +200,7 @@ protocol NotificationActionAPI {
     func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int?) async throws -> APIClient.BulkSnoozeResult
     func snoozeOverdue(until: String, includeTaskId: Int?) async throws -> APIClient.BulkSnoozeResult
     func snoozeOverdue(slot: String, includeTaskId: Int?) async throws -> APIClient.BulkSnoozeResult
-    func completeSlotReminders(slotId: Int, didKeys: Set<String>) async throws -> Int
+    func completeSlotReminders(slotId: Int, didKeys: Set<String>, source: ProgressSource?) async throws -> Int
 }
 
 /// The three sweep requirements are spelled out because `APIClient`'s own

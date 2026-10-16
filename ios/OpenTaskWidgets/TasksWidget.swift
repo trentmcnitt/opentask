@@ -943,3 +943,95 @@ private enum DayCompletePreviewData {
 }
 
 #endif
+
+// MARK: - Row corner (2026-10-16, synthetic sample data)
+//
+// Every corner state on page one (`RowCornerStrip`, the web row corner): "!!"
+// Urgent and "!" High; Medium and Low with NO mark (no tab, neutral checkbox);
+// the horizon dot on deadline tasks still on their automatic target — Days,
+// Weeks, Months, Eventually and the dashed unset — alone and beside a tab;
+// and a High task 3× over target, so the corner and the attempts fold
+// ("Mon · 3×") show together. Invented titles.
+
+private enum CornerPreviewData {
+    static var now: Date { TasksPreviewData.now }
+
+    private static func at(days: Int = 0, _ hour: Int, _ minute: Int = 0) -> String {
+        let calendar = Calendar.current
+        let base = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        return DateHelpers.formatISO(calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base) ?? base)
+    }
+
+    private static func auto(
+        _ id: Int, _ title: String, priority: Int, hour: Int, horizon: String?, deadlineDays: Int
+    ) -> TaskDTO {
+        TaskDTO(
+            id: id, projectId: 4434, title: title, priority: priority, dueAt: at(hour),
+            deadlineAt: at(days: deadlineDays, 17), horizon: horizon, targetAuto: true
+        )
+    }
+
+    static var tasks: [TaskDTO] {
+        [
+            TaskDTO(
+                id: 24_201, projectId: 6, title: "Send the signed contract back", priority: 3,
+                dueAt: at(days: -3, 8), attempts: 3, attemptsLabel: "3×"
+            ),
+            TaskDTO(id: 24_202, projectId: 6, title: "Renew the domain before it lapses", priority: 4, dueAt: at(9)),
+            TaskDTO(id: 24_203, projectId: 4434, title: "Reply to the plumber's quote", priority: 3, dueAt: at(10)),
+            TaskDTO(id: 24_204, projectId: 4434, title: "Order new printer ink", priority: 2, dueAt: at(10, 30)),
+            TaskDTO(id: 24_205, projectId: 4434, title: "Look up the library's opening hours", priority: 1, dueAt: at(11)),
+            auto(24_206, "File the dishwasher warranty claim", priority: 3, hour: 12, horizon: "days", deadlineDays: 3),
+            auto(24_207, "Book the annual eye exam", priority: 0, hour: 13, horizon: "weeks", deadlineDays: 4),
+            auto(24_208, "Pay the parking fine", priority: 4, hour: 14, horizon: "months", deadlineDays: 3),
+            auto(24_209, "Sort the photo backups into albums", priority: 2, hour: 15, horizon: "eventually", deadlineDays: 4),
+            auto(24_210, "Return the borrowed ladder", priority: 0, hour: 16, horizon: nil, deadlineDays: 3),
+        ]
+    }
+
+    static func entry() -> TasksEntry {
+        TasksEntry(
+            date: now,
+            tasks: TasksTimeline.upNextTasks(from: tasks),
+            projects: TasksPreviewData.projects,
+            scope: WidgetStore.upNextScope,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil,
+            colorProjects: TasksPreviewData.projects,
+            doneTasks: [],
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks),
+            overdueTotalCount: TaskLists.overdue(tasks, now: now).count
+        )
+    }
+}
+
+#Preview("Tasks Large — Row corner", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 0)
+    CornerPreviewData.entry()
+}
+
+#Preview("Tasks Large — Row corner page 2", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 1)
+    CornerPreviewData.entry()
+}
+
+#Preview("Tasks Medium — Row corner", as: .systemMedium) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 0)
+    CornerPreviewData.entry()
+}
+
+#Preview("Tasks Small — Row corner", as: .systemSmall) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 0)
+    CornerPreviewData.entry()
+}

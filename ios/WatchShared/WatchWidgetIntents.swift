@@ -96,7 +96,7 @@ struct ActOnPromptCardIntent: AppIntent {
 
         do {
             let result = did
-                ? try await APIClient.shared.didPrompts(keys: [promptKey])
+                ? try await APIClient.shared.didPrompts(keys: [promptKey], source: .watch)
                 : try await APIClient.shared.considerPrompts(keys: [promptKey])
             WatchCache.markPromptHandled(key: promptKey, did: did)
             // The quotas the server returned, into the cached task list the

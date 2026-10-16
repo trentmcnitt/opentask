@@ -292,8 +292,14 @@ final class APIClient {
     /// server's two accepted shapes. `ids` may be empty when `prompts` is
     /// not. A key from another day refuses the whole batch (400), so a
     /// caller holding a payload from before midnight must re-fetch.
+    ///
+    /// `source` (2026-10-16, `ProgressSource`) is sent only with prompts —
+    /// a did-it is the batch's only progress; a reminders-only batch logs
+    /// none, so it stays as it was.
     @discardableResult
-    func completeTasks(ids: [Int], prompts: [PromptCommit]) async throws -> BulkCompleteResult {
+    func completeTasks(
+        ids: [Int], prompts: [PromptCommit], source: ProgressSource? = nil
+    ) async throws -> BulkCompleteResult {
         guard !ids.isEmpty || !prompts.isEmpty else {
             return BulkCompleteResult(tasksAffected: 0, promptsConsidered: 0, promptsDid: 0)
         }
@@ -302,6 +308,7 @@ final class APIClient {
             body["prompts"] = prompts.map { commit -> Any in
                 commit.did ? ["key": commit.key, "did": true] as [String: Any] : commit.key
             }
+            body = ProgressSource.adding(source, to: body)
         }
         let data = try await post(path: "/api/tasks/bulk/complete", body: body)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -360,8 +367,8 @@ final class APIClient {
     /// other quota +1 unless that key was already done today), so a retried
     /// request logs once.
     @discardableResult
-    func didPrompts(keys: [String]) async throws -> PromptActionResult {
-        try await promptAction(path: "/api/quota-prompts/did", keys: keys)
+    func didPrompts(keys: [String], source: ProgressSource? = nil) async throws -> PromptActionResult {
+        try await promptAction(path: "/api/quota-prompts/did", keys: keys, source: source)
     }
 
     /// What `POST /api/quota-prompts/restore` answers (2026-09-25): how many
@@ -394,16 +401,21 @@ final class APIClient {
     /// did-it's progress comes off — exactly what it added. One transaction,
     /// one undo entry. Never `/undone`, which a quota refuses.
     @discardableResult
-    func restorePrompts(keys: [String]) async throws -> PromptRestoreResult {
+    func restorePrompts(keys: [String], source: ProgressSource? = nil) async throws -> PromptRestoreResult {
         guard !keys.isEmpty else { return PromptRestoreResult(restored: 0, tasks: []) }
-        let data = try await post(path: "/api/quota-prompts/restore", body: ["keys": keys])
+        let data = try await post(
+            path: "/api/quota-prompts/restore", body: ProgressSource.adding(source, to: ["keys": keys])
+        )
         return (try? JSONDecoder().decode(APIEnvelope<PromptRestoreResult>.self, from: data).data)
             ?? PromptRestoreResult(restored: 0, tasks: [], decoded: false)
     }
 
-    private func promptAction(path: String, keys: [String]) async throws -> PromptActionResult {
+    /// `source` only on did-it: a consider logs no progress, so it sends none.
+    private func promptAction(
+        path: String, keys: [String], source: ProgressSource? = nil
+    ) async throws -> PromptActionResult {
         guard !keys.isEmpty else { return PromptActionResult(considered: 0, did: 0, tasks: []) }
-        let data = try await post(path: path, body: ["keys": keys])
+        let data = try await post(path: path, body: ProgressSource.adding(source, to: ["keys": keys]))
         // A body that doesn't decode after a 2xx still means the server
         // acted: report success with no tasks, and let the caller re-fetch.
         return (try? JSONDecoder().decode(APIEnvelope<PromptActionResult>.self, from: data).data)
@@ -558,13 +570,16 @@ final class APIClient {
     /// waiting prompt is considered. Empty from the lock-screen action paths,
     /// which have no staging.
     @discardableResult
-    func completeSlotReminders(slotId: Int, didKeys: Set<String> = []) async throws -> Int {
+    func completeSlotReminders(
+        slotId: Int, didKeys: Set<String> = [], source: ProgressSource? = nil
+    ) async throws -> Int {
         guard let group = try await fetchSlotGroup(slotId: slotId) else { return 0 }
         return try await completeTasks(
             ids: group.reminders.map(\.id),
             prompts: group.waitingPrompts.map {
                 PromptCommit(key: $0.promptKey, did: didKeys.contains($0.promptKey))
-            }
+            },
+            source: source
         ).total
     }
 
@@ -584,8 +599,12 @@ final class APIClient {
     /// never surface as a thrown error the caller would read as "the log
     /// failed" and revert.
     @discardableResult
-    func logProgress(taskId: Int, delta: Int = 1) async throws -> TaskDTO? {
-        let data = try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
+    ///
+    /// `source`: where it was logged from (`ProgressSource`); nil → `api`.
+    func logProgress(taskId: Int, delta: Int = 1, source: ProgressSource? = nil) async throws -> TaskDTO? {
+        let data = try await post(
+            path: "/api/tasks/\(taskId)/progress", body: ProgressSource.adding(source, to: ["delta": delta])
+        )
         return try? JSONDecoder().decode(APIEnvelope<TaskDTO>.self, from: data).data
     }
 

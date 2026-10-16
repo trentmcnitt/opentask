@@ -2037,8 +2037,11 @@ private struct SegmentTaskRow: View {
                     targetTodayButton
                 }
 
+                // Both markers take the priority colour for High/Urgent only
+                // (`WidgetTheme.rowMarkColor`, 2026-10-16): a Medium row's
+                // yellow read as a priority mark, which the rule gives none.
                 Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
-                    marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.priorityColor(task.priority))
+                    marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.rowMarkColor(task.priority))
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, -markerBleed)
@@ -2049,7 +2052,7 @@ private struct SegmentTaskRow: View {
                         .accessibilityLabel(Text("Considered today: \(spoken)"))
                 } else {
                     Button(intent: ConsiderSegmentTaskIntent(taskId: task.id)) {
-                        marker(Image(systemName: "circle"), color: WidgetTheme.priorityColor(task.priority))
+                        marker(Image(systemName: "circle"), color: WidgetTheme.rowMarkColor(task.priority))
                     }
                     .buttonStyle(.plain)
                     .padding(.vertical, -markerBleed)

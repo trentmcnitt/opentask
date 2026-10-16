@@ -705,7 +705,7 @@ struct RestorePromptIntent: AppIntent {
         await reloadTappedWidget(kind: RemindersWidget.kind)
 
         do {
-            let result = try await APIClient.shared.restorePrompts(keys: [promptKey])
+            let result = try await APIClient.shared.restorePrompts(keys: [promptKey], source: .widget)
             WidgetStore.confirmTasks(result.tasks)
             WidgetStore.confirmPromptRestore(promptKey, tasks: result.tasks)
             if !result.decoded {

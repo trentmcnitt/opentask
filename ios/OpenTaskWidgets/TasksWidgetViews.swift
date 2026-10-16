@@ -490,9 +490,10 @@ private struct TasksListView: View {
     ///
     /// An open task's title column is the card minus the trailing control
     /// (mode-dependent — see `TaskRow.trailingControlWidth`) and its 10pt
-    /// gap, minus the project edge (3pt + 8pt gap) where shown, minus the
-    /// due label's own width + 8pt. The due label is `fixedSize` in the row,
-    /// so it really does take exactly that width — on Trent's phone it used
+    /// gap, minus the due label's own width + 8pt, minus the corner strip
+    /// (horizon dot, priority tab — `RowCornerStrip.width(for:)`, exactly
+    /// what it draws) + 8pt where it shows. The due label is `fixedSize` in
+    /// the row, so it really does take exactly that width — on Trent's phone it used
     /// to WRAP on its own ("Tomorrow / 4:00 pm"), handing its width back to
     /// a title whose line count had been measured without it, and the row
     /// reserved three lines for a two-line title. Snooze and select mode
@@ -514,7 +515,8 @@ private struct TasksListView: View {
             // disagree.
             let stackedDueHeight = ceil(2 * metrics.caption2LineHeight)
             var column = width - TaskRow.trailingControlWidth(for: mode) - 10
-            if isLarge, entry.isUnifiedScope { column -= 3 + 8 }
+            let corner = RowCornerStrip.width(for: task)
+            if corner > 0 { column -= corner + 8 }
             // The attempts count (" · 3×", and the past-deadline flag) rides
             // on the due label's FIRST line (`AttemptsInTime`), so it widens
             // only that line — by exactly what it draws.
@@ -609,12 +611,8 @@ private struct TasksListView: View {
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes),
                 dueStacked: layout.dueStacked,
                 markerBleed: mode.isNormal ? markerBleed : 0,
-                // Priority, never the project (2026-10-11): see
-                // `TaskRow.markColor`.
-                markColor: WidgetTheme.priorityColor(task.priority),
-                // Edge stripe: systemLarge, unified pages only — see
-                // `TaskRow.showsProjectEdge`.
-                showsProjectEdge: isLarge && entry.isUnifiedScope,
+                // High/Urgent only (2026-10-16): see `TaskRow.markColor`.
+                markColor: WidgetTheme.rowMarkColor(task.priority),
                 mode: modeForRow(task.id, base: mode, selected: picks)
             )
         case .divider(let count):
@@ -1017,7 +1015,8 @@ private struct UpNextList: View {
                 Link(destination: WidgetLink.task(task.id)) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Circle()
-                            .fill(WidgetTheme.priorityColor(task.priority).opacity(0.7))
+                            // Orange/red for High/Urgent only (`RowCorner`).
+                            .fill(WidgetTheme.rowMarkColor(task.priority).opacity(0.7))
                             .frame(width: 6, height: 6)
                             .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 1 }
                         Text(task.title)
@@ -1066,10 +1065,12 @@ private enum TaskRowMode {
 /// 2026-09-23: the check-off moved from a leading priority-colored DOT to a
 /// trailing PROJECT-colored SQUARE — see `ReminderRow`'s doc for why moving
 /// the control to the trailing edge needs no overlap handling (plain `HStack`
-/// siblings). Priority is no longer drawn here at all: it already reads
-/// through the title's font weight (`WidgetTheme.priorityWeight`), and the
-/// square's color says which project a row belongs to — which matters most on
-/// the unified "Up next" scope, where rows from every project share one list.
+/// siblings). Priority reads through the title's font weight
+/// (`WidgetTheme.priorityWeight`) and, since 2026-10-16, the corner strip on
+/// the first line (`RowCornerStrip`: "!" High, "!!" Urgent, nothing for
+/// Medium/Low/None, plus the horizon dot where it applies — the web row
+/// corner). The square's outline is orange/red for High/Urgent, else neutral
+/// (`markColor`).
 ///
 /// DUMB ABOUT ITS OWN SIZE (2026-09-24) — `lines`/`height` come from
 /// `TasksListView.layout(for:)`, the same numbers the pager added up; see
@@ -1102,24 +1103,21 @@ private struct TaskRow: View {
     /// mode's controls are already finger-sized on their own (a 32pt circle,
     /// a full pill), and select mode's whole row is the target.
     let markerBleed: CGFloat
-    /// The row's mark color — its edge stripe and checkbox outline. Its
-    /// PRIORITY color since 2026-10-11 (`WidgetTheme.priorityColor`: red
-    /// Urgent, orange High, yellow Medium, neutral Low/None), the reminder
-    /// circle's rule. It was the task's project color, which put green and
-    /// magenta stripes on the Today/Up next pages that read as states
-    /// ("Tasks widget: stripes use priority colors only").
-    var markColor: Color = WidgetTheme.priorityColor(0)
-    /// The project identity mark on the unified Today/Up next pages
-    /// (2026-09-23, item 5 — Trent: "Up Next and Today should both have some
-    /// indication... that shows what project they're from").
+    /// The checkbox outline's color: orange High, red Urgent, neutral for
+    /// everything else (`WidgetTheme.rowMarkColor`, 2026-10-16 — Trent's rule
+    /// that Medium and Low get no priority mark). It was the PRIORITY color
+    /// for every priority from 2026-10-11 (yellow Medium included), and the
+    /// project color before that.
     ///
-    /// SHOWN AS A COLORED EDGE, NOT A NAME (Trent, 2026-09-23, option B of
-    /// three rendered for him). The first version printed the project's name
-    /// beside the due time, in a fixed-width column reserved on every row —
-    /// which halved every title's width and wrapped them after three words.
-    /// A 3pt bar in the project's color costs 11pt, and the checkbox already
-    /// carries the same color.
-    var showsProjectEdge = false
+    /// THE EDGE STRIPE IS GONE (2026-10-16). `systemLarge`'s unified pages
+    /// drew a 3pt bar in this color left of the title (first the project's
+    /// color, Trent's option B of 2026-09-23; priority colors from 10-11).
+    /// The corner strip (`RowCornerStrip`: the web row corner's "!"/"!!"
+    /// tab and horizon dot) now carries priority on every family and page,
+    /// so a High/Urgent stripe beside it would say the same thing twice, and
+    /// a stripe for Medium/Low is exactly what the rule removes. The 11pt it
+    /// cost goes back to the title.
+    var markColor: Color = WidgetTheme.priorityColor(0)
     var mode: TaskRowMode = .normal
 
     /// The trailing column's width per mode (2026-09-23, Phase 2, PR review
@@ -1153,20 +1151,25 @@ private struct TaskRow: View {
         // when the title wraps. The due time sits at the END of this HStack —
         // "just left of the checkbox" (Trent, 2026-09-23).
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if showsProjectEdge {
-                Capsule()
-                    .fill(markColor)
-                    .frame(width: 3, height: max(height - 2, 10))
-                    // Its bottom sits on the title's first baseline
-                    // otherwise; this lines its top up with the text.
-                    .alignmentGuide(.firstTextBaseline) { $0[.top] + firstLineHeight * 0.75 }
-            }
             WidgetTheme.titleText(Text(task.title), notesGlyphSize: notesGlyphSize)
                 .font(.subheadline)
                 .fontWeight(WidgetTheme.priorityWeight(task.priority))
                 .foregroundStyle(.primary)
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                 .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
+
+            // The CORNER (2026-10-16, the web row's corner): horizon dot ·
+            // "!"/"!!" — High and Urgent only, the dot only where the horizon
+            // decides something (`RowCorner`). On the title's first line, just
+            // before the due label, so the due time still sits by the
+            // checkbox. `layout(for:)` subtracts exactly its width.
+            let corner = RowCornerStrip(task: task)
+            if !corner.isEmpty {
+                corner
+                    // Its middle on the first line's x-height, where the
+                    // title's lowercase letters sit.
+                    .alignmentGuide(.firstTextBaseline) { d in d.height / 2 + firstLineHeight * 0.22 }
+            }
 
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow

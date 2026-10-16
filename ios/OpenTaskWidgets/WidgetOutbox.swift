@@ -300,7 +300,9 @@ actor WidgetOutboxDrainer {
         guard WidgetStore.beginSendingOutboxEntry(entry.id, now: clock()) != nil else { return true }
         do {
             let result = did
-                ? try await transport.didPrompts(keys: [key])
+                // Every outbox entry is a widget tap (it drains only in the
+                // widget extension), so it says `widget` (`ProgressSource`).
+                ? try await transport.didPrompts(keys: [key], source: .widget)
                 : try await transport.considerPrompts(keys: [key])
             // The server's truth into BOTH caches, so the next tap repaints
             // from cache at once: the quotas into Tasks/Quotas, and the
@@ -348,7 +350,7 @@ actor WidgetOutboxDrainer {
         }
         guard WidgetStore.beginSendingOutboxEntry(entry.id, now: clock()) != nil else { return true }
         do {
-            if let confirmed = try await transport.logProgress(taskId: taskId, delta: delta) {
+            if let confirmed = try await transport.logProgress(taskId: taskId, delta: delta, source: .widget) {
                 // The server's count into the cache in the same lock hold that
                 // retires the delta (WidgetStore.confirmProgress's doc).
                 WidgetStore.confirmProgress(confirmed, delta: delta)
@@ -494,8 +496,8 @@ enum OutboxFailure: Equatable, CustomStringConvertible {
 protocol WidgetOutboxTransport: AnyObject {
     func markDone(taskId: Int) async throws
     func considerPrompts(keys: [String]) async throws -> APIClient.PromptActionResult
-    func didPrompts(keys: [String]) async throws -> APIClient.PromptActionResult
-    func logProgress(taskId: Int, delta: Int) async throws -> TaskDTO?
+    func didPrompts(keys: [String], source: ProgressSource?) async throws -> APIClient.PromptActionResult
+    func logProgress(taskId: Int, delta: Int, source: ProgressSource?) async throws -> TaskDTO?
     /// `POST /api/task-segments/consider`; returns how many were considered.
     @discardableResult
     func considerSegmentTasks(ids: [Int]) async throws -> Int

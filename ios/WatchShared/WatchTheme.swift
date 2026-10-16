@@ -80,9 +80,10 @@ enum WatchTheme {
         return projectColor(name)
     }
 
-    /// Mirrors `PRIORITY_OPTIONS` in `src/lib/priority.ts`. The watch has no
-    /// room for a priority glyph, so this only ever drives font weight — "priority
-    /// is prominence, not interruption" applies here even more than on the phone.
+    /// Mirrors `PRIORITY_OPTIONS` in `src/lib/priority.ts`: the title's weight.
+    /// Since 2026-10-16 a Tasks page row also wears the corner strip's
+    /// "!"/"!!" for High/Urgent (`RowCornerStrip`); Reminders rows stay
+    /// weight-only — "priority is prominence, not interruption".
     static func priorityWeight(_ priority: Int) -> Font.Weight {
         priority >= 3 ? .semibold : .regular
     }
