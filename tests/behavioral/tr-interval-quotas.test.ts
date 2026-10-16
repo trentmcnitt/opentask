@@ -21,7 +21,18 @@ import { incrementProgress } from '@/core/tasks/progress'
 import { getQuotaPromptsBySlot } from '@/core/tasks/quota-prompts'
 import { executeRedo, executeUndo } from '@/core/undo'
 import { QUOTA_INTERVAL_MESSAGE } from '@/core/validation'
-import { quotaIntervalAllowed, quotaPeriodFields, quotaRule, quotaWindow } from '@/lib/track'
+import {
+  groupByPeriod,
+  intervalPeriodName,
+  quotaIntervalAllowed,
+  quotaPeriodFields,
+  quotaRule,
+  quotaWindow,
+  taskPeriodLabel,
+  trackSections,
+} from '@/lib/track'
+import { quotaCountAriaLabel, quotaSegmentWord } from '@/lib/quota-segments'
+import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 /** A local wall-clock instant in Chicago. */
@@ -369,5 +380,76 @@ describe('The INTERVAL cap', () => {
       input: { title: 'Rotate the mattress', rrule: 'FREQ=DAILY;INTERVAL=45' },
     })
     expect(t.rrule).toContain('INTERVAL=45')
+  })
+})
+
+describe('The web helpers: grouping, sections and words key on (FREQ, INTERVAL)', () => {
+  const q = (rrule: string, label: string | null = null, current = 0, target = 1) =>
+    ({
+      title: rrule,
+      rrule,
+      progress_current: current,
+      progress_target: target,
+      period_label: label,
+    }) as Task
+
+  test('TR-120: each interval gets its own group, after its unit, shortest first', () => {
+    const groups = groupByPeriod([
+      q('FREQ=MONTHLY'),
+      q('FREQ=WEEKLY;INTERVAL=3'),
+      q('FREQ=WEEKLY'),
+      q('FREQ=WEEKLY;INTERVAL=2'),
+      q('FREQ=DAILY;INTERVAL=2'),
+    ])
+    expect(groups.map((g) => g.key)).toEqual([
+      'DAILY/2',
+      'WEEKLY',
+      'WEEKLY/2',
+      'WEEKLY/3',
+      'MONTHLY',
+    ])
+    expect(groups.map((g) => g.period)).toEqual([
+      'every 2 days',
+      'this week',
+      'every 2 weeks',
+      'every 3 weeks',
+      'this month',
+    ])
+  })
+
+  test('TR-121: an interval section has a bar and a count but no clock', () => {
+    const [week, fortnight] = trackSections(
+      [q('FREQ=WEEKLY', null, 1, 2), q('FREQ=WEEKLY;INTERVAL=2', 'by Oct 24', 1, 1)],
+      TEST_TIMEZONE,
+      at('2026-10-13'),
+    )
+    expect(week.timeLeft).not.toBeNull()
+    expect(week.elapsedFraction).not.toBeNull()
+    expect(fortnight).toMatchObject({
+      key: 'WEEKLY/2',
+      freq: 'WEEKLY',
+      interval: 2,
+      heading: 'every 2 weeks',
+      timeLeft: null,
+      elapsedFraction: null,
+      barAriaLabel: '100% done',
+      allMet: true,
+    })
+  })
+
+  test("TR-122: one quota's words — the served label above interval 1, its FREQ's at 1", () => {
+    expect(taskPeriodLabel(q('FREQ=WEEKLY'))).toBe('this week')
+    expect(taskPeriodLabel(q('FREQ=WEEKLY;INTERVAL=2', 'by Oct 24'))).toBe('by Oct 24')
+    // No served label (a row built by hand): the period's name, never "this week".
+    expect(taskPeriodLabel(q('FREQ=WEEKLY;INTERVAL=2'))).toBe('every 2 weeks')
+    expect(intervalPeriodName('DAILY', 3)).toBe('every 3 days')
+    expect(intervalPeriodName('MONTHLY', 1)).toBe('this month')
+  })
+
+  test("TR-123: the segments' word and accessible name take the served label", () => {
+    expect(quotaSegmentWord('WEEKLY')).toBe('week')
+    expect(quotaSegmentWord('WEEKLY', 'by Oct 24')).toBe('by Oct 24')
+    expect(quotaCountAriaLabel(1, 2, 'WEEKLY', 'by Oct 24')).toBe('1 of 2 by Oct 24')
+    expect(quotaCountAriaLabel(1, 2, 'WEEKLY')).toBe('1 of 2 this week')
   })
 })

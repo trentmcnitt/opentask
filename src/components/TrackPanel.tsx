@@ -973,7 +973,9 @@ function PeriodFoldButton({
  * A period section's heading — period first, bold and full-strength ink so it
  * outranks the muted label headings beneath it (`mock4`: "TODAY" reads darker
  * than "HEALTH"). One line: the period name · a muted "N days
- * left" (omitted for Today, which already says it, and for the no-period section, which has no clock) · a bar that
+ * left" (omitted for Today, which already says it, and for the no-period and
+ * interval sections — "every 2 weeks", whose quotas each end on their own day
+ * and say so on their chips — which have no shared clock) · a bar that
  * flexes to fill whatever room is left · "**M** of N" quotas met.
  *
  * Not a button — nothing here folds. Only the label clusters inside a section
@@ -1531,7 +1533,10 @@ function TrackChip({
               don't fit the line), so it obeys the same fit rule as a prompt
               row's. No period word: the section this chip sits in already
               says the period (`PeriodHeading`); the button's `aria-label`
-              spells it out for a screen reader. */}
+              spells it out for a screen reader. EXCEPT an interval quota
+              (2026-10-16): its section ("every 2 weeks") has no shared clock,
+              so the chip says its own end, the server's `period_label`
+              ("▰▱ by Oct 24") — null at interval 1, so no word there. */}
           <span className="relative min-w-0 break-words">
             {task.title}
             <QuotaSegments
@@ -1539,7 +1544,8 @@ function TrackChip({
               current={state.current}
               target={state.target}
               freq={quotaFreqOf(task.rrule)}
-              showWord={false}
+              showWord={task.period_label != null}
+              periodLabel={task.period_label}
               emphasizeCurrent
               textClassName="text-xs"
               lineEnd={chipLineEnd}

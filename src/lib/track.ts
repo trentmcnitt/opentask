@@ -315,6 +315,10 @@ export function effectiveProgress(
  * rrule's FREQ, which the §9 migration rewrote to the bare period
  * ("FREQ=WEEKLY" for "2x/week"). No rrule means no period: the count simply
  * accumulates until the task is completed.
+ *
+ * FREQ only — an interval quota reads as its unit ("this week" for a
+ * fortnight). Anything that names a SPECIFIC quota's period reads
+ * `taskPeriodLabel` instead, which says "by Oct 24" for it.
  */
 export function periodLabel(rrule: string | null | undefined): string | null {
   return freqLabel(quotaFreqOf(rrule))
@@ -327,6 +331,42 @@ export function periodLabel(rrule: string | null | undefined): string | null {
  */
 export function freqLabel(freq: string | null | undefined): string | null {
   return QUOTA_PERIODS.find((p) => p.freq === freq)?.label ?? null
+}
+
+/**
+ * "every 2 weeks", "every 3 days" — an interval quota's period as a name, the
+ * heading of its Track section and the fallback when no served label is at
+ * hand. Interval 1 is the FREQ's own label ("this week").
+ */
+export function intervalPeriodName(freq: QuotaFreq, interval: number): string {
+  if (interval <= 1) return freqLabel(freq) as string
+  const word = QUOTA_PERIODS.find((p) => p.freq === freq)!.word
+  return `every ${interval} ${freq === 'DAILY' ? 'day' : word}s`
+}
+
+/**
+ * ONE quota's period, as words — what a row, a chip's accessible name or a
+ * popover says after its count. Interval quotas (2026-10-16): the server's
+ * served label ("by Oct 24", `period_label`) wins, so the date is never
+ * re-derived here; a row without it (built by hand, or from a server that
+ * predates it) says "every 2 weeks". Interval 1 keeps "this week" / "today".
+ */
+export function taskPeriodLabel(task: Pick<Task, 'rrule' | 'period_label'>): string | null {
+  const period = quotaPeriodOf(task.rrule)
+  if (!period) return null
+  if (period.interval <= 1) return freqLabel(period.freq)
+  return task.period_label ?? intervalPeriodName(period.freq, period.interval)
+}
+
+/**
+ * The key a quota's period groups by — its FREQ, and its INTERVAL above 1
+ * ("WEEKLY", "WEEKLY/2"). Grouping by the label string would file a fortnight
+ * under "this week", whose clock it does not share. `'NONE'` = no period.
+ */
+export function quotaPeriodKey(rrule: string | null | undefined): string {
+  const period = quotaPeriodOf(rrule)
+  if (!period) return 'NONE'
+  return period.interval > 1 ? `${period.freq}/${period.interval}` : period.freq
 }
 
 /** "this week" → "week", for the period tag on a Quotas page row. */
@@ -388,17 +428,48 @@ export function trackSummary(
  * to the table cannot be silently dropped from the grouping — and the
  * period-less bucket is last and explicit, because a quota with no rule is a
  * real state rather than an oversight.
+ *
+ * INTERVAL QUOTAS (2026-10-16) get a group of their own per (FREQ, INTERVAL)
+ * — keyed by `quotaPeriodKey`, never by the label string — right after their
+ * unit's interval-1 group, shortest first: "this week", "every 2 weeks",
+ * "every 3 weeks", "this month"… A fortnight does not run on this week's
+ * clock, so it cannot share that section's notch and "N days left".
  */
-export function groupByPeriod(
-  quotas: Pick<Task, 'rrule'>[],
-): { period: string | null; tasks: Task[] }[] {
-  const order: (string | null)[] = [...QUOTA_PERIODS.map((p) => p.label), null]
-  const by = new Map<string | null, Task[]>()
+export function groupByPeriod(quotas: Pick<Task, 'rrule'>[]): {
+  /** The group's key (`quotaPeriodKey`): "WEEKLY", "WEEKLY/2", "NONE". */
+  key: string
+  freq: QuotaFreq | null
+  interval: number
+  /** As the user would say it: "this week", "every 2 weeks" — null for no period. */
+  period: string | null
+  tasks: Task[]
+}[] {
+  const by = new Map<string, Task[]>()
   for (const t of quotas as Task[]) {
-    const p = periodLabel(t.rrule)
-    by.set(p, [...(by.get(p) ?? []), t])
+    const key = quotaPeriodKey(t.rrule)
+    by.set(key, [...(by.get(key) ?? []), t])
   }
-  return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
+  const rank = (key: string): [number, number] => {
+    if (key === 'NONE') return [QUOTA_PERIODS.length, 0]
+    const [freq, n] = key.split('/')
+    return [QUOTA_PERIODS.findIndex((p) => p.freq === freq), n ? Number(n) : 1]
+  }
+  return [...by.keys()]
+    .sort((a, b) => {
+      const [fa, ia] = rank(a)
+      const [fb, ib] = rank(b)
+      return fa - fb || ia - ib
+    })
+    .map((key) => {
+      const period = quotaPeriodOf(by.get(key)![0].rrule)
+      return {
+        key,
+        freq: period?.freq ?? null,
+        interval: period?.interval ?? 1,
+        period: period ? intervalPeriodName(period.freq, period.interval) : null,
+        tasks: by.get(key)!,
+      }
+    })
 }
 
 /**
@@ -709,18 +780,27 @@ export const TRACK_NOTCH_CLASS = 'bg-black/14 dark:bg-white/14'
  * period-first redesign this exists for.
  */
 export interface TrackSection {
-  /** The FREQ, or `'NONE'` for the period-less bucket — the section's DOM/order key. */
-  key: QuotaFreq | 'NONE'
+  /**
+   * The section's DOM/order key (`quotaPeriodKey`): the FREQ ("WEEKLY"), the
+   * FREQ and INTERVAL of an interval section ("WEEKLY/2"), or `'NONE'`.
+   */
+  key: string
   freq: QuotaFreq | null
-  /** As `periodLabel` would say it — 'today' … 'this year' — or 'no period'. */
+  /** The section's INTERVAL — 1 for an ordinary period. */
+  interval: number
+  /** As `periodLabel` would say it — 'today' … 'this year' — 'every 2 weeks', or 'no period'. */
   heading: string
-  /** "ends tonight" / "N days left" — null for the no-period section, which has no clock. */
+  /**
+   * "N days left" — null for the no-period section and for an INTERVAL
+   * section, which has no shared clock (each of its quotas carries its own
+   * end, `period_label`, on its chip).
+   */
   timeLeft: string | null
-  /** 0..1, where the notch sits — null for the no-period section (no notch). */
+  /** 0..1, where the notch sits — null for the no-period and interval sections (no notch). */
   elapsedFraction: number | null
   /** sum(min(current,target)) / sum(target) over the section's quotas — partial credit, capped per quota. */
   barFraction: number
-  /** The bar's accessible description: "67% done, 43% of the week gone" — no elapsed clause with no period. */
+  /** The bar's accessible description: "67% done, 43% of the week gone" — no elapsed clause with no clock. */
   barAriaLabel: string
   /** Quotas met vs. total in this section — a count of quotas, not a sum of targets. */
   summary: { count: number; met: number }
@@ -737,6 +817,11 @@ export interface TrackSection {
  * The panel resolves each section's label clusters separately, with
  * `trackStream(section.tasks, labelConfig)` — see that function's comment for
  * why a cluster is scoped to one section rather than spanning periods.
+ *
+ * An interval section ("every 2 weeks", 2026-10-16 — the design doc's option
+ * (a)) has a bar and a met count like any other, but NO clock: two fortnights
+ * made in adjacent weeks end on different days, so one notch and one "N days
+ * left" would be wrong for one of them. Its chips say their own end instead.
  */
 export function trackSections(
   quotas: Task[],
@@ -744,21 +829,21 @@ export function trackSections(
   now: Date = new Date(),
   weekStart: WeekStart = WEEK_START_DEFAULT,
 ): TrackSection[] {
-  return groupByPeriod(quotas).map(({ period, tasks }) => {
-    const freq =
-      period === null ? null : (QUOTA_PERIODS.find((p) => p.label === period)?.freq ?? null)
+  return groupByPeriod(quotas).map(({ key, freq, interval, period, tasks }) => {
     const summary = quotaGroupSummary(tasks)
     const { done, total } = trackSummary(tasks)
     const barFraction = total === 0 ? 0 : done / total
-    const elapsedFraction = freq ? periodElapsedFraction(freq, timezone, now, weekStart) : null
+    const clock = freq !== null && interval === 1 ? freq : null
+    const elapsedFraction = clock ? periodElapsedFraction(clock, timezone, now, weekStart) : null
     const fillPct = Math.round(barFraction * 100)
     const elapsedPct = elapsedFraction === null ? null : Math.round(elapsedFraction * 100)
-    const noun = freq ? QUOTA_PERIODS.find((p) => p.freq === freq)?.noun : null
+    const noun = clock ? QUOTA_PERIODS.find((p) => p.freq === clock)?.noun : null
     return {
-      key: freq ?? 'NONE',
+      key,
       freq,
+      interval,
       heading: period ?? 'no period',
-      timeLeft: freq ? periodTimeLeftText(freq, timezone, now, weekStart) : null,
+      timeLeft: clock ? periodTimeLeftText(clock, timezone, now, weekStart) : null,
       elapsedFraction,
       barFraction,
       barAriaLabel:

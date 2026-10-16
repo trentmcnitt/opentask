@@ -11,7 +11,7 @@ import {
   resolvePromptSlot,
 } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
-import type { QuotaFreq } from '@/lib/track'
+import { quotaPeriodOf, type QuotaFreq } from '@/lib/track'
 import type { QuotaPromptConfig, Task } from '@/types'
 
 /**
@@ -74,6 +74,8 @@ export function useBulkPromptDraft(
   tasks: Task[],
   period: QuotaFreq | null,
   periodTouched: boolean,
+  /** The editor's "every N" draft (2026-10-16): only interval 1 counts as daily. */
+  interval: number | null = 1,
 ): BulkPromptDraft {
   const { slots, userDefault } = usePromptSetup()
   const base = useMemo(
@@ -94,7 +96,10 @@ export function useBulkPromptDraft(
     config.numbers = {}
   }
 
-  const daily = (t: Task) => (periodTouched ? period === 'DAILY' : isDailyQuota(t))
+  const daily = (t: Task) =>
+    periodTouched
+      ? period === 'DAILY' && (interval ?? quotaPeriodOf(t.rrule)?.interval ?? 1) === 1
+      : isDailyQuota(t)
   return {
     config,
     touched: enabledTouched || slotTouched,
