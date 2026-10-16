@@ -13,7 +13,6 @@ import {
   trackStream,
   trackStripeClass,
   quotaFreqOf,
-  TRACK_NOTCH_CLASS,
   type TrackSection,
   type TrackStreamItem,
 } from '@/lib/track'
@@ -36,6 +35,7 @@ import {
 } from '@/hooks/useResponsiveFold'
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
 import { QuotaSegments } from '@/components/QuotaSegments'
+import { SlotHairline } from '@/components/reminders/ReminderSlotGroup'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
@@ -119,8 +119,8 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   omitted, both `groupByPeriod`'s doing (`@/lib/track`).
  * - EACH SECTION'S HEADING IS ONE LINE (`PeriodHeading`): the period name,
  *   bold and full-strength — not muted, unlike a label's — so it outranks the
- *   clusters under it; a muted "N days left" (nothing for Today); an inline bar
- *   that flexes to fill whatever room is left; "**M** of N" quotas met. A
+ *   clusters under it; a muted "· N days left" (nothing for Today); "**M** of
+ *   N" quotas met at the right; and the bar UNDER the row (`PeriodBar`). A
  *   THIN DIVIDER (a top border) sits between sections, never before the first.
  * - THE BAR IS HONEST NOW BECAUSE A SECTION SHARES ONE CLOCK. The 09-09 design
  *   dropped the summed bar because a label group mixes days, weeks and months
@@ -129,14 +129,17 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   `sum(min(current,target)) / sum(target)` (partial credit, capped per
  *   quota — `trackSummary`) is a real number again. Indigo while short of the
  *   target, green when every quota in the section is met.
- * - THE NOTCH marks how much of the period has already run — a 2px line
- *   inside the bar, clipped by its `overflow-hidden`, never sticking out. ONE
- *   flat, faint tone at every fraction, on the fill or off it (Trent,
- *   2026-09-23: it must not switch shade by what it sits over) — see
- *   `TRACK_NOTCH_CLASS`, tuned in that one place. No notch on the no-period
- *   section: there is no clock to mark. The bar carries its own accessible
- *   description (`aria-valuetext`, e.g. "67% done, 43% of the week gone") —
- *   the notch itself is decorative and `aria-hidden`.
+ * - THE BAR IS THE REMINDERS PERIOD GROUP'S HAIRLINE (2026-10-16,
+ *   `SlotHairline`). Trent: "What's up with that hideous today bar? … we have
+ *   nice-looking bars and progress elsewhere, like on the reminders screen",
+ *   then "Why do the quotas have their bar fat and on the same line as the
+ *   heading, whereas the ones for the reminders have them casually underneath
+ *   the heading?" It was a 5px in-row track with a 2px elapsed-time notch; it
+ *   is now the 4px hairline under each Reminders period heading, the same
+ *   element, under the heading row and the width of the card. THE NOTCH WENT
+ *   WITH IT: "N days left" already says how much of the period is left, and
+ *   the bar's `aria-valuetext` still says it for a screen reader ("67% done,
+ *   43% of the week gone"), from the same `elapsedFraction`.
  * - THE PERIOD SUFFIX IS GONE FROM THE CHIP ("0/2·wk" → "0/2"). The section it
  *   sits in already says the period; repeating it on every chip was the
  *   afterthought that started this redesign. The chip's `aria-label` still
@@ -172,9 +175,11 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *    left`. It is a header button, `sm:hidden`, sitting beside the desktop
  *    heading (plain text).
  * 2. THE GROUP FOLDS make each label cluster independently collapsible. A shut
- *    cluster shows a 30×3 meter filled to met/count and "{n} left" — or "✓ all
- *    met", at which point the whole header steps back in opacity so a finished
- *    category stops competing for attention.
+ *    cluster shows "{n} left" — or "✓ all met", at which point the whole
+ *    header steps back in opacity so a finished category stops competing for
+ *    attention. It used to draw a 30×3 meter beside the words too; that went
+ *    on 2026-10-16 with the period bars' restyle (`PeriodBar`) — a third, tinier
+ *    bar style under the period's own bar only restated "{n} left".
  *
  * "{n} left" COUNTS QUOTAS STILL SHORT, not items and not increments remaining
  * (Trent picked it over both). It is the only one of the three that moves as he
@@ -416,8 +421,8 @@ const SEARCH_CLUSTERS: ReturnType<typeof useResponsiveFolds> = {
  * "Now," for the period sections' math — refreshed every minute, not the 15s
  * convention elsewhere in the app (`useQuickSelectDate`, `QuickActionPanel`).
  * Those redraw a relative time like "in 3 mins"; the fastest thing a period
- * section shows is the DAILY notch, which moves by whole minutes at best, so
- * a 15s tick would just spend renders nobody can see move.
+ * section shows is "N days left" (and the bar's elapsed description), which
+ * moves by whole minutes at best, so a 15s tick would just spend renders.
  */
 function useTrackNow(): Date {
   const [now, setNow] = useState(() => new Date())
@@ -878,6 +883,7 @@ function PeriodSection({
     >
       <div className="relative">
         <PeriodHeading section={s} />
+        <PeriodBar section={s} />
         {period && bodyItems.length > 0 && (
           <PeriodFoldButton
             section={s}
@@ -975,14 +981,14 @@ function PeriodFoldButton({
  * than "HEALTH"). One line: the period name · a muted "N days
  * left" (omitted for Today, which already says it, and for the no-period and
  * interval sections — "every 2 weeks", whose quotas each end on their own day
- * and say so on their chips — which have no shared clock) · a bar that
- * flexes to fill whatever room is left · "**M** of N" quotas met.
+ * and say so on their chips — which have no shared clock), then "**M** of N"
+ * quotas met at the right — the Reminders period group's header shape. The
+ * bar is NOT in this row; it sits under it (`PeriodBar`).
  *
  * Not a button — nothing here folds. Only the label clusters inside a section
  * (`ClusterTitle`) and the mobile section card (`TrackHeader`) do.
  */
 function PeriodHeading({ section }: { section: TrackSection }) {
-  const fillPct = Math.round(section.barFraction * 100)
   return (
     <div className="flex items-center gap-2 px-2 py-1">
       <span className="text-foreground shrink-0 text-[11px] font-bold tracking-widest whitespace-nowrap uppercase">
@@ -990,50 +996,45 @@ function PeriodHeading({ section }: { section: TrackSection }) {
       </span>
       {section.timeLeft && (
         <span className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap">
-          {section.timeLeft}
+          &middot; {section.timeLeft}
         </span>
       )}
-      <span
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={fillPct}
-        aria-valuetext={section.barAriaLabel}
-        data-track-period-bar
-        className="bg-muted relative h-[5px] min-w-[40px] flex-1 overflow-hidden rounded-full"
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            'absolute inset-y-0 left-0 h-full rounded-full transition-[width] duration-300 ease-out',
-            section.allMet ? 'bg-green-600' : 'bg-indigo-600 dark:bg-indigo-500',
-          )}
-          style={{ width: `${section.barFraction * 100}%` }}
-        />
-        {/* The notch: how much of the period's clock has already run. ONE
-            tone at every fraction, whether it sits on the fill or off it
-            (Trent, 2026-09-23 — it must not switch shade by what it covers) —
-            see `TRACK_NOTCH_CLASS`, tuned in that one place. The bar's own
-            `overflow-hidden` clips it to the bar's height, so it never sticks
-            out top or bottom; its description lives on the bar's
-            `aria-valuetext` above, since the notch itself is decorative. */}
-        {section.elapsedFraction !== null && (
-          <span
-            aria-hidden="true"
-            data-track-period-notch
-            className={cn('absolute inset-y-0 -ml-px w-[2px]', TRACK_NOTCH_CLASS)}
-            style={{ left: `${section.elapsedFraction * 100}%` }}
-          />
-        )}
-      </span>
+      <span className="flex-1" />
       <span
         data-track-period-count
-        className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap tabular-nums"
+        className="text-muted-foreground shrink-0 text-xs whitespace-nowrap tabular-nums"
       >
-        <span className="text-foreground font-semibold">{section.summary.met}</span> of{' '}
+        <span className="text-foreground font-medium">{section.summary.met}</span> of{' '}
         {section.summary.count}
       </span>
     </div>
+  )
+}
+
+/**
+ * A period section's bar: the Reminders period group's hairline
+ * (`SlotHairline`), UNDER the heading row and the width of the card — Trent,
+ * 2026-10-16: "Why do the quotas have their bar fat and on the same line as
+ * the heading, whereas the ones for the reminders have them casually
+ * underneath the heading?" Same element, so the same 4px, track, indigo fill
+ * and green when every quota in the section is met (`barFraction` reaches 1
+ * exactly then: partial credit is capped per quota). Its accessible text says
+ * how much of the period has run (`barAriaLabel`); the old in-row bar's
+ * elapsed-time notch went with that bar.
+ */
+function PeriodBar({ section }: { section: TrackSection }) {
+  const pct = Math.round(section.barFraction * 100)
+  return (
+    <SlotHairline
+      label={section.heading}
+      considered={pct}
+      total={100}
+      fraction={section.barFraction}
+      ariaLabel={`${section.heading}: ${section.summary.met} of ${section.summary.count} met`}
+      ariaValueText={section.barAriaLabel}
+      className="mx-2 mb-1.5"
+      data-track-period-bar=""
+    />
   )
 }
 
@@ -1229,9 +1230,9 @@ function clusterKey(label: string | null): string {
  * `max-w-full truncate` behind it so a very long label ellipsises at the card's
  * edge instead of pushing out of it.
  *
- * The meter is `aria-hidden` and carries no `role`: it is a redraw of the "{n}
- * left" text beside it, and a second `progressbar` here would be noise to a
- * screen reader and a collision for anything counting the panel's real ones.
+ * No meter on a shut cluster (2026-10-16): "{n} left" is the whole summary.
+ * The tiny 30×3 bar that sat beside it restated the text in a third bar style
+ * under the period's own bar, and was dropped with the period bars' restyle.
  */
 function ClusterTitle({
   item,
@@ -1318,18 +1319,6 @@ function ClusterTitle({
             foldClass(state, FOLD_SUMMARY),
           )}
         >
-          <span
-            aria-hidden="true"
-            className="bg-muted relative block h-[3px] w-[30px] overflow-hidden rounded-full"
-          >
-            <span
-              className={cn(
-                'block h-full rounded-full transition-[width] duration-300 ease-out',
-                allMet ? 'bg-green-600' : 'bg-foreground/60',
-              )}
-              style={{ width: `${count === 0 ? 0 : (met / count) * 100}%` }}
-            />
-          </span>
           {shortfall.allMet ? (
             <span className="flex items-center gap-0.5">
               <Check className="size-3" strokeWidth={3} aria-hidden="true" />

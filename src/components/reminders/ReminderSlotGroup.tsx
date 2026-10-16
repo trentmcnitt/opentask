@@ -466,12 +466,28 @@ export function SlotHeaderRow({
   )
 }
 
-/** Full-width hairline under a slot header: considered over what the slot held today. Long enough that one thought visibly moves it. */
+/**
+ * Full-width hairline under a slot header: considered over what the slot held
+ * today. Long enough that one thought visibly moves it.
+ *
+ * Also the Quotas surface's period bar (2026-10-16): Trent asked why the
+ * quotas' bars were "fat and on the same line as the heading, whereas the ones
+ * for the reminders have them casually underneath the heading", so a quota
+ * period section draws THIS bar under its heading row (`PeriodHeading` in
+ * `TrackPanel`). It passes its own `fraction` (partial credit, capped per
+ * quota — `trackSections`), accessible text and inset, since "considered"
+ * means nothing there; the look stays this one element's.
+ */
 export function SlotHairline({
   label,
   considered,
   total,
   color,
+  fraction: fractionOverride,
+  ariaLabel,
+  ariaValueText,
+  className = 'mx-3 mb-2',
+  ...rest
 }: {
   label: string
   considered: number
@@ -479,16 +495,24 @@ export function SlotHairline({
   /** A task segment's teal (2026-10-11) in place of the slots' indigo while
    *  it fills. Finished is green either way, like a slot. */
   color?: string
-}) {
-  const fraction = total > 0 ? considered / total : 0
+  /** The fill, 0..1, when it is not `considered / total` (a quota period). */
+  fraction?: number
+  ariaLabel?: string
+  ariaValueText?: string
+  /** The inset; the slot card's `mx-3 mb-2` by default. */
+  className?: string
+} & { [data: `data-${string}`]: string | undefined }) {
+  const fraction = fractionOverride ?? (total > 0 ? considered / total : 0)
   return (
     <div
-      className="bg-muted mx-3 mb-2 h-1 overflow-hidden rounded-full"
+      {...rest}
+      className={cn('bg-muted h-1 overflow-hidden rounded-full', className)}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={total}
       aria-valuenow={considered}
-      aria-label={`${considered} of ${total} considered in ${label}`}
+      aria-valuetext={ariaValueText}
+      aria-label={ariaLabel ?? `${considered} of ${total} considered in ${label}`}
     >
       <div
         className={cn(
