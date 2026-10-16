@@ -127,7 +127,8 @@ describe('completionRequest', () => {
   test('prompts only → /quota-prompts/consider or /did', () => {
     const [considerUrl, considerInit] = completionRequest([], ['q:1:1'], 'consider')
     expect(considerUrl).toBe('/api/quota-prompts/consider')
-    expect(body(considerInit)).toEqual({ keys: ['q:1:1'] })
+    // `source`: the web says it is the web (progress_events.source).
+    expect(body(considerInit)).toEqual({ keys: ['q:1:1'], source: 'web' })
     const [didUrl] = completionRequest([], ['q:1:1'], 'did')
     expect(didUrl).toBe('/api/quota-prompts/did')
   })
@@ -141,6 +142,7 @@ describe('completionRequest', () => {
         { key: 'q:1:1', did: true },
         { key: 'q:2:1', did: true },
       ],
+      source: 'web',
     })
     const [, considered] = completionRequest([7], ['q:1:1'], 'consider')
     expect(body(considered).prompts).toEqual([{ key: 'q:1:1', did: false }])

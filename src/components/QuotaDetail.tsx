@@ -16,6 +16,7 @@ import {
   type QuotaFreq,
 } from '@/lib/track'
 import { QuotaPromptSection, usePromptDraft } from '@/components/QuotaPromptField'
+import { QuotaRecord } from '@/components/QuotaRecord'
 import {
   QuotaPromptBulkField,
   useBulkPromptDraft,
@@ -276,6 +277,8 @@ export function QuotaDetail({
           {creating ? 'New quota' : single ? 'Quota' : `${tasks.length} quotas`}
         </p>
       )}
+
+      {single && <QuotaRecord task={single} state={trackState(single)} />}
 
       {oneQuota && <TitleField value={title} onChange={setTitle} autoFocus={creating} />}
 

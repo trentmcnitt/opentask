@@ -18,10 +18,13 @@ import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { z, ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
+import { progressSource } from '@/core/validation/quota-prompt'
 
 const progressSchema = z.object({
   /** Defaults to +1. Negative corrects a mis-log. */
   delta: z.number().int().min(-100).max(100).default(1),
+  /** Where it was logged from (`progress_events.source`); `api` when absent. */
+  source: progressSource,
 })
 
 export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
@@ -33,12 +36,13 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
 
     // An empty body is the common case (a +1 tap), so tolerate no JSON at all.
     const body = await request.json().catch(() => ({}))
-    const { delta } = progressSchema.parse(body)
+    const { delta, source } = progressSchema.parse(body)
 
     const { task, met, description } = incrementProgress({
       userId: user.id,
       taskId,
       delta,
+      source,
     })
 
     return success({ ...formatTaskResponse(task, user.timezone), met, description })

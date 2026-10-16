@@ -386,6 +386,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'ai_context_updated_at')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_context_updated_at TEXT DEFAULT NULL')
   }
+  // Where a quota's progress was logged from (src/lib/progress-source.ts).
+  // Rows from before it are 'api': the source was never recorded.
+  if (!hasColumn(database, 'progress_events', 'source')) {
+    database.exec("ALTER TABLE progress_events ADD COLUMN source TEXT NOT NULL DEFAULT 'api'")
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)

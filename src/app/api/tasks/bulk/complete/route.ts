@@ -37,6 +37,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       taskIds: input.ids,
       closePeriod: input.close_period === true,
       prompts: input.prompts,
+      source: input.source,
     })
 
     return success({

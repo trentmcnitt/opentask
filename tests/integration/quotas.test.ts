@@ -444,6 +444,7 @@ describe('GET /api/tasks/:id/quota-stats', () => {
       periods_missed: 0,
       current_streak: 0,
       longest_streak: 0,
+      last_logged_at: null,
     })
   })
 

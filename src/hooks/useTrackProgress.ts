@@ -94,7 +94,8 @@ export function useTrackProgress(task: Task): {
           const res = await fetch(`/api/tasks/${task.id}/progress`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ delta }),
+            // `source` (2026-10-16): where it was logged, for the history.
+            body: JSON.stringify({ delta, source: 'web' }),
           })
           if (!res.ok) throw new Error('Failed to log progress')
           const json = await res.json()

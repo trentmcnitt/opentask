@@ -11,6 +11,7 @@ import type { RedoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
+import { compensate, countBefore } from './progress-compensation'
 import { applyPromptDefault, applySlotRow } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
@@ -41,7 +42,10 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
       // Same guard as undo: re-applying a count into a later period would
       // plant last period's number in this one (see `createQuotaSnapshot`).
       if (periodMoved(tx, snapshot)) continue
+      const count = countBefore(tx, snapshot, entry.fieldsChanged)
       applyFieldsToTask(snapshot.task_id, snapshot.after_state, entry.fieldsChanged)
+      // The count moved again: logged again, as a redo (`compensate`).
+      compensate(tx, entry.id, snapshot, count, 'redo')
 
       // A completion's row comes back; a put-back's row goes again.
       if (snapshot.completion_id) {

@@ -39,9 +39,10 @@
  * first (`rolloverQuotaNow`) — but when a boundary moves backwards in time
  * (the Monday→Sunday switch shipping on a Sunday, or a user flipping the
  * preference mid-week) taps made after the new boundary must not be swept
- * into the week that just closed. Caveat: undo restores `progress_current`
- * without deleting the event row, so an undone +1 is still in the sum; the
- * clamp keeps that from ever carrying more than was logged.
+ * into the week that just closed. An undone +1 is no longer in that sum: since
+ * 2026-10-16 the undo writes the opposite row (`source: 'undo'`, see
+ * `progress-compensation.ts`), stamped when the undo ran. The clamp stays for
+ * rows written before then, whose undos left no such row.
  *
  * Runs every few minutes (see instrumentation.ts). If the server was down
  * across a boundary it catches up: the first missed period gets the count,

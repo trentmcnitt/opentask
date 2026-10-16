@@ -55,6 +55,7 @@ import type { QuotaDayState, Task, UndoSnapshot } from '@/types'
 import { getTaskById } from './create'
 import { rolloverQuotaNow } from './period-rollover'
 import { isDailyQuota } from './quota-prompts'
+import { DEFAULT_PROGRESS_SOURCE, type ClientProgressSource } from '@/lib/progress-source'
 
 /** One action on one prompt. `did: false` is "consider". */
 export interface PromptAction {
@@ -203,14 +204,15 @@ function writeQuotaCount(
   day: QuotaDayState,
   delta: number,
   nowStr: string,
+  source: ClientProgressSource,
 ): { snapshot: UndoSnapshot; fields: string[]; after: Task } {
   tx.prepare(
     'UPDATE tasks SET progress_current = ?, quota_day_state = ?, updated_at = ? WHERE id = ?',
   ).run(current, JSON.stringify(day), nowStr, task.id)
   if (delta !== 0) {
     tx.prepare(
-      'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
-    ).run(task.id, userId, delta, nowStr)
+      'INSERT INTO progress_events (task_id, user_id, delta, logged_at, source) VALUES (?, ?, ?, ?, ?)',
+    ).run(task.id, userId, delta, nowStr, source)
   }
   const fields = delta !== 0 ? ['progress_current', 'quota_day_state'] : ['quota_day_state']
   const after = { ...task, progress_current: current, quota_day_state: day }
@@ -227,6 +229,7 @@ export function executePromptActions(
   timezone: string,
   planned: PlannedAction[],
   now: Date = new Date(),
+  source: ClientProgressSource = DEFAULT_PROGRESS_SOURCE,
 ): ExecutedPromptActions {
   const today = localDate(timezone, now)
   const nowStr = now.toISOString()
@@ -241,7 +244,7 @@ export function executePromptActions(
 
   forEachPlannedQuota(planned, now, (task, actions) => {
     const { current, day, applied } = applyToQuota(task, actions, today)
-    const written = writeQuotaCount(tx, task, userId, current, day, applied, nowStr)
+    const written = writeQuotaCount(tx, task, userId, current, day, applied, nowStr, source)
     for (const f of written.fields) fields.add(f)
     out.snapshots.push(written.snapshot)
     if (applied > 0) out.progressed.push(written.after)
@@ -292,13 +295,15 @@ export function actOnPrompts(options: {
   userTimezone: string
   actions: PromptAction[]
   now?: Date
+  /** Where a did-it was logged from; `api` when the caller does not say. */
+  source?: ClientProgressSource
 }): PromptActionsResult {
-  const { userId, userTimezone, actions, now = new Date() } = options
+  const { userId, userTimezone, actions, now = new Date(), source } = options
   if (actions.length === 0) return { considered: 0, did: 0, tasks: [] }
   const planned = planPromptActions(userId, userTimezone, actions, now)
 
   const result = withTransaction((tx) => {
-    const executed = executePromptActions(tx, userId, userTimezone, planned, now)
+    const executed = executePromptActions(tx, userId, userTimezone, planned, now, source)
     const single = planned.length === 1 ? getTaskById(planned[0].taskId) : null
     logAction(
       userId,
@@ -368,8 +373,10 @@ export function restorePrompts(options: {
   userTimezone: string
   keys: string[]
   now?: Date
+  /** Where the put-back was made from; `api` when the caller does not say. */
+  source?: ClientProgressSource
 }): RestorePromptsResult {
-  const { userId, userTimezone, keys, now = new Date() } = options
+  const { userId, userTimezone, keys, now = new Date(), source = DEFAULT_PROGRESS_SOURCE } = options
   if (keys.length === 0) return { restored: 0, tasks: [] }
   const planned = planPromptActions(
     userId,
@@ -390,7 +397,7 @@ export function restorePrompts(options: {
       const keys = actions.map((a) => a.key)
       const { current, day, taken, restored: n } = restoreOnQuota(task, keys, today)
       restored += n
-      const written = writeQuotaCount(tx, task, userId, current, day, -taken, nowStr)
+      const written = writeQuotaCount(tx, task, userId, current, day, -taken, nowStr, source)
       for (const f of written.fields) fields.add(f)
       snapshots.push(written.snapshot)
       if (taken > 0) progressed.push(written.after)

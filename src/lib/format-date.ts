@@ -313,6 +313,22 @@ export function formatDurationDelta(fromMs: number, toMs: number): string {
 }
 
 /**
+ * When a quota was last logged, for its "Last: …" line (2026-10-16), in the
+ * user's clock: "today 7:42 AM", "yesterday 7:42 AM", the weekday within the
+ * last week ("Thu 7:42 AM"), and past that the date ("Oct 3, 7:42 AM") — a
+ * bare weekday more than six days back would name the wrong Thursday.
+ */
+export function formatLastLogged(isoUtc: string, timezone: string, now: Date = new Date()): string {
+  const days = calendarDaysBetween(new Date(isoUtc), now, timezone)
+  const time = formatTimeInTimezone(isoUtc, timezone)
+  if (days <= 0) return `today ${time}`
+  if (days === 1) return `yesterday ${time}`
+  const local = DateTime.fromISO(isoUtc, { zone: timezone })
+  if (days < 7) return `${local.toFormat('ccc')} ${time}`
+  return `${local.toFormat('LLL d')}, ${time}`
+}
+
+/**
  * Format a time in a given timezone as "9:00 AM" style.
  * Exported for use in activity formatting and anywhere a timezone-aware time string is needed.
  */

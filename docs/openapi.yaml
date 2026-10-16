@@ -440,6 +440,8 @@ paths:
                   description: >
                     Defaults to +1. A negative value corrects a mis-log;
                     progress never goes below zero.
+                source:
+                  $ref: '#/components/schemas/ProgressSource'
       responses:
         '200':
           description: Updated task
@@ -479,6 +481,11 @@ paths:
         from the periods the rollover has recorded, so the period in progress
         is not included in any of the four numbers. Returns 400 if the task is
         not a quota.
+
+        `last_logged_at` (2026-10-16) is when the last tap that still stands
+        was logged: walking the progress events newest first, each negative
+        event (a −1, an undo, a put-back) cancels the latest +1 before it.
+        Null when none stands.
       responses:
         '200':
           description: The quota's stats
@@ -489,7 +496,8 @@ paths:
                 properties:
                   data:
                     type: object
-                    required: [periods_met, periods_missed, current_streak, longest_streak]
+                    required:
+                      [periods_met, periods_missed, current_streak, longest_streak, last_logged_at]
                     properties:
                       periods_met:
                         type: integer
@@ -503,10 +511,98 @@ paths:
                       longest_streak:
                         type: integer
                         description: The longest run of met periods in a row
+                      last_logged_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                        description: When the last tap still standing was logged (UTC)
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{id}/progress-events:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      summary: A quota's progress history
+      operationId: getProgressEvents
+      tags: [Tasks]
+      description: |
+        Every +1 and −1 logged against a quota, newest first, with where it
+        was logged from (`source`). An undo of a count writes the opposite
+        event (`source: undo`) and a redo writes it again (`source: redo`), so
+        the events always sum to the count's movement. Owner or shared-project
+        access, as for the task. At most `limit` rows (default and maximum
+        500); when `has_more` is true, pass the last row's `id` as `before_id`
+        for the next page. Returns 400 if the task is not a quota.
+      parameters:
+        - name: since
+          in: query
+          description: Only events logged at or after this time (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          description: Only events logged before this time (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 500
+        - name: before_id
+          in: query
+          description: Only events older than this event id (paging)
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [events, has_more]
+                    properties:
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          required: [id, delta, logged_at, source, user_id]
+                          properties:
+                            id:
+                              type: integer
+                            delta:
+                              type: integer
+                              description: Signed change to the count
+                            logged_at:
+                              type: string
+                              format: date-time
+                            source:
+                              type: string
+                              enum: [web, widget, watch, mac, api, undo, redo]
+                            user_id:
+                              type: integer
+                              description: Who logged it
+                      has_more:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Not the caller's quota (and not in a shared project)
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1395,6 +1491,8 @@ paths:
                       - type: string
                         description: A prompt_key to consider.
                       - $ref: '#/components/schemas/PromptAction'
+                source:
+                  $ref: '#/components/schemas/ProgressSource'
       responses:
         '200':
           description: Completion result
@@ -4371,6 +4469,16 @@ components:
           items:
             type: string
             example: 'q:42:0:2026-09-24'
+        source:
+          $ref: '#/components/schemas/ProgressSource'
+
+    ProgressSource:
+      type: string
+      enum: [web, widget, watch, mac, api]
+      default: api
+      description: >
+        Where progress was logged from, recorded on its progress event
+        (`GET /api/tasks/{id}/progress-events`). Optional; `api` when absent.
 
     PromptAction:
       type: object

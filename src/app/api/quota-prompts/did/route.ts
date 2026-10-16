@@ -24,11 +24,12 @@ import { ZodError } from 'zod'
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
-    const { keys } = validatePromptKeys(await request.json())
+    const { keys, source } = validatePromptKeys(await request.json())
     const result = actOnPrompts({
       userId: user.id,
       userTimezone: user.timezone,
       actions: keys.map((key) => ({ key, did: true })),
+      source,
     })
     return success({
       considered: result.considered,
