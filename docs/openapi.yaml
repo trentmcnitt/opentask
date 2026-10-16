@@ -591,7 +591,8 @@ paths:
                               format: date-time
                             source:
                               type: string
-                              enum: [web, widget, watch, mac, api, undo, redo]
+                              enum: [web, widget, watch, mac, api, undo, redo, unknown]
+                              description: Where it was logged from; `unknown` for events logged before sources were recorded (2026-10-16)
                             user_id:
                               type: integer
                               description: Who logged it

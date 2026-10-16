@@ -387,9 +387,12 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE users ADD COLUMN ai_context_updated_at TEXT DEFAULT NULL')
   }
   // Where a quota's progress was logged from (src/lib/progress-source.ts).
-  // Rows from before it are 'api': the source was never recorded.
+  // Rows from before it are 'unknown': the source was never recorded, and the
+  // column default ('api', what a caller that says nothing is) would claim
+  // they came from the API. Only rows that exist when the column is added.
   if (!hasColumn(database, 'progress_events', 'source')) {
     database.exec("ALTER TABLE progress_events ADD COLUMN source TEXT NOT NULL DEFAULT 'api'")
+    database.exec("UPDATE progress_events SET source = 'unknown'")
   }
 
   backfillLabelRegistry(database)
