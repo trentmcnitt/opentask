@@ -279,7 +279,8 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE users ADD COLUMN track_expanded INTEGER NOT NULL DEFAULT 0')
   }
   // §5: /quotas opens on the summary (the dashboard's Quotas panel) unless the
-  // user chose the detailed list (Trent, 2026-09-25).
+  // user chose the detailed list (Trent, 2026-09-25). Unread since 2026-10-16,
+  // when the detailed list went; kept for the preferences API.
   if (!hasColumn(database, 'users', 'quotas_details')) {
     database.exec('ALTER TABLE users ADD COLUMN quotas_details INTEGER NOT NULL DEFAULT 0')
   }

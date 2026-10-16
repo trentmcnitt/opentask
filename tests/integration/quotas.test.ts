@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect, beforeEach } from 'vitest'
-import { apiFetch, apiAnon, resetTestData } from './helpers'
+import { apiFetch, apiFetchB, apiAnon, resetTestData } from './helpers'
 
 describe('Quotas surface API', () => {
   beforeEach(async () => {
@@ -422,5 +422,36 @@ describe('A quota needs a period', () => {
     expect(plainAfter.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
     const quotaAfter = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
     expect(quotaAfter.rrule).toBe('FREQ=WEEKLY')
+  })
+})
+
+describe('GET /api/tasks/:id/quota-stats', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function create(body: Record<string, unknown>) {
+    return (await (await apiFetch('/api/tasks', { method: 'POST', body })).json()).data
+  }
+
+  test("a new quota's record is all zeros", async () => {
+    const quota = await create({ title: 'Workouts', progress_target: 4, rrule: 'FREQ=WEEKLY' })
+    const res = await apiFetch(`/api/tasks/${quota.id}/quota-stats`)
+    expect(res.status).toBe(200)
+    expect((await res.json()).data).toEqual({
+      periods_met: 0,
+      periods_missed: 0,
+      current_streak: 0,
+      longest_streak: 0,
+    })
+  })
+
+  test('refuses anonymous callers, a plain task, and another user', async () => {
+    const quota = await create({ title: 'Workouts', progress_target: 4, rrule: 'FREQ=WEEKLY' })
+    const plain = await create({ title: 'An ordinary task' })
+    expect((await apiAnon(`/api/tasks/${quota.id}/quota-stats`)).status).toBe(401)
+    expect((await apiFetch(`/api/tasks/${plain.id}/quota-stats`)).status).toBe(400)
+    expect((await apiFetchB(`/api/tasks/${quota.id}/quota-stats`)).status).toBe(403)
+    expect((await apiFetch('/api/tasks/999999/quota-stats')).status).toBe(404)
   })
 })

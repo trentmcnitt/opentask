@@ -466,6 +466,50 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/tasks/{id}/quota-stats:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      summary: A quota's record over its closed periods
+      operationId: getQuotaStats
+      tags: [Tasks]
+      description: |
+        How often a quota has been met: its closed periods that reached the
+        target and those that fell short, and the run of met periods. Counted
+        from the periods the rollover has recorded, so the period in progress
+        is not included in any of the four numbers. Returns 400 if the task is
+        not a quota.
+      responses:
+        '200':
+          description: The quota's stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [periods_met, periods_missed, current_streak, longest_streak]
+                    properties:
+                      periods_met:
+                        type: integer
+                        description: Closed periods that reached the target
+                      periods_missed:
+                        type: integer
+                        description: Closed periods that fell short of it
+                      current_streak:
+                        type: integer
+                        description: Met periods in a row, counting back from the most recent closed one
+                      longest_streak:
+                        type: integer
+                        description: The longest run of met periods in a row
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/tasks/{id}/skip-occurrence:
     parameters:
       - $ref: '#/components/parameters/TaskId'

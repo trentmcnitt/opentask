@@ -12,7 +12,7 @@
  * and every quota made here is trashed afterwards.
  */
 
-import { test, expect, gotoQuotasDetails } from './fixtures'
+import { test, expect } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const created: number[] = []
@@ -117,31 +117,6 @@ test.describe('Quota segments', () => {
     await expect(group).toHaveText('0/7 week')
     await expect(group.locator('[data-seg]')).toHaveCount(0)
     await expect(group).toHaveAttribute('aria-label', '0 of 7 this week')
-  })
-
-  test('the Quotas page row: segments, met in green, and the text fallback', async ({
-    authenticatedPage: page,
-  }) => {
-    const metId = await makeQuota(page, 'E2E seg met', 'FREQ=WEEKLY', 2, 2)
-    const partId = await makeQuota(page, 'E2E seg month', 'FREQ=MONTHLY', 4, 1)
-    const manyId = await makeQuota(page, 'E2E seg many', 'FREQ=MONTHLY', 12, 3)
-    await gotoQuotasDetails(page)
-
-    const met = page.locator(`[data-quota-row="${metId}"] [data-quota-count]`)
-    await expectSegments(met, ['met', 'met'])
-    await expect(met).toHaveAttribute('data-count', '2/2')
-    await expect(met).toHaveAttribute('aria-label', '2 of 2 this week')
-    // The word turns green with the boxes.
-    await expect(met.getByText('week')).toHaveClass(/text-green-700/)
-
-    const part = page.locator(`[data-quota-row="${partId}"] [data-quota-count]`)
-    await expectSegments(part, ['filled', 'empty', 'empty', 'empty'])
-    await expect(part).toHaveText('month')
-    await expect(part).toHaveAttribute('aria-label', '1 of 4 this month')
-
-    const many = page.locator(`[data-quota-row="${manyId}"] [data-quota-count]`)
-    await expect(many).toHaveAttribute('data-count-form', 'text')
-    await expect(many).toHaveText('3/12 month')
   })
 
   test('a Track chip shows segments without a word, and no progress fill', async ({

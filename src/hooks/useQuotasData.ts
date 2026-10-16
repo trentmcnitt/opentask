@@ -10,10 +10,9 @@ import type { Task } from '@/types'
  * The /quotas page's data: every quota, from its own endpoint, kept fresh by
  * the sync stream, with a `refresh` the page's undo/redo can reach.
  *
- * Moved out of `QuotasView` (2026-09-25) when /quotas grew a second view — the
- * dashboard's Quotas panel, `QuotasSummary` — so the two views share one fetch
- * rather than each growing its own. Only one of them is mounted at a time, so
- * there is only ever one of these running.
+ * Its own hook since /quotas briefly had two views (2026-09-25 to 2026-10-16,
+ * a Summary/Details switch) that shared this one fetch; `QuotasSummary` is its
+ * one caller now.
  */
 export function useQuotasData(refreshRef?: React.MutableRefObject<(() => void) | null>) {
   const [tasks, setTasks] = useState<Task[] | null>(null)
@@ -30,7 +29,7 @@ export function useQuotasData(refreshRef?: React.MutableRefObject<(() => void) |
       const body = await res.json()
       // Still trackedItems, not the server's order: the dashboard sorts quotas
       // by title so the order cannot jump as counts change (commit 9bcf03d,
-      // "frozen order"), and the two views of the same eight things must agree.
+      // "frozen order"), and this page and that panel show the same quotas.
       setTasks(trackedItems(body.data.quotas as Task[]))
       setError(null)
     } catch (err) {

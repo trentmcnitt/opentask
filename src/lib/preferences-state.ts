@@ -72,7 +72,6 @@ export interface Prefs {
   filtersExpanded: boolean
   /** Show all's per-project cap before "Show all N" (`project_preview_count`). */
   projectPreviewCount: number
-  quotasDetails: boolean
   notificationsEnabled: boolean
   /** The quiet "AI finished" push for a just-added task. */
   enrichmentNotificationsEnabled: boolean
@@ -120,7 +119,6 @@ export const DEFAULT_PREFS: Prefs = {
   defaultSortReversed: false,
   filtersExpanded: false,
   projectPreviewCount: PROJECT_PREVIEW_DEFAULT,
-  quotasDetails: false,
   notificationsEnabled: true,
   enrichmentNotificationsEnabled: true,
   sweepFeedbackNotificationsEnabled: true,
@@ -198,7 +196,6 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'defaultSortReversed', data.default_sort_reversed)
   take(out, 'filtersExpanded', data.filters_expanded)
   take(out, 'projectPreviewCount', data.project_preview_count, (v) => Number.isInteger(v))
-  take(out, 'quotasDetails', data.quotas_details)
   take(out, 'notificationsEnabled', data.notifications_enabled)
   take(out, 'enrichmentNotificationsEnabled', data.enrichment_notifications_enabled)
   take(out, 'sweepFeedbackNotificationsEnabled', data.sweep_feedback_notifications_enabled)

@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Header } from '@/components/Header'
-import { QuotasView } from '@/components/QuotasView'
-import { QuotasSummary, QuotasViewSwitch, type QuotasPageView } from '@/components/QuotasSummary'
-import { useQuotasPagePreference } from '@/components/PreferencesProvider'
+import { QuotasSummary } from '@/components/QuotasSummary'
 import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -19,43 +17,30 @@ import { PageLoading } from '@/components/PageLoading'
  * easily remove items and the like."
  *
  * The Track panel on the dashboard is the daily instrument — glance, tap, move
- * on. This page is the workshop: every quota with its real history, a way to
- * make one, and a route into each one's editor. The same split Reminders has.
+ * on. This page is that panel with room around it: every quota, a way to make
+ * one, and each one's history and editor behind a hold on its chip. The same
+ * split Reminders has.
  *
- * Thin on purpose: the views own the data and the rendering. What the page
- * adds is the shared top bar (Quotas is a peer surface, not a settings page),
- * the undo pipeline behind it, and which of its two views is showing.
+ * Thin on purpose: `QuotasSummary` owns the data and the rendering. What the
+ * page adds is the shared top bar (Quotas is a peer surface, not a settings
+ * page), the undo pipeline behind it, and the search state.
  *
- * TWO VIEWS (Trent, 2026-09-25: "the default view when I go to the quotas
- * screen to be the dashboard version of quotas, with an option to expand it to
- * the view that you have here, where it shows how many have been met"):
- *
- * - SUMMARY, the default — `QuotasSummary`, the dashboard's Quotas panel.
- * - DETAILS — `QuotasView`, the list with "met 2×", selection and the
- *   multi-quota editor, unchanged.
- *
- * The choice is the server preference `quotas_details`: it follows the user
- * between the phone and the desk, and it
- * goes through the provider's dirty-field merge and ordered saver, so a press
- * that lands before the preferences load is not snapped back by it.
- *
- * `?quota=<id>` (the Quotas widget's deep link) OPENS DETAILS for that visit,
- * without saving it. The details list is where a single quota can be brought
- * into view and flashed (`QuotasView`'s deep-link effect); the summary cannot
- * promise that — a quota met at load is put away there, and its label cluster
- * may be folded shut — so scrolling to a chip would sometimes scroll to
- * nothing. Not saved, because following a link is not choosing a view: the
- * next plain visit opens wherever the user left it.
+ * ONE VIEW since 2026-10-16. There used to be a Summary/Details switch (the
+ * server preference `quotas_details`, 2026-09-25); Trent: "that Details view
+ * is pointless… We're going to get rid of that special view." What the
+ * Details list did, and where it lives now, is listed on `QuotasSummary`. The
+ * `users.quotas_details` column and its preferences API field remain, unread
+ * by the web app, so the preferences contract the native apps decode does not
+ * change — the same as `track_expanded` (see `TrackPanel`).
  */
 
 export default function QuotasPage() {
   const { ready } = useRequireSession()
   const timezone = useTimezone()
 
-  // Searching narrows the quotas to matching ones, in whichever view is
-  // showing — the views filter what they already hold, so there is no request
-  // behind this. Held here rather than in a view so it survives the
-  // Summary/Details switch. Mirrors the Reminders page exactly.
+  // Searching narrows the quotas to matching ones — the view filters what it
+  // already holds, so there is no request behind this. Mirrors the Reminders
+  // page exactly.
   const [searchQuery, setSearchQuery] = useState('')
   const clearSearch = useCallback(() => setSearchQuery(''), [])
   const searchFocusRef = useRef<(() => void) | null>(null)
@@ -89,24 +74,7 @@ export default function QuotasPage() {
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
-  const { quotasDetails, setQuotasDetails, loaded } = useQuotasPagePreference()
-  // Read once, on the first client render — see the block comment above.
-  // Lazily rather than in an effect, so the first paint is already the right
-  // view; the server renders the loading state either way (the session is
-  // still loading there), so nothing hydrates against a different tree.
-  const [deepLinked, setDeepLinked] = useState(
-    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('quota'),
-  )
-  const view: QuotasPageView = deepLinked || quotasDetails ? 'details' : 'summary'
-  const onViewChange = (next: QuotasPageView) => {
-    setDeepLinked(false)
-    setQuotasDetails(next === 'details')
-  }
-
-  // Wait for the preferences as well as the session: until they land,
-  // `quotasDetails` is the default, and a user who chose Details would watch
-  // the summary paint and then swap out from under him.
-  if (!ready || !loaded) return <PageLoading />
+  if (!ready) return <PageLoading />
 
   return (
     <div className="flex-1">
@@ -114,7 +82,7 @@ export default function QuotasPage() {
         section="Quotas"
         // No badges: the default is the TASK counts, which read as "0 0" here
         // and mean nothing on this surface. Reminders passes its own; quotas
-        // carry their numbers on the period card instead.
+        // carry their numbers on the period headings instead.
         badges={<span />}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
@@ -127,23 +95,12 @@ export default function QuotasPage() {
         timezone={timezone}
       />
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
-        {view === 'details' ? (
-          <QuotasView
-            onUndo={actions.handleUndo}
-            onCompleted={actions.bumpUndoCount}
-            refreshRef={refreshRef}
-            searchQuery={searchQuery}
-            viewSwitch={<QuotasViewSwitch view={view} onChange={onViewChange} />}
-          />
-        ) : (
-          <QuotasSummary
-            onUndo={actions.handleUndo}
-            onCompleted={actions.bumpUndoCount}
-            refreshRef={refreshRef}
-            searchQuery={searchQuery}
-            viewSwitch={<QuotasViewSwitch view={view} onChange={onViewChange} />}
-          />
-        )}
+        <QuotasSummary
+          onUndo={actions.handleUndo}
+          onCompleted={actions.bumpUndoCount}
+          refreshRef={refreshRef}
+          searchQuery={searchQuery}
+        />
       </main>
     </div>
   )
