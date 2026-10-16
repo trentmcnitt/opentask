@@ -28,7 +28,7 @@ import { isTracked } from '@/lib/track'
 // ---------------------------------------------------------------------------
 
 export interface PriorityTab {
-  /** "Urgent" / "High" / "Medium", or the compact symbol (see `badgeStyle`). */
+  /** "Urgent" / "High", or the compact symbol (see `badgeStyle`). */
   text: string
   /** The accessible name and tooltip: "High priority". */
   name: string
@@ -37,15 +37,16 @@ export interface PriorityTab {
 }
 
 /**
- * The solid tab for Medium, High and Urgent. Low and None show NOTHING (Trent,
- * E2b: a tab on every row would be noise; the ones that matter stand out).
+ * The solid tab for High and Urgent only. Medium, Low and None show NOTHING
+ * (Trent, 2026-10-15: "just use a colored corner, while only adding '!' and
+ * '!!' for high and urgent (medium and low get no colored corner tab)" — a
+ * Medium dot read as a second horizon dot beside R1's). Medium stays visible
+ * and settable everywhere else: the editor's chip, filters.
  *
- * Colours are `PRIORITY_OPTIONS`'s hues (yellow / orange / red 500) as fills.
- * Medium's yellow takes near-black text — white on yellow-500 is unreadable —
- * as in the mockup (#422006, Tailwind's yellow-950).
+ * Colours are `PRIORITY_OPTIONS`'s hues (orange / red 500) as fills.
  *
  * `badgeStyle` is the user's existing Priority Display choice: 'icons' puts the
- * compact symbol in the tab (●, !, !!) instead of the word. Kept because it
+ * compact symbol in the tab (! and !!) instead of the word. Kept because it
  * still means something on a tab; see `TaskRow` for the other settings.
  */
 export function priorityTab(
@@ -54,12 +55,6 @@ export function priorityTab(
 ): PriorityTab | null {
   const icons = badgeStyle === 'icons'
   switch (priority) {
-    case 2:
-      return {
-        text: icons ? '●' : 'Medium',
-        name: 'Medium priority',
-        className: 'bg-yellow-500 text-yellow-950',
-      }
     case 3:
       return {
         text: icons ? '!' : 'High',
@@ -234,8 +229,6 @@ const TAB_WIDTH = { dot: 24, attemptsPerChar: 7, attemptsPad: 14 } as const
 const PRIORITY_WIDTH: Record<string, number> = {
   Urgent: 50,
   High: 38,
-  Medium: 56,
-  '●': 22,
   '!': 18,
   '!!': 22,
 }
