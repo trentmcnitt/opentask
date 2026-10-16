@@ -166,6 +166,7 @@ private struct QuotaRowButton: View {
 
     private var accessibilityText: String {
         let count = "\(task.progressCurrent) of \(task.progressTarget)"
+            + (task.periodLabel.map { " \($0)" } ?? "")
         if isInert { return "\(task.displayTitle) — \(count), nothing to take back" }
         return "\(takesBack ? "Take one back from" : "Log one more for") \(task.displayTitle) — \(count)"
     }
@@ -215,6 +216,14 @@ private struct QuotaRow: View {
                 }
                 .foregroundStyle(met ? WatchTheme.done : WatchTheme.accent)
 
+                // An interval quota's own end, "by Oct 24" (2026-10-16): its
+                // section ("Every 2 weeks") has no single end to name.
+                if let end = task.periodLabel {
+                    Text(end)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
                 // Under the count rather than beside it: at the watch's
                 // width (and at large text sizes) "3/5 │ −1" on one line
                 // would eat the title's column. Red whatever the count's
@@ -235,6 +244,14 @@ private struct QuotaRow: View {
 // Realistic sample quotas (`WatchPreviewData.quotas`, or local data via
 // `PreviewLocalData`) — the long titles are the point: they're what a watch-width row has to wrap
 // without eating the count.
+// Interval quotas (2026-10-16): "Every 2 weeks" in its own section, after
+// "This month"'s rows are filtered away, so the row's "by Oct 24" is on screen.
+#Preview("Quotas — interval quota") {
+    NavigationStack {
+        QuotasPageView(model: .preview(showMet: true) { $0.rrule?.contains("INTERVAL") ?? false })
+    }
+}
+
 #Preview("Quotas — met hidden") {
     NavigationStack {
         QuotasPageView(model: .preview(showMet: false))

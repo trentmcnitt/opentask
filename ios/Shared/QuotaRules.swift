@@ -33,10 +33,10 @@ enum QuotaPeriodKey: String {
         }
     }
 
-    /// The period a quota's rrule counts within — mirrors `quotaFreqOf`
-    /// (`src/lib/track.ts`): only `FREQ` matters, `INTERVAL` is ignored (a
-    /// biweekly quota still groups under "This week", the same period a
-    /// weekly one does — §5's four sections don't distinguish the two).
+    /// The period UNIT a quota's rrule counts within — mirrors `quotaFreqOf`
+    /// (`src/lib/track.ts`): only `FREQ`. A fortnight is `.weekly` here; the
+    /// grouping that tells it apart from a week is `QuotaPeriodGroup`
+    /// (interval quotas, 2026-10-16).
     static func from(rrule: String?) -> QuotaPeriodKey {
         guard let rrule, !rrule.isEmpty else { return .none }
         switch RRuleParts.parse(rrule)["FREQ"]?.uppercased() {
@@ -49,7 +49,65 @@ enum QuotaPeriodKey: String {
     }
 }
 
+/// A quota's period for GROUPING: its unit and its INTERVAL (interval quotas,
+/// 2026-10-16) — the web's `quotaPeriodKey`. "Every 2 weeks" is its own
+/// section, after "This week": a fortnight doesn't run on this week's clock,
+/// so it can't share that section's notch and "N days left", and two
+/// fortnights made in adjacent weeks end on different days — so an interval
+/// section has no clock at all, and each of its quotas says its own end
+/// (`TaskDTO.periodLabel`, "by Oct 24", served by the server).
+struct QuotaPeriodGroup: Hashable {
+    let key: QuotaPeriodKey
+    /// 1 for an ordinary period.
+    let interval: Int
+
+    static func of(_ task: TaskDTO) -> QuotaPeriodGroup {
+        QuotaPeriodGroup(key: .from(rrule: task.rrule), interval: QuotaRules.interval(of: task))
+    }
+
+    /// "weekly", "weekly/2" — the section's list key (the web's "WEEKLY/2").
+    var id: String { interval > 1 ? "\(key.rawValue)/\(interval)" : key.rawValue }
+
+    /// "This week", or "Every 2 weeks" for an interval section.
+    var heading: String {
+        guard interval > 1 else { return key.heading }
+        let unit: String
+        switch key {
+        case .daily: unit = "days"
+        case .weekly: unit = "weeks"
+        case .monthly: unit = "months"
+        case .yearly: unit = "years"
+        case .none: return key.heading
+        }
+        return "Every \(interval) \(unit)"
+    }
+
+    /// Whether the section shares one clock (notch, "N days left") — only an
+    /// ordinary period does.
+    var hasClock: Bool { interval == 1 && key != .none }
+
+    /// Day → year, each unit's interval-1 group first, then its intervals
+    /// shortest first; the period-less bucket last.
+    static func ordered(_ groups: some Sequence<QuotaPeriodGroup>) -> [QuotaPeriodGroup] {
+        groups.sorted { a, b in
+            let ia = QuotaPeriodKey.order.firstIndex(of: a.key) ?? 0
+            let ib = QuotaPeriodKey.order.firstIndex(of: b.key) ?? 0
+            return ia == ib ? a.interval < b.interval : ia < ib
+        }
+    }
+}
+
 enum QuotaRules {
+
+    /// A quota's INTERVAL — the server's `period_interval` when it sent one,
+    /// else the rrule's own `INTERVAL` (an older server or cache), else 1.
+    static func interval(of task: TaskDTO) -> Int {
+        if let served = task.periodInterval { return max(served, 1) }
+        guard let rrule = task.rrule, let raw = RRuleParts.parse(rrule)["INTERVAL"], let n = Int(raw) else {
+            return 1
+        }
+        return max(n, 1)
+    }
 
     /// `quotaLabelOf` (`src/lib/track.ts`): the first label that isn't
     /// machinery. Reserved labels are a case-SENSITIVE `ai-` prefix

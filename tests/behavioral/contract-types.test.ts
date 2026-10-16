@@ -84,6 +84,10 @@ const QUOTA_PROMPT: Record<keyof QuotaPrompt, Field> = {
   current: INT,
   target: INT,
   period: STR_N,
+  period_interval: INT_N,
+  period_end: STR_N,
+  period_last_day: STR_N,
+  period_label: STR_N,
   stripe_color: STR_N,
   has_notes: BOOL,
   considered: BOOL,
@@ -134,6 +138,10 @@ const TASK: Record<keyof FormattedTask, Field> = {
   progress_current: INT,
   is_tracked: BOOL,
   progress_period_start: STR_N,
+  progress_period_end: STR_N,
+  period_interval: INT_N,
+  period_last_day: STR_N,
+  period_label: STR_N,
   quota_prompt_config: ['object', 'null'],
   quota_day_state: ['object', 'null'],
   is_reminder: BOOL,
@@ -203,6 +211,7 @@ const REMINDER_FIXTURES = [
   'reminders',
   'reminders-segments',
   'reminders-upcoming',
+  'reminders-interval',
 ]
 
 function groups(name: string): Group[] {
@@ -254,8 +263,9 @@ describe('contract fixtures match the TS types', () => {
         }
       }
     }
-    // Two daily rows, weekly, monthly — in each of the five captures.
-    expect(seen).toBe(20)
+    // Two daily rows, weekly, monthly — in each of the six captures — plus
+    // the every-2-weeks quota in the last (reminders-interval).
+    expect(seen).toBe(25)
   })
 
   test('group counts agree with the shared counting helpers', () => {
@@ -393,5 +403,32 @@ describe('contract fixtures match the TS types', () => {
     // User B's seeded task (due tomorrow) and the one three days late; the
     // quotas and reminders are not counted.
     expect(counts).toEqual({ total: 2, overdue: 1, today: 0 })
+  })
+})
+
+describe('contract fixtures: interval quotas', () => {
+  test('an interval quota serves its period on the task and on its prompt (2026-10-16)', () => {
+    const task = data('task-interval-quota')
+    expectShape(task, TASK, 'task-interval-quota')
+    expect(task).toMatchObject({
+      rrule: 'FREQ=WEEKLY;INTERVAL=2',
+      period_interval: 2,
+      period_label: 'by Jan 15', // pinned by the fixture writer
+    })
+    expect(task.progress_period_start).not.toBeNull()
+    expect(task.progress_period_end).not.toBeNull()
+    const prompt = groups('reminders-interval')
+      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
+      .find((p) => p.title === 'Deep-clean the oven')!
+    expect(prompt).toMatchObject({
+      period: 'WEEKLY',
+      period_interval: 2,
+      period_label: 'by Jan 15',
+    })
+    // Interval 1 serves no label: clients keep their own words.
+    const run = groups('reminders-interval')
+      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
+      .find((p) => p.title === 'Go for a run')!
+    expect(run).toMatchObject({ period_interval: 1, period_label: null })
   })
 })

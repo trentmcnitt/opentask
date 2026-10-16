@@ -141,6 +141,7 @@ export function QuotaPromptSection({
   value,
   onChange,
   period,
+  interval: draftInterval,
   periodTouched,
   task,
   target,
@@ -149,6 +150,8 @@ export function QuotaPromptSection({
   onChange: (next: QuotaPromptConfig) => void
   /** The editor's period — its draft, not the saved rule. */
   period: QuotaFreq | null
+  /** The editor's "every N" — its draft; null when untouched on a mixed selection. */
+  interval: number | null
   periodTouched: boolean
   /** The saved quota (null when creating), for its rule's INTERVAL. */
   task: Task | null
@@ -156,10 +159,12 @@ export function QuotaPromptSection({
   target: number
 }) {
   const { slots, userDefault } = usePromptSetup()
-  // A period chosen in the editor is a bare FREQ (interval 1); an untouched
-  // one keeps the quota's own rule, INTERVAL included — every other day is
-  // not "daily" for numbering.
-  const interval = periodTouched ? 1 : (quotaPeriodOf(task?.rrule)?.interval ?? 1)
+  // The editor's draft interval (interval quotas, 2026-10-16) — a period
+  // chosen in the editor starts at 1, the stepper sets more; an untouched one
+  // keeps the quota's own rule. Every other day is not "daily" for numbering.
+  const interval = periodTouched
+    ? (draftInterval ?? 1)
+    : (quotaPeriodOf(task?.rrule)?.interval ?? 1)
   return (
     <QuotaPromptField
       value={value}

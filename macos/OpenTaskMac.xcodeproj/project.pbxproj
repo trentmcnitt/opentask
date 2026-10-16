@@ -75,6 +75,7 @@
 		3EE6F7B84B2317550D8CC09A /* SegmentWidthsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */; };
 		3F5F24E827B5E77749258D0F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79B196EB051C2A6103B3CB4E /* WidgetKit.framework */; };
 		40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */; };
+		416BA9F4F61DED457A9F058E /* reminders-interval.json in Resources */ = {isa = PBXBuildFile; fileRef = A3976D6271B79475E88E8901 /* reminders-interval.json */; };
 		4185E2BB6C6CEE9C0B8B9FE0 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
 		422D698F05972EA445D2250C /* task-segments-target-today-repeating.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EC6908F672BD8B854E45E9F /* task-segments-target-today-repeating.json */; };
 		42CA7D8B8D0E3A5C709A5321 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */; };
@@ -99,6 +100,7 @@
 		57441E318F2FA30179E3BC29 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */; };
 		58A1CB55EF9E06BD0CD0FEB4 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */; };
 		59D21E71E0189D9AE5946B94 /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
+		5A0333B4EF13096F70EEC7D8 /* task-interval-quota.json in Resources */ = {isa = PBXBuildFile; fileRef = 921B76E2529F1F4C5642DE21 /* task-interval-quota.json */; };
 		5ACFC5419BA8178CCBDD0D35 /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */; };
 		5B12270DDC56B7FDB9FAEE3C /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06CA39C19D4AF5FADD8BA98 /* RecurrenceSummary.swift */; };
 		5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D351611FEE1FDCC48702D /* SampleData.swift */; };
@@ -361,10 +363,12 @@
 		8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidget.swift; sourceTree = "<group>"; };
 		8F19FED31D51A4F31E33C37B /* undo-status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "undo-status.json"; sourceTree = "<group>"; };
 		903ACB0C682D367B55AA9A1E /* WidgetRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetRenderTests.swift; sourceTree = "<group>"; };
+		921B76E2529F1F4C5642DE21 /* task-interval-quota.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-interval-quota.json"; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
 		A13865C4D7DA320D5CAA82CE /* QuotaCountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCountTests.swift; sourceTree = "<group>"; };
 		A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlan.swift; sourceTree = "<group>"; };
 		A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewLocalData.swift; sourceTree = "<group>"; };
+		A3976D6271B79475E88E8901 /* reminders-interval.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-interval.json"; sourceTree = "<group>"; };
 		A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAge.swift; sourceTree = "<group>"; };
 		A465FB343DC09F05B9CAF017 /* TasksPageControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksPageControl.swift; sourceTree = "<group>"; };
 		A535170EA850BA882099BFB1 /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
@@ -439,11 +443,13 @@
 				CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */,
 				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
 				37C29187973C3150F91CA3B7 /* reminders-initial.json */,
+				A3976D6271B79475E88E8901 /* reminders-interval.json */,
 				20094FA70C6D6907002B24FA /* reminders-segments.json */,
 				856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
 				E3290E5D7B8A509F3BA310ED /* task-badges.json */,
 				F18E00062C7779D38C364472 /* task-counts.json */,
+				921B76E2529F1F4C5642DE21 /* task-interval-quota.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
 				0FB8808D7E3324C55F3E06A1 /* task-segments-consider.json */,
 				5EC6908F672BD8B854E45E9F /* task-segments-target-today-repeating.json */,
@@ -811,11 +817,13 @@
 				D5CFE82513923A9DD0563FB9 /* quota-prompts-restore.json in Resources */,
 				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,
 				51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */,
+				416BA9F4F61DED457A9F058E /* reminders-interval.json in Resources */,
 				A7A7013390BB2D8ED7765AAB /* reminders-segments.json in Resources */,
 				53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
 				FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */,
 				04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */,
+				5A0333B4EF13096F70EEC7D8 /* task-interval-quota.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
 				DFD0535376C465799D675624 /* task-segments-consider.json in Resources */,
 				422D698F05972EA445D2250C /* task-segments-target-today-repeating.json in Resources */,

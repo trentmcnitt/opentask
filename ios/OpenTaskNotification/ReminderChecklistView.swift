@@ -331,7 +331,7 @@ struct ReminderChecklistView: View {
         let em = countEm
         return QuotaSegmentsText.count(
             QuotaCount.chooseForm(target: prompt.target), current: prompt.current, target: prompt.target,
-            word: QuotaCount.word(period: prompt.period), em: em, wordSize: em * 0.85, scale: displayScale
+            word: prompt.segmentWord, em: em, wordSize: em * 0.85, scale: displayScale
         )
     }
 

@@ -18,10 +18,15 @@ import { syncBadgeCount } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { QUOTA_DUE_DATE_MESSAGE, QUOTA_PERIOD_MESSAGE } from '@/core/validation'
-import { isTracked, quotaPeriodOf } from '@/lib/track'
+import {
+  QUOTA_DUE_DATE_MESSAGE,
+  QUOTA_INTERVAL_MESSAGE,
+  QUOTA_PERIOD_MESSAGE,
+} from '@/core/validation'
+import { isTracked, quotaIntervalAllowed, quotaPeriodOf } from '@/lib/track'
 import { assertPromptSlotsOwned, defaultReminderRule } from '@/core/time-slots'
 import { getTaskById } from './read'
+import { quotaAnchorNow } from './period-rollover'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
@@ -38,11 +43,13 @@ export interface CreateTaskOptions {
 
 /**
  * A new quota's two refusals (§5): it has no due date (QUOTA_DUE_DATE_MESSAGE),
- * and it always has a period (QUOTA_PERIOD_MESSAGE, 2026-09-25).
+ * and it always has a period (QUOTA_PERIOD_MESSAGE, 2026-09-25) whose
+ * INTERVAL is in range (QUOTA_INTERVAL_MESSAGE, 2026-10-16).
  */
 function assertQuotaShape(input: TaskCreateInput): void {
   if (input.due_at) throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
   if (quotaPeriodOf(input.rrule) === null) throw new ValidationError(QUOTA_PERIOD_MESSAGE)
+  if (!quotaIntervalAllowed(input.rrule)) throw new ValidationError(QUOTA_INTERVAL_MESSAGE)
 }
 
 /**
@@ -232,8 +239,8 @@ export function createTask(options: CreateTaskOptions): Task {
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
-        target_auto, occurrence_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        target_auto, occurrence_at, progress_period_start, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -270,6 +277,10 @@ export function createTask(options: CreateTaskOptions): Task {
         now,
         target.auto ? 1 : 0,
         occurrenceAt,
+        // Interval quotas (2026-10-16): a quota's period is anchored as it is
+        // made — this unit's start, in the owner's clock — not lazily by the
+        // rollover's first pass (`quotaAnchorNow`).
+        tracked ? quotaAnchorNow(userId, rrule) : null,
         now,
         now,
       )

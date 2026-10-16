@@ -599,9 +599,9 @@ describe('The occurrence origin survives what it should', () => {
   test('TR-026: a quota carries its period anchor in the task shape', () => {
     const quota = makeQuota()
     const stored = getTaskById(quota.id)!
-    // Null until the rollover job first anchors it — but present, and typed.
+    // Stamped as it is made (2026-10-16): the start of the week it is in.
     expect(stored).toHaveProperty('progress_period_start')
-    expect(stored.progress_period_start).toBeNull()
+    expect(stored.progress_period_start).not.toBeNull()
 
     getDb()
       .prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?')

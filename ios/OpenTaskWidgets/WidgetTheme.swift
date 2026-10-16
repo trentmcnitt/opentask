@@ -924,7 +924,7 @@ struct WidgetTextMetrics {
     /// pager and the row draw the same thing (a pre-measured row can't use
     /// `ViewThatFits`).
     func promptCountForm(_ prompt: QuotaPromptDTO, width: CGFloat) -> QuotaCount.Form {
-        let word = QuotaCount.word(period: prompt.period)
+        let word = prompt.segmentWord
         let segments = QuotaSegmentsDrawing.boxesWidth(
             current: prompt.current, target: prompt.target, hasWord: word != nil, em: titlePointSize,
             lead: promptCountLead, scale: displayScale
@@ -943,7 +943,7 @@ struct WidgetTextMetrics {
     ) -> (lines: Int, shrinks: Bool) {
         guard width > 0 else { return (1, false) }
         let font = titleFont(weight: .regular)
-        let word = QuotaCount.word(period: prompt.period)
+        let word = prompt.segmentWord
         let string = NSMutableAttributedString(string: prompt.title + " ", attributes: [.font: font])
         switch form {
         case .segments:

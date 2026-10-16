@@ -134,10 +134,20 @@ struct QuotaSegments: View {
     /// Off where a heading already names the period (the Track chip).
     var showsWord = true
     var palette = QuotaSegmentsText.Palette()
+    /// An interval quota's served end, "by Oct 24" (2026-10-16) — the word in
+    /// place of `period`'s ("week"), and in the spoken label. Nil at interval 1.
+    var periodLabel: String? = nil
 
     @Environment(\.displayScale) private var displayScale
 
-    private var word: String? { showsWord ? QuotaCount.word(period: period) : nil }
+    private var word: String? {
+        showsWord ? QuotaCount.word(period: period, label: periodLabel).map(Self.unbreakable) : nil
+    }
+
+    /// "by Oct 24" never splits across lines.
+    private static func unbreakable(_ word: String) -> String {
+        word.replacingOccurrences(of: " ", with: "\u{00A0}")
+    }
     private var size: CGFloat { wordSize ?? em * 0.85 }
 
     var body: some View {
@@ -153,7 +163,9 @@ struct QuotaSegments: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(
-            QuotaCount.spokenLabel(current: current, target: target, period: period, withPeriod: showsWord)
+            QuotaCount.spokenLabel(
+                current: current, target: target, period: period, label: periodLabel, withPeriod: showsWord
+            )
         ))
     }
 

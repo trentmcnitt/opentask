@@ -6,8 +6,9 @@ import Foundation
 // follows, both porting `src/lib/track.ts`. The per-quota rules come from
 // `QuotaRules` (ios/Shared/QuotaRules.swift), shared with the widget:
 //
-// - period = the rrule's `FREQ` only (`QuotaPeriodKey.from(rrule:)`), day →
-//   year, then the period-less bucket last;
+// - period = the rrule's `FREQ` and its INTERVAL (`QuotaPeriodGroup`, interval
+//   quotas 2026-10-16: "Every 2 weeks" is its own section after "This week"),
+//   day → year, then the period-less bucket last;
 // - a quota's label = its first label that isn't `ai-` machinery
 //   (`QuotaRules.label(of:)`);
 // - stripe color = that label's `label_config` color, EXCEPT green, which is
@@ -24,16 +25,18 @@ import Foundation
 
 /// One period's rows, ready to draw.
 struct WatchQuotaSection: Identifiable {
-    let period: QuotaPeriodKey
-    var id: String { period.rawValue }
+    let group: QuotaPeriodGroup
+    /// The section's period unit (`.weekly` for "Every 2 weeks" too).
+    var period: QuotaPeriodKey { group.key }
+    var id: String { group.id }
     /// Met vs. total over EVERY quota in the period (unfiltered).
     let metCount: Int
     let totalCount: Int
     /// The rows to show — met ones already filtered out unless shown.
     let rows: [WatchQuotaRow]
 
-    /// "Today · 1 of 2 met".
-    var summary: String { "\(period.heading) · \(metCount) of \(totalCount) met" }
+    /// "Today · 1 of 2 met", "Every 2 weeks · 0 of 1 met".
+    var summary: String { "\(group.heading) · \(metCount) of \(totalCount) met" }
 }
 
 struct WatchQuotaRow: Identifiable {
@@ -62,14 +65,14 @@ enum WatchQuotaLogic {
         labelConfig: [LabelConfigDTO],
         showMet: Bool
     ) -> [WatchQuotaSection] {
-        let byPeriod = Dictionary(grouping: quotas) { QuotaPeriodKey.from(rrule: $0.rrule) }
-        return QuotaPeriodKey.order.compactMap { period in
-            guard let tasks = byPeriod[period], !tasks.isEmpty else { return nil }
+        let byGroup = Dictionary(grouping: quotas) { QuotaPeriodGroup.of($0) }
+        return QuotaPeriodGroup.ordered(byGroup.keys).compactMap { group in
+            guard let tasks = byGroup[group], !tasks.isEmpty else { return nil }
             let visible = sorted(tasks).filter { task in
                 showMet || !task.isProgressMet
             }
             return WatchQuotaSection(
-                period: period,
+                group: group,
                 metCount: tasks.filter(\.isProgressMet).count,
                 totalCount: tasks.count,
                 rows: visible.map {

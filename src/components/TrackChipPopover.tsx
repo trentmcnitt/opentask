@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { PopoverFooter } from '@/components/ReminderRowPopover'
-import { periodLabel, type TrackState } from '@/lib/track'
+import { taskPeriodLabel, type TrackState } from '@/lib/track'
 import { formatRRule } from '@/lib/format-rrule'
 import { cn } from '@/lib/utils'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -141,7 +141,7 @@ function QuotaSummary({
   onDelete: () => void
   periods?: PromptPeriods
 }) {
-  const period = periodLabel(task.rrule)
+  const period = taskPeriodLabel(task)
   const cadence = task.rrule ? formatRRule(task.rrule, task.anchor_time) : null
 
   return (

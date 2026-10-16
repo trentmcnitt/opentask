@@ -46,6 +46,19 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// the only thing that says where a quota is in its period: §5 quotas carry
     /// no due date at all.
     let progressPeriodStart: String?
+    /// Interval quotas (2026-10-16, docs/TASK-MODEL.md § Quotas): the CURRENT
+    /// period, served by the server so no native client repeats its
+    /// `quotaPeriodEnd` — the window's exclusive end (UTC ISO 8601), the
+    /// rule's INTERVAL ("every 2 weeks" is 2), the window's last local day
+    /// (`yyyy-MM-dd`), and "by Oct 24" for an interval above 1 (nil at 1:
+    /// the surfaces keep their own words, "This week"). All nil on anything
+    /// that isn't a quota, and from a server or cache that predates them —
+    /// which then reads as interval 1, as before (`QuotaRules.interval(of:)`
+    /// falls back to the rrule's INTERVAL).
+    let progressPeriodEnd: String?
+    let periodInterval: Int?
+    let periodLastDay: String?
+    let periodLabel: String?
     /// The server's explicit "this is a quota" flag. It exists because a quota
     /// whose target is 1 ("date night, once a month") is indistinguishable from
     /// an ordinary task by target alone. Read it through `isTracked`, not
@@ -144,6 +157,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case progressTarget = "progress_target"
         case progressCurrent = "progress_current"
         case progressPeriodStart = "progress_period_start"
+        case progressPeriodEnd = "progress_period_end"
+        case periodInterval = "period_interval"
+        case periodLastDay = "period_last_day"
+        case periodLabel = "period_label"
         case trackedFlag = "is_tracked"
         case isReminder = "is_reminder"
         case labels
@@ -182,6 +199,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         progressTarget = try c.decodeIfPresent(Int.self, forKey: .progressTarget) ?? 1
         progressCurrent = try c.decodeIfPresent(Int.self, forKey: .progressCurrent) ?? 0
         progressPeriodStart = try c.decodeIfPresent(String.self, forKey: .progressPeriodStart)
+        progressPeriodEnd = try c.decodeIfPresent(String.self, forKey: .progressPeriodEnd)
+        periodInterval = try c.decodeIfPresent(Int.self, forKey: .periodInterval)
+        periodLastDay = try c.decodeIfPresent(String.self, forKey: .periodLastDay)
+        periodLabel = try c.decodeIfPresent(String.self, forKey: .periodLabel)
         trackedFlag = try c.decodeIfPresent(Bool.self, forKey: .trackedFlag) ?? false
         isReminder = try c.decodeIfPresent(Bool.self, forKey: .isReminder) ?? false
         labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
@@ -247,7 +268,11 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         ageLabel: String? = nil,
         growthKeptAt: String? = nil,
         targetAuto: Bool = false,
-        occurrenceAt: String? = nil
+        occurrenceAt: String? = nil,
+        progressPeriodEnd: String? = nil,
+        periodInterval: Int? = nil,
+        periodLastDay: String? = nil,
+        periodLabel: String? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -259,6 +284,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.progressTarget = progressTarget
         self.progressCurrent = progressCurrent
         self.progressPeriodStart = progressPeriodStart
+        self.progressPeriodEnd = progressPeriodEnd
+        self.periodInterval = periodInterval
+        self.periodLastDay = periodLastDay
+        self.periodLabel = periodLabel
         self.trackedFlag = trackedFlag
         self.isReminder = isReminder
         self.labels = labels
@@ -682,20 +711,33 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// server that predates the field.
     let slotId: Int?
     let title: String
-    /// Today's count — 0 once the period has ended.
-    let current: Int
+    /// Today's count — 0 once the period has ended. `var` (with
+    /// `considered` and `done`) only so the optimistic rebuilds below copy
+    /// the prompt and change these three (`updated(current:considered:done:)`)
+    /// rather than re-listing every field — a field added later (the period
+    /// fields, 2026-10-16) can't be dropped from a rebuild that way.
+    var current: Int
     let target: Int
-    /// `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or nil.
+    /// `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or nil. The bare FREQ even for an
+    /// interval quota — read `periodLabel` beside it.
     let period: String?
+    /// Interval quotas (2026-10-16): the quota's served period, as on
+    /// `TaskDTO` — the rule's INTERVAL, the window's exclusive end and last
+    /// local day, and "by Oct 24" for an interval above 1 (nil at 1, where
+    /// the word comes from `period`: "week"). Nil from an older server.
+    let periodInterval: Int?
+    let periodEnd: String?
+    let periodLastDay: String?
+    let periodLabel: String?
     /// The quota's label color, resolved server-side: a `LabelColor` name
     /// (`WidgetTheme.projectColor`'s palette) or nil. Never "green" — green
     /// means "met" on quota chips, so the stripe never spends it.
     let stripeColor: String?
     /// Considered today (the circle, or "did it", which implies it).
-    let considered: Bool
+    var considered: Bool
     /// Done for today: daily — count reached `number`; others — progress
     /// logged today from anywhere.
-    let done: Bool
+    var done: Bool
     /// The quota has notes (`has_notes`, 2026-09-25) — the web's
     /// `QuotaPromptRow` marks it with `NotesMarker` after the count, and the
     /// widget row draws the same small glyph there (`NotesGlyph`). False
@@ -708,6 +750,10 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         case promptKey = "prompt_key"
         case taskId = "task_id"
         case number, numbers, title, current, target, period
+        case periodInterval = "period_interval"
+        case periodEnd = "period_end"
+        case periodLastDay = "period_last_day"
+        case periodLabel = "period_label"
         case slotId = "slot_id"
         case stripeColor = "stripe_color"
         case considered, done
@@ -725,6 +771,10 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         current = try c.decodeIfPresent(Int.self, forKey: .current) ?? 0
         target = try c.decodeIfPresent(Int.self, forKey: .target) ?? 1
         period = try c.decodeIfPresent(String.self, forKey: .period)
+        periodInterval = try c.decodeIfPresent(Int.self, forKey: .periodInterval)
+        periodEnd = try c.decodeIfPresent(String.self, forKey: .periodEnd)
+        periodLastDay = try c.decodeIfPresent(String.self, forKey: .periodLastDay)
+        periodLabel = try c.decodeIfPresent(String.self, forKey: .periodLabel)
         stripeColor = try c.decodeIfPresent(String.self, forKey: .stripeColor)
         considered = try c.decodeIfPresent(Bool.self, forKey: .considered) ?? false
         done = try c.decodeIfPresent(Bool.self, forKey: .done) ?? false
@@ -740,7 +790,9 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         promptKey: String, taskId: Int, number: Int? = nil, numbers: [Int]? = nil, slotId: Int? = nil,
         title: String, current: Int, target: Int,
         period: String? = nil, stripeColor: String? = nil, considered: Bool = false, done: Bool = false,
-        hasNotes: Bool
+        hasNotes: Bool,
+        periodInterval: Int? = nil, periodEnd: String? = nil, periodLastDay: String? = nil,
+        periodLabel: String? = nil
     ) {
         self.promptKey = promptKey
         self.taskId = taskId
@@ -751,10 +803,25 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         self.current = current
         self.target = target
         self.period = period
+        self.periodInterval = periodInterval
+        self.periodEnd = periodEnd
+        self.periodLastDay = periodLastDay
+        self.periodLabel = periodLabel
         self.stripeColor = stripeColor
         self.considered = considered
         self.done = done
         self.hasNotes = hasNotes
+    }
+
+    /// A copy with a new count and handled state — EVERY other field carried
+    /// over by construction. The one way an optimistic or write-through
+    /// rebuild changes a prompt (`handled`, `putBack`, `WidgetStore`).
+    func updated(current: Int? = nil, considered: Bool? = nil, done: Bool? = nil) -> QuotaPromptDTO {
+        var copy = self
+        if let current { copy.current = current }
+        if let considered { copy.considered = considered }
+        if let done { copy.done = done }
+        return copy
     }
 
     /// Still waiting for today — the server's `promptWaiting`.
@@ -771,18 +838,26 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// period, count only.
     var countText: String {
         let count = "\(current)/\(target)"
-        guard let word = QuotaCount.word(period: period) else { return count }
-        return "\(count)\u{00A0}\(word)"
+        guard let word = segmentWord else { return count }
+        return "\(count)\u{00A0}\(word.replacingOccurrences(of: " ", with: "\u{00A0}"))"
     }
+
+    /// The word after the count — "today", "week", "month" from `period`,
+    /// or an interval quota's served end, "by Oct 24" (2026-10-16): "week"
+    /// would be wrong for a fortnight. The one word every prompt surface
+    /// draws (`QuotaCount.word(period:label:)`).
+    var segmentWord: String? { QuotaCount.word(period: period, label: periodLabel) }
 
     /// The period in natural words, for VoiceOver: "today", "this week",
     /// "this month", "this year" — nil when the quota has none (or an
     /// unknown one). See `spokenCount`.
-    var periodWords: String? { QuotaCount.spokenPeriod(period: period) }
+    var periodWords: String? { QuotaCount.spokenPeriod(period: period, label: periodLabel) }
 
     /// "1 of 2 today", "1 of 2 this week" — the count's ONE accessibility
     /// label, whichever form it draws (`QuotaCount.spokenLabel`).
-    var spokenCount: String { QuotaCount.spokenLabel(current: current, target: target, period: period) }
+    var spokenCount: String {
+        QuotaCount.spokenLabel(current: current, target: target, period: period, label: periodLabel)
+    }
 
     /// The count alone, "1/2" — for a surface that sets the period beside it
     /// itself (the Smart Stack card, `compactPeriodWord`).
@@ -794,6 +869,9 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// count and word on two lines of one `Text`, with these. Everywhere else
     /// uses the full `periodWords`.
     var compactPeriodWord: String? {
+        // An interval quota: its last day as "10/24" — "by Oct 24" doesn't
+        // fit the 30pt column, and "wk" would be wrong for a fortnight.
+        if periodLabel != nil, let day = QuotaCount.compactDay(periodLastDay) { return day }
         switch period {
         case "DAILY": return "today"
         case "WEEKLY": return "wk"
@@ -829,11 +907,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         } else {
             newCurrent = current
         }
-        return QuotaPromptDTO(
-            promptKey: promptKey, taskId: taskId, number: number, numbers: numbers, slotId: slotId,
-            title: title, current: newCurrent, target: target, period: period, stripeColor: stripeColor,
-            considered: true, done: done || did, hasNotes: hasNotes
-        )
+        return updated(current: newCurrent, considered: true, done: done || did)
     }
 
     /// A copy put back — waiting for today again — the optimistic render of
@@ -842,11 +916,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// what comes off) is recorded only on the server (`did_applied`), and
     /// its answer is written in by `WidgetStore.confirmPromptRestore`.
     func putBack() -> QuotaPromptDTO {
-        QuotaPromptDTO(
-            promptKey: promptKey, taskId: taskId, number: number, numbers: numbers, slotId: slotId,
-            title: title, current: current, target: target, period: period, stripeColor: stripeColor,
-            considered: false, done: false, hasNotes: hasNotes
-        )
+        updated(considered: false, done: false)
     }
 }
 

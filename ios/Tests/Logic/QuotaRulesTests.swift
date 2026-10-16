@@ -46,4 +46,45 @@ final class QuotaRulesTests: XCTestCase {
         XCTAssertNil(QuotaRules.stripeColor(of: quota(3), labelConfig: config))
         XCTAssertNil(QuotaRules.stripeColor(forLabel: "unconfigured", labelConfig: config))
     }
+
+    // MARK: Interval quotas (2026-10-16)
+
+    func testPeriodGroupKeysOnUnitAndInterval() {
+        let week = TaskDTO(id: 1, title: "Run", rrule: "FREQ=WEEKLY", progressTarget: 3)
+        let fortnight = TaskDTO(
+            id: 2, title: "Oven", rrule: "FREQ=WEEKLY;INTERVAL=2", trackedFlag: true, periodInterval: 2
+        )
+        // An older server: no `period_interval`, the rrule's INTERVAL is read.
+        let oldServer = TaskDTO(id: 3, title: "Filters", rrule: "FREQ=MONTHLY;INTERVAL=3", trackedFlag: true)
+        XCTAssertEqual(QuotaPeriodGroup.of(week), QuotaPeriodGroup(key: .weekly, interval: 1))
+        XCTAssertEqual(QuotaPeriodGroup.of(fortnight), QuotaPeriodGroup(key: .weekly, interval: 2))
+        XCTAssertEqual(QuotaPeriodGroup.of(oldServer), QuotaPeriodGroup(key: .monthly, interval: 3))
+        XCTAssertEqual(QuotaPeriodGroup.of(fortnight).id, "weekly/2")
+        XCTAssertEqual(QuotaPeriodGroup.of(fortnight).heading, "Every 2 weeks")
+        XCTAssertEqual(QuotaPeriodGroup.of(week).heading, "This week")
+        XCTAssertTrue(QuotaPeriodGroup.of(week).hasClock)
+        XCTAssertFalse(QuotaPeriodGroup.of(fortnight).hasClock)
+    }
+
+    func testPeriodGroupOrder() {
+        let groups = [
+            QuotaPeriodGroup(key: .monthly, interval: 1),
+            QuotaPeriodGroup(key: .weekly, interval: 3),
+            QuotaPeriodGroup(key: .none, interval: 1),
+            QuotaPeriodGroup(key: .weekly, interval: 1),
+            QuotaPeriodGroup(key: .weekly, interval: 2),
+            QuotaPeriodGroup(key: .daily, interval: 2),
+        ]
+        XCTAssertEqual(
+            QuotaPeriodGroup.ordered(groups).map(\.id),
+            ["daily/2", "weekly", "weekly/2", "weekly/3", "monthly", "none"]
+        )
+    }
+
+    func testCompactDay() {
+        XCTAssertEqual(QuotaCount.compactDay("2026-10-24"), "10/24")
+        XCTAssertEqual(QuotaCount.compactDay("2026-01-05"), "1/5")
+        XCTAssertNil(QuotaCount.compactDay(nil))
+        XCTAssertNil(QuotaCount.compactDay("Oct 24"))
+    }
 }

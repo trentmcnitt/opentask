@@ -65,6 +65,12 @@ export interface QuotaSegmentsProps extends Omit<HTMLAttributes<HTMLSpanElement>
   freq: string | null | undefined
   /** Show the period word after the count. Off on a Track chip, whose section names it. */
   showWord?: boolean
+  /**
+   * Interval quotas (2026-10-16): the server's served label ("by Oct 24",
+   * `period_label`) — used as the word in place of the FREQ's ("week"), and in
+   * the accessible name. Null/omitted at interval 1.
+   */
+  periodLabel?: string | null
   /** Follows a title in running text (see HOW IT MEASURES). */
   inline?: boolean
   /** The text form's numerator in the foreground, medium weight (the chips' and Quotas page's look). */
@@ -233,6 +239,7 @@ export function QuotaSegments({
   target: rawTarget,
   freq,
   showWord = true,
+  periodLabel = null,
   inline = true,
   emphasizeCurrent = false,
   textClassName = 'text-[0.85em]',
@@ -242,7 +249,7 @@ export function QuotaSegments({
 }: QuotaSegmentsProps) {
   const target = Math.max(1, rawTarget)
   const met = current >= target
-  const word = showWord ? quotaSegmentWord(freq) : null
+  const word = showWord ? quotaSegmentWord(freq, periodLabel) : null
   const fills = segmentFills(current, target)
   const anchorRef = useRef<HTMLSpanElement>(null)
   const segGhostRef = useRef<HTMLSpanElement>(null)
@@ -269,7 +276,7 @@ export function QuotaSegments({
     <span
       {...rest}
       role="img"
-      aria-label={quotaCountAriaLabel(current, target, freq)}
+      aria-label={quotaCountAriaLabel(current, target, freq, periodLabel)}
       data-quota-segments=""
       data-count={`${current}/${target}`}
       data-count-form={form}

@@ -5,7 +5,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { trackState, quotaFreqOf, quotaLabelOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
+import {
+  trackState,
+  quotaFreqOf,
+  quotaLabelOf,
+  quotaPeriodOf,
+  quotaRule,
+  QUOTA_INTERVAL_MAX,
+  QUOTA_PERIODS,
+  type QuotaFreq,
+} from '@/lib/track'
 import { QuotaPromptSection, usePromptDraft } from '@/components/QuotaPromptField'
 import {
   QuotaPromptBulkField,
@@ -119,9 +128,23 @@ export function QuotaDetail({
   const [title, setTitle] = useState(base.title)
   const [target, setTarget] = useState(base.target)
   const [period, setPeriod] = useState<QuotaPeriod | null>(base.period)
+  const [interval, setPeriodInterval] = useState<number | null>(base.interval)
   const [label, setLabel] = useState<QuotaLabelChoice>(base.label)
   const [notes, setNotes] = useState(base.notes)
-  const { prompt, section } = useEditorPrompt(single, tasks, oneQuota, period, base.period)
+  const { prompt, section } = useEditorPrompt(single, tasks, oneQuota, {
+    period,
+    interval,
+    touched: period !== base.period || interval !== base.interval,
+  })
+
+  // Choosing ANOTHER period starts it at every 1 ("Every week" means every
+  // week); pressing the chip that is already pressed changes nothing, so a
+  // fortnight is not flattened by a stray tap on its own chip.
+  const choosePeriod = (next: QuotaPeriod) => {
+    if (next === period) return
+    setPeriod(next)
+    setPeriodInterval(1)
+  }
 
   // The registry is the option list. `reload` runs after a save that registered
   // a new name, so the next quota edited in the same session is offered it.
@@ -137,7 +160,7 @@ export function QuotaDetail({
     dirty,
     targetOk,
     canSave,
-  } = describeDraft({ creating, base, title, target, period, label, notes, prompt })
+  } = describeDraft({ creating, base, title, target, period, interval, label, notes, prompt })
 
   const buildChanges = useCallback((): QuotaChanges => {
     const changes: QuotaChanges = {}
@@ -159,9 +182,15 @@ export function QuotaDetail({
     // about its period, can both have their target edited while each keeps its
     // own rule. `is_tracked` alone satisfies the server's rule for a bare FREQ,
     // so nothing has to be invented to make the request legal.
+    //
+    // INTERVAL QUOTAS (2026-10-16): the rule is canonical — `FREQ=X`, plus
+    // `;INTERVAL=N` above 1 (`quotaRule`; the server refuses the other
+    // order). A touched period always has an interval: choosing a chip sets
+    // it to 1, and the stepper sets it directly. A selection whose intervals
+    // disagree shows "—" and sends nothing until one of the two is touched.
     if (creating || periodTouched) {
       changes.is_tracked = true
-      if (period !== null) changes.rrule = `FREQ=${period}`
+      if (period !== null) changes.rrule = quotaRule(period, interval ?? 1)
     }
     // The label goes ONLY when it was actually chosen, for the same reason the
     // rule does: six quotas on this corpus still carry TWO labels from before
@@ -193,6 +222,7 @@ export function QuotaDetail({
     notes,
     targetNumber,
     period,
+    interval,
     label,
     registeredLabels,
   ])
@@ -233,6 +263,7 @@ export function QuotaDetail({
     setTitle(base.title)
     setTarget(base.target)
     setPeriod(base.period)
+    setPeriodInterval(base.interval)
     setLabel(base.label)
     setNotes(base.notes)
     prompt.reset()
@@ -258,7 +289,9 @@ export function QuotaDetail({
         target={target}
         onTargetChange={setTarget}
         period={period}
-        onPeriodChange={setPeriod}
+        onPeriodChange={choosePeriod}
+        interval={interval}
+        onIntervalChange={setPeriodInterval}
         showError={targetTouched && !targetOk}
       />
 
@@ -295,15 +328,14 @@ function useEditorPrompt(
   single: Task | null,
   tasks: Task[],
   oneQuota: boolean,
-  period: QuotaPeriod | null,
-  basePeriod: QuotaPeriod | null,
+  draft: { period: QuotaPeriod | null; interval: number | null; touched: boolean },
 ) {
-  const periodTouched = period !== basePeriod
+  const { period, interval, touched: periodTouched } = draft
   const singlePrompt = usePromptDraft(single)
-  const bulkPrompt = useBulkPromptDraft(oneQuota ? [] : tasks, period, periodTouched)
+  const bulkPrompt = useBulkPromptDraft(oneQuota ? [] : tasks, period, periodTouched, interval)
   return {
     prompt: oneQuota ? singlePrompt : bulkPrompt,
-    section: { oneQuota, singlePrompt, bulkPrompt, period, periodTouched, single },
+    section: { oneQuota, singlePrompt, bulkPrompt, period, interval, periodTouched, single },
   }
 }
 
@@ -313,6 +345,7 @@ function EditorPromptSection({
   singlePrompt,
   bulkPrompt,
   period,
+  interval,
   periodTouched,
   single,
   target,
@@ -321,6 +354,7 @@ function EditorPromptSection({
   singlePrompt: ReturnType<typeof usePromptDraft>
   bulkPrompt: BulkPromptDraft
   period: QuotaPeriod | null
+  interval: number | null
   periodTouched: boolean
   single: Task | null
   target: number
@@ -331,6 +365,7 @@ function EditorPromptSection({
       value={singlePrompt.config}
       onChange={singlePrompt.setConfig}
       period={period}
+      interval={interval}
       periodTouched={periodTouched}
       task={single}
       target={target}
@@ -338,18 +373,32 @@ function EditorPromptSection({
   )
 }
 
-/** "N times · every week", shared by every mode of the editor. */
+/**
+ * "N times · every week", shared by every mode of the editor.
+ *
+ * The chips pick the period's UNIT and are pressed by FREQ alone; the "every
+ * N" stepper under them (`IntervalStepper`, 2026-10-16) picks how many of it
+ * — "every 2 weeks" is "Every week" pressed with 2 in the stepper. Not a
+ * second number in front of the chips: "[1] times every [2] weeks" puts two
+ * bare numbers side by side, and the first is the one people take for the
+ * interval (the design doc's reading of Trent's ask).
+ */
 function CadenceField({
   target,
   onTargetChange,
   period,
   onPeriodChange,
+  interval,
+  onIntervalChange,
   showError,
 }: {
   target: string
   onTargetChange: (value: string) => void
   period: QuotaPeriod | null
   onPeriodChange: (value: QuotaPeriod) => void
+  /** Null: the selection's intervals disagree ("—"). */
+  interval: number | null
+  onIntervalChange: (value: number) => void
   showError: boolean
 }) {
   const n = Number.parseInt(target, 10)
@@ -386,10 +435,75 @@ function CadenceField({
           ))}
         </div>
       </div>
+      {period !== null && QUOTA_INTERVAL_MAX[period] > 1 && (
+        <IntervalStepper period={period} value={interval} onChange={onIntervalChange} />
+      )}
       {showError && (
         <p className="text-destructive text-xs">A target is a whole number from 1 to 1000.</p>
       )}
     </fieldset>
+  )
+}
+
+/**
+ * "every [−] 2 [+] weeks" — how many of the pressed period one quota period
+ * spans (interval quotas, 2026-10-16). Always shown under the pressed chip,
+ * at 1 too ("every 1 week"), so it can be found without knowing to look for
+ * it; a yearly quota has none (every year is the only choice). The range is
+ * the server's cap (`QUOTA_INTERVAL_MAX`): 1–30 days, 1–12 weeks, 1–12
+ * months. `null` is a multi-edit whose quotas disagree — it shows "—", and
+ * either button starts it from 1.
+ */
+function IntervalStepper({
+  period,
+  value,
+  onChange,
+}: {
+  period: QuotaPeriod
+  value: number | null
+  onChange: (value: number) => void
+}) {
+  const max = QUOTA_INTERVAL_MAX[period]
+  const unit = period === 'DAILY' ? 'day' : QUOTA_PERIODS.find((p) => p.freq === period)!.word
+  const shown = value ?? 1
+  const step = (delta: 1 | -1) =>
+    onChange(value === null ? 1 : Math.min(max, Math.max(1, value + delta)))
+  const stepClass =
+    'hover:border-foreground/40 flex size-7 items-center justify-center rounded-full border text-sm disabled:opacity-40'
+  return (
+    <div className="flex items-center gap-2 text-sm" data-interval-stepper={period}>
+      <span className="text-muted-foreground">every</span>
+      <button
+        type="button"
+        aria-label={`Fewer ${unit}s per period`}
+        onClick={() => step(-1)}
+        disabled={value !== null && value <= 1}
+        className={stepClass}
+      >
+        −
+      </button>
+      <output
+        aria-live="polite"
+        aria-label={value === null ? 'Mixed' : `Every ${value} ${unit}${value === 1 ? '' : 's'}`}
+        data-interval-value={value ?? ''}
+        className="w-6 text-center font-medium tabular-nums"
+      >
+        {value === null ? '—' : value}
+      </output>
+      <button
+        type="button"
+        aria-label={`More ${unit}s per period`}
+        onClick={() => step(1)}
+        disabled={value !== null && value >= max}
+        className={stepClass}
+      >
+        +
+      </button>
+      <span className="text-muted-foreground">
+        {unit}
+        {value === null || shown !== 1 ? 's' : ''}
+      </span>
+    </div>
   )
 }
 
@@ -650,6 +764,7 @@ function describeBase({
       title: create?.title ?? '',
       target: '3',
       period: 'WEEKLY' as QuotaPeriod | null,
+      interval: 1 as number | null,
       // A new quota starts unlabelled — `null`, not `undefined`: nothing is in
       // disagreement, the answer is simply "none".
       label: null as QuotaLabelChoice,
@@ -658,11 +773,16 @@ function describeBase({
     }
   const targets = new Set(tasks.map((t) => String(Math.max(1, t.progress_target ?? 1))))
   const periods = new Set(tasks.map((t) => quotaFreqOf(t.rrule)))
+  // The interval apart from the FREQ, so the chip a fortnight presses is
+  // "Every week" and a selection mixing every week with every 2 weeks presses
+  // "Every week" with "—" in the stepper.
+  const intervals = new Set(tasks.map((t) => quotaPeriodOf(t.rrule)?.interval ?? 1))
   const labels = new Set(tasks.map(quotaLabelOf))
   return {
     title: single?.title ?? '',
     target: targets.size === 1 ? [...targets][0] : '',
     period: periods.size === 1 ? [...periods][0] : null,
+    interval: intervals.size === 1 ? ([...intervals][0] as number | null) : null,
     // One agreed label (or one agreed "none"); `undefined` when they differ, so
     // picking "None" on a mixed selection still reads as a change.
     label: (labels.size === 1 ? [...labels][0] : undefined) as QuotaLabelChoice,
@@ -689,6 +809,7 @@ function describeDraft({
   title,
   target,
   period,
+  interval,
   label,
   notes,
   prompt,
@@ -698,6 +819,7 @@ function describeDraft({
     title: string
     target: string
     period: QuotaPeriod | null
+    interval: number | null
     label: QuotaLabelChoice
     notes: string
     allPeriodless: boolean
@@ -705,6 +827,7 @@ function describeDraft({
   title: string
   target: string
   period: QuotaPeriod | null
+  interval: number | null
   label: QuotaLabelChoice
   notes: string
   /** The "Remind me daily" section changed (compared by the component). */
@@ -712,7 +835,9 @@ function describeDraft({
 }) {
   const targetNumber = Number.parseInt(target, 10)
   const targetTouched = target !== base.target
-  const periodTouched = period !== base.period
+  // The period is the FREQ and the interval together: changing only the
+  // "every N" stepper is a period change, and sends the rule.
+  const periodTouched = period !== base.period || interval !== base.interval
   const titleTouched = title !== base.title
   const notesTouched = notes !== base.notes
   const labelTouched = label !== base.label
