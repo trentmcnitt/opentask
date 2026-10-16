@@ -246,10 +246,11 @@ describe('Quota review fixes over HTTP', () => {
       ).json()
     ).data
 
-    // Present and explicitly null — the iOS Track widget needs this field, not
-    // due_at, to know how far through its period a quota is.
+    // Present, and stamped as the quota is made (2026-10-16) — the iOS Track
+    // widget needs this field, not due_at, to know how far through its
+    // period a quota is.
     expect(quota).toHaveProperty('progress_period_start')
-    expect(quota.progress_period_start).toBeNull()
+    expect(quota.progress_period_start).not.toBeNull()
     expect(quota.due_at).toBeNull()
 
     const fetched = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
@@ -453,5 +454,90 @@ describe('GET /api/tasks/:id/quota-stats', () => {
     expect((await apiFetch(`/api/tasks/${plain.id}/quota-stats`)).status).toBe(400)
     expect((await apiFetchB(`/api/tasks/${quota.id}/quota-stats`)).status).toBe(403)
     expect((await apiFetch('/api/tasks/999999/quota-stats')).status).toBe(404)
+  })
+})
+
+/**
+ * Interval quotas (2026-10-16): "every 2 weeks". The period is served on the
+ * task (and its prompt) so no client re-derives it; the INTERVAL is capped
+ * for a quota; a period edit re-anchors and undo puts the old period back.
+ */
+describe('Interval quotas', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function create(body: Record<string, unknown>) {
+    const res = await apiFetch('/api/tasks', { method: 'POST', body })
+    return { status: res.status, body: await res.json() }
+  }
+
+  test('POST with FREQ=WEEKLY;INTERVAL=2 serves the period: end, last day, "by …"', async () => {
+    const { status, body } = await create({
+      title: 'Deep-clean the oven',
+      is_tracked: true,
+      rrule: 'FREQ=WEEKLY;INTERVAL=2',
+    })
+    expect(status).toBe(201)
+    const id = body.data.id
+    const task = (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+    expect(task.progress_period_start).not.toBeNull()
+    expect(task.period_interval).toBe(2)
+    expect(task.period_label).toMatch(/^by [A-Z][a-z]{2} \d{1,2}$/)
+    expect(Date.parse(task.progress_period_end)).toBeGreaterThan(Date.now())
+    expect(task.period_last_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    const reminders = (await (await apiFetch('/api/reminders')).json()).data
+    const prompt = reminders.groups
+      .flatMap((g: { prompts: { task_id: number }[] }) => g.prompts)
+      .find((p: { task_id: number }) => p.task_id === id)
+    expect(prompt).toMatchObject({
+      period: 'WEEKLY',
+      period_interval: 2,
+      period_label: task.period_label,
+      period_end: task.progress_period_end,
+    })
+  })
+
+  test('an interval-1 quota serves no label (clients keep "this week")', async () => {
+    const { body } = await create({ title: 'Run', is_tracked: true, rrule: 'FREQ=WEEKLY' })
+    expect(body.data.period_interval).toBe(1)
+    expect(body.data.period_label).toBeNull()
+  })
+
+  test('the INTERVAL cap is a 400 on create and on PATCH', async () => {
+    for (const rrule of [
+      'FREQ=WEEKLY;INTERVAL=13',
+      'FREQ=DAILY;INTERVAL=31',
+      'FREQ=YEARLY;INTERVAL=2',
+    ]) {
+      const { status } = await create({ title: 'Too long', is_tracked: true, rrule })
+      expect(status, rrule).toBe(400)
+    }
+    const { body } = await create({ title: 'Ok', is_tracked: true, rrule: 'FREQ=MONTHLY' })
+    const res = await apiFetch(`/api/tasks/${body.data.id}`, {
+      method: 'PATCH',
+      body: { rrule: 'FREQ=MONTHLY;INTERVAL=13', is_tracked: true },
+    })
+    expect(res.status).toBe(400)
+  })
+
+  test('PATCH weekly → every 3 months re-anchors; undo restores the rule and the anchor', async () => {
+    const { body } = await create({ title: 'Swap filters', is_tracked: true, rrule: 'FREQ=WEEKLY' })
+    const before = body.data
+    const patched = await apiFetch(`/api/tasks/${before.id}`, {
+      method: 'PATCH',
+      // A bare period rule needs the tracked flag beside it (as the editor sends it).
+      body: { rrule: 'FREQ=MONTHLY;INTERVAL=3', is_tracked: true },
+    })
+    expect(patched.status).toBe(200)
+    const after = (await patched.json()).data
+    expect(after.period_interval).toBe(3)
+    expect(after.period_label).toMatch(/^by /)
+
+    expect((await apiFetch('/api/undo', { method: 'POST' })).status).toBe(200)
+    const undone = (await (await apiFetch(`/api/tasks/${before.id}`)).json()).data
+    expect(undone.rrule).toBe('FREQ=WEEKLY')
+    expect(undone.progress_period_start).toBe(before.progress_period_start)
   })
 })

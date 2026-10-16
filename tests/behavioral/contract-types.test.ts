@@ -211,6 +211,7 @@ const REMINDER_FIXTURES = [
   'reminders',
   'reminders-segments',
   'reminders-upcoming',
+  'reminders-interval',
 ]
 
 function groups(name: string): Group[] {
@@ -262,8 +263,9 @@ describe('contract fixtures match the TS types', () => {
         }
       }
     }
-    // Two daily rows, weekly, monthly — in each of the five captures.
-    expect(seen).toBe(20)
+    // Two daily rows, weekly, monthly — in each of the six captures — plus
+    // the every-2-weeks quota in the last (reminders-interval).
+    expect(seen).toBe(25)
   })
 
   test('group counts agree with the shared counting helpers', () => {
@@ -359,6 +361,31 @@ describe('contract fixtures match the TS types', () => {
       Object.entries(d).filter(([k]) => k !== 'met' && k !== 'description'),
     )
     expectShape(task, TASK, 'task-progress')
+  })
+
+  test('an interval quota serves its period on the task and on its prompt (2026-10-16)', () => {
+    const task = data('task-interval-quota')
+    expectShape(task, TASK, 'task-interval-quota')
+    expect(task).toMatchObject({
+      rrule: 'FREQ=WEEKLY;INTERVAL=2',
+      period_interval: 2,
+      period_label: 'by Jan 15', // pinned by the fixture writer
+    })
+    expect(task.progress_period_start).not.toBeNull()
+    expect(task.progress_period_end).not.toBeNull()
+    const prompt = groups('reminders-interval')
+      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
+      .find((p) => p.title === 'Deep-clean the oven')!
+    expect(prompt).toMatchObject({
+      period: 'WEEKLY',
+      period_interval: 2,
+      period_label: 'by Jan 15',
+    })
+    // Interval 1 serves no label: clients keep their own words.
+    const run = groups('reminders-interval')
+      .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
+      .find((p) => p.title === 'Go for a run')!
+    expect(run).toMatchObject({ period_interval: 1, period_label: null })
   })
 
   test('every slot is exactly a TimeSlot', () => {
