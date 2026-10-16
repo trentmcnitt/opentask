@@ -711,7 +711,7 @@ function periodBounds(
 /**
  * How much of a quota's period has already run, 0..1 — the period bar's
  * `aria-valuetext` ("43% of the week gone"). It drew a notch on the bar
- * until 2026-10-16, when the bar became the Reminders day bar (`DayBar`).
+ * until 2026-10-16, when the bar became the Reminders period hairline.
  *
  * The fraction is a ratio of two REAL durations (`end.diff(start)`, both
  * absolute instants), not a ratio of calendar units — which is what makes it
