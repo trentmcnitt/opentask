@@ -1381,64 +1381,41 @@ test.describe('Quotas page — the ?quota= deep link', () => {
    * highlight it in the Quotas tab." Mirrors `?reminder=<id>` on
    * `/reminders` and `?task=<id>&highlight=1` on `/`.
    *
-   * It lands on a CHIP now (2026-10-16). The two ways the page could hide one
-   * are both exercised: a quota met at load (put away) and a label cluster
-   * folded shut. Both are shown for the flash only, and both are back as the
-   * user left them after it.
+   * It lands on a CHIP now (2026-10-16), so the chip must be on the page even
+   * when the page would hide it: a quota met at load is put away. It is shown
+   * for the flash only, and put away again after it. (The other way a chip can
+   * hide, a label cluster folded shut, is opened the same way — but the fold
+   * store lives in memory, so a test's `goto` cannot carry a shut fold into
+   * the deep link's page load.)
    */
-  test('?quota=<id> brings a put-away chip in a shut cluster into view, flashes it, and changes nothing', async ({
+  test('?quota=<id> brings a put-away chip into view, flashes it, and changes nothing', async ({
     authenticatedPage: page,
   }) => {
-    const label = `zz-link-${Date.now()}`
     const id = await createTask(page, {
       title: `Probe quota the widget links to ${Date.now()}`,
       progress_target: 1,
       is_tracked: true,
       rrule: 'FREQ=WEEKLY',
-      labels: [label],
-      create_label: true,
-    })
-    // A sibling still short, so the cluster stays on the page to be folded.
-    const sibling = await createTask(page, {
-      title: `Probe quota sibling ${Date.now()}`,
-      progress_target: 2,
-      rrule: 'FREQ=WEEKLY',
-      labels: [label],
-      create_label: true,
     })
     expect(
       (await page.request.post(`/api/tasks/${id}/progress`, { data: { delta: 1 } })).ok(),
     ).toBeTruthy()
 
-    // Fold the cluster shut first — the state the link must not disturb.
-    await page.goto('/quotas')
-    const toggle = page.locator(
-      `[data-quota-period="WEEKLY"] [data-track-cluster="${label}"] button`,
-    )
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    await expect(page.locator(`[data-track-chip="${sibling}"]`)).toBeHidden()
-    // Met at load: put away.
-    await expect(page.locator(`[data-track-chip="${id}"]`)).toHaveCount(0)
-
-    try {
-      await page.goto(`/quotas?quota=${id}`)
-      const chip = page.locator(`[data-track-chip="${id}"]`)
-      await expect(chip).toHaveAttribute('data-quota-highlight', '')
-      await expect(chip).toBeInViewport()
-      // A link is a place to look, not an edit. Nothing opens.
-      await expect(page.getByRole('dialog')).toHaveCount(0)
-      await expect(page.locator('[data-track-popover]')).toHaveCount(0)
-      // The param is spent, so a reload does not flash the same chip again.
-      await expect(page).toHaveURL('/quotas')
-      // Once the flash has played, the page is as the user left it: the met
-      // quota put away again and the cluster shut.
-      await expect(chip).toHaveCount(0)
-      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    } finally {
-      // Put the fold back: the fold store is shared by every test.
-      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
-    }
+    await page.goto(`/quotas?quota=${id}`)
+    const chip = page.locator(`[data-track-chip="${id}"]`)
+    await expect(chip).toHaveAttribute('data-quota-highlight', '')
+    await expect(chip).toBeInViewport()
+    // A link is a place to look, not an edit. Nothing opens.
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('[data-track-popover]')).toHaveCount(0)
+    // The param is spent, so a reload does not flash the same chip again.
+    await expect(page).toHaveURL('/quotas')
+    // Once the flash has played, the page is as it would be without the link:
+    // met at load, so put away.
+    await expect(chip).toHaveCount(0)
+    await page.reload()
+    await expect(page.locator('[data-quotas-summary]')).toBeVisible()
+    await expect(chip).toHaveCount(0)
   })
 })
 
