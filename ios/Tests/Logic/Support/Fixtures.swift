@@ -47,6 +47,8 @@ enum Fixtures {
 
     static let pinnedDate = "2026-01-15"
     static let pinnedTimestamp = "2026-01-15T16:00:00.000Z"
+    /// An interval quota's `period_label` ("by Oct 24"), pinned by the writer.
+    static let pinnedPeriodLabel = "by Jan 15"
 
     /// Task placeholders, as the writer assigns them.
     static let daily = 101, weekly = 102, monthly = 103, stretch = 104, planTomorrow = 105, plants = 106
@@ -57,6 +59,10 @@ enum Fixtures {
     /// with a target and a deadline, and a repeating task (every 3 days) —
     /// distinct from 106, the one-off "Water the plants".
     static let passport = 111, plantsRecurring = 112
+    /// The every-2-weeks quota in `task-interval-quota.json` and
+    /// `reminders-interval.json` (2026-10-16), created after the badge tasks
+    /// (113–115).
+    static let fortnightly = 116
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }

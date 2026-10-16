@@ -166,6 +166,7 @@ private struct QuotaRowButton: View {
 
     private var accessibilityText: String {
         let count = "\(task.progressCurrent) of \(task.progressTarget)"
+            + (task.periodLabel.map { " \($0)" } ?? "")
         if isInert { return "\(task.displayTitle) — \(count), nothing to take back" }
         return "\(takesBack ? "Take one back from" : "Log one more for") \(task.displayTitle) — \(count)"
     }
@@ -214,6 +215,14 @@ private struct QuotaRow: View {
                         .font(.body.monospacedDigit().weight(.semibold))
                 }
                 .foregroundStyle(met ? WatchTheme.done : WatchTheme.accent)
+
+                // An interval quota's own end, "by Oct 24" (2026-10-16): its
+                // section ("Every 2 weeks") has no single end to name.
+                if let end = task.periodLabel {
+                    Text(end)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
 
                 // Under the count rather than beside it: at the watch's
                 // width (and at large text sizes) "3/5 │ −1" on one line

@@ -100,6 +100,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
                 let expected: Set<String> = [
                     "prompt_key", "task_id", "number", "numbers", "slot_id", "title", "current", "target",
                     "period", "stripe_color", "considered", "done", "has_notes",
+                    "period_interval", "period_end", "period_last_day", "period_label",
                 ]
                 XCTAssertEqual(Set(r.keys), expected, "\(name): the wire keys QuotaPromptDTO decodes")
                 XCTAssertEqual(r["prompt_key"] as? String, p.promptKey)
@@ -115,6 +116,13 @@ final class ContractDecodeTests: WidgetStoreTestCase {
                 XCTAssertEqual(r["considered"] as? Bool, p.considered)
                 XCTAssertEqual(r["done"] as? Bool, p.done)
                 XCTAssertEqual(r["has_notes"] as? Bool, p.hasNotes)
+                XCTAssertEqual(r["period_interval"] as? Int, p.periodInterval)
+                XCTAssertEqual(r["period_end"] as? String, p.periodEnd)
+                XCTAssertEqual(r["period_last_day"] as? String, p.periodLastDay)
+                XCTAssertEqual(r["period_label"] as? String, p.periodLabel)
+                // Interval 1 everywhere in these captures: no label, the FREQ's word.
+                XCTAssertEqual(p.periodInterval, 1)
+                XCTAssertNil(p.periodLabel)
             }
         }
     }
@@ -519,6 +527,61 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // The cache round trip keeps every badge field.
         let back = try JSONDecoder().decode(TaskDTO.self, from: JSONEncoder().encode(deadline))
         XCTAssertEqual(back, deadline)
+    }
+
+    // MARK: Interval quotas (2026-10-16)
+
+    /// `task-interval-quota.json`: an every-2-weeks quota as GET
+    /// /api/tasks/{id} returns it — the served period fields, decoded, and
+    /// field by field against the raw JSON (a renamed key would decode nil).
+    func testIntervalQuotaTask() throws {
+        let task = try Fixtures.decode(TaskDTO.self, "task-interval-quota")
+        XCTAssertEqual(task.title, "Deep-clean the oven")
+        XCTAssertEqual(task.rrule, "FREQ=WEEKLY;INTERVAL=2")
+        XCTAssertTrue(task.isTracked)
+        XCTAssertEqual(task.progressPeriodStart, Fixtures.pinnedTimestamp, "anchored at create")
+        XCTAssertEqual(task.progressPeriodEnd, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(task.periodInterval, 2)
+        XCTAssertEqual(task.periodLastDay, Fixtures.pinnedDate)
+        XCTAssertEqual(task.periodLabel, Fixtures.pinnedPeriodLabel)
+        XCTAssertEqual(QuotaRules.interval(of: task), 2)
+        XCTAssertEqual(QuotaPeriodGroup.of(task), QuotaPeriodGroup(key: .weekly, interval: 2))
+
+        let raw = try Fixtures.object("task-interval-quota")
+        XCTAssertEqual(raw["progress_period_end"] as? String, task.progressPeriodEnd)
+        XCTAssertEqual(raw["period_interval"] as? Int, task.periodInterval)
+        XCTAssertEqual(raw["period_last_day"] as? String, task.periodLastDay)
+        XCTAssertEqual(raw["period_label"] as? String, task.periodLabel)
+
+        // The cache round trip keeps every period field.
+        let back = try JSONDecoder().decode(TaskDTO.self, from: JSONEncoder().encode(task))
+        XCTAssertEqual(back, task)
+    }
+
+    /// `reminders-interval.json`: the every-2-weeks quota's prompt carries the
+    /// same period, and every surface's word for it is the served end.
+    func testIntervalQuotaPrompt() throws {
+        let prompts = try Fixtures.prompts("reminders-interval")
+        XCTAssertEqual(prompts.count, 5)
+        let prompt = try XCTUnwrap(prompts.first { $0.taskId == Fixtures.fortnightly })
+        XCTAssertEqual(prompt.title, "Deep-clean the oven")
+        XCTAssertEqual(prompt.period, "WEEKLY", "the bare FREQ, as older builds read it")
+        XCTAssertEqual(prompt.periodInterval, 2)
+        XCTAssertEqual(prompt.periodEnd, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(prompt.periodLastDay, Fixtures.pinnedDate)
+        XCTAssertEqual(prompt.periodLabel, Fixtures.pinnedPeriodLabel)
+        XCTAssertEqual(prompt.segmentWord, "by Jan 15")
+        XCTAssertEqual(prompt.countText, "0/1\u{00A0}by\u{00A0}Jan\u{00A0}15")
+        XCTAssertEqual(prompt.spokenCount, "0 of 1 by Jan 15")
+        XCTAssertEqual(prompt.compactPeriodWord, "1/15")
+        // The optimistic rebuilds keep the period.
+        XCTAssertEqual(prompt.handled(did: true).periodLabel, prompt.periodLabel)
+        XCTAssertEqual(prompt.handled(did: true).putBack().periodEnd, prompt.periodEnd)
+
+        // An interval-1 quota beside it keeps its own word.
+        let run = try XCTUnwrap(prompts.first { $0.taskId == Fixtures.weekly })
+        XCTAssertNil(run.periodLabel)
+        XCTAssertEqual(run.segmentWord, "week")
     }
 
     // MARK: GET /api/tasks/counts (the foreground badge)

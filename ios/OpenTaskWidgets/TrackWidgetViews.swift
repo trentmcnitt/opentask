@@ -551,9 +551,11 @@ private struct QuotaChip: View {
 
     private var accessibilityText: String {
         // "1 of 2" — no period: the section heading names it (the segments'
-        // one label, `QuotaCount.spokenLabel`).
+        // one label, `QuotaCount.spokenLabel`) — except an interval quota's
+        // own end, "1 of 2 by Oct 24" (2026-10-16), which its chip draws.
         let count = QuotaCount.spokenLabel(
-            current: item.task.progressCurrent, target: item.task.progressTarget, period: nil
+            current: item.task.progressCurrent, target: item.task.progressTarget, period: nil,
+            label: item.task.periodLabel
         )
         if isInert { return "\(item.task.displayTitle) — \(count), nothing to take back" }
         return "\(takesBack ? "Take one back from" : "Log one more for") \(item.task.displayTitle) — \(count)"
@@ -589,7 +591,8 @@ private struct QuotaChip: View {
     }
 
     /// The count: N skewed segments (indigo per completion, all green once
-    /// met; no period word — the section header names it), or "3/7" above
+    /// met; no period word — the section header names it — except an
+    /// interval quota's own end, "by Oct 24", `QuotaMetrics.endWord`), or "3/7" above
     /// six (`QuotaMetrics.countForm`), exactly `QuotaMetrics.countWidth`
     /// wide. The chip's progress FILL is gone (2026-10-13): the segments say
     /// how far along it is.
@@ -598,7 +601,8 @@ private struct QuotaChip: View {
             switch QuotaMetrics.countForm(for: item) {
             case .segments:
                 QuotaSegmentsText.segments(
-                    current: item.task.progressCurrent, target: item.task.progressTarget, word: nil,
+                    current: item.task.progressCurrent, target: item.task.progressTarget,
+                    word: QuotaMetrics.endWord(for: item),
                     em: QuotaMetrics.chipTitleSize, wordSize: QuotaMetrics.chipCountSize,
                     scale: QuotaMetrics.segmentScale
                 )
@@ -608,6 +612,10 @@ private struct QuotaChip: View {
                     .font(QuotaMetrics.chipCurrentFont)
                 Text("/\(item.task.progressTarget)")
                     .font(QuotaMetrics.chipTargetFont)
+                if let word = QuotaMetrics.endWord(for: item) {
+                    Text("\u{00A0}" + word)
+                        .font(QuotaMetrics.chipTargetFont)
+                }
             }
             if takesBack {
                 // "│ −1" — exactly `QuotaMetrics.takeBackWidth`: gap,

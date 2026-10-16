@@ -185,7 +185,7 @@ private struct RemindersSmallView: View {
         let em = WidgetTextMetrics(dynamicTypeSize: dynamicTypeSize).caption2Font.pointSize
         let count = QuotaSegmentsText.count(
             QuotaCount.chooseForm(target: prompt.target), current: prompt.current, target: prompt.target,
-            word: QuotaCount.word(period: prompt.period), em: em, wordSize: em, scale: displayScale
+            word: prompt.segmentWord, em: em, wordSize: em, scale: displayScale
         )
         return (Text(prompt.title) + Text(" ") + count)
             .accessibilityLabel(Text("\(prompt.title), \(prompt.spokenCount)"))
@@ -1345,7 +1345,7 @@ struct PromptLabel {
 
     /// "1 of 2 today" / "1 of 2 this week".
     var spokenCount: String {
-        QuotaCount.spokenLabel(current: prompt.current, target: prompt.target, period: prompt.period)
+        prompt.spokenCount
     }
 
     /// "Piano Scales, 1 of 2 today" (+ ", has notes").
@@ -1361,7 +1361,7 @@ struct PromptLabel {
             ? Text(prompt.title).strikethrough().foregroundStyle(.secondary)
             : Text(prompt.title).foregroundStyle(.primary)
         let count = QuotaSegmentsText.count(
-            form, current: prompt.current, target: prompt.target, word: QuotaCount.word(period: prompt.period),
+            form, current: prompt.current, target: prompt.target, word: prompt.segmentWord,
             em: metrics.titlePointSize, wordSize: metrics.promptCountWordSize,
             lead: form == .segments ? metrics.promptCountLead : 0, scale: metrics.displayScale
         )

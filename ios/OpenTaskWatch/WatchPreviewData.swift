@@ -83,12 +83,13 @@ enum WatchPreviewData {
 
     private static func quota(
         id: Int, title: String, rrule: String, current: Int, target: Int,
-        labels: [String] = [], shortTitle: String? = nil
+        labels: [String] = [], shortTitle: String? = nil, interval: Int? = nil, ends: String? = nil
     ) -> TaskDTO {
         TaskDTO(
             id: id, title: title, rrule: rrule,
             progressTarget: target, progressCurrent: current,
-            trackedFlag: true, labels: labels, shortTitle: shortTitle
+            trackedFlag: true, labels: labels, shortTitle: shortTitle,
+            periodInterval: interval, periodLabel: ends
         )
     }
 
@@ -99,6 +100,8 @@ enum WatchPreviewData {
         quota(id: 152, title: "Check the smoke alarm", rrule: "FREQ=MONTHLY", current: 0, target: 1, labels: ["house", "finance"]),
         quota(id: 3307, title: "Look for new evening courses — community colleges, library programs, weekend workshops", rrule: "FREQ=WEEKLY", current: 0, target: 1, labels: ["ideas"]),
         quota(id: 309, title: "Wipe keyboard + mouse + screen", rrule: "FREQ=MONTHLY", current: 0, target: 1, labels: ["house"]),
+        // An interval quota (2026-10-16): "Every 2 weeks", its row saying its end.
+        quota(id: 24001, title: "Deep-clean the oven", rrule: "FREQ=WEEKLY;INTERVAL=2", current: 0, target: 1, labels: ["house"], interval: 2, ends: "by Oct 24"),
         quota(id: 111, title: "Dust the bookshelf", rrule: "FREQ=MONTHLY", current: 0, target: 1, labels: ["house"]),
         quota(id: 276, title: "Vacuum the car mats", rrule: "FREQ=MONTHLY", current: 0, target: 1, labels: ["family", "house"]),
         quota(id: 255, title: "Bake bread from scratch (incl. sourdough)", rrule: "FREQ=WEEKLY", current: 3, target: 5, labels: ["health"]),

@@ -393,7 +393,9 @@ struct PromptRowView: View {
                     QuotaSegments(
                         current: prompt.current, target: prompt.target, period: prompt.period,
                         em: countEm,
-                        palette: .init(fill: WatchTheme.accent, met: WatchTheme.done, metText: WatchTheme.done)
+                        palette: .init(fill: WatchTheme.accent, met: WatchTheme.done, metText: WatchTheme.done),
+                        // An interval quota's end, "by Oct 24" (2026-10-16).
+                        periodLabel: prompt.periodLabel
                     )
                     Button(action: didIt) {
                         Image(systemName: "square")
