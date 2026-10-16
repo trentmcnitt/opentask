@@ -147,7 +147,10 @@ Enrichment queries both owned and shared projects when building the project list
 ```
 - Inbox (id: 1)
 - Shopping List (id: 5, shared)
+- Oak Rental (id: 7) — Duplex at 412 Oak St, tenants Priya and Dev
 ```
+
+A project with a `description` (what belongs there, up to 280 characters) gets it after " — ", on one line; with none, the field is left out. When any description is listed, the heading says what they are for (they only settle which project the words mean). Enrichment has read them since 2026-10-16; Process read them first.
 
 ### Per-user feature modes
 
@@ -405,7 +408,7 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 Parses natural language task input into structured fields: clean title, due date, priority, labels, project, recurrence rule, auto-snooze, recurrence mode, and notes. Runs asynchronously after task creation. Uses the warm enrichment slot (SDK) or a direct API call (Anthropic/OpenAI).
 
-**Project assignment** has two triggers (Trent, 2026-09-28): an explicit instruction ("add it to Work", "put it in shopping"), or a **name match** — the task text contains a project's full name as a phrase, case-insensitive, used as that name ("test task for job search" → Job Search, "print the expense report for work" → Work). There is still no inference from topic ("apply to Acme" does not go to Job Search). The name-match guard: whole words only ("homework"/"workout" do not match Work), not a verb ("work out"), not a schedule cue or direction ("after work", "on the way home"), never Inbox; two matches → the longer name wins, otherwise null. The server resolves `project_name` by exact name (`COLLATE NOCASE`) and `sanitizeReminderEnrichment` nulls it for reminders, which never belong to a project. Like labels, projects have a post-parse guard: `filterProjectMatch()` keeps the model's `project_name` only if a word of the project's name (3+ letters) appears in the input as a whole word. It admits explicit partial names ("put it in shopping" → Shopping List) and rejects every topic-only pick — the model still did those sometimes after name matches were allowed, because it emits `project_name` before its reasoning. Whether a present word is used _as_ the name ("after work", "work out") stays the prompt's job. Known cost: an assignment by synonym ("put this in groceries" for Shopping List) is dropped. The quality harness applies the same guard and logs when it changes the model's answer. **A name match never moves a task out of a project the user chose** (Trent, 2026-09-28; `allowProjectMove()`): a task in the Inbox moves on either trigger, but a task already in another project moves only on an explicit instruction. The two are told apart by the prompt's contract — an explicit instruction is removed from the title, a name match stays in it — so outside the Inbox the move is kept only if none of the chosen project's name words (same whole-word test) remain in the enriched title. Quality scenarios all start in the Inbox, so the harness does not need this rule.
+**Project assignment** has two triggers (Trent, 2026-09-28): an explicit instruction ("add it to Work", "put it in shopping"), or a **name match** — the task text contains a project's full name as a phrase, case-insensitive, used as that name ("test task for job search" → Job Search, "print the expense report for work" → Work). There is still no inference from topic ("apply to Acme" does not go to Job Search). The name-match guard: whole words only ("homework"/"workout" do not match Work), not a verb ("work out"), not a schedule cue or direction ("after work", "on the way home"), never Inbox; two matches → the longer name wins, otherwise null. **Project descriptions** (2026-10-16) are listed with the projects but are never a third trigger: a description only settles which project the words mean when they could mean several ("add it to the rental project" with Oak Rental and Pine Rental → the one whose description names the tenant), and never pulls a task away from a project its words name. `filterProjectMatch()` still drops any pick whose name is not in the words. The server resolves `project_name` by exact name (`COLLATE NOCASE`) and `sanitizeReminderEnrichment` nulls it for reminders, which never belong to a project. Like labels, projects have a post-parse guard: `filterProjectMatch()` keeps the model's `project_name` only if a word of the project's name (3+ letters) appears in the input as a whole word. It admits explicit partial names ("put it in shopping" → Shopping List) and rejects every topic-only pick — the model still did those sometimes after name matches were allowed, because it emits `project_name` before its reasoning. Whether a present word is used _as_ the name ("after work", "work out") stays the prompt's job. Known cost: an assignment by synonym ("put this in groceries" for Shopping List) is dropped. The quality harness applies the same guard and logs when it changes the model's answer. **A name match never moves a task out of a project the user chose** (Trent, 2026-09-28; `allowProjectMove()`): a task in the Inbox moves on either trigger, but a task already in another project moves only on an explicit instruction. The two are told apart by the prompt's contract — an explicit instruction is removed from the title, a name match stays in it — so outside the Inbox the move is kept only if none of the chosen project's name words (same whole-word test) remain in the enriched title. Quality scenarios all start in the Inbox, so the harness does not need this rule.
 
 Extracted labels pass through `filterExplicitLabels()` — a post-parse guard that strips AI-inferred labels unless the user's input contains explicit label-intent language (e.g., "label it", "tag it", "mark it as").
 
@@ -627,30 +630,31 @@ For each scenario, the evaluator writes a `validation.md` with a score (0-10), p
 
 Scenarios live in `tests/quality/scenarios/`, organized by category:
 
-| File                        | Category                                               | Count |
-| --------------------------- | ------------------------------------------------------ | ----- |
-| `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)          | 32    |
-| `enrichment-priority.ts`    | Priority inference                                     | 13    |
-| `enrichment-recurrence.ts`  | Expanded recurrence patterns                           | 15    |
-| `enrichment-edge.ts`        | Edge cases                                             | 11    |
-| `enrichment-labels.ts`      | Explicit-only label extraction                         | 10    |
-| `enrichment-dictation.ts`   | Dictation realism and typo tolerance                   | 10    |
-| `enrichment-context.ts`     | User context resolution                                | 8     |
-| `enrichment-projects.ts`    | Project assignment — explicit and name match           | 10    |
-| `enrichment-voice.ts`       | Voice preservation                                     | 8     |
-| `enrichment-reminders.ts`   | Reminder enrichment — cadence and time slots (§6)      | 11    |
-| `enrichment-task-model.ts`  | Target, deadline and horizon (2026-10-10)              | 31    |
-| `enrichment-soon.ts`        | Soon today: "now", "in an hour", hour ranges           | 13    |
-| `task-model-review.ts`      | Deadline field in Insights and What's Next             | 2     |
-| `process.ts`                | Process: project recommendations and duplicates        | 4     |
-| `quick-take.ts`             | Quick Take                                             | 12    |
-| `insights.ts`               | AI Insights scoring and signals                        | 11    |
-| `whats-next.ts`             | What's Next recommendations                            | 8     |
-| `insights-large.ts`         | Large-scale insights (50-600 tasks, production)        | 3     |
-| `helpers/generate-tasks.ts` | Realistic task list generator (used by insights-large) | —     |
-| `index.ts`                  | Barrel export                                          | —     |
+| File                                 | Category                                                 | Count |
+| ------------------------------------ | -------------------------------------------------------- | ----- |
+| `enrichment-core.ts`                 | Core enrichment (title, date, priority, etc.)            | 32    |
+| `enrichment-priority.ts`             | Priority inference                                       | 13    |
+| `enrichment-recurrence.ts`           | Expanded recurrence patterns                             | 15    |
+| `enrichment-edge.ts`                 | Edge cases                                               | 11    |
+| `enrichment-labels.ts`               | Explicit-only label extraction                           | 10    |
+| `enrichment-dictation.ts`            | Dictation realism and typo tolerance                     | 10    |
+| `enrichment-context.ts`              | User context resolution                                  | 8     |
+| `enrichment-projects.ts`             | Project assignment — explicit and name match             | 10    |
+| `enrichment-voice.ts`                | Voice preservation                                       | 8     |
+| `enrichment-reminders.ts`            | Reminder enrichment — cadence and time slots (§6)        | 11    |
+| `enrichment-task-model.ts`           | Target, deadline and horizon (2026-10-10)                | 31    |
+| `enrichment-soon.ts`                 | Soon today: "now", "in an hour", hour ranges             | 13    |
+| `enrichment-project-descriptions.ts` | Project descriptions settle which project the words mean | 6     |
+| `task-model-review.ts`               | Deadline field in Insights and What's Next               | 2     |
+| `process.ts`                         | Process: project recommendations and duplicates          | 4     |
+| `quick-take.ts`                      | Quick Take                                               | 12    |
+| `insights.ts`                        | AI Insights scoring and signals                          | 11    |
+| `whats-next.ts`                      | What's Next recommendations                              | 8     |
+| `insights-large.ts`                  | Large-scale insights (50-600 tasks, production)          | 3     |
+| `helpers/generate-tasks.ts`          | Realistic task list generator (used by insights-large)   | —     |
+| `index.ts`                           | Barrel export                                            | —     |
 
-**Total: 212 scenarios** (161 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
+**Total: 218 scenarios** (167 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
 
 Scenarios that need a value the run date decides (a deadline "7 days from now") compute it at load time; `must_include` accepts `~date:YYYY-MM-DD` (a local datetime on that day, any time) and `~notnull`. An enrichment scenario may pin `now` (a local datetime in its timezone): the prompt, the post-processes and the time matchers then all read that minute — `~soon` ("now": 15 minutes out, rounded up to the quarter hour), `~in-hours:N` and `~hours-range:LO-HI` (a quarter hour inside the range). Process scenarios use `process_expectations` (required project per task, groups that must appear, pairs that must not be grouped).
 

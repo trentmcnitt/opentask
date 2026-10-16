@@ -10,6 +10,7 @@ import type { FeatureMode, FeatureInfo, FeatureInfoMap } from '@/components/Pref
 import { savePreference } from '@/lib/save-preference'
 import { showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { AI_CONTEXT_MAX_LENGTH } from '@/lib/ai-context'
 import { aiContextAgeLabel, isAiContextStale } from '@/lib/ai-context-staleness'
 import { SettingsSection } from './SettingsSection'
 
@@ -136,14 +137,14 @@ function AiContextEditor({ isDemo }: { isDemo: boolean }) {
         placeholder={
           'e.g., "I work from home as a software engineer. My wife handles groceries. I have two young kids in daycare."'
         }
-        maxLength={1000}
+        maxLength={AI_CONTEXT_MAX_LENGTH}
         rows={3}
-        className="mb-2 scroll-mt-24 text-sm"
+        className="mb-2 max-h-[60vh] scroll-mt-24 text-sm"
         disabled={isDemo}
       />
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 text-xs text-zinc-400">
-          {value.length}/1000 ·{' '}
+          {value.length}/{AI_CONTEXT_MAX_LENGTH} ·{' '}
           {/* The staleness nudge's only home (2026-10-14; it used to be a
               link in the left bar and the ☰ menu): the context's age, or "No
               update date" when it was never stamped. Stale (21+ days, or no

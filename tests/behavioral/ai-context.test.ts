@@ -193,6 +193,55 @@ describe('Enrichment prompt includes user context', () => {
 
     expect(prompt).not.toContain('User context:')
   })
+
+  test('embeds a 4,000-character context whole', () => {
+    const context = 'x'.repeat(3999) + 'Z'
+    const prompt = buildEnrichmentUserPrompt({
+      timezone: TEST_TIMEZONE,
+      morningTime: '09:00',
+      wakeTime: '07:00',
+      sleepTime: '22:00',
+      projects: [{ id: 1, name: 'Inbox' }],
+      userContext: context,
+      taskText: 'buy milk',
+    })
+
+    expect(prompt).toContain(`User context: ${context}\n`)
+  })
+})
+
+describe('Enrichment prompt lists project descriptions (2026-10-16)', () => {
+  const build = (projects: Parameters<typeof buildEnrichmentUserPrompt>[0]['projects']) =>
+    buildEnrichmentUserPrompt({
+      timezone: TEST_TIMEZONE,
+      morningTime: '09:00',
+      wakeTime: '07:00',
+      sleepTime: '22:00',
+      projects,
+      taskText: 'buy milk',
+    })
+
+  test('a description follows the name on one line; an empty one is left out', () => {
+    const prompt = build([
+      { id: 1, name: 'Inbox', description: null },
+      { id: 2, name: 'Oak Rental', description: 'Duplex at 412 Oak St.\nTenants: Priya.' },
+      { id: 3, name: 'Groceries', shared: 1, description: '   ' },
+    ])
+
+    expect(prompt).toContain('- Inbox (id: 1)\n')
+    expect(prompt).toContain('- Oak Rental (id: 2) — Duplex at 412 Oak St. Tenants: Priya.\n')
+    expect(prompt).toContain('- Groceries (id: 3, shared)\n')
+    expect(prompt).toContain('only settles which project the words mean')
+  })
+
+  test('with no descriptions the list and its heading are as before', () => {
+    const prompt = build([
+      { id: 1, name: 'Inbox' },
+      { id: 2, name: 'Work', description: null },
+    ])
+
+    expect(prompt).toContain('Available projects:\n- Inbox (id: 1)\n- Work (id: 2)\n')
+  })
 })
 
 describe('Insights prompt includes user context', () => {

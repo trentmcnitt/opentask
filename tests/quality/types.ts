@@ -86,6 +86,8 @@ export interface ProjectInfo {
   id: number
   name: string
   shared: boolean
+  /** What belongs there (`projects.description`, up to 280 chars); shown to enrichment when set */
+  description?: string | null
 }
 
 export interface WhatsNextInput {

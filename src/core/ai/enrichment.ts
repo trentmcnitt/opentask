@@ -600,7 +600,7 @@ function buildPromptFor(
     wake_time: string
     sleep_time: string
   },
-  projects: Array<{ id: number; name: string; shared: number }>,
+  projects: Array<{ id: number; name: string; shared: number; description: string | null }>,
   textToEnrich: string,
 ): { prompt: string; isReminder: boolean; slots: TimeSlot[]; defaultSlotLabel: string | null } {
   if (row.is_reminder !== 1) {
@@ -672,12 +672,14 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
     throw new Error(`User ${row.user_id} not found`)
   }
 
-  // Get available projects for project name resolution (owned + shared)
+  // Available projects for project name resolution (owned + shared). The
+  // description (what belongs there) lets the model choose between projects
+  // the words already match — it never makes a match on its own.
   const projects = db
     .prepare(
-      'SELECT id, name, shared FROM projects WHERE owner_id = ? OR shared = 1 ORDER BY sort_order',
+      'SELECT id, name, shared, description FROM projects WHERE owner_id = ? OR shared = 1 ORDER BY sort_order',
     )
-    .all(user.id) as { id: number; name: string; shared: number }[]
+    .all(user.id) as { id: number; name: string; shared: number; description: string | null }[]
 
   // Use original_title when available (preserves raw dictated input for re-enrichment).
   // Legacy tasks with null original_title fall back to current title.

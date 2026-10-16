@@ -4297,7 +4297,7 @@ components:
             `"next_period"` acts as `"60"`.
         ai_context:
           type: [string, 'null']
-          maxLength: 1000
+          maxLength: 4000
           description: |
             Free-text context about the user that every AI feature sees
             (Settings -> AI Context). Trimmed; an empty string clears it
