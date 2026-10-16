@@ -758,13 +758,17 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   } else {
     parsed = pinUnnamedDay(
       alignTaskModelDates(
-        resolveBareTime(
-          resolveDateOnlyTarget(
-            sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+        resolveSoonTarget(
+          resolveBareTime(
+            resolveDateOnlyTarget(
+              sanitizeTaskModelFields(parsed, textToEnrich, row.id),
+              textToEnrich,
+              user.timezone,
+              user.morning_time,
+              targetTodayTime(user.id, user.timezone),
+            ),
             textToEnrich,
             user.timezone,
-            user.morning_time,
-            targetTodayTime(user.id, user.timezone),
           ),
           textToEnrich,
           user.timezone,
@@ -1026,6 +1030,106 @@ export function resolveBareTime(
   if (next <= nowLocal) next = next.plus({ days: 1 })
   log.info('ai', 'Enrichment: moved a time with no day to its next occurrence')
   return { ...enrichment, due_at: toLocalIso(next, value) }
+}
+
+/**
+ * "Do it now": "right now", "immediately", or "now" as the input's last word
+ * ("call the landlord now"). Not "now that the lease is signed …" (a clause,
+ * not a time), and not "for now" / "until now" / "by now" / "from now", which
+ * are not a time to do it either.
+ */
+const NOW_CUE =
+  /\b(right now|immediately)\b|(?<!\b(?:for|until|till|by|from|as of)\s)\bnow\s*[.!]*\s*$/i
+
+/**
+ * "in an hour", "in 1 hour", "in 3 hours", "in two hrs" — one count of hours.
+ * A range ("in an hour or two", "in 2 or 3 hours") is not one count: the
+ * lookahead stops "in an hour" matching the front of "in an hour or two", and
+ * "in 2 or 3 hours" never matches because a number must sit right before
+ * "hour".
+ */
+const IN_HOURS_CUE =
+  /\bin (an|a|one|two|three|four|five|six|\d{1,2}) (?:hours?|hrs?)\b(?!\s*(?:or|to|-|–))/i
+
+/**
+ * Another time or day in the words, beside a soon cue: then the cue is not the
+ * whole story and `resolveSoonTarget` leaves the model's answer alone.
+ * Narrower than `DAY_NAMED`, whose bare "this" / "next" would make "do this
+ * now" look dated; "may", "sat" and "sun" are left out as everyday words.
+ */
+const SOON_BLOCKER =
+  /\b(today|tonight|tomorrow|tmrw|tomm?orr?ow|weekend|morning|afternoon|evening|noon|midnight)\b|\b(this|next) (morning|afternoon|evening|week|weekend|month|year)\b|\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tues?|weds?|thu|thurs?|fri)\b|\b(january|february|march|april|june|july|august|september|october|november|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\bin (an?|one|\d+|two|three|four|five|six) (minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\b/i
+
+const HOUR_WORDS: Record<string, number> = {
+  an: 1,
+  a: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+}
+
+/** The first quarter-hour mark (:00, :15, :30, :45) at or after `t`, to the minute. */
+function ceilQuarter(t: DateTime): DateTime {
+  const minute = t.startOf('minute')
+  const over = minute.minute % 15
+  return over === 0 ? minute : minute.plus({ minutes: 15 - over })
+}
+
+/**
+ * SOON TODAY (2026-10-16): the arithmetic of "now" and "in an hour", done in
+ * code rather than trusted to the model.
+ *
+ * - "now" / "right now" / "immediately" → about 15 minutes out, rounded UP to
+ *   the next quarter hour (at 2:07 → 2:30; at 2:45 → 3:00). Before this the
+ *   prompt asked for the current time itself, so the task was over target the
+ *   moment it was made.
+ * - "in an hour" / "in N hours" → now plus N hours, rounded up to the quarter
+ *   hour (at 2:07, "in an hour" → 3:15).
+ *
+ * A range ("in an hour or two", "in 2 or 3 hours") is the model's: the prompt
+ * asks for a whole hour inside it, and either end of the range is the user's
+ * — there is no single right answer for code to enforce.
+ *
+ * ADJUST ONLY: a null target stays null. The model decides whether "now" is a
+ * time to do it (it is not in "the shop is open now"); this only fixes the
+ * time it wrote, including the date near midnight. And only when the cue is
+ * the ONLY time in the words: no clock time (`CLOCK_TIME`) and no day
+ * (`SOON_BLOCKER`) anywhere else in the input, so an explicit time is never
+ * moved. A repeating task's first date is the rule's business.
+ *
+ * Runs on the model's LOCAL value, after `resolveBareTime` and before
+ * `alignTaskModelDates` (which drops a target that lands after the deadline).
+ * Pure apart from `now`; exported for the quality harness and tests.
+ */
+export function resolveSoonTarget(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || enrichment.rrule) return enrichment
+  const nowCue = NOW_CUE.exec(inputText)
+  const hoursCue = IN_HOURS_CUE.exec(inputText)
+  // Both at once ("now … in an hour") states two times: leave it to the model.
+  const cue = nowCue && hoursCue ? null : (nowCue ?? hoursCue)
+  if (!cue) return enrichment
+  const rest = inputText.slice(0, cue.index) + ' ' + inputText.slice(cue.index + cue[0].length)
+  if (CLOCK_TIME.test(rest) || SOON_BLOCKER.test(rest)) return enrichment
+
+  const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
+  const hours = cue === hoursCue ? (HOUR_WORDS[cue[1].toLowerCase()] ?? Number(cue[1])) : 0
+  const target =
+    cue === hoursCue
+      ? ceilQuarter(nowLocal.plus({ hours }))
+      : ceilQuarter(nowLocal.plus({ minutes: 15 }))
+  const next = toLocalIso(target, value)
+  if (next === value) return enrichment
+  log.info('ai', `Enrichment: set a "${cue[0].trim()}" target to ${next}`)
+  return { ...enrichment, due_at: next }
 }
 
 /**

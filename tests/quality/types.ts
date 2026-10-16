@@ -50,6 +50,13 @@ export interface EnrichmentInput {
   wakeTime?: string
   /** User's sleep time preference in HH:MM format (default: '22:00') */
   sleepTime?: string
+  /**
+   * The current moment for this scenario, as a local datetime in `timezone`
+   * ("2026-10-16T23:52"). The prompt's "Current local time", every
+   * post-process and the `~soon` / `~in-hours` / `~hours-range` matchers all
+   * use it. Default: the moment the scenario runs.
+   */
+  now?: string
 }
 
 /**
