@@ -942,8 +942,6 @@ private enum DayCompletePreviewData {
     DayCompletePreviewData.nothingDue
 }
 
-#endif
-
 // MARK: - Row corner (2026-10-16, synthetic sample data)
 //
 // Every corner state on page one (`RowCornerStrip`, the web row corner): "!!"
@@ -1035,3 +1033,5 @@ private enum CornerPreviewData {
     let _ = resetTasksPreviewState(page: 0)
     CornerPreviewData.entry()
 }
+
+#endif
