@@ -112,7 +112,8 @@ test.describe('Quota prompts', () => {
     await row.locator('[data-prompt-consider]').click()
     const res = await considered
     expect(res.ok()).toBeTruthy()
-    expect(res.request().postDataJSON()).toEqual({ keys: [key] })
+    // `source`: the web says it is the web (progress_events.source, 2026-10-16).
+    expect(res.request().postDataJSON()).toEqual({ keys: [key], source: 'web' })
     await expect(row).toHaveCount(0)
     expect(await progressOf(page, id)).toBe(0)
 
@@ -603,6 +604,7 @@ test.describe('Quota prompts — selection', () => {
     expect(res.request().postDataJSON()).toEqual({
       ids: [reminder],
       prompts: [{ key, did: false }],
+      source: 'web',
     })
     await expect(thought).toHaveCount(0)
     await expect(prompt).toHaveCount(0)
@@ -813,6 +815,7 @@ test.describe('Quota prompts — the bar never logs progress', () => {
       expect(second_.request().postDataJSON()).toEqual({
         ids: [reminder],
         prompts: [{ key: twoKey, did: false }],
+        source: 'web',
       })
       await expect(dailyTwo).toHaveCount(0)
 
