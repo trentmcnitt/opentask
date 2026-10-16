@@ -36,6 +36,8 @@ import {
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
 import { QuotaSegments } from '@/components/QuotaSegments'
 import { SlotHairline } from '@/components/reminders/ReminderSlotGroup'
+import { QuotaSelectionBar } from '@/components/QuotaSelectionBar'
+import { useQuotaChipSelection, type QuotaChipSelection } from '@/hooks/useQuotaChipSelection'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
@@ -255,10 +257,13 @@ function useTrackChipDetail({
   onUndo,
   onCompleted,
   onRefresh,
+  onWritten,
 }: {
   onUndo: () => void
   onCompleted: () => void
   onRefresh: () => Promise<void>
+  /** A save or delete went through — the Quotas page clears its selection. */
+  onWritten?: () => void
 }) {
   // The quota whose popover bubble is showing. By id, not object, so a sync
   // refresh can replace the rendered task underneath an open bubble.
@@ -267,6 +272,7 @@ function useTrackChipDetail({
     refresh: onRefresh,
     onUndo,
     onCompleted,
+    onWritten,
   })
 
   const openPopover = useCallback((task: Task) => setOpenId(task.id), [])
@@ -334,7 +340,18 @@ function useTrackChipDetail({
     }
   }
 
-  return { openId, openPopover, closePopover, openEditor, deleteFromPopover, periodsFor, modal }
+  return {
+    openId,
+    openPopover,
+    closePopover,
+    openEditor,
+    deleteFromPopover,
+    periodsFor,
+    modal,
+    // The Quotas page's selection bar: several quotas' editor, and Trash.
+    openEdit,
+    deleteQuotas,
+  }
 }
 
 interface TrackPanelProps {
@@ -447,7 +464,14 @@ export function TrackPanel({
   const timezone = useTimezone()
   const { weekStart } = useWeekStart()
   const now = useTrackNow()
-  const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh })
+  const panelRef = useRef<HTMLElement>(null)
+  // Selecting chips — the Quotas page only (`useQuotaChipSelection`).
+  const selection = useQuotaChipSelection({
+    enabled: standalone,
+    query: normalizeTaskSearch(searchQuery),
+    panelRef,
+  })
+  const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh, onWritten: selection.clear })
   const section = useResponsiveFold('track-section')
   const clusters = useResponsiveFolds('track-cluster')
   // Shut on a phone until tapped — see `PERIOD_BODY`.
@@ -491,7 +515,12 @@ export function TrackPanel({
   const overall = quotaGroupSummary(quotas)
 
   return (
-    <section aria-label="Quotas" data-track-panel className={cn(!standalone && 'mb-6')}>
+    <section
+      ref={panelRef}
+      aria-label="Quotas"
+      data-track-panel
+      className={cn(!standalone && 'mb-6')}
+    >
       <TrackHeader standalone={standalone} section={section} overall={overall} showMet={showMet} />
 
       <div
@@ -513,11 +542,51 @@ export function TrackPanel({
           detail={detail}
           highlightId={highlightId}
           onHighlightDone={onHighlightDone}
+          selection={standalone ? selection : undefined}
         />
       </div>
 
+      {standalone && <TrackSelectionBar quotas={quotas} selection={selection} detail={detail} />}
+
       {detail.modal}
     </section>
+  )
+}
+
+/**
+ * The Quotas page's floating bar over a chip selection (`QuotaSelectionBar`).
+ * Details with ONE chip opens that chip's bubble — the selection is dropped
+ * first, so the bar does not sit under the bubble — and with several opens
+ * the editor's multi-edit, keeping the selection until a save clears it
+ * (`onWritten`) so a cancelled edit can be retried. Trash is one bulk delete.
+ * Selected ids that are no longer quotas on screen (trashed elsewhere) are
+ * simply not counted.
+ */
+function TrackSelectionBar({
+  quotas,
+  selection,
+  detail,
+}: {
+  quotas: Task[]
+  selection: QuotaChipSelection
+  detail: ReturnType<typeof useTrackChipDetail>
+}) {
+  const selected = quotas.filter((q) => selection.selectedIds.has(q.id))
+  if (selected.length === 0) return null
+  return (
+    <QuotaSelectionBar
+      count={selected.length}
+      onDetails={() => {
+        if (selected.length === 1) {
+          selection.clear()
+          detail.openPopover(selected[0])
+        } else {
+          detail.openEdit(selected)
+        }
+      }}
+      onDelete={() => void detail.deleteQuotas(selected)}
+      onClear={selection.clear}
+    />
   )
 }
 
@@ -846,6 +915,8 @@ interface PeriodSectionProps {
   /** The deep-linked chip — see `TrackPanelProps.highlightId`. */
   highlightId?: number | null
   onHighlightDone?: () => void
+  /** The Quotas page's chip selection; undefined on the dashboard. */
+  selection?: QuotaChipSelection
 }
 
 /**
@@ -870,6 +941,7 @@ function PeriodSection({
   locked = false,
   highlightId,
   onHighlightDone,
+  selection,
 }: PeriodSectionProps) {
   const bodyItems = sectionBodyItems(s, labelConfig, isPutAway)
   const bodyId = `track-period-${s.key}`
@@ -925,6 +997,7 @@ function PeriodSection({
                 periods={detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined}
                 highlighted={highlightId === item.task.id}
                 onHighlightDone={onHighlightDone}
+                selection={selection}
               />
             ),
           )}
@@ -1387,6 +1460,12 @@ function chipLineEnd(title: HTMLElement): { right: number; resizeTarget: Element
  *   press and hold     open the detail sheet — this REPLACED hold-to-subtract,
  *                      which is why swipe had to take over −1 first
  *
+ * ON THE QUOTAS PAGE (2026-10-16) the chip also selects, and the hold and
+ * shift-click go to selection there: hold selects, shift-click takes a range,
+ * Cmd/Ctrl-click toggles, and the bubble is the selection bar's Details. The
+ * full table, and why, is on `useQuotaChipSelection`. `selection` is
+ * undefined on the dashboard, where every gesture above is unchanged.
+ *
  * The count is segments after the title (`QuotaSegments`). Long titles wrap
  * inside the chip, never ellipsise.
  */
@@ -1403,6 +1482,7 @@ function TrackChip({
   periods,
   highlighted = false,
   onHighlightDone,
+  selection,
 }: {
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
@@ -1428,10 +1508,22 @@ function TrackChip({
    */
   highlighted?: boolean
   onHighlightDone?: () => void
+  /** The Quotas page's selection — see the gesture table above. */
+  selection?: QuotaChipSelection
 }) {
   const { state, period, log } = useTrackProgress(task)
-  const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
-  const swipe = useHorizontalSwipe({ onSwipeLeft: () => void log(-1) })
+  const selecting = selection?.isSelectionMode ?? false
+  const selected = selection?.selectedIds.has(task.id) ?? false
+  const press = useLongPress({
+    onLongPress: () => (selection ? selection.onHold(task.id) : onOpenDetail(task)),
+  })
+  // −1 gestures are inert while chips are being picked.
+  const swipe = useHorizontalSwipe({
+    onSwipeLeft: () => {
+      if (!selecting) void log(-1)
+    },
+  })
+  const countText = `${state.current} of ${state.target}${period ? ` ${period}` : ''}`
 
   return (
     <li
@@ -1478,23 +1570,32 @@ function TrackChip({
             // Mouse only. A long-press on iOS can raise a contextmenu of its own,
             // and that must not silently subtract when the user meant to open
             // the sheet.
-            if (!press.wasTouch()) void log(-1)
+            if (!press.wasTouch() && !selecting) void log(-1)
           }}
           onClick={(e) => {
             // A hold opened the sheet and a swipe already logged its −1; the
             // click that trails either one is not a tap.
             if (press.didFire() || swipe.didSwipe()) return
+            // On the Quotas page a modifier or selection mode makes it a pick.
+            if (selection?.onClick(task.id, e)) return
             void log(e.shiftKey ? -1 : 1)
           }}
+          data-track-chip-selected={selected ? '' : undefined}
           // The count is IN the accessible name, not beside it. `aria-label`
           // replaces a button's contents wholesale, so the count on screen and
           // any sr-only run inside are never announced — and in the folded
           // panel this chip is now the only progress there is, the period
           // card's `progressbar` having gone with the cards.
-          aria-label={`Log one more for "${task.title}" — ${state.current} of ${state.target}${
-            period ? ` ${period}` : ''
-          }`}
-          title="Tap: +1 · Swipe left, right-click or shift-click: −1 · Hold: details"
+          aria-label={
+            selecting
+              ? `${selected ? 'Deselect' : 'Select'} "${task.title}" — ${countText}`
+              : `Log one more for "${task.title}" — ${countText}`
+          }
+          title={
+            selection
+              ? 'Tap: +1 · Swipe left or right-click: −1 · Hold, ⌘-click or shift-click: select'
+              : 'Tap: +1 · Swipe left, right-click or shift-click: −1 · Hold: details'
+          }
           className={cn(
             // leading-5, not leading-none: with the chip clipping its fill, a tight line
             // box cut the descenders off "Eggs" and "Grinding" (Trent, 2026-09-05).
@@ -1506,6 +1607,8 @@ function TrackChip({
             'relative flex min-h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-[10px] border py-1 pr-2.5 pl-3 text-left text-[13px] leading-5 transition-colors select-none',
             'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
             state.met && 'border-green-600/30',
+            // Selected: the Reminders row's ring and fill, on the chip.
+            selected && 'ring-ring bg-accent ring-2',
             highlighted && 'animate-row-highlight',
           )}
         >
