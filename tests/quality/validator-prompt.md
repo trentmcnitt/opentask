@@ -67,6 +67,7 @@ For each scenario:
 - No inference from topic: "apply to Acme" must not go to Job Search, "fix that deployment bug" must not go to Work.
 - Name-match false positives are failures: part of a longer word ("homework", "workout"), a verb ("work out"), a schedule cue or direction ("after work", "on the way home"), or Inbox.
 - Two matching names → the longer, more specific one; unrelated matches with no explicit instruction → `null`.
+- **Project descriptions** (2026-10-16, the text after " — " in the project list): a description only settles which project the user's words mean when they could mean several (an instruction "add it to the rental project" with Oak Rental and Pine Rental → the one whose description fits). A pick made only because a description fits the topic is a **failure** (also when the run log shows the guard nulled it), and so is a description pulling a task away from a project its words name.
 
 ### 6. Recurrence Parsing
 
