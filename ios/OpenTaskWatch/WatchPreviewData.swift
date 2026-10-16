@@ -144,5 +144,38 @@ enum WatchPreviewData {
             ]),
         ]
     }
+
+    /// The Tasks page's row corner (2026-10-16) — invented titles: "!!" and
+    /// "!", Medium/Low with no mark, the horizon dot on deadline tasks on
+    /// their automatic target (Days beside "!", Months beside "!!",
+    /// Eventually, unset), and a High task 3× over target.
+    static var cornerTasks: [TaskDTO] {
+        let calendar = Calendar.current
+        func at(days: Int = 0, _ hour: Int) -> String {
+            let base = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
+            return DateHelpers.formatISO(calendar.date(bySettingHour: hour, minute: 0, second: 0, of: base) ?? base)
+        }
+        func auto(_ id: Int, _ title: String, priority: Int, hour: Int, horizon: String?) -> TaskDTO {
+            TaskDTO(
+                id: id, projectId: 2, title: title, priority: priority, dueAt: at(days: 1, hour),
+                deadlineAt: at(days: 4, 17), horizon: horizon, targetAuto: true
+            )
+        }
+        return [
+            TaskDTO(id: 9501, projectId: 1, title: "Send the signed contract back", priority: 3, dueAt: at(days: -3, 8), attempts: 3, attemptsLabel: "3×"),
+            TaskDTO(id: 9502, projectId: 1, title: "Renew the domain", priority: 4, dueAt: at(days: 1, 9)),
+            TaskDTO(id: 9503, projectId: 2, title: "Order new printer ink", priority: 2, dueAt: at(days: 1, 10)),
+            TaskDTO(id: 9504, projectId: 2, title: "Look up the library hours", priority: 1, dueAt: at(days: 1, 11)),
+            auto(9505, "File the dishwasher warranty claim", priority: 3, hour: 12, horizon: "days"),
+            auto(9506, "Pay the parking fine", priority: 4, hour: 13, horizon: "months"),
+            auto(9507, "Sort the photo backups", priority: 0, hour: 14, horizon: "eventually"),
+            auto(9508, "Return the borrowed ladder", priority: 0, hour: 15, horizon: nil),
+        ]
+    }
+
+    static let cornerProjects: [ProjectDTO] = [
+        ProjectDTO(id: 1, name: "Work", color: "red"),
+        ProjectDTO(id: 2, name: "Home", color: "blue"),
+    ]
 }
 #endif

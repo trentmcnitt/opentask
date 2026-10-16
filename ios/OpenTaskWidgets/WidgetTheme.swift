@@ -45,6 +45,14 @@ enum WidgetTheme {
         priority >= 2 ? 1.0 : 0.85
     }
 
+    /// A TASK row's mark colour (checkbox outline, Up next dot, a task
+    /// segment row's circle): the priority colour for High and Urgent only,
+    /// the None neutral for Medium, Low and None (2026-10-16, Trent's corner
+    /// rule — `RowCorner.markIsColored`). Reminder rows keep `priorityColor`.
+    static func rowMarkColor(_ priority: Int) -> Color {
+        RowCorner.markIsColored(priority) ? priorityColor(priority) : priorityColor(0)
+    }
+
     // MARK: - Projects
 
     /// The eight named palette colors the server allows on a project.

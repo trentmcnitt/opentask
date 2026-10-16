@@ -327,6 +327,19 @@ final class WidgetOutboxTests: WidgetStoreTestCase {
         XCTAssertTrue(WidgetStore.outboxEntries().isEmpty)
     }
 
+    /// Every progress the outbox logs says it came from a widget (2026-10-16,
+    /// `progress_events.source`): a did-it and a `±1`. A consider logs no
+    /// progress and carries none.
+    func testProgressCallsSayTheyCameFromAWidget() async throws {
+        tapPrompt(Fixtures.promptKey(Fixtures.daily, 1), did: true)
+        tapPrompt(Fixtures.promptKey(Fixtures.monthly, 0), did: false)
+        tapProgress(Fixtures.daily, delta: -1)
+        let transport = StubOutboxTransport()
+        await makeDrainer(transport).drain()
+        XCTAssertEqual(transport.calls.count, 3)
+        XCTAssertEqual(transport.sources, [.widget, .widget])
+    }
+
     // MARK: Progress
 
     func testProgressConfirmWritesTheServerCountAndRetiresTheDelta() async throws {
@@ -508,6 +521,21 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
         lock.unlock()
     }
 
+    /// The `source` each progress-logging call (did-it, `±1`) carried, in order.
+    private var sourceLog: [ProgressSource?] = []
+
+    var sources: [ProgressSource?] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sourceLog
+    }
+
+    private func recordSource(_ source: ProgressSource?) {
+        lock.lock()
+        sourceLog.append(source)
+        lock.unlock()
+    }
+
     private func pop<T>(_ list: inout [Result<T, Error>], default value: T) -> Result<T, Error> {
         lock.lock()
         defer { lock.unlock() }
@@ -529,12 +557,14 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
         return try pop(&promptResults, default: APIClient.PromptActionResult(considered: keys.count, did: 0, tasks: [])).get()
     }
 
-    func didPrompts(keys: [String]) async throws -> APIClient.PromptActionResult {
+    func didPrompts(keys: [String], source: ProgressSource?) async throws -> APIClient.PromptActionResult {
+        recordSource(source)
         record(.did(keys))
         return try pop(&promptResults, default: APIClient.PromptActionResult(considered: 0, did: keys.count, tasks: [])).get()
     }
 
-    func logProgress(taskId: Int, delta: Int) async throws -> TaskDTO? {
+    func logProgress(taskId: Int, delta: Int, source: ProgressSource?) async throws -> TaskDTO? {
+        recordSource(source)
         record(.progress(taskId, delta))
         return try pop(&progressResults, default: nil).get()
     }

@@ -131,6 +131,12 @@ struct TasksPageView: View {
 /// reminder" rule extends here to 3 lines rather than unlimited — a task
 /// title genuinely can run long, and the watch has no room to show every
 /// line of a paragraph), and a day-aware due line.
+///
+/// THE CORNER (2026-10-16, the web row's corner and the phone Tasks widget's
+/// strip): at the row's trailing top, the horizon dot where the horizon
+/// decides something and "!"/"!!" for High/Urgent only — Medium, Low and None
+/// get nothing (`RowCorner`, `RowCornerStrip`). It takes its own column, so a
+/// long title wraps a little sooner on those rows only.
 private struct TaskRow: View {
     let task: TaskDTO
     let project: ProjectDTO?
@@ -185,6 +191,30 @@ private struct TaskRow: View {
                         .accessibilityLabel(Text(spokenDueLine(due)))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            let corner = RowCornerStrip(task: task)
+            if !corner.isEmpty {
+                // Centred on the `.body` title's first line.
+                corner.padding(.top, 4)
+            }
         }
     }
 }
+
+#if DEBUG
+// The row corner (2026-10-16): every state on the first screens — see
+// `WatchPreviewData.cornerTasks`.
+#Preview("Tasks — row corner") {
+    NavigationStack {
+        TasksPageView(model: .previewTasks())
+    }
+}
+
+#Preview("Tasks — row corner, XXX Large") {
+    NavigationStack {
+        TasksPageView(model: .previewTasks())
+    }
+    .dynamicTypeSize(.xxxLarge)
+}
+#endif

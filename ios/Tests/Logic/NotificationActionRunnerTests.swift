@@ -18,7 +18,7 @@ final class NotificationActionRunnerTests: XCTestCase {
         case snoozeDelta(Int, Int?)
         case snoozeUntil(String, Int?)
         case snoozeSlot(String, Int?)
-        case completeSlot(Int, Set<String>)
+        case completeSlot(Int, Set<String>, ProgressSource?)
     }
 
     private struct StubError: Error {}
@@ -56,8 +56,8 @@ final class NotificationActionRunnerTests: XCTestCase {
             return sweepResult
         }
 
-        func completeSlotReminders(slotId: Int, didKeys: Set<String>) async throws -> Int {
-            try record(.completeSlot(slotId, didKeys))
+        func completeSlotReminders(slotId: Int, didKeys: Set<String>, source: ProgressSource?) async throws -> Int {
+            try record(.completeSlot(slotId, didKeys, source))
             return slotAffected
         }
     }
@@ -149,7 +149,8 @@ final class NotificationActionRunnerTests: XCTestCase {
         let outcome = try await run(
             slot, .button(NotificationAction.completeAll), userInfo: [SlotReminderKey.slotId: 7]
         )
-        XCTAssertEqual(api.calls, [.completeSlot(7, [])])
+        // `.mac`: this bundle is a macOS one, and a Mac notification says so.
+        XCTAssertEqual(api.calls, [.completeSlot(7, [], .mac)])
         XCTAssertEqual(outcome, .slotCompleted(affected: 2))
         XCTAssertEqual(dismissed, [])
     }
@@ -157,7 +158,7 @@ final class NotificationActionRunnerTests: XCTestCase {
     /// The un-slotted ("Anytime") group, and a payload missing the key.
     func testSlotCompleteAllWithoutASlotIdUsesAnytime() async throws {
         _ = try await run(slot, .button(NotificationAction.completeAll))
-        XCTAssertEqual(api.calls, [.completeSlot(-1, [])])
+        XCTAssertEqual(api.calls, [.completeSlot(-1, [], .mac)])
     }
 
     func testSlotCompleteAllReportsZeroSoTheBannerCanStay() async throws {

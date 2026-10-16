@@ -433,7 +433,7 @@ final class WatchViewModel: ObservableObject {
         Task {
             do {
                 let result = did
-                    ? try await api.didPrompts(keys: [prompt.promptKey])
+                    ? try await api.didPrompts(keys: [prompt.promptKey], source: .watch)
                     : try await api.considerPrompts(keys: [prompt.promptKey])
                 settleConfirmedQuotas(result.tasks)
                 // The click was the feedback; no success chime (2026-10-11).
@@ -615,7 +615,7 @@ final class WatchViewModel: ObservableObject {
 
         Task {
             do {
-                let confirmed = try await api.logProgress(taskId: task.id, delta: delta)
+                let confirmed = try await api.logProgress(taskId: task.id, delta: delta, source: .watch)
                 settleQuota(task.id, delta: delta, confirmed: confirmed)
                 // The tap's click was the feedback (no success chime, 2026-10-11).
                 canUndo = true
@@ -766,6 +766,16 @@ extension WatchViewModel {
         model.canUndo = true
         model.showMetQuotas = showMet
         model.quotasTakebackMode = takeback
+        return model
+    }
+
+    /// The Tasks page with the row-corner sample (`WatchPreviewData.cornerTasks`).
+    static func previewTasks() -> WatchViewModel {
+        let model = WatchViewModel()
+        model.tasks = WatchPreviewData.cornerTasks
+        model.projects = WatchPreviewData.cornerProjects
+        model.hasLoadedOnce = true
+        model.canUndo = true
         return model
     }
 
