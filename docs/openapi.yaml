@@ -4427,6 +4427,27 @@ components:
         period:
           type: [string, 'null']
           enum: [DAILY, WEEKLY, MONTHLY, YEARLY, null]
+          description: >
+            The quota rule's FREQ - bare, even for an interval quota; read
+            `period_interval` and `period_label` beside it.
+        period_interval:
+          type: [integer, 'null']
+          description: The quota rule's INTERVAL (1 when it has none) - the task's `period_interval`.
+        period_end:
+          type: [string, 'null']
+          format: date-time
+          description: The current period's exclusive end (UTC) - the task's `progress_period_end`.
+        period_last_day:
+          type: [string, 'null']
+          format: date
+          description: The current period's last local day - the task's `period_last_day`.
+        period_label:
+          type: [string, 'null']
+          description: >
+            "by Oct 24" for an interval quota (`period_interval` above 1); null
+            at interval 1, where the client keeps its own word for `period`
+            ("· week"). The task's `period_label`.
+          example: by Oct 24
         stripe_color:
           type: [string, 'null']
           enum: [red, orange, yellow, blue, purple, pink, gray, null]
@@ -4670,10 +4691,48 @@ components:
             A quota's period anchor (§5) - the UTC instant the current period
             began, by the user's local calendar (00:00 on the user's first day
             of the week for a week - see the `week_start` preference, Sunday by
-            default - the 1st for a month). Null until the period-rollover job first runs for
-            the quota, and null on anything that is not a quota. USE THIS, NOT
+            default - the 1st for a month). Stamped when the row becomes a quota
+            (create, or an edit that converts it) and re-stamped to the current
+            unit's start when its period (FREQ or INTERVAL) changes - the edit
+            keeps only the taps logged since that start, and its undo restores
+            the old rule and anchor together (2026-10-16). Null on anything that
+            is not a quota (and on a quota made before 2026-10-16 until the
+            period-rollover job first runs for it). USE THIS, NOT
             due_at, for anything that needs to know how far through its period a
             quota is (a pace indicator, for example): a quota has no due_at.
+        progress_period_end:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            Interval quotas (2026-10-16), computed: the CURRENT period's end
+            (UTC, exclusive) in the owner's clock - `progress_period_start`
+            plus `period_interval` units, stepped past a period that has ended
+            but the rollover job has not closed yet. Use it rather than
+            re-deriving the window from the rrule. Null on anything that is not
+            a quota.
+        period_interval:
+          type: [integer, 'null']
+          description: >
+            Computed: the quota rule's INTERVAL - 2 for `FREQ=WEEKLY;INTERVAL=2`
+            ("every 2 weeks"), 1 when the rule has none. Null on anything that
+            is not a quota.
+        period_last_day:
+          type: [string, 'null']
+          format: date
+          description: >
+            Computed: the current period's last local day (`YYYY-MM-DD`) -
+            `progress_period_end` minus one day, since the end is the next
+            period's first midnight. For a client's own compact date. Null on
+            anything that is not a quota.
+        period_label:
+          type: [string, 'null']
+          description: >
+            Computed: when an interval quota's period ends, as words - "by Oct
+            24" (the last day). Only for `period_interval` above 1; NULL at
+            interval 1, where a client keeps its own period words ("this week",
+            "today") - a two-week period cannot be called "this week". Null on
+            anything that is not a quota.
+          example: by Oct 24
         quota_prompt_config:
           type: [object, 'null']
           description: >
@@ -4795,6 +4854,13 @@ components:
             `FREQ=DAILY` becomes `FREQ=DAILY;BYHOUR=8;BYMINUTE=30`. A quota
             (`progress_target` > 1 or `is_tracked`) is exempt: its rule is a bare
             period rule (`FREQ=WEEKLY`) and is stored as sent.
+
+            A quota's period may span several units (interval quotas,
+            2026-10-16): `FREQ=WEEKLY;INTERVAL=2` is "every 2 weeks". INTERVAL
+            comes AFTER FREQ (the reverse order is a 400) and is capped for a
+            quota: 1-30 days, 1-12 weeks, 1-12 months; a yearly quota is every
+            year (a 400 past that, on create and on any edit that sends the
+            rule).
 
             On a reminder (`is_reminder: true`), OMITTING `rrule` (with no
             `due_at`) puts the reminder in the user's default reminder slot -
