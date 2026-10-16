@@ -22,7 +22,6 @@ import {
 /** A GET /api/user/preferences `data` payload, trimmed to what these tests read. */
 const SERVER = {
   filters_expanded: false,
-  quotas_details: true,
   default_grouping: 'new',
   default_sort: 'priority',
   default_sort_reversed: true,
@@ -47,7 +46,7 @@ describe('mergeLoadedPrefs', () => {
 
     const merged = mergeLoadedPrefs(local, dirty.take(), parseServerPrefs(SERVER))
     expect(merged.filtersExpanded).toBe(true) // the click, not the server's false
-    expect(merged.quotasDetails).toBe(true) // untouched → server
+    expect(merged.defaultSortReversed).toBe(true) // untouched → server
     expect(merged.defaultGrouping).toBe('new')
     expect(merged.defaultSort).toBe('priority')
     expect(merged.morningTime).toBe('08:30')
@@ -57,19 +56,19 @@ describe('mergeLoadedPrefs', () => {
     const dirty = createDirtyTracker()
     const loaded = mergeLoadedPrefs(DEFAULT_PREFS, dirty.take(), parseServerPrefs(SERVER))
     expect(loaded.filtersExpanded).toBe(false)
-    expect(loaded.quotasDetails).toBe(true)
+    expect(loaded.defaultSortReversed).toBe(true)
 
-    const after = click(loaded, dirty, 'quotasDetails', false)
-    expect(after.quotasDetails).toBe(false)
+    const after = click(loaded, dirty, 'defaultSortReversed', false)
+    expect(after.defaultSortReversed).toBe(false)
   })
 
   test('rapid toggle before load: the final local value survives, even when it matches the default', () => {
     const dirty = createDirtyTracker()
-    let local = click(DEFAULT_PREFS, dirty, 'quotasDetails', true)
-    local = click(local, dirty, 'quotasDetails', false) // back to the default
+    let local = click(DEFAULT_PREFS, dirty, 'defaultSortReversed', true)
+    local = click(local, dirty, 'defaultSortReversed', false) // back to the default
     // The server still holds an older `true` (the second PATCH hasn't landed).
     const merged = mergeLoadedPrefs(local, dirty.take(), parseServerPrefs(SERVER))
-    expect(merged.quotasDetails).toBe(false)
+    expect(merged.defaultSortReversed).toBe(false)
   })
 
   test('reload: nothing dirty, so every field comes from the server', () => {
@@ -80,7 +79,6 @@ describe('mergeLoadedPrefs', () => {
     )
     expect(merged).toMatchObject({
       filtersExpanded: true,
-      quotasDetails: true,
       defaultGrouping: 'new',
       defaultSort: 'priority',
       defaultSortReversed: true,
@@ -162,8 +160,8 @@ describe('createPreferenceSaver', () => {
 
   test('a lone save is sent at once', () => {
     const { send, calls } = fakeSend()
-    createPreferenceSaver(send).save('quotas_details', { quotas_details: true })
-    expect(calls.map((c) => c.body)).toEqual([{ quotas_details: true }])
+    createPreferenceSaver(send).save('filters_expanded', { filters_expanded: true })
+    expect(calls.map((c) => c.body)).toEqual([{ filters_expanded: true }])
   })
 
   test('a second save waits for the first to settle, then carries the final value', async () => {
@@ -201,9 +199,9 @@ describe('createPreferenceSaver', () => {
   test('toggling away and back while the first save is in flight sends nothing more', async () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)
-    saver.save('quotas_details', { quotas_details: true })
-    saver.save('quotas_details', { quotas_details: false })
-    saver.save('quotas_details', { quotas_details: true })
+    saver.save('filters_expanded', { filters_expanded: true })
+    saver.save('filters_expanded', { filters_expanded: false })
+    saver.save('filters_expanded', { filters_expanded: true })
 
     calls[0].resolve()
     await tick()
@@ -241,31 +239,34 @@ describe('createPreferenceSaver', () => {
       }
       return Promise.resolve()
     })
-    saver.save('quotas_details', { quotas_details: true }) // fails
-    saver.save('quotas_details', { quotas_details: false })
-    saver.save('quotas_details', { quotas_details: true }) // the last click
+    saver.save('filters_expanded', { filters_expanded: true }) // fails
+    saver.save('filters_expanded', { filters_expanded: false })
+    saver.save('filters_expanded', { filters_expanded: true }) // the last click
     rejectFirst()
     await tick()
-    expect(bodies).toEqual([{ quotas_details: true }, { quotas_details: true }])
+    expect(bodies).toEqual([{ filters_expanded: true }, { filters_expanded: true }])
   })
 
   test('different fields do not wait on each other', () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)
     saver.save('filters_expanded', { filters_expanded: true })
-    saver.save('quotas_details', { quotas_details: true })
+    saver.save('default_sort', { default_sort: 'priority' })
     expect(calls).toHaveLength(2)
   })
 
   test('pagehide: a waiting value is sent right away instead of dying with the page', () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)
-    saver.save('quotas_details', { quotas_details: true })
-    saver.save('quotas_details', { quotas_details: false })
+    saver.save('filters_expanded', { filters_expanded: true })
+    saver.save('filters_expanded', { filters_expanded: false })
     expect(calls).toHaveLength(1)
 
     saver.flushPending()
-    expect(calls.map((c) => c.body)).toEqual([{ quotas_details: true }, { quotas_details: false }])
+    expect(calls.map((c) => c.body)).toEqual([
+      { filters_expanded: true },
+      { filters_expanded: false },
+    ])
     saver.flushPending()
     expect(calls).toHaveLength(2) // nothing waiting any more
   })

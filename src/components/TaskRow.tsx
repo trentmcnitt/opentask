@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
-import { isTracked, periodLabel, trackState } from '@/lib/track'
+import { isTracked, taskPeriodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts } from '@/lib/format-date'
 import {
   ageLabel,
@@ -917,7 +917,7 @@ interface MetaSegment {
 /** "2 / 4 this week" — a quota's standing, as its row's only metadata. */
 function trackedMetaSegments(task: Task): MetaSegment[] {
   const { current, target, met } = trackState(task)
-  const period = periodLabel(task.rrule)
+  const period = taskPeriodLabel(task)
   return [
     {
       text: `${current} / ${target}${period ? ` ${period}` : ''}${met ? ' · met' : ''}`,

@@ -139,8 +139,9 @@ describe('Weekly quota periods by week start', () => {
 
   test('TR-060: by default a week is Sunday 00:00 to Saturday midnight', () => {
     const q = quota(2)
-    expect(rolloverTrackedPeriods(at('2026-09-23'))).toEqual({ anchored: 1, rolled: 0 })
+    // Anchored as it is made (2026-10-16), so the rollover has nothing to anchor.
     expect(anchor(q.id)).toBe('2026-09-20T05:00:00.000Z') // Sun 20, 00:00 CDT
+    expect(rolloverTrackedPeriods(at('2026-09-23'))).toEqual({ anchored: 0, rolled: 0 })
     logAt(q.id, at('2026-09-24'))
     logAt(q.id, at('2026-09-26', 22))
 
@@ -238,6 +239,8 @@ describe('Weekly quota periods by week start', () => {
   })
 
   test('TR-064: flipping Sunday→Monday mid-week ends the week at the Monday just gone; Mon–Wed taps carry', () => {
+    // Made early on the Sunday, so it is anchored to that week (create stamps it).
+    vi.setSystemTime(at('2026-09-27', 1))
     const q = quota(5)
     rolloverTrackedPeriods(at('2026-09-27', 1))
     expect(anchor(q.id)).toBe('2026-09-27T05:00:00.000Z')

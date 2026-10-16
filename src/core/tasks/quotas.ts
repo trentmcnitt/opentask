@@ -17,6 +17,9 @@
 import { getDb } from '@/core/db'
 import type { Task } from '@/types'
 import { getTasks } from './create'
+import { loadTaskForMutation } from './access'
+import { ValidationError } from '@/core/errors'
+import { isTracked } from '@/lib/track'
 
 /**
  * Every open quota for a user.
@@ -53,4 +56,68 @@ export function hasAnyQuotas(userId: number): boolean {
     )
     .get(userId)
   return row !== undefined
+}
+
+/** A quota's record over its closed periods — see `getQuotaStats`. */
+export interface QuotaStats {
+  /** Closed periods that reached the target. */
+  periods_met: number
+  /** Closed periods that fell short of it (including a missed one recorded as 0). */
+  periods_missed: number
+  /** Met periods in a row, counting back from the most recent closed one. */
+  current_streak: number
+  /** The longest run of met periods in a row, ever. */
+  longest_streak: number
+}
+
+/**
+ * A quota's history in four numbers, for the chip's bubble (`TrackChipPopover`)
+ * — the "how often has this actually happened" the Quotas page's Details list
+ * used to answer with "met 2×", which went with that view (2026-10-16).
+ *
+ * ONE SOURCE: `progress_periods`, which the period rollover writes for every
+ * closed period, met or short (`period-rollover.ts`). Not `completion_count`:
+ * a task converted into a quota keeps the count it earned as a plain task, so
+ * "met" from there and "missed" from here would not add up to the periods it
+ * has been tracked for. Only CLOSED periods count; the one in progress is the
+ * chip's own count, and the bubble adds it to the streak itself once it is met.
+ *
+ * Cheap on purpose: one query on `idx_progress_periods_task`, newest first,
+ * and one walk over the `met` flags — a daily quota tracked for years is a few
+ * thousand integers.
+ */
+export function getQuotaStats(userId: number, taskId: number): QuotaStats {
+  const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
+  if (!isTracked(task)) throw new ValidationError('Not a quota')
+
+  const rows = getDb()
+    .prepare(
+      `SELECT met FROM progress_periods
+        WHERE task_id = ?
+        ORDER BY period_start DESC, id DESC`,
+    )
+    .all(taskId) as { met: number }[]
+
+  let met = 0
+  let current = 0
+  let longest = 0
+  let run = 0
+  let unbroken = true
+  for (const row of rows) {
+    if (row.met) {
+      met++
+      run++
+      if (run > longest) longest = run
+      if (unbroken) current = run
+    } else {
+      run = 0
+      unbroken = false
+    }
+  }
+  return {
+    periods_met: met,
+    periods_missed: rows.length - met,
+    current_streak: current,
+    longest_streak: longest,
+  }
 }

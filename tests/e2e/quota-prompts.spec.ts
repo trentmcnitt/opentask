@@ -13,14 +13,7 @@
  * is put back, so other specs' counts are untouched.
  */
 
-import {
-  test,
-  expect,
-  waitForPreferenceSave,
-  gotoQuotasDetails,
-  uniqueTitle,
-  waitForGetsSettled,
-} from './fixtures'
+import { test, expect, waitForPreferenceSave, uniqueTitle, waitForGetsSettled } from './fixtures'
 import type { Locator, Page, Request } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -443,13 +436,13 @@ test.describe('Quota prompts — notes mark', () => {
 })
 
 /**
- * The Quotas page's multi-edit (2026-09-25): select several quotas → Details
- * now carries "Remind me daily" and the "Reminds me in" chips, with the same
+ * The quota editor's multi-edit (2026-09-25): select several quotas' prompts
+ * on /reminders → Details carries "Remind me daily" and the "Reminds me in" chips, with the same
  * "only what you change is applied" mixed state as How often and Label. The
  * write is ONE bulk edit of only the changed fields, merged per quota by the
  * server, and one Undo.
  */
-test.describe('Quota prompts — multi-edit on the Quotas page', () => {
+test.describe('Quota prompts — multi-edit', () => {
   test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
 
   async function configure(page: Page, id: number, config: object) {
@@ -464,18 +457,22 @@ test.describe('Quota prompts — multi-edit on the Quotas page', () => {
     return (await res.json()).data.quota_prompt_config
   }
 
-  /** Select exactly these rows on /quotas and open Details. */
-  async function openDetails(page: Page, ids: number[]) {
-    await gotoQuotasDetails(page)
-    await page.locator(`[data-quota-row="${ids[0]}"]`).click()
-    for (const id of ids.slice(1)) {
-      await page.locator(`[data-quota-row="${id}"]`).click({ modifiers: ['ControlOrMeta'] })
+  /**
+   * Select one prompt of each of these quotas on /reminders and open Details —
+   * the multi-quota editor's way in since the Quotas page's Details list (and
+   * its selection) went on 2026-10-16.
+   */
+  async function openDetails(page: Page, titles: string[]) {
+    await page.goto('/reminders')
+    for (const title of titles) {
+      await promptRow(page, title)
+        .first()
+        .click({ modifiers: ['ControlOrMeta'] })
     }
-    const bar = page.locator('[data-quota-selection-bar]')
-    await expect(bar).toContainText(`${ids.length} selected`)
-    await bar.getByRole('button', { name: 'Details' }).click()
+    await expect(bar(page)).toContainText(`${titles.length} selected`)
+    await bar(page).getByRole('button', { name: 'Details' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog).toContainText(`Editing ${ids.length} quotas`)
+    await expect(dialog).toContainText(`Editing ${titles.length} quotas`)
     return dialog.locator('[data-quota-prompt-field="many"]')
   }
 
@@ -494,7 +491,7 @@ test.describe('Quota prompts — multi-edit on the Quotas page', () => {
     await configure(page, weekly, { slot_id: last.id })
     await configure(page, daily, { slot_id: first.id, numbers: { '3': last.id } })
 
-    const field = await openDetails(page, [weekly, daily])
+    const field = await openDetails(page, ['E2E multi weekly', 'E2E multi daily'])
     // Both remind (the default for weekly and daily): the switch agrees.
     await expect(field.locator('[data-quota-prompt-enabled]')).toHaveAttribute(
       'aria-checked',
@@ -535,50 +532,8 @@ test.describe('Quota prompts — multi-edit on the Quotas page', () => {
 
     // And the editor reads the restored disagreement again.
     await page.keyboard.press('Escape')
-    const again = await openDetails(page, [weekly, daily])
+    const again = await openDetails(page, ['E2E multi weekly', 'E2E multi daily'])
     await expect(again.locator('[data-quota-prompt-mixed="slot"]')).toHaveText('—')
-  })
-
-  test('a mixed switch set to off hides the periods and keeps each quota its own period', async ({
-    authenticatedPage: page,
-  }) => {
-    const last = (await userSlots(page)).at(-1)!
-    const off = await makeQuota(page, 'E2E multi off', 'FREQ=WEEKLY', 2)
-    const on = await makeQuota(page, 'E2E multi on', 'FREQ=MONTHLY', 2)
-    await configure(page, off, { enabled: false, slot_id: last.id })
-    await configure(page, on, { slot_id: last.id })
-
-    const field = await openDetails(page, [off, on])
-    const toggle = field.locator('[data-quota-prompt-enabled]')
-    // One off, one on: the dash, and a switch that claims neither.
-    await expect(field.locator('[data-quota-prompt-mixed="enabled"]')).toHaveText('—')
-    await expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await expect(field).toContainText('On for some of these, off for others')
-    // Where they remind agrees, so it shows — pressed.
-    await expect(field.locator(`[data-quota-prompt-slot="${last.id}"]`)).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-checked', 'true')
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await expect(field.locator('[data-quota-prompt-mixed="enabled"]')).toHaveCount(0)
-    // Off: nothing reminds, so there is no period to pick.
-    await expect(field.locator('[data-quota-prompt-slot]')).toHaveCount(0)
-    await expect(field).toContainText('Only on the Quotas page')
-
-    const saved = page.waitForResponse(isBulkEdit)
-    await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
-    const res = await saved
-    expect(res.request().postDataJSON().changes).toEqual({
-      quota_prompt_config: { enabled: false },
-    })
-    // The one already off was not rewritten; the other kept its period.
-    expect((await res.json()).data.tasks_affected).toBe(1)
-    expect(await configOf(page, off)).toEqual({ enabled: false, slot_id: last.id })
-    expect(await configOf(page, on)).toEqual({ slot_id: last.id, enabled: false })
   })
 })
 

@@ -182,6 +182,20 @@ export interface Task {
    * iOS Track widget's pace tick) must read this, not a date.
    */
   progress_period_start: string | null
+  /**
+   * Interval quotas (2026-10-16): the current period, SERVED — computed on
+   * every read (`rowToTask`, `quotaPeriodFields` in `@/lib/track`) in the
+   * owner's clock, so no client repeats `quotaPeriodEnd`. `progress_period_end`
+   * is the window's exclusive end (UTC), `period_interval` the rule's INTERVAL,
+   * `period_last_day` the window's last local day (`YYYY-MM-DD`), and
+   * `period_label` "by Oct 24" for an interval above 1 — null at interval 1,
+   * where clients keep their own words ("this week"). All null on a non-quota.
+   * Optional: a Task built by hand (tests, an optimistic row) has none.
+   */
+  progress_period_end?: string | null
+  period_interval?: number | null
+  period_last_day?: string | null
+  period_label?: string | null
 
   /**
    * Quota reminders (2026-09-24): where and whether this quota prompts on the

@@ -72,6 +72,9 @@ const VALID_TASK_COLUMNS = new Set([
   // tracked completion or a skip would 500 without them.
   'progress_target',
   'progress_current',
+  // Interval quotas (2026-10-16): a period edit re-anchors the quota in the
+  // same write, and its undo puts the old anchor back with the old rule.
+  'progress_period_start',
   'skip_count',
   // §5: the explicit quota flag. Missing here until 2026-09-08, which was not
   // merely "undo does nothing": this allowlist THROWS on an unknown field, and

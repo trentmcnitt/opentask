@@ -1,59 +1,86 @@
 'use client'
 
-import { useEffect } from 'react'
-import { cn } from '@/lib/utils'
+import { useCallback, useEffect, useState } from 'react'
+import { Gauge, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { TrackPanel } from '@/components/TrackPanel'
-import { EmptyState, QuotasHeaderRow, QuotasSearchCount } from '@/components/QuotasView'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { useQuotasData } from '@/hooks/useQuotasData'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 
 /**
- * /quotas' default view: the dashboard's Quotas panel, on a page of its own.
+ * The Quotas page: the dashboard's Quotas panel, on a page of its own.
  *
  * Trent, 2026-09-25: "the default view when I go to the quotas screen to be the
- * dashboard version of quotas, with an option to expand it to the view that you
- * have here, where it shows how many have been met." So the page opens on
- * `TrackPanel` itself — the same component, not a copy — in its `standalone`
- * mode (no phone section fold, no redundant heading; see that prop), and
- * `QuotasView`, the detailed list with "met 2×", selection and the multi-quota
- * editor, is one press of the page's Summary/Details switch away.
+ * dashboard version of quotas". So the page is `TrackPanel` itself — the same
+ * component, not a copy — in its `standalone` mode (no phone section fold, no
+ * redundant heading; see that prop).
+ *
+ * ONE VIEW (Trent, 2026-10-16: "that Details view is pointless… We're going to
+ * get rid of that special view"). Until then a Summary/Details switch swapped
+ * in a second list (`QuotasView`: rows with "met 2×", selection, the
+ * multi-quota editor). Where each of its parts went:
+ * - "met N×" → the chip's bubble (hold a chip), with missed, the streak and
+ *   the day it was made (`TrackChipPopover`'s `QuotaRecord`).
+ * - +1 / −1 → the chip: tap, and swipe left / right-click / shift-click.
+ * - editing one → the bubble's Open (`QuotaDetailModal`); trashing one → the
+ *   bubble's trash can.
+ * - grouping by label → the panel's label clusters, inside each period.
+ * - search, New quota, `?quota=<id>` → here and in the panel, below.
+ * - selecting several and editing or trashing them together → gone with it.
  *
  * What this adds around the panel is only what the panel does not do for
- * itself on the dashboard: the page's header row (shared with `QuotasView` so
- * the two views line up), the empty state (`TrackPanel` renders nothing at zero
- * quotas), and "New quota" — the button, and the sidebar/phone plus, which
- * reach the page through the `open-add-quota` event exactly as they reach
- * `QuotasView`. Editing an existing quota is the panel's own: hold a chip, then
- * "Open", which is its `QuotaDetailModal`.
+ * itself on the dashboard: the page's header row, the empty state
+ * (`TrackPanel` renders nothing at zero quotas), "New quota" — the button, and
+ * the sidebar/phone plus, which reach the page through the `open-add-quota`
+ * event — and the `?quota=<id>` deep link.
  */
 export function QuotasSummary({
   onUndo,
   onCompleted,
   refreshRef,
-  viewSwitch,
   searchQuery,
 }: {
   onUndo: () => void
   onCompleted: () => void
   refreshRef?: React.MutableRefObject<(() => void) | null>
-  viewSwitch?: React.ReactNode
   /** The top bar's search. The panel narrows itself (see `TrackPanel`); this
-   *  view adds the count line and the no-match state, as `QuotasView` does. */
+   *  view adds the count line and the no-match state. */
   searchQuery?: string
 }) {
   const { tasks, error, refresh } = useQuotasData(refreshRef)
   // Only ever a create from here — editing an existing quota is the panel's
-  // own editor (see above). Nothing on this view is selected, so no `clear`.
+  // own editor, behind a chip's bubble.
   const { openCreate, modal } = useQuotaEditor({ refresh, onUndo, onCompleted })
 
-  // `openCreate` is idempotent, as in `QuotasView`: a double-tap on the
-  // phone's plus dispatches twice, and a second draft would throw away what
-  // was typed.
+  // `openCreate` is idempotent: a double-tap on the phone's plus dispatches
+  // twice, and a second draft would throw away what was typed.
   useEffect(() => {
     window.addEventListener('open-add-quota', openCreate)
     return () => window.removeEventListener('open-add-quota', openCreate)
   }, [openCreate])
+
+  // `?quota=<id>` — the Quotas widget's deep link (`WidgetLink.quota` →
+  // `opentask://quota/<id>` → `/quotas?quota=<id>`, resolved in
+  // `OpenTaskApp.handleWidgetLink`); a notification tap on a quota's id is
+  // forwarded here by the dashboard's `?task=` effect too. Brings that quota's
+  // chip into view and flashes it once; opens nothing — mirrors RemindersView's
+  // `?reminder=<id>`. The panel does the showing (`TrackPanel`'s
+  // `highlightId`: it unfolds the chip's cluster and shows it even if it is a
+  // met one that would be put away).
+  //
+  // Read in `useState`'s initializer from `window.location.search` rather
+  // than `useSearchParams()` (no Suspense boundary needed, and the first paint
+  // already carries it). The param is stripped once the list has loaded, so
+  // it outlives a remount before the data arrives, and a reload does not
+  // flash again. An id that is not one of these quotas matches no chip.
+  const [highlightId, setHighlightId] = useState<number | null>(readQuotaParam)
+  const clearHighlight = useCallback(() => setHighlightId(null), [])
+  const loaded = tasks !== null
+  useEffect(() => {
+    if (!loaded || !new URLSearchParams(window.location.search).has('quota')) return
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }, [loaded])
 
   const query = normalizeTaskSearch(searchQuery)
   const searching = query.length > 0
@@ -65,7 +92,7 @@ export function QuotasSummary({
     // Not a labelled region: the panel inside is `region "Quotas"` already,
     // and two regions of one name would make "the Quotas panel" ambiguous.
     <div data-quotas-summary className="space-y-3 pb-24">
-      <QuotasHeaderRow count={tasks.length} onNew={openCreate} viewSwitch={viewSwitch} />
+      <QuotasHeaderRow count={tasks.length} onNew={openCreate} />
 
       {searching && tasks.length > 0 && (
         <QuotasSearchCount
@@ -84,6 +111,8 @@ export function QuotasSummary({
           onRefresh={refresh}
           standalone
           searchQuery={searchQuery}
+          highlightId={highlightId}
+          onHighlightDone={clearHighlight}
         />
       )}
 
@@ -92,56 +121,62 @@ export function QuotasSummary({
   )
 }
 
-export type QuotasPageView = 'summary' | 'details'
+/** `?quota=<id>` as a number, or null — see `QuotasSummary`'s deep-link comment. */
+function readQuotaParam(): number | null {
+  if (typeof window === 'undefined') return null
+  const id = Number.parseInt(new URLSearchParams(window.location.search).get('quota') ?? '', 10)
+  return Number.isNaN(id) ? null : id
+}
+
+/** The page's header row: the count, which is the page's h1, and "New quota". */
+function QuotasHeaderRow({ count, onNew }: { count: number; onNew: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-1">
+      {/* The page's h1, exactly as the Reminders headline is: this one line
+          is the surface's summary, so it is the heading rather than a
+          paragraph sitting where a heading should be. */}
+      <h1 className="text-muted-foreground text-sm whitespace-nowrap">
+        {count === 0 ? 'No quotas yet.' : `${count} quota${count === 1 ? '' : 's'}`}
+      </h1>
+      {/* "New" on a phone, "New quota" wider; the accessible name stays
+          "New quota" at every width. */}
+      <Button size="sm" onClick={onNew} aria-label="New quota">
+        <Plus className="size-4" />
+        <span className="sm:hidden">New</span>
+        <span className="hidden sm:inline">New quota</span>
+      </Button>
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center gap-3 py-16 text-center">
+      <div className="bg-muted text-muted-foreground flex size-11 items-center justify-center rounded-full">
+        <Gauge className="size-5" />
+      </div>
+      <p className="text-muted-foreground max-w-xs text-sm leading-relaxed">
+        A quota is something you do a set number of times in a period — &ldquo;eat beef four times a
+        week&rdquo;. It counts instead of completing, and it is never late.
+      </p>
+    </div>
+  )
+}
 
 /**
- * The page's Summary / Details switch.
- *
- * A two-option segmented control styled exactly like the dashboard's
- * `ViewModeToggle` (Today / Projects / All) — the app's one pattern for "the
- * same things, shown another way". (It was deliberately not a "Show as …"
- * text button, because the panel then had its own "Show as rows / Show as
- * chips" switch; that switch is gone as of 2026-09-29.) Words only, no icons —
- * the words are the affordance.
+ * The count line shown while a search is active, and the no-match state — the
+ * Reminders surface's `SearchResults` header, word for word apart from the
+ * noun, so the two pages read the same.
  */
-export function QuotasViewSwitch({
-  view,
-  onChange,
-}: {
-  view: QuotasPageView
-  onChange: (view: QuotasPageView) => void
-}) {
-  const options: { value: QuotasPageView; label: string; hint: string }[] = [
-    { value: 'summary', label: 'Summary', hint: 'The Quotas panel from the Tasks page' },
-    { value: 'details', label: 'Details', hint: 'Every quota with how often it has been met' },
-  ]
+function QuotasSearchCount({ count, query }: { count: number; query: string }) {
   return (
-    <div
-      role="group"
-      aria-label="Quotas view"
-      data-quotas-view-switch
-      className="bg-muted/50 inline-flex items-center gap-0.5 rounded-lg p-0.5"
-    >
-      {options.map((option) => {
-        const active = view === option.value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={active}
-            title={option.hint}
-            className={cn(
-              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-              active
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
+    <>
+      <div className="text-muted-foreground px-2 text-sm" data-search-count={count}>
+        {count} result{count !== 1 ? 's' : ''} for &ldquo;{query.trim()}&rdquo;
+      </div>
+      {count === 0 && (
+        <p className="text-muted-foreground py-12 text-center text-sm">No quota here says that.</p>
+      )}
+    </>
   )
 }

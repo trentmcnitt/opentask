@@ -1447,13 +1447,8 @@ enum WidgetStore {
                         done = isTarget ? false : prompt.done
                         if isTarget { needsFetch = true }
                     }
-                    return QuotaPromptDTO(
-                        promptKey: prompt.promptKey, taskId: prompt.taskId, number: prompt.number,
-                        numbers: prompt.numbers, slotId: prompt.slotId, title: prompt.title,
-                        current: current, target: prompt.target, period: prompt.period,
-                        stripeColor: prompt.stripeColor,
-                        considered: isTarget ? false : prompt.considered, done: done,
-                        hasNotes: prompt.hasNotes
+                    return prompt.updated(
+                        current: current, considered: isTarget ? false : prompt.considered, done: done
                     )
                 })
             }
@@ -1519,12 +1514,8 @@ enum WidgetStore {
             group.replacingPrompts(group.prompts.map { prompt in
                 var p = prompt.promptKey == key && prompt.isWaiting ? prompt.handled(did: did) : prompt
                 if let current = counts[p.taskId] {
-                    p = QuotaPromptDTO(
-                        promptKey: p.promptKey, taskId: p.taskId, number: p.number, numbers: p.numbers,
-                        slotId: p.slotId, title: p.title,
-                        current: current, target: p.target, period: p.period, stripeColor: p.stripeColor,
-                        considered: p.considered, done: p.done || (p.number.map { current >= $0 } ?? false),
-                        hasNotes: p.hasNotes
+                    p = p.updated(
+                        current: current, done: p.done || (p.number.map { current >= $0 } ?? false)
                     )
                 }
                 return p

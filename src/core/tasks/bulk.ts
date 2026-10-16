@@ -29,6 +29,7 @@ import {
   executeMarkDone,
   collectFieldChanges,
   applyFieldChanges,
+  settleQuotaPeriod,
   type FieldChangesInput,
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
@@ -1024,11 +1025,14 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       }
     }
 
-    for (const task of tasks) {
+    for (const listed of tasks) {
+      // A rule sent to a quota may re-anchor it: close an expired period
+      // first (`settleQuotaPeriod`), inside this transaction.
+      const task = settleQuotaPeriod(listed, inputFor(listed))
       // Collect field changes using shared helper
       const data = collectFieldChanges({
         task,
-        input: inputFor(task),
+        input: inputFor(listed),
         userId,
         userTimezone,
         now: nowDate,

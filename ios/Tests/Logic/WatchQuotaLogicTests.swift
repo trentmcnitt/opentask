@@ -85,6 +85,23 @@ final class WatchQuotaLogicTests: XCTestCase {
         let moved = WatchPromptMove.movedConfig(stored: nil, numbers: row.numbers, toSlotId: 15)
         XCTAssertEqual(moved["numbers"] as? [String: Int], ["2": 15])
     }
+
+    /// Interval quotas (2026-10-16): "Every 2 weeks" is its own section right
+    /// after "This week", summarised under its own heading.
+    func testIntervalQuotasGetTheirOwnSection() {
+        let quotas = [
+            TaskDTO(id: 1, title: "Run", rrule: "FREQ=WEEKLY", progressTarget: 3),
+            TaskDTO(
+                id: 2, title: "Oven", rrule: "FREQ=WEEKLY;INTERVAL=2", progressCurrent: 1, trackedFlag: true,
+                periodInterval: 2, periodLabel: "by Oct 24"
+            ),
+            TaskDTO(id: 3, title: "Call", rrule: "FREQ=MONTHLY", progressTarget: 2),
+        ]
+        let sections = WatchQuotaLogic.sections(quotas: quotas, labelConfig: [], showMet: true)
+        XCTAssertEqual(sections.map(\.id), ["weekly", "weekly/2", "monthly"])
+        XCTAssertEqual(sections[1].summary, "Every 2 weeks · 1 of 1 met")
+        XCTAssertEqual(sections[1].period, .weekly)
+    }
 }
 
 final class WatchSlotLogicTests: XCTestCase {

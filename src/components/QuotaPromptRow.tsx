@@ -55,7 +55,9 @@ import type { Task } from '@/types'
  *   count is segments with a short period word (`QuotaSegments`: "today",
  *   "week", "month"), falling back to "1/2 today" text; the words come from
  *   the one period table (`QUOTA_PERIODS`), so they never disagree with the
- *   Quotas panel's headings. A period-less quota shows the count alone.
+ *   Quotas panel's headings. An interval quota (every 2 weeks, 2026-10-16)
+ *   says when its period ends instead — "▰▱ by Oct 24", the server's
+ *   `period_label`. A period-less quota shows the count alone.
  * - SELECTABLE BESIDE REMINDERS, keyed by `prompt_key` (2026-09-25; before
  *   that, not selectable at all). A daily quota can wait in several periods
  *   at once, one row per number, so the task id would not say WHICH row. The
@@ -124,9 +126,12 @@ export interface QuotaPromptRowProps {
   bubble?: (row: React.ReactElement) => React.ReactNode
 }
 
-/** "3/5 this week" — the prompt's own count and its period, for the did-it button's name. */
+/**
+ * "3/5 this week" — the prompt's own count and its period, for the did-it
+ * button's name. An interval quota's served end ("3/5 by Oct 24") wins.
+ */
 function countText(prompt: QuotaPrompt): string {
-  const period = freqLabel(prompt.period)
+  const period = prompt.period_label ?? freqLabel(prompt.period)
   return `${prompt.current}/${prompt.target}${period ? ` ${period}` : ''}`
 }
 
@@ -252,7 +257,12 @@ export function QuotaPromptRow({
         {/* The count as segments (`QuotaSegments`), or "0/2 today" when they
             don't fit. Its own space is the break point: the count wraps as a
             unit on its own, never dragging the title's last word with it. */}
-        <QuotaSegments current={prompt.current} target={prompt.target} freq={prompt.period} />
+        <QuotaSegments
+          current={prompt.current}
+          target={prompt.target}
+          freq={prompt.period}
+          periodLabel={prompt.period_label}
+        />
         {/* The quota's notes, marked exactly as a reminder row marks its own
             (2026-09-25) — after the count, as a reminder's comes after its
             cadence mark. The bubble a hold opens is where they are read. */}
@@ -331,7 +341,12 @@ export function ConsideredPromptRow({
         )}
       >
         {prompt.title}
-        <QuotaSegments current={prompt.current} target={prompt.target} freq={prompt.period} />
+        <QuotaSegments
+          current={prompt.current}
+          target={prompt.target}
+          freq={prompt.period}
+          periodLabel={prompt.period_label}
+        />
         {prompt.has_notes && <NotesMarker />}
       </p>
     </li>

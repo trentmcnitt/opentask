@@ -37,8 +37,22 @@ export interface QuotaPrompt {
   /** Today's count — 0 once the period has ended, even before the cron runs. */
   current: number
   target: number
-  /** The quota's period, for a client's own wording ("· week"). */
+  /**
+   * The quota's period FREQ, for a client's own wording ("· week"). The bare
+   * FREQ even for an interval quota — read `period_interval`/`period_label`
+   * beside it (older native builds decode this as a plain string).
+   */
   period: PromptPeriod | null
+  /**
+   * Interval quotas (2026-10-16): the task's served period fields
+   * (`quotaPeriodFields` in `@/lib/track`) — the rule's INTERVAL, the current
+   * window's exclusive end (UTC) and last local day, and "by Oct 24" for an
+   * interval above 1 (null at 1: the client keeps its own word for `period`).
+   */
+  period_interval: number | null
+  period_end: string | null
+  period_last_day: string | null
+  period_label: string | null
   /**
    * The quota's label colour, resolved server-side so every client draws the
    * same stripe. A `LabelColor` name, never a CSS class. `null` = neutral:

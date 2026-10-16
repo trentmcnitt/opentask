@@ -335,12 +335,14 @@ private enum ReminderPreviewData {
     /// 2026-09-24). Keyed for the sample's day; previews never send it.
     private static func prompt(
         _ taskId: Int, _ number: Int?, _ title: String, _ current: Int, _ target: Int,
-        _ period: String?, _ stripe: String?, considered: Bool = false, done: Bool = false
+        _ period: String?, _ stripe: String?, considered: Bool = false, done: Bool = false,
+        ends: String? = nil
     ) -> QuotaPromptDTO {
         QuotaPromptDTO(
             promptKey: "q:\(taskId):\(number ?? 0):2026-09-24", taskId: taskId, number: number,
             title: title, current: current, target: target, period: period, stripeColor: stripe,
-            considered: considered, done: done, hasNotes: false
+            considered: considered, done: done, hasNotes: false,
+            periodInterval: ends == nil ? 1 : 2, periodLabel: ends
         )
     }
 
@@ -355,6 +357,8 @@ private enum ReminderPreviewData {
             prompt(116, nil, "Oatmeal + Berries", 1, 3, "WEEKLY", nil),
             prompt(3307, nil, "Look for new evening courses — community colleges, library programs, weekend workshops", 0, 1, "WEEKLY", "pink"),
             prompt(276, nil, "Vacuum the car mats", 0, 1, "MONTHLY", "purple"),
+            // An interval quota (2026-10-16): its end, not "week".
+            prompt(24001, nil, "Deep-clean the oven", 0, 1, "WEEKLY", "orange", ends: "by Oct 24"),
             prompt(255, nil, "Bake bread from scratch (incl. sourdough)", 0, 5, "WEEKLY", "blue"),
             prompt(83, 1, "Piano Scales", 0, 2, "DAILY", "blue"),
             prompt(193, nil, "Figs", 1, 2, "WEEKLY", nil),

@@ -755,9 +755,12 @@ extension WatchViewModel {
     /// file because the properties it fills are `private(set)`. Setting
     /// `showMetQuotas` persists through its `didSet`, which is harmless in a
     /// preview process (its App Group defaults are its own sandbox).
-    static func preview(showMet: Bool, takeback: Bool = false) -> WatchViewModel {
+    /// `only`: keep just the quotas it accepts (the interval-quota preview).
+    static func preview(
+        showMet: Bool, takeback: Bool = false, only: ((TaskDTO) -> Bool)? = nil
+    ) -> WatchViewModel {
         let model = WatchViewModel()
-        model.tasks = WatchPreviewData.quotas
+        model.tasks = WatchPreviewData.quotas.filter { only?($0) ?? true }
         model.labelConfig = WatchPreviewData.labelConfig
         model.hasLoadedOnce = true
         model.canUndo = true

@@ -22,24 +22,30 @@ export type SegmentFill = 'empty' | 'filled' | 'met'
 /**
  * The word after the segments — "today", "week", "month", "year" (never "this
  * week": the segments already say "so far"). Null for a period-less quota.
- * Read from the FREQ only, so an interval quota ("every other day") keeps the
- * same word its label shows today.
+ * Read from the FREQ — unless the quota is an INTERVAL quota (2026-10-16) and
+ * the server served its end as `label` ("by Oct 24"), which is the word then:
+ * "week" would be wrong for a fortnight.
  */
-export function quotaSegmentWord(freq: string | null | undefined): string | null {
-  return QUOTA_PERIODS.find((p) => p.freq === freq)?.word ?? null
+export function quotaSegmentWord(
+  freq: string | null | undefined,
+  label: string | null = null,
+): string | null {
+  return label ?? QUOTA_PERIODS.find((p) => p.freq === freq)?.word ?? null
 }
 
 /**
  * The group's accessible name, in natural words: "1 of 2 today", "1 of 2 this
  * week", "1 of 2 this month" — the period's full label, since "1 of 2 week" is
- * not something a person says. A period-less quota is "1 of 2".
+ * not something a person says. An interval quota's served label reads as is
+ * ("1 of 2 by Oct 24"). A period-less quota is "1 of 2".
  */
 export function quotaCountAriaLabel(
   current: number,
   target: number,
   freq: string | null | undefined,
+  periodLabel: string | null = null,
 ): string {
-  const label = QUOTA_PERIODS.find((p) => p.freq === freq)?.label
+  const label = periodLabel ?? QUOTA_PERIODS.find((p) => p.freq === freq)?.label
   return `${current} of ${target}${label ? ` ${label}` : ''}`
 }
 

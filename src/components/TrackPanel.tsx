@@ -13,7 +13,6 @@ import {
   trackStream,
   trackStripeClass,
   quotaFreqOf,
-  TRACK_NOTCH_CLASS,
   type TrackSection,
   type TrackStreamItem,
 } from '@/lib/track'
@@ -36,11 +35,13 @@ import {
 } from '@/hooks/useResponsiveFold'
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
 import { QuotaSegments } from '@/components/QuotaSegments'
+import { SlotHairline } from '@/components/reminders/ReminderSlotGroup'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
+import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
@@ -118,8 +119,8 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   omitted, both `groupByPeriod`'s doing (`@/lib/track`).
  * - EACH SECTION'S HEADING IS ONE LINE (`PeriodHeading`): the period name,
  *   bold and full-strength — not muted, unlike a label's — so it outranks the
- *   clusters under it; a muted "N days left" (nothing for Today); an inline bar
- *   that flexes to fill whatever room is left; "**M** of N" quotas met. A
+ *   clusters under it; a muted "· N days left" (nothing for Today); "**M** of
+ *   N" quotas met at the right; and the bar UNDER the row (`PeriodBar`). A
  *   THIN DIVIDER (a top border) sits between sections, never before the first.
  * - THE BAR IS HONEST NOW BECAUSE A SECTION SHARES ONE CLOCK. The 09-09 design
  *   dropped the summed bar because a label group mixes days, weeks and months
@@ -128,14 +129,17 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   `sum(min(current,target)) / sum(target)` (partial credit, capped per
  *   quota — `trackSummary`) is a real number again. Indigo while short of the
  *   target, green when every quota in the section is met.
- * - THE NOTCH marks how much of the period has already run — a 2px line
- *   inside the bar, clipped by its `overflow-hidden`, never sticking out. ONE
- *   flat, faint tone at every fraction, on the fill or off it (Trent,
- *   2026-09-23: it must not switch shade by what it sits over) — see
- *   `TRACK_NOTCH_CLASS`, tuned in that one place. No notch on the no-period
- *   section: there is no clock to mark. The bar carries its own accessible
- *   description (`aria-valuetext`, e.g. "67% done, 43% of the week gone") —
- *   the notch itself is decorative and `aria-hidden`.
+ * - THE BAR IS THE REMINDERS PERIOD GROUP'S HAIRLINE (2026-10-16,
+ *   `SlotHairline`). Trent: "What's up with that hideous today bar? … we have
+ *   nice-looking bars and progress elsewhere, like on the reminders screen",
+ *   then "Why do the quotas have their bar fat and on the same line as the
+ *   heading, whereas the ones for the reminders have them casually underneath
+ *   the heading?" It was a 5px in-row track with a 2px elapsed-time notch; it
+ *   is now the 4px hairline under each Reminders period heading, the same
+ *   element, under the heading row and the width of the card. THE NOTCH WENT
+ *   WITH IT: "N days left" already says how much of the period is left, and
+ *   the bar's `aria-valuetext` still says it for a screen reader ("67% done,
+ *   43% of the week gone"), from the same `elapsedFraction`.
  * - THE PERIOD SUFFIX IS GONE FROM THE CHIP ("0/2·wk" → "0/2"). The section it
  *   sits in already says the period; repeating it on every chip was the
  *   afterthought that started this redesign. The chip's `aria-label` still
@@ -171,9 +175,11 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *    left`. It is a header button, `sm:hidden`, sitting beside the desktop
  *    heading (plain text).
  * 2. THE GROUP FOLDS make each label cluster independently collapsible. A shut
- *    cluster shows a 30×3 meter filled to met/count and "{n} left" — or "✓ all
- *    met", at which point the whole header steps back in opacity so a finished
- *    category stops competing for attention.
+ *    cluster shows "{n} left" — or "✓ all met", at which point the whole
+ *    header steps back in opacity so a finished category stops competing for
+ *    attention. It used to draw a 30×3 meter beside the words too; that went
+ *    on 2026-10-16 with the period bars' restyle (`PeriodBar`) — a third, tinier
+ *    bar style under the period's own bar only restated "{n} left".
  *
  * "{n} left" COUNTS QUOTAS STILL SHORT, not items and not increments remaining
  * (Trent picked it over both). It is the only one of the three that moves as he
@@ -238,13 +244,12 @@ const CLUSTER_MET_DIM: FoldClasses = {
 /**
  * All chip-level "detail" state for Track: which quota's popover bubble is
  * open, and which (if any) is open in the full `QuotaDetailModal` editor —
- * the same editor `QuotasView` mounts (`useQuotaEditor`: same mutations, same
- * guarded "Open full page"), so pressing a chip's "Open" button edits the
- * same way `/quotas` does, just without leaving (Trent, 2026-09-21:
- * "whenever I do things with tasks it opens a modal... that's how I like to
- * work"). One hook rather than state split across `TrackPanel` and its
- * chips' callers, so the panel's own render stays short — the same reason
- * `useQuotaEditor` is its own file rather than inline in `QuotasView`.
+ * the same editor every quota surface mounts (`useQuotaEditor`: same
+ * mutations, same guarded "Open full page"), so pressing a chip's "Open"
+ * button edits in place (Trent, 2026-09-21: "whenever I do things with tasks
+ * it opens a modal... that's how I like to work"). One hook rather than state
+ * split across `TrackPanel` and its chips' callers, so the panel's own render
+ * stays short.
  */
 function useTrackChipDetail({
   onUndo,
@@ -360,6 +365,44 @@ interface TrackPanelProps {
    * the task list's, and never reaches this panel). See "SEARCH" in the body.
    */
   searchQuery?: string
+  /**
+   * `?quota=<id>` on /quotas (standalone only): the one chip to bring into
+   * view and flash once. See `withHighlight` for how it is made visible.
+   */
+  highlightId?: number | null
+  /** The flash has played; it must not play again on a remount. */
+  onHighlightDone?: () => void
+}
+
+/**
+ * The deep-linked chip (`highlightId`) must be ON SCREEN to be scrolled to,
+ * and the page's ordinary rules can hide it two ways: a quota met at load is
+ * put away, and its label cluster may be folded shut (the fold store is
+ * shared with the dashboard). So, for as long as the highlight is live — it
+ * is cleared once the flash has played — that one quota is never put away and
+ * its cluster reads open. Neither is written anywhere: the fold store is left
+ * alone and "Show met" is untouched, so when the flash ends the cluster folds
+ * back and a met quota is put away again, exactly as the user left them.
+ *
+ * This is why the page no longer needs its old Details list for the deep link
+ * (the summary "cannot promise" a scroll-to was that list's reason to exist).
+ */
+function withHighlight(
+  clusters: ReturnType<typeof useResponsiveFolds>,
+  sections: TrackSection[],
+  highlightId: number | null | undefined,
+): ReturnType<typeof useResponsiveFolds> {
+  if (highlightId == null) return clusters
+  const section = sections.find((s) => s.tasks.some((t) => t.id === highlightId))
+  const group =
+    section && groupByLabel(section.tasks).find((g) => g.tasks.some((t) => t.id === highlightId))
+  if (!section || !group) return clusters
+  const key = sectionClusterKey(section.key, group.label)
+  return {
+    stateOf: (k) => (k === key ? true : clusters.stateOf(k)),
+    isOpen: (k) => k === key || clusters.isOpen(k),
+    toggle: clusters.toggle,
+  }
 }
 
 /**
@@ -378,8 +421,8 @@ const SEARCH_CLUSTERS: ReturnType<typeof useResponsiveFolds> = {
  * "Now," for the period sections' math — refreshed every minute, not the 15s
  * convention elsewhere in the app (`useQuickSelectDate`, `QuickActionPanel`).
  * Those redraw a relative time like "in 3 mins"; the fastest thing a period
- * section shows is the DAILY notch, which moves by whole minutes at best, so
- * a 15s tick would just spend renders nobody can see move.
+ * section shows is "N days left" (and the bar's elapsed description), which
+ * moves by whole minutes at best, so a 15s tick would just spend renders.
  */
 function useTrackNow(): Date {
   const [now, setNow] = useState(() => new Date())
@@ -397,6 +440,8 @@ export function TrackPanel({
   onRefresh,
   standalone = false,
   searchQuery,
+  highlightId,
+  onHighlightDone,
 }: TrackPanelProps) {
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
@@ -432,7 +477,9 @@ export function TrackPanel({
   const showMet = useShowMet()
   const { putAway, leaving } = useMetPutAway(quotas)
   const hideMet = !showMet.shown && !searching
-  const isPutAway = (task: Task) => hideMet && putAway.has(task.id) && trackState(task).met
+  // The deep-linked chip is never put away while it flashes — `withHighlight`.
+  const isPutAway = (task: Task) =>
+    hideMet && putAway.has(task.id) && trackState(task).met && task.id !== highlightId
   const isLeaving = (task: Task) => hideMet && leaving.has(task.id) && trackState(task).met
 
   // No match at all renders nothing; `QuotasSummary` says so. That also
@@ -461,9 +508,11 @@ export function TrackPanel({
           isPutAway={isPutAway}
           isLeaving={isLeaving}
           summaries={summaries}
-          clusters={searching ? SEARCH_CLUSTERS : clusters}
+          clusters={searching ? SEARCH_CLUSTERS : withHighlight(clusters, sections, highlightId)}
           locked={searching}
           detail={detail}
+          highlightId={highlightId}
+          onHighlightDone={onHighlightDone}
         />
       </div>
 
@@ -794,6 +843,9 @@ interface PeriodSectionProps {
   detail: ReturnType<typeof useTrackChipDetail>
   /** Search results: clusters render open and cannot be folded (`SEARCH_CLUSTERS`). */
   locked?: boolean
+  /** The deep-linked chip — see `TrackPanelProps.highlightId`. */
+  highlightId?: number | null
+  onHighlightDone?: () => void
 }
 
 /**
@@ -816,6 +868,8 @@ function PeriodSection({
   clusters,
   detail,
   locked = false,
+  highlightId,
+  onHighlightDone,
 }: PeriodSectionProps) {
   const bodyItems = sectionBodyItems(s, labelConfig, isPutAway)
   const bodyId = `track-period-${s.key}`
@@ -829,6 +883,7 @@ function PeriodSection({
     >
       <div className="relative">
         <PeriodHeading section={s} />
+        <PeriodBar section={s} />
         {period && bodyItems.length > 0 && (
           <PeriodFoldButton
             section={s}
@@ -868,6 +923,8 @@ function PeriodSection({
                 onEdit={detail.openEditor}
                 onDeleteQuota={detail.deleteFromPopover}
                 periods={detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined}
+                highlighted={highlightId === item.task.id}
+                onHighlightDone={onHighlightDone}
               />
             ),
           )}
@@ -922,14 +979,16 @@ function PeriodFoldButton({
  * A period section's heading — period first, bold and full-strength ink so it
  * outranks the muted label headings beneath it (`mock4`: "TODAY" reads darker
  * than "HEALTH"). One line: the period name · a muted "N days
- * left" (omitted for Today, which already says it, and for the no-period section, which has no clock) · a bar that
- * flexes to fill whatever room is left · "**M** of N" quotas met.
+ * left" (omitted for Today, which already says it, and for the no-period and
+ * interval sections — "every 2 weeks", whose quotas each end on their own day
+ * and say so on their chips — which have no shared clock), then "**M** of N"
+ * quotas met at the right — the Reminders period group's header shape. The
+ * bar is NOT in this row; it sits under it (`PeriodBar`).
  *
  * Not a button — nothing here folds. Only the label clusters inside a section
  * (`ClusterTitle`) and the mobile section card (`TrackHeader`) do.
  */
 function PeriodHeading({ section }: { section: TrackSection }) {
-  const fillPct = Math.round(section.barFraction * 100)
   return (
     <div className="flex items-center gap-2 px-2 py-1">
       <span className="text-foreground shrink-0 text-[11px] font-bold tracking-widest whitespace-nowrap uppercase">
@@ -937,50 +996,45 @@ function PeriodHeading({ section }: { section: TrackSection }) {
       </span>
       {section.timeLeft && (
         <span className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap">
-          {section.timeLeft}
+          &middot; {section.timeLeft}
         </span>
       )}
-      <span
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={fillPct}
-        aria-valuetext={section.barAriaLabel}
-        data-track-period-bar
-        className="bg-muted relative h-[5px] min-w-[40px] flex-1 overflow-hidden rounded-full"
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            'absolute inset-y-0 left-0 h-full rounded-full transition-[width] duration-300 ease-out',
-            section.allMet ? 'bg-green-600' : 'bg-indigo-600 dark:bg-indigo-500',
-          )}
-          style={{ width: `${section.barFraction * 100}%` }}
-        />
-        {/* The notch: how much of the period's clock has already run. ONE
-            tone at every fraction, whether it sits on the fill or off it
-            (Trent, 2026-09-23 — it must not switch shade by what it covers) —
-            see `TRACK_NOTCH_CLASS`, tuned in that one place. The bar's own
-            `overflow-hidden` clips it to the bar's height, so it never sticks
-            out top or bottom; its description lives on the bar's
-            `aria-valuetext` above, since the notch itself is decorative. */}
-        {section.elapsedFraction !== null && (
-          <span
-            aria-hidden="true"
-            data-track-period-notch
-            className={cn('absolute inset-y-0 -ml-px w-[2px]', TRACK_NOTCH_CLASS)}
-            style={{ left: `${section.elapsedFraction * 100}%` }}
-          />
-        )}
-      </span>
+      <span className="flex-1" />
       <span
         data-track-period-count
-        className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap tabular-nums"
+        className="text-muted-foreground shrink-0 text-xs whitespace-nowrap tabular-nums"
       >
-        <span className="text-foreground font-semibold">{section.summary.met}</span> of{' '}
+        <span className="text-foreground font-medium">{section.summary.met}</span> of{' '}
         {section.summary.count}
       </span>
     </div>
+  )
+}
+
+/**
+ * A period section's bar: the Reminders period group's hairline
+ * (`SlotHairline`), UNDER the heading row and the width of the card — Trent,
+ * 2026-10-16: "Why do the quotas have their bar fat and on the same line as
+ * the heading, whereas the ones for the reminders have them casually
+ * underneath the heading?" Same element, so the same 4px, track, indigo fill
+ * and green when every quota in the section is met (`barFraction` reaches 1
+ * exactly then: partial credit is capped per quota). Its accessible text says
+ * how much of the period has run (`barAriaLabel`); the old in-row bar's
+ * elapsed-time notch went with that bar.
+ */
+function PeriodBar({ section }: { section: TrackSection }) {
+  const pct = Math.round(section.barFraction * 100)
+  return (
+    <SlotHairline
+      label={section.heading}
+      considered={pct}
+      total={100}
+      fraction={section.barFraction}
+      ariaLabel={`${section.heading}: ${section.summary.met} of ${section.summary.count} met`}
+      ariaValueText={section.barAriaLabel}
+      className="mx-2 mb-1.5"
+      data-track-period-bar=""
+    />
   )
 }
 
@@ -1176,9 +1230,9 @@ function clusterKey(label: string | null): string {
  * `max-w-full truncate` behind it so a very long label ellipsises at the card's
  * edge instead of pushing out of it.
  *
- * The meter is `aria-hidden` and carries no `role`: it is a redraw of the "{n}
- * left" text beside it, and a second `progressbar` here would be noise to a
- * screen reader and a collision for anything counting the panel's real ones.
+ * No meter on a shut cluster (2026-10-16): "{n} left" is the whole summary.
+ * The tiny 30×3 bar that sat beside it restated the text in a third bar style
+ * under the period's own bar, and was dropped with the period bars' restyle.
  */
 function ClusterTitle({
   item,
@@ -1265,18 +1319,6 @@ function ClusterTitle({
             foldClass(state, FOLD_SUMMARY),
           )}
         >
-          <span
-            aria-hidden="true"
-            className="bg-muted relative block h-[3px] w-[30px] overflow-hidden rounded-full"
-          >
-            <span
-              className={cn(
-                'block h-full rounded-full transition-[width] duration-300 ease-out',
-                allMet ? 'bg-green-600' : 'bg-foreground/60',
-              )}
-              style={{ width: `${count === 0 ? 0 : (met / count) * 100}%` }}
-            />
-          </span>
           {shortfall.allMet ? (
             <span className="flex items-center gap-0.5">
               <Check className="size-3" strokeWidth={3} aria-hidden="true" />
@@ -1359,6 +1401,8 @@ function TrackChip({
   onEdit,
   onDeleteQuota,
   periods,
+  highlighted = false,
+  onHighlightDone,
 }: {
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
@@ -1376,6 +1420,14 @@ function TrackChip({
   onDeleteQuota: (task: Task) => void
   /** Where its daily reminder sits, while its bubble is open — see `periodsFor`. */
   periods?: PromptPeriods
+  /**
+   * `?quota=<id>` on /quotas: scroll to this chip and flash it once — the
+   * Reminders rows' `scrollRowIntoView` + `.animate-row-highlight` pair. A
+   * plain callback ref is enough here: the standalone page mounts nothing
+   * above the panel after it renders (see `scrollRowIntoView`).
+   */
+  highlighted?: boolean
+  onHighlightDone?: () => void
 }) {
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
@@ -1400,6 +1452,13 @@ function TrackChip({
         <button
           type="button"
           data-track-chip={task.id}
+          data-quota-highlight={highlighted ? '' : undefined}
+          ref={highlighted ? scrollRowIntoView : undefined}
+          onAnimationEnd={(e) => {
+            if (e.target === e.currentTarget && e.animationName === 'row-highlight') {
+              onHighlightDone?.()
+            }
+          }}
           onPointerDown={(e) => {
             press.onPointerDown(e)
             swipe.onPointerDown(e)
@@ -1447,6 +1506,7 @@ function TrackChip({
             'relative flex min-h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-[10px] border py-1 pr-2.5 pl-3 text-left text-[13px] leading-5 transition-colors select-none',
             'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
             state.met && 'border-green-600/30',
+            highlighted && 'animate-row-highlight',
           )}
         >
           {/* No progress fill behind the chip since 2026-10-13: the segments
@@ -1462,7 +1522,10 @@ function TrackChip({
               don't fit the line), so it obeys the same fit rule as a prompt
               row's. No period word: the section this chip sits in already
               says the period (`PeriodHeading`); the button's `aria-label`
-              spells it out for a screen reader. */}
+              spells it out for a screen reader. EXCEPT an interval quota
+              (2026-10-16): its section ("every 2 weeks") has no shared clock,
+              so the chip says its own end, the server's `period_label`
+              ("▰▱ by Oct 24") — null at interval 1, so no word there. */}
           <span className="relative min-w-0 break-words">
             {task.title}
             <QuotaSegments
@@ -1470,7 +1533,8 @@ function TrackChip({
               current={state.current}
               target={state.target}
               freq={quotaFreqOf(task.rrule)}
-              showWord={false}
+              showWord={task.period_label != null}
+              periodLabel={task.period_label}
               emphasizeCurrent
               textClassName="text-xs"
               lineEnd={chipLineEnd}

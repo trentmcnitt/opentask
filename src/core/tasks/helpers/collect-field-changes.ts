@@ -11,13 +11,17 @@ import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence, fillRuleTime } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { DateTime } from 'luxon'
 import {
   QUOTA_DUE_DATE_MESSAGE,
+  QUOTA_INTERVAL_MESSAGE,
   QUOTA_PERIOD_MESSAGE,
   REMINDER_SNOOZE_MESSAGE,
   TRACKED_REMINDER_MESSAGE,
 } from '@/core/validation'
-import { isTracked, quotaPeriodOf } from '@/lib/track'
+import { isTracked, quotaIntervalAllowed, quotaPeriodOf } from '@/lib/track'
+import { loggedSince, quotaAnchorNow, rolloverQuotaNow } from '../period-rollover'
+import { getTaskById } from '../read'
 import { capAtDeadline, resolveTarget, type TargetContext } from '@/lib/task-segments'
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
@@ -202,6 +206,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
+  // A row becoming a quota, or a quota whose period changes, is anchored now.
+  collectQuotaAnchor(data, task, input, wasTracked, willBeTracked, now)
 
   // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
   // enforced here because a bare `{ due_at }` on a dated reminder is a move
@@ -381,6 +387,82 @@ function assertQuotaInvariants(
   if (willBeTracked && quotaPeriodOf(resultingRrule) === null && !legacyPeriodless) {
     throw new ValidationError(QUOTA_PERIOD_MESSAGE)
   }
+  // And its period spans no more than the editor offers (QUOTA_INTERVAL_MESSAGE)
+  // — judged only on a rule this write sends, so a stored rule outside the
+  // range stays editable.
+  if (willBeTracked && input.rrule !== undefined && !quotaIntervalAllowed(input.rrule)) {
+    throw new ValidationError(QUOTA_INTERVAL_MESSAGE)
+  }
+}
+
+/**
+ * INTERVAL QUOTAS (2026-10-16): a quota's period is re-anchored when the row
+ * BECOMES a quota, or when its period — FREQ or INTERVAL — changes.
+ *
+ * Without it a period edit kept the old anchor: a weekly quota changed to
+ * monthly kept its Sunday, and its months ran the 11th to the 11th for good
+ * (only weeks have alignment logic). Re-anchored, it starts at the current
+ * unit's start (`quotaAnchorNow`: this week's first day, the 1st, midnight,
+ * Jan 1) — the rule a new quota is anchored by — inside this write, so the
+ * edit and the anchor are ONE undo entry, and undo puts the old rule and the
+ * old anchor back together.
+ *
+ * THE COUNT: what was logged since the new start, never more than the count
+ * already there (`min(progress_current, loggedSince(newStart))`). Weekly →
+ * monthly keeps this week's taps (earlier weeks were already closed and
+ * recorded by the rollover; counting them again would double them); monthly
+ * → weekly keeps only this week's. This is the doc's SIMPLER alternative: the
+ * part of the old window before the new start is not recorded as a short
+ * period — its taps stay in `progress_events`, but no `progress_periods` row
+ * or completion is written for it. Recording it would put rows in tables undo
+ * cannot take back. An expired window is closed by the rollover BEFORE this
+ * runs (`settleQuotaPeriod`), so a finished period is always recorded first.
+ *
+ * A count the request sets itself (`progress_current`) is left to the request.
+ */
+function collectQuotaAnchor(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  wasTracked: boolean,
+  willBeTracked: boolean,
+  now: Date,
+): void {
+  if (!willBeTracked) return
+  const nextRule = input.rrule !== undefined ? input.rrule : task.rrule
+  const after = quotaPeriodOf(nextRule)
+  if (!after) return
+  const before = quotaPeriodOf(task.rrule)
+  const periodChanged =
+    before === null || before.freq !== after.freq || before.interval !== after.interval
+  if (wasTracked && !periodChanged) return
+
+  const anchor = quotaAnchorNow(task.user_id, nextRule, now)
+  if (!anchor) return
+  if (anchor !== task.progress_period_start) {
+    trackField(data, 'progress_period_start', task.progress_period_start, anchor)
+  }
+  if (input.progress_current !== undefined) return
+  const since = DateTime.fromISO(anchor, { zone: 'utc' })
+  const carried = Math.min(task.progress_current, loggedSince(task.id, since))
+  if (carried !== task.progress_current) {
+    trackField(data, 'progress_current', task.progress_current, carried)
+  }
+}
+
+/**
+ * Close a quota's expired period before an edit re-anchors it.
+ *
+ * The rollover runs every five minutes; a period edit in that gap would carry
+ * a count belonging to a period that is already over, and that period would
+ * never be recorded. So an edit that sends a rule to a quota runs the
+ * rollover for it first (`rolloverQuotaNow`, the +1's own guard) and edits
+ * the fresh row. A no-op when the period has not ended. Returns the task to
+ * collect changes against.
+ */
+export function settleQuotaPeriod(task: Task, input: FieldChangesInput): Task {
+  if (!isTracked(task) || input.rrule === undefined) return task
+  return rolloverQuotaNow(task.id) > 0 ? (getTaskById(task.id) ?? task) : task
 }
 
 /**

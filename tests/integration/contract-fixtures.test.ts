@@ -65,6 +65,10 @@
  * 12. The two badges (§7): an undated task 40 days old, and two tasks over
  *     target for three local days (one with a deadline ahead), backdated
  *     GET  /api/tasks/{id} ×3                   → task-badges.json
+ * 13. Interval quotas (2026-10-16): an every-2-weeks quota (target 1)
+ *     GET  /api/tasks/{id}                      → task-interval-quota.json
+ *     GET  /api/reminders                       → reminders-interval.json
+ *        (its prompt's `period_interval` 2 and `period_label` "by …")
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -92,6 +96,8 @@
  * - `prompt_key` → `q:<mapped task id>:<k>:2026-01-15`
  * - every ISO timestamp → `2026-01-15T16:00:00.000Z`, every bare date →
  *   `2026-01-15`. HH:MM values (`start_time`, `anchor_time`) are kept.
+ * - an interval quota's `period_label` ("by Oct 24", a date in words) →
+ *   `by Jan 15`, the pinned date's.
  *
  * A run that straddles local midnight (America/New_York) can fail spuriously:
  * the prompt keys are day-scoped. Re-run.
@@ -113,6 +119,8 @@ const RERUN_HINT =
 
 export const PINNED_TIMESTAMP = '2026-01-15T16:00:00.000Z'
 export const PINNED_DATE = '2026-01-15'
+/** An interval quota's `period_label` is a date in words; pinned like the dates. */
+export const PINNED_PERIOD_LABEL = 'by Jan 15'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 
@@ -196,12 +204,17 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
     }
     return value
   }
-  if (typeof value === 'string') {
-    const pk = PROMPT_KEY.exec(value)
-    if (pk) return `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}`
-    if (ISO_DATETIME.test(value)) return PINNED_TIMESTAMP
-    if (ISO_DATE.test(value)) return PINNED_DATE
-  }
+  if (typeof value === 'string') return normaliseString(value, ids, key)
+  return value
+}
+
+/** A string value: prompt keys, ISO timestamps and dates, and a date in words. */
+function normaliseString(value: string, ids: IdMap, key?: string): string {
+  if (key === 'period_label' && value.startsWith('by ')) return PINNED_PERIOD_LABEL
+  const pk = PROMPT_KEY.exec(value)
+  if (pk) return `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}`
+  if (ISO_DATETIME.test(value)) return PINNED_TIMESTAMP
+  if (ISO_DATE.test(value)) return PINNED_DATE
   return value
 }
 
@@ -553,6 +566,19 @@ describe('contract fixtures (native clients)', () => {
       attempts: await call(`/api/tasks/${created.slipping}`),
       attempts_deadline: await call(`/api/tasks/${created.slippingDeadline}`),
     }
+
+    // 13. Interval quotas (2026-10-16): every 2 weeks, once. Anchored at
+    //     create, so its served period (`progress_period_end`,
+    //     `period_interval` 2, `period_last_day`, `period_label` "by …") is
+    //     on the task and on its prompt at once. Last, so nothing above moves.
+    await make('fortnightly', {
+      title: 'Deep-clean the oven',
+      rrule: 'FREQ=WEEKLY;INTERVAL=2',
+      progress_target: 1,
+      is_tracked: true,
+    })
+    captured['task-interval-quota'] = await call(`/api/tasks/${created.fortnightly}`)
+    captured['reminders-interval'] = await call('/api/reminders')
   })
 
   const names = [
@@ -575,6 +601,8 @@ describe('contract fixtures (native clients)', () => {
     'task-counts',
     'bulk-snooze',
     'task-badges',
+    'task-interval-quota',
+    'reminders-interval',
   ]
 
   for (const name of names) {

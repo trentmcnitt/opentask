@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { periodLabel, trackState, type TrackState } from '@/lib/track'
+import { taskPeriodLabel, trackState, type TrackState } from '@/lib/track'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
@@ -51,7 +51,7 @@ export function useTrackProgress(task: Task): {
   const displayed =
     inFlight > 0 ? local : pinned && pinned.base === serverCurrent ? pinned.value : serverCurrent
   const state = trackState(task, displayed)
-  const period = periodLabel(task.rrule)
+  const period = taskPeriodLabel(task)
   // The toast's Undo runs from an older render's `log`; through the ref it
   // still sees the count as it is now, not as it was when the toast was made.
   const displayedRef = useRef(displayed)

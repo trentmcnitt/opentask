@@ -137,6 +137,18 @@ function stripeColor(task: Task, labelConfig: LabelConfig[]): LabelColor | null 
   return color === 'green' ? null : color
 }
 
+/** The window `rowToTask` served on the task, in the owner's clock, under the prompt's names. */
+function promptPeriodFields(
+  task: Task,
+): Pick<QuotaPrompt, 'period_interval' | 'period_end' | 'period_last_day' | 'period_label'> {
+  return {
+    period_interval: task.period_interval ?? null,
+    period_end: task.progress_period_end ?? null,
+    period_last_day: task.period_last_day ?? null,
+    period_label: task.period_label ?? null,
+  }
+}
+
 /**
  * Today's prompts for a user, by slot id (`null` = the un-slotted group).
  * Every prompt assigned today is returned, handled ones included with their
@@ -175,6 +187,7 @@ export function getQuotaPromptsBySlot(
       current,
       target,
       period: quotaPeriodOf(task.rrule)?.freq ?? null,
+      ...promptPeriodFields(task),
       stripe_color: stripeColor(task, settings.labelConfig),
       has_notes: !!task.notes?.trim(),
     }

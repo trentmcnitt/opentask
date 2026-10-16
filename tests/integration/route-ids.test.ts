@@ -33,6 +33,7 @@ describe('[id] route parsing', () => {
     ['POST', '/api/tasks/abc/restore'],
     ['POST', '/api/tasks/abc/reprocess'],
     ['POST', '/api/tasks/abc/progress'],
+    ['GET', '/api/tasks/abc/quota-stats'],
     ['POST', '/api/tasks/abc/confirm'],
     ['POST', '/api/tasks/abc/skip-occurrence'],
     ['GET', '/api/projects/abc'],

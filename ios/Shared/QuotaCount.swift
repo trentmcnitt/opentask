@@ -24,9 +24,15 @@ enum QuotaCount {
 
     /// The word after the count: "today", "week", "month", "year" — never
     /// "this week" (the segments already say "so far"). Nil for a quota with
-    /// no period. Read from the FREQ alone, so an interval quota ("every other
-    /// day") keeps the word it shows today.
-    static func word(period: String?) -> String? {
+    /// no period. Read from the FREQ — unless the server served an interval
+    /// quota's end as `label` ("by Oct 24", 2026-10-16), which is the word
+    /// then: "week" would be wrong for a fortnight. The web's
+    /// `quotaSegmentWord`.
+    ///
+    /// The label's spaces come back NO-BREAK: "by Oct 24" wraps as one word
+    /// (a prompt row in the Reminders widget drew "by" / "Oct 24" otherwise).
+    static func word(period: String?, label: String? = nil) -> String? {
+        if let label { return label.replacingOccurrences(of: " ", with: "\u{00A0}") }
         switch period {
         case "DAILY": return "today"
         case "WEEKLY": return "week"
@@ -38,7 +44,8 @@ enum QuotaCount {
 
     /// The period in natural words for VoiceOver — "1 of 2 week" is not
     /// something a person says.
-    static func spokenPeriod(period: String?) -> String? {
+    static func spokenPeriod(period: String?, label: String? = nil) -> String? {
+        if let label { return label }
         switch period {
         case "DAILY": return "today"
         case "WEEKLY": return "this week"
@@ -52,10 +59,23 @@ enum QuotaCount {
     /// "1 of 2 today", "1 of 2 this week", "1 of 2 this month"; "1 of 2" with
     /// no period. `withPeriod: false` for a surface whose heading names it
     /// (the Track widget's chips).
-    static func spokenLabel(current: Int, target: Int, period: String?, withPeriod: Bool = true) -> String {
+    static func spokenLabel(
+        current: Int, target: Int, period: String?, label: String? = nil, withPeriod: Bool = true
+    ) -> String {
         let count = "\(current) of \(target)"
-        guard withPeriod, let words = spokenPeriod(period: period) else { return count }
+        guard withPeriod, let words = spokenPeriod(period: period, label: label) else { return count }
         return "\(count) \(words)"
+    }
+
+    /// "10/24" from a served `period_last_day` ("2026-10-24") — an interval
+    /// quota's end where "by Oct 24" doesn't fit (the Smart Stack card's
+    /// 30pt column). Plain string slicing: no calendar, no time zone, so it
+    /// can't shift a day. Nil for anything not `yyyy-MM-dd`.
+    static func compactDay(_ day: String?) -> String? {
+        guard let day else { return nil }
+        let parts = day.split(separator: "-")
+        guard parts.count == 3, let month = Int(parts[1]), let date = Int(parts[2]) else { return nil }
+        return "\(month)/\(date)"
     }
 
     /// The text form: "3/7 today", or "3/7" with no word. Plain spaces — a

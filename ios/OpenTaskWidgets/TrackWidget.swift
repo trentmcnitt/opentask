@@ -456,13 +456,16 @@ extension QuotaPeriodKey {
 /// analog since WidgetKit views carry their own accessibility labels
 /// per-control rather than one composed string.
 struct QuotaSection: Identifiable {
-    /// `QuotaPeriodKey.rawValue` — the section's DOM/list key.
+    /// `QuotaPeriodGroup.id` — "weekly", or "weekly/2" for an interval
+    /// section — the section's list key.
     let id: String
     let heading: String
-    /// "N days left" — nil for Today (PR #62) and the no-period section.
+    /// "N days left" — nil for Today (PR #62), the no-period section and an
+    /// interval section ("Every 2 weeks", 2026-10-16), whose quotas each end
+    /// on their own day and say so on their chips.
     let timeLeftText: String?
-    /// 0...1, where the section bar's notch sits — nil for the no-period
-    /// section (no clock, no notch).
+    /// 0...1, where the section bar's notch sits — nil for the no-period and
+    /// interval sections (no shared clock, no notch).
     let elapsedFraction: Double?
     /// `sum(min(current,target)) / sum(target)` over EVERY quota in the
     /// period (unfiltered by `showMet` — matches the web's `trackSections`:
@@ -523,28 +526,30 @@ enum QuotaSectionBuilder {
     /// Every period section with at least one quota in it, day → year then
     /// the period-less bucket — `QuotaPeriodKey.order`, `groupByPeriod`'s
     /// fixed table rather than a hand-rolled list, so a period can never be
-    /// silently dropped from the grouping.
+    /// silently dropped from the grouping. Grouped by `QuotaPeriodGroup`
+    /// (unit AND interval, 2026-10-16): "Every 2 weeks" is its own section
+    /// right after "This week", the web panel's option (a).
     static func sections(
         from quotas: [TaskDTO],
         labelConfig: [LabelConfigDTO],
         showMet: Bool,
         now: Date
     ) -> [QuotaSection] {
-        var byPeriod: [QuotaPeriodKey: [TaskDTO]] = [:]
+        var byGroup: [QuotaPeriodGroup: [TaskDTO]] = [:]
         for task in quotas {
-            byPeriod[QuotaPeriodKey.from(rrule: task.rrule), default: []].append(task)
+            byGroup[QuotaPeriodGroup.of(task), default: []].append(task)
         }
-        return QuotaPeriodKey.order.compactMap { key in
-            guard let tasks = byPeriod[key], !tasks.isEmpty else { return nil }
+        return QuotaPeriodGroup.ordered(byGroup.keys).compactMap { group in
+            guard let tasks = byGroup[group], !tasks.isEmpty else { return nil }
             return section(
-                key: key, tasks: tasks, labelConfig: labelConfig,
+                group: group, tasks: tasks, labelConfig: labelConfig,
                 showMet: showMet, now: now
             )
         }
     }
 
     private static func section(
-        key: QuotaPeriodKey,
+        group: QuotaPeriodGroup,
         tasks: [TaskDTO],
         labelConfig: [LabelConfigDTO],
         showMet: Bool,
@@ -554,16 +559,18 @@ enum QuotaSectionBuilder {
         let capped = tasks.reduce(0.0) { $0 + Double(min($1.progressCurrent, $1.progressTarget)) }
         let targetSum = tasks.reduce(0.0) { $0 + Double($1.progressTarget) }
         let firstWeekday = QuotaPeriodKey.firstWeekday(from: tasks)
+        // An interval section has no shared clock: each chip says its own end.
+        let clock: QuotaPeriodKey? = group.hasClock ? group.key : nil
         return QuotaSection(
-            id: key.rawValue,
-            heading: key.heading,
-            timeLeftText: key.timeLeftText(now: now, firstWeekday: firstWeekday),
-            elapsedFraction: key.elapsedFraction(now: now, firstWeekday: firstWeekday),
+            id: group.id,
+            heading: group.heading,
+            timeLeftText: clock?.timeLeftText(now: now, firstWeekday: firstWeekday),
+            elapsedFraction: clock?.elapsedFraction(now: now, firstWeekday: firstWeekday),
             barFraction: targetSum > 0 ? capped / targetSum : 0,
             allMet: !tasks.isEmpty && metCount == tasks.count,
             summary: (met: metCount, count: tasks.count),
             clusters: clusters(
-                sectionId: key.rawValue, tasks: tasks, labelConfig: labelConfig,
+                sectionId: group.id, tasks: tasks, labelConfig: labelConfig,
                 showMet: showMet
             )
         )
@@ -723,6 +730,14 @@ enum QuotaMetrics {
             + (showsTakeBack(item, takeback: takeback) ? takeBackWidth : 0) + chipTrailingPadding
     }
 
+    /// An interval quota's chip says its own end after the count — "by Oct
+    /// 24", the server's `period_label` (2026-10-16): its section ("Every 2
+    /// weeks") has no shared clock. Nil on every other chip, whose section
+    /// heading names the period. Non-breaking, so it never splits.
+    static func endWord(for item: TrackItem) -> String? {
+        item.task.periodLabel?.replacingOccurrences(of: " ", with: "\u{00A0}")
+    }
+
     // MARK: The count (2026-10-13, quota segments)
     //
     // A chip's count is N skewed segments (`QuotaSegmentsText`, no period
@@ -748,15 +763,17 @@ enum QuotaMetrics {
     /// The count's width: the segment images' advance, or "cur" + "/target"
     /// measured as two runs (they render at different weights).
     static func countWidth(for item: TrackItem) -> CGFloat {
+        let word = endWord(for: item)
         switch countForm(for: item) {
         case .segments:
             return QuotaSegmentsDrawing.boxesWidth(
-                current: item.task.progressCurrent, target: item.task.progressTarget, hasWord: false,
+                current: item.task.progressCurrent, target: item.task.progressTarget, hasWord: word != nil,
                 em: chipTitleSize, lead: 0, scale: segmentScale
-            )
+            ) + (word.map { WidgetTheme.measuredWidth(for: $0, font: chipTargetMeasureFont) } ?? 0)
         case .text:
             return WidgetTheme.measuredWidth(for: "\(item.task.progressCurrent)", font: chipCurrentMeasureFont)
                 + WidgetTheme.measuredWidth(for: "/\(item.task.progressTarget)", font: chipTargetMeasureFont)
+                + (word.map { WidgetTheme.measuredWidth(for: "\u{00A0}" + $0, font: chipTargetMeasureFont) } ?? 0)
         }
     }
 
@@ -1206,6 +1223,11 @@ private enum QuotasPreviewData {
             TaskDTO(id: 21829, projectId: 1, title: "Citrus Snack (e.g. oranges, clementines)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 2, trackedFlag: true, labels: []),
             TaskDTO(id: 23532, projectId: 1, title: "Review saved articles", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["admin"]),
             TaskDTO(id: 23534, projectId: 1, title: "Run the weekly backup check on the external drive", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["admin", "ai-added"]),
+            // Interval quotas (2026-10-16): their own sections, "Every 2
+            // weeks" and "Every 3 months", each chip saying its own end.
+            TaskDTO(id: 24001, projectId: 4434, title: "Deep-clean the oven", priority: 0, rrule: "FREQ=WEEKLY;INTERVAL=2", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"], periodInterval: 2, periodLastDay: "2026-10-24", periodLabel: "by Oct 24"),
+            TaskDTO(id: 24002, projectId: 4434, title: "Water the ferns deeply", priority: 0, rrule: "FREQ=WEEKLY;INTERVAL=2", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["house"], periodInterval: 2, periodLastDay: "2026-10-31", periodLabel: "by Oct 31"),
+            TaskDTO(id: 24003, projectId: 4434, title: "Swap the air filters", priority: 0, rrule: "FREQ=MONTHLY;INTERVAL=3", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"], periodInterval: 3, periodLastDay: "2026-12-31", periodLabel: "by Dec 31"),
         ]).filter(\.isTracked)
     }
 

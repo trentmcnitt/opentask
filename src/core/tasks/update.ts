@@ -19,7 +19,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './read'
 import { canUserAccessTask } from './access'
-import { applyFieldChanges, collectFieldChanges } from './helpers'
+import { applyFieldChanges, collectFieldChanges, settleQuotaPeriod } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
 
 // `canUserAccessTask` moved to `./access`; re-exported so existing `./update`
@@ -82,12 +82,15 @@ export function isWidgetVisibleEdit(
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   const { userId, userTimezone, taskId, input, prefetchedTask, skipWebhookDispatch } = options
 
-  const task = prefetchedTask ?? getTaskById(taskId)
-  if (!task) throw new NotFoundError('Task not found')
+  const found = prefetchedTask ?? getTaskById(taskId)
+  if (!found) throw new NotFoundError('Task not found')
   if (!prefetchedTask) {
     // Only validate access if caller didn't pre-validate
-    if (!canUserAccessTask(userId, task)) throw new ForbiddenError('Access denied')
+    if (!canUserAccessTask(userId, found)) throw new ForbiddenError('Access denied')
   }
+  // A rule sent to a quota may re-anchor it: close an expired period first,
+  // so the edit carries this period's count, not a finished one's.
+  const task = found.deleted_at ? found : settleQuotaPeriod(found, input)
   // Always check deleted_at, even for prefetched tasks — prevents future callers
   // from accidentally bypassing this guard by passing prefetchedTask
   if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')

@@ -16,17 +16,16 @@ import type { Task } from '@/types'
  * wording, same Undo. The alternative was a second, independent
  * implementation of "save/create/delete a quota" that could silently drift
  * from this one. Its one caller now is `useQuotaEditor`, which every quota
- * surface mounts (`QuotasView`, `QuotasSummary`, `TrackPanel`, the quota
- * prompts) along with the modal these writes serve.
+ * surface mounts (`QuotasSummary`, `TrackPanel`, the quota prompts) along with
+ * the modal these writes serve. (`QuotasView`, the Quotas page's Details list,
+ * was removed on 2026-10-16, and with it the selection these used to clear.)
  */
 export function useQuotaMutations({
   refresh,
-  clear,
   onUndo,
   onCompleted,
 }: {
   refresh: () => Promise<void>
-  clear: () => void
   onUndo: () => void
   onCompleted: () => void
 }) {
@@ -66,10 +65,9 @@ export function useQuotaMutations({
         action: undoAction(),
       })
       onCompleted()
-      clear()
       await refresh()
     },
-    [clear, refresh, undoAction, onCompleted],
+    [refresh, undoAction, onCompleted],
   )
 
   const createQuota = useCallback(
@@ -113,14 +111,13 @@ export function useQuotaMutations({
           action: undoAction(),
         })
         onCompleted()
-        clear()
         await refresh()
       } catch (err) {
         log.error('ui', 'Deleting quotas failed:', err)
         showToast({ message: 'Could not move those to Trash', type: 'error' })
       }
     },
-    [clear, refresh, undoAction, onCompleted],
+    [refresh, undoAction, onCompleted],
   )
 
   return { saveQuotas, createQuota, deleteQuotas }
