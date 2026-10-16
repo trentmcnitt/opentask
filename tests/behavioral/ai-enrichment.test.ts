@@ -902,7 +902,13 @@ describe('label merging', () => {
 })
 
 describe('local→UTC timezone conversion', () => {
-  beforeEach(() => clearPendingEnrichment())
+  // The answers below are dated 2026-02-20: frozen before it, so the past-date
+  // guard (dropUnstatedPastDates) never sees them as past, whenever this runs.
+  beforeEach(() => {
+    clearPendingEnrichment()
+    vi.setSystemTime(new Date('2026-02-15T16:00:00Z'))
+  })
+  afterEach(() => vi.useRealTimers())
 
   test('converts local time to UTC correctly across DST boundary', async () => {
     // March 4 is CST (UTC-6), but March 9 is CDT (UTC-5) — DST starts March 8

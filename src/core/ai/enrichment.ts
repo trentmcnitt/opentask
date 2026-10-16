@@ -758,33 +758,46 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
       defaultSlotLabel,
     )
   } else {
-    parsed = pinUnnamedDay(
-      alignTaskModelDates(
-        resolveSoonTarget(
-          resolveBareTime(
-            resolveDateOnlyTarget(
-              sanitizeTaskModelFields(parsed, textToEnrich, row.id),
-              textToEnrich,
-              user.timezone,
-              user.morning_time,
-              targetTodayTime(user.id, user.timezone),
-            ),
-            textToEnrich,
-            user.timezone,
-          ),
-          textToEnrich,
-          user.timezone,
-        ),
-        user.timezone,
-      ),
-      textToEnrich,
-      user.timezone,
-    )
+    parsed = postProcessTaskDates(parsed, textToEnrich, user.timezone, {
+      morningTime: user.morning_time,
+      todayTarget: targetTodayTime(user.id, user.timezone),
+      taskId: row.id,
+    })
   }
 
   parsed = toUtcTimes(parsed, user.timezone, row.id)
 
   return applyEnrichment(row, parsed, user, textToEnrich)
+}
+
+/**
+ * Every date post-process a (non-reminder) task's enrichment goes through, in
+ * order, on the model's LOCAL values. Production (SDK and API mode alike) and
+ * the quality harness both call this, so the two cannot drift:
+ * deadline/horizon guard → date-only "today" → bare time → soon today →
+ * unstated past dates → deadline alignment → unnamed-day pin.
+ */
+export function postProcessTaskDates(
+  parsed: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  opts: { morningTime: string; todayTarget: string; taskId?: number; now?: Date },
+): EnrichmentResult {
+  const now = opts.now ?? new Date()
+  let result = sanitizeTaskModelFields(parsed, inputText, opts.taskId)
+  result = resolveDateOnlyTarget(
+    result,
+    inputText,
+    timezone,
+    opts.morningTime,
+    opts.todayTarget,
+    now,
+  )
+  result = resolveBareTime(result, inputText, timezone, now)
+  result = resolveSoonTarget(result, inputText, timezone, now)
+  result = dropUnstatedPastDates(result, inputText, timezone, now)
+  result = alignTaskModelDates(result, timezone, now)
+  return pinUnnamedDay(result, inputText, timezone, now)
 }
 
 /**
@@ -1169,6 +1182,66 @@ export function resolveSoonTarget(
   if (next === value) return enrichment
   log.info('ai', `Enrichment: set a "${cue[0].trim()}" target to ${next}`)
   return { ...enrichment, due_at: next }
+}
+
+/**
+ * Words that could name a day already past, so a past date the model returns
+ * may be the user's own: "yesterday", "3 days ago", "last Tuesday", "this past
+ * weekend", any weekday ("it expired Monday"), a month name ("Feb 28th"), an
+ * ordinal ("the 13th"), a numeric date ("10/13", "2025-10-13") or a year.
+ * Deliberately generous: a false "stated" only leaves the model's date alone
+ * (the old behaviour); a false "not stated" would erase a date the user gave.
+ * "may" counts as the month — erring that way is the safe one.
+ */
+const PAST_DATE_STATED =
+  /\b(yesterday|ago|last|past|previous|earlier|overdue|missed)\b|\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|nesday|sday|urday)?\b|\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}[/.-]\d{1,2}\b|\b(19|20)\d{2}\b/i
+
+/**
+ * PAST-DATE GUARD (2026-10-16): a target or deadline the model dated before
+ * TODAY (the user's local date), when the words state no such day, is dropped
+ * (set to null). The failure that prompted it: grok-4-1-fast gave "now that the
+ * lease is signed call the landlord" a target of 2025-10-16 5:15 PM — a year
+ * in the past, so the task was over target (and nagging) the moment it was
+ * made. A target nobody stated must not exist (the prompt's own rule: no day,
+ * no target), and a past one is the worst kind: over target at once.
+ *
+ * The deadline gets the same rule: a cutoff already passed that the user never
+ * said is a hallucination, and a passed deadline changes how the task is
+ * treated (bulk snooze holds it back as if High). A month and day with no year
+ * ("the deadline is Feb 28th") counts as stated, so `alignTaskModelDates`
+ * still rolls it to next year as before.
+ *
+ * Only the DATE is checked: an earlier time today is `resolveBareTime`'s
+ * business. A repeating task is skipped (its first date is the rule's,
+ * `pinUnnamedDay`). Runs on the model's LOCAL values, after `resolveSoonTarget`
+ * and before `alignTaskModelDates`. Pure apart from `now`; exported for the
+ * quality harness and tests.
+ */
+export function dropUnstatedPastDates(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  if (enrichment.rrule || PAST_DATE_STATED.test(inputText)) return enrichment
+  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  const isPast = (value: string | null) => {
+    if (!value) return false
+    const local = parseLocalDateTime(value, timezone)
+    return local !== null && local.startOf('day') < today
+  }
+  const dropTarget = isPast(enrichment.due_at)
+  const dropDeadline = isPast(enrichment.deadline_at)
+  if (!dropTarget && !dropDeadline) return enrichment
+  log.info(
+    'ai',
+    `Enrichment: dropped a past ${[dropTarget && 'target', dropDeadline && 'deadline'].filter(Boolean).join(' and ')} the input does not state`,
+  )
+  return {
+    ...enrichment,
+    due_at: dropTarget ? null : enrichment.due_at,
+    deadline_at: dropDeadline ? null : enrichment.deadline_at,
+  }
 }
 
 /**

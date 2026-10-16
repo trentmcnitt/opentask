@@ -481,15 +481,7 @@ async function runEnrichment(
   // so the scenario is judged on what the database would receive. When the
   // guard changes the model's answer, the raw value is logged so a prompt
   // regression the guard is hiding still shows up in the run output.
-  const {
-    filterProjectMatch,
-    sanitizeTaskModelFields,
-    alignTaskModelDates,
-    resolveDateOnlyTarget,
-    resolveBareTime,
-    resolveSoonTarget,
-    pinUnnamedDay,
-  } = await import('@/core/ai/enrichment')
+  const { filterProjectMatch, postProcessTaskDates } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
@@ -504,33 +496,13 @@ async function runEnrichment(
   // A repeat with no day named is pinned to today (`pinUnnamedDay`, 2026-10-12);
   // a yearly rule in a named month with no day, to the 1st (2026-10-13).
   // "now" / "in an hour" are counted in code (`resolveSoonTarget`, 2026-10-16).
-  const taskModel = pinUnnamedDay(
-    alignTaskModelDates(
-      resolveSoonTarget(
-        resolveBareTime(
-          resolveDateOnlyTarget(
-            sanitizeTaskModelFields(parsed, input.text),
-            input.text,
-            input.timezone,
-            input.morningTime ?? '09:00',
-            targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
-            now,
-          ),
-          input.text,
-          input.timezone,
-          now,
-        ),
-        input.text,
-        input.timezone,
-        now,
-      ),
-      input.timezone,
-      now,
-    ),
-    input.text,
-    input.timezone,
+  // Unstated past dates are dropped (`dropUnstatedPastDates`, 2026-10-16).
+  // One shared function: the same one production calls.
+  const taskModel = postProcessTaskDates(parsed, input.text, input.timezone, {
+    morningTime: input.morningTime ?? '09:00',
+    todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
     now,
-  )
+  })
   if (taskModel.rrule !== parsed.rrule) {
     console.log(
       `[quality] day pin changed rrule "${parsed.rrule}" → "${taskModel.rrule}" for: ${input.text}`,
