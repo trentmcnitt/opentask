@@ -433,7 +433,7 @@ export function trackSummary(
  * — keyed by `quotaPeriodKey`, never by the label string — right after their
  * unit's interval-1 group, shortest first: "this week", "every 2 weeks",
  * "every 3 weeks", "this month"… A fortnight does not run on this week's
- * clock, so it cannot share that section's notch and "N days left".
+ * clock, so it cannot share that section's "N days left".
  */
 export function groupByPeriod(quotas: Pick<Task, 'rrule'>[]): {
   /** The group's key (`quotaPeriodKey`): "WEEKLY", "WEEKLY/2", "NONE". */
@@ -709,13 +709,14 @@ function periodBounds(
 }
 
 /**
- * How much of a quota's period has already run, 0..1 — the Track panel's
- * notch sits at this fraction along the period's bar.
+ * How much of a quota's period has already run, 0..1 — the period bar's
+ * `aria-valuetext` ("43% of the week gone"). It drew a notch on the bar
+ * until 2026-10-16, when the bar became the Reminders day bar (`DayBar`).
  *
  * The fraction is a ratio of two REAL durations (`end.diff(start)`, both
  * absolute instants), not a ratio of calendar units — which is what makes it
  * DST-safe. A 23-hour spring-forward day divides `now - start` by 23 real
- * hours here, not by a hard-coded 24, so the notch lands at the same clock
+ * hours here, not by a hard-coded 24, so the fraction lands at the same clock
  * time it would on any other day rather than drifting an hour off on the one
  * day a naive `hoursSinceMidnight / 24` would get wrong.
  */
@@ -771,9 +772,6 @@ export function periodTimeLeftText(
   return `${days} day${days === 1 ? '' : 's'} left`
 }
 
-/** The Track panel's period bar: one darker tone, everywhere, no matter what it sits over. */
-export const TRACK_NOTCH_CLASS = 'bg-black/14 dark:bg-white/14'
-
 /**
  * A period section's math and quotas, ready for the panel to draw a section
  * from — see the Quotas panel's own top-of-file comment for the 2026-09-23
@@ -796,7 +794,7 @@ export interface TrackSection {
    * end, `period_label`, on its chip).
    */
   timeLeft: string | null
-  /** 0..1, where the notch sits — null for the no-period and interval sections (no notch). */
+  /** 0..1, how much of the period has run (the bar's `aria-valuetext`) — null for the no-period and interval sections. */
   elapsedFraction: number | null
   /** sum(min(current,target)) / sum(target) over the section's quotas — partial credit, capped per quota. */
   barFraction: number
@@ -820,7 +818,7 @@ export interface TrackSection {
  *
  * An interval section ("every 2 weeks", 2026-10-16 — the design doc's option
  * (a)) has a bar and a met count like any other, but NO clock: two fortnights
- * made in adjacent weeks end on different days, so one notch and one "N days
+ * made in adjacent weeks end on different days, so one elapsed fraction and one "N days
  * left" would be wrong for one of them. Its chips say their own end instead.
  */
 export function trackSections(

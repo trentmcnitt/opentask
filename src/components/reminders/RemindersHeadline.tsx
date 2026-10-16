@@ -8,6 +8,7 @@ import type { RemindersSummary } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import { MIN_SEGMENT_PX, SegmentDivider } from '@/components/ReminderSlotBar'
+import { DayBarFill, DayBarTrack } from '@/components/DayBar'
 import { segmentColor, segmentCounts, segmentKey, segmentLabel } from '@/components/TaskSegmentRow'
 import type { SegmentView } from '@/hooks/useTaskSegments'
 
@@ -203,26 +204,15 @@ function DayBarButton({
       style={{ flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
       className="group rounded-full py-1.5 focus-visible:outline-none"
     >
-      <span
+      <DayBarTrack
         className={cn(
-          'relative block h-2 overflow-hidden rounded-full transition-colors',
+          'transition-colors',
           'group-focus-visible:ring-ring group-focus-visible:ring-offset-background group-focus-visible:ring-2 group-focus-visible:ring-offset-1',
-          started
-            ? 'bg-muted group-hover:bg-foreground/15'
-            : 'bg-muted/50 group-hover:bg-foreground/10',
+          started ? 'group-hover:bg-foreground/15' : 'bg-muted/50 group-hover:bg-foreground/10',
         )}
       >
-        <span
-          className={cn(
-            'block h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-            done ? 'bg-green-600' : 'bg-indigo-600',
-          )}
-          style={{
-            width: `${total > 0 ? (considered / total) * 100 : 0}%`,
-            ...(color && !done ? { backgroundColor: color } : {}),
-          }}
-        />
-      </span>
+        <DayBarFill fraction={total > 0 ? considered / total : 0} done={done} color={color} />
+      </DayBarTrack>
     </button>
   )
 }

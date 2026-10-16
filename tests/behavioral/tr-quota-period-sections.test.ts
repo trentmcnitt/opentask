@@ -1,8 +1,8 @@
 /**
  * The Track panel's period-first redesign (§5, 2026-09-23, Trent's `mock4`):
  * a section per period — today, this week, this month, this year, no period —
- * each with a bar (partial credit, capped per quota) and a notch at how much
- * of the period's clock has run.
+ * each with a bar (partial credit, capped per quota) and a description of how
+ * much of the period's clock has run.
  *
  * The clock math (`periodElapsedFraction`, `periodDaysLeft`,
  * `periodTimeLeftText`) is the part that has to be exactly right and is easy
@@ -16,7 +16,6 @@ import {
   periodDaysLeft,
   periodTimeLeftText,
   trackSections,
-  TRACK_NOTCH_CLASS,
 } from '@/lib/track'
 import type { Task } from '@/types'
 
@@ -201,7 +200,7 @@ describe('trackSections', () => {
     expect(partial.allMet).toBe(false)
   })
 
-  test('the no-period section has no clock: no time-left text and no notch', () => {
+  test('the no-period section has no clock: no time-left text and no elapsed fraction', () => {
     const [section] = trackSections([quota('Eggs', null, 0, 1)], TZ, NOW)
     expect(section.freq).toBeNull()
     expect(section.timeLeft).toBeNull()
@@ -222,13 +221,5 @@ describe('trackSections', () => {
       NOW,
     )
     expect(section.summary).toEqual({ count: 2, met: 1 })
-  })
-})
-
-describe('TRACK_NOTCH_CLASS', () => {
-  test('is one flat, faint tone — no light/dark-by-coverage variants baked in', () => {
-    // Trent, 2026-09-23: the notch must not switch shade by whether the fill
-    // covers it — one class, tuned in one place.
-    expect(TRACK_NOTCH_CLASS).toBe('bg-black/14 dark:bg-white/14')
   })
 })

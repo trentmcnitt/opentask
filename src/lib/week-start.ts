@@ -9,7 +9,7 @@
  * for a user-facing week any more. Use `startOfWeek` below.
  *
  * Pure (no DB, no Node imports): shared by the server (period rollover, quota
- * prompts, quick take) and the client (Track panel "N days left", notch).
+ * prompts, quick take) and the client (Track panel "N days left").
  *
  * ── Quota periods and a misaligned anchor ──────────────────────────────────
  *
