@@ -139,11 +139,11 @@ export const enrichmentProjectDescriptionScenarios: AITestScenario[] = [
     description:
       'A clearly named project wins over another project whose description fits the topic',
     input: {
-      text: 'buy tomato cages for the garden',
+      text: 'order tomato cages for the veggie garden',
       timezone: TZ,
       projects: [
         { id: 1, name: 'Inbox', shared: false },
-        { id: 2, name: 'Garden', shared: false, description: null },
+        { id: 2, name: 'Veggie Garden', shared: false, description: null },
         {
           id: 3,
           name: 'Home',
@@ -153,10 +153,10 @@ export const enrichmentProjectDescriptionScenarios: AITestScenario[] = [
       ],
     },
     requirements: {
-      must_include: { project_name: 'Garden', due_at: null, labels: [], rrule: null },
+      must_include: { project_name: 'Veggie Garden', due_at: null, labels: [], rrule: null },
       quality_notes:
-        'project_name MUST be "Garden" — the words name it ("for the garden"). Home\'s description mentions garden beds, but a description never pulls a task away ' +
-        'from the project its words name. Title "Buy tomato cages for the garden" (a name match keeps its words).',
+        'project_name MUST be "Veggie Garden" — the words contain its full name ("for the veggie garden"). Home\'s description mentions garden beds, but a description never pulls a task away ' +
+        'from the project its words name. Title "Order tomato cages for the veggie garden" (a name match keeps its words).',
     },
   },
   {
