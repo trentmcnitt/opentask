@@ -41,6 +41,7 @@ import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
+import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
@@ -238,13 +239,12 @@ const CLUSTER_MET_DIM: FoldClasses = {
 /**
  * All chip-level "detail" state for Track: which quota's popover bubble is
  * open, and which (if any) is open in the full `QuotaDetailModal` editor —
- * the same editor `QuotasView` mounts (`useQuotaEditor`: same mutations, same
- * guarded "Open full page"), so pressing a chip's "Open" button edits the
- * same way `/quotas` does, just without leaving (Trent, 2026-09-21:
- * "whenever I do things with tasks it opens a modal... that's how I like to
- * work"). One hook rather than state split across `TrackPanel` and its
- * chips' callers, so the panel's own render stays short — the same reason
- * `useQuotaEditor` is its own file rather than inline in `QuotasView`.
+ * the same editor every quota surface mounts (`useQuotaEditor`: same
+ * mutations, same guarded "Open full page"), so pressing a chip's "Open"
+ * button edits in place (Trent, 2026-09-21: "whenever I do things with tasks
+ * it opens a modal... that's how I like to work"). One hook rather than state
+ * split across `TrackPanel` and its chips' callers, so the panel's own render
+ * stays short.
  */
 function useTrackChipDetail({
   onUndo,
@@ -360,6 +360,44 @@ interface TrackPanelProps {
    * the task list's, and never reaches this panel). See "SEARCH" in the body.
    */
   searchQuery?: string
+  /**
+   * `?quota=<id>` on /quotas (standalone only): the one chip to bring into
+   * view and flash once. See `withHighlight` for how it is made visible.
+   */
+  highlightId?: number | null
+  /** The flash has played; it must not play again on a remount. */
+  onHighlightDone?: () => void
+}
+
+/**
+ * The deep-linked chip (`highlightId`) must be ON SCREEN to be scrolled to,
+ * and the page's ordinary rules can hide it two ways: a quota met at load is
+ * put away, and its label cluster may be folded shut (the fold store is
+ * shared with the dashboard). So, for as long as the highlight is live — it
+ * is cleared once the flash has played — that one quota is never put away and
+ * its cluster reads open. Neither is written anywhere: the fold store is left
+ * alone and "Show met" is untouched, so when the flash ends the cluster folds
+ * back and a met quota is put away again, exactly as the user left them.
+ *
+ * This is why the page no longer needs its old Details list for the deep link
+ * (the summary "cannot promise" a scroll-to was that list's reason to exist).
+ */
+function withHighlight(
+  clusters: ReturnType<typeof useResponsiveFolds>,
+  sections: TrackSection[],
+  highlightId: number | null | undefined,
+): ReturnType<typeof useResponsiveFolds> {
+  if (highlightId == null) return clusters
+  const section = sections.find((s) => s.tasks.some((t) => t.id === highlightId))
+  const group =
+    section && groupByLabel(section.tasks).find((g) => g.tasks.some((t) => t.id === highlightId))
+  if (!section || !group) return clusters
+  const key = sectionClusterKey(section.key, group.label)
+  return {
+    stateOf: (k) => (k === key ? true : clusters.stateOf(k)),
+    isOpen: (k) => k === key || clusters.isOpen(k),
+    toggle: clusters.toggle,
+  }
 }
 
 /**
@@ -397,6 +435,8 @@ export function TrackPanel({
   onRefresh,
   standalone = false,
   searchQuery,
+  highlightId,
+  onHighlightDone,
 }: TrackPanelProps) {
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
@@ -432,7 +472,9 @@ export function TrackPanel({
   const showMet = useShowMet()
   const { putAway, leaving } = useMetPutAway(quotas)
   const hideMet = !showMet.shown && !searching
-  const isPutAway = (task: Task) => hideMet && putAway.has(task.id) && trackState(task).met
+  // The deep-linked chip is never put away while it flashes — `withHighlight`.
+  const isPutAway = (task: Task) =>
+    hideMet && putAway.has(task.id) && trackState(task).met && task.id !== highlightId
   const isLeaving = (task: Task) => hideMet && leaving.has(task.id) && trackState(task).met
 
   // No match at all renders nothing; `QuotasSummary` says so. That also
@@ -461,9 +503,11 @@ export function TrackPanel({
           isPutAway={isPutAway}
           isLeaving={isLeaving}
           summaries={summaries}
-          clusters={searching ? SEARCH_CLUSTERS : clusters}
+          clusters={searching ? SEARCH_CLUSTERS : withHighlight(clusters, sections, highlightId)}
           locked={searching}
           detail={detail}
+          highlightId={highlightId}
+          onHighlightDone={onHighlightDone}
         />
       </div>
 
@@ -794,6 +838,9 @@ interface PeriodSectionProps {
   detail: ReturnType<typeof useTrackChipDetail>
   /** Search results: clusters render open and cannot be folded (`SEARCH_CLUSTERS`). */
   locked?: boolean
+  /** The deep-linked chip — see `TrackPanelProps.highlightId`. */
+  highlightId?: number | null
+  onHighlightDone?: () => void
 }
 
 /**
@@ -816,6 +863,8 @@ function PeriodSection({
   clusters,
   detail,
   locked = false,
+  highlightId,
+  onHighlightDone,
 }: PeriodSectionProps) {
   const bodyItems = sectionBodyItems(s, labelConfig, isPutAway)
   const bodyId = `track-period-${s.key}`
@@ -868,6 +917,8 @@ function PeriodSection({
                 onEdit={detail.openEditor}
                 onDeleteQuota={detail.deleteFromPopover}
                 periods={detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined}
+                highlighted={highlightId === item.task.id}
+                onHighlightDone={onHighlightDone}
               />
             ),
           )}
@@ -1359,6 +1410,8 @@ function TrackChip({
   onEdit,
   onDeleteQuota,
   periods,
+  highlighted = false,
+  onHighlightDone,
 }: {
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
@@ -1376,6 +1429,14 @@ function TrackChip({
   onDeleteQuota: (task: Task) => void
   /** Where its daily reminder sits, while its bubble is open — see `periodsFor`. */
   periods?: PromptPeriods
+  /**
+   * `?quota=<id>` on /quotas: scroll to this chip and flash it once — the
+   * Reminders rows' `scrollRowIntoView` + `.animate-row-highlight` pair. A
+   * plain callback ref is enough here: the standalone page mounts nothing
+   * above the panel after it renders (see `scrollRowIntoView`).
+   */
+  highlighted?: boolean
+  onHighlightDone?: () => void
 }) {
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
@@ -1400,6 +1461,13 @@ function TrackChip({
         <button
           type="button"
           data-track-chip={task.id}
+          data-quota-highlight={highlighted ? '' : undefined}
+          ref={highlighted ? scrollRowIntoView : undefined}
+          onAnimationEnd={(e) => {
+            if (e.target === e.currentTarget && e.animationName === 'row-highlight') {
+              onHighlightDone?.()
+            }
+          }}
           onPointerDown={(e) => {
             press.onPointerDown(e)
             swipe.onPointerDown(e)
@@ -1447,6 +1515,7 @@ function TrackChip({
             'relative flex min-h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-[10px] border py-1 pr-2.5 pl-3 text-left text-[13px] leading-5 transition-colors select-none',
             'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
             state.met && 'border-green-600/30',
+            highlighted && 'animate-row-highlight',
           )}
         >
           {/* No progress fill behind the chip since 2026-10-13: the segments

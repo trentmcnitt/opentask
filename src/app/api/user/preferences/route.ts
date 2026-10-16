@@ -232,7 +232,11 @@ function validateGeneralFields(
     changes.track_expanded = body.track_expanded ? 1 : 0
   }
 
-  // §5: whether /quotas opens on the detailed list rather than the summary.
+  // §5: whether /quotas opened on its Details list rather than the summary.
+  // UNUSED since 2026-10-16 — the Details list is gone and the web app no
+  // longer reads or writes this. Still accepted and returned, like
+  // `track_expanded` above: it is in the preferences payload the native apps
+  // decode (contract fixture `user-preferences`); the column stays.
   if (body.quotas_details !== undefined) {
     if (typeof body.quotas_details !== 'boolean') return 'quotas_details must be a boolean'
     changes.quotas_details = body.quotas_details ? 1 : 0

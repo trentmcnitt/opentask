@@ -78,7 +78,7 @@ import type { Task } from '@/types'
  * undo everything else on this dashboard goes through). A local hook, not
  * inline state in `DashboardRemindersPanel`, so the panel's own render stays
  * short — the same reason `useQuotaMutations` is its own file rather than
- * inline in `QuotasView`.
+ * inline in the quota surfaces.
  */
 function useRowEditor({
   timeSlots,

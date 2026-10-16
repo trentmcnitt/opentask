@@ -79,9 +79,6 @@ interface PreferencesContextValue {
   /** §7.3 — dashboard filter-chip section pinned open by the user. */
   filtersExpanded: boolean
   setFiltersExpanded: (expanded: boolean) => void
-  /** §5 — /quotas opens on the detailed list rather than the summary panel. */
-  quotasDetails: boolean
-  setQuotasDetails: (details: boolean) => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
   enrichmentNotificationsEnabled: boolean
@@ -162,8 +159,6 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSortPreference: () => {},
   filtersExpanded: false,
   setFiltersExpanded: () => {},
-  quotasDetails: false,
-  setQuotasDetails: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
   enrichmentNotificationsEnabled: true,
@@ -441,11 +436,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setField('filtersExpanded', expanded)
           saver.save('filters_expanded', { filters_expanded: expanded })
         },
-        setQuotasDetails: (details: boolean) => {
-          if (details === prefs.quotasDetails) return
-          setField('quotasDetails', details)
-          saver.save('quotas_details', { quotas_details: details })
-        },
       }}
     >
       {children}
@@ -575,19 +565,6 @@ export function useDefaultSort() {
 export function useFilterSectionPreference() {
   const { filtersExpanded, setFiltersExpanded } = useContext(PreferencesContext)
   return { filtersExpanded, setFiltersExpanded }
-}
-
-/**
- * §5 — which view /quotas opens on: the dashboard's Quotas panel (the default,
- * `quotasDetails` false) or the detailed list. Server-persisted, so the
- * choice follows the user across devices.
- * `loaded` is `preferencesLoaded`: until it is true `quotasDetails` is the
- * hardcoded default, and a page that picks its view from it would paint the
- * summary and then flip to the list for a user who chose the list.
- */
-export function useQuotasPagePreference() {
-  const { quotasDetails, setQuotasDetails, preferencesLoaded } = useContext(PreferencesContext)
-  return { quotasDetails, setQuotasDetails, loaded: preferencesLoaded }
 }
 
 export function useAiContext() {

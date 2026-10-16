@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
   -- §5: the Track panel on the Tasks page starts folded to one line; this
   -- remembers the user's explicit choice to keep it open.
   track_expanded INTEGER NOT NULL DEFAULT 0,
-  -- §5: /quotas opens on the dashboard's Quotas panel (the summary); this
-  -- remembers the user's explicit choice of the detailed list instead.
+  -- §5: /quotas opened on its Details list instead of the summary. Unread
+  -- since 2026-10-16 (the Details list is gone); kept for the preferences API.
   quotas_details INTEGER NOT NULL DEFAULT 0,
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"badgeStyle":"words","colorTitle":false,"rightBorder":false,"colorCheckbox":true}',
