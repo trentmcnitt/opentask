@@ -61,6 +61,19 @@ test.describe('Interval quotas', () => {
     await expect(chip).toContainText(label)
     await expect(chip).toHaveAttribute('aria-label', new RegExp(`0 of 1 ${label}$`))
 
+    // The chip's bubble: "0 of 1 by Oct 24 · Every 2 weeks", never "this week",
+    // and the record (closed periods, whatever their length) reads as for any quota.
+    await chip.click({ delay: 500 })
+    const pop = page.locator('[data-track-popover]')
+    await expect(pop).toBeVisible()
+    await expect(pop).toContainText(`0 of 1 ${label} · Every 2 weeks`)
+    await expect(pop).not.toContainText('this week')
+    const record = pop.locator('[data-quota-record]')
+    await expect(record).toHaveAttribute('data-quota-record', 'ready')
+    await expect(record.locator('[data-quota-met]')).toHaveText('Never yet')
+    await expect(record).toContainText('Tracking since')
+    await page.keyboard.press('Escape')
+
     // The editor reads it back: the chip pressed by FREQ, the interval in the stepper.
     await page.goto(`/tasks/${id}`)
     const editor = page.locator(`[data-quota-detail="${id}"]`)
