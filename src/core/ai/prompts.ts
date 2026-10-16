@@ -80,7 +80,14 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    A date that only says when the task must be done BY ("by Friday", "due the 23rd", "before the 17th", "expires Oct 13") is a deadline, not a target: put it in deadline_at and leave due_at null. Nothing is lost: the app gives a deadline with no target an automatic target of its own, a few days before the deadline, and starts reminding the user from there. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both. A target never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
 
-   No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "right now" / "immediately" / "tonight" name a time).
+   No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "now" / "right now" / "immediately", "in an hour" and "tonight" name a time).
+
+   **Soon today** — a time counted from now. Round to a quarter hour (:00, :15, :30, :45), never earlier than the user said:
+   - "now", "right now", "immediately" → about 15 minutes out, rounded UP to the next quarter hour (at 2:07 PM → 2:30 PM; at 2:45 PM → 3:00 PM). Not the current minute: that is already over target.
+   - "in an hour", "in 3 hours" → now plus that many hours, rounded up to the quarter hour (at 2:07 PM, "in an hour" → 3:15 PM).
+   - A range ("in an hour or two", "in 2 or 3 hours") → a WHOLE hour (hh:00) inside it (at 2:30 PM, "in an hour or two" → 4:00 PM; "in 2 or 3 hours" → 5:00 PM). Not the quarter hour after the shorter end.
+   - Past midnight it is tomorrow's date: at 11:50 PM, "right now" → 12:15 AM the next day.
+   - "now" only names a time when it says when to do the task. "now that the lease is signed, call the landlord", "for now", "by now" name no time: due_at null.
 
    **A time with no day is a target:** its NEXT occurrence — today if that time is still ahead of the current local time, otherwise tomorrow. "call mom 7pm" at 3 PM → today at 7:00 PM; "8:30am standup" at 10 AM → tomorrow at 8:30 AM. A time in the words is the time to do it even when it sits next to a name or a noun ("block Jordan time 930am" → target 9:30 AM, title "Block Jordan time"). Dictation often drops the colon: "830am" is 8:30 AM, "1015pm" is 10:15 PM. With no am/pm ("at 9", "at 3"), take whichever of the two readings comes next between 7 AM and 11 PM. Remove the time phrase from the title, as with any other target wording.
 
@@ -90,7 +97,7 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    Use the current **local** time (not UTC) to determine today's date and day of week. When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date. A month and day with no year ("February 28th", "Oct 13") means the NEXT time that date comes round: if it has already passed this year, use next year. This applies to due_at and deadline_at alike.
 
-   **The word "today" with no time:** ONLY when the user's words say "today" as the day to do it and give no time of day ("do it today", "text Matthew today"), return the date alone — \`2026-03-04\`, no time part — and the app places it. This never applies when the user names no day: no day mentioned → due_at null, as above (a bare task like "check the mail" or "urgent call the bank" has no target). "right now" / "immediately" → the current local time as a full datetime. A time the user states for today ("today at 3pm", "tonight", "this afternoon") is a full datetime, as usual.
+   **The word "today" with no time:** ONLY when the user's words say "today" as the day to do it and give no time of day ("do it today", "text Matthew today"), return the date alone — \`2026-03-04\`, no time part — and the app places it. This never applies when the user names no day: no day mentioned → due_at null, as above (a bare task like "check the mail" or "urgent call the bank" has no target). "now" / "right now" / "immediately" → soon today, as above. A time the user states for today ("today at 3pm", "tonight", "this afternoon") is a full datetime, as usual.
 
 3. **deadline_at** — the real outside cutoff, as an ISO 8601 local datetime (same format as due_at), or null. Set it ONLY when the wording states a date or time the task must be done by: "by Friday", "before the 17th", "due Monday", "due to the client Monday 10am", "expires Oct 13", "the deadline is February 28th", "last day to return it is Sunday", "the pharmacy closes at 9pm tonight". When the cutoff names a day but no time, use the END of that day: \`T23:59:00\` local.
 
@@ -849,6 +856,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - due_at is the TARGET — the day the user said to do it. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
 - Urgency is priority, not a date: "urgent X" / "critical alert X" with no day or time named → due_at null
+- Soon today: "now" / "right now" → ~15 min out, rounded UP to the quarter hour; "in an hour" → now + 1h, rounded up to the quarter hour; "in an hour or two" / "in 2 or 3 hours" → a whole hour (hh:00) inside the range
 - horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
 - Return due_at and deadline_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
 - When no specific time is mentioned for a target, use the configured default task time. Exception: the user says "today" with no time → the date alone ("YYYY-MM-DD"); the app places it. No day mentioned at all → due_at null, never today
@@ -875,6 +883,12 @@ export interface EnrichmentPromptParams {
   projects: Array<{ id: number; name: string; shared?: boolean | number }>
   userContext?: string | null
   taskText: string
+  /**
+   * The moment the prompt's "Current local time" shows. Production leaves it
+   * out (now); the quality harness pins it, so a scenario can be "11:52 PM"
+   * and its answer is judged against the same minute the model was shown.
+   */
+  now?: Date
 }
 
 /**
@@ -885,13 +899,14 @@ export interface EnrichmentPromptParams {
  */
 export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): string {
   const { timezone, morningTime, wakeTime, sleepTime, projects, userContext, taskText } = params
+  const now = params.now ?? new Date()
 
   const formattedMorning = formatMorningTime(morningTime)
   const formattedWake = formatMorningTime(wakeTime)
   const formattedSleep = formatMorningTime(sleepTime)
 
   // Pre-format local time so the model never needs to do timezone math
-  const localNow = new Date().toLocaleString('en-US', {
+  const localNow = now.toLocaleString('en-US', {
     timeZone: timezone,
     weekday: 'short',
     month: 'short',

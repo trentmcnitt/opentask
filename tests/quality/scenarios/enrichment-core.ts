@@ -96,6 +96,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         priority: 4,
+        due_at: '~soon',
         rrule: null,
         labels: [],
       },
@@ -103,7 +104,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Priority MUST be 4 (urgent). ' +
         'Title should remove "urgent" and "right now" (extracted into priority/date). ' +
         'Something like "Fix the leak in the kitchen". ' +
-        'due_at could be now/today given "right now". ' +
+        'due_at: "right now" is soon today (2026-10-16) — about 15 minutes after the run time, rounded up to the next quarter hour. ' +
         'project_name should be null — no explicit project assignment. Labels must be an empty array — no explicit label request in input.',
     },
   },

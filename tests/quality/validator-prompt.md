@@ -44,6 +44,7 @@ For each scenario:
 - "do it Saturday", "remind me Thursday at 9", "tomorrow" are targets: `deadline_at` null.
 - Is `horizon` set ONLY from explicit pace wording ("this week" → weeks, "sometime this month" → months, "in the next few days" / "today or tomorrow" → days, "eventually" / "someday" → eventually)? A horizon from topic or size ("fix the squeaky door" → eventually) is a **failure**. A named day is not a pace.
 - "by the end of the month" is a deadline, not a horizon.
+- **Soon today** (2026-10-16) — the run's "now" is `run_now_local` in metadata.json (or the scenario's pinned `now` in input.json): "now" / "right now" / "immediately" → about 15 minutes out, rounded UP to the next quarter hour (2:07 → 2:30, 2:45 → 3:00, 11:52 PM → 12:15 AM tomorrow); never the current minute. "in an hour" / "in N hours" → now + N hours, rounded up to the quarter hour. A range ("in an hour or two", "in 2 or 3 hours") → a whole hour inside it is best; another quarter hour inside it is a minor miss; outside it (e.g. 15 minutes out) is a failure. A "now" that is not a time ("now that the lease is signed", "for now") → `due_at` null.
 - Recurring tasks and reminders: `deadline_at` and `horizon` null.
 
 ### 3. Priority Inference

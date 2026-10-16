@@ -28,6 +28,7 @@
 import { describe, test, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { DateTime } from 'luxon'
 import { allScenarios } from './scenarios/index'
 import { requireFeatureModel, resolveSDKModel } from '@/core/ai/models'
 import type { AIFeature } from '@/core/ai/models'
@@ -315,10 +316,17 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
   try {
     let output: Record<string, unknown>
     let durationMs: number
+    // The moment an enrichment scenario was run at (its pinned `now`, or the
+    // clock): the time matchers and the Layer 2 judge read it.
+    let runNow: Date | undefined
 
     switch (scenario.feature) {
       case 'enrichment':
-        ;({ output, durationMs } = await runEnrichment(scenario.input as EnrichmentInput))
+        ;({
+          output,
+          durationMs,
+          now: runNow,
+        } = await runEnrichment(scenario.input as EnrichmentInput))
         break
       case 'enrichment_reminder':
         ;({ output, durationMs } = await runReminderEnrichment(
@@ -363,6 +371,11 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
           model: getModelForFeature(scenario.feature),
           duration_ms: durationMs,
           timestamp: new Date().toISOString(),
+          ...(runNow && {
+            run_now_local: DateTime.fromJSDate(runNow)
+              .setZone((scenario.input as EnrichmentInput).timezone)
+              .toFormat('ccc, LLL d, yyyy, h:mm a'),
+          }),
         },
         null,
         2,
@@ -370,7 +383,7 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
     )
 
     // Structural assertions
-    validateStructure(scenario, output)
+    validateStructure(scenario, output, runNow)
 
     scenarioResults.push({
       id: scenario.id,
@@ -402,15 +415,26 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
 // Feature runners — use the same production code paths
 // ---------------------------------------------------------------------------
 
+/**
+ * The scenario's "now": its pinned local `now`, or the moment it runs. One
+ * instant for the prompt, every post-process and the matchers, so a scenario
+ * at a quarter-hour boundary is judged against the minute the model was shown.
+ */
+function scenarioNow(input: EnrichmentInput): Date {
+  if (!input.now) return new Date()
+  return DateTime.fromISO(input.now, { zone: input.timezone }).toJSDate()
+}
+
 async function runEnrichment(
   input: EnrichmentInput,
-): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+): Promise<{ output: Record<string, unknown>; durationMs: number; now: Date }> {
   const { ENRICHMENT_SYSTEM_PROMPT, buildEnrichmentUserPrompt } = await import('@/core/ai/prompts')
   const { aiQuery } = await import('@/core/ai/sdk')
   const { EnrichmentResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { z } = await import('zod')
 
+  const now = scenarioNow(input)
   const prompt = buildEnrichmentUserPrompt({
     timezone: input.timezone,
     morningTime: input.morningTime ?? '09:00',
@@ -419,6 +443,7 @@ async function runEnrichment(
     projects: input.projects,
     userContext: input.userContext,
     taskText: input.text,
+    now,
   })
 
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
@@ -462,6 +487,7 @@ async function runEnrichment(
     alignTaskModelDates,
     resolveDateOnlyTarget,
     resolveBareTime,
+    resolveSoonTarget,
     pinUnnamedDay,
   } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
@@ -477,23 +503,33 @@ async function runEnrichment(
   // A date-only target ("today", no time) is placed the way production places it.
   // A repeat with no day named is pinned to today (`pinUnnamedDay`, 2026-10-12);
   // a yearly rule in a named month with no day, to the 1st (2026-10-13).
+  // "now" / "in an hour" are counted in code (`resolveSoonTarget`, 2026-10-16).
   const taskModel = pinUnnamedDay(
     alignTaskModelDates(
-      resolveBareTime(
-        resolveDateOnlyTarget(
-          sanitizeTaskModelFields(parsed, input.text),
+      resolveSoonTarget(
+        resolveBareTime(
+          resolveDateOnlyTarget(
+            sanitizeTaskModelFields(parsed, input.text),
+            input.text,
+            input.timezone,
+            input.morningTime ?? '09:00',
+            targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
+            now,
+          ),
           input.text,
           input.timezone,
-          input.morningTime ?? '09:00',
-          targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
+          now,
         ),
         input.text,
         input.timezone,
+        now,
       ),
       input.timezone,
+      now,
     ),
     input.text,
     input.timezone,
+    now,
   )
   if (taskModel.rrule !== parsed.rrule) {
     console.log(
@@ -513,6 +549,7 @@ async function runEnrichment(
   return {
     output: { ...taskModel, project_name: guarded } as unknown as Record<string, unknown>,
     durationMs: result.durationMs,
+    now,
   }
 }
 
@@ -965,7 +1002,20 @@ async function runInsightsViaProduction(
 // Structural validation
 // ---------------------------------------------------------------------------
 
-function validateStructure(scenario: AITestScenario, output: Record<string, unknown>): void {
+/** The scenario's now and timezone, for the time matchers (enrichment only). */
+function clockFor(
+  scenario: AITestScenario,
+  runNow: Date | undefined,
+): { now: Date; timezone: string } | undefined {
+  const zone = (scenario.input as { timezone?: string }).timezone
+  return runNow && zone ? { now: runNow, timezone: zone } : undefined
+}
+
+function validateStructure(
+  scenario: AITestScenario,
+  output: Record<string, unknown>,
+  runNow?: Date,
+): void {
   const { must_include, must_not_include } = scenario.requirements
 
   // Check must_include fields
@@ -987,7 +1037,13 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
           )
         }
       } else if (typeof expectedValue === 'string' && expectedValue.startsWith('~')) {
-        checkSpecialExpectation(scenario.id, key, expectedValue, actualValue)
+        checkSpecialExpectation(
+          scenario.id,
+          key,
+          expectedValue,
+          actualValue,
+          clockFor(scenario, runNow),
+        )
       } else if (typeof expectedValue === 'string') {
         if (
           typeof actualValue !== 'string' ||
@@ -1122,8 +1178,28 @@ function validateProcessExpectations(
  * - `~datetime:YYYY-MM-DDTHH:MM` — a local datetime at that minute (seconds
  *   free): a time with no day, whose day depends on when the run starts
  * - `~notnull` — set to anything
+ * - `~soon` — "now": about 15 minutes after the scenario's now, rounded UP to
+ *   the next quarter hour (exactly that minute; `resolveSoonTarget` does it)
+ * - `~in-hours:N` — "in N hours": now + N hours, rounded up to the quarter hour
+ * - `~hours-range:LO-HI` — "in an hour or two" (1-2), "in 2 or 3 hours"
+ *   (2-3): a time on a quarter hour inside the range. The model picks; the
+ *   prompt asks for a whole hour, and Layer 2 judges that preference. Both
+ *   ends count (at 2:30, "an hour or two" may be 3:30 or 4:00 — designer,
+ *   2026-10-16); `resolveSoonTarget` replaces a pick outside the range.
+ *
+ * The time matchers need `clock` — the scenario's now and timezone.
  */
-function checkSpecialExpectation(id: string, key: string, expected: string, actual: unknown): void {
+function checkSpecialExpectation(
+  id: string,
+  key: string,
+  expected: string,
+  actual: unknown,
+  clock?: { now: Date; timezone: string },
+): void {
+  if (expected === '~soon' || /^~(in-hours|hours-range):/.test(expected)) {
+    checkSoonExpectation(id, key, expected, actual, clock)
+    return
+  }
   if (expected.startsWith('~date:')) {
     const day = expected.slice('~date:'.length)
     if (typeof actual !== 'string' || actual.slice(0, 10) !== day) {
@@ -1154,6 +1230,46 @@ function checkSpecialExpectation(id: string, key: string, expected: string, actu
     return
   }
   throw new Error(`[${id}] Unknown matcher ${expected} for ${key}`)
+}
+
+/** The first quarter-hour mark at or after `t`, to the minute. */
+function ceilQuarter(t: DateTime): DateTime {
+  const minute = t.startOf('minute')
+  const over = minute.minute % 15
+  return over === 0 ? minute : minute.plus({ minutes: 15 - over })
+}
+
+/** The `~soon`, `~in-hours:N` and `~hours-range:LO-HI` matchers (see above). */
+function checkSoonExpectation(
+  id: string,
+  key: string,
+  expected: string,
+  actual: unknown,
+  clock?: { now: Date; timezone: string },
+): void {
+  if (!clock) throw new Error(`[${id}] ${expected} needs the scenario's now and timezone`)
+  const now = DateTime.fromJSDate(clock.now).setZone(clock.timezone).startOf('minute')
+  const fmt = (t: DateTime) => t.toFormat("yyyy-MM-dd'T'HH:mm")
+  const got = typeof actual === 'string' ? DateTime.fromISO(actual, { zone: clock.timezone }) : null
+  if (!got || !got.isValid) {
+    throw new Error(`[${id}] Expected ${key} ${expected} at now ${fmt(now)}, got ${actual}`)
+  }
+  if (expected === '~soon' || expected.startsWith('~in-hours:')) {
+    const hours = expected === '~soon' ? 0 : Number(expected.slice('~in-hours:'.length))
+    const want = ceilQuarter(expected === '~soon' ? now.plus({ minutes: 15 }) : now.plus({ hours }))
+    if (fmt(got) !== fmt(want)) {
+      throw new Error(`[${id}] Expected ${key} at ${fmt(want)} (now ${fmt(now)}), got ${actual}`)
+    }
+    return
+  }
+  const [lo, hi] = expected.slice('~hours-range:'.length).split('-').map(Number)
+  const earliest = now.plus({ hours: lo })
+  const latest = now.plus({ hours: hi })
+  if (got.minute % 15 !== 0 || got < earliest || got > latest) {
+    throw new Error(
+      `[${id}] Expected ${key} on a quarter hour in ${fmt(earliest)}..${fmt(latest)} (now ${fmt(now)}), got ${actual}`,
+    )
+  }
 }
 
 /** Task model fields (2026-10-10): deadline_at a datetime or null, horizon an enum or null. */
