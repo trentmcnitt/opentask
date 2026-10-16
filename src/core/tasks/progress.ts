@@ -52,12 +52,15 @@ import { localDate, withLogged } from '@/lib/quota-prompts'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { DEFAULT_PROGRESS_SOURCE, type ClientProgressSource } from '@/lib/progress-source'
 
 export interface IncrementProgressOptions {
   userId: number
   taskId: number
   /** Defaults to +1. Negative values correct a mis-log. */
   delta?: number
+  /** Where it was logged from; `api` when the caller does not say. */
+  source?: ClientProgressSource
 }
 
 export interface IncrementProgressResult {
@@ -74,7 +77,7 @@ export interface IncrementProgressResult {
  * decision above. It dispatches `task.progressed`, never `task.completed`.
  */
 export function incrementProgress(options: IncrementProgressOptions): IncrementProgressResult {
-  const { userId, taskId, delta = 1 } = options
+  const { userId, taskId, delta = 1, source = DEFAULT_PROGRESS_SOURCE } = options
 
   const found = loadTaskForMutation(userId, taskId, {
     trashed: { reject: 'Cannot log progress on a trashed task' },
@@ -121,8 +124,8 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     ).run(next, JSON.stringify(dayState), nowStr, taskId)
     if (applied !== 0) {
       tx.prepare(
-        'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
-      ).run(taskId, userId, applied, nowStr)
+        'INSERT INTO progress_events (task_id, user_id, delta, logged_at, source) VALUES (?, ?, ?, ?, ?)',
+      ).run(taskId, userId, applied, nowStr, source)
     }
 
     // Logged even when nothing moved: a client offers Undo on its toast for

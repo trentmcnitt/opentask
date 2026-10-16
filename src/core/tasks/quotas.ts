@@ -68,6 +68,11 @@ export interface QuotaStats {
   current_streak: number
   /** The longest run of met periods in a row, ever. */
   longest_streak: number
+  /**
+   * When the last tap that still stands was logged (UTC ISO), or null if
+   * none does — see `lastStandingTap`. The bubble's and editor's "Last: …".
+   */
+  last_logged_at: string | null
 }
 
 /**
@@ -119,5 +124,108 @@ export function getQuotaStats(userId: number, taskId: number): QuotaStats {
     periods_missed: rows.length - met,
     current_streak: current,
     longest_streak: longest,
+    last_logged_at: lastStandingTap(taskId),
+  }
+}
+
+/**
+ * The time of the most recent +1 that was not taken back (2026-10-16): the
+ * events, newest first, with every negative row (a −1, an undo's
+ * compensating row, a put-back) cancelling the latest positive one before it.
+ * So a tap followed by its Undo is not "the last tap"; the one before it is.
+ * A redo's row is a tap again. Null when nothing stands.
+ *
+ * Walks at most `LAST_TAP_SCAN` rows: a quota's taps are a few a day, and a
+ * run of that many cancelled taps in a row is not a history anybody has.
+ */
+const LAST_TAP_SCAN = 500
+
+function lastStandingTap(taskId: number): string | null {
+  const rows = getDb()
+    .prepare(
+      `SELECT delta, logged_at FROM progress_events
+        WHERE task_id = ?
+        ORDER BY julianday(logged_at) DESC, id DESC
+        LIMIT ?`,
+    )
+    .all(taskId, LAST_TAP_SCAN) as { delta: number; logged_at: string }[]
+  let owed = 0
+  for (const row of rows) {
+    if (row.delta < 0) {
+      owed += -row.delta
+    } else if (row.delta > owed) {
+      return normalizeIso(row.logged_at)
+    } else {
+      owed -= row.delta
+    }
+  }
+  return null
+}
+
+/** `logged_at` is written as `…:SSZ` and as `…:SS.sssZ`; serve one form. */
+function normalizeIso(at: string): string {
+  const d = new Date(at)
+  return Number.isNaN(d.getTime()) ? at : d.toISOString()
+}
+
+/** One row of a quota's progress history — `GET /api/tasks/:id/progress-events`. */
+export interface ProgressEvent {
+  id: number
+  /** Signed: +1 a tap, −1 a correction, an undo's opposite row. */
+  delta: number
+  /** UTC ISO. */
+  logged_at: string
+  /** `web` | `widget` | `watch` | `mac` | `api` | `undo` | `redo` (src/lib/progress-source.ts). */
+  source: string
+  /** Who logged it — a shared quota can be logged by more than its owner. */
+  user_id: number
+}
+
+/** The most rows one request returns. */
+export const PROGRESS_EVENTS_LIMIT = 500
+
+/**
+ * A quota's progress history, newest first, between `since` (inclusive) and
+ * `until` (exclusive), either optional. Access is the task's own (owner, or a
+ * shared project — `loadTaskForMutation`'s rule, trashed allowed, as for its
+ * stats). At most `limit` rows (≤ 500); `has_more` says there are older ones,
+ * fetched by passing the last row's `id` back as `before_id`. Paged by id,
+ * not by time: two taps in one second share a `logged_at`, and a time cursor
+ * would drop one of them at a page edge. Ids are written in order, so id
+ * order is the order they were logged.
+ */
+export function getProgressEvents(
+  userId: number,
+  taskId: number,
+  range: { since?: string; until?: string; limit?: number; beforeId?: number } = {},
+): { events: ProgressEvent[]; has_more: boolean } {
+  const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
+  if (!isTracked(task)) throw new ValidationError('Not a quota')
+  const limit = Math.min(Math.max(1, range.limit ?? PROGRESS_EVENTS_LIMIT), PROGRESS_EVENTS_LIMIT)
+  const where = ['task_id = ?']
+  const args: (string | number)[] = [taskId]
+  if (range.since) {
+    where.push('julianday(logged_at) >= julianday(?)')
+    args.push(range.since)
+  }
+  if (range.until) {
+    where.push('julianday(logged_at) < julianday(?)')
+    args.push(range.until)
+  }
+  if (range.beforeId) {
+    where.push('id < ?')
+    args.push(range.beforeId)
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT id, delta, logged_at, source, user_id FROM progress_events
+        WHERE ${where.join(' AND ')}
+        ORDER BY id DESC
+        LIMIT ?`,
+    )
+    .all(...args, limit + 1) as ProgressEvent[]
+  return {
+    events: rows.slice(0, limit).map((r) => ({ ...r, logged_at: normalizeIso(r.logged_at) })),
+    has_more: rows.length > limit,
   }
 }

@@ -24,8 +24,8 @@ import { ZodError } from 'zod'
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
-    const { keys } = validatePromptKeys(await request.json())
-    const result = restorePrompts({ userId: user.id, userTimezone: user.timezone, keys })
+    const { keys, source } = validatePromptKeys(await request.json())
+    const result = restorePrompts({ userId: user.id, userTimezone: user.timezone, keys, source })
     return success({
       restored: result.restored,
       tasks: result.tasks.map((t) => formatTaskResponse(t, user.timezone)),

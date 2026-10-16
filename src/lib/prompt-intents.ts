@@ -74,10 +74,13 @@ export function completionRequest(
       : ['/api/tasks/bulk/done', post({ ids })]
   }
   if (ids.length === 0) {
-    return [`/api/quota-prompts/${intent === 'did' ? 'did' : 'consider'}`, post({ keys })]
+    return [
+      `/api/quota-prompts/${intent === 'did' ? 'did' : 'consider'}`,
+      post({ keys, source: 'web' }),
+    ]
   }
   return [
     '/api/tasks/bulk/complete',
-    post({ ids, prompts: keys.map((key) => ({ key, did: intent === 'did' })) }),
+    post({ ids, prompts: keys.map((key) => ({ key, did: intent === 'did' })), source: 'web' }),
   ]
 }

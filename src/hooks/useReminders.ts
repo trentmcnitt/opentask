@@ -1042,7 +1042,8 @@ function usePutBackPrompt({
           fetch('/api/quota-prompts/restore', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keys: [key] }),
+            // `source`: the put-back's −1 is recorded as the web's.
+            body: JSON.stringify({ keys: [key], source: 'web' }),
           }),
         message: `Put back “${prompt.title}”`,
         errorMessage: 'Could not put it back',

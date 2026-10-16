@@ -34,6 +34,7 @@ import {
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 import { isPastDeadline } from '@/lib/task-segments'
+import type { ClientProgressSource } from '@/lib/progress-source'
 import {
   describePromptActions,
   dispatchProgressed,
@@ -106,6 +107,8 @@ export interface BulkDoneOptions {
    * commit, a slot's "Considered all". See `quota-prompt-actions.ts`.
    */
   prompts?: PromptAction[]
+  /** Where a prompt's did-it was logged from (`progress_events.source`). */
+  source?: ClientProgressSource
 }
 
 export interface BulkDoneResult {
@@ -130,7 +133,7 @@ export interface BulkDoneResult {
  * BO-005: Mixed types handled correctly
  */
 export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
-  const { userId, userTimezone, taskIds, closePeriod = false, prompts = [] } = options
+  const { userId, userTimezone, taskIds, closePeriod = false, prompts = [], source } = options
 
   if (taskIds.length === 0 && prompts.length === 0) {
     return {
@@ -216,7 +219,14 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     // whole entry, so it becomes the union — safe because `applyFieldsToTask`
     // skips any field a snapshot does not carry, and each snapshot carries
     // only its own fields.
-    const prompted = executePromptActions(tx, userId, userTimezone, plannedPrompts, completedAt)
+    const prompted = executePromptActions(
+      tx,
+      userId,
+      userTimezone,
+      plannedPrompts,
+      completedAt,
+      source,
+    )
     if (tasks.length > 0) {
       logAction(
         userId,

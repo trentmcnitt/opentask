@@ -551,7 +551,11 @@ CREATE TABLE IF NOT EXISTS progress_events (
   task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id),
   delta      INTEGER NOT NULL DEFAULT 1,
-  logged_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+  logged_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  -- Where it was logged from (2026-10-16): web | widget | watch | mac | api,
+  -- or undo | redo for the compensating row an undo/redo of a count writes.
+  -- See src/lib/progress-source.ts.
+  source     TEXT NOT NULL DEFAULT 'api'
 );
 CREATE INDEX IF NOT EXISTS idx_progress_events_task ON progress_events(task_id, logged_at);
 
