@@ -913,12 +913,15 @@ export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): strin
   const formattedWake = formatMorningTime(wakeTime)
   const formattedSleep = formatMorningTime(sleepTime)
 
-  // Pre-format local time so the model never needs to do timezone math
+  // Pre-format local time so the model never needs to do timezone math. The
+  // year is in it (2026-10-16): without one, grok-4-1-fast dated nearly every
+  // target in its training year — "tomorrow morning" a year in the past.
   const localNow = now.toLocaleString('en-US', {
     timeZone: timezone,
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,

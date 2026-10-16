@@ -660,6 +660,8 @@ Scenarios that need a value the run date decides (a deadline "7 days from now") 
 
 **Soon today** (2026-10-16): "now" / "right now" / "immediately" is about 15 minutes out, rounded UP to the next quarter hour; "in an hour" / "in N hours" is now + N hours, rounded up to the quarter hour; a range ("in an hour or two", "in 2 or 3 hours") is a whole hour inside it, picked by the model. The model's arithmetic was unreliable in the quality runs (2:07 → 2:15, 11:52 PM → midnight, "in 2 or 3 hours" at 2:10 → 4:00), so `resolveSoonTarget` in `enrichment.ts` recomputes "now" and "in N hours", and replaces a range pick that is not a quarter hour inside the range with the first whole hour in it — only when the model set a target and the cue is the only time or day in the words.
 
+**Past-date guard** (2026-10-16): a target or deadline dated before today (the user's local date) is dropped when the words could not state a past day (no "yesterday", "ago", "last", weekday, month, ordinal, numeric date or year): `dropUnstatedPastDates`. It caught grok-4-1-fast giving "now that the lease is signed call the landlord" a target a year in the past. A repeating task is left to its rule. The prompt's "Current local time" names the year (2026-10-16): without it grok dated nearly every target a year back, which this guard then had to erase. All the date post-processes run in one function, `postProcessTaskDates`, which production (SDK and API mode) and the quality harness both call.
+
 Reminder scenarios are a separate feature, not a subset of enrichment: a
 reminder has its own user prompt (`buildReminderEnrichmentUserPrompt`) built
 around the user's time slots, and its result passes through
