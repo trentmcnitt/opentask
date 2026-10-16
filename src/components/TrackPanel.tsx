@@ -559,8 +559,10 @@ export function TrackPanel({
  * first, so the bar does not sit under the bubble — and with several opens
  * the editor's multi-edit, keeping the selection until a save clears it
  * (`onWritten`) so a cancelled edit can be retried. Trash is one bulk delete.
- * Selected ids that are no longer quotas on screen (trashed elsewhere) are
- * simply not counted.
+ * Selected ids that are no longer quotas (trashed elsewhere) are not counted,
+ * and selection mode ends when none is left. A selected chip whose cluster
+ * is folded afterwards stays selected, as a dashboard row in a collapsed
+ * group does.
  */
 function TrackSelectionBar({
   quotas,
@@ -572,6 +574,12 @@ function TrackSelectionBar({
   detail: ReturnType<typeof useTrackChipDetail>
 }) {
   const selected = quotas.filter((q) => selection.selectedIds.has(q.id))
+  const orphaned = selected.length === 0 && selection.isSelectionMode
+  // Every selected quota went (trashed on another device, a create undone):
+  // leave selection mode too, or the next tap would toggle rather than +1.
+  useEffect(() => {
+    if (orphaned) selection.clear()
+  }, [orphaned, selection])
   if (selected.length === 0) return null
   return (
     <QuotaSelectionBar

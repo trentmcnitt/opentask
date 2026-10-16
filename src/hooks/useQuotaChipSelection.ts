@@ -23,6 +23,9 @@ import { useSelectionMode } from '@/hooks/useSelectionMode'
  * | Swipe left, right-click       | −1                   | nothing                 |
  * | Escape                        | —                    | clear                   |
  *
+ * (Cmd-click on a Mac, Ctrl-click elsewhere: a Mac's Ctrl-click is a
+ * right-click, so it subtracts, as it always has.)
+ *
  * - THE PHONE'S SELECT MODE is the dashboard's: a hold turns it on, then a tap
  *   toggles, a further hold extends the range, and the bar's × (or emptying
  *   the selection) turns it off. There is no separate Select button on the
@@ -62,11 +65,15 @@ export function useQuotaChipSelection({
   const selection = useSelectionMode()
   const { selectedIds, isSelectionMode, toggle, rangeSelect, clear } = selection
 
-  // Escape clears, as on the dashboard and Reminders.
+  // Escape clears, as on the dashboard and Reminders — but not while a dialog
+  // (the multi-edit) is open: there Escape cancels the edit, and the
+  // selection must survive to retry it.
   useEffect(() => {
     if (!enabled) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && selectedIds.size > 0) clear()
+      if (e.key !== 'Escape' || selectedIds.size === 0) return
+      if (document.querySelector('[role="dialog"]')) return
+      clear()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
