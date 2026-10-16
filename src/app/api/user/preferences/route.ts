@@ -12,6 +12,7 @@ import { isAIEnabled } from '@/core/ai/sdk'
 import { isSdkAvailableSync } from '@/core/ai/provider'
 import { getFeatureInfo, isAnyApiProviderAvailable } from '@/core/ai/models'
 import type { FeatureMode } from '@/core/ai/user-context'
+import { AI_CONTEXT_MAX_LENGTH } from '@/lib/ai-context'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -383,7 +384,9 @@ function validateAiFields(
     let resolved: string | null = null
     if (typeof val === 'string') {
       const trimmed = val.trim()
-      if (trimmed.length > 1000) return 'ai_context must be at most 1000 characters'
+      if (trimmed.length > AI_CONTEXT_MAX_LENGTH) {
+        return `ai_context must be at most ${AI_CONTEXT_MAX_LENGTH} characters`
+      }
       resolved = trimmed.length > 0 ? trimmed : null
     }
     changes.ai_context = resolved

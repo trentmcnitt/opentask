@@ -157,6 +157,8 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    If two project names match, prefer the longer, more specific one ("book the hotel for work travel" with Work and Work Travel → "Work Travel"). If the matches are unrelated names and neither is an explicit assignment, return null.
 
+   **Project descriptions.** A project in the list may end with " — " and a note on what belongs there. It changes none of the rules above: a project is still set only on an explicit instruction or a name match, never because a description fits what the task is about ("renew my prescription" with Health described as "doctor, pharmacy" → null). A description is used in one case only: an instruction whose partial name fits more than one project ("put it under school" with Maya School and Leo School) → the one whose description fits the task ("the Lincoln field trip" → the one described as Lincoln Elementary). It never overrides a name match ("wax the hull for the boat club" → Boat Club, even when another project's description mentions boats).
+
 8. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY. FREQ=HOURLY, FREQ=MINUTELY, and FREQ=SECONDLY are NOT supported — use auto_snooze_minutes for sub-daily repeats. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. FREQ=WEEKLY MUST include BYDAY. FREQ=MONTHLY MUST include BYMONTHDAY or BYDAY. Do NOT include COUNT or UNTIL (only infinite recurrence is supported). Parse recurrence patterns:
    - "every day" → FREQ=DAILY
    - "every Monday" → FREQ=WEEKLY;BYDAY=MO
@@ -851,7 +853,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 export const ENRICHMENT_REMINDERS = `## Reminders
 - Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
 - Do NOT infer labels from context — only include labels the user explicitly requests
-- Do NOT infer projects from task content — project_name is null unless the user explicitly assigns one or the task text contains a project's full name used as that name ("for job search" → Job Search). Never Inbox; "after work", "work out" and "homework" are not matches
+- Do NOT infer projects from task content — project_name is null unless the user explicitly assigns one or the task text contains a project's full name used as that name ("for job search" → Job Search). Never Inbox; "after work", "work out" and "homework" are not matches. A project's description only picks between projects the words already match — it never makes a match
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - due_at is the TARGET — the day the user said to do it. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
@@ -880,7 +882,13 @@ export interface EnrichmentPromptParams {
   wakeTime: string
   /** HH:MM format, e.g. '22:00' */
   sleepTime: string
-  projects: Array<{ id: number; name: string; shared?: boolean | number }>
+  /** `description` (what belongs there, ≤280 chars) is shown after the name when set */
+  projects: Array<{
+    id: number
+    name: string
+    shared?: boolean | number
+    description?: string | null
+  }>
   userContext?: string | null
   taskText: string
   /**
@@ -916,9 +924,19 @@ export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): strin
     hour12: true,
   })
 
+  // One line per project; a description (if any) follows " — ", on one line.
   const projectList = projects
-    .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
+    .map((p) => {
+      const description = p.description?.replace(/\s+/g, ' ').trim()
+      return `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})${description ? ` — ${description}` : ''}`
+    })
     .join('\n')
+  // With any description in the list, the heading says what they are for: in
+  // the quality runs a description that fit the topic ("dentist") pulled the
+  // model into topic inference, which the project rules forbid.
+  const projectsHeading = projects.some((p) => p.description?.trim())
+    ? 'Available projects (a description after " — " only settles which project the words mean; it is never a reason to set one):'
+    : 'Available projects:'
 
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
 
@@ -940,7 +958,7 @@ When resolving time-of-day language:
 - "evening" → use your judgment, typically early evening
 - "tonight" / "bedtime" / "before bed" → sleep time (${formattedSleep})
 
-Available projects:
+${projectsHeading}
 ${projectList}${userContextBlock}
 
 <task>
