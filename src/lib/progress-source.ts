@@ -14,7 +14,12 @@ export const CLIENT_PROGRESS_SOURCES = ['web', 'widget', 'watch', 'mac', 'api'] 
 
 export type ClientProgressSource = (typeof CLIENT_PROGRESS_SOURCES)[number]
 
-export type ProgressSource = ClientProgressSource | 'undo' | 'redo'
+/**
+ * Every value a stored event can hold. `unknown` marks the events logged
+ * before sources were recorded (the migration that added the column sets it,
+ * src/core/db/index.ts); no client sends it.
+ */
+export type ProgressSource = ClientProgressSource | 'undo' | 'redo' | 'unknown'
 
 /** What an event says when the caller did not. */
 export const DEFAULT_PROGRESS_SOURCE: ClientProgressSource = 'api'
