@@ -48,16 +48,16 @@ function row(over: Record<string, unknown> = {}) {
 }
 
 describe('TM-RC: priority tab', () => {
-  test('TM-RC-001: Medium, High and Urgent get a solid tab; Low and None nothing', () => {
+  test('TM-RC-001: High and Urgent get a solid tab; Medium, Low and None nothing (10-15)', () => {
     expect(priorityTab(0)).toBeNull()
     expect(priorityTab(1)).toBeNull()
-    expect(priorityTab(2)).toMatchObject({ text: 'Medium', name: 'Medium priority' })
+    expect(priorityTab(2)).toBeNull()
+    expect(priorityTab(2, 'icons')).toBeNull()
     expect(priorityTab(3)).toMatchObject({ text: 'High', name: 'High priority' })
     expect(priorityTab(4)).toMatchObject({ text: 'Urgent', name: 'Urgent priority' })
   })
 
-  test("TM-RC-002: the app's priority hues, filled; Medium's yellow takes dark text", () => {
-    expect(priorityTab(2)!.className).toBe('bg-yellow-500 text-yellow-950')
+  test("TM-RC-002: the app's priority hues, filled", () => {
     expect(priorityTab(3)!.className).toBe('bg-orange-500 text-white')
     expect(priorityTab(4)!.className).toBe('bg-red-500 text-white')
   })
@@ -65,7 +65,6 @@ describe('TM-RC: priority tab', () => {
   test('TM-RC-003: the Icons display style puts the symbol in the tab, same name', () => {
     expect(priorityTab(4, 'icons')).toMatchObject({ text: '!!', name: 'Urgent priority' })
     expect(priorityTab(3, 'icons')!.text).toBe('!')
-    expect(priorityTab(2, 'icons')!.text).toBe('●')
     expect(priorityTab(1, 'icons')).toBeNull()
   })
 })

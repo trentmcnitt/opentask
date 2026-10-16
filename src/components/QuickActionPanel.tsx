@@ -1,6 +1,7 @@
 'use client'
 
 import { targetReset, type HorizonValue } from '@/lib/task-segments'
+import { HorizonPicker } from '@/components/HorizonDot'
 import { BACK_TO_AUTO, TARGET_WORD } from '@/lib/task-model-words'
 import { TaskModelFields } from '@/components/TaskModelFields'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
@@ -1288,14 +1289,9 @@ export function QuickActionPanel({
                   ? pendingDeadline
                   : (effectiveTask?.deadline_at ?? null)
               }
-              horizon={
-                pendingHorizon !== undefined ? pendingHorizon : (effectiveTask?.horizon ?? null)
-              }
               deadlineDirty={pendingDeadline !== undefined}
-              horizonDirty={pendingHorizon !== undefined}
               timezone={timezone}
               onDeadline={setPendingDeadline}
-              onHorizon={setPendingHorizon}
               repeatLabel={deadlineRepeatLabel({
                 rrule: displayRrule,
                 deadline_at:
@@ -1314,10 +1310,17 @@ export function QuickActionPanel({
               // An automatic deadline target keeps the horizon working. Read
               // from the target line's own (staged) value, so Remove target or
               // Back to auto staged brings the horizon back at once.
+              // Only a REAL target: `workingDate` is the picker's working
+              // value and is set even with no target, so it counts only once
+              // a date is staged (`isDateDirty`) — it made a task with no
+              // target read "quiet until <today>" (2026-10-15).
               quietUntil={
-                displayRrule || autoTarget
+                displayRrule || autoTarget || showsNoTarget
                   ? null
-                  : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
+                  : (pendingDueAt ??
+                    (isDateDirty ? workingDate : null) ??
+                    effectiveTask?.due_at ??
+                    null)
               }
               emptyAnchor={
                 displayRrule ? (pendingDueAt ?? effectiveTask?.due_at ?? workingDate) : null
@@ -1466,6 +1469,19 @@ export function QuickActionPanel({
                   {isPriorityDirty && <span className="mr-0.5 text-blue-500">●</span>}
                   {isMixedPriority ? '—' : getPriorityOption(displayPriority).label}
                 </span>
+              )}
+              {/* Horizon (2026-10-15): always settable on a one-off, beside
+                  project and priority — see `HorizonPicker`. Not on a
+                  recurring task, a reminder or a quota (no horizon), nor in
+                  bulk (Process sets horizons in bulk). */}
+              {canEdit && !isBulkMode && !isReminderLike && !displayRrule && (
+                <HorizonPicker
+                  value={
+                    pendingHorizon !== undefined ? pendingHorizon : (effectiveTask?.horizon ?? null)
+                  }
+                  dirty={pendingHorizon !== undefined}
+                  onChange={setPendingHorizon}
+                />
               )}
               {/*
                 §6: a reminder behaves differently from a task (no debt, no

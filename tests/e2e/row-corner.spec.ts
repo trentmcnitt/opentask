@@ -1,8 +1,8 @@
 /**
  * The task row's corner and target time (2026-10-14, `src/lib/row-corner.ts`):
  *
- * - the priority tab (E2b): Urgent red, High orange, Medium yellow; Low and
- *   None show nothing, and the old priority word under the title is gone;
+ * - the priority tab (E2b): Urgent red, High orange; Medium, Low and None
+ *   show nothing (2026-10-15), and the old priority word under the title is gone;
  * - the horizon dot (R1): a size per horizon, a dashed outline when unset, a
  *   tooltip saying when it comes back, hidden on a row with a picked target;
  *   the corner reads dot · attempts · priority;
@@ -136,7 +136,7 @@ async function rgb(el: Locator, prop: 'backgroundColor' | 'color'): Promise<stri
 test.describe('Row corner · desktop', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('priority tab: Urgent red, High orange, Medium yellow; Low and None nothing', async ({
+  test('priority tab: Urgent red, High orange; Medium, Low and None nothing', async ({
     authenticatedPage: page,
   }) => {
     const ids: Record<number, number> = {}
@@ -150,7 +150,7 @@ test.describe('Row corner · desktop', () => {
         const tab = (p: number) => taskRow(page, ids[p]).locator('[data-priority-tab]')
         await expect(tab(0)).toHaveCount(0)
         await expect(tab(1)).toHaveCount(0)
-        await expect(tab(2)).toHaveText('Medium')
+        await expect(tab(2)).toHaveCount(0)
         await expect(tab(3)).toHaveText('High')
         await expect(tab(4)).toHaveText('Urgent')
         // Accessible names.
@@ -161,7 +161,6 @@ test.describe('Row corner · desktop', () => {
           taskRow(page, ids[4]).getByRole('img', { name: 'Urgent priority' }),
         ).toBeVisible()
         // Solid fills in the app's priority hues (Tailwind 500s), both themes.
-        expect(await rgb(tab(2), 'backgroundColor')).toBe(await cssColor(page, 'yellow-500'))
         expect(await rgb(tab(3), 'backgroundColor')).toBe(await cssColor(page, 'orange-500'))
         expect(await rgb(tab(4), 'backgroundColor')).toBe(await cssColor(page, 'red-500'))
         // The tab sits flush in the top-right corner of the row.
@@ -511,7 +510,9 @@ test.describe('Row corner · phone', () => {
     })
     const timed = await create(page, {
       title: uniqueTitle('RC phone timed'),
-      priority: 2,
+      // High, so the row has a corner (a Medium row has none since 10-15) for
+      // the "New" tag check below.
+      priority: 3,
       target_at: tomorrowAt10(),
     })
     try {
