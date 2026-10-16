@@ -112,10 +112,14 @@ describe('left as the model wrote it', () => {
     expect(soon('2026-10-17T09:00:00', 'snowboard tune up', now)).toBe('2026-10-17T09:00:00')
   })
 
-  test('a range is the model\'s pick: "an hour or two", "2 or 3 hours"', () => {
+  test("a range keeps the model's pick when it is a quarter hour inside it", () => {
     const now = '2026-10-16T14:30:00'
     expect(soon('2026-10-16T16:00:00', 'call the bank in an hour or two', now)).toBe(
       '2026-10-16T16:00:00',
+    )
+    // The short end is the user's too (designer, 2026-10-16: 3:30 or 4:00).
+    expect(soon('2026-10-16T15:30:00', 'call the bank in an hour or two', now)).toBe(
+      '2026-10-16T15:30:00',
     )
     expect(soon('2026-10-16T17:00:00', 'walk the dog in 2 or 3 hours', now)).toBe(
       '2026-10-16T17:00:00',
@@ -124,7 +128,39 @@ describe('left as the model wrote it', () => {
       '2026-10-16T17:00:00',
     )
   })
+})
 
+describe('a range the model missed → the first whole hour inside it', () => {
+  test('before the range, off a quarter hour, or after it', () => {
+    // At 2:10, "in 2 or 3 hours" is 4:10–5:10; the model said 4:00 (quality run).
+    expect(soon('2026-10-16T16:00:00', 'walk the dog in 2 or 3 hours', '2026-10-16T14:10:00')).toBe(
+      '2026-10-16T17:00:00',
+    )
+    expect(
+      soon('2026-10-16T14:45:00', 'call the bank in an hour or two', '2026-10-16T14:30:00'),
+    ).toBe('2026-10-16T16:00:00')
+    expect(
+      soon('2026-10-16T16:07:00', 'call the bank in an hour or two', '2026-10-16T14:30:00'),
+    ).toBe('2026-10-16T16:00:00')
+    expect(soon('2026-10-16T20:00:00', 'water the lawn in 1-2 hrs', '2026-10-16T14:30:00')).toBe(
+      '2026-10-16T16:00:00',
+    )
+  })
+
+  test('near midnight, the date the model kept today rolls to tomorrow', () => {
+    expect(
+      soon('2026-10-16T01:00:00', 'take the laundry out in an hour or two', '2026-10-16T23:20:00'),
+    ).toBe('2026-10-17T01:00:00')
+  })
+
+  test('a whole-hour short end is itself a whole hour', () => {
+    expect(soon('2026-10-16T14:00:00', 'call back in an hour or two', '2026-10-16T13:00:00')).toBe(
+      '2026-10-16T14:00:00',
+    )
+  })
+})
+
+describe('left as the model wrote it (more)', () => {
   test('an explicit time or day beside the cue is never moved', () => {
     const now = '2026-10-16T14:07:00'
     expect(soon('2026-10-16T17:00:00', 'call mom now, or at 5pm at the latest', now)).toBe(

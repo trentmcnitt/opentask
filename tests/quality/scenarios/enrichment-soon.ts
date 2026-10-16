@@ -5,15 +5,15 @@
  *   moment the task is made)
  * - "in an hour" / "in N hours" → now + N hours, rounded up to the quarter hour
  * - "in an hour or two" / "in 2 or 3 hours" → a whole hour (hh:00) inside the
- *   range — the model picks; any quarter hour inside it passes Layer 1, and
- *   Layer 2 prefers the whole hour
+ *   range — the model picks; a quarter hour inside it is kept, anything else
+ *   is replaced in code; Layer 2 prefers the whole hour
  * - a "now" that is not a time ("now that …", "for now") → no target
  *
  * Each scenario pins `now` (today's date at a chosen clock time, America/
  * Chicago), so the prompt, the post-processes and the matchers all read the
  * same minute — and "near midnight" is tested whatever time the run starts.
- * The "now" and "in N hours" arithmetic is done in code (`resolveSoonTarget`);
- * the model still has to see "now" as a time and get a range right.
+ * The arithmetic is checked in code (`resolveSoonTarget`); the model still has
+ * to see "now" and a range as a time at all.
  */
 
 import { DateTime } from 'luxon'

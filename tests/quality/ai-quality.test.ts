@@ -1183,10 +1183,9 @@ function validateProcessExpectations(
  * - `~in-hours:N` — "in N hours": now + N hours, rounded up to the quarter hour
  * - `~hours-range:LO-HI` — "in an hour or two" (1-2), "in 2 or 3 hours"
  *   (2-3): a time on a quarter hour inside the range. The model picks; the
- *   prompt asks for a whole hour, and Layer 2 judges that preference. The low
- *   end is counted from the quarter hour now is in (at 2:31, "an hour or two"
- *   may be 3:30): rounding the user's "now" to the quarter is what the
- *   designer accepted (3:30 or 4:00 at 2:30), not a tolerance.
+ *   prompt asks for a whole hour, and Layer 2 judges that preference. Both
+ *   ends count (at 2:30, "an hour or two" may be 3:30 or 4:00 — designer,
+ *   2026-10-16); `resolveSoonTarget` replaces a pick outside the range.
  *
  * The time matchers need `clock` — the scenario's now and timezone.
  */
@@ -1264,8 +1263,7 @@ function checkSoonExpectation(
     return
   }
   const [lo, hi] = expected.slice('~hours-range:'.length).split('-').map(Number)
-  const quarterStart = now.minus({ minutes: now.minute % 15 })
-  const earliest = quarterStart.plus({ hours: lo })
+  const earliest = now.plus({ hours: lo })
   const latest = now.plus({ hours: hi })
   if (got.minute % 15 !== 0 || got < earliest || got > latest) {
     throw new Error(
