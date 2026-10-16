@@ -176,7 +176,17 @@ export const QUOTA_DUE_DATE_MESSAGE =
  * bulk edit (`collectFieldChanges`, which both go through).
  */
 export const QUOTA_PERIOD_MESSAGE =
-  'A quota needs a period — send rrule FREQ=DAILY, FREQ=WEEKLY, FREQ=MONTHLY or FREQ=YEARLY'
+  'A quota needs a period — send rrule FREQ=DAILY, FREQ=WEEKLY, FREQ=MONTHLY or FREQ=YEARLY (optionally ;INTERVAL=N after it)'
+
+/**
+ * Interval quotas (2026-10-16): a quota's period spans at most 30 days, 12
+ * weeks or 12 months, and a yearly one is every year — the editor's stepper
+ * range (`QUOTA_INTERVAL_MAX` in `@/lib/track`, the one table both read).
+ * Refused on create and on any edit that sends a rule; a stored rule outside
+ * the range stays editable as long as the edit leaves the rule alone.
+ */
+export const QUOTA_INTERVAL_MESSAGE =
+  "A quota's period can span 1–30 days, 1–12 weeks or 1–12 months; a yearly quota is every year (INTERVAL=1)"
 
 /**
  * Short name for the quota widget chip (§5) — trimmed, capped at 24 chars so

@@ -22,8 +22,11 @@
  * period began, by the user's local calendar — 00:00 on the first day of the
  * user's week for a week (`users.week_start`: Sunday by default, or Monday;
  * see `@/lib/week-start`), the 1st for a month, midnight for a day, Jan 1 for
- * a year. A quota the job has never seen is anchored to the start of the
- * period it is in, and nothing is recorded for it. INTERVAL is honoured by
+ * a year (`quotaUnitStart`). Since 2026-10-16 the anchor is stamped when a
+ * row BECOMES a quota (create, or an edit that converts it) and re-stamped
+ * when its period changes (`collectQuotaAnchor`, collect-field-changes.ts);
+ * a quota the job finds without one (made before that) is anchored here to
+ * the start of the period it is in, and nothing is recorded for it. INTERVAL is honoured by
  * advancing the anchor `interval` units at a time. A weekly anchor that is
  * not on the user's week-start boundary (anchored under the old Monday-only
  * rule, or the preference changed) closes at the NEXT boundary instead — a
@@ -48,19 +51,11 @@
  */
 import { DateTime } from 'luxon'
 import { getDb, withTransaction } from '@/core/db'
-import { quotaPeriodUnit } from '@/lib/track'
+import { quotaPeriodUnit, quotaUnitStart } from '@/lib/track'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
-import {
-  coerceWeekStart,
-  quotaPeriodEnd,
-  startOfWeek,
-  type PeriodUnit,
-  type WeekStart,
-} from '@/lib/week-start'
-
-type Unit = PeriodUnit
+import { coerceWeekStart, quotaPeriodEnd } from '@/lib/week-start'
 
 interface QuotaRow {
   id: number
@@ -83,18 +78,28 @@ export interface RolloverResult {
   rolled: number
 }
 
-/** The start of the calendar unit `now` falls in, by the user's clock. */
-function unitStart(now: DateTime, unit: Unit, weekStart: WeekStart): DateTime {
-  switch (unit) {
-    case 'days':
-      return now.startOf('day')
-    case 'weeks':
-      return startOfWeek(now, weekStart)
-    case 'months':
-      return now.startOf('month')
-    case 'years':
-      return now.startOf('year')
-  }
+/**
+ * Where a quota's period starts if it is anchored NOW: the start of the
+ * calendar unit the owner is in (`quotaUnitStart`), by the owner's timezone
+ * and first day of the week, as a UTC ISO string. Null for a rule with no
+ * period. Stamped at create and re-stamped by a period edit (2026-10-16) —
+ * anchoring lazily, at the cron's first sight, could land a quota made at
+ * 23:58 on a Saturday in the NEXT week, shifting a fortnight's phase by one.
+ */
+export function quotaAnchorNow(
+  ownerId: number,
+  rrule: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  const period = quotaPeriodUnit(rrule)
+  if (!period) return null
+  const owner = getDb()
+    .prepare('SELECT timezone, week_start FROM users WHERE id = ?')
+    .get(ownerId) as { timezone: string; week_start: string | null } | undefined
+  if (!owner) return null
+  const local = DateTime.fromJSDate(now).setZone(owner.timezone)
+  if (!local.isValid) return null
+  return quotaUnitStart(local, period.unit, coerceWeekStart(owner.week_start)).toUTC().toISO()
 }
 
 const QUOTA_ROW_SQL = `SELECT t.id, t.user_id, t.title, t.rrule, t.progress_current, t.progress_target,
@@ -178,7 +183,7 @@ function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   const weekStart = coerceWeekStart(q.week_start)
 
   if (!q.progress_period_start) {
-    const start = unitStart(local, period.unit, weekStart).toUTC().toISO()
+    const start = quotaUnitStart(local, period.unit, weekStart).toUTC().toISO()
     getDb().prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?').run(start, q.id)
     return { anchored: true, closed: 0 }
   }
@@ -268,7 +273,7 @@ function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
  * `…:SSZ` (column default) and `…:SS.sssZ` (`toISOString`), and a plain string
  * compare between the two formats is wrong at the exact boundary second.
  */
-function loggedSince(taskId: number, since: DateTime): number {
+export function loggedSince(taskId: number, since: DateTime): number {
   const row = getDb()
     .prepare(
       `SELECT COALESCE(SUM(delta), 0) AS n FROM progress_events

@@ -59,8 +59,11 @@ describe('Track period rollover', () => {
     teardownTestDb()
   })
 
-  test('TR-010: first sight anchors the quota to the start of its period, records nothing', () => {
+  test('TR-010: first sight anchors an unanchored quota to the start of its period, records nothing', () => {
     const eggs = quota('Eggs', 2)
+    // Create stamps the anchor since 2026-10-16; a quota made before that
+    // still reaches the rollover with none — that legacy row is this case.
+    getDb().prepare('UPDATE tasks SET progress_period_start = NULL WHERE id = ?').run(eggs.id)
     const r = rolloverTrackedPeriods(THU)
     expect(r).toEqual({ anchored: 1, rolled: 0 })
     const row = getDb()

@@ -11,6 +11,8 @@ import { getDb } from '@/core/db'
 import type { QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import { normalizeDayState } from '@/lib/quota-prompts'
 import { effectiveAttempts } from '@/lib/task-segments'
+import { quotaPeriodFields } from '@/lib/track'
+import { coerceWeekStart } from '@/lib/week-start'
 import { getCurrentlyDueTaskIds } from './currently-due'
 
 /**
@@ -78,7 +80,12 @@ export function taskColumns(alias?: string): string {
   // The OWNER's timezone, for the attempts read (`effectiveAttempts`): a
   // local day is the owner's, whoever reads a shared task.
   const ownerTz = `(SELECT timezone FROM users WHERE users.id = ${table}.user_id) AS owner_timezone`
-  return [...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)), ownerTz].join(', ')
+  // And the owner's first day of the week, for a quota's served period
+  // (`quotaPeriodFields`): a week ends at the owner's boundary, like the rollover.
+  const ownerWeekStart = `(SELECT week_start FROM users WHERE users.id = ${table}.user_id) AS owner_week_start`
+  return [...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)), ownerTz, ownerWeekStart].join(
+    ', ',
+  )
 }
 
 /**
@@ -279,6 +286,8 @@ export interface TaskRow {
   growth_kept_at: string | null
   /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
   owner_timezone?: string | null
+  /** Not a column: the owner's `week_start` (`taskColumns`), for a quota's served period. */
+  owner_week_start?: string | null
   last_notified_at: string | null
   last_critical_alert_at: string | null
   auto_snooze_minutes: number | null
@@ -329,6 +338,18 @@ export function rowToTask(row: TaskRow): Task {
     const { attempts, countedThrough } = effectiveAttempts(task, row.owner_timezone, new Date())
     task.attempts = attempts
     task.attempts_counted_through = countedThrough
+    // Interval quotas (2026-10-16): the current period, served — see
+    // `quotaPeriodFields`. Every row carries the four keys (null on anything
+    // but a quota), so the response has one shape.
+    Object.assign(
+      task,
+      quotaPeriodFields(
+        task,
+        row.owner_timezone,
+        new Date(),
+        coerceWeekStart(row.owner_week_start),
+      ),
+    )
   }
   return task
 }

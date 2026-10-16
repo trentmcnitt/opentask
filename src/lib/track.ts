@@ -148,6 +148,138 @@ export function quotaPeriodUnit(
 }
 
 /**
+ * INTERVAL QUOTAS (2026-10-16): how many units one period may span — "every
+ * 2 weeks" is `FREQ=WEEKLY;INTERVAL=2`. ONE table for the editor's "every N"
+ * stepper range and the server's cap (`quotaIntervalAllowed`, refused on
+ * create and edit), so the two cannot drift. A yearly quota has no stepper:
+ * every year is the only choice.
+ */
+export const QUOTA_INTERVAL_MAX: Record<QuotaFreq, number> = {
+  DAILY: 30,
+  WEEKLY: 12,
+  MONTHLY: 12,
+  YEARLY: 1,
+}
+
+/** Is this rule's INTERVAL inside its period's range? A rule with no period has nothing to cap. */
+export function quotaIntervalAllowed(rrule: string | null | undefined): boolean {
+  const period = quotaPeriodOf(rrule)
+  return period === null || period.interval <= QUOTA_INTERVAL_MAX[period.freq]
+}
+
+/**
+ * A quota rule in canonical form: `FREQ=X`, plus `;INTERVAL=N` only above 1.
+ * The validator refuses INTERVAL before FREQ, so every writer goes through here.
+ */
+export function quotaRule(freq: QuotaFreq, interval: number): string {
+  return interval > 1 ? `FREQ=${freq};INTERVAL=${interval}` : `FREQ=${freq}`
+}
+
+/**
+ * The start of the calendar unit `local` falls in, by the user's clock — where
+ * a quota's period is anchored: 00:00 on the user's first day of the week, the
+ * 1st of the month, midnight, Jan 1. The ONE anchor rule: create, a period
+ * edit and the rollover's first pass all anchor through here. INTERVAL plays
+ * no part — a fortnight made this week starts on this week's first day.
+ */
+export function quotaUnitStart(local: DateTime, unit: PeriodUnit, weekStart: WeekStart): DateTime {
+  switch (unit) {
+    case 'days':
+      return local.startOf('day')
+    case 'weeks':
+      return startOfWeek(local, weekStart)
+    case 'months':
+      return local.startOf('month')
+    case 'years':
+      return local.startOf('year')
+  }
+}
+
+/**
+ * The quota's CURRENT period window `[start, end)`, as of `now`, in `timezone`.
+ *
+ * The rollover's own stepping (`period-rollover.ts`), made pure: from the
+ * stored anchor, step `start = end` while the window has ended. So a window
+ * the cron has not closed yet (it runs every five minutes) already reads as
+ * the next one — the label a client draws never names a period that is over.
+ * A quota with no anchor yet (one made before anchors were stamped at create)
+ * reads from the start of the unit it is in, which is where the rollover's
+ * first pass will anchor it. Null for a row with no period.
+ */
+export function quotaWindow(
+  task: Pick<Task, 'rrule' | 'progress_period_start'>,
+  timezone: string,
+  now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
+): { start: DateTime; end: DateTime; interval: number } | null {
+  const period = quotaPeriodUnit(task.rrule)
+  if (!period) return null
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  if (!local.isValid) return null
+  const anchored = task.progress_period_start
+    ? DateTime.fromISO(task.progress_period_start, { zone: 'utc' }).setZone(timezone)
+    : null
+  let start =
+    anchored && anchored.isValid ? anchored : quotaUnitStart(local, period.unit, weekStart)
+  let end = quotaPeriodEnd(start, period.unit, period.interval, weekStart)
+  while (local >= end) {
+    start = end
+    end = quotaPeriodEnd(start, period.unit, period.interval, weekStart)
+  }
+  return { start, end, interval: period.interval }
+}
+
+/**
+ * The period fields the server serves on every quota (tasks and prompts), so
+ * no client — web or native — repeats `quotaPeriodEnd`:
+ *
+ * - `progress_period_end`: the current window's end, UTC, EXCLUSIVE.
+ * - `period_interval`: the rule's INTERVAL (1 when it has none).
+ * - `period_last_day`: the window's last local day, `YYYY-MM-DD` — the end
+ *   minus one day, since the end itself is the next period's first midnight.
+ * - `period_label`: "by Oct 24" (that last day) for an interval above 1;
+ *   NULL at interval 1, where every client keeps its own words ("this week",
+ *   "wk", "today") — a fortnight cannot be called "this week", but a week can.
+ *
+ * All null on a row that is not a quota, or has no period.
+ */
+export interface QuotaPeriodFields {
+  progress_period_end: string | null
+  period_interval: number | null
+  period_last_day: string | null
+  period_label: string | null
+}
+
+export const NO_QUOTA_PERIOD: QuotaPeriodFields = {
+  progress_period_end: null,
+  period_interval: null,
+  period_last_day: null,
+  period_label: null,
+}
+
+/** "by Oct 24": the inclusive last day of a window that ends (exclusively) at `end`. */
+export function periodByLabel(end: DateTime): string {
+  return `by ${end.minus({ days: 1 }).toFormat('LLL d')}`
+}
+
+export function quotaPeriodFields(
+  task: Pick<Task, 'rrule' | 'progress_period_start' | 'progress_target' | 'is_tracked'>,
+  timezone: string,
+  now: Date = new Date(),
+  weekStart: WeekStart = WEEK_START_DEFAULT,
+): QuotaPeriodFields {
+  if (!isTracked(task)) return NO_QUOTA_PERIOD
+  const window = quotaWindow(task, timezone, now, weekStart)
+  if (!window) return NO_QUOTA_PERIOD
+  return {
+    progress_period_end: window.end.toUTC().toISO(),
+    period_interval: window.interval,
+    period_last_day: window.end.minus({ days: 1 }).toISODate(),
+    period_label: window.interval > 1 ? periodByLabel(window.end) : null,
+  }
+}
+
+/**
  * The count that is TRUE right now: `progress_current`, or 0 once its period
  * has ended.
  *
