@@ -646,6 +646,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-soon.ts`                 | Soon today: "now", "in an hour", hour ranges                | 13    |
 | `enrichment-project-descriptions.ts` | Project descriptions settle which project the words mean    | 6     |
 | `enrichment-same-day.ts`             | Same day: "tomorrow" dated today, a passed time, "now that" | 6     |
+| `enrichment-repeat-titles.ts`        | Repeat words leave the title; a repeat made after its time  | 7     |
 | `task-model-review.ts`               | Deadline field in Insights and What's Next                  | 2     |
 | `process.ts`                         | Process: project recommendations and duplicates             | 4     |
 | `quick-take.ts`                      | Quick Take                                                  | 12    |
@@ -655,11 +656,13 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `helpers/generate-tasks.ts`          | Realistic task list generator (used by insights-large)      | —     |
 | `index.ts`                           | Barrel export                                               | —     |
 
-**Total: 224 scenarios** (173 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
+**Total: 231 scenarios** (180 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
 
 Scenarios that need a value the run date decides (a deadline "7 days from now") compute it at load time; `must_include` accepts `~date:YYYY-MM-DD` (a local datetime on that day, any time) and `~notnull`. An enrichment scenario may pin `now` (a local datetime in its timezone): the prompt, the post-processes and the time matchers then all read that minute — `~soon` ("now": 15 minutes out, rounded up to the quarter hour), `~in-hours:N` and `~hours-range:LO-HI` (a quarter hour inside the range). Process scenarios use `process_expectations` (required project per task, groups that must appear, pairs that must not be grouped).
 
 **Soon today** (2026-10-16): "now" / "right now" / "immediately" is about 15 minutes out, rounded UP to the next quarter hour; "in an hour" / "in N hours" is now + N hours, rounded up to the quarter hour; a range ("in an hour or two", "in 2 or 3 hours") is a whole hour inside it, picked by the model. The model's arithmetic was unreliable in the quality runs (2:07 → 2:15, 11:52 PM → midnight, "in 2 or 3 hours" at 2:10 → 4:00), so `resolveSoonTarget` in `enrichment.ts` recomputes "now" and "in N hours", and replaces a range pick that is not a quarter hour inside the range with the first whole hour in it — only when the model set a target and the cue is the only time or day in the words.
+
+**Repeat words in titles** (2026-10-16): the prompt's title rule says repeat wording leaves the title once it is in `rrule` ("Water the ferns every other day" → "Water the ferns"), and a repeat word that names something stays ("Weekly standup"). The backstop is `stripRepeatPhrase` (`src/core/ai/repeat-title.ts`): a TRAILING phrase, or a LEADING one that reads as a time clause ("Every Monday, …"), is removed only when it says exactly what the parsed rule says, per a small table ("every other day" ↔ `FREQ=DAILY;INTERVAL=2`, "twice a week" ↔ weekly on two days, "every Monday" ↔ `WEEKLY;BYDAY=MO`, …); otherwise the title is untouched. It runs in `postProcessTaskEnrichment` (the date post-process, then the title), which production and the harness share. A repeat whose first date the model put today, after its time, starts at its next occurrence (`rollPassedRepeatStart`, the create path's `rollPassedFirstOccurrence`).
 
 **Same-day fixes** (2026-10-16): a one-off target the model dated today moves to the same time tomorrow when the words say "tomorrow" (not inside a word like "Tomorrowland"), or when its time has already passed and the words name no clock time (`resolveSameDayPast`; "tonight", "today", "now" and "in N hours" keep it today). "now that …", "for now" and "by now" with no other time or day words, and a target in the "now" slots (the current quarter hour up to the soon slot), give no target (`dropNowPhraseTarget`). Both came from claude-haiku-5-5 on the demo: "call mom tomorrow evening" at 7:52 PM dated today 7 PM, and "now that the lease is signed call the landlord" at 7:38 PM given 7:45 PM.
 

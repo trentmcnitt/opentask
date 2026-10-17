@@ -44,6 +44,7 @@ import {
   parseRRule,
   getDayOfWeek,
   fillRuleTime,
+  rollPassedFirstOccurrence,
 } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { stampTargetSet } from '@/core/tasks/target-set'
@@ -58,6 +59,7 @@ import { nearestSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
 import { isTracked } from '@/lib/track'
 import { EnrichmentResultSchema } from './types'
+import { stripRepeatPhrase } from './repeat-title'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
 import { enrichmentApiQuery } from './enrichment-api'
@@ -758,7 +760,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
       defaultSlotLabel,
     )
   } else {
-    parsed = postProcessTaskDates(parsed, textToEnrich, user.timezone, {
+    parsed = postProcessTaskEnrichment(parsed, textToEnrich, user.timezone, {
       morningTime: user.morning_time,
       todayTarget: targetTodayTime(user.id, user.timezone),
       taskId: row.id,
@@ -776,7 +778,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
  * the quality harness both call this, so the two cannot drift:
  * deadline/horizon guard → date-only "today" → bare time → soon today →
  * "now that" drop → same-day past / "tomorrow" → unstated past dates →
- * deadline alignment → unnamed-day pin.
+ * deadline alignment → unnamed-day pin → a repeat's passed start rolled on.
  */
 export function postProcessTaskDates(
   parsed: EnrichmentResult,
@@ -800,7 +802,28 @@ export function postProcessTaskDates(
   result = resolveSameDayPast(result, inputText, timezone, now)
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
-  return pinUnnamedDay(result, inputText, timezone, now)
+  result = pinUnnamedDay(result, inputText, timezone, now)
+  return rollPassedRepeatStart(result, timezone, now)
+}
+
+/**
+ * The whole deterministic post-process of a (non-reminder) task's enrichment:
+ * the date rules (`postProcessTaskDates`), then a repeat phrase left at the
+ * start or end of the title that says exactly what the rule says is removed
+ * (`stripRepeatPhrase`, 2026-10-16: "Water the ferns every other day" →
+ * "Water the ferns"). Production and the quality harness both call this.
+ */
+export function postProcessTaskEnrichment(
+  parsed: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  opts: { morningTime: string; todayTarget: string; taskId?: number; now?: Date },
+): EnrichmentResult {
+  const result = postProcessTaskDates(parsed, inputText, timezone, opts)
+  const title = stripRepeatPhrase(result.title, result.rrule)
+  if (title === result.title) return result
+  log.info('ai', 'Enrichment: removed a repeat phrase from the title that the rule already says')
+  return { ...result, title }
 }
 
 /**
@@ -1358,6 +1381,31 @@ export function resolveSameDayPast(
     'ai',
     `Enrichment: moved a target today to tomorrow (${saidTomorrow ? '"tomorrow" in the words' : 'its time had passed'})`,
   )
+  return { ...enrichment, due_at: next }
+}
+
+/**
+ * A REPEATING task's first date the model put TODAY, after its time, rolls to
+ * the next occurrence — the create path's rule (`rollPassedFirstOccurrence`,
+ * 2026-10-16), applied here because enrichment writes its rule and date onto
+ * an existing task as an update, not through createTask. "submit my timesheet
+ * every Friday by 5pm" made Friday at 8:30 PM → next Friday 5 PM. Runs last,
+ * on the model's LOCAL value, after `pinUnnamedDay` has settled the rule.
+ * Pure apart from `now`; exported for the quality harness and tests.
+ */
+export function rollPassedRepeatStart(
+  enrichment: EnrichmentResult,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || !enrichment.rrule) return enrichment
+  const local = parseLocalDateTime(value, timezone)
+  if (!local) return enrichment
+  const first = rollPassedFirstOccurrence(enrichment.rrule, local.toJSDate(), timezone, now)
+  if (first.getTime() === local.toJSDate().getTime()) return enrichment
+  const next = toLocalIso(DateTime.fromJSDate(first).setZone(timezone), value)
+  log.info('ai', `Enrichment: a repeat's first date today had passed; moved to ${next}`)
   return { ...enrichment, due_at: next }
 }
 

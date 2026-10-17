@@ -26,6 +26,7 @@ For each scenario:
 - Were priority phrases removed ("URGENT", "high priority") since they were extracted into `priority`?
 - Was the user's voice preserved? ("grab" not changed to "buy", specific phrasing kept)
 - Was an already-clean title left unchanged?
+- (2026-10-16) Repeat wording left in the title once it is in `rrule` ("Water the ferns every other day", "Go to the gym twice a week") is a title miss; a repeat word that is part of a name ("Weekly standup") must stay.
 
 ### 2. Date Extraction
 
@@ -75,6 +76,7 @@ For each scenario:
 - Was DTSTART NOT included? (the prompt explicitly forbids it)
 - Was `null` returned when no recurrence was mentioned?
 - Were vague recurrence signals correctly interpreted? ("every morning" = FREQ=DAILY)
+- (2026-10-16) A repeat made on its day after its time must start at its next occurrence, not today's past one.
 
 ### 7. Conservatism
 

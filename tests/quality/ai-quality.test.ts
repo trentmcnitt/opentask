@@ -481,7 +481,7 @@ async function runEnrichment(
   // so the scenario is judged on what the database would receive. When the
   // guard changes the model's answer, the raw value is logged so a prompt
   // regression the guard is hiding still shows up in the run output.
-  const { filterProjectMatch, postProcessTaskDates } = await import('@/core/ai/enrichment')
+  const { filterProjectMatch, postProcessTaskEnrichment } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
@@ -498,7 +498,7 @@ async function runEnrichment(
   // "now" / "in an hour" are counted in code (`resolveSoonTarget`, 2026-10-16).
   // Unstated past dates are dropped (`dropUnstatedPastDates`, 2026-10-16).
   // One shared function: the same one production calls.
-  const taskModel = postProcessTaskDates(parsed, input.text, input.timezone, {
+  const taskModel = postProcessTaskEnrichment(parsed, input.text, input.timezone, {
     morningTime: input.morningTime ?? '09:00',
     todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
     now,
@@ -516,6 +516,11 @@ async function runEnrichment(
     console.log(
       `[quality] task-model guard changed due_at "${parsed.due_at}" / deadline_at "${parsed.deadline_at}" / horizon "${parsed.horizon}" for: ${input.text}`,
     )
+  }
+  // A repeat phrase the rule already says is stripped from the title
+  // (`stripRepeatPhrase`, 2026-10-16) — logged so a prompt miss stays visible.
+  if (taskModel.title !== parsed.title) {
+    console.log(`[quality] title strip changed "${parsed.title}" → "${taskModel.title}"`)
   }
 
   return {
@@ -1188,6 +1193,19 @@ function checkSpecialExpectation(
   }
   if (expected === '~notnull') {
     if (actual == null) throw new Error(`[${id}] Expected ${key} to be set, got ${actual}`)
+    return
+  }
+  // '~lacks:every other day' / '~has:weekly' — a string field (a title) without
+  // or with that text, case-insensitive (2026-10-16, repeat words in titles).
+  const text = /^~(lacks|has):(.*)$/.exec(expected)
+  if (text) {
+    const contains =
+      typeof actual === 'string' && actual.toLowerCase().includes(text[2].toLowerCase())
+    if (contains !== (text[1] === 'has')) {
+      throw new Error(
+        `[${id}] Expected ${key} to ${text[1] === 'has' ? 'contain' : 'not contain'} "${text[2]}", got ${JSON.stringify(actual)}`,
+      )
+    }
     return
   }
   // '~rrule-has:FREQ=WEEKLY;INTERVAL=2;BYDAY=TH' — every listed part is in
