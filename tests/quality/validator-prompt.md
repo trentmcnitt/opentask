@@ -77,6 +77,7 @@ For each scenario:
 - Was `null` returned when no recurrence was mentioned?
 - Were vague recurrence signals correctly interpreted? ("every morning" = FREQ=DAILY)
 - (2026-10-16) A repeat made on its day after its time must start at its next occurrence, not today's past one.
+- (2026-10-17) "today" / "tonight" (with no other day named) is TODAY's local date, also late in the evening when UTC has moved to tomorrow; a target on the next day is a failure.
 
 ### 7. Conservatism
 
