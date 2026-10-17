@@ -775,7 +775,8 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
  * order, on the model's LOCAL values. Production (SDK and API mode alike) and
  * the quality harness both call this, so the two cannot drift:
  * deadline/horizon guard → date-only "today" → bare time → soon today →
- * unstated past dates → deadline alignment → unnamed-day pin.
+ * "now that" drop → same-day past / "tomorrow" → unstated past dates →
+ * deadline alignment → unnamed-day pin.
  */
 export function postProcessTaskDates(
   parsed: EnrichmentResult,
@@ -795,6 +796,8 @@ export function postProcessTaskDates(
   )
   result = resolveBareTime(result, inputText, timezone, now)
   result = resolveSoonTarget(result, inputText, timezone, now)
+  result = dropNowPhraseTarget(result, inputText, timezone, now)
+  result = resolveSameDayPast(result, inputText, timezone, now)
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
   return pinUnnamedDay(result, inputText, timezone, now)
@@ -1242,6 +1245,120 @@ export function dropUnstatedPastDates(
     due_at: dropTarget ? null : enrichment.due_at,
     deadline_at: dropDeadline ? null : enrichment.deadline_at,
   }
+}
+
+/** "now that …", "for now", "by now": "now" in a phrase that names no time. */
+const NOW_PHRASE = /\b(now that|for now|by now)\b/i
+
+/**
+ * "NOW THAT" (2026-10-16): a "now" phrase that names no time — "now that the
+ * lease is signed", "for now", "by now" — read as "now" anyway. The real
+ * failure: Haiku gave "now that the lease is signed call the landlord" a
+ * target of 7:45 PM, said at 7:38 PM. Such a target is dropped.
+ *
+ * NARROW on purpose (the designer declined a broad "no time words, no
+ * target" guard). All of these must hold:
+ * - the words contain one of the three phrases;
+ * - no real "now" cue (`NOW_CUE`: "right now", "immediately", a closing
+ *   "now"), no "in N hours", no clock time, no day or part of day
+ *   (`SOON_BLOCKER`) — any of those is a time the user may have meant;
+ * - the model's target sits in the slots a model writes when it reads "now"
+ *   as the time: from the start of the current quarter hour (7:30 at 7:38)
+ *   up to the soon slot `resolveSoonTarget` would give (8:00 at 7:38). That
+ *   window is the whole family of "now" answers — the minute itself, it
+ *   rounded down, rounded to the nearest or next quarter, or 15 minutes out
+ *   rounded up — not a tolerance around one value. Any later target is the
+ *   model's own reading of something else and is left alone.
+ *
+ * Not for repeating tasks; deadlines are never touched. Runs on the model's
+ * LOCAL value, after `resolveSoonTarget` and before `resolveSameDayPast`
+ * (which would otherwise move a 7:30 "now" to tomorrow). Pure apart from
+ * `now`; exported for the quality harness and tests.
+ */
+export function dropNowPhraseTarget(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || enrichment.rrule || !NOW_PHRASE.test(inputText)) return enrichment
+  const otherTime = [NOW_CUE, IN_HOURS_CUE, IN_HOURS_RANGE_CUE, CLOCK_TIME, SOON_BLOCKER]
+  if (otherTime.some((re) => re.test(inputText))) return enrichment
+  const target = parseLocalDateTime(value, timezone)
+  if (!target) return enrichment
+  const nowMinute = DateTime.fromJSDate(now).setZone(timezone).startOf('minute')
+  const quarterStart = nowMinute.minus({ minutes: nowMinute.minute % 15 })
+  const soonSlot = ceilQuarter(nowMinute.plus({ minutes: 15 }))
+  if (target < quarterStart || target > soonSlot) return enrichment
+  log.info('ai', 'Enrichment: dropped a "now" target from a phrase that names no time')
+  return { ...enrichment, due_at: null }
+}
+
+/** "tomorrow" as a word ("Tomorrowland" is not one), or the common "tmrw". */
+const TOMORROW_WORD = /\b(tomorrow|tmrw)\b/i
+
+/**
+ * Words that put the task on TODAY, or count from now: with one, a target
+ * today is the user's and the same-day rules below leave it alone.
+ */
+const TODAY_WORDS =
+  /\b(today|tonight|now|immediately|asap)\b|\bthis (morning|afternoon|evening)\b|\bin (an?|one|\d+|two|three|four|five|six) (minutes?|mins?|hours?|hrs?)\b/i
+
+/**
+ * SAME-DAY FIXES (2026-10-16), for a one-off target the model dated TODAY:
+ *
+ * 1. "tomorrow" in the words and the target is today → the same time
+ *    tomorrow. The real failure: Haiku, at 7:52 PM on a Friday, turned "call
+ *    mom tomorrow evening" into Friday 7:00 PM.
+ * 2. Otherwise, a target today that is already past (before the current
+ *    minute) and whose clock time the words do not name → the same time
+ *    tomorrow. "call mom in the evening" read at 7:52 PM as 7:00 PM today
+ *    becomes 7:00 PM tomorrow.
+ *
+ *    Why tomorrow at the model's time, and not the soon slot or the next
+ *    hour: when the words name a part of day ("evening", "after lunch") but
+ *    no clock, the model's time IS its reading of that part of day — 7 PM is
+ *    "evening". That part of day has passed today, so its next occurrence is
+ *    tomorrow's; moving it to "in 15 minutes" would turn an evening task into
+ *    a now task, which nobody said. With no time words at all the same holds:
+ *    the time the model picked passed, tomorrow is its next occurrence (the
+ *    model's pick of a day — not this — decides whether there is a target).
+ *
+ * Left alone:
+ * - a clock time in the words ("7pm" said at 8 PM): `resolveBareTime`'s
+ *   business, forward only, and it already ran;
+ * - a word that puts it on today or counts from now (`TODAY_WORDS`: "today",
+ *   "tonight", "this evening", "now", "in an hour"): the user said today, so
+ *   a passed time today is their call, not a misread day;
+ * - a repeating task (its first date is the rule's), a target on any other
+ *   day, and every deadline.
+ *
+ * Runs on the model's LOCAL value, after `dropNowPhraseTarget` and before
+ * `dropUnstatedPastDates`. Pure apart from `now`; exported for the quality
+ * harness and tests.
+ */
+export function resolveSameDayPast(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || enrichment.rrule || TODAY_WORDS.test(inputText)) return enrichment
+  const target = parseLocalDateTime(value, timezone)
+  if (!target) return enrichment
+  const nowMinute = DateTime.fromJSDate(now).setZone(timezone).startOf('minute')
+  if (!target.hasSame(nowMinute, 'day')) return enrichment
+  const saidTomorrow = TOMORROW_WORD.test(inputText)
+  const passedUnnamed = target < nowMinute && !CLOCK_TIME.test(inputText)
+  if (!saidTomorrow && !passedUnnamed) return enrichment
+  const next = toLocalIso(target.plus({ days: 1 }), value)
+  log.info(
+    'ai',
+    `Enrichment: moved a target today to tomorrow (${saidTomorrow ? '"tomorrow" in the words' : 'its time had passed'})`,
+  )
+  return { ...enrichment, due_at: next }
 }
 
 /**
