@@ -33,6 +33,17 @@ function getClient(apiKey?: string): Anthropic {
 }
 
 /**
+ * A call's token usage, with the prompt cache's share, for the completion log
+ * line, so cost and caching can be read from the server log (the activity log
+ * has no token columns).
+ */
+function usageText(usage: Anthropic.Usage): string {
+  const read = usage.cache_read_input_tokens ?? 0
+  const write = usage.cache_creation_input_tokens ?? 0
+  return `tokens in ${usage.input_tokens}, cache read ${read}, cache write ${write}, out ${usage.output_tokens}`
+}
+
+/**
  * Execute an AI query via the Anthropic Messages API.
  *
  * Mirrors the interface of aiQuery() from sdk.ts — same input options,
@@ -68,9 +79,16 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
       messages: [{ role: 'user', content: prompt }],
     }
 
-    // System prompt
+    // System prompt, cached (2026-10-16). The system prompts are long and the
+    // same on every call (enrichment's is ~13.5k tokens; the time, the user's
+    // context and the task text go in the user turn), so marking the block
+    // ephemeral lets back-to-back calls read it from Anthropic's prompt cache
+    // at a tenth of the input price. The cache lasts about five minutes; a
+    // call after a quiet spell pays the full price plus the write surcharge.
     if (systemPrompt) {
-      createParams.system = systemPrompt
+      createParams.system = [
+        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+      ]
     }
 
     // Structured output via json_schema format
@@ -149,7 +167,10 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
       provider: 'anthropic',
     })
 
-    log.info('ai', `[api] ${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
+    log.info(
+      'ai',
+      `[api] ${action} completed in ${durationMs}ms (model: ${resolvedModel}; ${usageText(response.usage)})`,
+    )
 
     return {
       structuredOutput,
