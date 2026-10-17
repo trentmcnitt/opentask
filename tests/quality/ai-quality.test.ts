@@ -502,6 +502,8 @@ async function runEnrichment(
     morningTime: input.morningTime ?? '09:00',
     todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
     now,
+    // Every scenario is a new task's first enrichment, as in production.
+    newTask: true,
   })
   if (taskModel.rrule !== parsed.rrule) {
     console.log(

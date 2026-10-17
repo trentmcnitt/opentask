@@ -172,21 +172,23 @@ test.describe('Snooze guards', () => {
       // (found 2026-09-22). Anchoring explicitly to `TEST_TZ`, the same zone
       // the app itself uses, fixes both bombs at once.
       //
-      // And since 2026-10-16 the anchor is always YESTERDAY's 08:00: a
-      // repeating task created with a date TODAY whose time has passed starts
-      // at its next occurrence (`rollPassedFirstOccurrence`), so "today 08:00"
-      // would arrive as tomorrow and not be overdue. A date before today is
-      // kept as given.
+      // And since 2026-10-16 a NEW repeating task created with a past date
+      // starts at its next occurrence (`rollPassedFirstOccurrence`), so the
+      // task is made as a one-off dated yesterday 08:00 and THEN given its
+      // rule by an edit — an existing task's date is never rolled. That is
+      // the state this test needs: a repeat carrying yesterday's debt.
       const now = DateTime.now().setZone(TEST_TZ)
       const dueAt = now.set({ hour: 8, minute: 0, second: 0, millisecond: 0 }).minus({ days: 1 })
       const taskId = await createTask(page, {
         title,
         due_at: dueAt.toUTC().toISO(),
-        rrule: 'FREQ=DAILY',
-        recurrence_mode: 'from_due',
         priority: 1,
         project_id: projectId,
       })
+      const ruled = await page.request.patch(`/api/tasks/${taskId}`, {
+        data: { rrule: 'FREQ=DAILY', recurrence_mode: 'from_due' },
+      })
+      expect(ruled.ok()).toBeTruthy()
       taskIds.push(taskId)
       await page.reload()
 

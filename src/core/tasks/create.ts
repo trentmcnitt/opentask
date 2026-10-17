@@ -107,9 +107,10 @@ function timedSchedule(
  * A new task's first date (a quota's is null, decided by the caller):
  * - a repeating task with no date → its first occurrence from now
  *   (`computeFirstOccurrence`, the creation day is day 0);
- * - a repeating task given a date TODAY whose time has passed → its next
- *   occurrence (`rollPassedFirstOccurrence`, 2026-10-16, the same ruling):
- *   weekly Fri 5 PM made Fri 8:30 PM → next Friday, not over target at birth.
+ * - a repeating task given a date already past (earlier today or any earlier
+ *   day) → its next occurrence (`rollPassedFirstOccurrence`, 2026-10-16, the
+ *   same ruling): weekly Fri 5 PM made Fri 8:30 PM → next Friday; the 15th of
+ *   every month made on the 16th → next month's 15th. Not over target at birth.
  *   Not a reminder: today's occurrence, even past its slot, is still today's
  *   to consider on the Reminders screen (a missed one is not re-shown later);
  * - anything else → the date as given.

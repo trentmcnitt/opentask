@@ -6,6 +6,7 @@ import { getDb, resetDb } from '@/core/db'
 import { seedSystemLabels, createLabel } from '@/core/labels'
 import { seedDefaultTimeSlots } from '@/core/time-slots'
 import { DateTime } from 'luxon'
+import { vi } from 'vitest'
 
 export const TEST_TIMEZONE = 'America/Chicago'
 export const TEST_USER_ID = 1
@@ -93,4 +94,22 @@ export function setupTestDb(): void {
  */
 export function teardownTestDb(): void {
   resetDb()
+}
+
+/**
+ * Seed an EXISTING repeating task whose date has since passed: run `make`
+ * with the (already frozen) clock set one minute before `dueAt`, then put the
+ * clock back. A NEW repeating task created with a past date starts at its
+ * next occurrence instead (`rollPassedFirstOccurrence`, 2026-10-16), so a
+ * test that needs an overdue repeat must make it while its date was ahead —
+ * as a real one was. Only for tests that already freeze the clock.
+ */
+export function madeBefore<T>(dueAt: string, make: () => T): T {
+  const now = new Date()
+  vi.setSystemTime(new Date(Date.parse(dueAt) - 60_000))
+  try {
+    return make()
+  } finally {
+    vi.setSystemTime(now)
+  }
 }

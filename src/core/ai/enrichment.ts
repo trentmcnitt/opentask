@@ -764,12 +764,29 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
       morningTime: user.morning_time,
       todayTarget: targetTodayTime(user.id, user.timezone),
       taskId: row.id,
+      // A new task: created title-only (createTask's `isTitleOnly`), so no
+      // date or rule yet. Re-enriching one that has either is an edit.
+      newTask: row.due_at === null && row.rrule === null,
     })
   }
 
   parsed = toUtcTimes(parsed, user.timezone, row.id)
 
   return applyEnrichment(row, parsed, user, textToEnrich)
+}
+
+export interface PostProcessOptions {
+  morningTime: string
+  todayTarget: string
+  taskId?: number
+  now?: Date
+  /**
+   * The enrichment of a NEW task — created title-only, with no date or rule
+   * yet. Only then does a repeat's past first date roll to its next
+   * occurrence (`rollPassedRepeatStart`); a re-enrichment of an existing task
+   * never moves its dates that way. Default false.
+   */
+  newTask?: boolean
 }
 
 /**
@@ -784,7 +801,7 @@ export function postProcessTaskDates(
   parsed: EnrichmentResult,
   inputText: string,
   timezone: string,
-  opts: { morningTime: string; todayTarget: string; taskId?: number; now?: Date },
+  opts: PostProcessOptions,
 ): EnrichmentResult {
   const now = opts.now ?? new Date()
   let result = sanitizeTaskModelFields(parsed, inputText, opts.taskId)
@@ -803,7 +820,7 @@ export function postProcessTaskDates(
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
   result = pinUnnamedDay(result, inputText, timezone, now)
-  return rollPassedRepeatStart(result, timezone, now)
+  return opts.newTask ? rollPassedRepeatStart(result, timezone, now) : result
 }
 
 /**
@@ -817,7 +834,7 @@ export function postProcessTaskEnrichment(
   parsed: EnrichmentResult,
   inputText: string,
   timezone: string,
-  opts: { morningTime: string; todayTarget: string; taskId?: number; now?: Date },
+  opts: PostProcessOptions,
 ): EnrichmentResult {
   const result = postProcessTaskDates(parsed, inputText, timezone, opts)
   const title = stripRepeatPhrase(result.title, result.rrule)
@@ -1385,13 +1402,20 @@ export function resolveSameDayPast(
 }
 
 /**
- * A REPEATING task's first date the model put TODAY, after its time, rolls to
- * the next occurrence — the create path's rule (`rollPassedFirstOccurrence`,
- * 2026-10-16), applied here because enrichment writes its rule and date onto
- * an existing task as an update, not through createTask. "submit my timesheet
- * every Friday by 5pm" made Friday at 8:30 PM → next Friday 5 PM. Runs last,
- * on the model's LOCAL value, after `pinUnnamedDay` has settled the rule.
- * Pure apart from `now`; exported for the quality harness and tests.
+ * A REPEATING task's first date the model put in the PAST (earlier today or
+ * any earlier day) rolls to the next occurrence — the create path's rule
+ * (`rollPassedFirstOccurrence`, 2026-10-16), applied here because enrichment
+ * writes its rule and date onto the just-created task as an update, not
+ * through createTask. "submit my timesheet every Friday by 5pm" made Friday
+ * at 8:30 PM → next Friday 5 PM; "pay mortgage on the 15th of every month"
+ * made on the 16th → next month's 15th.
+ *
+ * Only for a NEW task (`postProcessTaskDates`'s `newTask`): enrichment of a
+ * task that was created title-only and has had no date or rule yet. A
+ * re-enrichment of a task that already has a date or a rule is an existing
+ * task, and its dates are not rolled. Runs last, on the model's LOCAL value,
+ * after `pinUnnamedDay` has settled the rule. Pure apart from `now`; exported
+ * for the quality harness and tests.
  */
 export function rollPassedRepeatStart(
   enrichment: EnrichmentResult,

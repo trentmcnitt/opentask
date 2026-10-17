@@ -14,7 +14,14 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, backdateCreated, showAllNow, uniqueTitle } from './fixtures'
+import {
+  test,
+  expect,
+  backdateCreated,
+  hideStraySegmentTasks,
+  showAllNow,
+  uniqueTitle,
+} from './fixtures'
 import type { Page } from '@playwright/test'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -36,6 +43,11 @@ async function trash(page: Page, ids: number[]) {
 
 const segmentRow = (page: Page, id: number) =>
   page.locator('[data-task-segments]').locator(`[data-segment-task="${id}"]`)
+
+// Only the segments a test makes: tasks other specs left behind would
+// otherwise fill a Weeks segment on a Saturday (the default check-in day) and
+// not on other days — see `hideStraySegmentTasks`.
+test.beforeEach(() => hideStraySegmentTasks())
 
 test.describe('Task segments', () => {
   test('sit under the slots on /reminders; circle considers, Today targets, Defer all defers', async ({

@@ -468,23 +468,28 @@ export function computeFirstOccurrence(
 }
 
 /**
- * A REPEATING task given a first date TODAY whose time has already passed
- * starts at its NEXT occurrence instead (designer, 2026-10-16) — the same
- * ruling as "the creation day is day 0" (#258, `computeFirstOccurrence`):
- * made on its day after its time, the first occurrence is the next one, not
- * today's past one. The real case: "submit my timesheet every Friday by 5pm"
- * made Friday at 8:30 PM came out due Friday 5 PM — over target at birth.
+ * A NEW repeating task given a first date already PAST starts at its NEXT
+ * occurrence instead (designer, 2026-10-16) — the same ruling as "the
+ * creation day is day 0" (#258, `computeFirstOccurrence`): a repeat's first
+ * occurrence is never one that has already gone by. Two real cases:
+ * - earlier today: "submit my timesheet every Friday by 5pm" made Friday at
+ *   8:30 PM came out due Friday 5 PM (#286);
+ * - an earlier day: "pay mortgage on the 15th of every month" made Oct 16
+ *   came out due Oct 15 — over target at birth either way.
  *
  * The next occurrence keeps the given date's time of day (as the anchor), on
- * the rule: a weekly Friday → next Friday; a daily → tomorrow; an every-2-
- * weeks rule → the next grid point (two weeks on, as #258 rules for a
- * floating rule made after its time). Only TODAY's past dates move: a date
- * before today is a caller's deliberate choice (a debt to show), and one
- * still ahead is the first occurrence as given — so "a repeat with no day
- * named starts today", while today's time is still ahead, is untouched.
+ * the rule, counted from now: a weekly Friday → next Friday; a daily →
+ * tomorrow; the 15th of every month made on the 16th → the 15th of next
+ * month; an every-2-weeks rule → the next grid point. A date still ahead is
+ * the first occurrence as given — so "a repeat with no day named starts
+ * today", while today's time is still ahead, is untouched.
  *
- * Shared by createTask (every client and mode) and AI enrichment's date
- * post-process. `now` is injectable for tests.
+ * FOR A NEW TASK ONLY. Callers: createTask (every client and mode) and AI
+ * enrichment of a just-created task (`rollPassedRepeatStart`). Never a later
+ * edit: PATCH and bulk edit don't call it, so moving an existing repeating
+ * task's date into the past stays as the user set it. Not reminders (the
+ * callers skip them: today's occurrence is still today's to consider).
+ * `now` is injectable for tests.
  */
 export function rollPassedFirstOccurrence(
   rruleStr: string,
@@ -494,6 +499,6 @@ export function rollPassedFirstOccurrence(
 ): Date {
   const due = DateTime.fromJSDate(dueAt).setZone(timezone)
   const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
-  if (!due.isValid || !due.hasSame(nowLocal, 'day') || due >= nowLocal) return dueAt
+  if (!due.isValid || due >= nowLocal) return dueAt
   return computeFirstOccurrence(rruleStr, due.toFormat('HH:mm'), timezone, now)
 }

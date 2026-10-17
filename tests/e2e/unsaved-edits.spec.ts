@@ -118,7 +118,12 @@ test.describe('Unsaved edits survive', () => {
     // typed title over.
     await page.setViewportSize({ width: 375, height: 812 })
     await page.reload()
-    await page.waitForSelector('[id^="task-row-"], .text-4xl', { timeout: 10_000 })
+    // The dashboard has loaded: a row, the empty state, or — late in the
+    // evening, when every seeded task is folded behind "N more in …" — Now's
+    // summary (main failed here at 11:22 PM).
+    await page.waitForSelector('[id^="task-row-"], .text-4xl, [data-now-summary]', {
+      timeout: 10_000,
+    })
     await page.getByRole('button', { name: 'Add', exact: true }).click()
     const quick = page.getByRole('textbox', { name: 'Quick add task' })
     await expect(quick).toBeFocused()
