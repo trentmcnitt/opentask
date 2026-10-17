@@ -60,7 +60,7 @@ export const enrichmentLateTodayScenarios: AITestScenario[] = [
     requirements: {
       must_include: { deadline_at: null, rrule: null },
       quality_notes:
-        '"today or tomorrow" is pace wording: horizon "days" with no target is best. A target tomorrow is acceptable; the "today" rule must not force today. Title "Call the vet".',
+        '"today or tomorrow" is pace wording: horizon "days" with no target is best; a target later today or tomorrow is acceptable (the user named both). The "today" rule must not act here (another day is named). Title "Call the vet".',
     },
   },
 ]

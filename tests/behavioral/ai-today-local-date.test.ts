@@ -49,14 +49,19 @@ describe('a "today" / "tonight" target on another date moves to today', () => {
     expect(run('take out the trash tonight', '2026-10-17T23:30:00')).toBe('2026-10-16T23:30:00')
   })
 
+  test('"tonight" the model put on today at the 10 PM sleep time, said at 10:57 PM → the app\'s "today" time', () => {
+    expect(run('take out the trash tonight', '2026-10-16T22:00:00')).toBe('2026-10-16T23:00:00')
+  })
+
   test("a clock time said for today stays that time today, even if passed (the user's words)", () => {
     expect(run('call the bank today at 3pm', '2026-10-17T15:00:00')).toBe('2026-10-16T15:00:00')
   })
 })
 
 describe('left alone', () => {
-  test('already today', () => {
+  test('already today and still ahead, or a time the user said (even passed)', () => {
     expect(run('text Matthew today', '2026-10-16T23:00:00')).toBe('2026-10-16T23:00:00')
+    expect(run('call mom tonight at 7', '2026-10-16T19:00:00')).toBe('2026-10-16T19:00:00')
   })
 
   test('another day word beside "today"', () => {

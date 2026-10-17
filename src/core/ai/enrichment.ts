@@ -1352,13 +1352,15 @@ const OTHER_DAY_WORD =
  * "TODAY" IS TODAY'S LOCAL DATE (2026-10-17). The real failure: SDK, at
  * 10:57 PM CDT, put a "today" task on the next day — the UTC date. Late
  * evening is when Trent dictates, so a "today" or "tonight" task the model
- * dated another day moves to TODAY's local date:
+ * dated another day (or today, at a time already gone) lands today, ahead:
  *
  * - a clock time in the words ("tonight at 11pm", "today at 3") → that time
  *   today, as said — even if it has passed (the user's own words; like
  *   "tonight at 7" said at 8 PM, kept);
  * - no clock time ("call the bank today", "tonight") → the model's time of
- *   day today while it is still ahead; once passed, the app's own placement
+ *   day today while it is still ahead; once passed — also when the model put
+ *   it on today already, e.g. "tonight" as the 10 PM sleep time said at
+ *   10:57 PM — the app's own placement
  *   of a bare "today" (`todayTarget`, the Today button's time — the next
  *   period, or the top of the next hour). NOT the same-day rule's "tomorrow
  *   at the same time": that would put a "today" task on tomorrow, the bug
@@ -1390,7 +1392,10 @@ export function resolveTodayLocalDate(
   const target = parseLocalDateTime(value, timezone)
   if (!target) return enrichment
   const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
-  if (target.hasSame(nowLocal, 'day')) return enrichment
+  const namedClock = CLOCK_TIME.test(inputText)
+  // Already today: only a passed, unnamed time is moved ("tonight" given the
+  // 10 PM sleep time at 10:57 PM); a time the user said stays as said.
+  if (target.hasSame(nowLocal, 'day') && (namedClock || target >= nowLocal)) return enrichment
   const sameTimeToday = nowLocal.set({
     hour: target.hour,
     minute: target.minute,
@@ -1398,14 +1403,12 @@ export function resolveTodayLocalDate(
     millisecond: 0,
   })
   const placed =
-    CLOCK_TIME.test(inputText) || sameTimeToday > nowLocal
+    namedClock || sameTimeToday > nowLocal
       ? sameTimeToday
       : DateTime.fromISO(todayTarget, { zone: 'utc' }).setZone(timezone)
   const next = toLocalIso(placed, value)
-  log.info(
-    'ai',
-    `Enrichment: a "today" target the model dated ${target.toISODate()} moved to ${next}`,
-  )
+  if (next === value) return enrichment
+  log.info('ai', `Enrichment: a "today" target (${target.toISO()}) moved to ${next}`)
   return { ...enrichment, due_at: next }
 }
 
