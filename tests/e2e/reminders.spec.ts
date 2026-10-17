@@ -14,7 +14,7 @@
  * specs assert on.
  */
 
-import { test, expect, waitForGetsSettled } from './fixtures'
+import { test, expect, hideStraySegmentTasks, waitForGetsSettled } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -104,25 +104,33 @@ async function openReminders(page: Page): Promise<void> {
 }
 
 /**
- * Only the current time slot is open by default; the rest fold behind their
- * header with a count. Tests assert on rows regardless of the wall clock, so
- * they open every folded slot first — without toggling one that is already
- * open, which would hide the rows they are about to look for.
- */
-/**
  * Open any slot that is folded.
  *
  * Since 2026-09-06 every slot starts open, so this is usually a no-op — it is
  * kept because a test may fold one deliberately, and because it states the
  * precondition the assertions after it depend on.
+ *
+ * Only a slot card's HEADER toggle counts — the first button of the
+ * `[data-slot-key]` card's header row. The Reminders region holds other
+ * `aria-expanded` buttons too: a slot's "Show N considered" footer, and the
+ * task segments' cards and rows nested under the slots (2026-10-10). Counting
+ * every folded button in the region (as this did until 2026-10-17) clicked
+ * those as well: on a Saturday, the default check-in day, two stray tasks'
+ * segment rows were on screen, the first click opened one row's menu (a modal
+ * dropdown, which hides the rest of the page from the accessibility tree), and
+ * the second click waited out the whole test timeout for a button it could no
+ * longer see — so the test's `finally` cleanup never ran and every later test
+ * saw its reminders (CI, 2026-10-17).
  */
 async function openAllSlots(page: Page) {
-  // Scoped to the surface itself so a folded nav menu elsewhere is never clicked.
-  const surface = page.getByRole('region', { name: 'Reminders' })
-  const n = await surface.getByRole('button', { expanded: false }).count()
+  const folded = page
+    .getByRole('region', { name: 'Reminders' })
+    .locator('[data-slot-key] > div:first-child > button[aria-expanded="false"]')
+  const n = await folded.count()
   for (let i = 0; i < n; i++) {
     // Re-query each time: opening a slot re-renders the list.
-    await surface.getByRole('button', { expanded: false }).first().click()
+    await folded.first().click()
+    await expect(folded).toHaveCount(n - i - 1)
   }
 }
 
@@ -145,6 +153,11 @@ async function longPressRow(page: Page, row: Locator): Promise<void> {
   await expect(row).toHaveAttribute('aria-selected', 'true')
   await page.mouse.up()
 }
+
+// No task segment but what a test makes: tasks other specs left behind would
+// otherwise show under the slots on some days (a Saturday, the default
+// check-in day) and not others — see `hideStraySegmentTasks`.
+test.beforeEach(() => hideStraySegmentTasks())
 
 test.describe('Reminders surface', () => {
   test('is a top-level page reachable from the nav', async ({ authenticatedPage: page }) => {
