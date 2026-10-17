@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, waitForTaskCreate } from './fixtures'
 
 /**
  * AI feature E2E tests.
@@ -38,14 +38,21 @@ test.describe('AI features (disabled)', () => {
     const quickAddInput = page.getByRole('textbox', { name: 'Quick add task' })
     await expect(quickAddInput).toBeVisible({ timeout: 5000 })
     await quickAddInput.fill(taskTitle)
+    const created = waitForTaskCreate(page)
     await quickAddInput.press('Enter')
+    const id = (await (await created).json()).data.id as number
 
-    // The new task is listed in the Just now card, and the card's tap shows
-    // its real row (the title link). An undated task isn't relevant now, so
-    // in Now the row starts behind its project's "+ N more" fold.
-    const entry = page.locator('[data-just-added-card]').getByText(taskTitle)
-    await expect(entry).toBeVisible({ timeout: 10000 })
-    await entry.click()
-    await expect(page.getByRole('link', { name: taskTitle })).toBeVisible()
+    try {
+      // The new task is listed in the Just now card, and the card's tap shows
+      // its real row (the title link). An undated task isn't relevant now, so
+      // in Now the row starts behind its project's "+ N more" fold.
+      const entry = page.locator('[data-just-added-card]').getByText(taskTitle)
+      await expect(entry).toBeVisible({ timeout: 10000 })
+      await entry.click()
+      await expect(page.getByRole('link', { name: taskTitle })).toBeVisible()
+    } finally {
+      // Trashed, not left for later specs (see quick-add.spec.ts).
+      await page.request.delete(`/api/tasks/${id}`)
+    }
   })
 })

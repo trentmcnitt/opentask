@@ -120,6 +120,53 @@ export function backdateCreated(ids: number[], opts: { inSegments?: boolean } = 
   }
 }
 
+/**
+ * Resolves on the next `POST /api/tasks` response — arm it BEFORE the Enter or
+ * click that creates, then read the new task's id from its body so the spec
+ * can trash what it made.
+ */
+export function waitForTaskCreate(page: Page) {
+  return page.waitForResponse(
+    (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+  )
+}
+
+/**
+ * Take every open task the test user already has out of TODAY'S task segments
+ * (horizon segments and Upcoming), straight in the E2E database — for a spec
+ * that asserts on the segments it makes, or on a reminders screen with none.
+ *
+ * Other specs leave tasks behind (a quick add, a task they never trash), and
+ * whether those show in today's segments depends on the DATE the suite runs,
+ * not on anything the spec does (`segmentState`, `upcomingState` in
+ * src/lib/task-segments.ts): an undated task reads as weeks, and a weeks task
+ * created ON the check-in day — Saturday by default — shows that same day. So
+ * on a Saturday every undated task the run had made so far appeared under the
+ * reminder slots, and two specs that pass on any other day failed (2026-10-17,
+ * first seen just after midnight). A run that crosses midnight does the same
+ * for `days` tasks (created before today) and can land a stray target's
+ * Upcoming heads-up day on today.
+ *
+ * The same stamp globalSetup gives the seeded tasks: considered a day AHEAD,
+ * which is never "today" (no considered row) and on or after every segment's
+ * latest day and every heads-up day, so none of them shows. Only segments read
+ * `last_considered_at`. Call it BEFORE creating the spec's own tasks.
+ * Reminders and quotas are left alone: they are never in a segment, and a
+ * reminder's consideration is its own state.
+ */
+export function hideStraySegmentTasks(): void {
+  const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+  try {
+    db.prepare(
+      `UPDATE tasks SET last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day')
+       WHERE done = 0 AND deleted_at IS NULL
+         AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1`,
+    ).run()
+  } finally {
+    db.close()
+  }
+}
+
 let titleCounter = 0
 export function uniqueTitle(base: string): string {
   titleCounter += 1
