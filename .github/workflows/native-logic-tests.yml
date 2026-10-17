@@ -8,6 +8,14 @@ name: Native logic tests
 # macOS runner is slow and costly, and the tests are also run locally before
 # native PRs. Unsigned (CODE_SIGNING_ALLOWED=NO) — a hostless test bundle
 # needs no team or provisioning.
+#
+# It also compiles the Mac app and the iOS app (simulator SDK, no watch
+# targets) in the RELEASE configuration, unsigned. Device installs are Release
+# builds, and code inside `#if DEBUG` (previews, preview data) is compiled out
+# there: #281 put previews outside the guard that called a DEBUG-only helper,
+# the Debug-only test build passed, and the break surfaced only at install
+# time (#282). The watch targets are not compiled here (the runner's watchOS
+# SDK is not assumed).
 
 on:
   pull_request:
@@ -16,12 +24,14 @@ on:
       - 'ios/**'
       - 'macos/**'
       - 'tests/fixtures/contract/**'
+      - '.github/workflows/native-logic-tests.yml'
   push:
     branches: [main]
     paths:
       - 'ios/**'
       - 'macos/**'
       - 'tests/fixtures/contract/**'
+      - '.github/workflows/native-logic-tests.yml'
 
 permissions:
   contents: read
@@ -43,4 +53,24 @@ jobs:
           xcodebuild test \
             -scheme OpenTaskLogicTests \
             -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Compile the Mac app (Release)
+        working-directory: macos
+        run: |
+          xcodebuild build \
+            -scheme OpenTaskMac \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Generate the iOS project (no watch targets)
+        working-directory: ios
+        run: xcodegen generate --spec project-sim.yml
+      - name: Compile the iOS app (Release, simulator SDK)
+        working-directory: ios
+        run: |
+          xcodebuild build \
+            -project OpenTaskSim.xcodeproj \
+            -scheme OpenTask \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
