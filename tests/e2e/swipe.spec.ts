@@ -32,7 +32,12 @@ test.describe('Swipe gestures', () => {
   })
 
   test('left swipe on overdue task triggers snooze action', async ({ authenticatedPage: page }) => {
-    // "Reply to email" is overdue (due 2 hours ago) — swipe left should snooze
+    // "Reply to email" is seeded overdue (due 2 hours ago) — swipe left should
+    // snooze. By now snooze.spec.ts has instant-snoozed it (+1 hour), so it
+    // may no longer be due today: in the late evening that hour lands
+    // tomorrow and Now folds it behind "N more in Inbox" (seen at 11:22 PM,
+    // main included). Lift the folds so the row is there at any hour.
+    await showAllNow(page)
     await expect(page.getByText('Reply to email')).toBeVisible({ timeout: 5000 })
 
     const taskLink = page.getByRole('link', { name: 'Reply to email' })
