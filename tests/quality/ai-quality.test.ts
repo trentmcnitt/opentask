@@ -500,7 +500,8 @@ async function runEnrichment(
   // One shared function: the same one production calls.
   const taskModel = postProcessTaskEnrichment(parsed, input.text, input.timezone, {
     morningTime: input.morningTime ?? '09:00',
-    todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone),
+    // At the scenario's own now, so a pinned 10:57 PM places "today" as production would then.
+    todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone, now),
     now,
     // Every scenario is a new task's first enrichment, as in production.
     newTask: true,

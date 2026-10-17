@@ -794,7 +794,8 @@ export interface PostProcessOptions {
  * order, on the model's LOCAL values. Production (SDK and API mode alike) and
  * the quality harness both call this, so the two cannot drift:
  * deadline/horizon guard → date-only "today" → bare time → soon today →
- * "now that" drop → same-day past / "tomorrow" → unstated past dates →
+ * "now that" drop → "today" on today's local date → same-day past /
+ * "tomorrow" → unstated past dates →
  * deadline alignment → unnamed-day pin → a repeat's passed start rolled on.
  */
 export function postProcessTaskDates(
@@ -816,6 +817,7 @@ export function postProcessTaskDates(
   result = resolveBareTime(result, inputText, timezone, now)
   result = resolveSoonTarget(result, inputText, timezone, now)
   result = dropNowPhraseTarget(result, inputText, timezone, now)
+  result = resolveTodayLocalDate(result, inputText, timezone, opts.todayTarget, now)
   result = resolveSameDayPast(result, inputText, timezone, now)
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
@@ -1333,6 +1335,78 @@ export function dropNowPhraseTarget(
   if (target < quarterStart || target > soonSlot) return enrichment
   log.info('ai', 'Enrichment: dropped a "now" target from a phrase that names no time')
   return { ...enrichment, due_at: null }
+}
+
+/** "today" / "tonight" as day words ("Tonights" or "todays" are not). */
+const TODAY_DAY_WORD = /\b(today|tonight)\b/i
+
+/**
+ * Any other day in the words: with one, "today" may not be the day the task
+ * is for ("today or tomorrow", "Tuesday — bring today's notes"), so the
+ * "today" rule below leaves the model's date alone. Generous on purpose.
+ */
+const OTHER_DAY_WORD =
+  /\b(tomorrow|tmrw|tomm?orr?ow|yesterday|weekend|next|week|month|year)\b|\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|nesday|sday|urday)?s?\b|\b(jan|january|feb|february|mar|march|apr|april|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\bin (an?|one|\d+|two|three|four|five|six|seven) (days?|weeks?|months?)\b/i
+
+/**
+ * "TODAY" IS TODAY'S LOCAL DATE (2026-10-17). The real failure: SDK, at
+ * 10:57 PM CDT, put a "today" task on the next day — the UTC date. Late
+ * evening is when Trent dictates, so a "today" or "tonight" task the model
+ * dated another day moves to TODAY's local date:
+ *
+ * - a clock time in the words ("tonight at 11pm", "today at 3") → that time
+ *   today, as said — even if it has passed (the user's own words; like
+ *   "tonight at 7" said at 8 PM, kept);
+ * - no clock time ("call the bank today", "tonight") → the model's time of
+ *   day today while it is still ahead; once passed, the app's own placement
+ *   of a bare "today" (`todayTarget`, the Today button's time — the next
+ *   period, or the top of the next hour). NOT the same-day rule's "tomorrow
+ *   at the same time": that would put a "today" task on tomorrow, the bug
+ *   this fixes. (The same-day rule leaves "today"/"tonight" texts alone for
+ *   the same reason.)
+ *
+ * Only when "today"/"tonight" is the ONLY day in the words (`OTHER_DAY_WORD`):
+ * "today or tomorrow", "Tuesday … today's notes" stay as the model read them.
+ * One-offs only: a repeating task's first date is its rule's and the
+ * first-occurrence rule's ("every day starting today" made at 10:57 PM rolls
+ * to tomorrow's occurrence, #286/#287); moving it to a passed today would
+ * only be rolled again. Deadlines are untouched.
+ *
+ * Runs after `dropNowPhraseTarget` and BEFORE `resolveSameDayPast`, so every
+ * later rule reads the corrected date; the same-day rule then leaves it
+ * alone (it never acts on a "today"/"tonight" text). Pure apart from `now`;
+ * exported for the quality harness and tests.
+ */
+export function resolveTodayLocalDate(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  todayTarget: string,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || enrichment.rrule) return enrichment
+  if (!TODAY_DAY_WORD.test(inputText) || OTHER_DAY_WORD.test(inputText)) return enrichment
+  const target = parseLocalDateTime(value, timezone)
+  if (!target) return enrichment
+  const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
+  if (target.hasSame(nowLocal, 'day')) return enrichment
+  const sameTimeToday = nowLocal.set({
+    hour: target.hour,
+    minute: target.minute,
+    second: 0,
+    millisecond: 0,
+  })
+  const placed =
+    CLOCK_TIME.test(inputText) || sameTimeToday > nowLocal
+      ? sameTimeToday
+      : DateTime.fromISO(todayTarget, { zone: 'utc' }).setZone(timezone)
+  const next = toLocalIso(placed, value)
+  log.info(
+    'ai',
+    `Enrichment: a "today" target the model dated ${target.toISODate()} moved to ${next}`,
+  )
+  return { ...enrichment, due_at: next }
 }
 
 /** "tomorrow" as a word ("Tomorrowland" is not one), or the common "tmrw". */
