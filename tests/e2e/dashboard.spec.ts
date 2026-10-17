@@ -142,78 +142,120 @@ test.describe('Now: a dateless task lands behind the fold', () => {
  * door shows tasks, not a wall of chips. The collapse rules themselves are
  * documented in src/hooks/useFilterSection.ts.
  */
+/**
+ * Run `run` with two tasks of the test's own in two different date buckets —
+ * one with no target ("No Target") and one targeted weeks ahead — trashed
+ * afterwards.
+ *
+ * The date chips only show when at least two buckets have tasks
+ * (`DueDateFilterBar`), and which buckets the seeded tasks fill depends on
+ * the hour of the run (they are dated relative to it): just after midnight
+ * they can all fall in one, and the section had chips only because an earlier
+ * spec's quick-added task was left behind in "No Target" (until 2026-10-17).
+ * Backdated so neither is a "Just added" preview or a task-segment row.
+ */
+async function withTwoDateBuckets(page: Page, run: () => Promise<void>): Promise<void> {
+  const ids: number[] = []
+  const later = DateTime.now()
+    .setZone(TEST_TZ)
+    .plus({ days: 40 })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()
+  for (const data of [
+    { title: uniqueTitle('Filter undated') },
+    { title: uniqueTitle('Filter later'), due_at: later },
+  ]) {
+    const res = await page.request.post('/api/tasks', { data })
+    expect(res.ok()).toBeTruthy()
+    ids.push((await res.json()).data.id as number)
+  }
+  backdateCreated(ids)
+  try {
+    await run()
+  } finally {
+    for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+  }
+}
+
 test.describe('Dashboard filter section', () => {
   const toggle = filtersToggle
 
   test('filter chips are collapsed by default and open in one click', async ({
     authenticatedPage: page,
   }) => {
-    // ESTABLISH THE PRECONDITION RATHER THAN INHERIT IT. `filters_expanded` is
-    // a server preference on the one user every spec in the run shares, so
-    // "collapsed by default" is only true here if nothing earlier in the run
-    // pinned it open — which made this test a hostage to file ordering, and it
-    // duly broke the first time a new spec sorted ahead of it.
-    //
-    // Every click below lands after a load the page has provably applied (see
-    // `loadWithFiltersOpen`): starting from "open" is what makes the load
-    // observable, since closed is also the pre-load default.
-    await loadWithFiltersOpen(page)
-    const chips = page.locator('#dashboard-filter-chips')
+    await withTwoDateBuckets(page, async () => {
+      // ESTABLISH THE PRECONDITION RATHER THAN INHERIT IT. `filters_expanded` is
+      // a server preference on the one user every spec in the run shares, so
+      // "collapsed by default" is only true here if nothing earlier in the run
+      // pinned it open — which made this test a hostage to file ordering, and it
+      // duly broke the first time a new spec sorted ahead of it.
+      //
+      // Every click below lands after a load the page has provably applied (see
+      // `loadWithFiltersOpen`): starting from "open" is what makes the load
+      // observable, since closed is also the pre-load default.
+      await loadWithFiltersOpen(page)
+      const chips = page.locator('#dashboard-filter-chips')
 
-    // Closed by hand: client and server now both hold `false`.
-    await clickFiltersToggle(page)
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
-    await expect(chips).toHaveCount(0)
+      // Closed by hand: client and server now both hold `false`.
+      await clickFiltersToggle(page)
+      await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
+      await expect(chips).toHaveCount(0)
 
-    // One click opens it.
-    await clickFiltersToggle(page)
-    await expect(chips).toBeVisible()
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
-    // The chips the section hides are really there once opened
-    await expect(chips.locator('[data-date-chip]').first()).toBeVisible()
+      // One click opens it.
+      await clickFiltersToggle(page)
+      await expect(chips).toBeVisible()
+      await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
+      // The chips the section hides are really there once opened
+      await expect(chips.locator('[data-date-chip]').first()).toBeVisible()
 
-    // ...and close again
-    await clickFiltersToggle(page)
-    await expect(chips).toHaveCount(0)
+      // ...and close again
+      await clickFiltersToggle(page)
+      await expect(chips).toHaveCount(0)
 
-    // Collapsed by default: a fresh load with the preference off stays shut.
-    await waitForPrefsLoaded(page, () => page.reload(), toggle(page))
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
-    await expect(chips).toHaveCount(0)
+      // Collapsed by default: a fresh load with the preference off stays shut.
+      await waitForPrefsLoaded(page, () => page.reload(), toggle(page))
+      await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
+      await expect(chips).toHaveCount(0)
+    })
   })
 
   test('applying a filter shows a count badge on the collapsed control', async ({
     authenticatedPage: page,
   }) => {
-    await loadWithFiltersOpen(page)
-    const chips = page.locator('#dashboard-filter-chips')
-    await chips.locator('[data-date-chip]').first().click()
+    await withTwoDateBuckets(page, async () => {
+      await loadWithFiltersOpen(page)
+      const chips = page.locator('#dashboard-filter-chips')
+      await chips.locator('[data-date-chip]').first().click()
 
-    // Filter applied: the list is narrowed and the control carries the count
-    await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toBeVisible()
-    await expect(toggle(page)).toContainText('1')
+      // Filter applied: the list is narrowed and the control carries the count
+      await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toBeVisible()
+      await expect(toggle(page)).toContainText('1')
 
-    // Collapsing by hand keeps the active filter legible via the badge
-    await clickFiltersToggle(page)
-    await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
-    await expect(toggle(page)).toContainText('1')
+      // Collapsing by hand keeps the active filter legible via the badge
+      await clickFiltersToggle(page)
+      await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+      await expect(toggle(page)).toContainText('1')
+    })
   })
 
   test('clearing every filter drops the badge and lets the section stay closed', async ({
     authenticatedPage: page,
   }) => {
-    await loadWithFiltersOpen(page)
-    const chips = page.locator('#dashboard-filter-chips')
-    await chips.locator('[data-date-chip]').first().click()
-    await expect(toggle(page)).toContainText('1')
+    await withTwoDateBuckets(page, async () => {
+      await loadWithFiltersOpen(page)
+      const chips = page.locator('#dashboard-filter-chips')
+      await chips.locator('[data-date-chip]').first().click()
+      await expect(toggle(page)).toContainText('1')
 
-    await page.getByRole('button', { name: 'Clear filter' }).click()
+      await page.getByRole('button', { name: 'Clear filter' }).click()
 
-    await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toHaveCount(0)
-    await expect(toggle(page)).toHaveText('Filters')
-    // Auto-expand released, so the toggle is free to close again
-    await clickFiltersToggle(page)
-    await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+      await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toHaveCount(0)
+      await expect(toggle(page)).toHaveText('Filters')
+      // Auto-expand released, so the toggle is free to close again
+      await clickFiltersToggle(page)
+      await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+    })
   })
 })
 
