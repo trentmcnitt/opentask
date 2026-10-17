@@ -328,6 +328,20 @@ function pinServerEnvironment(raw: Json): Json {
 // Scenario
 // ---------------------------------------------------------------------------
 
+/**
+ * Day-of-week agnostic (2026-10-17): a weeks task created ON the check-in day
+ * shows in that day's segment (task-segments.ts `segmentState`), so on a
+ * Saturday in User B's zone (the default check-in day) the scenario's undated
+ * one-off appeared in `task_segments` and the fixtures drifted — CI failed
+ * every Saturday, main included. The scenario makes the check-in day
+ * YESTERDAY's weekday, after the preferences are captured: a task created
+ * today then always waits for the next check-in, whatever today is.
+ */
+async function checkInYesterday() {
+  const yesterday = DateTime.now().setZone('America/New_York').minus({ days: 1 })
+  await call('/api/user/preferences', { check_in_day: yesterday.weekday }, 'PATCH')
+}
+
 async function call(
   pathname: string,
   body?: unknown,
@@ -398,15 +412,7 @@ describe('contract fixtures (native clients)', () => {
     )
     captured['user-preferences'] = pinServerEnvironment(await call('/api/user/preferences'))
 
-    // Day-of-week agnostic (2026-10-17): a weeks task created ON the check-in
-    // day shows in that day's segment (task-segments.ts `segmentState`), so
-    // on a Saturday in User B's zone (the default check-in day) the undated
-    // one-off below appeared in `task_segments` and the fixtures drifted —
-    // CI failed every Saturday, main included. Make the check-in day
-    // YESTERDAY's weekday, after the preferences are captured: a task created
-    // today then always waits for the next check-in, whatever today is.
-    const yesterday = DateTime.now().setZone('America/New_York').minus({ days: 1 })
-    await call('/api/user/preferences', { check_in_day: yesterday.weekday }, 'PATCH')
+    await checkInYesterday()
 
     let placeholder = 101
     const make = async (name: string, body: Record<string, unknown>) => {
