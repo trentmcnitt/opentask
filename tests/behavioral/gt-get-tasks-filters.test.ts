@@ -10,7 +10,13 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTask, getTasks } from '@/core/tasks'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
-import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import {
+  setupTestDb,
+  teardownTestDb,
+  TEST_TIMEZONE,
+  TEST_USER_ID,
+  madeBefore,
+} from '../helpers/setup'
 
 const NOW = new Date('2026-01-15T16:00:00Z') // 10:00 Chicago
 const PAST = '2026-01-15T13:00:00.000Z' // 07:00 Chicago
@@ -84,10 +90,14 @@ describe('getTasks filters', () => {
   test('GT-004: overdue follows the schedule for a recurring task', () => {
     // A daily 09:00 task whose stored due_at is still yesterday's is due now
     // (it carries debt); one whose next occurrence is tomorrow is not.
-    const late = createTask({
-      ...base,
-      input: { title: 'Daily 9am', rrule: 'FREQ=DAILY', due_at: '2026-01-14T15:00:00.000Z' },
-    })
+    // Made while yesterday's 9 AM was still ahead (a new repeat with a past
+    // date would start at its next occurrence instead).
+    const late = madeBefore('2026-01-14T15:00:00.000Z', () =>
+      createTask({
+        ...base,
+        input: { title: 'Daily 9am', rrule: 'FREQ=DAILY', due_at: '2026-01-14T15:00:00.000Z' },
+      }),
+    )
     createTask({
       ...base,
       input: { title: 'Daily 5pm tomorrow', rrule: 'FREQ=DAILY', due_at: FUTURE },

@@ -341,6 +341,52 @@ describe('a repeat whose first date today has passed (rollPassedRepeatStart, 202
     expect(after.occurrence_at).toBe('2026-10-17T22:00:00.000Z')
   })
 
+  test('a new task given an earlier day: "15th of every month" given Oct 9 → Oct 15', async () => {
+    // Clock: Sat Oct 10, 8 PM. The model dated the first occurrence Oct 9.
+    const task = titleOnly('pay the mortgage on the 9th of every month')
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Pay the mortgage',
+        due_at: '2026-10-09T09:00:00',
+        rrule: 'FREQ=MONTHLY;BYMONTHDAY=9',
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    // Nov 9, 9 AM CST = 15:00 UTC.
+    expect(getTaskById(task.id)!.due_at).toBe('2026-11-09T15:00:00.000Z')
+  })
+
+  test('re-enriching an EXISTING repeating task never rolls its date', async () => {
+    // A repeating task the user already has (a rule and a date), re-enriched
+    // by adding ai-to-process: an edit, not a new task.
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'water the plants every Saturday at 5pm',
+        due_at: '2026-10-17T22:00:00.000Z',
+        rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=17;BYMINUTE=0',
+      },
+    })
+    getDb()
+      .prepare('UPDATE tasks SET labels = ? WHERE id = ?')
+      .run(JSON.stringify(['ai-to-process']), task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Water the plants',
+        due_at: '2026-10-10T17:00:00',
+        rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=17;BYMINUTE=0',
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    // The model's date today 5 PM (passed) is applied as given, not rolled.
+    expect(getTaskById(task.id)!.due_at).toBe('2026-10-10T22:00:00.000Z')
+  })
+
   test('a first date today still ahead stays today', async () => {
     const task = titleOnly('take out the trash every Saturday at 9pm')
     mockEnrichmentQuery.mockResolvedValueOnce(

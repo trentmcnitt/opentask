@@ -29,6 +29,7 @@ import {
   localTime,
   TEST_TIMEZONE,
   TEST_USER_ID,
+  madeBefore,
 } from '../helpers/setup'
 
 function makeReminder(overrides: Record<string, unknown> = {}) {
@@ -418,15 +419,19 @@ describe('Reminders surface', () => {
       rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
       due_at: localTime(7, 0, -3),
     })
-    const plain = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: {
-        title: 'Real task',
-        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
-        due_at: localTime(7, 0, -3),
-      },
-    })
+    // Made while that date was still ahead (a new repeat with a past date
+    // would start at its next occurrence instead).
+    const plain = madeBefore(localTime(7, 0, -3), () =>
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: {
+          title: 'Real task',
+          rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+          due_at: localTime(7, 0, -3),
+        },
+      }),
+    )
     const input = { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' }
 
     updateTask({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id, input })

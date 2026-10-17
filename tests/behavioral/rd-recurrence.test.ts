@@ -26,6 +26,7 @@ import {
   localTime,
   TEST_USER_ID,
   TEST_TIMEZONE,
+  madeBefore,
 } from '../helpers/setup'
 
 const TIMEZONE = 'America/Chicago'
@@ -479,15 +480,19 @@ describe('Recurrence Changes via Task Update', () => {
   test('RD-011: Overdue task + rrule change keeps due_at unchanged', () => {
     // Create task that is already overdue (due yesterday at 8 AM)
     const yesterdayDueAt = localTime(8, 0, -1) // Yesterday at 8 AM
-    const task = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: {
-        title: 'Overdue daily task',
-        due_at: yesterdayDueAt,
-        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
-      },
-    })
+    // Made while that date was still ahead (a new repeat with a past date
+    // would start at its next occurrence instead).
+    const task = madeBefore(yesterdayDueAt, () =>
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: {
+          title: 'Overdue daily task',
+          due_at: yesterdayDueAt,
+          rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+        },
+      }),
+    )
 
     // Verify task is overdue
     expect(new Date(task.due_at!).getTime()).toBeLessThan(Date.now())

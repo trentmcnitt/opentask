@@ -224,6 +224,36 @@ export const creationDayScenarios: GoldenScenario[] = [
     expect: { task: { '2026-10-16': 'over 1×' } },
   },
   {
+    // An EARLIER DAY rolls too (designer 2026-10-16 follow-up): the mortgage
+    // case, "pay mortgage on the 15th of every month" made Oct 16 and dated
+    // Oct 15 by the model → its next occurrence, Nov 15.
+    id: 'cd-monthly-15th-dated-yesterday',
+    title: '15th of every month at 9 AM, given Oct 15, made Fri Oct 16 — first Nov 15',
+    source: 'designer 10-16 ("pay mortgage on the 15th of every month")',
+    from: '2026-10-16',
+    to: '2026-11-15',
+    policy: ['tap'],
+    tasks: [
+      {
+        name: 'task',
+        created: '2026-10-16T10:00',
+        input: {
+          title: 'Synthetic monthly task',
+          due_at: iso('2026-10-15T09:00'),
+          rrule: 'FREQ=MONTHLY;BYMONTHDAY=15;BYHOUR=9;BYMINUTE=0',
+        },
+      },
+    ],
+    // Not over target at birth. The wait to Nov 15 is 30 days: heads-ups 4
+    // days before and the day before.
+    expect: {
+      task: {
+        ...headsUps(['2026-11-11', '2026-11-14']),
+        '2026-11-15': 'over 1×',
+      },
+    },
+  },
+  {
     id: 'cd-daily-dated-made-after-its-time',
     title: 'Daily 7 AM, given today 7 AM, made at 10 AM — first tomorrow 7 AM',
     source: 'designer 10-16',

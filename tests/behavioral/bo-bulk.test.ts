@@ -19,6 +19,7 @@ import {
   TEST_USER_ID,
   TEST_TIMEZONE,
   seedTestLabels,
+  madeBefore,
 } from '../helpers/setup'
 
 describe('Bulk Operations Behavioral Tests', () => {
@@ -956,25 +957,31 @@ describe('Bulk Edit Snooze & Recurrence', () => {
     const yesterdayDueAt1 = localTime(8, 0, -1) // Yesterday 8 AM
     const yesterdayDueAt2 = localTime(9, 0, -1) // Yesterday 9 AM
 
-    const task1 = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: {
-        title: 'Overdue task 1',
-        due_at: yesterdayDueAt1,
-        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
-      },
-    })
+    // Made while their dates were still ahead (a new repeat with a past date
+    // would start at its next occurrence instead).
+    const task1 = madeBefore(yesterdayDueAt1, () =>
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: {
+          title: 'Overdue task 1',
+          due_at: yesterdayDueAt1,
+          rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+        },
+      }),
+    )
 
-    const task2 = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: {
-        title: 'Overdue task 2',
-        due_at: yesterdayDueAt2,
-        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
-      },
-    })
+    const task2 = madeBefore(yesterdayDueAt1, () =>
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: {
+          title: 'Overdue task 2',
+          due_at: yesterdayDueAt2,
+          rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        },
+      }),
+    )
 
     // Verify tasks are overdue
     expect(new Date(task1.due_at!).getTime()).toBeLessThan(Date.now())

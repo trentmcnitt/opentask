@@ -1,18 +1,22 @@
 /**
- * A repeating task CREATED with a date today whose time has passed starts at
- * its next occurrence (rollPassedFirstOccurrence, designer 2026-10-16) — the
- * #258 day-0 ruling extended to a dated create. In createTask, so every client
- * and mode gets it. Not reminders (today's occurrence is still today's to
- * consider), not a date before today, not a date still ahead.
+ * A NEW repeating task created with a date already past — earlier today (#286)
+ * or any earlier day (2026-10-16 follow-up) — starts at its next occurrence
+ * (rollPassedFirstOccurrence, designer 2026-10-16), the #258 day-0 ruling
+ * extended to a dated create. In createTask, so every client and mode gets it.
+ * Not reminders (today's occurrence is still today's to consider), not a date
+ * still ahead, and never a later EDIT of an existing task's date.
  */
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
-import { createTask } from '@/core/tasks'
+import { createTask, getTaskById } from '@/core/tasks'
+import { updateTask } from '@/core/tasks/update'
 import { rollPassedFirstOccurrence } from '@/core/recurrence'
 
 // Fri Oct 16 2026, Chicago (CDT, UTC-5).
 const at = (local: string) => new Date(`2026-10-16T${local}:00-05:00`)
 const utc = (local: string) => new Date(`${local}:00-05:00`).toISOString()
+// Nov 15, 9 AM Chicago: CST (UTC-6), after the DST change.
+const NOV15_9AM = '2026-11-15T15:00:00.000Z'
 
 describe('rollPassedFirstOccurrence', () => {
   const roll = (rrule: string, due: string, now: string) =>
@@ -34,10 +38,17 @@ describe('rollPassedFirstOccurrence', () => {
     ).toBe(utc('2026-10-30T17:00'))
   })
 
-  test('unchanged: still ahead today, a date before today, a date after today', () => {
+  test('an earlier day rolls too: the 15th of every month, given Oct 15, made Oct 16 → Nov 15', () => {
+    expect(roll('FREQ=MONTHLY;BYMONTHDAY=15', '2026-10-15T09:00', '10:00')).toBe(NOV15_9AM)
+    // A weekly Friday given last Friday → next Friday.
+    expect(roll('FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0', '2026-10-09T17:00', '20:30')).toBe(
+      utc('2026-10-23T17:00'),
+    )
+  })
+
+  test('unchanged: still ahead today, a date after today', () => {
     const weekly = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0'
     expect(roll(weekly, '2026-10-16T17:00', '15:00')).toBe(utc('2026-10-16T17:00'))
-    expect(roll(weekly, '2026-10-09T17:00', '20:30')).toBe(utc('2026-10-09T17:00'))
     expect(roll(weekly, '2026-10-23T17:00', '20:30')).toBe(utc('2026-10-23T17:00'))
   })
 })
@@ -86,6 +97,38 @@ describe('createTask', () => {
       rrule: 'FREQ=DAILY;BYHOUR=17;BYMINUTE=0',
     })
     expect(task.due_at).toBe(utc('2026-10-16T17:00'))
+  })
+
+  test('the mortgage case: "15th of every month" given Oct 15, made Oct 16 → Nov 15', () => {
+    vi.setSystemTime(at('10:00'))
+    const task = create({ due_at: utc('2026-10-15T09:00'), rrule: 'FREQ=MONTHLY;BYMONTHDAY=15' })
+    expect(task.due_at).toBe(NOV15_9AM)
+    expect(task.occurrence_at).toBe(NOV15_9AM)
+  })
+
+  test('a reminder given an earlier day is NOT rolled', () => {
+    vi.setSystemTime(at('10:00'))
+    const task = create({
+      is_reminder: true,
+      due_at: utc('2026-10-14T07:00'),
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+    })
+    expect(task.due_at).toBe(utc('2026-10-14T07:00'))
+  })
+
+  test("an EDIT moving an existing repeating task's date into the past is NOT rolled", () => {
+    vi.setSystemTime(at('10:00'))
+    const task = create({
+      due_at: utc('2026-10-20T09:00'),
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+    })
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { due_at: utc('2026-10-13T09:00') },
+    })
+    expect(getTaskById(task.id)!.due_at).toBe(utc('2026-10-13T09:00'))
   })
 
   test('no date given: computeFirstOccurrence as before (made after its time → next week)', () => {
