@@ -319,6 +319,44 @@ describe('kinds that never get the fields', () => {
   })
 })
 
+describe('a repeat whose first date today has passed (rollPassedRepeatStart, 2026-10-16)', () => {
+  // Enrichment writes the rule and date onto an existing task (an update, not
+  // createTask), so it applies the create path's rule itself. Clock: Sat Oct
+  // 10, 8 PM Chicago.
+  test('weekly Saturday 5 PM, given today 5 PM → next Saturday', async () => {
+    const task = titleOnly('water the plants every Saturday at 5pm')
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Water the plants',
+        due_at: '2026-10-10T17:00:00',
+        rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=17;BYMINUTE=0',
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    const after = getTaskById(task.id)!
+    // Sat Oct 17, 5 PM CDT = 22:00 UTC; the occurrence starts there too.
+    expect(after.due_at).toBe('2026-10-17T22:00:00.000Z')
+    expect(after.occurrence_at).toBe('2026-10-17T22:00:00.000Z')
+  })
+
+  test('a first date today still ahead stays today', async () => {
+    const task = titleOnly('take out the trash every Saturday at 9pm')
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Take out the trash',
+        due_at: '2026-10-10T21:00:00',
+        rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=21;BYMINUTE=0',
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    expect(getTaskById(task.id)!.due_at).toBe('2026-10-11T02:00:00.000Z')
+  })
+})
+
 describe('undo', () => {
   test('re-enrichment that sets a deadline and horizon is undone in one step', async () => {
     const task = createTask({

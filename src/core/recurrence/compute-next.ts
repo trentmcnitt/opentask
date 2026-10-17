@@ -466,3 +466,34 @@ export function computeFirstOccurrence(
   }
   return computeFromDue(rruleStr, anchorTime, timezone, now, null, day0)
 }
+
+/**
+ * A REPEATING task given a first date TODAY whose time has already passed
+ * starts at its NEXT occurrence instead (designer, 2026-10-16) — the same
+ * ruling as "the creation day is day 0" (#258, `computeFirstOccurrence`):
+ * made on its day after its time, the first occurrence is the next one, not
+ * today's past one. The real case: "submit my timesheet every Friday by 5pm"
+ * made Friday at 8:30 PM came out due Friday 5 PM — over target at birth.
+ *
+ * The next occurrence keeps the given date's time of day (as the anchor), on
+ * the rule: a weekly Friday → next Friday; a daily → tomorrow; an every-2-
+ * weeks rule → the next grid point (two weeks on, as #258 rules for a
+ * floating rule made after its time). Only TODAY's past dates move: a date
+ * before today is a caller's deliberate choice (a debt to show), and one
+ * still ahead is the first occurrence as given — so "a repeat with no day
+ * named starts today", while today's time is still ahead, is untouched.
+ *
+ * Shared by createTask (every client and mode) and AI enrichment's date
+ * post-process. `now` is injectable for tests.
+ */
+export function rollPassedFirstOccurrence(
+  rruleStr: string,
+  dueAt: Date,
+  timezone: string,
+  now: Date = new Date(),
+): Date {
+  const due = DateTime.fromJSDate(dueAt).setZone(timezone)
+  const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
+  if (!due.isValid || !due.hasSame(nowLocal, 'day') || due >= nowLocal) return dueAt
+  return computeFirstOccurrence(rruleStr, due.toFormat('HH:mm'), timezone, now)
+}
