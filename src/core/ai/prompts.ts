@@ -74,6 +74,8 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
+   **Repeat wording never stays in the title.** Once a repeat is in rrule (or auto_snooze_minutes), every word of it leaves the title — "every other day", "twice a week", "every Monday", "daily", "every morning", "on weekdays", "every 3 months", and the time that goes with it ("at 9am"). The rule carries it; in the title it only repeats itself. Keep the rest of the title in the user's words. "Water the ferns every other day" → title "Water the ferns"; "go to the gym twice a week" → "Go to the gym". A repeat word that is part of a name stays: "weekly standup every Monday 9am" → "Weekly standup".
+
 2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "call the plumber Thursday", "do it Saturday", "remind me Thursday at 9", "remind me Monday at 3"). When no specific time is mentioned, use the configured default task time from the user prompt — except for today (see below). If neither a day nor a time is mentioned, return null.
 
    The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
@@ -852,6 +854,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 
 export const ENRICHMENT_REMINDERS = `## Reminders
 - Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
+- Repeat wording ("every other day", "twice a week", "every Monday", "daily") and its time leave the title once they are in rrule
 - Do NOT infer labels from context — only include labels the user explicitly requests
 - Do NOT infer projects from task content — project_name is null unless the user explicitly assigns one or the task text contains a project's full name used as that name ("for job search" → Job Search). Never Inbox; "after work", "work out" and "homework" are not matches. A project's description only picks between projects the words already match — it never makes a match
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule

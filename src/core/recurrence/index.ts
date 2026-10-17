@@ -38,6 +38,7 @@ export { ensureRuleTime, ruleTimeFor, fillRuleTime, type RuleTimeSources } from 
 export {
   computeNextOccurrence,
   computeFirstOccurrence,
+  rollPassedFirstOccurrence,
   isRecurring,
   type ComputeNextOptions,
 } from './compute-next'

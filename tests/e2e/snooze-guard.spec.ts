@@ -171,9 +171,14 @@ test.describe('Snooze guards', () => {
       // to prove never fired. Reproduced with `TZ=Etc/GMT+7` on clean main
       // (found 2026-09-22). Anchoring explicitly to `TEST_TZ`, the same zone
       // the app itself uses, fixes both bombs at once.
+      //
+      // And since 2026-10-16 the anchor is always YESTERDAY's 08:00: a
+      // repeating task created with a date TODAY whose time has passed starts
+      // at its next occurrence (`rollPassedFirstOccurrence`), so "today 08:00"
+      // would arrive as tomorrow and not be overdue. A date before today is
+      // kept as given.
       const now = DateTime.now().setZone(TEST_TZ)
-      let dueAt = now.set({ hour: 8, minute: 0, second: 0, millisecond: 0 })
-      if (dueAt > now) dueAt = dueAt.minus({ days: 1 })
+      const dueAt = now.set({ hour: 8, minute: 0, second: 0, millisecond: 0 }).minus({ days: 1 })
       const taskId = await createTask(page, {
         title,
         due_at: dueAt.toUTC().toISO(),

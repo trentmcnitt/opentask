@@ -8,7 +8,12 @@ import { resolveTarget, type TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
-import { computeFirstOccurrence, deriveAnchorFields, fillRuleTime } from '@/core/recurrence'
+import {
+  computeFirstOccurrence,
+  deriveAnchorFields,
+  fillRuleTime,
+  rollPassedFirstOccurrence,
+} from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
@@ -99,6 +104,33 @@ function timedSchedule(
 }
 
 /**
+ * A new task's first date (a quota's is null, decided by the caller):
+ * - a repeating task with no date → its first occurrence from now
+ *   (`computeFirstOccurrence`, the creation day is day 0);
+ * - a repeating task given a date TODAY whose time has passed → its next
+ *   occurrence (`rollPassedFirstOccurrence`, 2026-10-16, the same ruling):
+ *   weekly Fri 5 PM made Fri 8:30 PM → next Friday, not over target at birth.
+ *   Not a reminder: today's occurrence, even past its slot, is still today's
+ *   to consider on the Reminders screen (a missed one is not re-shown later);
+ * - anything else → the date as given.
+ * A quota never gets here: its rrule is a bare period rule ("FREQ=WEEKLY"),
+ * which names the period the count runs over, not a day to occur on.
+ */
+function firstDueAt(
+  given: string | null,
+  rrule: string | null | undefined,
+  isReminder: boolean,
+  timezone: string,
+): string | null {
+  if (!rrule) return given
+  if (!given) return computeFirstOccurrence(rrule, null, timezone).toISOString()
+  if (isReminder) return given
+  const due = new Date(given)
+  const first = rollPassedFirstOccurrence(rrule, due, timezone)
+  return first.getTime() === due.getTime() ? given : first.toISOString()
+}
+
+/**
  * Create a new task
  *
  * @returns The created task
@@ -153,17 +185,9 @@ export function createTask(options: CreateTaskOptions): Task {
   const targetCtx = getTargetContext(userId)
   const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone)
 
-  // Compute due_at if rrule provided but no due_at.
-  //
-  // A quota is skipped: its rrule is a bare period rule ("FREQ=WEEKLY"), which
-  // names the period the count runs over rather than a day to occur on, so
-  // asking rrule.js for its "first occurrence" produced an arbitrary weekday —
-  // which is how quotas ended up carrying a stray local-midnight due date.
-  let dueAt = tracked ? null : (input.due_at ?? null)
-  if (!tracked && rrule && !dueAt) {
-    const firstOccurrence = computeFirstOccurrence(rrule, null, userTimezone)
-    dueAt = firstOccurrence.toISOString()
-  }
+  let dueAt = tracked
+    ? null
+    : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, userTimezone)
   // §6: a repeating task's scheduled occurrence starts at its first date.
   const occurrenceAt = rrule && !tracked ? dueAt : null
   // §8 (2026-10-12): a deadline with no target gets the stored automatic one;

@@ -49,7 +49,13 @@ function seedSelection(): Map<string, number> {
   ids.set('dated-p0', make('dated-p0', 0, localTime(8, 0)))
   ids.set('dateless-p1', make('dateless-p1', 1, null))
   ids.set('at-target-p2', make('at-target-p2', 2, target()))
+  // Made at 6 AM, before its 7 AM occurrence, so it keeps today's date and is
+  // over target by 10 AM: a repeat MADE after its time today starts at the
+  // next occurrence instead (rollPassedFirstOccurrence, 2026-10-16).
+  const now = new Date()
+  vi.setSystemTime(new Date(localTime(6, 0)))
   ids.set('recurring-p1', make('recurring-p1', 1, localTime(7, 0), 'FREQ=DAILY'))
+  vi.setSystemTime(now)
   ids.set('high-p3', make('high-p3', 3, localTime(8, 30)))
   ids.set('urgent-p4', make('urgent-p4', 4, localTime(8, 45)))
   ids.set('rescued-p4', make('rescued-p4', 4, localTime(8, 50)))

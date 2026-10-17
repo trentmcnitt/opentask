@@ -23,7 +23,7 @@
 import { markDone } from '@/core/tasks/mark-done'
 import type { SimContext } from '@/core/sim/day-simulator'
 import type { GoldenScenario } from './types'
-import { headsUps } from './helpers'
+import { headsUps, iso } from './helpers'
 
 const EVERY_7_DAYS = 'FREQ=DAILY;INTERVAL=7;BYHOUR=12;BYMINUTE=0'
 const BARE_WEEKLY = 'FREQ=WEEKLY;BYHOUR=12;BYMINUTE=0'
@@ -177,5 +177,70 @@ export const creationDayScenarios: GoldenScenario[] = [
         '2026-10-25': 'over 1×',
       },
     },
+  },
+  // A repeat MADE WITH A DATE today whose time has passed starts at its next
+  // occurrence (designer 2026-10-16, the same day-0 ruling; createTask →
+  // rollPassedFirstOccurrence). Fri Oct 16 2026.
+  {
+    id: 'cd-weekly-friday-dated-made-after-its-time',
+    title: 'Weekly Friday 5 PM, given today 5 PM, made Fri 8:30 PM — first next Friday',
+    source: 'designer 10-16 ("submit my timesheet every Friday by 5pm" made Fri 8:30 PM)',
+    from: '2026-10-16',
+    to: '2026-10-23',
+    policy: ['tap'],
+    tasks: [
+      {
+        name: 'task',
+        created: '2026-10-16T20:30',
+        input: {
+          title: 'Synthetic weekly Friday task',
+          due_at: iso('2026-10-16T17:00'),
+          rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0',
+        },
+      },
+    ],
+    // Not over target the evening it is made. The wait to Oct 23 is under 7
+    // days: the day-before heads-up only.
+    expect: { task: { '2026-10-22': 'upcoming', '2026-10-23': 'over 1×' } },
+  },
+  {
+    id: 'cd-weekly-friday-dated-made-before-its-time',
+    title: 'Weekly Friday 5 PM, given today 5 PM, made Fri 3 PM — today is the first',
+    source: 'designer 10-16 (time still ahead: unchanged)',
+    from: '2026-10-16',
+    to: '2026-10-16',
+    policy: ['tap'],
+    tasks: [
+      {
+        name: 'task',
+        created: '2026-10-16T15:00',
+        input: {
+          title: 'Synthetic weekly Friday task',
+          due_at: iso('2026-10-16T17:00'),
+          rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0',
+        },
+      },
+    ],
+    expect: { task: { '2026-10-16': 'over 1×' } },
+  },
+  {
+    id: 'cd-daily-dated-made-after-its-time',
+    title: 'Daily 7 AM, given today 7 AM, made at 10 AM — first tomorrow 7 AM',
+    source: 'designer 10-16',
+    from: '2026-10-16',
+    to: '2026-10-17',
+    policy: ['tap'],
+    tasks: [
+      {
+        name: 'task',
+        created: '2026-10-16T10:00',
+        input: {
+          title: 'Synthetic daily task',
+          due_at: iso('2026-10-16T07:00'),
+          rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        },
+      },
+    ],
+    expect: { task: { '2026-10-17': 'over 1×' } },
   },
 ]
