@@ -630,35 +630,38 @@ For each scenario, the evaluator writes a `validation.md` with a score (0-10), p
 
 Scenarios live in `tests/quality/scenarios/`, organized by category:
 
-| File                                 | Category                                                 | Count |
-| ------------------------------------ | -------------------------------------------------------- | ----- |
-| `enrichment-core.ts`                 | Core enrichment (title, date, priority, etc.)            | 32    |
-| `enrichment-priority.ts`             | Priority inference                                       | 13    |
-| `enrichment-recurrence.ts`           | Expanded recurrence patterns                             | 15    |
-| `enrichment-edge.ts`                 | Edge cases                                               | 11    |
-| `enrichment-labels.ts`               | Explicit-only label extraction                           | 10    |
-| `enrichment-dictation.ts`            | Dictation realism and typo tolerance                     | 10    |
-| `enrichment-context.ts`              | User context resolution                                  | 8     |
-| `enrichment-projects.ts`             | Project assignment — explicit and name match             | 10    |
-| `enrichment-voice.ts`                | Voice preservation                                       | 8     |
-| `enrichment-reminders.ts`            | Reminder enrichment — cadence and time slots (§6)        | 11    |
-| `enrichment-task-model.ts`           | Target, deadline and horizon (2026-10-10)                | 31    |
-| `enrichment-soon.ts`                 | Soon today: "now", "in an hour", hour ranges             | 13    |
-| `enrichment-project-descriptions.ts` | Project descriptions settle which project the words mean | 6     |
-| `task-model-review.ts`               | Deadline field in Insights and What's Next               | 2     |
-| `process.ts`                         | Process: project recommendations and duplicates          | 4     |
-| `quick-take.ts`                      | Quick Take                                               | 12    |
-| `insights.ts`                        | AI Insights scoring and signals                          | 11    |
-| `whats-next.ts`                      | What's Next recommendations                              | 8     |
-| `insights-large.ts`                  | Large-scale insights (50-600 tasks, production)          | 3     |
-| `helpers/generate-tasks.ts`          | Realistic task list generator (used by insights-large)   | —     |
-| `index.ts`                           | Barrel export                                            | —     |
+| File                                 | Category                                                    | Count |
+| ------------------------------------ | ----------------------------------------------------------- | ----- |
+| `enrichment-core.ts`                 | Core enrichment (title, date, priority, etc.)               | 32    |
+| `enrichment-priority.ts`             | Priority inference                                          | 13    |
+| `enrichment-recurrence.ts`           | Expanded recurrence patterns                                | 15    |
+| `enrichment-edge.ts`                 | Edge cases                                                  | 11    |
+| `enrichment-labels.ts`               | Explicit-only label extraction                              | 10    |
+| `enrichment-dictation.ts`            | Dictation realism and typo tolerance                        | 10    |
+| `enrichment-context.ts`              | User context resolution                                     | 8     |
+| `enrichment-projects.ts`             | Project assignment — explicit and name match                | 10    |
+| `enrichment-voice.ts`                | Voice preservation                                          | 8     |
+| `enrichment-reminders.ts`            | Reminder enrichment — cadence and time slots (§6)           | 11    |
+| `enrichment-task-model.ts`           | Target, deadline and horizon (2026-10-10)                   | 31    |
+| `enrichment-soon.ts`                 | Soon today: "now", "in an hour", hour ranges                | 13    |
+| `enrichment-project-descriptions.ts` | Project descriptions settle which project the words mean    | 6     |
+| `enrichment-same-day.ts`             | Same day: "tomorrow" dated today, a passed time, "now that" | 6     |
+| `task-model-review.ts`               | Deadline field in Insights and What's Next                  | 2     |
+| `process.ts`                         | Process: project recommendations and duplicates             | 4     |
+| `quick-take.ts`                      | Quick Take                                                  | 12    |
+| `insights.ts`                        | AI Insights scoring and signals                             | 11    |
+| `whats-next.ts`                      | What's Next recommendations                                 | 8     |
+| `insights-large.ts`                  | Large-scale insights (50-600 tasks, production)             | 3     |
+| `helpers/generate-tasks.ts`          | Realistic task list generator (used by insights-large)      | —     |
+| `index.ts`                           | Barrel export                                               | —     |
 
-**Total: 218 scenarios** (167 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
+**Total: 224 scenarios** (173 enrichment + 11 enrichment_reminder + 12 quick_take + 15 insights + 9 whats_next + 2 process_projects + 2 process_duplicates)
 
 Scenarios that need a value the run date decides (a deadline "7 days from now") compute it at load time; `must_include` accepts `~date:YYYY-MM-DD` (a local datetime on that day, any time) and `~notnull`. An enrichment scenario may pin `now` (a local datetime in its timezone): the prompt, the post-processes and the time matchers then all read that minute — `~soon` ("now": 15 minutes out, rounded up to the quarter hour), `~in-hours:N` and `~hours-range:LO-HI` (a quarter hour inside the range). Process scenarios use `process_expectations` (required project per task, groups that must appear, pairs that must not be grouped).
 
 **Soon today** (2026-10-16): "now" / "right now" / "immediately" is about 15 minutes out, rounded UP to the next quarter hour; "in an hour" / "in N hours" is now + N hours, rounded up to the quarter hour; a range ("in an hour or two", "in 2 or 3 hours") is a whole hour inside it, picked by the model. The model's arithmetic was unreliable in the quality runs (2:07 → 2:15, 11:52 PM → midnight, "in 2 or 3 hours" at 2:10 → 4:00), so `resolveSoonTarget` in `enrichment.ts` recomputes "now" and "in N hours", and replaces a range pick that is not a quarter hour inside the range with the first whole hour in it — only when the model set a target and the cue is the only time or day in the words.
+
+**Same-day fixes** (2026-10-16): a one-off target the model dated today moves to the same time tomorrow when the words say "tomorrow" (not inside a word like "Tomorrowland"), or when its time has already passed and the words name no clock time (`resolveSameDayPast`; "tonight", "today", "now" and "in N hours" keep it today). "now that …", "for now" and "by now" with no other time or day words, and a target in the "now" slots (the current quarter hour up to the soon slot), give no target (`dropNowPhraseTarget`). Both came from claude-haiku-5-5 on the demo: "call mom tomorrow evening" at 7:52 PM dated today 7 PM, and "now that the lease is signed call the landlord" at 7:38 PM given 7:45 PM.
 
 **Past-date guard** (2026-10-16): a target or deadline dated before today (the user's local date) is dropped when the words could not state a past day (no "yesterday", "ago", "last", weekday, month, ordinal, numeric date or year): `dropUnstatedPastDates`. It caught grok-4-1-fast giving "now that the lease is signed call the landlord" a target a year in the past. A repeating task is left to its rule. The prompt's "Current local time" names the year (2026-10-16): without it grok dated nearly every target a year back, which this guard then had to erase. All the date post-processes run in one function, `postProcessTaskDates`, which production (SDK and API mode) and the quality harness both call.
 

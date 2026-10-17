@@ -18,6 +18,7 @@ import { enrichmentProjectScenarios } from './enrichment-projects'
 import { enrichmentPriorityScenarios } from './enrichment-priority'
 import { enrichmentTaskModelScenarios } from './enrichment-task-model'
 import { enrichmentSoonScenarios } from './enrichment-soon'
+import { enrichmentSameDayScenarios } from './enrichment-same-day'
 import { enrichmentProjectDescriptionScenarios } from './enrichment-project-descriptions'
 import { whatsNextScenarios } from './whats-next'
 import { insightsScenarios } from './insights'
@@ -39,6 +40,7 @@ export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentPriorityScenarios,
   ...enrichmentTaskModelScenarios,
   ...enrichmentSoonScenarios,
+  ...enrichmentSameDayScenarios,
   ...enrichmentProjectDescriptionScenarios,
 ]
 
