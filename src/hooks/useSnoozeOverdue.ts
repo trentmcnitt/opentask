@@ -6,8 +6,10 @@
  *
  * P0-P2 are always eligible. P3 (High) joins in once nothing lower is left in
  * the batch, so a list of nothing but overdue High tasks takes two presses
- * rather than refusing to move. P4 (Urgent) is never bulk-snoozed. The rule
- * lives in `filterForBulkSnooze`; the server decides, this hook only reports.
+ * rather than refusing to move — with the server's task queue on, one High per
+ * press. P4 (Urgent) is never bulk-snoozed. The rule lives in
+ * `filterForBulkSnooze`; the server decides, this hook only reports (the
+ * server's `summary` line, when it sends one).
  */
 
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'

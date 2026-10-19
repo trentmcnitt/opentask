@@ -345,7 +345,10 @@ describe('TQ-H: one High per press (B8, resolution 8)', () => {
       deadlineSkipped: 0,
       highSnoozed: 0, // C is P1 by priority
     })
+    // C is in the tier by its passed deadline, and named so.
+    expect(presses[0].summary).toBe('Snoozed past-deadline "C" (3 high, 1 urgent skipped)')
     expect(presses[1]).toMatchObject({ tasksAffected: 1, urgentSkipped: 3, highSkipped: 2 })
+    expect(presses[1].summary).toBe('Snoozed high-priority "B" (2 high, 1 urgent skipped)')
     expect(presses[4]).toMatchObject({ tasksAffected: 0, urgentSkipped: 1, highSkipped: 0 })
     expect(presses[4].summary).toBe(
       'No snoozable tasks (1 urgent task must be snoozed individually)',
@@ -447,6 +450,16 @@ describe('TQ-C: every pick clears the mark (and its undo puts it back)', () => {
     )
     // The undo/redo round trip ends on the redo: the automatic target.
     expect(task(t.id).target_auto).toBe(true)
+  })
+
+  test('TQ-C06b: a deadline added while the target stays put', () => {
+    const t = marked()
+    // A deadline after the marked target: the target does not move, but the
+    // deadline write moves the EFFECTIVE target, so it is a target write.
+    clearedThenRestored(t.id, () =>
+      updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-30T17:00') } }),
+    )
+    expect(task(t.id).due_at).toBe(at('2026-10-21T06:30'))
   })
 
   test('TQ-C07: done of a repeating task (the completion advance)', () => {

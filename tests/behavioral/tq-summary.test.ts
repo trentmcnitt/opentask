@@ -49,6 +49,11 @@ describe('TQ-S: the summary line', () => {
       'Snoozed high-priority "Pay rent" (2 high, 1 urgent skipped)',
     ],
     [
+      'the one "High" is a passed-deadline P1',
+      { affected: 1, high: 1, urgent: 0, highName: 'File taxes', highByDeadline: true },
+      'Snoozed past-deadline "File taxes" (1 high skipped)',
+    ],
+    [
       'THE MIXED PRESS: marked (repeating among them) + deadline-capped + one High named',
       {
         affected: 6,

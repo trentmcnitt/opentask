@@ -5,6 +5,7 @@
  */
 
 import { getTargetContext } from './target-context'
+import type { TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
@@ -566,6 +567,7 @@ function deferContext(
   timezone: string,
   source: BulkSnoozeSource | undefined,
   now: Date,
+  targetCtx: TargetContext,
 ): DeferContext {
   const defer = taskQueueEnabled() && source !== undefined
   if (!defer && source !== 'try_tomorrow') {
@@ -576,7 +578,7 @@ function deferContext(
   const slots = getDb()
     .prepare('SELECT start_time FROM time_slots WHERE user_id = ?')
     .all(userId) as { start_time: string }[]
-  const { morningTime } = getTargetContext(userId)
+  const { morningTime } = targetCtx
   const rollover = nextRollover(now, timezone, rolloverTimeOf(slots, morningTime))
   return { defer, source, timezone, now, rollover }
 }
@@ -701,7 +703,7 @@ function snoozeSummary(
   result: Omit<BulkSnoozeResult, 'summary'>,
   rollover: Date | null,
   timezone: string,
-  singleName: string | null = null,
+  named: { single?: string | null; highByDeadline?: boolean } = {},
 ): string {
   return bulkSnoozeMessage({
     affected: result.tasksAffected,
@@ -713,8 +715,9 @@ function snoozeSummary(
     queued: result.queued,
     queuedName: result.queuedName,
     queueAt: rollover ? formatTimeInTimezone(rollover.toISOString(), timezone) : undefined,
-    singleName,
+    singleName: named.single ?? null,
     highName: result.snoozedHighName,
+    highByDeadline: named.highByDeadline,
     cappedOccurrence: result.cappedOccurrence,
   })
 }
@@ -804,11 +807,11 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   if (snoozeable.length === 0) return emptySnoozeResult(counts)
 
   const nowDate = new Date()
-  const ctx = deferContext(userId, userTimezone, source, nowDate)
+  const targetCtx = getTargetContext(userId)
+  const ctx = deferContext(userId, userTimezone, source, nowDate, targetCtx)
   let deadlineCapped = 0
   let cappedOccurrence = 0
   const queuedTasks: Task[] = []
-  const targetCtx = getTargetContext(userId)
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
@@ -894,7 +897,10 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     // Spec rule 4: a press that moved exactly one task names it (switch on
     // only — off, the line stays exactly what it was).
     const single = taskQueueEnabled() && moved.length === 1 ? moved[0].title : null
-    return { ...done, summary: snoozeSummary(done, ctx.rollover, userTimezone, single) }
+    // The one High may be below High by priority, in the tier by a passed deadline.
+    const highByDeadline = oneHigh !== undefined && oneHigh.priority < HIGH_PRIORITY_THRESHOLD
+    const summary = snoozeSummary(done, ctx.rollover, userTimezone, { single, highByDeadline })
+    return { ...done, summary }
   })
 
   if (moved.length === 0) return result

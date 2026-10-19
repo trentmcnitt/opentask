@@ -192,6 +192,8 @@ export interface BulkSnoozeSkips {
   singleName?: string | null
   /** The High moved by "one High per press" (B8), named. */
   highName?: string | null
+  /** The named High is below High by priority, in the tier by a passed deadline. */
+  highByDeadline?: boolean
   /** Repeating tasks a defer stopped at their next occurrence (B2). In `affected`. */
   cappedOccurrence?: number
 }
@@ -278,14 +280,16 @@ function bulkSnoozeCore(skips: BulkSnoozeSkips, list: string): string {
 /** `Snoozed 3 tasks`, `Snoozed "Title"`, `Snoozed high-priority "Title"`. */
 function snoozedPart(skips: BulkSnoozeSkips, other: number): string {
   const { affected, highAffected = 0, highName, singleName } = skips
-  if (highName && other === 1) return `Snoozed high-priority "${highName}"`
+  // The one High (B8) by name: "high-priority" when it is High by priority,
+  // "past-deadline" when a passed deadline put it in the tier.
+  const named = `${skips.highByDeadline ? 'past-deadline' : 'high-priority'} "${highName}"`
+  if (highName && other === 1) return `Snoozed ${named}`
   if (other === 1 && affected === 1 && singleName) return `Snoozed "${singleName}"`
   // "HIGH-PRIORITY" WHEN THAT IS ALL IT MOVED (Trent, 2026-09-22). High is
   // swept only once nothing lower is left, so a double snooze is two presses:
   // the first moves the ordinary tasks, the second the High ones left over.
   // Saying so is what makes the second press make sense.
   const what = highAffected === other ? `high-priority ${taskWord(other)}` : taskWord(other)
-  const including =
-    highName && highAffected !== other ? `, including high-priority "${highName}"` : ''
+  const including = highName && highAffected !== other ? `, including ${named}` : ''
   return `Snoozed ${other} ${what}${including}`
 }
