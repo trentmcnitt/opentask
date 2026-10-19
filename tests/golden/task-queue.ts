@@ -10,12 +10,17 @@
  *
  * How to read a line here (see `dayLine`): "queued" = in the task queue
  * (`queued_at`: stripped, or a repeating task waiting); the attempts stay on
- * a queued task with no target (B7: a strip never resets them). PR 3 gives
- * the queue its own panels and its precedence over the horizon segments and
- * Upcoming; until then a stripped one-off (horizon unset, read as weeks)
- * shows in the weeks segment on the check-in day (Saturday) like any
- * untargeted task, and a waiting repeating task still gets its Upcoming
- * heads-up.
+ * a queued task with no target (B7: a strip never resets them).
+ *
+ * THE QUEUE'S PANELS (task-queue PR 3; rules 6–8, resolution 6). A queued
+ * task shows in `queue_today` the OpenTask day it was queued and in
+ * `queue_previous` after that, and in no horizon segment and not in Upcoming
+ * (rule 7). The `tap` policy considers it there. A stripped ONE-OFF then
+ * leaves the queue (rule 8): untargeted, back on its horizon's rhythm (unset
+ * reads as weeks: the check-in day, Saturday), with no badge — attempts show
+ * only while a task has a target or is queued. A waiting REPEATING task
+ * stays queued, in "previously targeted" every morning until its occurrence
+ * (resolution 6: considered yesterday is previously targeted today).
  *
  * Attempts count OPENTASK days (B7): the day runs 06:30 → 06:30.
  */
@@ -95,9 +100,12 @@ export const taskQueueScenarios: GoldenScenario[] = [
     expect: {
       task: {
         '2026-10-19': 'over 1×',
-        '2026-10-20..2026-10-23': 'quiet queued 1×',
-        '2026-10-24': 'weeks queued 1×',
-        '2026-10-25': 'quiet queued 1×',
+        // Stripped: "Stripped today", considered there (the tap), so out of
+        // the queue — untargeted, on the weeks rhythm (unset), no badge.
+        '2026-10-20': 'queue_today queued 1×',
+        '2026-10-21..2026-10-23': 'quiet',
+        '2026-10-24': 'weeks',
+        '2026-10-25': 'quiet',
       },
     },
   },
@@ -121,9 +129,10 @@ export const taskQueueScenarios: GoldenScenario[] = [
       task: {
         '2026-10-19': 'over 1×',
         '2026-10-20': 'over 2×',
-        '2026-10-21..2026-10-23': 'quiet queued 2×',
-        '2026-10-24': 'weeks queued 2×',
-        '2026-10-25': 'quiet queued 2×',
+        '2026-10-21': 'queue_today queued 2×',
+        '2026-10-22..2026-10-23': 'quiet',
+        '2026-10-24': 'weeks',
+        '2026-10-25': 'quiet',
       },
     },
   },
@@ -145,8 +154,9 @@ export const taskQueueScenarios: GoldenScenario[] = [
     expect: {
       task: {
         '2026-10-19': 'over 1×',
-        '2026-10-20..2026-10-23': 'quiet queued 1×',
-        '2026-10-24': 'weeks queued 1×',
+        '2026-10-20': 'queue_today queued 1×',
+        '2026-10-21..2026-10-23': 'quiet',
+        '2026-10-24': 'weeks',
       },
     },
   },
@@ -287,14 +297,17 @@ export const taskQueueScenarios: GoldenScenario[] = [
     expect: {
       task: {
         '2026-10-19': 'over 1×',
-        // Moved by the rollover on Tue to Mon 26 (wait 6): a heads-up the day before.
-        '2026-10-20..2026-10-24': 'quiet queued 1×',
-        '2026-10-25': 'upcoming queued 1×',
+        // Waiting for Mon 26 (B3): "Stripped today" on Tue, then "previously
+        // targeted" every morning, considered each day (resolution 6). The
+        // queue takes precedence over its Upcoming heads-up on Sun 25 (rule 7).
+        '2026-10-20': 'queue_today queued 1×',
+        '2026-10-21..2026-10-25': 'queue_previous queued 1×',
         // Its day: the rollover auto-skips it to this occurrence (attempts afresh),
         // out of the queue; it nags from 08:00 like any task.
         '2026-10-26': 'over 1×',
         // Still unhandled at the next rollover: it waits again, for Mon Nov 2.
-        '2026-10-27..2026-10-28': 'quiet queued 1×',
+        '2026-10-27': 'queue_today queued 1×',
+        '2026-10-28': 'queue_previous queued 1×',
       },
     },
   },
@@ -326,7 +339,11 @@ export const taskQueueScenarios: GoldenScenario[] = [
       },
     ],
     expect: {
-      task: { '2026-10-19': 'over 1×', '2026-10-20..2026-10-23': 'quiet queued 1×' },
+      task: {
+        '2026-10-19': 'over 1×',
+        '2026-10-20': 'queue_today queued 1×',
+        '2026-10-21..2026-10-23': 'queue_previous queued 1×',
+      },
     },
   },
   {
@@ -362,12 +379,12 @@ export const taskQueueScenarios: GoldenScenario[] = [
     expect: {
       task: {
         '2026-10-19': 'over 1×',
-        '2026-10-20': 'quiet queued 1×',
-        '2026-10-21': 'upcoming queued 1×',
+        '2026-10-20': 'queue_today queued 1×',
+        '2026-10-21': 'queue_previous queued 1×',
         '2026-10-22': 'over 1×',
-        '2026-10-23': 'quiet queued 1×',
+        '2026-10-23': 'queue_today queued 1×',
         // Set Fri for Sun (wait 2): a heads-up the day before.
-        '2026-10-24': 'upcoming queued 1×',
+        '2026-10-24': 'queue_previous queued 1×',
         '2026-10-25': 'over 1×',
       },
     },
@@ -406,9 +423,14 @@ export const taskQueueScenarios: GoldenScenario[] = [
       swept: {
         '2026-10-19': 'over 1×',
         '2026-10-20': 'over 2×',
-        '2026-10-21': 'quiet queued 2×',
+        '2026-10-21': 'queue_today queued 2×',
       },
-      left: { '2026-10-19': 'over 1×', '2026-10-20..2026-10-21': 'quiet queued 1×' },
+      left: {
+        '2026-10-19': 'over 1×',
+        '2026-10-20': 'queue_today queued 1×',
+        // Considered in the queue on Tue: out of it, untargeted.
+        '2026-10-21': 'quiet',
+      },
     },
   },
   {
@@ -434,8 +456,8 @@ export const taskQueueScenarios: GoldenScenario[] = [
       task: {
         '2027-03-13': 'over 1×',
         // Untargeted on Sunday, its weeks segment (Saturday) came round after it was made.
-        '2027-03-14': 'weeks queued 1×',
-        '2027-03-15': 'quiet queued 1×',
+        '2027-03-14': 'queue_today queued 1×',
+        '2027-03-15': 'quiet',
       },
     },
   },
@@ -458,7 +480,7 @@ export const taskQueueScenarios: GoldenScenario[] = [
       { at: '2026-10-20T08:29', run: check('task', { due_at: iso('2026-10-19T16:00') }) },
       { at: '2026-10-20T08:31', run: check('task', { due_at: null }) },
     ],
-    expect: { task: { '2026-10-19': 'over 1×', '2026-10-20': 'quiet queued 1×' } },
+    expect: { task: { '2026-10-19': 'over 1×', '2026-10-20': 'queue_today queued 1×' } },
   },
   {
     id: 'tq-night-owl',
@@ -484,7 +506,7 @@ export const taskQueueScenarios: GoldenScenario[] = [
       },
       { at: '2026-10-20T06:31', run: check('task', { due_at: null, attempts: 1 }) },
     ],
-    expect: { task: { '2026-10-20': 'quiet queued 1×' } },
+    expect: { task: { '2026-10-20': 'queue_today queued 1×' } },
   },
   {
     id: 'tq-evening-pick-early-morning',
@@ -523,7 +545,7 @@ export const taskQueueScenarios: GoldenScenario[] = [
         // An early-morning pick belongs to Tuesday: one attempt, from 06:00.
         '2026-10-20': 'over 1×',
         // Still over at the next rollover: stripped, the one attempt kept.
-        '2026-10-21': 'quiet queued 1×',
+        '2026-10-21': 'queue_today queued 1×',
       },
     },
   },
