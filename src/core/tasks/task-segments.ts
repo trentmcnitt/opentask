@@ -147,8 +147,20 @@ function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
  *
  * A QUEUED task (switch on) is placed by `queueKind` before anything else and
  * is then in no other segment (rule 7, precedence over horizon AND Upcoming).
+ *
+ * `queuePanels` — the caller can show the queue's two panels (the web;
+ * `GET /api/reminders?queue=1`). Without it, a queued task (switch on) is in
+ * NO segment at all: an older native build would list unknown kinds as
+ * pages, so it gets the list with the parked tasks simply left out —
+ * untargeted, out of the way, which is what the queue is for. Switch off:
+ * nothing is queued as far as the segments go, either way.
  */
-export function getTaskSegments(userId: number, timezone: string, now = new Date()): TaskSegment[] {
+export function getTaskSegments(
+  userId: number,
+  timezone: string,
+  now = new Date(),
+  { queuePanels = false }: { queuePanels?: boolean } = {},
+): TaskSegment[] {
   const byKind = new Map<SegmentKind, SegmentTask[]>()
   const checkInDay = getCheckInDay(userId)
   const upcoming: (SegmentTask & { target: string })[] = []
@@ -158,12 +170,19 @@ export function getTaskSegments(userId: number, timezone: string, now = new Date
     byKind.set(kind, list)
   }
   const placeInQueue = queuePlacer(userId, timezone, now)
+  // Queued, but the caller can't show the queue: left out of every segment.
+  const place = (task: Task) => {
+    const queued = placeInQueue(task)
+    if (queued && !queuePanels) return 'hidden' as const
+    return queued
+  }
   const addUpcoming = (task: Task) => {
     const heads = upcomingState(task, timezone, now)
     if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
   }
   for (const task of eligibleTasks(userId)) {
-    const queued = placeInQueue(task)
+    const queued = place(task)
+    if (queued === 'hidden') continue
     if (queued) {
       add(queued.kind, queued.entry)
       continue
@@ -176,7 +195,8 @@ export function getTaskSegments(userId: number, timezone: string, now = new Date
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
   for (const task of repeatingTasks(userId)) {
-    const queued = placeInQueue(task)
+    const queued = place(task)
+    if (queued === 'hidden') continue
     if (queued) add(queued.kind, queued.entry)
     else addUpcoming(task)
   }

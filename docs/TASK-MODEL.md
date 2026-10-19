@@ -410,7 +410,7 @@ No selection mode on segment rows (resolution 9: a tap considers). Queue panels 
 
 **Considered all (rule 9).** Every consideration panel offers it while it has rows waiting: the reminder periods (their existing "Considered all": `bulk/complete` with the waiting `prompts`; it confirms first on `/reminders`, not on the dashboard panel) and, with the switch on, every task segment (one `/api/task-segments/consider` call with all waiting ids — one undo entry, Undo on the toast, no confirm, like Defer all beside it). On the dashboard panel a sweep shows only while the page is expanded, as before.
 
-**Native builds.** The kinds are new strings in `task_segments[].horizon`; a build that predates them decodes them as unknown kinds (Swift `SegmentKind(raw:)` is nil). Shipped builds still LIST such a segment (`TaskSegmentDTO.listed` filters on rows, not kind), labelled from its raw string, with the unknown-kind page key −15 shared by both panels. Native support follows separately.
+**The opt-in (`GET /api/reminders?queue=1`).** The panels are sent only to a client that asks for them; the web does (`useReminders`). Without it, queued tasks are left out of `task_segments` altogether — not put back in a horizon segment or Upcoming: parked and untargeted, they show nowhere on that client, which is the queue's "out of my face". Why: shipped native builds decode an unknown kind (Swift `SegmentKind(raw:)` is nil) but still LIST it as a page (`TaskSegmentDTO.listed` filters on rows, not kind), labelled from the raw string, both panels on page key −15. The native PR adds the opt-in with its own panels. (`getTaskSegments(…, { queuePanels })`; the day simulator passes it.)
 
 ## Priority Values
 

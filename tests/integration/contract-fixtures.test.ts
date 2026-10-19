@@ -79,7 +79,9 @@
  *     ago, which strips a one-off and sends a weekly task to wait (both
  *     backdated in the DB so the rollover sees them as left over), then one
  *     as of now, which strips a one-off and a Try Tomorrow row
- *     GET  /api/reminders                       → reminders-queue.json
+ *     GET  /api/reminders?queue=1               → reminders-queue.json
+ *     (and GET /api/reminders, the default form: no queue kinds — asserted,
+ *     not captured)
  *        (`queue_previous`: the old strip and the waiting weekly task;
  *        `queue_today`: the new strip and the Try Tomorrow row)
  *
@@ -414,7 +416,7 @@ const USER_B_ID = 2
 async function queuePanels(
   make: (name: string, body: Record<string, unknown>) => Promise<void>,
   created: Record<string, number>,
-): Promise<Json> {
+): Promise<{ withQueue: Json; plain: Json }> {
   await setTaskQueue(true)
   try {
     // Five days ago at 09:00: older than the repeating task's missed
@@ -448,7 +450,13 @@ async function queuePanels(
     })
     backdate([created.queueNew, created.queueTryTomorrow], 3)
     await call('/api/test/rollover', { user_id: USER_B_ID, force: true })
-    return await call('/api/reminders')
+    // The opt-in form (the web's, and the native apps' once they draw the
+    // queue) and the default form, which a build that predates the queue
+    // sends: the switch is on, yet it gets no queue kinds and no queued task.
+    return {
+      withQueue: await call('/api/reminders?queue=1'),
+      plain: await call('/api/reminders'),
+    }
   } finally {
     await setTaskQueue(false)
   }
@@ -501,6 +509,7 @@ describe('contract fixtures (native clients)', () => {
   const ids = new IdMap()
   const captured: Record<string, Json> = {}
   const created: Record<string, number> = {}
+  let plainWithQueueOn: Json = null
 
   beforeAll(async () => {
     await resetTestData()
@@ -724,7 +733,25 @@ describe('contract fixtures (native clients)', () => {
       created[name] = res.data.id
       ids.register('task', res.data.id, placeholder++)
     }
-    captured['reminders-queue'] = await queuePanels(make, created)
+    const forms = await queuePanels(make, created)
+    captured['reminders-queue'] = forms.withQueue
+    plainWithQueueOn = forms.plain
+  })
+
+  test('without ?queue=1 the switch-on payload has no queue kinds and no queued task', () => {
+    type Segs = { data: { task_segments: { horizon: string; tasks: { id: number }[] }[] } }
+    const queued = new Set(
+      ['queueOld', 'queueWeekly', 'queueNew', 'queueTryTomorrow'].map((n) => created[n]),
+    )
+    const plain = (plainWithQueueOn as unknown as Segs).data.task_segments
+    expect(plain.map((s) => s.horizon)).not.toContain('queue_today')
+    expect(plain.map((s) => s.horizon)).not.toContain('queue_previous')
+    for (const seg of plain) for (const t of seg.tasks) expect(queued.has(t.id)).toBe(false)
+    // The opt-in form has them, first.
+    const withQueue = (captured['reminders-queue'] as unknown as Segs).data.task_segments
+    expect(withQueue.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
+    // Everything else is the same list in both forms.
+    expect(plain).toEqual(withQueue.slice(2))
   })
 
   const names = [

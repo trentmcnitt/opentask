@@ -59,7 +59,7 @@ function roll(local: string) {
 function placement(local: string, ids: number[]): Record<number, string> {
   setClock(local)
   const out: Record<number, string> = {}
-  for (const seg of getTaskSegments(TEST_USER_ID, tz, new Date(at(local)))) {
+  for (const seg of getTaskSegments(TEST_USER_ID, tz, new Date(at(local)), { queuePanels: true })) {
     for (const row of seg.tasks) {
       if (!ids.includes(row.task.id)) continue
       expect(out[row.task.id]).toBeUndefined() // one panel at most (rule 7)
@@ -71,7 +71,9 @@ function placement(local: string, ids: number[]): Record<number, string> {
 
 function kinds(local: string): string[] {
   setClock(local)
-  return getTaskSegments(TEST_USER_ID, tz, new Date(at(local))).map((s) => s.horizon)
+  return getTaskSegments(TEST_USER_ID, tz, new Date(at(local)), { queuePanels: true }).map(
+    (s) => s.horizon,
+  )
 }
 
 function setup() {
@@ -299,9 +301,9 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     })
     roll('2026-10-20T06:30')
     setClock('2026-10-20T07:00')
-    const panel = getTaskSegments(TEST_USER_ID, tz, new Date(at('2026-10-20T07:00'))).find(
-      (s) => s.horizon === 'queue_today',
-    )!
+    const panel = getTaskSegments(TEST_USER_ID, tz, new Date(at('2026-10-20T07:00')), {
+      queuePanels: true,
+    }).find((s) => s.horizon === 'queue_today')!
     expect(panel.tasks.map((r) => r.task.id)).toEqual([medOld.id, medNew.id, low.id, none.id])
     // A row with no remembered target sorts after one with, at equal priority.
     const base = { priority: 2 }
@@ -336,6 +338,25 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(ks).not.toContain('queue_today')
     expect(ks).not.toContain('queue_previous')
     expect(placement('2026-10-20T07:00', [t.id])).toEqual({ [t.id]: 'days:waiting' })
+  })
+
+  test('TQ-P14: without the opt-in, queued tasks are in no segment (old native builds)', () => {
+    const t = strippedOneOff()
+    const w = waitingWeekly()
+    const plain = makeAt('2026-10-19T09:00', { title: 'Plain', horizon: 'days' })
+    roll('2026-10-20T06:30')
+    setClock('2026-10-20T07:00')
+    const segs = getTaskSegments(TEST_USER_ID, tz, new Date(at('2026-10-20T07:00')))
+    expect(segs.map((s) => s.horizon)).toEqual(['days'])
+    const ids = segs.flatMap((s) => s.tasks.map((r) => r.task.id))
+    expect(ids).toContain(plain.id)
+    expect(ids).not.toContain(t.id)
+    expect(ids).not.toContain(w.id)
+    // Not put back in their horizon segment or Upcoming either — on Sun 25,
+    // Upcoming's heads-up day for the weekly task, it is still left out.
+    setClock('2026-10-25T09:00')
+    const sunday = getTaskSegments(TEST_USER_ID, tz, new Date(at('2026-10-25T09:00')))
+    expect(sunday.flatMap((s) => s.tasks.map((r) => r.task.id))).not.toContain(w.id)
   })
 
   test('TQ-P13: switch off — segments are exactly as before for unqueued tasks', () => {

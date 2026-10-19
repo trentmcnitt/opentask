@@ -1977,6 +1977,25 @@ paths:
         `OPENTASK_QUOTA_PROMPTS=off` each make every `prompts` array empty.
         The slot notification and its nags count waiting prompts too, so a
         client's slot checklist should list them after the reminders.
+
+        THE TASK QUEUE (2026-10-19). With the server's `OPENTASK_TASK_QUEUE`
+        on, `task_segments` can carry the queue's two panels — but only for a
+        client that asks for them with `?queue=1`. Without it, queued tasks
+        are left out of `task_segments` entirely (in no panel, horizon segment
+        or Upcoming): a client that predates the queue would otherwise show
+        the unknown kinds as pages of their own. Switch off: `queue` changes
+        nothing.
+      parameters:
+        - name: queue
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1`: this client shows the task queue's panels (`queue_today`,
+            `queue_previous` in `task_segments`). The web sends it. Omitted:
+            queued tasks are left out of `task_segments`.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -2025,8 +2044,9 @@ paths:
 
                           THE TASK QUEUE (2026-10-19, only with the server's
                           `OPENTASK_TASK_QUEUE` on — `task_queue` in GET
-                          /api/user/preferences): two more segments come
-                          FIRST. `queue_today` holds the tasks queued at or
+                          /api/user/preferences — AND `?queue=1` on the
+                          request; without the opt-in, queued tasks are in no
+                          segment): two more segments come FIRST. `queue_today` holds the tasks queued at or
                           after the user's latest rollover moment ("Stripped
                           today"); `queue_previous` those queued before it and
                           never handed back ("Previously targeted" — it drops
@@ -2045,8 +2065,7 @@ paths:
                           (`/api/task-segments/consider`) takes it out of the
                           queue, back to its horizon segment where it shows
                           considered today; a waiting repeating task stays.
-                          A client that doesn't know these kinds should skip
-                          them.
+                          Only a client that sends `?queue=1` receives them.
                         items:
                           type: object
                           properties:
