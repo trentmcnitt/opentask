@@ -22,6 +22,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const now = new Date()
+    // `?queue=1` (task-queue PR 3): this client shows the task queue's panels
+    // (`queue_today`, `queue_previous`). The web sends it; a native build that
+    // predates the queue does not, and gets the queued tasks left out (an
+    // unknown segment kind would show there as a page of its own).
+    const queuePanels = request.nextUrl.searchParams.get('queue') === '1'
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)
     const promptsBySlot = getQuotaPromptsBySlot(user.id, user.timezone, now)
@@ -69,8 +74,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       // `groups` — a native build that predates it ignores the key, and its
       // "Complete all" can never reach a real task. None of these counts
       // include task rows: segments never feed the headline count, the nav
-      // badge or the slot notifications.
-      task_segments: getTaskSegments(user.id, user.timezone, now).map((seg) => ({
+      // badge or the slot notifications. With the task queue on, the queue's
+      // two panels come first — only for a caller that sent `?queue=1`.
+      task_segments: getTaskSegments(user.id, user.timezone, now, { queuePanels }).map((seg) => ({
         horizon: seg.horizon,
         tasks: seg.tasks.map(({ task, state }) => ({
           ...formatTaskResponse(task, user.timezone),

@@ -95,6 +95,15 @@ export interface Prefs {
   aiSdkAvailable: boolean
   aiApiAvailable: boolean
   aiFeatureInfo: FeatureInfoMap | null
+  /**
+   * The server's task-queue switch (`OPENTASK_TASK_QUEUE`, task queue PR 3)
+   * and the user's rollover time (HH:MM: the first period's start, else
+   * `morning_time`). Read-only, server facts. The switch gates the queue UI;
+   * with it on, attempts count OpenTask days from the rollover time, as the
+   * server counts them (`useTaskQueue` in PreferencesProvider).
+   */
+  taskQueue: boolean
+  rolloverTime: string | null
 }
 
 /** What the UI shows until the preferences fetch lands. */
@@ -139,6 +148,8 @@ export const DEFAULT_PREFS: Prefs = {
   aiSdkAvailable: false,
   aiApiAvailable: false,
   aiFeatureInfo: null,
+  taskQueue: false,
+  rolloverTime: null,
 }
 
 function featureMode(value: unknown): FeatureMode | undefined {
@@ -217,6 +228,8 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'aiSdkAvailable', data.ai_sdk_available)
   take(out, 'aiApiAvailable', data.ai_api_available)
   take(out, 'aiFeatureInfo', data.ai_feature_info, truthy)
+  take(out, 'taskQueue', data.task_queue)
+  take(out, 'rolloverTime', data.rollover_time, truthy)
   return out
 }
 

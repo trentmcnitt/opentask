@@ -411,6 +411,47 @@ describe('contract fixtures match the TS types', () => {
   })
 })
 
+describe('contract fixtures: the task queue (PR 3)', () => {
+  test('user preferences carry the rollover time; the switch is not captured (PR 3)', () => {
+    const prefs = data('user-preferences')
+    // `task_queue` is the server's switch: not captured (pinServerEnvironment).
+    expect(prefs).not.toHaveProperty('task_queue')
+    expect(prefs.rollover_time).toMatch(/^\d{2}:\d{2}$/)
+  })
+
+  test('the task queue panels: first, sorted by priority, every row a segment row', () => {
+    // Task queue PR 3: `queue_today` and `queue_previous` come before every
+    // other segment. A native build that predates them drops the unknown
+    // kinds (Swift `SegmentKind(raw:)` returns nil) — the rows are otherwise
+    // ordinary segment rows, with `queued_from_due_at` and `try_tomorrow`.
+    const segs = data('reminders-queue').task_segments as Obj[]
+    expect(segs.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
+    const [today, previous] = segs as { tasks: Obj[] }[]
+    expect(today.tasks.map((r) => r.priority)).toEqual([2, 0])
+    expect(today.tasks.map((r) => r.try_tomorrow)).toEqual([false, true])
+    expect(previous.tasks.map((r) => r.recurring)).toEqual([false, true])
+    for (const seg of segs) {
+      for (const row of seg.tasks as Obj[]) {
+        expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
+        const task = Object.fromEntries(
+          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+        )
+        expectShape(task, TASK, `queue task ${row.id}`)
+      }
+    }
+    for (const seg of segs.slice(0, 2)) {
+      for (const row of seg.tasks as Obj[]) {
+        expect(row.queued_at).not.toBeNull()
+        expect(row.queued_from_due_at).not.toBeNull()
+      }
+    }
+    // A waiting repeating task keeps its next occurrence as its target; a
+    // stripped one-off has none.
+    expect(previous.tasks[0].due_at).toBeNull()
+    expect(previous.tasks[1].due_at).not.toBeNull()
+  })
+})
+
 describe('contract fixtures: interval quotas', () => {
   test('an interval quota serves its period on the task and on its prompt (2026-10-16)', () => {
     const task = data('task-interval-quota')

@@ -18,6 +18,7 @@ import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import { NotesMarker } from '@/components/NotesMarker'
 import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { DashboardTasksPanel } from '@/components/DashboardTasksPanel'
+import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
 import {
   NARROW_CAP,
   PagerSweep,
@@ -230,7 +231,13 @@ export function DashboardRemindersPanel({
     pages.length,
     pages.length > 0 ? naturalSlotIndex(groups, timezone, now) : 0,
   )
-  const tasksCard = <DashboardTasksPanel actions={segments} timezone={timezone} />
+  const tasksCard = (
+    <>
+      <DashboardTasksPanel actions={segments} timezone={timezone} />
+      {/* A task-segment row's details icon (task queue PR 3). */}
+      <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
+    </>
+  )
   // No reminder waiting or considered today: no Reminders card, the same way
   // `TrackPanel` returns null with no quotas. The Tasks card stands alone.
   if (!pager) return tasksCard
@@ -258,8 +265,10 @@ export function DashboardRemindersPanel({
           canGoNext={index < pages.length - 1}
           onPrev={() => pager.goTo(index - 1)}
           onNext={() => pager.goTo(index + 1)}
+          // Only while the slot has something waiting (spec rule 9: Considered
+          // all shows only while the panel has waiting rows).
           sweep={
-            expanded && page.total > 0 ? (
+            expanded && page.waiting > 0 ? (
               <PagerSweep
                 kind="consider"
                 ariaLabel={`Mark all in ${page.label} as considered`}

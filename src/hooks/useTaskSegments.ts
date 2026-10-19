@@ -38,6 +38,12 @@ import type { Task } from '@/types'
  * - Repeating Upcoming rows have Today and its picker too (§6: moving the
  *   target leaves the occurrence where it was), but no target reset
  * - Defer All → everything still waiting in that segment, back tomorrow
+ * - Considered all (task queue PR 3, spec rule 9) → every row still waiting
+ *   in that segment considered in ONE call to /api/task-segments/consider —
+ *   one undo entry, Undo on the toast. A queued one-off leaves the queue for
+ *   its horizon segment (ticked there today); a waiting repeating task stays
+ * - the details icon (resolution 10) → `openDetails`: the Quick panel for
+ *   that task (`SegmentDetailsModal`, which each surface renders)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
  *   toast then says "Moved to Tasks · <Horizon>")
  */
@@ -196,7 +202,58 @@ export function useTaskSegments({
     },
     [run],
   )
-  const setHorizon = useCallback(
+  const setHorizon = useSetHorizon(inFlight, onUndo, refresh, onCompleted)
+
+  // Put back (2026-10-11): a considered or deferred row from "Show N
+  // considered" waits again — the slots' put-back.
+  const restore = useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        'waiting',
+        () => post('/api/task-segments/restore', { ids: [task.id] }),
+        `Put back: “${task.title}”`,
+      ),
+    [run],
+  )
+
+  const considerAll = useConsiderAll(run)
+  // The details icon's Quick panel: which task is open (`SegmentDetailsModal`).
+  const [detailsTask, setDetailsTask] = useState<Task | null>(null)
+
+  const removeTarget = useRemoveTarget(run)
+  const actions = {
+    consider,
+    considerAll,
+    done,
+    targetToday,
+    deferAll,
+    setHorizon,
+    restore,
+    removeTarget,
+  }
+  return {
+    segments: view,
+    ...actions,
+    ...picker,
+    detailsTask,
+    openDetails: setDetailsTask as (task: Task) => void,
+    closeDetails: () => setDetailsTask(null),
+    refresh,
+  }
+}
+
+/**
+ * The horizon dot's menu (switch off) — a PATCH of `horizon`, with Undo. Not
+ * through `run`: the row stays where it is until the refresh says otherwise.
+ */
+function useSetHorizon(
+  inFlight: { current: number },
+  onUndo: () => void,
+  refresh: () => Promise<void>,
+  onCompleted?: () => void,
+) {
+  return useCallback(
     async (task: Task, horizon: HorizonValue | null, segment?: SegmentKind) => {
       inFlight.current++
       try {
@@ -219,25 +276,28 @@ export function useTaskSegments({
         void refresh()
       }
     },
-    [onUndo, onCompleted, refresh],
+    [inFlight, onUndo, onCompleted, refresh],
   )
+}
 
-  // Put back (2026-10-11): a considered or deferred row from "Show N
-  // considered" waits again — the slots' put-back.
-  const restore = useCallback(
-    (task: Task) =>
-      run(
-        [task.id],
-        'waiting',
-        () => post('/api/task-segments/restore', { ids: [task.id] }),
-        `Put back: “${task.title}”`,
-      ),
+/**
+ * Considered all (task queue PR 3, spec rule 9): every row still waiting in
+ * the segment, in one consider call — one undo entry, Undo on the toast.
+ */
+function useConsiderAll(run: RunSegmentAction) {
+  return useCallback(
+    (segment: SegmentView) => {
+      const ids = segment.rows.filter((r) => r.state === 'waiting').map((r) => r.task.id)
+      if (ids.length === 0) return
+      return run(
+        ids,
+        'considered',
+        () => post('/api/task-segments/consider', { ids }),
+        ids.length === 1 ? 'Considered 1 task' : `Considered ${ids.length} tasks`,
+      )
+    },
     [run],
   )
-
-  const removeTarget = useRemoveTarget(run)
-  const actions = { consider, done, targetToday, deferAll, setHorizon, restore, removeTarget }
-  return { segments: view, ...actions, ...picker }
 }
 
 type RunSegmentAction = (

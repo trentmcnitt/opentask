@@ -165,6 +165,13 @@ export interface UseRemindersReturn {
   create: (input: ReminderCreateInput) => Promise<Task>
 }
 
+/**
+ * The web shows the task queue's panels (task-queue PR 3), so it opts in to
+ * them (`?queue=1`); without it the server leaves queued tasks out of
+ * `task_segments` altogether, for native builds that predate the queue.
+ */
+const REMINDERS_URL = '/api/reminders?queue=1'
+
 export interface ReminderCreateInput {
   title: string
   /**
@@ -442,7 +449,7 @@ export function useReminders({
     }
     const seq = requestGuard.begin()
     try {
-      const res = await fetch('/api/reminders')
+      const res = await fetch(REMINDERS_URL)
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
       // A newer refresh was sent while this one was out: its answer is the
@@ -1070,7 +1077,7 @@ function loadRemindersCache(): Promise<void> {
   if (cacheLoad) return cacheLoad
   cacheLoad = (async () => {
     try {
-      const res = await fetch('/api/reminders')
+      const res = await fetch(REMINDERS_URL)
       if (!res.ok) return
       const json = await res.json()
       setRemindersCache(parseRemindersPayload(json))

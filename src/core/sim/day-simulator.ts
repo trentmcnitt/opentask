@@ -119,7 +119,7 @@ const ORDER: Place[] = ['done', 'over']
 /** Read one tick: every task's place and badges. */
 export function readTick(userId: number, timezone: string, ids: number[], now: Date): SimTaskDay[] {
   const segment = new Map<number, { kind: SegmentKind; state: string }[]>()
-  for (const seg of getTaskSegments(userId, timezone, now)) {
+  for (const seg of getTaskSegments(userId, timezone, now, { queuePanels: true })) {
     for (const row of seg.tasks) {
       const list = segment.get(row.task.id) ?? []
       list.push({ kind: seg.horizon, state: row.state })
@@ -195,7 +195,7 @@ function applyPolicy(
   ids: number[],
 ): void {
   if (policy.includes('tap')) {
-    const waiting = getTaskSegments(userId, timezone, now)
+    const waiting = getTaskSegments(userId, timezone, now, { queuePanels: true })
       .flatMap((s) => s.tasks)
       .filter((r) => r.state === 'waiting' && ids.includes(r.task.id))
       .map((r) => r.task.id)
@@ -213,7 +213,7 @@ function applyPolicy(
 
 /** The user's open, ordinary task ids (no reminders or quotas): the CLI's default report set. */
 function defaultIds(userId: number, now: Date, timezone: string): number[] {
-  return getTaskSegments(userId, timezone, now)
+  return getTaskSegments(userId, timezone, now, { queuePanels: true })
     .flatMap((s) => s.tasks.map((r) => r.task.id))
     .concat(getCurrentlyDueTaskIds(userId, now))
 }

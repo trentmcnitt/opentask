@@ -117,6 +117,9 @@ interface PreferencesContextValue {
   aiApiAvailable: boolean
   aiFeatureInfo: FeatureInfoMap | null
   setAiFeatureInfo: (info: FeatureInfoMap) => void
+  /** The server's task-queue switch and the user's rollover time (`useTaskQueue`). */
+  taskQueue: boolean
+  rolloverTime: string | null
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -197,6 +200,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   aiApiAvailable: false,
   aiFeatureInfo: null,
   setAiFeatureInfo: () => {},
+  taskQueue: false,
+  rolloverTime: null,
 })
 
 // Register the iOS APNs device token with the server using session cookie auth.
@@ -517,6 +522,39 @@ export function useWeekStart() {
 export function useCheckInDay() {
   const { checkInDay, setCheckInDay } = useContext(PreferencesContext)
   return { checkInDay, setCheckInDay }
+}
+
+/**
+ * THE TASK QUEUE, as the browser sees it (task queue PR 3): `enabled` is the
+ * server's switch (`OPENTASK_TASK_QUEUE`, from GET /api/user/preferences) —
+ * it gates the queue UI: the queue panels themselves come from the server
+ * only when it is on, and the segment rows' details icon, the horizon dot on
+ * their meta line and "Considered all" on the task panels show only with it.
+ * `attemptsRolloverTime` is what the attempts read (`effectiveAttempts`) and
+ * the 3× offer take: the user's rollover time with the switch on (OpenTask
+ * days, B7 — the server's own count, its early-morning-pick rule included),
+ * null with it off (calendar days, as before the queue).
+ *
+ * The rollover time is the one the page loaded with: a period added or moved
+ * in another tab is picked up on the next load.
+ *
+ * `loaded`: the preferences fetch has settled. Until then `enabled` is the
+ * fallback (false), not the server's answer, so a surface that would draw
+ * one thing with the switch on and another with it off draws NEITHER until
+ * it knows — nothing swaps over when the fetch lands (the attempts read uses
+ * the server's stored count meanwhile, `attemptsOf` below).
+ */
+export function useTaskQueue(): {
+  loaded: boolean
+  enabled: boolean
+  attemptsRolloverTime: string | null
+} {
+  const { taskQueue, rolloverTime, preferencesLoaded } = useContext(PreferencesContext)
+  return {
+    loaded: preferencesLoaded,
+    enabled: taskQueue,
+    attemptsRolloverTime: taskQueue ? rolloverTime : null,
+  }
 }
 
 /**

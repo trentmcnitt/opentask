@@ -1757,7 +1757,10 @@ paths:
       tags: [Reminders]
       description: >
         The circle: stamps `last_considered_at`. Never a completion. One undo entry; logged even when already considered today. The caller's own open tasks only; anything else refuses the
-        whole request (400).
+        whole request (400). Every id at once is "Considered all" (one undo entry). A queued one-off (the task
+        queue: `queued_at` set, no rrule) also leaves the queue in the same write — `queued_at` cleared,
+        `try_tomorrow` too, `queued_from_due_at` kept — so it goes back to its horizon segment, considered
+        there today; undo puts it back in the queue. A queued repeating task stays queued.
       requestBody:
         required: true
         content:
@@ -1974,6 +1977,25 @@ paths:
         `OPENTASK_QUOTA_PROMPTS=off` each make every `prompts` array empty.
         The slot notification and its nags count waiting prompts too, so a
         client's slot checklist should list them after the reminders.
+
+        THE TASK QUEUE (2026-10-19). With the server's `OPENTASK_TASK_QUEUE`
+        on, `task_segments` can carry the queue's two panels — but only for a
+        client that asks for them with `?queue=1`. Without it, queued tasks
+        are left out of `task_segments` entirely (in no panel, horizon segment
+        or Upcoming): a client that predates the queue would otherwise show
+        the unknown kinds as pages of their own. Switch off: `queue` changes
+        nothing.
+      parameters:
+        - name: queue
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1`: this client shows the task queue's panels (`queue_today`,
+            `queue_previous` in `task_segments`). The web sends it. Omitted:
+            queued tasks are left out of `task_segments`.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -2019,12 +2041,46 @@ paths:
                           heads-up day) came round shows daily until it is.
                           TOP-LEVEL, never inside `groups`; never counted in
                           `total`, the nav badge or the slot notifications.
+
+                          THE TASK QUEUE (2026-10-19, only with the server's
+                          `OPENTASK_TASK_QUEUE` on — `task_queue` in GET
+                          /api/user/preferences — AND `?queue=1` on the
+                          request; without the opt-in, queued tasks are in no
+                          segment): two more segments come FIRST. `queue_today` holds the tasks queued at or
+                          after the user's latest rollover moment ("Stripped
+                          today"); `queue_previous` those queued before it and
+                          never handed back ("Previously targeted" — it drops
+                          nothing). A queued task is a one-off whose target the
+                          rollover stripped (`queued_at` set, `due_at` null,
+                          the old target in `queued_from_due_at`) or a
+                          repeating task waiting for its next occurrence
+                          (`queued_at` set, `due_at` its next occurrence; it
+                          leaves the queue once that has arrived). A task in
+                          a queue panel is in no other segment, Upcoming
+                          included. Rows are sorted by priority (highest
+                          first), then the older `queued_from_due_at`, then
+                          id. `try_tomorrow` marks a row Try Tomorrow put
+                          there; the rollover clears it once the row is in
+                          `queue_previous`. Considering a queued one-off
+                          (`/api/task-segments/consider`) takes it out of the
+                          queue, back to its horizon segment where it shows
+                          considered today; a waiting repeating task stays.
+                          Only a client that sends `?queue=1` receives them.
                         items:
                           type: object
                           properties:
                             horizon:
                               type: string
-                              enum: [days, upcoming, weeks, months, eventually]
+                              enum:
+                                [
+                                  queue_today,
+                                  queue_previous,
+                                  days,
+                                  upcoming,
+                                  weeks,
+                                  months,
+                                  eventually,
+                                ]
                             tasks:
                               type: array
                               items:
@@ -4365,6 +4421,26 @@ components:
       type: object
       additionalProperties: true
       properties:
+        task_queue:
+          type: boolean
+          readOnly: true
+          description: |
+            The server's task-queue switch (`OPENTASK_TASK_QUEUE`, 2026-10-19)
+            — a deploy switch for the whole server, not a user setting. On:
+            the rollover strips and queues, the queue panels appear in
+            `GET /api/reminders` `task_segments`, and attempts count OpenTask
+            days (rollover to rollover). Clients gate the queue UI on it.
+            Ignored on PATCH.
+        rollover_time:
+          type: string
+          readOnly: true
+          example: '06:30'
+          description: |
+            The user's rollover time (HH:MM): the start of their first
+            reminder period, else `morning_time`. With `task_queue` on, the
+            OpenTask day runs from one rollover to the next, and a client that
+            counts attempts itself counts those days (the server's own rule,
+            its early-morning-pick exception included). Ignored on PATCH.
         default_grouping:
           type: string
           enum: [project, new, unified]

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Forward } from 'lucide-react'
+import { CheckCheck, Forward } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   SLOT_FOOTER_TOGGLE_CLASS,
@@ -21,9 +21,11 @@ import {
   segmentKey,
   segmentLabel,
   segmentTitleColor,
+  useQueueOn,
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { isQueueKind } from '@/lib/task-segments'
 
 /**
  * One task segment on /reminders, as a SECTION shaped exactly like a slot's
@@ -68,6 +70,7 @@ export function TaskSegmentGroup({
 }) {
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
   const hint = useSegmentHint()
+  const queueOn = useQueueOn(segment.horizon)
   const color = segmentColor(segment.horizon)
   const label = segmentLabel(segment)
   const waiting = waitingRows(segment)
@@ -107,7 +110,25 @@ export function TaskSegmentGroup({
         >
           {headerRow}
         </button>
-        {open && waiting.length > 0 && (
+        {/* "Considered all" (task queue PR 3, spec rule 9): the slot's own
+            sweep, in the slot's place and style, on every task segment while
+            it has rows waiting — one consider call, one Undo, no confirm (Defer
+            all beside it has none; the toast's Undo is the recovery). Only
+            with the task queue on. The queue's panels have no Defer all: their
+            gestures are consider, Today and done (spec rule 8). */}
+        {open && queueOn && waiting.length > 0 && (
+          <button
+            type="button"
+            data-segment-consider-all
+            onClick={() => void actions.considerAll(segment)}
+            aria-label={`Mark all ${waiting.length} in ${label} as considered`}
+            className={SLOT_SWEEP_CLASS}
+          >
+            <CheckCheck className="size-3.5" strokeWidth={2.5} />
+            <span className="hidden sm:inline">Considered all</span>
+          </button>
+        )}
+        {open && waiting.length > 0 && !isQueueKind(segment.horizon) && (
           <button
             type="button"
             onClick={() => void actions.deferAll(segment)}
@@ -187,8 +208,8 @@ function SegmentConsideredDisclosure({
 
 /**
  * Every task segment with a row today, AFTER the slots (Trent, 10-11: "Tasks
- * should go underneath Reminders"), in screen order (days, upcoming,
- * weeks, months, eventually), with the slots' spacing. Open/folded comes from the slots' own
+ * should go underneath Reminders"), in screen order (the task queue's two
+ * panels, days, upcoming, weeks, months, eventually), with the slots' spacing. Open/folded comes from the slots' own
  * `useSlotDisclosure`, under a "tasks:<horizon>" key that is never a slot id.
  */
 export function TaskSegmentSections({

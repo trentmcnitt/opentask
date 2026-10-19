@@ -35,6 +35,8 @@ import {
   type PreferencesRow,
 } from '@/core/users/preferences'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
+import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
 
 // `default_grouping` accepts the live groupings (`GROUPINGS`: project, new,
 // unified) plus the retired 'slot' (Today, dropped 2026-10-14) and 'time' (the
@@ -89,7 +91,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const user = await getAuthUser(request)
     if (!user) return unauthorized()
 
-    return success(formatPreferencesResponse(getPreferences(user.id)))
+    return success(formatPreferencesResponse(getPreferences(user.id), user.id))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'GET /api/user/preferences error:', err)
@@ -554,9 +556,16 @@ function validatePatchFields(
   return changes
 }
 
-function formatPreferencesResponse(row: PreferencesRow) {
+function formatPreferencesResponse(row: PreferencesRow, userId: number) {
   const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
   return {
+    // The task queue (task-queue PR 3, read-only): the server's switch
+    // (`OPENTASK_TASK_QUEUE`, which gates the queue UI) and the user's
+    // rollover time (HH:MM — the first period's start, else morning_time).
+    // With the switch on a client counts attempts in OpenTask days from that
+    // time, exactly as the server does; off, in calendar days.
+    task_queue: taskQueueEnabled(),
+    rollover_time: rolloverTimeForUser(userId),
     ai_available: isAIEnabled(),
     // Coerced on the way out too, so a 'time' written by anything that
     // skipped this route reads as the 'project' the dashboard will show.
@@ -651,7 +660,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest) {
     if (typeof result === 'string') return badRequest(result)
 
     // Also closes weekly quota periods a new `week_start` ends (see updatePreferences).
-    return success(formatPreferencesResponse(updatePreferences(user.id, result)))
+    return success(formatPreferencesResponse(updatePreferences(user.id, result), user.id))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'PATCH /api/user/preferences error:', err)

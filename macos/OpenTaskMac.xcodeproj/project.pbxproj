@@ -22,6 +22,7 @@
 		0B238C882F4EB87F26D4491E /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */; };
 		0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
 		0B3969A3602AD5B372A3B3E4 /* WidgetOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C01DDBEE9460F29FCD1B3F5 /* WidgetOutbox.swift */; };
+		0C23FC92332C00DEA90A64AD /* reminders-queue.json in Resources */ = {isa = PBXBuildFile; fileRef = 9692247898AD0E30DCD14FCD /* reminders-queue.json */; };
 		0D6F55755A010812E541EE71 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */; };
 		0F61848EE6DE753BC568EFBB /* bulk-snooze-overdue.json in Resources */ = {isa = PBXBuildFile; fileRef = 70F0219AA24F58B2411FD6D5 /* bulk-snooze-overdue.json */; };
 		0F675979F0E897179550119D /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
@@ -384,6 +385,7 @@
 		8F19FED31D51A4F31E33C37B /* undo-status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "undo-status.json"; sourceTree = "<group>"; };
 		903ACB0C682D367B55AA9A1E /* WidgetRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetRenderTests.swift; sourceTree = "<group>"; };
 		921B76E2529F1F4C5642DE21 /* task-interval-quota.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-interval-quota.json"; sourceTree = "<group>"; };
+		9692247898AD0E30DCD14FCD /* reminders-queue.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-queue.json"; sourceTree = "<group>"; };
 		9DD5A0D38F3F38C3D5EC9D21 /* RowCornerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowCornerTests.swift; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
 		A13865C4D7DA320D5CAA82CE /* QuotaCountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCountTests.swift; sourceTree = "<group>"; };
@@ -466,6 +468,7 @@
 				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
 				37C29187973C3150F91CA3B7 /* reminders-initial.json */,
 				A3976D6271B79475E88E8901 /* reminders-interval.json */,
+				9692247898AD0E30DCD14FCD /* reminders-queue.json */,
 				20094FA70C6D6907002B24FA /* reminders-segments.json */,
 				856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
@@ -846,6 +849,7 @@
 				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,
 				51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */,
 				416BA9F4F61DED457A9F058E /* reminders-interval.json in Resources */,
+				0C23FC92332C00DEA90A64AD /* reminders-queue.json in Resources */,
 				A7A7013390BB2D8ED7765AAB /* reminders-segments.json in Resources */,
 				53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,

@@ -45,16 +45,36 @@ export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
 
 /**
- * A task segment's identity: a horizon, or Upcoming (2026-10-12, the heads-up
- * segment — `upcomingState`, below). In the API, `horizon: "upcoming"`.
+ * The task queue's two panels (task queue PR 3, 2026-10-19; design rules 6-8,
+ * docs/TASK-MODEL.md § The task queue). Code words only — the names on screen
+ * are provisional (`QUEUE_WORD` in task-model-words.ts):
+ * - `queue_today`: queued at or after the latest rollover ("Stripped today");
+ * - `queue_previous`: queued before it ("Previously targeted").
+ * Only with the server switch on (`OPENTASK_TASK_QUEUE`); `queueKind`, below.
  */
-export type SegmentKind = HorizonValue | 'upcoming'
+export const QUEUE_KINDS = ['queue_today', 'queue_previous'] as const
+export type QueueKind = (typeof QUEUE_KINDS)[number]
 
 /**
- * The order the screens walk the segments: Upcoming directly after Days and
- * before Weeks, on a check-in day too (spec §2).
+ * A task segment's identity: a horizon, Upcoming (2026-10-12, the heads-up
+ * segment — `upcomingState`, below), or one of the queue's two panels. In the
+ * API, `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"`.
+ */
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind
+
+/** Whether a segment is one of the task queue's panels. */
+export function isQueueKind(kind: SegmentKind): kind is QueueKind {
+  return kind === 'queue_today' || kind === 'queue_previous'
+}
+
+/**
+ * The order the screens walk the segments: the queue's two panels FIRST (spec
+ * rule 6: "the first and foremost thing to handle"), then Upcoming directly
+ * after Days and before Weeks, on a check-in day too (spec §2).
  */
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
+  'queue_today',
+  'queue_previous',
   'days',
   'upcoming',
   'weeks',
@@ -699,8 +719,8 @@ export function attemptsOffer(
   },
   now: Date = new Date(),
   /**
-   * The task queue is on (server callers pass `taskQueueEnabled()`; this
-   * module also runs in the browser, which cannot read the switch). Then
+   * The task queue is on (server callers pass `taskQueueEnabled()`, the
+   * browser the switch from GET /api/user/preferences, `useTaskQueue`). Then
    * "Remove target?" is RETIRED on a strippable task (`queueStrippable`,
    * build-plan resolution 1): the rollover takes its target off on its own,
    * so the queue does the offer's job. High and deadline tasks keep theirs.
@@ -731,23 +751,76 @@ export function queueStrippable(task: {
 }
 
 /**
- * Whether the server retired this row's live "Remove target?" (the task
- * queue, see the offer above): it sent `attempts_offer: null` for a
- * strippable task it had already counted at 3× or more.
+ * THE TASK QUEUE'S PANELS (task queue PR 3, 2026-10-19; spec rules 6-8,
+ * resolution 6). Which panel a QUEUED task shows in today, or null when it is
+ * not in the queue at all:
+ * - not queued (`queued_at` NULL) → null;
+ * - a target that has ARRIVED (`due_at` at or before now) → null: it is over
+ *   target, on the dashboard. A stripped one-off has no target; a waiting
+ *   repeating task's target is its next occurrence, so it leaves the queue
+ *   the moment that occurrence comes (the rollover releases it that morning);
+ * - queued at or after `latestRolloverAt` (the user's latest rollover moment,
+ *   `latestRollover` in opentask-day.ts) → `queue_today`, else
+ *   `queue_previous`. A repeating task stays queued after a consider, so one
+ *   considered yesterday is in `queue_previous` today (resolution 6).
+ *
+ * PRECEDENCE (rule 7): a task this returns a kind for is in no horizon
+ * segment and not in Upcoming — the caller places it here and nowhere else.
+ * Its state (waiting / considered / deferred) is the shared stamps' (rule 7:
+ * one considered state), read by `queueRowState`.
  */
-export function queueRetiredOffer(
-  task: {
-    rrule?: string | null
-    deadline_at: string | null
-    priority?: number
-    attempts?: number
-    /** The server's field; absent on a row built in the browser. */
-    attempts_offer?: 'remove' | 'auto' | null
-  },
-  liveOffer: 'remove' | 'auto' | null,
-): boolean {
-  if (liveOffer !== 'remove' || !queueStrippable(task)) return false
-  return task.attempts_offer === null && (task.attempts ?? 0) >= ATTEMPTS_OFFER_REMOVE
+export function queueKind(
+  task: { queued_at?: string | null; due_at: string | null },
+  now: Date,
+  latestRolloverAt: Date,
+): QueueKind | null {
+  if (!task.queued_at) return null
+  if (task.due_at !== null && Date.parse(task.due_at) <= now.getTime()) return null
+  return Date.parse(task.queued_at) >= latestRolloverAt.getTime() ? 'queue_today' : 'queue_previous'
+}
+
+/**
+ * A queue row's state today: considered today (listed ticked behind "Show N
+ * considered", like a horizon row), deferred today, else waiting. Never
+ * hidden: the queue drops nothing (spec rule 6) — a one-off leaves it only by
+ * a consider (which clears `queued_at`), a target, done or delete.
+ *
+ * "Today" is the OPENTASK day (`openTaskDayOf` with the user's rollover
+ * time), the day the panels split on — so a repeating row considered at 23:30
+ * stays considered at 00:30, inside the same "Stripped today" panel, until the
+ * rollover moves it to "Previously targeted", waiting again. Queue panels
+ * only: horizon segments and Upcoming stay on midnight (resolution 4).
+ */
+export function queueRowState(
+  task: { last_considered_at: string | null; segment_deferred_at: string | null },
+  timezone: string,
+  now: Date,
+  rolloverTime: string,
+): SegmentState {
+  const today = openTaskDayOf(now, timezone, rolloverTime)
+  const isToday = (iso: string | null) =>
+    iso !== null && openTaskDayOf(new Date(iso), timezone, rolloverTime) === today
+  if (isToday(task.last_considered_at)) return 'considered'
+  if (isToday(task.segment_deferred_at)) return 'deferred'
+  return 'waiting'
+}
+
+/**
+ * The queue panels' order (spec "Medium stays in the strip … sorted by
+ * priority"; the brief's tie-breaks): priority, highest first; then the OLDER
+ * remembered target (`queued_from_due_at`) first, a row without one last;
+ * then id. Try Tomorrow rows are NOT lifted to the top (designer, 10-19) —
+ * they carry a mark instead.
+ */
+export function compareQueueRows(
+  a: { id: number; priority: number; queued_from_due_at?: string | null },
+  b: { id: number; priority: number; queued_from_due_at?: string | null },
+): number {
+  if (a.priority !== b.priority) return b.priority - a.priority
+  const fa = a.queued_from_due_at ? Date.parse(a.queued_from_due_at) : Infinity
+  const fb = b.queued_from_due_at ? Date.parse(b.queued_from_due_at) : Infinity
+  if (fa !== fb) return fa < fb ? -1 : 1
+  return a.id - b.id
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */

@@ -362,6 +362,43 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(result.considered, 1)
     }
 
+    // MARK: The task queue's panels (task-queue PR 3, docs/TASK-MODEL.md § The task queue)
+
+    /// `GET /api/reminders` with the server's task queue on: two new segment
+    /// kinds, `queue_today` and `queue_previous`, FIRST. This build doesn't
+    /// know them — the payload must still decode, every row intact, and
+    /// `SegmentKind(raw:)` must return nil for both (a future kind, -15).
+    func testRemindersQueueSegmentsDecodeAsUnknownKinds() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-queue")
+        let horizons = payload.taskSegments.map(\.horizon)
+        XCTAssertEqual(Array(horizons.prefix(2)), ["queue_today", "queue_previous"])
+        for segment in payload.taskSegments.prefix(2) {
+            XCTAssertNil(SegmentKind(raw: segment.horizon))
+            XCTAssertNil(segment.kind)
+            XCTAssertNil(segment.horizonValue)
+            XCTAssertEqual(segment.pageKey, -15)
+            XCTAssertEqual(segment.tasks.count, 2)
+            XCTAssertEqual(segment.tasks.map(\.state), [.waiting, .waiting])
+        }
+        let today = payload.taskSegments[0]
+        XCTAssertEqual(today.tasks.map(\.task.title), ["Call the plumber", "Sort the receipts"])
+        XCTAssertEqual(today.tasks.map(\.recurring), [false, false])
+        let previous = payload.taskSegments[1]
+        XCTAssertEqual(previous.tasks.map(\.task.title), ["Return the library books", "Water the ferns"])
+        XCTAssertEqual(previous.tasks.map(\.recurring), [false, true])
+        XCTAssertNil(previous.tasks[0].task.dueAt, "a stripped one-off has no target")
+        XCTAssertNotNil(previous.tasks[1].task.dueAt, "a waiting weekly task keeps its next occurrence")
+        // The known kinds after them still read as before.
+        XCTAssertEqual(payload.taskSegments.dropFirst(2).compactMap(\.kind).count, payload.taskSegments.count - 2)
+
+        // The queue fields the native apps will need later are on every row.
+        let raw = try Fixtures.object("reminders-queue")
+        let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
+        let rawToday = try XCTUnwrap(rawSegments.first?["tasks"] as? [[String: Any]])
+        XCTAssertEqual(rawToday.map { $0["try_tomorrow"] as? Bool }, [false, true])
+        XCTAssertEqual(rawToday.map { $0["queued_from_due_at"] as? String }, [Fixtures.pinnedTimestamp, Fixtures.pinnedTimestamp])
+    }
+
     // MARK: Upcoming (2026-10-12, docs/TASK-MODEL.md § Upcoming)
 
     /// `GET /api/reminders` with an Upcoming segment, after Days: a one-off

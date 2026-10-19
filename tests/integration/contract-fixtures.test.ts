@@ -74,6 +74,17 @@
  *        (`queued`, `queued_name`, `summary`, `message`; step 12's two
  *        slipping tasks swept, step 9's Urgent one skipped)
  *
+ * 15. The task queue's panels (task-queue PR 3), switch on, after two test
+ *     rollovers (`POST /api/test/rollover` with `force`): one as of two days
+ *     ago, which strips a one-off and sends a weekly task to wait (both
+ *     backdated in the DB so the rollover sees them as left over), then one
+ *     as of now, which strips a one-off and a Try Tomorrow row
+ *     GET  /api/reminders?queue=1               → reminders-queue.json
+ *     (and GET /api/reminders, the default form: no queue kinds — asserted,
+ *     not captured)
+ *        (`queue_previous`: the old strip and the waiting weekly task;
+ *        `queue_today`: the new strip and the Try Tomorrow row)
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -325,6 +336,10 @@ function pinServerEnvironment(raw: Json): Json {
     data[key] = false
   }
   delete data.ai_feature_info
+  // The task-queue switch is the server's (`OPENTASK_TASK_QUEUE`, and the
+  // test route's state), not the user's: left out, like the AI fields.
+  // `rollover_time` is user data and stays.
+  delete data.task_queue
   return { ...(raw as Record<string, Json>), data }
 }
 
@@ -367,6 +382,90 @@ async function call(
  * deadline one just moves. `notify: false`: no feedback push. Last, so
  * nothing captured before it moves.
  */
+/** A moment `days` days from now (negative: ago), as an ISO instant. */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString()
+}
+
+/** 09:00 in User B's zone (America/New_York), `days` local days from today. */
+function nineAm(days: number): string {
+  return DateTime.now()
+    .setZone('America/New_York')
+    .plus({ days })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()!
+}
+
+/** User B's id in the integration seed (scripts/seed-test.ts). */
+const USER_B_ID = 2
+
+/**
+ * Step 15. The task queue's panels (task-queue PR 3), with the switch on.
+ * Each rollover runs with `force` (the test route sets the user's last
+ * rollover to the day before, in the same step), so a minute cron that
+ * stamped the day first can't stop it. A rollover only touches a task whose
+ * target was set before its moment (as of M), so every task here has its
+ * `target_set_at` backdated; nothing earlier in the scenario is old enough.
+ *
+ * 1. As of two days ago: a one-off five days late is stripped, and a
+ *    repeating task (every 10 days at 09:00 — a rule whose text never
+ *    depends on the day the test runs) whose occurrence was four days ago
+ *    WAITS for its next one, six days ahead (no occurrence in that OpenTask
+ *    day). Both are queued then: "Previously targeted" today.
+ * 2. As of now: a one-off two days late is stripped, and a Try Tomorrow row
+ *    (`/bulk/snooze` with `source: 'try_tomorrow'`: target at the next
+ *    rollover, marked) is stripped as marked, its flag kept: "Stripped today".
+ */
+async function queuePanels(
+  make: (name: string, body: Record<string, unknown>) => Promise<void>,
+  created: Record<string, number>,
+): Promise<{ withQueue: Json; plain: Json }> {
+  await setTaskQueue(true)
+  try {
+    // Five days ago at 09:00: older than the repeating task's missed
+    // occurrence, so it sorts first in its panel at any hour.
+    await make('queueOld', { title: 'Return the library books', target_at: nineAm(-5) })
+    await make('queueWeekly', {
+      title: 'Water the ferns',
+      rrule: 'FREQ=DAILY;INTERVAL=10;BYHOUR=9;BYMINUTE=0',
+      target_at: nineAm(6),
+    })
+    const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
+    try {
+      // Its last occurrence was four days ago: one interval before the one
+      // ahead.
+      db.prepare('UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?').run(
+        nineAm(-4),
+        nineAm(-4),
+        created.queueWeekly,
+      )
+    } finally {
+      db.close()
+    }
+    backdate([created.queueOld, created.queueWeekly], 5)
+    await call('/api/test/rollover', { user_id: USER_B_ID, now: daysFromNow(-2), force: true })
+
+    await make('queueNew', { title: 'Call the plumber', target_at: daysFromNow(-2), priority: 2 })
+    await make('queueTryTomorrow', { title: 'Sort the receipts', target_at: daysFromNow(-1) })
+    await call('/api/tasks/bulk/snooze', {
+      ids: [created.queueTryTomorrow],
+      source: 'try_tomorrow',
+    })
+    backdate([created.queueNew, created.queueTryTomorrow], 3)
+    await call('/api/test/rollover', { user_id: USER_B_ID, force: true })
+    // The opt-in form (the web's, and the native apps' once they draw the
+    // queue) and the default form, which a build that predates the queue
+    // sends: the switch is on, yet it gets no queue kinds and no queued task.
+    return {
+      withQueue: await call('/api/reminders?queue=1'),
+      plain: await call('/api/reminders'),
+    }
+  } finally {
+    await setTaskQueue(false)
+  }
+}
+
 async function snoozeOverdueWithQueue(): Promise<Json> {
   await setTaskQueue(true)
   try {
@@ -414,6 +513,7 @@ describe('contract fixtures (native clients)', () => {
   const ids = new IdMap()
   const captured: Record<string, Json> = {}
   const created: Record<string, number> = {}
+  let plainWithQueueOn: Json = null
 
   beforeAll(async () => {
     await resetTestData()
@@ -629,6 +729,35 @@ describe('contract fixtures (native clients)', () => {
     captured['bulk-snooze-overdue'] = await snoozeOverdueWithQueue()
   })
 
+  // 15. The task queue's two panels (`queuePanels`). Last of all.
+  beforeAll(async () => {
+    let placeholder = 101 + Object.keys(created).length
+    const make = async (name: string, body: Record<string, unknown>) => {
+      const res = (await call('/api/tasks', body)) as { data: { id: number } }
+      created[name] = res.data.id
+      ids.register('task', res.data.id, placeholder++)
+    }
+    const forms = await queuePanels(make, created)
+    captured['reminders-queue'] = forms.withQueue
+    plainWithQueueOn = forms.plain
+  })
+
+  test('without ?queue=1 the switch-on payload has no queue kinds and no queued task', () => {
+    type Segs = { data: { task_segments: { horizon: string; tasks: { id: number }[] }[] } }
+    const queued = new Set(
+      ['queueOld', 'queueWeekly', 'queueNew', 'queueTryTomorrow'].map((n) => created[n]),
+    )
+    const plain = (plainWithQueueOn as unknown as Segs).data.task_segments
+    expect(plain.map((s) => s.horizon)).not.toContain('queue_today')
+    expect(plain.map((s) => s.horizon)).not.toContain('queue_previous')
+    for (const seg of plain) for (const t of seg.tasks) expect(queued.has(t.id)).toBe(false)
+    // The opt-in form has them, first.
+    const withQueue = (captured['reminders-queue'] as unknown as Segs).data.task_segments
+    expect(withQueue.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
+    // Everything else is the same list in both forms.
+    expect(plain).toEqual(withQueue.slice(2))
+  })
+
   const names = [
     'user-preferences',
     'reminders-initial',
@@ -652,6 +781,7 @@ describe('contract fixtures (native clients)', () => {
     'task-badges',
     'task-interval-quota',
     'reminders-interval',
+    'reminders-queue',
   ]
 
   for (const name of names) {

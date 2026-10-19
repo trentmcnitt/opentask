@@ -20,7 +20,19 @@
  * is a deliberate target — the age clock starts there. Each is one undo entry;
  * a misfire is undone with the standard Undo.
  *
- * Repeating tasks appear only in Upcoming (their next occurrence's heads-ups).
+ * Repeating tasks appear only in Upcoming (their next occurrence's heads-ups)
+ * and, waiting for their next occurrence, in the task queue.
+ *
+ * THE TASK QUEUE (task-queue PR 3, 2026-10-19; docs/TASK-MODEL.md § The task
+ * queue). With the server switch on (`OPENTASK_TASK_QUEUE`), two more
+ * segments come FIRST: `queue_today` (queued by this OpenTask day's rollover)
+ * and `queue_previous` (queued earlier, never handed back) — `queueKind` in
+ * src/lib/task-segments.ts. A queued task is in no horizon segment and not in
+ * Upcoming (rule 7). Consider on a stripped one-off also takes it OUT of the
+ * queue (`queued_at` cleared in the same write): it goes back to its horizon
+ * segment, ticked there today through the shared `last_considered_at`. A
+ * waiting repeating task stays queued and shows again tomorrow. Switch off:
+ * queued tasks fall through to the horizon segments and Upcoming as before.
  */
 
 import { getDb, withTransaction } from '@/core/db'
@@ -34,6 +46,9 @@ import type { Task } from '@/types'
 import {
   SEGMENT_NUDGE_THRESHOLD,
   SEGMENT_ORDER,
+  compareQueueRows,
+  queueKind,
+  queueRowState,
   coerceCheckInDay,
   segmentState,
   type CheckInDay,
@@ -43,6 +58,9 @@ import {
 import { upcomingCandidate, upcomingState } from '@/lib/task-segments'
 import { rowToTask, taskColumns, type TaskRow } from './read'
 import { bulkEdit } from './bulk'
+import { taskQueueEnabled } from './task-queue'
+import { rolloverTimeForUser } from './rollover-time'
+import { latestRollover } from '@/lib/opentask-day'
 
 export interface SegmentTask {
   task: Task
@@ -115,37 +133,73 @@ function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
 }
 
 /**
- * Today's task segments, in the order the screen walks them (days, upcoming,
- * weeks, months, eventually). A segment appears only on a day it has items.
- * Within a horizon segment: priority, then id — horizon decides WHETHER a task
- * shows, never where, so acting on one never reorders the rest under the
- * finger (the 09-05 rule). Within Upcoming: the effective target, then id —
- * the order the dates come in.
+ * Today's task segments, in the order the screen walks them (the queue's two
+ * panels, days, upcoming, weeks, months, eventually). A segment appears only
+ * on a day it has items. Within a horizon segment: priority, then id —
+ * horizon decides WHETHER a task shows, never where, so acting on one never
+ * reorders the rest under the finger (the 09-05 rule). Within Upcoming: the
+ * effective target, then id — the order the dates come in. Within a queue
+ * panel: priority, the older remembered target, then id (`compareQueueRows`).
  *
  * A one-off with a target the user picked is in no horizon segment (spec §1,
  * §8.5): it shows only in Upcoming, on its heads-up days. A deadline task
  * whose target is the automatic one stays in its horizon segment.
+ *
+ * A QUEUED task (switch on) is placed by `queueKind` before anything else and
+ * is then in no other segment (rule 7, precedence over horizon AND Upcoming).
+ *
+ * `queuePanels` — the caller can show the queue's two panels (the web;
+ * `GET /api/reminders?queue=1`). Without it, a queued task (switch on) is in
+ * NO segment at all: an older native build would list unknown kinds as
+ * pages, so it gets the list with the parked tasks simply left out —
+ * untargeted, out of the way, which is what the queue is for. Switch off:
+ * nothing is queued as far as the segments go, either way.
  */
-export function getTaskSegments(userId: number, timezone: string, now = new Date()): TaskSegment[] {
+export function getTaskSegments(
+  userId: number,
+  timezone: string,
+  now = new Date(),
+  { queuePanels = false }: { queuePanels?: boolean } = {},
+): TaskSegment[] {
   const byKind = new Map<SegmentKind, SegmentTask[]>()
   const checkInDay = getCheckInDay(userId)
   const upcoming: (SegmentTask & { target: string })[] = []
+  const add = (kind: SegmentKind, entry: SegmentTask) => {
+    const list = byKind.get(kind) ?? []
+    list.push(entry)
+    byKind.set(kind, list)
+  }
+  const placeInQueue = queuePlacer(userId, timezone, now)
+  // Queued, but the caller can't show the queue: left out of every segment.
+  const place = (task: Task) => {
+    const queued = placeInQueue(task)
+    if (queued && !queuePanels) return 'hidden' as const
+    return queued
+  }
   const addUpcoming = (task: Task) => {
     const heads = upcomingState(task, timezone, now)
     if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
   }
   for (const task of eligibleTasks(userId)) {
+    const queued = place(task)
+    if (queued === 'hidden') continue
+    if (queued) {
+      add(queued.kind, queued.entry)
+      continue
+    }
     if (upcomingCandidate(task)) {
       addUpcoming(task)
       continue
     }
     const placed = segmentState(task, timezone, now, checkInDay)
-    if (!placed) continue
-    const list = byKind.get(placed.horizon) ?? []
-    list.push({ task, state: placed.state })
-    byKind.set(placed.horizon, list)
+    if (placed) add(placed.horizon, { task, state: placed.state })
   }
-  for (const task of repeatingTasks(userId)) addUpcoming(task)
+  for (const task of repeatingTasks(userId)) {
+    const queued = place(task)
+    if (queued === 'hidden') continue
+    if (queued) add(queued.kind, queued.entry)
+    else addUpcoming(task)
+  }
   if (upcoming.length > 0) {
     upcoming.sort((a, b) => Date.parse(a.target) - Date.parse(b.target) || a.task.id - b.task.id)
     byKind.set(
@@ -155,11 +209,34 @@ export function getTaskSegments(userId: number, timezone: string, now = new Date
   }
   return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
     const tasks = byKind.get(kind)!
-    if (kind !== 'upcoming') {
+    if (kind === 'queue_today' || kind === 'queue_previous') {
+      tasks.sort((a, b) => compareQueueRows(a.task, b.task))
+    } else if (kind !== 'upcoming') {
       tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
     }
     return segmentOf(kind, tasks)
   })
+}
+
+/**
+ * The queue's placement rule for this user and moment, or one that places
+ * nothing with the switch off (then a queued task falls through to its horizon
+ * segment or Upcoming, exactly as before the queue). The latest rollover
+ * moment is read once per call, not per task.
+ */
+function queuePlacer(
+  userId: number,
+  timezone: string,
+  now: Date,
+): (task: Task) => { kind: SegmentKind; entry: SegmentTask } | null {
+  if (!taskQueueEnabled()) return () => null
+  const rolloverTime = rolloverTimeForUser(userId)
+  const m = latestRollover(now, timezone, rolloverTime)
+  return (task) => {
+    const kind = queueKind(task, now, m)
+    if (!kind) return null
+    return { kind, entry: { task, state: queueRowState(task, timezone, now, rolloverTime) } }
+  }
 }
 
 /** Load the caller's own open tasks among `ids`; anything else is refused, not skipped. */
@@ -184,22 +261,45 @@ type StampColumn = 'last_considered_at' | 'segment_deferred_at'
  * Write one stamp on each task, as one undo entry. Logged even when a task is
  * already stamped today: the client offers Undo on every tap, and without an
  * entry of its own that Undo would reverse whatever came before it.
+ *
+ * `leaveQueue` (consider only): a QUEUED ONE-OFF also leaves the task queue in
+ * the same write — `queued_at` and Try Tomorrow's `try_tomorrow` cleared, both
+ * in that task's snapshot, so the one Undo puts it back in the queue
+ * (`queued_from_due_at`, the remembered target, is kept). The flag goes with
+ * it: the rollover only ever clears it on a queued task, so left set on a task
+ * outside the queue it would never clear. A waiting REPEATING task stays
+ * queued (spec rule 8: it comes back tomorrow, until its next occurrence).
  */
 function stampTasks(
   userId: number,
   ids: number[],
   column: StampColumn,
   description: string,
+  { leaveQueue = false }: { leaveQueue?: boolean } = {},
 ): number {
   const tasks = ownOpenTasks(userId, ids)
   const now = new Date().toISOString()
+  const fieldsAll = new Set<string>([column])
   withTransaction((db) => {
     const stmt = db.prepare(`UPDATE tasks SET ${column} = ?, updated_at = ? WHERE id = ?`)
+    const unqueue = db.prepare(
+      `UPDATE tasks SET ${column} = ?, queued_at = NULL, try_tomorrow = 0, updated_at = ? WHERE id = ?`,
+    )
     const snapshots = tasks.map((task) => {
+      if (leaveQueue && task.queued_at && !task.rrule) {
+        unqueue.run(now, now, task.id)
+        const fields = [column, 'queued_at', ...(task.try_tomorrow ? ['try_tomorrow'] : [])]
+        fields.forEach((f) => fieldsAll.add(f))
+        return createTaskSnapshot(
+          task,
+          { ...task, [column]: now, queued_at: null, try_tomorrow: false },
+          fields,
+        )
+      }
       stmt.run(now, now, task.id)
       return createTaskSnapshot(task, { ...task, [column]: now }, [column])
     })
-    logAction(userId, 'task_segment', description, [column], snapshots)
+    logAction(userId, 'task_segment', description, [...fieldsAll], snapshots)
   })
   emitSyncEvent(userId)
   return tasks.length
@@ -209,10 +309,17 @@ function plural(n: number): string {
   return n === 1 ? '1 task' : `${n} tasks`
 }
 
-/** The circle: "I saw it." Never a completion. */
+/**
+ * The circle (and a tap on the row): "I saw it." Never a completion. On a
+ * queued one-off it is also the way OUT of the queue (`stampTasks`'
+ * `leaveQueue`) — always, whatever the switch says: a task the user has seen
+ * must not sit in a queue the switch later turns back on.
+ */
 export function considerTasks(userId: number, ids: number[]): number {
   const n = ids.length
-  return stampTasks(userId, ids, 'last_considered_at', `Considered ${plural(n)}`)
+  return stampTasks(userId, ids, 'last_considered_at', `Considered ${plural(n)}`, {
+    leaveQueue: true,
+  })
 }
 
 /** Defer All: off today's segment, back tomorrow. Not a consider. */

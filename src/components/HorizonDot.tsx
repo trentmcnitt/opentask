@@ -144,23 +144,55 @@ export function HorizonDotButton({
   onChange,
   variant,
   className,
+  onOpen,
 }: {
   task: Pick<Task, 'horizon' | 'title' | 'deadline_at' | 'due_at'>
   onChange?: (horizon: HorizonValue | null) => void
-  variant: 'corner' | 'inline'
+  /** 'meta': the segment row's meta line (task queue on) — opens details (`onOpen`), never a menu. */
+  variant: 'corner' | 'inline' | 'meta'
   className?: string
+  /** 'meta' only: open the task's details. */
+  onOpen?: () => void
 }) {
   const { checkInDay } = useCheckInDay()
   const horizon = horizonOf(task.horizon)
   const title = horizonDotTitle(task, checkInDay, new Date())
   const shape = cn(
     'relative flex shrink-0 items-center justify-center',
-    variant === 'corner'
-      ? 'bg-muted h-[18px] min-w-6 px-[6px]'
-      : '-my-2 size-8 rounded-md pointer-coarse:-my-3 pointer-coarse:size-11',
+    variant === 'corner' && 'bg-muted h-[18px] min-w-6 px-[6px]',
+    variant === 'inline' && '-my-2 size-8 rounded-md pointer-coarse:-my-3 pointer-coarse:size-11',
+    // A segment row's meta line (task queue PR 3): just the mark, in the
+    // line's flow, beside the project and priority.
+    variant === 'meta' && 'size-3',
     className,
   )
   const data = { 'data-horizon-dot': horizon ?? 'unset', 'data-horizon-chip': '' }
+  if (variant === 'meta') {
+    // The segment row's meta line (task queue on): a press opens the task's
+    // details, where the horizon is changed — never the row's consider.
+    return (
+      <button
+        type="button"
+        data-horizon-dot={horizon ?? 'unset'}
+        data-horizon-meta
+        title={title}
+        aria-label={`${HORIZON_WORD}: ${title}. Details`}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen?.()
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        className={cn(
+          shape,
+          // A bigger hit box than the 12px mark, without moving the line.
+          'cursor-pointer touch-manipulation rounded-sm before:absolute before:-inset-2 hover:opacity-70',
+        )}
+      >
+        <HorizonDotMark horizon={horizon} />
+      </button>
+    )
+  }
   if (!onChange) {
     return (
       <span {...data} title={title} className={shape}>
