@@ -17,8 +17,10 @@ import {
   compareVersions,
   ClaudeCliError,
   _resetClaudeCliForTesting,
+  probeClaudeCli,
   type CliResolverDeps,
 } from '@/core/ai/cli-path'
+import { log } from '@/lib/logger'
 
 vi.mock('@/lib/logger', () => ({
   log: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn(), trace: vi.fn() },
@@ -216,12 +218,24 @@ describe('getClaudeCliPath', () => {
 // --- API providers never touch the CLI ---
 
 const cliSpy = vi.hoisted(() => vi.fn(() => '/usr/local/bin/claude'))
+// Provider detection may PROBE for an installed CLI (`claude --version` only, no
+// session) to decide whether SDK mode is offered; it never resolves it for use.
+const probeSpy = vi.hoisted(() =>
+  vi.fn(() => ({
+    ok: true,
+    cli: { source: 'path', path: '/usr/local/bin/claude', version: '2.1.303' },
+  })),
+)
 
-describe('API providers never resolve the CLI', () => {
+describe('API providers never run the CLI', () => {
   beforeEach(() => {
     cliSpy.mockClear()
     vi.resetModules()
-    vi.doMock('@/core/ai/cli-path', () => ({ getClaudeCliPath: cliSpy }))
+    vi.doMock('@/core/ai/cli-path', () => ({
+      getClaudeCliPath: cliSpy,
+      probeClaudeCli: probeSpy,
+      refusalMessage: () => 'unavailable',
+    }))
     vi.doMock('@/core/ai/api-provider', () => ({
       apiQuery: vi.fn(async () => ({ success: true })),
     }))
@@ -258,5 +272,40 @@ describe('API providers never resolve the CLI', () => {
     const { initAI } = await import('@/core/ai/sdk')
     await initAI()
     expect(cliSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('probeClaudeCli and SDK availability', () => {
+  beforeEach(() => _resetClaudeCliForTesting())
+
+  test('probe resolves and caches without logging; the first getClaudeCliPath logs once', async () => {
+    vi.mocked(log.info).mockClear()
+    vi.mocked(log.error).mockClear()
+    const deps = makeDeps({
+      pathEnv: '/usr/bin',
+      bins: { '/usr/bin/claude': '2.1.303 (Claude Code)' },
+    })
+    expect(probeClaudeCli(deps).ok).toBe(true)
+    expect(log.info).not.toHaveBeenCalled()
+    expect(getClaudeCliPath(deps)).toBe('/usr/bin/claude')
+    getClaudeCliPath(deps)
+    expect(log.info).toHaveBeenCalledTimes(1)
+    expect(deps.exec).toHaveBeenCalledTimes(1)
+  })
+
+  test('no usable CLI → the SDK provider is unavailable, with the not-found reason', async () => {
+    vi.resetModules()
+    vi.doMock('@/core/ai/cli-path', async (orig) => {
+      const real = await orig<typeof import('@/core/ai/cli-path')>()
+      return {
+        ...real,
+        probeClaudeCli: () => ({ ok: false, reason: 'not-found', pathEnv: '/nowhere' }),
+      }
+    })
+    const provider = await import('@/core/ai/provider')
+    expect(await provider.isSdkAvailable()).toBe(false)
+    expect(provider.sdkUnavailableReason()).toMatch(/Claude Code CLI not found/)
+    vi.doUnmock('@/core/ai/cli-path')
+    vi.resetModules()
   })
 })

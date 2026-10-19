@@ -22,6 +22,7 @@ import { getClaudeCliPath } from './cli-path'
 import {
   type AIProvider,
   isSdkAvailable,
+  sdkUnavailableReason,
   isAnthropicAvailable,
   isOpenAIAvailable,
   getServerDefaultProvider,
@@ -62,6 +63,10 @@ export async function initAI(): Promise<void> {
   }
 
   const sdkOk = await isSdkAvailable()
+  // No usable Claude Code CLI: SDK mode is off on this box (an API-only or
+  // Docker install, or a too-old CLI). Say why once; the fallback below picks
+  // an API provider when one is configured.
+  if (!sdkOk) log.warn('ai', `SDK provider unavailable: ${sdkUnavailableReason()}`)
   const anthropicOk = isAnthropicAvailable()
   const openaiOk = isOpenAIAvailable()
 

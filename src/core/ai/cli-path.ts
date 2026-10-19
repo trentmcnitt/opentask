@@ -212,6 +212,7 @@ function defaultDeps(): CliResolverDeps {
 // --- Cached entry point ---
 
 let cached: CliResolution | null = null
+let logged = false
 
 function logResolution(res: CliResolution): void {
   if (res.ok) {
@@ -222,20 +223,33 @@ function logResolution(res: CliResolution): void {
 }
 
 /**
+ * Resolve (once per process, cached) without logging or throwing — for
+ * provider detection (`isSdkAvailable`), which decides whether SDK mode is
+ * offered at all. A box with no usable CLI then simply has no SDK provider:
+ * API providers are picked instead and no warm slot starts.
+ */
+export function probeClaudeCli(deps?: CliResolverDeps): CliResolution {
+  if (!cached) cached = resolveClaudeCli(deps ?? defaultDeps())
+  return cached
+}
+
+/**
  * The `pathToClaudeCodeExecutable` to pass the SDK — always a path, never the
- * bundled CLI. Resolved and logged once per process; throws ClaudeCliError on
- * every call when no usable CLI was found. Call it only on the SDK path.
+ * bundled CLI. Logged once per process; throws ClaudeCliError on every call
+ * when no usable CLI was found. Call it only on the SDK path.
  */
 export function getClaudeCliPath(deps?: CliResolverDeps): string {
-  if (!cached) {
-    cached = resolveClaudeCli(deps ?? defaultDeps())
-    logResolution(cached)
+  const res = probeClaudeCli(deps)
+  if (!logged) {
+    logged = true
+    logResolution(res)
   }
-  if (!cached.ok) throw new ClaudeCliError(refusalMessage(cached))
-  return cached.cli.path
+  if (!res.ok) throw new ClaudeCliError(refusalMessage(res))
+  return res.cli.path
 }
 
 /** Test-only: forget the cached resolution. */
 export function _resetClaudeCliForTesting(): void {
   cached = null
+  logged = false
 }
