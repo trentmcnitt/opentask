@@ -128,6 +128,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   try_tomorrow: BOOL,
   queued_at: STR_N,
   queued_from_due_at: STR_N,
+  rolled_over_at: STR_N,
   attempts_label: STR_N,
   attempts_offer: STR_N,
   age_label: STR_N,

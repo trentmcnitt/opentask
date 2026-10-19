@@ -151,7 +151,15 @@ describe('TQ-F: the sweep-feedback push uses the count-only summary', () => {
  * `create.ts` is exempt: a new row starts with the columns' defaults.
  */
 describe('TQ-G: queue-state guard', () => {
-  const EXEMPT = new Set(['src/core/tasks/create.ts', 'src/core/tasks/target-set.ts'])
+  const EXEMPT = new Set([
+    'src/core/tasks/create.ts',
+    'src/core/tasks/target-set.ts',
+    // The rollover (task-queue PR 2) is the deliberate exception: it is the
+    // writer that SETS the queue state (`queued_at`, the kept target), and
+    // writes every queue column explicitly in each statement — clearing
+    // them would undo its own strip. Its tests: tq-rollover.test.ts.
+    'src/core/tasks/task-rollover.ts',
+  ])
 
   function files(dir: string): string[] {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {

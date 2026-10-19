@@ -28,6 +28,8 @@ export interface ParsedUndoEntry {
   snapshots: UndoSnapshot[]
   /** Set only on time_slot_edit / time_slot_delete entries. */
   slotState?: SlotUndoState | null
+  /** When the entry was written — the rollover fence's reference (`rollover-fence.ts`). */
+  createdAt?: string | null
 }
 
 /** An undo_log row as selected by selectUndoEntries() */
@@ -38,6 +40,7 @@ export interface RawUndoRow {
   fields_changed: string
   snapshot: string
   slot_state: string | null
+  created_at?: string | null
 }
 
 export function parseUndoRow(raw: RawUndoRow): ParsedUndoEntry {
@@ -48,6 +51,7 @@ export function parseUndoRow(raw: RawUndoRow): ParsedUndoEntry {
     fieldsChanged: JSON.parse(raw.fields_changed),
     snapshots: JSON.parse(raw.snapshot) as UndoSnapshot[],
     slotState: parseSlotState(raw.slot_state),
+    createdAt: raw.created_at ?? null,
   }
 }
 
@@ -72,7 +76,7 @@ export function selectUndoEntries(
   options: SelectUndoEntriesOptions,
 ): ParsedUndoEntry[] {
   let sql = `
-    SELECT id, action, description, fields_changed, snapshot, slot_state
+    SELECT id, action, description, fields_changed, snapshot, slot_state, created_at
     FROM undo_log
     WHERE user_id = ? AND undone = ?
   `

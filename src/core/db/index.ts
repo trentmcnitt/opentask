@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
 import { log } from '@/lib/logger'
+import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
 import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
@@ -388,11 +389,14 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
-  // Written by the rollover (task-queue PR 2), whose migration stamps it with
-  // each user's current OpenTask day WHERE it IS NULL — NULL is never read as
-  // "never ran". Left NULL here.
+  // Written by the rollover (task-queue PR 2); stamped below
+  // (`stampRolloverDates`) — NULL is never read as "never ran".
   if (!hasColumn(database, 'users', 'last_rollover_date')) {
     database.exec('ALTER TABLE users ADD COLUMN last_rollover_date TEXT DEFAULT NULL')
+  }
+  // The rollover's undo-fence witness (task-queue PR 2).
+  if (!hasColumn(database, 'tasks', 'rolled_over_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN rolled_over_at TEXT DEFAULT NULL')
   }
   if (!hasColumn(database, 'completions', 'attempts')) {
     database.exec('ALTER TABLE completions ADD COLUMN attempts INTEGER DEFAULT NULL')
@@ -414,6 +418,8 @@ function runMigrations(database: Database.Database): void {
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
+  // After the periods are backfilled: the rollover time is the first period.
+  stampRolloverDates(database)
   clearQuotaDueDates(database)
   restoreProjectGrouping(database)
   logTargetMigration(migrateDeadlineTargets(database))
@@ -424,6 +430,39 @@ function logTargetMigration(counts: TargetMigrationCounts): void {
   if (Object.values(counts).some((n) => n > 0)) {
     log.info('db', `target model migration (2026-10-12): ${JSON.stringify(counts)}`)
   }
+}
+
+/**
+ * THE ROLLOVER'S DEPLOY STAMP (task queue PR 2, 2026-10-19). Every user whose
+ * `last_rollover_date` is NULL gets their CURRENT OpenTask day — so the first
+ * deploy strips nothing, and the first strip is the next real rollover.
+ * Runs on every startup, switch on or off; the `IS NULL` makes a second run a
+ * no-op. The rollover job itself also treats a NULL as "stamp, don't strip"
+ * (a user created after this ran), so NULL never means "never ran".
+ */
+export function stampRolloverDates(database: Database.Database, now: Date = new Date()): number {
+  const users = database
+    .prepare('SELECT id, timezone, morning_time FROM users WHERE last_rollover_date IS NULL')
+    .all() as { id: number; timezone: string; morning_time: string | null }[]
+  if (users.length === 0) return 0
+  const slots = database.prepare('SELECT start_time FROM time_slots WHERE user_id = ?')
+  const stamp = database.prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?')
+  let stamped = 0
+  for (const u of users) {
+    try {
+      const time = rolloverTimeOf(
+        slots.all(u.id) as { start_time: string }[],
+        u.morning_time ?? '09:00',
+      )
+      stamp.run(openTaskDayOf(now, u.timezone, time), u.id)
+      stamped++
+    } catch (err) {
+      // A malformed zone or morning time: left NULL, and the job stamps it
+      // (or skips it) on its own. Never block startup.
+      log.warn('db', `Rollover stamp skipped for user ${u.id}:`, err)
+    }
+  }
+  return stamped
 }
 
 /**

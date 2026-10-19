@@ -14,6 +14,7 @@ import { effectiveAttempts } from '@/lib/task-segments'
 import { quotaPeriodFields } from '@/lib/track'
 import { coerceWeekStart } from '@/lib/week-start'
 import { getCurrentlyDueTaskIds } from './currently-due'
+import { taskQueueEnabled } from './task-queue'
 
 /**
  * Every column `rowToTask` reads, in one list so the two SELECTs below can't
@@ -52,6 +53,7 @@ const TASK_COLUMNS = [
   'try_tomorrow',
   'queued_at',
   'queued_from_due_at',
+  'rolled_over_at',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -87,9 +89,18 @@ export function taskColumns(alias?: string): string {
   // And the owner's first day of the week, for a quota's served period
   // (`quotaPeriodFields`): a week ends at the owner's boundary, like the rollover.
   const ownerWeekStart = `(SELECT week_start FROM users WHERE users.id = ${table}.user_id) AS owner_week_start`
-  return [...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)), ownerTz, ownerWeekStart].join(
-    ', ',
-  )
+  // And the owner's ROLLOVER TIME (task queue, 2026-10-19): the earliest
+  // period's start, else morning_time — `rolloverTimeOf` in SQL (start_time
+  // is validated zero-padded HH:MM, so MIN sorts as time; the index on
+  // (user_id, start_time) answers it). Read only with the switch on, when
+  // attempts count OpenTask days (`effectiveAttempts`).
+  const ownerRollover = `COALESCE((SELECT MIN(start_time) FROM time_slots WHERE time_slots.user_id = ${table}.user_id),(SELECT morning_time FROM users WHERE users.id = ${table}.user_id)) AS owner_rollover_time`
+  return [
+    ...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)),
+    ownerTz,
+    ownerWeekStart,
+    ownerRollover,
+  ].join(', ')
 }
 
 /**
@@ -292,6 +303,9 @@ export interface TaskRow {
   try_tomorrow?: number
   queued_at?: string | null
   queued_from_due_at?: string | null
+  rolled_over_at?: string | null
+  /** Not a column: the owner's rollover time (`taskColumns`), for the attempts read. */
+  owner_rollover_time?: string | null
   /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
   owner_timezone?: string | null
   /** Not a column: the owner's `week_start` (`taskColumns`), for a quota's served period. */
@@ -343,7 +357,15 @@ export function parseJsonColumn<T>(raw: string | null | undefined): T | null {
 export function rowToTask(row: TaskRow): Task {
   const task = baseTask(row)
   if (row.owner_timezone) {
-    const { attempts, countedThrough } = effectiveAttempts(task, row.owner_timezone, new Date())
+    // Task queue (B7): with the switch on, an attempt is an OPENTASK day
+    // (rollover to rollover), not a calendar day.
+    const rolloverTime = taskQueueEnabled() ? (row.owner_rollover_time ?? null) : null
+    const { attempts, countedThrough } = effectiveAttempts(
+      task,
+      row.owner_timezone,
+      new Date(),
+      rolloverTime,
+    )
     task.attempts = attempts
     task.attempts_counted_through = countedThrough
     // Interval quotas (2026-10-16): the current period, served — see
@@ -365,12 +387,16 @@ export function rowToTask(row: TaskRow): Task {
 /** The task queue's columns (2026-10-19); defaulted for a row from before them. */
 function queueFields(
   row: TaskRow,
-): Pick<Task, 'queue_mark' | 'try_tomorrow' | 'queued_at' | 'queued_from_due_at'> {
+): Pick<
+  Task,
+  'queue_mark' | 'try_tomorrow' | 'queued_at' | 'queued_from_due_at' | 'rolled_over_at'
+> {
   return {
     queue_mark: row.queue_mark === 1,
     try_tomorrow: row.try_tomorrow === 1,
     queued_at: row.queued_at ?? null,
     queued_from_due_at: row.queued_from_due_at ?? null,
+    rolled_over_at: row.rolled_over_at ?? null,
   }
 }
 

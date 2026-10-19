@@ -12,6 +12,7 @@ import type { UndoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
+import { rolledOverSince } from './rollover-fence'
 import { compensate, countBefore } from './progress-compensation'
 import { applyPromptDefault, applySlotRow } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
@@ -45,6 +46,9 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
       // A quota count from a period that has since closed: nothing to restore
       // (see `createQuotaSnapshot`). The entry is still marked undone below.
       if (periodMoved(tx, snapshot)) continue
+      // The task queue's rollover changed this task after the entry was
+      // written (B5): leave it as the rollover left it (`rollover-fence.ts`).
+      if (rolledOverSince(tx, snapshot, entry.createdAt)) continue
       const count = countBefore(tx, snapshot, entry.fieldsChanged)
       applyFieldsToTask(snapshot.task_id, snapshot.before_state, entry.fieldsChanged)
       // A count moved back is logged as the opposite event (`compensate`).

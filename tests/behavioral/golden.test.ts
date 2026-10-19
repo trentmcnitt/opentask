@@ -12,6 +12,7 @@
 import { describe, test, expect, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { createTask } from '@/core/tasks'
+import { getDb } from '@/core/db'
 import { simulateDays, dayLine, type SimEvent } from '@/core/sim/day-simulator'
 import { goldenScenarios } from '../golden'
 import type { GoldenScenario } from '../golden/types'
@@ -39,8 +40,28 @@ function expected(
   return out
 }
 
+/** A queue scenario's user: the switch, the periods, and the stamp (see `GoldenScenario.queue`). */
+function setupQueue(s: GoldenScenario) {
+  if (!s.queue) return
+  vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+  const db = getDb()
+  const insert = db.prepare(
+    'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
+  )
+  db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
+  ;(s.queue.periods ?? ['06:30', '12:00', '20:30']).forEach((start, i) =>
+    insert.run(TEST_USER_ID, `Period ${i}`, start, i),
+  )
+  db.prepare('UPDATE users SET morning_time = ?, last_rollover_date = ? WHERE id = ?').run(
+    s.queue.morning ?? '08:30',
+    DateTime.fromISO(s.from).minus({ days: 1 }).toISODate(),
+    TEST_USER_ID,
+  )
+}
+
 function run(s: GoldenScenario) {
   setupTestDb()
+  setupQueue(s)
   const events: SimEvent[] = [
     ...s.tasks.map((t) => ({
       at: t.created,
@@ -74,6 +95,7 @@ function run(s: GoldenScenario) {
     })),
     taskIds: () => Object.values(ids),
     setClock: (d) => vi.setSystemTime(d),
+    rollover: s.queue ? { late: s.queue.late } : undefined,
   })
   for (const [name, id] of Object.entries(ids)) names[id] = name
   const actual: Record<string, Record<string, string>> = {}
@@ -87,7 +109,10 @@ function run(s: GoldenScenario) {
 
 describe('GOLDEN: day-by-day timelines (America/Chicago)', () => {
   afterAll(() => teardownTestDb())
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
 
   test('the suite is in the test user zone', () => expect(TEST_TIMEZONE).toBe(TZ))
 

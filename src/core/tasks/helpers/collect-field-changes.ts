@@ -53,6 +53,15 @@ export type FieldChangesInput = TaskUpdateInput & {
    */
   queue_mark?: boolean
   try_tomorrow?: boolean
+  /**
+   * Server-internal (task queue, spec rule 2 "the original target is
+   * remembered"): the defer that NEWLY sets the mark also records the task's
+   * pre-sweep target here, in the same write and snapshot, so the rollover
+   * keeps it (not the rollover moment the sweep moved it to) and undo of the
+   * sweep puts the old value back. Omitted by a defer of an already-marked
+   * task, which keeps the value its first sweep wrote.
+   */
+  queued_from_due_at?: string | null
 }
 
 export interface FieldChangeData {
@@ -269,6 +278,12 @@ function collectQueueFields(data: FieldChangeData, task: Task, input: FieldChang
       undefined,
       input.queue_mark ? 1 : 0,
     )
+  }
+  if (
+    input.queued_from_due_at !== undefined &&
+    input.queued_from_due_at !== task.queued_from_due_at
+  ) {
+    trackField(data, 'queued_from_due_at', task.queued_from_due_at, input.queued_from_due_at)
   }
   if (input.try_tomorrow !== undefined && input.try_tomorrow !== task.try_tomorrow) {
     trackField(

@@ -48,4 +48,13 @@ export interface GoldenScenario {
   expect: Record<string, Record<string, string>>
   /** Per-day counts to check (a subset of the simulator's `counts`). */
   counts?: Record<string, Record<string, number>>
+  /**
+   * The task queue ON (task-queue PR 2): the runner sets OPENTASK_TASK_QUEUE,
+   * gives the user these periods (default 06:30 / 12:00 / 20:30, so the
+   * rollover is 06:30) and morning time (default 08:30), stamps
+   * `last_rollover_date` to the day before `from`, and runs the rollover at
+   * each day's rollover moment — or at `late[date]` (HH:mm), a missed run
+   * caught up. A queued task's line says "queued" after its place.
+   */
+  queue?: { periods?: string[]; morning?: string; late?: Record<string, string> }
 }

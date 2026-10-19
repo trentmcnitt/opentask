@@ -11,6 +11,8 @@
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - Every 1 min: persist attempts (§7 — reads are already exact; this keeps
  *   the stored columns current, see src/core/tasks/attempts.ts)
+ * - Every 1 min, FIRST in both minute jobs above: the task queue's rollover
+ *   (src/core/tasks/task-rollover.ts; once per user per OpenTask day)
  * - 3:00 AM UTC daily: undo purge
  * - 3:30 AM UTC daily: trash purge
  * - 4:00 AM UTC daily: completions purge
@@ -49,6 +51,34 @@ function makeSafeCronRun(notifyError: NotifyError) {
 }
 
 /**
+ * THE TASK ROLLOVER (task queue PR 2; src/core/tasks/task-rollover.ts), run
+ * at the HEAD of both minute jobs — the notification check and the attempts
+ * persist — rather than as a third job of its own. node-cron gives no order
+ * between jobs due the same minute, and at 6:30 the order matters: a task a
+ * sweep marked for the queue has its target AT the rollover, so a
+ * notification check (or an attempts persist) that ran first would nag it
+ * (or count the new day as an attempt) a moment before the strip. The job is
+ * synchronous and runs once per user per OpenTask day (a conditional stamp),
+ * so whichever minute job fires first does the work and the other finds
+ * nothing. Its own try/catch: a failure never blocks either job. Runs with
+ * the switch off too (it then only advances `last_rollover_date`).
+ */
+function makeTaskRollover(runTaskRollover: () => unknown, notifyError: NotifyError): () => void {
+  return () => {
+    try {
+      runTaskRollover()
+    } catch (err) {
+      log.error('cron', 'Task rollover error:', err)
+      notifyError(
+        'cron-failure',
+        'Task rollover failed',
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  }
+}
+
+/**
  * Attempts (spec §7): keep the stored count current every minute — reads are
  * already exact (src/core/tasks/attempts.ts). Its own job, so a failure here
  * never blocks a notification. Quiet: no per-run info log.
@@ -56,9 +86,11 @@ function makeSafeCronRun(notifyError: NotifyError) {
 async function startAttemptsCron(
   schedule: (expr: string, fn: () => void) => unknown,
   notifyError: NotifyError,
+  taskRollover: () => void,
 ) {
   const { persistAttempts } = await import('@/core/tasks/attempts')
   schedule('* * * * *', () => {
+    taskRollover()
     try {
       persistAttempts()
     } catch (err) {
@@ -86,6 +118,8 @@ export async function register() {
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
     const { purgeOldStats } = await import('@/core/stats/purge')
     const { rolloverTrackedPeriods } = await import('@/core/tasks/period-rollover')
+    const { runTaskRollover } = await import('@/core/tasks/task-rollover')
+    const taskRollover = makeTaskRollover(() => runTaskRollover(), notifyError)
     const {
       initAI,
       isAIEnabled,
@@ -99,6 +133,10 @@ export async function register() {
 
     // Run initial notification check after a short delay
     setTimeout(async () => {
+      // The rollover first, as in the minute jobs (`makeTaskRollover`): a
+      // restart at 06:40 after downtime across 06:30 must strip the tasks a
+      // sweep marked for 06:30 before this check would nag them.
+      taskRollover()
       log.info('notifications', 'Running initial overdue check')
       await checkOverdueTasks()
     }, 5000)
@@ -125,6 +163,8 @@ export async function register() {
       }
       isNotificationRunning = true
       notificationStartedAt = Date.now()
+      // Before the overdue check: see `makeTaskRollover`.
+      taskRollover()
       try {
         await checkOverdueTasks()
         // §6: the time slot notifies, not the reminder. Same tick as the
@@ -147,7 +187,7 @@ export async function register() {
       }
     })
     log.info('cron', 'Notification cron started (every 1 min)')
-    await startAttemptsCron((expr, fn) => cron.schedule(expr, fn), notifyError)
+    await startAttemptsCron((expr, fn) => cron.schedule(expr, fn), notifyError, taskRollover)
 
     // --- WidgetKit push sync (event-driven, not a cron) ---
     initWidgetPushSync()

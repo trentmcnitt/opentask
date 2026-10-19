@@ -11,6 +11,7 @@ import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
 import { ageLabel, attemptsLabel, attemptsOffer } from '@/lib/task-segments'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
 
 export interface ClipboardGroup {
   label: string
@@ -52,7 +53,9 @@ export interface FormattedTask extends Task {
    *   else null.
    * - `attempts_offer`: at 3× (`ATTEMPTS_OFFER_REMOVE`), what the row offers —
    *   "remove" (Remove target?), "auto" (Back to auto?), or null (none yet,
-   *   an automatic target, or a repeating task).
+   *   an automatic target, a repeating task, or — task queue on — a
+   *   strippable one-off, whose target the rollover takes off on its own).
+   *   The web row follows this field (TaskRow).
    * - `age_label`: ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo" on a task with
    *   neither a target nor a deadline, past its horizon's threshold; else null.
    *   Calendar math in the user's timezone, as the web row computes it.
@@ -99,7 +102,8 @@ export function formatTaskResponse(task: Task, timezone: string): FormattedTask 
     is_recurring: task.rrule !== null,
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),
-    attempts_offer: attemptsOffer(task, now),
+    // Task queue on: no "Remove target?" on a strippable task (resolution 1).
+    attempts_offer: attemptsOffer(task, now, { queue: taskQueueEnabled() }),
     age_label: ageLabel(task, now, timezone),
   }
 }

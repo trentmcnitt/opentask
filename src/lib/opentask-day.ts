@@ -82,3 +82,55 @@ export function nextRollover(now: Date, timezone: string, rolloverTime: string):
   if (today.getTime() > now.getTime()) return today
   return rolloverMoment(local.plus({ days: 1 }).toISODate()!, timezone, rolloverTime)
 }
+
+/**
+ * The latest rollover moment AT OR BEFORE `now` (the mirror of
+ * `nextRollover`): at exactly 6:30:00 it is today's; at 6:29 it is
+ * yesterday's. The rollover job runs as of this moment (task-queue PR 2).
+ */
+export function latestRollover(now: Date, timezone: string, rolloverTime: string): Date {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const today = rolloverMoment(local.toISODate()!, timezone, rolloverTime)
+  if (today.getTime() <= now.getTime()) return today
+  return rolloverMoment(local.minus({ days: 1 }).toISODate()!, timezone, rolloverTime)
+}
+
+/**
+ * AN EARLY-MORNING PICK (designer ruling, 2026-10-19): a target between local
+ * midnight and the rollover on its calendar day X, SET on an earlier calendar
+ * day than X — at 22:00, "tomorrow 6:00". It is a pick for the coming day,
+ * not the evening's leftover, so it belongs to day X: the rollover of day X
+ * spares it (src/core/tasks/task-rollover.ts) and its attempts count day X,
+ * not the OpenTask day before (`targetOpenTaskDay`). A pick made after
+ * midnight (the night owl's 1 AM pick of 2 AM) is not one: it stays with the
+ * evening's day. ONE rule for both, so they can't drift apart.
+ */
+export function isEarlyMorningPick(
+  dueAt: string,
+  setAt: string,
+  timezone: string,
+  rolloverTime: string,
+): boolean {
+  const due = DateTime.fromISO(dueAt, { zone: 'utc' }).setZone(timezone)
+  const day = due.toISODate()!
+  if (due.toMillis() >= rolloverMoment(day, timezone, rolloverTime).getTime()) return false
+  const setDay = DateTime.fromISO(setAt, { zone: 'utc' }).setZone(timezone).toISODate()!
+  return setDay < day
+}
+
+/**
+ * The OpenTask day (yyyy-MM-dd) a target belongs to for attempts: its
+ * calendar day when it is an early-morning pick (`isEarlyMorningPick`), else
+ * `openTaskDayOf` like any instant.
+ */
+export function targetOpenTaskDay(
+  dueAt: string,
+  setAt: string,
+  timezone: string,
+  rolloverTime: string,
+): string {
+  if (isEarlyMorningPick(dueAt, setAt, timezone, rolloverTime)) {
+    return DateTime.fromISO(dueAt, { zone: 'utc' }).setZone(timezone).toISODate()!
+  }
+  return openTaskDayOf(new Date(dueAt), timezone, rolloverTime)
+}

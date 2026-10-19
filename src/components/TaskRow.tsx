@@ -29,6 +29,7 @@ import { formatDueTimeParts } from '@/lib/format-date'
 import {
   ageLabel,
   attemptsOffer,
+  queueRetiredOffer,
   effectiveAttempts,
   isPastDeadline,
   targetReset,
@@ -385,9 +386,18 @@ export function TaskRow({
   // without a refetch. At 3× the row OFFERS to drop the target (never does it
   // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
   // target the user picked; nothing on an automatic target or a repeating task.
+  //
+  // The task queue (resolution 1) retires "Remove target?" on a strippable
+  // one-off — but only with the SERVER's switch on, which the browser can't
+  // read yet (PR 3 gives it the switch). Until then the offer is read live, as
+  // always, and the server's `attempts_offer` only SUPPRESSES: when the server
+  // already counted 3× (`task.attempts`) on a strippable task and still sent
+  // null, it retired the offer. With the switch off the server sends "remove"
+  // there, so the row behaves exactly as before.
   const attempts = effectiveAttempts(task, timezone, new Date()).attempts
-  const offer =
+  const liveOffer =
     onRemoveTarget && !isSelectionMode && !tracked ? attemptsOffer({ ...task, attempts }) : null
+  const offer = queueRetiredOffer(task, liveOffer) ? null : liveOffer
   const corner = rowCorner({
     task,
     attempts: !tracked && task.due_at !== null ? attempts : 0,

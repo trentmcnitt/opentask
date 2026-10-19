@@ -11,6 +11,7 @@ import type { RedoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
+import { rolledOverSince } from './rollover-fence'
 import { compensate, countBefore } from './progress-compensation'
 import { applyPromptDefault, applySlotRow } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
@@ -42,6 +43,9 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
       // Same guard as undo: re-applying a count into a later period would
       // plant last period's number in this one (see `createQuotaSnapshot`).
       if (periodMoved(tx, snapshot)) continue
+      // The task queue's rollover changed this task after the entry was
+      // written (B5): leave it as the rollover left it (`rollover-fence.ts`).
+      if (rolledOverSince(tx, snapshot, entry.createdAt)) continue
       const count = countBefore(tx, snapshot, entry.fieldsChanged)
       applyFieldsToTask(snapshot.task_id, snapshot.after_state, entry.fieldsChanged)
       // The count moved again: logged again, as a redo (`compensate`).

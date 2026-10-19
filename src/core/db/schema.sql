@@ -254,6 +254,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- write), and the target it had then (kept, for a restore).
   queued_at TEXT DEFAULT NULL,
   queued_from_due_at TEXT DEFAULT NULL,
+  -- When the rollover last changed this task (task-queue PR 2: a strip, a
+  -- repeating roll or wait). The UNDO FENCE's witness: undo and redo skip a
+  -- snapshot of this task from an entry written before it
+  -- (src/core/undo/rollover-fence.ts). No target write clears it.
+  rolled_over_at TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
