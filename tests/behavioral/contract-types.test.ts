@@ -358,44 +358,6 @@ describe('contract fixtures match the TS types', () => {
     expect(data('user-preferences').check_in_day).toBe(6)
   })
 
-  test('user preferences carry the task-queue switch and the rollover time (PR 3)', () => {
-    const prefs = data('user-preferences')
-    expect(prefs.task_queue).toBe(false)
-    expect(prefs.rollover_time).toMatch(/^\d{2}:\d{2}$/)
-  })
-
-  test('the task queue panels: first, sorted by priority, every row a segment row', () => {
-    // Task queue PR 3: `queue_today` and `queue_previous` come before every
-    // other segment. A native build that predates them drops the unknown
-    // kinds (Swift `SegmentKind(raw:)` returns nil) — the rows are otherwise
-    // ordinary segment rows, with `queued_from_due_at` and `try_tomorrow`.
-    const segs = data('reminders-queue').task_segments as Obj[]
-    expect(segs.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
-    const [today, previous] = segs as { tasks: Obj[] }[]
-    expect(today.tasks.map((r) => r.priority)).toEqual([2, 0])
-    expect(today.tasks.map((r) => r.try_tomorrow)).toEqual([false, true])
-    expect(previous.tasks.map((r) => r.recurring)).toEqual([false, true])
-    for (const seg of segs) {
-      for (const row of seg.tasks as Obj[]) {
-        expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
-        const task = Object.fromEntries(
-          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
-        )
-        expectShape(task, TASK, `queue task ${row.id}`)
-      }
-    }
-    for (const seg of segs.slice(0, 2)) {
-      for (const row of seg.tasks as Obj[]) {
-        expect(row.queued_at).not.toBeNull()
-        expect(row.queued_from_due_at).not.toBeNull()
-      }
-    }
-    // A waiting repeating task keeps its next occurrence as its target; a
-    // stripped one-off has none.
-    expect(previous.tasks[0].due_at).toBeNull()
-    expect(previous.tasks[1].due_at).not.toBeNull()
-  })
-
   test('the progress response is a FormattedTask plus met/description', () => {
     const d = data('task-progress')
     expect(typeof d.met).toBe('boolean')
@@ -446,6 +408,46 @@ describe('contract fixtures match the TS types', () => {
     // User B's seeded task (due tomorrow) and the one three days late; the
     // quotas and reminders are not counted.
     expect(counts).toEqual({ total: 2, overdue: 1, today: 0 })
+  })
+})
+
+describe('contract fixtures: the task queue (PR 3)', () => {
+  test('user preferences carry the task-queue switch and the rollover time (PR 3)', () => {
+    const prefs = data('user-preferences')
+    expect(prefs.task_queue).toBe(false)
+    expect(prefs.rollover_time).toMatch(/^\d{2}:\d{2}$/)
+  })
+
+  test('the task queue panels: first, sorted by priority, every row a segment row', () => {
+    // Task queue PR 3: `queue_today` and `queue_previous` come before every
+    // other segment. A native build that predates them drops the unknown
+    // kinds (Swift `SegmentKind(raw:)` returns nil) — the rows are otherwise
+    // ordinary segment rows, with `queued_from_due_at` and `try_tomorrow`.
+    const segs = data('reminders-queue').task_segments as Obj[]
+    expect(segs.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
+    const [today, previous] = segs as { tasks: Obj[] }[]
+    expect(today.tasks.map((r) => r.priority)).toEqual([2, 0])
+    expect(today.tasks.map((r) => r.try_tomorrow)).toEqual([false, true])
+    expect(previous.tasks.map((r) => r.recurring)).toEqual([false, true])
+    for (const seg of segs) {
+      for (const row of seg.tasks as Obj[]) {
+        expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
+        const task = Object.fromEntries(
+          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+        )
+        expectShape(task, TASK, `queue task ${row.id}`)
+      }
+    }
+    for (const seg of segs.slice(0, 2)) {
+      for (const row of seg.tasks as Obj[]) {
+        expect(row.queued_at).not.toBeNull()
+        expect(row.queued_from_due_at).not.toBeNull()
+      }
+    }
+    // A waiting repeating task keeps its next occurrence as its target; a
+    // stripped one-off has none.
+    expect(previous.tasks[0].due_at).toBeNull()
+    expect(previous.tasks[1].due_at).not.toBeNull()
   })
 })
 

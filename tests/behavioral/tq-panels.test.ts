@@ -232,6 +232,15 @@ describe('TQ-P: the task queue panels', () => {
     expect(task(a.id).last_considered_at).toBeNull()
     expect(task(w.id).last_considered_at).toBeNull()
   })
+})
+
+describe('TQ-P: the queue panels — retargets, order, the switch', () => {
+  beforeEach(setup)
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+  afterAll(() => teardownTestDb())
 
   test('TQ-P08: Today from the queue — out of the queue, then a new attempt', () => {
     const t = strippedOneOff()
