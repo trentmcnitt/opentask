@@ -377,6 +377,23 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // The task queue (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
+  for (const col of ['queue_mark', 'try_tomorrow']) {
+    if (!hasColumn(database, 'tasks', col)) {
+      database.exec(`ALTER TABLE tasks ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`)
+    }
+  }
+  for (const col of ['queued_at', 'queued_from_due_at']) {
+    if (!hasColumn(database, 'tasks', col)) {
+      database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
+    }
+  }
+  // Written by the rollover (task-queue PR 2), whose migration stamps it with
+  // each user's current OpenTask day WHERE it IS NULL — NULL is never read as
+  // "never ran". Left NULL here.
+  if (!hasColumn(database, 'users', 'last_rollover_date')) {
+    database.exec('ALTER TABLE users ADD COLUMN last_rollover_date TEXT DEFAULT NULL')
+  }
   if (!hasColumn(database, 'completions', 'attempts')) {
     database.exec('ALTER TABLE completions ADD COLUMN attempts INTEGER DEFAULT NULL')
   }

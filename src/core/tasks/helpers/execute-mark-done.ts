@@ -8,7 +8,7 @@
 import type { Database } from 'better-sqlite3'
 import type { Task, UndoSnapshot } from '@/types'
 import type { MarkDoneComputation } from './compute-mark-done'
-import { TARGET_SET_FIELD } from '../target-set'
+import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from '../target-set'
 
 export interface ExecuteMarkDoneResult {
   snapshot: UndoSnapshot
@@ -82,7 +82,7 @@ function executeRecurringMarkDone(
     SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         progress_current = 0, attempts = 0, attempts_counted_through = NULL,
-        updated_at = ?
+        ${QUEUE_CLEAR_SQL}, updated_at = ?
     WHERE id = ?
   `,
   ).run(
@@ -98,8 +98,13 @@ function executeRecurringMarkDone(
     task.id,
   )
 
+  // The new target clears the queue state (target-set.ts); the snapshot
+  // carries only the fields that were set.
+  const queueClear = queueStateToClear(task)
+
   // Build snapshot with completion data for redo
   const afterState: Partial<Task> & { _completion?: unknown } = {
+    ...queueClear.after,
     id: task.id,
     due_at: nextDueAt,
     occurrence_at: nextOccurrenceAt,
@@ -126,6 +131,7 @@ function executeRecurringMarkDone(
   const snapshot: UndoSnapshot = {
     task_id: task.id,
     before_state: {
+      ...queueClear.before,
       id: task.id,
       title: task.title,
       due_at: task.due_at,
@@ -174,7 +180,7 @@ function executeOneOffMarkDone(
     UPDATE tasks
     SET done = 1, done_at = ?, archived_at = ?, attempts = 0, attempts_counted_through = NULL,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-        updated_at = ?
+        queue_mark = 0, try_tomorrow = 0, updated_at = ?
     WHERE id = ?
   `,
   ).run(
@@ -187,12 +193,16 @@ function executeOneOffMarkDone(
     task.id,
   )
 
+  // The task queue: the mark and flag, when set (see computeMarkDone).
+  const queueClear = queueStateToClear(task, { includeQueued: false })
+
   // Build snapshot manually (like recurring path) to include _completion data
   // for redo. createTaskSnapshot would strip _completion since it's not in
   // fieldsChanged.
   const snapshot: UndoSnapshot = {
     task_id: task.id,
     before_state: {
+      ...queueClear.before,
       id: task.id,
       title: task.title,
       done: false,
@@ -205,6 +215,7 @@ function executeOneOffMarkDone(
       attempts_counted_through: task.attempts_counted_through,
     },
     after_state: {
+      ...queueClear.after,
       id: task.id,
       done: true,
       attempts: 0,

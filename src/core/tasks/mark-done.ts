@@ -21,7 +21,7 @@ import { loadTaskForMutation } from './access'
 import { computeMarkDone, executeMarkDone } from './helpers'
 import { isTracked } from '@/lib/track'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
-import { TARGET_SET_FIELD } from './target-set'
+import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
 
 export interface MarkDoneOptions {
   userId: number
@@ -343,6 +343,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     userTimezone,
     new Date(),
   )
+  const queueClear = queueStateToClear(task)
   const fieldsChanged = [
     'due_at',
     'occurrence_at',
@@ -356,6 +357,9 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     TARGET_SET_FIELD,
     'attempts',
     'attempts_counted_through',
+    // The task queue (2026-10-19): setting the target again clears the queue
+    // state (normally already clear: done cleared it).
+    ...queueClear.fields,
   ]
 
   const updatedTask = withTransaction((tx) => {
@@ -364,7 +368,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?,
             ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-            updated_at = ?
+            ${QUEUE_CLEAR_SQL}, updated_at = ?
         WHERE id = ?`,
     ).run(
       latest.due_at_was,
@@ -387,6 +391,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     // the same id and a redo deletes it again — see execute-undo / execute-redo.
     const snapshot = createTaskSnapshot(
       {
+        ...queueClear.before,
         id: task.id,
         title: task.title,
         due_at: task.due_at,
@@ -401,6 +406,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         last_completed_at: task.last_completed_at,
       },
       {
+        ...queueClear.after,
         id: task.id,
         title: task.title,
         due_at: latest.due_at_was,

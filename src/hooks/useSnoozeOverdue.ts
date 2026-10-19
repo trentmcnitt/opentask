@@ -6,8 +6,10 @@
  *
  * P0-P2 are always eligible. P3 (High) joins in once nothing lower is left in
  * the batch, so a list of nothing but overdue High tasks takes two presses
- * rather than refusing to move. P4 (Urgent) is never bulk-snoozed. The rule
- * lives in `filterForBulkSnooze`; the server decides, this hook only reports.
+ * rather than refusing to move — with the server's task queue on, one High per
+ * press. P4 (Urgent) is never bulk-snoozed. The rule lives in
+ * `filterForBulkSnooze`; the server decides, this hook only reports (the
+ * server's `summary` line, when it sends one).
  */
 
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
@@ -85,31 +87,20 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
           body: JSON.stringify({
             ids: overdueTasks.map((t) => t.id),
             until: snoozeUntil,
+            // Snooze-all is a DEFER (task queue, docs/TASK-MODEL.md § Picks
+            // and defers): with the server switch on, one landing at or after
+            // the next rollover is marked for the Tasks queue. The only web
+            // caller that sends it — every other bulk/snooze is a pick.
+            source: 'sweep',
           }),
         })
         if (!res.ok) throw new Error('Snooze failed')
         const responseData = await res.json()
         const tasksAffected = responseData.data?.tasks_affected ?? 0
-        // `skipped_urgent` is the TOTAL skipped on priority — its name is frozen
-        // by the iOS client that reads it — and `skipped_high` is the High
-        // subset, so Urgent alone is the difference. Falling back to the total
-        // when `skipped_high` is absent keeps an older server's response
-        // readable: it reports everything as Urgent, which is what that server
-        // meant by it.
-        const skippedByPriority = responseData.data?.skipped_urgent ?? 0
-        const skippedHigh = responseData.data?.skipped_high ?? 0
-        const snoozedHigh = responseData.data?.snoozed_high ?? 0
         if (tasksAffected > 0) onUndoCountBump?.()
         fetchTasks()
 
-        const message = bulkSnoozeMessage({
-          affected: tasksAffected,
-          highAffected: snoozedHigh,
-          high: skippedHigh,
-          urgent: skippedByPriority - skippedHigh,
-          deadline: responseData.data?.skipped_deadline ?? 0,
-          capped: responseData.data?.capped_deadline ?? 0,
-        })
+        const message = sweepToastMessage(responseData.data ?? {})
 
         showToast({
           message,
@@ -132,4 +123,40 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       morningTime,
     ],
   )
+}
+
+/** The bulk snooze response fields the toast reads. */
+interface SweepResponse {
+  summary?: string
+  tasks_affected?: number
+  skipped_urgent?: number
+  skipped_high?: number
+  snoozed_high?: number
+  skipped_deadline?: number
+  capped_deadline?: number
+}
+
+/**
+ * The sweep toast's line: the server's standard `summary` (the task queue's
+ * wording and names) when it sends one, else built here from the counts — an
+ * older server's response.
+ *
+ * `skipped_urgent` is the TOTAL skipped on priority — its name is frozen by
+ * the iOS client that reads it — and `skipped_high` is the High subset, so
+ * Urgent alone is the difference. Falling back to the total when
+ * `skipped_high` is absent keeps an older server's response readable: it
+ * reports everything as Urgent, which is what that server meant by it.
+ */
+function sweepToastMessage(data: SweepResponse): string {
+  if (data.summary) return data.summary
+  const skippedByPriority = data.skipped_urgent ?? 0
+  const skippedHigh = data.skipped_high ?? 0
+  return bulkSnoozeMessage({
+    affected: data.tasks_affected ?? 0,
+    highAffected: data.snoozed_high ?? 0,
+    high: skippedHigh,
+    urgent: skippedByPriority - skippedHigh,
+    deadline: data.skipped_deadline ?? 0,
+    capped: data.capped_deadline ?? 0,
+  })
 }

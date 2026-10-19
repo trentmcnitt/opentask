@@ -23,6 +23,7 @@
 		0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
 		0B3969A3602AD5B372A3B3E4 /* WidgetOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C01DDBEE9460F29FCD1B3F5 /* WidgetOutbox.swift */; };
 		0D6F55755A010812E541EE71 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */; };
+		0F61848EE6DE753BC568EFBB /* bulk-snooze-overdue.json in Resources */ = {isa = PBXBuildFile; fileRef = 70F0219AA24F58B2411FD6D5 /* bulk-snooze-overdue.json */; };
 		0F675979F0E897179550119D /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
 		1065DE5F13ABB56144BC9136 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
 		10C0CFD2650A63BF90C8D597 /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B46ABD580807D58325D969 /* TaskDayProgress.swift */; };
@@ -357,6 +358,7 @@
 		6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBootstrapper.swift; sourceTree = "<group>"; };
 		6E710EC06D677571B16557AD /* TaskLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLists.swift; sourceTree = "<group>"; };
 		700281E5CE4D89D08424F789 /* RecurrenceSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceSummaryTests.swift; sourceTree = "<group>"; };
+		70F0219AA24F58B2411FD6D5 /* bulk-snooze-overdue.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-snooze-overdue.json"; sourceTree = "<group>"; };
 		7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogicTests.swift; sourceTree = "<group>"; };
 		77660CA27D2B28508DE93F7A /* QuotaCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCount.swift; sourceTree = "<group>"; };
 		78F7579086893D2594E48169 /* OpenTaskMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenTaskMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -456,6 +458,7 @@
 			isa = PBXGroup;
 			children = (
 				EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */,
+				70F0219AA24F58B2411FD6D5 /* bulk-snooze-overdue.json */,
 				84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */,
 				F781F8F4FFD0805CBC5D5068 /* completions.json */,
 				7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */,
@@ -835,6 +838,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EF9B9D541E938BB134EA1D78 /* bulk-complete.json in Resources */,
+				0F61848EE6DE753BC568EFBB /* bulk-snooze-overdue.json in Resources */,
 				2CB01EC9E23BF96101F784AC /* bulk-snooze.json in Resources */,
 				5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */,
 				CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */,

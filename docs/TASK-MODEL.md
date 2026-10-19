@@ -293,6 +293,55 @@ Why the change (Trent, 2026-09-15): with four overdue High tasks and nothing els
 - For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks." These tasks ride the bulk sweep, so a shifted target reflects a sweep the user never read, not a decision.
 - An unset `horizon` is unset, not "weeks": never report it as stated.
 
+## The OpenTask day, picks and defers
+
+The task queue (2026-10-19; design in Trent's `task-queue-design.md`, "Picks and defers" and the red-team resolutions). It sits behind the server switch **`OPENTASK_TASK_QUEUE=1`** (`taskQueueEnabled()` in `src/core/tasks/task-queue.ts`, read at call time): a deploy and rollback switch for the whole server, not a per-user setting. Off, everything below is inert and every endpoint behaves as described in the rest of this file.
+
+This is task-queue PR 1: the day, the classification and the mark. **The rollover itself — stripping marked tasks into the queue each morning — is PR 2**, and the queue panels are PR 3. Until they land, a marked task simply sits at the rollover moment and goes over target then, as a swept task always did.
+
+### The OpenTask day
+
+The OpenTask day runs from **rollover to rollover**, not midnight to midnight (`src/lib/opentask-day.ts`, pure):
+
+- **The rollover** is the start of the user's earliest period (Trent's is 6:30); with no periods, their `morning_time` (`rolloverTimeOf`).
+- `rolloverMoment(date, tz, time)`: the instant on a local date. On a spring-forward night that swallows the time (a 02:30 first period), it is the **next valid minute** (03:00); on a fall-back night, the first of the repeated times.
+- `openTaskDayOf(instant)`: 00:00–06:29 belongs to the previous date; 06:30 exactly starts the new one. A night owl's 2 AM target belongs to the evening's day.
+- `nextRollover(now)`: the first rollover strictly after now (at exactly 6:30:00, tomorrow's).
+
+For now the OpenTask day governs the defer rule below (and, from PR 2, the rollover and attempts) only. "Today" in the Now view, the Today pill, Upcoming and `check_in_day` stay on midnight (build-plan resolution 4).
+
+### Picks and defers
+
+Every target change is classed by what the gesture means, not by how many tasks it touches:
+
+- **Pick** ("this, at this time"): the editor and the time pickers, the single snooze, Today, enrichment from the user's words, a single notification's snooze buttons, and **every multi-select edit** (`bulk/snooze` or `bulk/edit` with `include_task_ids`). A pick is never marked.
+- **Defer** ("not now"): **Snooze-all in every form** — the web clock and FAB (`useSnoozeOverdue` sends `source: 'sweep'` to `bulk/snooze`), and `bulk/snooze-overdue` (always a sweep: every native "All" button, widget bar and Shortcut) — and **Try Tomorrow** (`source: 'try_tomorrow'`, API only for now).
+
+The class comes from the gesture (`source` on `bulkSnooze`), so no target provenance is stored. For a defer, `bulkSnooze` takes each task's own landing time L (the absolute `until`, or its target plus the delta) and decides (`planLanding` in `src/core/tasks/bulk.ts`):
+
+| Task (tier is `bulkSnoozeTier`: a passed deadline counts as High) | L before the next rollover                                               | L at or after the next rollover                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
+| Below High, no deadline (one-off or repeating)                    | moves to L                                                               | **target = the rollover moment, `queue_mark` set** |
+| Below High, repeating, not marked (e.g. with a deadline)          | moves to L, but never past its next occurrence (`capped_occurrence`, B2) | the same                                           |
+| A deadline task                                                   | moves to L, capped at the deadline                                       | the same                                           |
+| High or Urgent (one per press, see below)                         | moves to L                                                               | moves to L                                         |
+
+So Trent's evening sweep to "tomorrow" (morning_time 8:30) lands every ordinary task at **6:30**, marked; a 6:00 "+1h" sweep lands at 6:30 and is marked too (resolution 12). Picks are never capped at the next occurrence: a manual move may pass it (B2).
+
+**Try Tomorrow** is one task's Snooze-all to the next rollover (no `until` needed): the target moves to the rollover, `queue_mark` is set, and `try_tomorrow` too, so tomorrow's queue row can be told apart. On a High or Urgent task (never stripped), or a deadline task, it is a plain move to the rollover with no mark.
+
+### The queue mark
+
+`tasks.queue_mark` (and `try_tomorrow`) mean "the rollover takes this into the queue". **Any other target change clears them** — a pick, the editor, Today, enrichment, an automatic target (a deadline added, "Back to auto"), done or skip of a repeating task, put-back — along with `queued_at` (a queued task that gets a target leaves the queue). Done of a one-off clears the mark and flag too. `queued_from_due_at`, the remembered original target, is kept. One place does it: `stampTargetSet` (`src/core/tasks/target-set.ts`), which already runs on every `due_at` / `deadline_at` write through `collectFieldChanges` and enrichment; the defer that sets the mark writes the mark and flag in the same write so the stamp leaves those two — but it still clears `queued_at` (Try Tomorrow on a queued task takes it out of the queue), and a plain sweep's mark clears an earlier Try Tomorrow flag. The fixed-SQL writers (completion advance, skip, put-back) clear it in their own statements (`QUEUE_CLEAR_SQL`); `tests/behavioral/tq-summary.test.ts` guards that. Only fields actually set go into the undo snapshot, so undo of a marking sweep restores the target and clears the mark, and undo of a pick that cleared a mark puts it back.
+
+`queued_at` / `queued_from_due_at` are written by the rollover (PR 2), and `users.last_rollover_date` (also PR 2) makes it run exactly once; PR 2's migration stamps that with each user's current OpenTask day, so NULL is never read as "never ran".
+
+### One High per press, and the summary
+
+With the switch on, once nothing lower is left a defer (a Snooze-all press) moves **one** task of the High tier (passed-deadline tasks included) — the oldest target first, then the nearest deadline, then the lowest id — and names it (`snoozed_high_name`). The rest stay skipped and counted as before (`skipped_urgent` / `skipped_high` / `skipped_deadline` keep their meanings). Urgent is still never swept, and `include_task_ids` still rescues. A pick — `bulk/snooze` without `source`, and bulk edit — keeps the whole-tier rule.
+
+Both bulk snooze routes return `queued`, `queued_name` (title when exactly one), `queued_until` (the rollover the marked tasks were targeted at; word them from it, never from `until`), `capped_occurrence`, `snoozed_high_name` and `summary` — one line built by `bulkSnoozeMessage` (`src/lib/snooze.ts`) and shared by the web toast, snooze-overdue's `message` (always equal to it) and, later, the native apps: "3 will move to the Tasks queue at 6:30 AM · Snoozed 2 tasks (1 urgent skipped)". A press that moves exactly one task names it; the one High moved is named. The sweep-feedback push stays counts only (no titles on the lock screen): its title is the same builder's line with every name suppressed (`bulkSnoozeCountSummary`). The undo / History entry says what happened: "Sent 3 tasks to the queue at 6:30 AM", or "Snoozed 5 tasks (3 to the queue at 6:30 AM)" for a mixed press. Switch off, `summary` is the line the toast always showed and the new counts are zero.
+
 ## Priority Values
 
 | Value | Meaning |

@@ -89,3 +89,19 @@ export async function resetTestData(): Promise<void> {
     throw new Error(`Reset failed: ${res.status}`)
   }
 }
+
+/**
+ * Turn the server's task-queue switch (OPENTASK_TASK_QUEUE) on or off, via the
+ * test-only endpoint. Every test file expects it off: one that turns it on
+ * turns it off again in a `finally` / `afterAll`.
+ */
+export async function setTaskQueue(enabled: boolean): Promise<void> {
+  const res = await fetch(`${baseUrl()}/api/test/task-queue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) {
+    throw new Error(`Task queue switch failed: ${res.status}`)
+  }
+}

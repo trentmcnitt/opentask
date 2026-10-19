@@ -1116,6 +1116,35 @@ paths:
         the target is left alone. `tasks_affected` counts only the tasks whose
         date actually moved, so it plus `tasks_skipped` can be less than the
         number of `ids`.
+
+        **Picks and defers (the task queue, 2026-10-19).** Applies only while the
+        server runs with `OPENTASK_TASK_QUEUE=1`; off, `source` is ignored (except
+        that `try_tomorrow` still lands on the next rollover) and every call
+        behaves as described above. A call without `source` is a PICK and is
+        never marked. A DEFER (`source: sweep` — Snooze-all — or `try_tomorrow`)
+        is decided per task by where it lands, against the user's next ROLLOVER
+        (the start of their first period, else their morning time):
+        - below High (by the tier above), with no deadline, landing at or after
+          the next rollover: the target becomes that rollover moment itself and
+          the task is marked for the Tasks queue (`queue_mark`; counted in
+          `queued`). Repeating tasks included.
+        - landing before the next rollover, or a deadline task: moved as above.
+        - a repeating task below High that is not marked never moves past its
+          next occurrence: it lands on it (`capped_occurrence`). Picks are never
+          capped.
+        - `try_tomorrow` (exactly one id; `until` / `delta_minutes` not needed):
+          the next rollover, marked, plus `try_tomorrow` on the task. On a High
+          or Urgent (or deadline) task, a plain move there with no mark.
+
+        Also with the switch on, ONE HIGH PER PRESS for a defer (`source` set;
+        a pick keeps the whole-tier rule): once nothing lower is left, the
+        call moves one task of the High tier — the oldest target first, then
+        the nearest deadline, then the lowest id — named in `snoozed_high_name`;
+        the rest stay skipped and counted as before. `include_task_ids` still
+        moves the tasks it names.
+
+        Any other change to a task's target (a pick, an edit, Today, done or skip
+        of a repeating task, an automatic target) clears its queue mark.
       requestBody:
         required: true
         content:
@@ -1142,6 +1171,14 @@ paths:
                   description: |
                     Task IDs to snooze even if they are P4/Urgent. Used by
                     explicit user selections to bypass the default urgent skip.
+                source:
+                  type: string
+                  enum: [sweep, try_tomorrow]
+                  description: |
+                    Pick or defer (the task queue; see above). Absent: a pick.
+                    `sweep`: Snooze-all (the web app's clock and button send it).
+                    `try_tomorrow`: Try Tomorrow on exactly one task; `until` and
+                    `delta_minutes` may then be omitted.
                 allow_past_deadline_ids:
                   type: array
                   items: { type: integer }
@@ -1175,6 +1212,12 @@ paths:
 
         The target is at most one of `until`, `delta_minutes`, `slot` or
         `tomorrow`; with none, the user's default snooze option applies.
+
+        It is always a SWEEP (`source: sweep` in `/api/tasks/bulk/snooze`): with
+        the server's task queue on (`OPENTASK_TASK_QUEUE=1`), a task below High
+        with no deadline whose landing is at or after the next rollover is
+        marked for the Tasks queue instead, and one High moves per press. See
+        `/api/tasks/bulk/snooze`.
 
         **Feedback notification.** When the call is authenticated with an API
         token (not a browser session) and the sweep leaves High or Urgent tasks
@@ -1274,7 +1317,32 @@ paths:
                           Ready-to-display summary, the same copy as the web toast — e.g.
                           "Snoozed 3 tasks (2 high, 1 urgent skipped)" or "No snoozable
                           tasks". For clients that show the result without branching on
-                          the counts (Apple Shortcuts).
+                          the counts (Apple Shortcuts). Always equal to `summary`.
+                      queued:
+                        type: integer
+                        description: Marked for the Tasks queue by this call (task queue on). Also in `tasks_affected`.
+                      queued_name:
+                        type: [string, 'null']
+                        description: The marked task's title when exactly one was marked.
+                      capped_occurrence:
+                        type: integer
+                        description: Repeating tasks stopped at their next occurrence (task queue on). Also in `tasks_affected`.
+                      snoozed_high_name:
+                        type: [string, 'null']
+                        description: The one High task this press moved (task queue on), by title.
+                      queued_until:
+                        type: [string, 'null']
+                        format: date-time
+                        description: >-
+                          The rollover moment the queued tasks were targeted at (task queue
+                          on); null when nothing was queued. Word marked tasks from this,
+                          never from `until`.
+                      summary:
+                        type: string
+                        description: >-
+                          The standard one-line summary, e.g. "3 will move to the Tasks queue
+                          at 6:30 AM · Snoozed 2 tasks (1 urgent skipped)". With the task
+                          queue off it is the line `message` always carried.
                       feedback_notification:
                         type: boolean
                         description: >-
@@ -4767,6 +4835,23 @@ components:
           description: >
             The last Process "keep" of the horizon (`affirm_horizon`); Process asks to grow it
             again only one threshold period after it. Server-set.
+        queue_mark:
+          type: boolean
+          description: >
+            The task queue (2026-10-19): a defer (Snooze-all, Try Tomorrow) landing at or after the
+            next rollover moved the target to that rollover and marked the task for the Tasks queue.
+            Cleared by any other target change. Server-set.
+        try_tomorrow:
+          type: boolean
+          description: The same mark, set by Try Tomorrow, so its row can be told apart. Server-set.
+        queued_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the rollover put the task in the Tasks queue; cleared when it gets a target. Server-set.
+        queued_from_due_at:
+          type: [string, 'null']
+          format: date-time
+          description: The target the task had when the rollover queued it (kept). Server-set.
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -5642,6 +5727,33 @@ components:
         skipped_no_due_date:
           type: integer
           description: Relative mode only — tasks with no due_at to add the delta to
+        queued:
+          type: integer
+          description: |
+            bulk/snooze only. Marked for the Tasks queue by this call — a defer
+            (`source`) landing at or after the next rollover, with the server's
+            task queue on. Also counted in `tasks_affected`.
+        queued_name:
+          type: [string, 'null']
+          description: bulk/snooze only. The marked task's title when exactly one was marked.
+        capped_occurrence:
+          type: integer
+          description: bulk/snooze only. Repeating tasks a defer stopped at their next occurrence. Also in `tasks_affected`.
+        snoozed_high_name:
+          type: [string, 'null']
+          description: bulk/snooze only. The one High task this press moved (one High per press), by title.
+        queued_until:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            bulk/snooze only. The rollover moment the queued tasks were targeted
+            at; null when nothing was queued. Word marked tasks from this, never
+            from `until`.
+        summary:
+          type: string
+          description: |
+            bulk/snooze only. The standard one-line summary the web toast shows,
+            e.g. `"Call the bank" will move to the Tasks queue at 6:30 AM`.
 
     StatsSummary:
       type: object

@@ -13,9 +13,11 @@
  * edit, bulk snooze, snooze-overdue, the snooze endpoint, Today and the
  * time-slot moves, but create, a completion advance, skip, put-back
  * (`markUndone`) and AI enrichment write `due_at` with SQL of their own. Each
- * of those imports this module; `tests/behavioral/up-target-set-writers.test.ts`
- * fails when a file under `src/core` writes `due_at` / `deadline_at` without
- * importing it (and exercises every path), so a new writer can't skip it.
+ * of those imports this module; the `target_set_at` writers and guard tests in
+ * `tests/behavioral/up-upcoming.test.ts` (UP-080…UP-090) fail when a file
+ * under `src` writes `due_at` / `deadline_at` without importing it (and
+ * exercise every path), so a new writer can't skip it. The queue-state guard
+ * (TQ-G01, `tests/behavioral/tq-summary.test.ts`) does the same for clearing.
  *
  * Undo / redo never stamp: they restore the snapshot's value.
  * Distinct from `segment_targeted_at` (targeted FROM a task segment only).
@@ -33,6 +35,62 @@
  */
 
 import type { Task } from '@/types'
+
+/*
+ * THE QUEUE MARK RIDES ON THE SAME STAMP (task queue, 2026-10-19; spec
+ * "Picks and defers"). "Any target, auto included, clears the queue mark. A
+ * pick clears the mark." So every write that moves the target also clears
+ * `queue_mark`, `try_tomorrow` and `queued_at` (a queued task that gets a
+ * target leaves the queue, spec rule 8). The defer that SETS the mark
+ * (`bulkSnooze`) writes `queue_mark` / `try_tomorrow` itself and passes
+ * `keepQueue`, so those two are left to it — `queued_at` is cleared even
+ * then. `queued_from_due_at` is left alone: it is the remembered
+ * original target. Only the fields that are actually set are written into the
+ * snapshot, so a task with no queue state gets no noise fields.
+ *
+ * The fixed-SQL writers (completion advance, skip, put-back) clear them in
+ * their own statements, with `QUEUE_CLEAR_SQL` and `queueStateToClear`. Done
+ * of a one-off clears the mark and the flag too (its row leaves every list).
+ */
+
+/** The queue columns a target write clears, as a SQL fragment (always safe to run). */
+export const QUEUE_CLEAR_SQL = 'queue_mark = 0, try_tomorrow = 0, queued_at = NULL'
+
+type QueueState = Pick<Task, 'queue_mark' | 'try_tomorrow' | 'queued_at'>
+
+/**
+ * The queue fields this task has SET, and the cleared values — for a snapshot.
+ * Empty when the task has no queue state (nothing to restore on undo).
+ */
+export function queueStateToClear(
+  task: Partial<QueueState>,
+  /** false: only the mark and the flag (done of a one-off: no target, so `queued_at` stays). */
+  { includeQueued = true }: { includeQueued?: boolean } = {},
+): {
+  fields: (keyof QueueState)[]
+  before: Partial<QueueState>
+  after: Partial<QueueState>
+} {
+  const fields: (keyof QueueState)[] = []
+  const before: Partial<QueueState> = {}
+  const after: Partial<QueueState> = {}
+  if (task.queue_mark) {
+    fields.push('queue_mark')
+    before.queue_mark = true
+    after.queue_mark = false
+  }
+  if (task.try_tomorrow) {
+    fields.push('try_tomorrow')
+    before.try_tomorrow = true
+    after.try_tomorrow = false
+  }
+  if (includeQueued && task.queued_at) {
+    fields.push('queued_at')
+    before.queued_at = task.queued_at
+    after.queued_at = null
+  }
+  return { fields, before, after }
+}
 
 /** The column, for the writers whose SQL is a fixed statement. */
 export const TARGET_SET_FIELD = 'target_set_at'
@@ -59,11 +117,26 @@ export interface CollectedWrite {
  */
 export function stampTargetSet(
   write: CollectedWrite,
-  task: Pick<Task, 'target_set_at'> & Partial<Pick<Task, 'attempts' | 'attempts_counted_through'>>,
+  task: Pick<Task, 'target_set_at'> &
+    Partial<Pick<Task, 'attempts' | 'attempts_counted_through'> & QueueState>,
   nowStr: string,
+  opts: { keepQueue?: boolean } = {},
 ): boolean {
   if (!movesTarget(write.fieldsChanged) || write.fieldsChanged.includes(TARGET_SET_FIELD)) {
     return false
+  }
+  // The queue state (see above): a target write clears it. The defer that
+  // sets the mark keeps the mark and the flag (it wrote them itself) — but
+  // never `queued_at`: a task that gets a target leaves the queue, the
+  // defer's own write included (spec rule 8; Try Tomorrow on a queued task).
+  const keepMark = opts.keepQueue || write.fieldsChanged.includes('queue_mark')
+  const clear = queueStateToClear(task)
+  for (const field of clear.fields) {
+    if (keepMark && field !== 'queued_at') continue
+    write.setClauses.push(field === 'queued_at' ? 'queued_at = NULL' : `${field} = 0`)
+    write.fieldsChanged.push(field)
+    if (write.beforeState) Object.assign(write.beforeState, { [field]: clear.before[field] })
+    if (write.afterState) Object.assign(write.afterState, { [field]: clear.after[field] })
   }
   if (typeof task.attempts === 'number' && !write.fieldsChanged.includes('attempts')) {
     write.setClauses.push('attempts = ?', 'attempts_counted_through = ?')

@@ -10,7 +10,7 @@ import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
 import { advanceDeadline, capAtDeadline } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
-import { TARGET_SET_FIELD } from '../target-set'
+import { TARGET_SET_FIELD, queueStateToClear } from '../target-set'
 
 export interface MarkDoneStats {
   completionCount: number
@@ -133,6 +133,9 @@ export function computeMarkDone(
         // §7: done resets attempts (the completion row keeps the count).
         'attempts',
         'attempts_counted_through',
+        // The task queue (2026-10-19): the advance sets a new target, which
+        // clears the queue state — only the fields that were set.
+        ...queueStateToClear(task).fields,
       ],
     }
   } else {
@@ -148,6 +151,9 @@ export function computeMarkDone(
         'last_completed_at',
         'attempts',
         'attempts_counted_through',
+        // The task queue (2026-10-19): a done task is out of every list, so
+        // its mark and flag go (only those that were set; undo restores them).
+        ...queueStateToClear(task, { includeQueued: false }).fields,
       ],
     }
   }

@@ -8,6 +8,12 @@
     "skipped_reminders": 1,
     "skipped_no_due_date": 0,
     "skipped_deadline": 0,
-    "capped_deadline": 0
+    "capped_deadline": 0,
+    "queued": 0,
+    "queued_name": null,
+    "capped_occurrence": 0,
+    "snoozed_high_name": null,
+    "queued_until": null,
+    "summary": "Snoozed 2 tasks (1 urgent skipped)"
   }
 }

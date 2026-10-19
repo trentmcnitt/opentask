@@ -152,6 +152,19 @@ export interface Task {
   attempts_counted_through: string | null
   /** Process's last "keep" of the horizon (ruling Q7); null = never kept. */
   growth_kept_at: string | null
+  /**
+   * THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
+   * `queue_mark`: a defer (Snooze-all, Try Tomorrow) landing at or after the
+   * next rollover moved the target to that rollover and marked the task; the
+   * rollover strips it into the queue. Any other target write clears it.
+   * `try_tomorrow`: the same mark, set by Try Tomorrow. `queued_at`: when the
+   * rollover queued it (cleared by any target write); `queued_from_due_at`:
+   * the target it had then, kept.
+   */
+  queue_mark: boolean
+  try_tomorrow: boolean
+  queued_at: string | null
+  queued_from_due_at: string | null
 
   // Notifications
   last_notified_at: string | null

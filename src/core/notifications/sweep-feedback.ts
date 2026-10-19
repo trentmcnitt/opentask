@@ -42,7 +42,10 @@
  *
  * The title follows `bulkSnoozeMessage` (the web toast and `data.message`):
  * "Snoozed N tasks", or "N high-priority tasks" on the second press of a double
- * snooze. The body uses the watch's and Mac's wording for what stayed
+ * snooze. With the task queue on (OPENTASK_TASK_QUEUE) it IS that builder's
+ * line with every name suppressed (`bulkSnoozeCountSummary`): "3 will move to
+ * the Tasks queue at 6:30 AM · Snoozed 1 task". The toast and `summary` name
+ * tasks; this push never does. The body uses the watch's and Mac's wording for what stayed
  * (`SweepLine` in `ios/Shared/SweepSummary.swift`: "N High still overdue",
  * "N Urgent still overdue"), so every surface names the tiers alike. `until`
  * is formatted in the user's timezone like the activity log's snooze target
@@ -118,6 +121,8 @@ export function sweepFeedbackContent(
   counts: SweepCounts,
   until: string,
   timezone: string,
+  /** The task queue's one High per press (B8): the next press moves one, not all. */
+  { onePerPress = false }: { onePerPress?: boolean } = {},
 ): SweepFeedbackContent | null {
   const { affected, highAffected, high, urgent, deadline = 0 } = counts
   if (high <= 0 && urgent <= 0 && deadline <= 0) return null
@@ -145,9 +150,11 @@ export function sweepFeedbackContent(
       // High waits for the next press, once nothing lower is left. When
       // nothing moved at all, another press would do the same, so no hint.
       sentences.push(
-        deadline === 0
-          ? `Snooze again to move the High ${high === 1 ? 'one' : 'ones'}`
-          : `Snooze again to move ${waiting === 1 ? 'it' : 'them'}`,
+        onePerPress
+          ? `Snooze again to move ${waiting === 1 ? 'it' : 'the next one'}`
+          : deadline === 0
+            ? `Snooze again to move the High ${high === 1 ? 'one' : 'ones'}`
+            : `Snooze again to move ${waiting === 1 ? 'it' : 'them'}`,
       )
     } else if (waiting === 0) {
       sentences.push(`Urgent can't be bulk snoozed`)
@@ -175,6 +182,14 @@ export interface SweepFeedbackInput {
   timezone: string
   /** Overdue tasks left after the sweep — the bulk grid's header count. */
   totalOverdueCount: number
+  /**
+   * The task queue (OPENTASK_TASK_QUEUE on): the sweep's summary line with
+   * COUNTS ONLY (`bulkSnoozeCountSummary` — the toast's builder with every
+   * name suppressed), used as the title so the push reads like the toast
+   * without a title on the lock screen. Absent (switch off): the title is
+   * built here, as it always was.
+   */
+  countSummary?: string
 }
 
 export interface SweepFeedback extends SweepFeedbackContent {
@@ -190,9 +205,12 @@ export function decideSweepFeedback(
   if (!user || user.is_demo || !user.notifications_enabled) return null
   if (!user.sweep_feedback_notifications_enabled) return null
 
-  const content = sweepFeedbackContent(input.counts, input.until, input.timezone)
+  const content = sweepFeedbackContent(input.counts, input.until, input.timezone, {
+    onePerPress: input.countSummary !== undefined,
+  })
   if (!content) return null
-  return { ...content, totalOverdueCount: input.totalOverdueCount }
+  const title = input.countSummary ?? content.title
+  return { ...content, title, totalOverdueCount: input.totalOverdueCount }
 }
 
 /** `decideSweepFeedback` with the user's settings read from the database. */

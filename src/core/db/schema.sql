@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS users (
   -- no part of Upcoming.
   check_in_day INTEGER NOT NULL DEFAULT 6,
   morning_time  TEXT NOT NULL DEFAULT '09:00',
+  -- The task queue (2026-10-19, docs/TASK-MODEL.md § The OpenTask day): the
+  -- OpenTask day (yyyy-MM-dd) whose rollover last ran for this user, so it
+  -- runs exactly once. Written by the rollover job (task-queue PR 2), never
+  -- by PR 1. PR 2's migration stamps it `WHERE last_rollover_date IS NULL`
+  -- with each user's CURRENT OpenTask day, so NULL must never be read as
+  -- "never ran, strip everything".
+  last_rollover_date TEXT DEFAULT NULL,
   wake_time     TEXT NOT NULL DEFAULT '07:00',
   sleep_time    TEXT NOT NULL DEFAULT '22:00',
   ai_context    TEXT,
@@ -235,6 +242,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Process's last "keep" of this horizon (ruling Q7): the growth ask returns
   -- only one threshold period after it. NULL = never kept.
   growth_kept_at TEXT DEFAULT NULL,
+  -- THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
+  -- queue_mark: a Snooze-all (a DEFER) that landed at or after the next
+  -- rollover moved the target to that rollover moment and marked the task for
+  -- the queue; the rollover (PR 2) strips it. Any other target write clears it
+  -- (src/core/tasks/target-set.ts). try_tomorrow: the same, from the per-task
+  -- Try Tomorrow, so tomorrow's queue row can be told apart.
+  queue_mark INTEGER NOT NULL DEFAULT 0,
+  try_tomorrow INTEGER NOT NULL DEFAULT 0,
+  -- When the rollover put the task in the queue (PR 2; cleared by any target
+  -- write), and the target it had then (kept, for a restore).
+  queued_at TEXT DEFAULT NULL,
+  queued_from_due_at TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
