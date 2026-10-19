@@ -228,6 +228,20 @@ export default async function globalSetup() {
      WHERE rrule IS NULL`,
   )
 
+  // THE TASK QUEUE'S OWN USER (task-queue PR 3, tests/e2e/tq-queue-panels.spec.ts).
+  // That spec runs the rollover through the test route, and a rollover strips
+  // every below-High one-off left on a previous day's target — for the shared
+  // user that would take the targets off tasks other specs rely on. So the
+  // queue spec signs in as this user, with nothing seeded but an Inbox, and
+  // runs the rollover for this user only (`user_id`). Its periods are the
+  // defaults (`backfillTimeSlots` at startup).
+  db.prepare(
+    `INSERT INTO users (id, email, name, password_hash, timezone) VALUES (?, ?, ?, ?, ?)`,
+  ).run(2, 'queue@opentask.local', 'Queue User', passwordHash, seededUserTz)
+  db.prepare(
+    `INSERT INTO projects (id, name, owner_id, shared, sort_order) VALUES (?, ?, ?, ?, ?)`,
+  ).run(4, 'Inbox', 2, 0, 0)
+
   db.close()
   console.log('[e2e] Database seeded at', DB_PATH)
 }
