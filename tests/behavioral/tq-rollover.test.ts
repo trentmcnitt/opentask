@@ -37,7 +37,7 @@ import { runTaskRollover } from '@/core/tasks/task-rollover'
 import { findStrippedTargets, restoreStrippedTargets } from '@/core/tasks/restore-stripped'
 import { executeUndo, executeRedo } from '@/core/undo'
 import { formatTaskResponse } from '@/lib/format-task'
-import { queueRetiredOffer } from '@/lib/task-segments'
+import { attemptsOffer } from '@/lib/task-segments'
 import { isEarlyMorningPick, targetOpenTaskDay } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -908,20 +908,17 @@ describe('TQ-O: the 3× offer by task kind (resolution 1)', () => {
     expect(formatTaskResponse(task(plain.id), tz).attempts_offer).toBe('remove')
   })
 
-  test('TQ-O02: the web row reads the offer live; the server field only suppresses', () => {
+  test('TQ-O02: the web row reads the switch (PR 3) and agrees with the server', () => {
     const plain = threeDays({ title: 'P2', priority: 2 })
-    // Switch on: the server sent null at 3× on a strippable task — retired.
-    expect(queueRetiredOffer(formatTaskResponse(plain, tz), 'remove')).toBe(true)
-    // Switch off: the server sent "remove" — the live offer stands.
-    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
-    expect(queueRetiredOffer(formatTaskResponse(task(plain.id), tz), 'remove')).toBe(false)
-    // Fetched at 2× (null), crossing to 3× live: shown at once, as on main.
-    expect(queueRetiredOffer({ ...plain, attempts: 2, attempts_offer: null }, 'remove')).toBe(false)
-    // A row built in the browser (no server field): never suppressed.
-    expect(queueRetiredOffer({ ...plain }, 'remove')).toBe(false)
-    // High and deadline tasks: never.
     const high = threeDays({ title: 'High', priority: 3 })
-    expect(queueRetiredOffer({ ...high, attempts_offer: null }, 'remove')).toBe(false)
+    // The browser passes the switch from GET /api/user/preferences
+    // (`useTaskQueue`): on, no "Remove target?" on a strippable one-off.
+    expect(attemptsOffer(plain, new Date(), { queue: true })).toBeNull()
+    expect(formatTaskResponse(plain, tz).attempts_offer).toBeNull()
+    // High and deadline tasks keep theirs.
+    expect(attemptsOffer(high, new Date(), { queue: true })).toBe('remove')
+    // Off: the offer, as on main.
+    expect(attemptsOffer(plain, new Date(), { queue: false })).toBe('remove')
   })
 })
 

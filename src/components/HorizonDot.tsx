@@ -147,7 +147,8 @@ export function HorizonDotButton({
 }: {
   task: Pick<Task, 'horizon' | 'title' | 'deadline_at' | 'due_at'>
   onChange?: (horizon: HorizonValue | null) => void
-  variant: 'corner' | 'inline'
+  /** 'meta': the segment row's meta line (task queue on) — a mark, never a menu. */
+  variant: 'corner' | 'inline' | 'meta'
   className?: string
 }) {
   const { checkInDay } = useCheckInDay()
@@ -155,9 +156,11 @@ export function HorizonDotButton({
   const title = horizonDotTitle(task, checkInDay, new Date())
   const shape = cn(
     'relative flex shrink-0 items-center justify-center',
-    variant === 'corner'
-      ? 'bg-muted h-[18px] min-w-6 px-[6px]'
-      : '-my-2 size-8 rounded-md pointer-coarse:-my-3 pointer-coarse:size-11',
+    variant === 'corner' && 'bg-muted h-[18px] min-w-6 px-[6px]',
+    variant === 'inline' && '-my-2 size-8 rounded-md pointer-coarse:-my-3 pointer-coarse:size-11',
+    // A segment row's meta line (task queue PR 3): just the mark, in the
+    // line's flow, beside the project and priority.
+    variant === 'meta' && 'size-3',
     className,
   )
   const data = { 'data-horizon-dot': horizon ?? 'unset', 'data-horizon-chip': '' }

@@ -26,6 +26,8 @@ import {
 } from '@/components/TaskSegmentRow'
 import { usePanelPager } from '@/hooks/usePanelPager'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { useTaskQueue } from '@/components/PreferencesProvider'
+import { isQueueKind } from '@/lib/task-segments'
 
 /**
  * The dashboard's TASKS card, directly beneath the Reminders card (2026-10-11).
@@ -34,7 +36,8 @@ import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
  * in the dashboard … now the segments are all in a line. i liked the reminders
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
- * across today's segments (Days, Upcoming, Weeks, Months, Eventually), its own strip of
+ * across today's segments (the task queue's two panels first, with the
+ * switch on, then Days, Upcoming, Weeks, Months, Eventually), its own strip of
  * teal bars (the current one taller, as a slot's is; green when finished), the
  * same header ("TASKS · DAYS · Daily", "X of Y" that opens what was
  * considered with put-back, ‹ ›), the same rows, and "Defer all" behind the
@@ -73,6 +76,7 @@ export function DashboardTasksPanel({
   // No page is a slot: the natural page is the first segment still waiting.
   const pager = usePanelPager(pages, 0, 0)
   const hint = useSegmentHint()
+  const queueOn = useTaskQueue().enabled
   if (!pager) return null
   if (pages.every((p) => p.waiting === 0)) {
     return <TasksDoneLine segments={actions.segments} actions={actions} />
@@ -103,11 +107,25 @@ export function DashboardTasksPanel({
         nextLabel="Next task segment"
         sweep={
           expanded && page.waiting > 0 ? (
-            <PagerSweep
-              kind="defer"
-              ariaLabel={`Defer all ${page.waiting} in ${page.label}`}
-              onClick={() => void actions.deferAll(segment)}
-            />
+            <>
+              {/* "Considered all" (task queue PR 3, spec rule 9): the slot
+                  page's sweep, beside Defer all, with the queue on. The
+                  queue's panels have no Defer all (spec rule 8). */}
+              {queueOn && (
+                <PagerSweep
+                  kind="consider"
+                  ariaLabel={`Mark all in ${page.label} as considered`}
+                  onClick={() => void actions.considerAll(segment)}
+                />
+              )}
+              {!isQueueKind(segment.horizon) && (
+                <PagerSweep
+                  kind="defer"
+                  ariaLabel={`Defer all ${page.waiting} in ${page.label}`}
+                  onClick={() => void actions.deferAll(segment)}
+                />
+              )}
+            </>
           ) : null
         }
         onToggleExpanded={() => setExpanded(!expanded)}

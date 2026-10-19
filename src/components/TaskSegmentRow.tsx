@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, FolderOpen } from 'lucide-react'
+import { Check, ChevronDown, FileText, FolderOpen } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
@@ -19,18 +19,24 @@ import {
   HORIZON_LABELS,
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
+  QUEUE_PANEL_HINTS,
+  QUEUE_PANEL_WORDS,
+  QUEUE_WORD,
+  TRY_TOMORROW_MARK,
   UPCOMING_HINT,
   UPCOMING_LABEL,
   horizonHints,
 } from '@/lib/task-model-words'
 import {
   SEGMENT_NUDGE_THRESHOLD,
+  isQueueKind,
   type CheckInDay,
   type HorizonValue,
   type SegmentKind,
 } from '@/lib/task-segments'
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
-import { useCheckInDay } from '@/components/PreferencesProvider'
+import { showsHorizonDot } from '@/lib/row-corner'
+import { useCheckInDay, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -89,14 +95,20 @@ export function segmentCounts(segment: SegmentView): { handled: number; total: n
   return { handled: segment.considered + segment.deferred, total: segment.rows.length }
 }
 
-/** A segment's one word: its horizon's, or "Upcoming". */
+/** A segment's one word: its horizon's, "Upcoming", or a queue panel's. */
 export function segmentWord(kind: SegmentKind): string {
+  if (isQueueKind(kind)) return QUEUE_PANEL_WORDS[kind]
   return kind === 'upcoming' ? UPCOMING_LABEL : HORIZON_LABELS[kind]
 }
 
-/** "Tasks · Days": the segment's name on both surfaces. */
+/**
+ * "Tasks · Days": the segment's name on both surfaces. A task queue panel
+ * (PR 3) has the queue's own provisional name instead: "Task reminders ·
+ * Today" / "Task reminders · Earlier" (`QUEUE_WORD`).
+ */
 export function segmentLabel(segment: SegmentView): string {
-  return `Tasks · ${segmentWord(segment.horizon)}`
+  const word = segmentWord(segment.horizon)
+  return isQueueKind(segment.horizon) ? `${QUEUE_WORD} · ${word}` : `Tasks · ${word}`
 }
 
 /**
@@ -105,7 +117,9 @@ export function segmentLabel(segment: SegmentView): string {
  * Tuesday"). Upcoming says what it is instead: "Heads-up".
  */
 export function segmentHint(segment: SegmentView, checkInDay: CheckInDay): string {
-  return segment.horizon === 'upcoming' ? UPCOMING_HINT : horizonHints(checkInDay)[segment.horizon]
+  const kind = segment.horizon
+  if (isQueueKind(kind)) return QUEUE_PANEL_HINTS[kind]
+  return kind === 'upcoming' ? UPCOMING_HINT : horizonHints(checkInDay)[kind]
 }
 
 /** `segmentHint` with the signed-in user's check-in day. */
@@ -188,6 +202,11 @@ export function TaskSegmentRow({
   const consider = () => {
     if (!considered) void actions.consider(task)
   }
+  // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
+  // like the priority tab, on a "Stripped today" row only. The row is NOT
+  // lifted to the top — it keeps its place in the priority sort. The rollover
+  // clears the flag once the row moves to "Previously targeted".
+  const tryTomorrow = segmentHorizon === 'queue_today' && task.try_tomorrow
   return (
     <li
       data-segment-task={task.id}
@@ -209,7 +228,7 @@ export function TaskSegmentRow({
       // the reminder and prompt rows above it; every row in these lists,
       // considered ones too, now carries the same border).
       className={cn(
-        'group items-start rounded-xl border border-transparent',
+        'group relative items-start rounded-xl border border-transparent',
         hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
         considered
@@ -217,6 +236,16 @@ export function TaskSegmentRow({
           : cn('cursor-pointer', panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'),
       )}
     >
+      {tryTomorrow && (
+        <span
+          role="img"
+          data-try-tomorrow
+          aria-label={TRY_TOMORROW_MARK}
+          title={TRY_TOMORROW_MARK}
+          className="absolute top-1.5 bottom-1.5 -left-px w-[3px] rounded-r-sm"
+          style={{ backgroundColor: 'var(--segment-queue_today)' }}
+        />
+      )}
       {considered ? (
         <span
           aria-hidden
@@ -286,12 +315,17 @@ export function TaskSegmentRow({
 }
 
 /**
- * The row's right side: horizon chip, "Today", and the done square.
+ * The row's right side: horizon dot, "Today", and the done square.
  *
- * On an UPCOMING row (2026-10-12) there is no horizon chip — a targeted task's
- * horizon decides nothing until the target is removed (spec §1) — and a
- * REPEATING row has no Today either: target-today skips it (ruling Q1), so it
- * keeps the circle and done only.
+ * On an UPCOMING row (2026-10-12) there is no horizon dot — a targeted task's
+ * horizon decides nothing until the target is removed (spec §1).
+ *
+ * THE TASK QUEUE ON (PR 3, resolution 10): the DETAILS ICON replaces the
+ * horizon dot on EVERY task-segment row — the queue's, the horizons' and
+ * Upcoming's. It opens the Quick panel for the task (priority, target,
+ * horizon, … — `SegmentDetailsModal`); the horizon itself moves to the meta
+ * line as the row corner's dot (`TaskSegmentMeta`). Switch off: the dot
+ * button, as before the queue.
  */
 function TaskSegmentRowActions({
   row,
@@ -307,6 +341,7 @@ function TaskSegmentRowActions({
   segmentHorizon: SegmentKind
 }) {
   const { task } = row
+  const queue = useTaskQueue()
   const showToday = segmentHorizon !== 'upcoming' || upcomingRowActions(row).today
   return (
     <div
@@ -315,15 +350,34 @@ function TaskSegmentRowActions({
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
-      {/* The horizon dot (2026-10-14; it replaced the chevron chip): the
-          segment header names the segment, the dot the task's own horizon —
-          a bigger dot than its neighbours' when a deadline pulled it in. */}
-      {segmentHorizon !== 'upcoming' && (
-        <HorizonDotButton
-          task={task}
-          variant="inline"
-          onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
-        />
+      {queue.enabled ? (
+        <button
+          type="button"
+          data-segment-details
+          onClick={(e) => {
+            e.stopPropagation()
+            actions.openDetails(task)
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label={`Details: "${task.title}"`}
+          title="Details"
+          // The inline horizon dot's box (`HorizonDotButton`): 32px with a
+          // mouse, 44px with a finger, pulled back to the row's line height.
+          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 relative -my-2 flex size-8 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors pointer-coarse:-my-3 pointer-coarse:size-11"
+        >
+          <FileText className={panel ? 'size-4' : 'size-[18px]'} />
+        </button>
+      ) : (
+        // The horizon dot (2026-10-14; it replaced the chevron chip): the
+        // segment header names the segment, the dot the task's own horizon —
+        // a bigger dot than its neighbours' when a deadline pulled it in.
+        segmentHorizon !== 'upcoming' && (
+          <HorizonDotButton
+            task={task}
+            variant="inline"
+            onChange={(h) => void actions.setHorizon(task, h, segmentHorizon)}
+          />
+        )
       )}
       {showToday && (
         <TargetTodayButton
@@ -371,18 +425,24 @@ function TaskSegmentRowActions({
  * The second line, only when there is something to say: a future target date
  * ("Nov 1") or a deadline. Without either the row is one line, a reminder row's
  * height — the segment stays bite-size.
+ *
+ * With the task queue on (PR 3) the horizon is here too, as the row corner's
+ * dot (`showsHorizonDot`, the dashboard row's rule: a one-off with no picked
+ * target), since the details icon took the dot's place on the right — and a
+ * repeating task waiting in the queue names its schedule ("every Wed").
  */
 function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
   const { projects } = useProjects()
+  const queue = useTaskQueue()
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const target = task.due_at ? DateTime.fromISO(task.due_at).setZone(timezone) : null
   const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null
   // The dashboard row's context, compactly (Trent, 10-11): the project, the
-  // priority, a future target and the deadline. Segments hold one-off tasks
-  // only, so there is never a recurrence to show.
+  // priority, a future target and the deadline.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {queue.enabled && showsHorizonDot(task) && <HorizonDotButton task={task} variant="meta" />}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
@@ -397,6 +457,12 @@ function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
       {target && (
         <span data-target-chip title={`Target ${target.toFormat('ccc LLL d, h:mm a')}`}>
           {target.toFormat('LLL d')}
+          {task.rrule && (
+            <span className="text-muted-foreground">
+              {' · '}
+              {recurrenceSummary(task.rrule, task.anchor_time)}
+            </span>
+          )}
         </span>
       )}
       {deadline && (
@@ -417,7 +483,10 @@ function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
  */
 function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
   const now = new Date()
-  const attempts = effectiveAttempts(task, timezone, now).attempts
+  // OpenTask days with the task queue on, calendar days off — the server's
+  // own count either way (`useTaskQueue`).
+  const { attemptsRolloverTime } = useTaskQueue()
+  const attempts = effectiveAttempts(task, timezone, now, attemptsRolloverTime).attempts
   const age = ageLabel(task, now, timezone)
   return (
     <>

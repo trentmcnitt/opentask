@@ -29,7 +29,6 @@ import { formatDueTimeParts } from '@/lib/format-date'
 import {
   ageLabel,
   attemptsOffer,
-  queueRetiredOffer,
   effectiveAttempts,
   isPastDeadline,
   targetReset,
@@ -45,6 +44,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import {
   useLabelConfig,
   usePriorityDisplay,
+  useTaskQueue,
   useSnoozePreferences,
 } from '@/components/PreferencesProvider'
 import { getLabelClasses, LABEL_COLORS } from '@/lib/label-colors'
@@ -250,6 +250,7 @@ export function TaskRow({
   const timezone = useTimezone()
   const { labelConfig } = useLabelConfig()
   const { priorityDisplay } = usePriorityDisplay()
+  const queue = useTaskQueue()
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
 
@@ -387,17 +388,23 @@ export function TaskRow({
   // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
   // target the user picked; nothing on an automatic target or a repeating task.
   //
-  // The task queue (resolution 1) retires "Remove target?" on a strippable
-  // one-off — but only with the SERVER's switch on, which the browser can't
-  // read yet (PR 3 gives it the switch). Until then the offer is read live, as
-  // always, and the server's `attempts_offer` only SUPPRESSES: when the server
-  // already counted 3× (`task.attempts`) on a strippable task and still sent
-  // null, it retired the offer. With the switch off the server sends "remove"
-  // there, so the row behaves exactly as before.
-  const attempts = effectiveAttempts(task, timezone, new Date()).attempts
-  const liveOffer =
-    onRemoveTarget && !isSelectionMode && !tracked ? attemptsOffer({ ...task, attempts }) : null
-  const offer = queueRetiredOffer(task, liveOffer) ? null : liveOffer
+  // The task queue (resolution 1, PR 3): with the SERVER's switch on
+  // (`useTaskQueue`, from GET /api/user/preferences) "Remove target?" is
+  // retired on a strippable one-off (below High, no deadline) — the rollover
+  // takes its target off on its own — and attempts count OpenTask days from
+  // the user's rollover time, the server's own count (B7, its early-morning
+  // pick rule included). With the switch off: calendar days and the offer,
+  // exactly as before the queue.
+  const attempts = effectiveAttempts(
+    task,
+    timezone,
+    new Date(),
+    queue.attemptsRolloverTime,
+  ).attempts
+  const offer =
+    onRemoveTarget && !isSelectionMode && !tracked
+      ? attemptsOffer({ ...task, attempts }, new Date(), { queue: queue.enabled })
+      : null
   const corner = rowCorner({
     task,
     attempts: !tracked && task.due_at !== null ? attempts : 0,

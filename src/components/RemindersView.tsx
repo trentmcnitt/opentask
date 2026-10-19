@@ -20,6 +20,7 @@ import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSel
 import { usePromptDeepLink } from '@/hooks/useRemindersDeepLinks'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
+import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
 import { useTaskSegments } from '@/hooks/useTaskSegments'
 import { usePromptRows } from '@/components/QuotaPromptRow'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
@@ -753,6 +754,8 @@ export function RemindersView({
         }
         onClear={clear}
       />
+      {/* A task-segment row's details icon (task queue PR 3). */}
+      <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
       <ConsiderAllDialog
         request={considerAll.request}
         onConfirm={considerAll.confirm}

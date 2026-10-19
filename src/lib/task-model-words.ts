@@ -56,6 +56,22 @@ export function horizonHints(checkInDay: CheckInDay): Record<HorizonValue, strin
 export const UPCOMING_LABEL = 'Upcoming'
 export const UPCOMING_HINT = 'Heads-up'
 
+/**
+ * THE TASK QUEUE (task queue PR 3, 2026-10-19; spec rule 6): the panels' name.
+ * PROVISIONAL — Trent's working words are "Reminders" for the reminder panels
+ * and "Task reminders" for these; the names are TBD. The two panels share the
+ * name and differ by their word after it ("TASK REMINDERS · TODAY") and their
+ * hint, which says what each holds — the spec's working names.
+ */
+export const QUEUE_WORD = 'Task reminders'
+export const QUEUE_PANEL_WORDS = { queue_today: 'Today', queue_previous: 'Earlier' } as const
+export const QUEUE_PANEL_HINTS = {
+  queue_today: 'Stripped today',
+  queue_previous: 'Previously targeted',
+} as const
+/** Try Tomorrow's mark on a "Stripped today" row (its tooltip and accessible name). */
+export const TRY_TOMORROW_MARK = 'Try tomorrow'
+
 /** The weekday names for the check-in day setting, 1 = Monday … 7 = Sunday. */
 export const CHECK_IN_DAY_NAMES: Record<CheckInDay, string> = {
   1: 'Monday',
