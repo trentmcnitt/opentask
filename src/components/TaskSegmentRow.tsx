@@ -102,7 +102,20 @@ export function segmentCounts(segment: SegmentView): { handled: number; total: n
  * switch-off controls in the moment before the preferences load.
  */
 export function useQueueOn(kind: SegmentKind): boolean {
-  return useTaskQueue().enabled || isQueueKind(kind)
+  return useQueueUi(kind) === 'on'
+}
+
+/**
+ * `useQueueOn` with the third state: 'pending' while the preferences are
+ * still loading on a row that isn't a queue panel's — then the row draws
+ * neither the switch-on nor the switch-off control, so nothing swaps over
+ * when they land (`useTaskQueue().loaded`).
+ */
+export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
+  const { loaded, enabled } = useTaskQueue()
+  if (isQueueKind(kind)) return 'on'
+  if (!loaded) return 'pending'
+  return enabled ? 'on' : 'off'
 }
 
 /** A segment's one word: its horizon's, "Upcoming", or a queue panel's. */
@@ -224,6 +237,9 @@ export function TaskSegmentRow({
       tabIndex={considered ? -1 : 0}
       onClick={consider}
       onKeyDown={(e) => {
+        // The row's own keys only: Enter or Space on a button inside it
+        // (details, Today, done) is that button's, never a consider.
+        if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           consider()
@@ -308,7 +324,12 @@ export function TaskSegmentRow({
         {segmentHorizon === 'upcoming' ? (
           <UpcomingMeta row={row} actions={actions} timezone={timezone} />
         ) : (
-          <TaskSegmentMeta task={task} timezone={timezone} segmentHorizon={segmentHorizon} />
+          <TaskSegmentMeta
+            task={task}
+            timezone={timezone}
+            segmentHorizon={segmentHorizon}
+            onOpenDetails={() => actions.openDetails(task)}
+          />
         )}
       </div>
       {!considered && (
@@ -351,7 +372,7 @@ function TaskSegmentRowActions({
   segmentHorizon: SegmentKind
 }) {
   const { task } = row
-  const queueOn = useQueueOn(segmentHorizon)
+  const queueUi = useQueueUi(segmentHorizon)
   const showToday = segmentHorizon !== 'upcoming' || upcomingRowActions(row).today
   return (
     <div
@@ -360,7 +381,7 @@ function TaskSegmentRowActions({
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
-      {queueOn ? (
+      {queueUi === 'on' ? (
         <button
           type="button"
           data-segment-details
@@ -377,6 +398,15 @@ function TaskSegmentRowActions({
         >
           <FileText className={panel ? 'size-4' : 'size-[18px]'} />
         </button>
+      ) : queueUi === 'pending' ? (
+        // Preferences still loading: the slot both controls share, empty,
+        // so the row doesn't shift when one of them arrives.
+        segmentHorizon !== 'upcoming' && (
+          <span
+            aria-hidden
+            className="-my-2 size-8 shrink-0 pointer-coarse:-my-3 pointer-coarse:size-11"
+          />
+        )
       ) : (
         // The horizon dot (2026-10-14; it replaced the chevron chip): the
         // segment header names the segment, the dot the task's own horizon —
@@ -445,10 +475,13 @@ function TaskSegmentMeta({
   task,
   timezone,
   segmentHorizon,
+  onOpenDetails,
 }: {
   task: Task
   timezone: string
   segmentHorizon: SegmentKind
+  /** The meta dot opens the task's details (the details icon's editor). */
+  onOpenDetails: () => void
 }) {
   const { projects } = useProjects()
   const queueOn = useQueueOn(segmentHorizon)
@@ -460,7 +493,9 @@ function TaskSegmentMeta({
   // priority, a future target and the deadline.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      {queueOn && showsHorizonDot(task) && <HorizonDotButton task={task} variant="meta" />}
+      {queueOn && showsHorizonDot(task) && (
+        <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
+      )}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
@@ -503,8 +538,11 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
   const now = new Date()
   // OpenTask days with the task queue on, calendar days off — the server's
   // own count either way (`useTaskQueue`).
-  const { attemptsRolloverTime } = useTaskQueue()
-  const attempts = effectiveAttempts(task, timezone, now, attemptsRolloverTime).attempts
+  // The server's stored count until the preferences (the switch) have loaded.
+  const { loaded, attemptsRolloverTime } = useTaskQueue()
+  const attempts = loaded
+    ? effectiveAttempts(task, timezone, now, attemptsRolloverTime).attempts
+    : (task.attempts ?? 0)
   const age = ageLabel(task, now, timezone)
   return (
     <>

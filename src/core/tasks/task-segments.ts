@@ -230,11 +230,12 @@ function queuePlacer(
   now: Date,
 ): (task: Task) => { kind: SegmentKind; entry: SegmentTask } | null {
   if (!taskQueueEnabled()) return () => null
-  const m = latestRollover(now, timezone, rolloverTimeForUser(userId))
+  const rolloverTime = rolloverTimeForUser(userId)
+  const m = latestRollover(now, timezone, rolloverTime)
   return (task) => {
     const kind = queueKind(task, now, m)
     if (!kind) return null
-    return { kind, entry: { task, state: queueRowState(task, timezone, now) } }
+    return { kind, entry: { task, state: queueRowState(task, timezone, now, rolloverTime) } }
   }
 }
 

@@ -291,16 +291,28 @@ test('the details icon on a queue row and on a horizon row opens the Quick panel
     for (const id of [queued, plain]) {
       const r = row(page, id)
       await expect(r).toBeVisible()
-      // The details icon replaced the horizon dot button; the dot is on
-      // the meta line, as a mark (a stripped one-off has no target).
+      // The details icon replaced the horizon dot menu; the dot is on the
+      // meta line (a stripped one-off has no target).
       await expect(r.locator('button[data-horizon-chip]')).toHaveCount(0)
-      await expect(r.locator('[data-horizon-dot]')).toBeVisible()
-      await r.getByRole('button', { name: /^Details:/ }).click()
       const dialog = page.getByRole('dialog')
-      await expect(dialog).toBeVisible()
-      await expect(dialog.getByText(/TQ (details|horizon)/)).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(dialog).toHaveCount(0)
+      const opensDetails = async () => {
+        await expect(dialog).toBeVisible()
+        await expect(dialog.getByText(/TQ (details|horizon)/)).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(dialog).toHaveCount(0)
+      }
+      // The icon.
+      await r.getByRole('button', { name: /^Details:/ }).click()
+      await opensDetails()
+      // A tap on the meta-line dot opens details too, never the row's consider.
+      await r.locator('[data-horizon-meta]').click()
+      await opensDetails()
+      // Enter on the focused details button is the button's, not the row's.
+      await r.getByRole('button', { name: /^Details:/ }).focus()
+      await page.keyboard.press('Enter')
+      await opensDetails()
+      await expect(r).toHaveAttribute('data-segment-state', 'waiting')
+      expect((await stateOf(page, id)).last_considered_at).toBeNull()
     }
   } finally {
     await trash(page, ids)

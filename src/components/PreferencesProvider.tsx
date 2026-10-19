@@ -537,10 +537,24 @@ export function useCheckInDay() {
  *
  * The rollover time is the one the page loaded with: a period added or moved
  * in another tab is picked up on the next load.
+ *
+ * `loaded`: the preferences fetch has settled. Until then `enabled` is the
+ * fallback (false), not the server's answer, so a surface that would draw
+ * one thing with the switch on and another with it off draws NEITHER until
+ * it knows — nothing swaps over when the fetch lands (the attempts read uses
+ * the server's stored count meanwhile, `attemptsOf` below).
  */
-export function useTaskQueue(): { enabled: boolean; attemptsRolloverTime: string | null } {
-  const { taskQueue, rolloverTime } = useContext(PreferencesContext)
-  return { enabled: taskQueue, attemptsRolloverTime: taskQueue ? rolloverTime : null }
+export function useTaskQueue(): {
+  loaded: boolean
+  enabled: boolean
+  attemptsRolloverTime: string | null
+} {
+  const { taskQueue, rolloverTime, preferencesLoaded } = useContext(PreferencesContext)
+  return {
+    loaded: preferencesLoaded,
+    enabled: taskQueue,
+    attemptsRolloverTime: taskQueue ? rolloverTime : null,
+  }
 }
 
 /**

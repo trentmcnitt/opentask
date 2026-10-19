@@ -55,7 +55,9 @@ export interface FormattedTask extends Task {
    *   "remove" (Remove target?), "auto" (Back to auto?), or null (none yet,
    *   an automatic target, a repeating task, or — task queue on — a
    *   strippable one-off, whose target the rollover takes off on its own).
-   *   The web row follows this field (TaskRow).
+   *   The web row computes the same answer live (TaskRow: `attemptsOffer`
+   *   with the switch from GET /api/user/preferences), so it never waits for
+   *   a refetch.
    * - `age_label`: ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo" on a task with
    *   neither a target nor a deadline, past its horizon's threshold; else null.
    *   Calendar math in the user's timezone, as the web row computes it.

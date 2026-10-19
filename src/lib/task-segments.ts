@@ -784,14 +784,22 @@ export function queueKind(
  * considered", like a horizon row), deferred today, else waiting. Never
  * hidden: the queue drops nothing (spec rule 6) — a one-off leaves it only by
  * a consider (which clears `queued_at`), a target, done or delete.
+ *
+ * "Today" is the OPENTASK day (`openTaskDayOf` with the user's rollover
+ * time), the day the panels split on — so a repeating row considered at 23:30
+ * stays considered at 00:30, inside the same "Stripped today" panel, until the
+ * rollover moves it to "Previously targeted", waiting again. Queue panels
+ * only: horizon segments and Upcoming stay on midnight (resolution 4).
  */
 export function queueRowState(
   task: { last_considered_at: string | null; segment_deferred_at: string | null },
   timezone: string,
   now: Date,
+  rolloverTime: string,
 ): SegmentState {
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  const isToday = (iso: string | null) => iso !== null && +localDay(iso, timezone) === +today
+  const today = openTaskDayOf(now, timezone, rolloverTime)
+  const isToday = (iso: string | null) =>
+    iso !== null && openTaskDayOf(new Date(iso), timezone, rolloverTime) === today
   if (isToday(task.last_considered_at)) return 'considered'
   if (isToday(task.segment_deferred_at)) return 'deferred'
   return 'waiting'

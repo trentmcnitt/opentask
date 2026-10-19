@@ -359,6 +359,25 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(sunday.flatMap((s) => s.tasks.map((r) => r.task.id))).not.toContain(w.id)
   })
 
+  test("TQ-P15: a queue row's considered state lasts the OpenTask day, not the calendar day", () => {
+    const w = waitingWeekly()
+    roll('2026-10-20T06:30')
+    // Considered at 23:30 Tue …
+    setClock('2026-10-20T23:30')
+    considerTasks(TEST_USER_ID, [w.id])
+    // … still considered at 00:30 Wed, in the same "Stripped today" panel.
+    expect(placement('2026-10-21T00:30', [w.id])).toEqual({ [w.id]: 'queue_today:considered' })
+    // The rollover moves it to "Previously targeted", waiting again.
+    roll('2026-10-21T06:30')
+    expect(placement('2026-10-21T07:00', [w.id])).toEqual({ [w.id]: 'queue_previous:waiting' })
+    // A horizon row stays on midnight (resolution 4): considered at 23:30,
+    // waiting again at 00:30 in its Days segment.
+    const d = makeAt('2026-10-19T09:00', { title: 'Days', horizon: 'days' })
+    setClock('2026-10-21T23:30')
+    considerTasks(TEST_USER_ID, [d.id])
+    expect(placement('2026-10-22T00:30', [d.id])).toEqual({ [d.id]: 'days:waiting' })
+  })
+
   test('TQ-P13: switch off — segments are exactly as before for unqueued tasks', () => {
     const plain = makeAt('2026-10-19T09:00', { title: 'Plain', horizon: 'days' })
     const on = placement('2026-10-20T07:00', [plain.id])

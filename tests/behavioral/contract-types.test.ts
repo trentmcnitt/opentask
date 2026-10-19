@@ -412,9 +412,10 @@ describe('contract fixtures match the TS types', () => {
 })
 
 describe('contract fixtures: the task queue (PR 3)', () => {
-  test('user preferences carry the task-queue switch and the rollover time (PR 3)', () => {
+  test('user preferences carry the rollover time; the switch is not captured (PR 3)', () => {
     const prefs = data('user-preferences')
-    expect(prefs.task_queue).toBe(false)
+    // `task_queue` is the server's switch: not captured (pinServerEnvironment).
+    expect(prefs).not.toHaveProperty('task_queue')
     expect(prefs.rollover_time).toMatch(/^\d{2}:\d{2}$/)
   })
 

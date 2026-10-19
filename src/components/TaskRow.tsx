@@ -395,14 +395,14 @@ export function TaskRow({
   // the user's rollover time, the server's own count (B7, its early-morning
   // pick rule included). With the switch off: calendar days and the offer,
   // exactly as before the queue.
-  const attempts = effectiveAttempts(
-    task,
-    timezone,
-    new Date(),
-    queue.attemptsRolloverTime,
-  ).attempts
+  // Until the preferences have loaded the switch is unknown (`queue.loaded`):
+  // the server's stored count stands, and no offer is drawn, so nothing
+  // changes when they land.
+  const attempts = queue.loaded
+    ? effectiveAttempts(task, timezone, new Date(), queue.attemptsRolloverTime).attempts
+    : (task.attempts ?? 0)
   const offer =
-    onRemoveTarget && !isSelectionMode && !tracked
+    queue.loaded && onRemoveTarget && !isSelectionMode && !tracked
       ? attemptsOffer({ ...task, attempts }, new Date(), { queue: queue.enabled })
       : null
   const corner = rowCorner({

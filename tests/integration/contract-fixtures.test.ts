@@ -336,6 +336,10 @@ function pinServerEnvironment(raw: Json): Json {
     data[key] = false
   }
   delete data.ai_feature_info
+  // The task-queue switch is the server's (`OPENTASK_TASK_QUEUE`, and the
+  // test route's state), not the user's: left out, like the AI fields.
+  // `rollover_time` is user data and stays.
+  delete data.task_queue
   return { ...(raw as Record<string, Json>), data }
 }
 
