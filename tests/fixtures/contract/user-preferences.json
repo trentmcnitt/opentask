@@ -1,5 +1,7 @@
 {
   "data": {
+    "task_queue": false,
+    "rollover_time": "07:00",
     "ai_available": false,
     "default_grouping": "project",
     "default_sort": "horizon",

@@ -74,6 +74,15 @@
  *        (`queued`, `queued_name`, `summary`, `message`; step 12's two
  *        slipping tasks swept, step 9's Urgent one skipped)
  *
+ * 15. The task queue's panels (task-queue PR 3), switch on, after two test
+ *     rollovers (`POST /api/test/rollover` with `force`): one as of two days
+ *     ago, which strips a one-off and sends a weekly task to wait (both
+ *     backdated in the DB so the rollover sees them as left over), then one
+ *     as of now, which strips a one-off and a Try Tomorrow row
+ *     GET  /api/reminders                       → reminders-queue.json
+ *        (`queue_previous`: the old strip and the waiting weekly task;
+ *        `queue_today`: the new strip and the Try Tomorrow row)
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -367,6 +376,77 @@ async function call(
  * deadline one just moves. `notify: false`: no feedback push. Last, so
  * nothing captured before it moves.
  */
+/** A moment `days` days from now (negative: ago), as an ISO instant. */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString()
+}
+
+/** The RRULE weekday of an instant in User B's zone (America/New_York): "MO" … "SU". */
+function weekdayCode(iso: string): string {
+  const day = DateTime.fromISO(iso).setZone('America/New_York').weekday
+  return ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][day - 1]
+}
+
+/** User B's id in the integration seed (scripts/seed-test.ts). */
+const USER_B_ID = 2
+
+/**
+ * Step 15. The task queue's panels (task-queue PR 3), with the switch on.
+ * Each rollover runs with `force` (the test route sets the user's last
+ * rollover to the day before, in the same step), so a minute cron that
+ * stamped the day first can't stop it. A rollover only touches a task whose
+ * target was set before its moment (as of M), so every task here has its
+ * `target_set_at` backdated; nothing earlier in the scenario is old enough.
+ *
+ * 1. As of two days ago: a one-off four days late is stripped, and a weekly
+ *    task whose occurrence was four days ago WAITS for its next one (three
+ *    days ahead — no occurrence in that OpenTask day). Both are queued then:
+ *    "Previously targeted" today.
+ * 2. As of now: a one-off two days late is stripped, and a Try Tomorrow row
+ *    (`/bulk/snooze` with `source: 'try_tomorrow'`: target at the next
+ *    rollover, marked) is stripped as marked, its flag kept: "Stripped today".
+ */
+async function queuePanels(
+  make: (name: string, body: Record<string, unknown>) => Promise<void>,
+  created: Record<string, number>,
+): Promise<Json> {
+  await setTaskQueue(true)
+  try {
+    await make('queueOld', { title: 'Return the library books', target_at: daysFromNow(-4) })
+    await make('queueWeekly', {
+      title: 'Water the ferns',
+      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+      target_at: daysFromNow(3),
+    })
+    const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
+    try {
+      // The weekly task's last occurrence was four days ago (its rule is
+      // weekly from the day it was made, so a week before the one ahead).
+      db.prepare('UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?').run(
+        daysFromNow(-4),
+        daysFromNow(-4),
+        created.queueWeekly,
+      )
+    } finally {
+      db.close()
+    }
+    backdate([created.queueOld, created.queueWeekly], 5)
+    await call('/api/test/rollover', { user_id: USER_B_ID, now: daysFromNow(-2), force: true })
+
+    await make('queueNew', { title: 'Call the plumber', target_at: daysFromNow(-2), priority: 2 })
+    await make('queueTryTomorrow', { title: 'Sort the receipts', target_at: daysFromNow(-1) })
+    await call('/api/tasks/bulk/snooze', {
+      ids: [created.queueTryTomorrow],
+      source: 'try_tomorrow',
+    })
+    backdate([created.queueNew, created.queueTryTomorrow], 3)
+    await call('/api/test/rollover', { user_id: USER_B_ID, force: true })
+    return await call('/api/reminders')
+  } finally {
+    await setTaskQueue(false)
+  }
+}
+
 async function snoozeOverdueWithQueue(): Promise<Json> {
   await setTaskQueue(true)
   try {
@@ -629,6 +709,17 @@ describe('contract fixtures (native clients)', () => {
     captured['bulk-snooze-overdue'] = await snoozeOverdueWithQueue()
   })
 
+  // 15. The task queue's two panels (`queuePanels`). Last of all.
+  beforeAll(async () => {
+    let placeholder = 101 + Object.keys(created).length
+    const make = async (name: string, body: Record<string, unknown>) => {
+      const res = (await call('/api/tasks', body)) as { data: { id: number } }
+      created[name] = res.data.id
+      ids.register('task', res.data.id, placeholder++)
+    }
+    captured['reminders-queue'] = await queuePanels(make, created)
+  })
+
   const names = [
     'user-preferences',
     'reminders-initial',
@@ -652,6 +743,7 @@ describe('contract fixtures (native clients)', () => {
     'task-badges',
     'task-interval-quota',
     'reminders-interval',
+    'reminders-queue',
   ]
 
   for (const name of names) {
