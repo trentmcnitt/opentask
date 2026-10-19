@@ -32,7 +32,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { isTracked } from '@/lib/track'
 import { loadTaskForMutation } from './access'
 import type { Task } from '@/types'
-import { TARGET_SET_FIELD } from './target-set'
+import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
 
 export interface SkipOccurrenceOptions {
   userId: number
@@ -115,7 +115,8 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         `UPDATE tasks
             SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
                 progress_current = 0, ${TARGET_SET_FIELD} = ?,
-                attempts = 0, attempts_counted_through = NULL, updated_at = ?
+                attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL},
+                updated_at = ?
           WHERE id = ?`,
       ).run(
         nextDueAt,
@@ -141,6 +142,8 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         // §7: a new occurrence starts its attempts afresh.
         attempts: 0,
         attempts_counted_through: null,
+        // The task queue (2026-10-19): the new target clears the queue state.
+        ...queueStateToClear(task).after,
       }
       fieldsChanged = [
         'due_at',
@@ -152,6 +155,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         TARGET_SET_FIELD,
         'attempts',
         'attempts_counted_through',
+        ...queueStateToClear(task).fields,
       ]
     } else {
       // Archived, never completed. done stays 0 — that is the entire point.

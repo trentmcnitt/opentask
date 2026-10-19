@@ -48,6 +48,10 @@ const TASK_COLUMNS = [
   'attempts',
   'attempts_counted_through',
   'growth_kept_at',
+  'queue_mark',
+  'try_tomorrow',
+  'queued_at',
+  'queued_from_due_at',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -284,6 +288,10 @@ export interface TaskRow {
   attempts: number
   attempts_counted_through: string | null
   growth_kept_at: string | null
+  queue_mark?: number
+  try_tomorrow?: number
+  queued_at?: string | null
+  queued_from_due_at?: string | null
   /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
   owner_timezone?: string | null
   /** Not a column: the owner's `week_start` (`taskColumns`), for a quota's served period. */
@@ -354,6 +362,18 @@ export function rowToTask(row: TaskRow): Task {
   return task
 }
 
+/** The task queue's columns (2026-10-19); defaulted for a row from before them. */
+function queueFields(
+  row: TaskRow,
+): Pick<Task, 'queue_mark' | 'try_tomorrow' | 'queued_at' | 'queued_from_due_at'> {
+  return {
+    queue_mark: row.queue_mark === 1,
+    try_tomorrow: row.try_tomorrow === 1,
+    queued_at: row.queued_at ?? null,
+    queued_from_due_at: row.queued_from_due_at ?? null,
+  }
+}
+
 function baseTask(row: TaskRow): Task {
   return {
     id: row.id,
@@ -384,6 +404,7 @@ function baseTask(row: TaskRow): Task {
     attempts: row.attempts ?? 0,
     attempts_counted_through: row.attempts_counted_through ?? null,
     growth_kept_at: row.growth_kept_at ?? null,
+    ...queueFields(row),
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,
     auto_snooze_minutes: row.auto_snooze_minutes,

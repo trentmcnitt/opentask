@@ -387,10 +387,21 @@ export const bulkSnoozeSchema = z
     // capped at its deadline (§8.2).
     allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
     cap_at_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
+    /**
+     * PICK OR DEFER (task queue, 2026-10-19; docs/TASK-MODEL.md § Picks and
+     * defers). Absent = a pick, as always. `sweep` = Snooze-all (the web
+     * clock and FAB send it); `try_tomorrow` = Try Tomorrow on one task, which
+     * needs no `until` / `delta_minutes` (it lands on the next rollover).
+     */
+    source: z.enum(['sweep', 'try_tomorrow']).optional(),
   })
-  .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
-    message: 'Either until or delta_minutes must be provided',
-  })
+  .refine(
+    (data) =>
+      data.until !== undefined ||
+      data.delta_minutes !== undefined ||
+      data.source === 'try_tomorrow',
+    { message: 'Either until or delta_minutes must be provided' },
+  )
   .refine((data) => !(data.until !== undefined && data.delta_minutes !== undefined), {
     message: 'Cannot provide both until and delta_minutes',
   })

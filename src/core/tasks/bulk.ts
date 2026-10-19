@@ -8,7 +8,7 @@ import { getTargetContext } from './target-context'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
-import { nowUtc, isRecurring } from '@/core/recurrence'
+import { nowUtc, isRecurring, computeNextOccurrence } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
@@ -20,7 +20,10 @@ import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
-import { formatDurationDelta } from '@/lib/format-date'
+import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
+import { bulkSnoozeMessage } from '@/lib/snooze'
+import { nextRollover, rolloverTimeOf } from '@/lib/opentask-day'
+import { taskQueueEnabled } from './task-queue'
 import { validateLabelsExist } from '@/core/labels'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -293,6 +296,8 @@ interface BulkSnoozeFilterResult {
   /** Below High by priority, held to the High tier by a passed deadline. */
   deadlineSkipped: number
   reminderSkipped: number
+  /** The one High-tier task "one High per press" let through (`oneHigh`), if any. */
+  oneHighId?: number
 }
 
 /**
@@ -359,6 +364,7 @@ function filterForBulkSnooze(
   tasks: Task[],
   includeTaskIds?: Set<number>,
   now: Date = new Date(),
+  { oneHigh = false }: { oneHigh?: boolean } = {},
 ): BulkSnoozeFilterResult {
   // §6: reminders are bucket-locked and can never be snoozed, not even by an
   // explicit selection — `include_task_ids` deliberately does NOT rescue them,
@@ -380,14 +386,28 @@ function filterForBulkSnooze(
   const anyLowerLeft = snoozable.some((t) => tierOf(t) < HIGH_PRIORITY_THRESHOLD)
   // The ceiling this call sweeps up to, inclusive. Normally P2; once nothing
   // lower is left, the High tier joins in. P4 is above both and never included.
-  const ceiling = anyLowerLeft ? HIGH_PRIORITY_THRESHOLD - 1 : HIGH_PRIORITY_THRESHOLD
+  //
+  // ONE HIGH PER PRESS (task queue, B8 / resolution 8, switch on): once
+  // nothing lower is left, the press takes ONE task of the High tier instead
+  // of all of it — the oldest target first, then the nearest deadline, then
+  // the lowest id (`pickOneHigh`) — and the toast names it. The rest stay
+  // skipped and counted exactly as before.
+  const ceiling = anyLowerLeft || oneHigh ? HIGH_PRIORITY_THRESHOLD - 1 : HIGH_PRIORITY_THRESHOLD
+  const oneHighId =
+    oneHigh && !anyLowerLeft
+      ? pickOneHigh(
+          snoozable.filter(
+            (t) => tierOf(t) === HIGH_PRIORITY_THRESHOLD && !includeTaskIds?.has(t.id),
+          ),
+        )?.id
+      : undefined
 
   const eligible: Task[] = []
   let urgentSkipped = 0
   let highSkipped = 0
   let deadlineSkipped = 0
   for (const task of snoozable) {
-    if (tierOf(task) <= ceiling || includeTaskIds?.has(task.id)) {
+    if (tierOf(task) <= ceiling || includeTaskIds?.has(task.id) || task.id === oneHighId) {
       eligible.push(task)
       continue
     }
@@ -399,7 +419,19 @@ function filterForBulkSnooze(
     if (priorityOf(task) === HIGH_PRIORITY_THRESHOLD) highSkipped++
   }
 
-  return { eligible, urgentSkipped, highSkipped, deadlineSkipped, reminderSkipped }
+  return { eligible, urgentSkipped, highSkipped, deadlineSkipped, reminderSkipped, oneHighId }
+}
+
+/**
+ * Which High-tier task one press moves (resolution 8): the oldest target
+ * first, then the nearest deadline (none sorts last), then the lowest id.
+ */
+function pickOneHigh(candidates: Task[]): Task | undefined {
+  const time = (iso: string | null) => (iso ? Date.parse(iso) : Number.POSITIVE_INFINITY)
+  return [...candidates].sort(
+    (a, b) =>
+      time(a.due_at) - time(b.due_at) || time(a.deadline_at) - time(b.deadline_at) || a.id - b.id,
+  )[0]
 }
 
 export interface BulkSnoozeOptions {
@@ -419,7 +451,19 @@ export interface BulkSnoozeOptions {
    * the dismissal at the end of `bulkSnooze`.
    */
   dueBeforeIds?: number[]
+  /**
+   * PICK OR DEFER (task queue, 2026-10-19; spec "Picks and defers"). Absent =
+   * a pick ("this, at this time"), today's behaviour. `'sweep'` = Snooze-all
+   * in any form (the web clock and FAB, `/bulk/snooze-overdue`); `'try_tomorrow'`
+   * = Try Tomorrow on one task. With `OPENTASK_TASK_QUEUE` on, a defer landing
+   * at or after the next rollover moves the target to that rollover and marks
+   * the task for the queue (`planLanding`). Switch off: ignored, except that
+   * Try Tomorrow still lands on the next rollover (with no mark).
+   */
+  source?: BulkSnoozeSource
 }
+
+export type BulkSnoozeSource = 'sweep' | 'try_tomorrow'
 
 export interface BulkSnoozeResult {
   tasksAffected: number
@@ -460,37 +504,37 @@ export interface BulkSnoozeResult {
    * changes a due date in between.
    */
   snoozedIds: number[]
+  /** Task queue: moved to the next rollover and marked for the queue. In `tasksAffected`. */
+  queued: number
+  /** The marked task's title when exactly one was marked; else null. */
+  queuedName: string | null
+  /** Task queue (B2): repeating tasks a defer stopped at their next occurrence. */
+  cappedOccurrence: number
+  /** Task queue (B8): the one High this press moved, by title; else null. */
+  snoozedHighName: string | null
+  /**
+   * The standard one-line summary (spec rule 4) — the web toast, the
+   * snooze-overdue `message` the Shortcuts show, the sweep-feedback push and
+   * (later) the native apps all read it. `bulkSnoozeMessage`.
+   */
+  summary: string
 }
-
-/**
- * Bulk snooze
- *
- * Snoozes all specified tasks. Supports two modes:
- * - Absolute (until): Sets all tasks to the same target time
- * - Relative (deltaMinutes): Adds minutes to each task's current due_at
- *
- * Which tasks it will actually touch is `filterForBulkSnooze`'s decision —
- * P0-P2 always, P3 once nothing lower is left in the batch, P4 never (unless
- * named in `includeTaskIds`); reminders and quotas are always skipped.
- *
- * What it writes to each of those is the single snooze's and bulk/edit's own
- * rule, through the same `collectFieldChanges` + `applyFieldChanges` pair: a
- * dated task's target moves (its first-target date kept, the snooze stat); a
- * dateless task (absolute mode only) gets its first date, which is not a
- * snooze; a task already due at the target is left alone and not counted.
- * Every move stops at a deadline still ahead (§8.2): `deadlineCapped` counts
- * those. A task whose deadline has passed is held to the High tier
- * (`filterForBulkSnooze`), counted in `deadlineSkipped` when held back.
- */
 
 /** Whether the deadline cap (§8.2) stopped this task's date at its deadline. */
 function wasCapped(data: { cappedAtDeadline?: boolean; fieldsChanged: string[] }): boolean {
   return data.cappedAtDeadline === true && data.fieldsChanged.includes('due_at')
 }
 
-/** Exactly one of `until` / `deltaMinutes`, and a parseable `until`. */
-function validateSnoozeMode(until: string | undefined, deltaMinutes: number | undefined): void {
-  if (until === undefined && deltaMinutes === undefined) {
+/**
+ * Exactly one of `until` / `deltaMinutes`, and a parseable `until`. Try
+ * Tomorrow needs neither: it always lands on the next rollover.
+ */
+function validateSnoozeMode(
+  until: string | undefined,
+  deltaMinutes: number | undefined,
+  source: BulkSnoozeSource | undefined,
+): void {
+  if (until === undefined && deltaMinutes === undefined && source !== 'try_tomorrow') {
     throw new ValidationError('Either until or deltaMinutes must be provided')
   }
   if (until !== undefined && deltaMinutes !== undefined) {
@@ -502,68 +546,268 @@ function validateSnoozeMode(until: string | undefined, deltaMinutes: number | un
   }
 }
 
-export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
-  const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds, dueBeforeIds } =
-    options
+/**
+ * What one call knows about picks and defers (task queue): whether this call
+ * defers under the switch, and the next rollover moment. Null rollover when
+ * nothing in the call reads it.
+ */
+interface DeferContext {
+  /** Switch on AND a defer (`source` set). */
+  defer: boolean
+  source: BulkSnoozeSource | undefined
+  timezone: string
+  now: Date
+  /** The next rollover moment (`nextRollover`), when a defer or Try Tomorrow needs it. */
+  rollover: Date | null
+}
 
-  if (taskIds.length === 0) {
+function deferContext(
+  userId: number,
+  timezone: string,
+  source: BulkSnoozeSource | undefined,
+  now: Date,
+): DeferContext {
+  const defer = taskQueueEnabled() && source !== undefined
+  if (!defer && source !== 'try_tomorrow') {
+    return { defer, source, timezone, now, rollover: null }
+  }
+  // The rollover is the first period's start, or morning_time with none.
+  // Read here rather than passed in, so every caller gets the same answer.
+  const slots = getDb()
+    .prepare('SELECT start_time FROM time_slots WHERE user_id = ?')
+    .all(userId) as { start_time: string }[]
+  const { morningTime } = getTargetContext(userId)
+  const rollover = nextRollover(now, timezone, rolloverTimeOf(slots, morningTime))
+  return { defer, source, timezone, now, rollover }
+}
+
+/** Where one task lands, and what the landing says about it. */
+interface Landing {
+  dueAt: string
+  /** Marked for the queue (and Try Tomorrow's flag with it). */
+  mark: boolean
+  tryTomorrow: boolean
+  /** Stopped at its next occurrence (B2). */
+  cappedOccurrence: boolean
+}
+
+/**
+ * PICKS AND DEFERS (task queue, 2026-10-19; spec "Picks and defers", B1, B2).
+ *
+ * `landing` is where the request sends the task (L: the absolute `until`, or
+ * its own target plus the delta; Try Tomorrow: the next rollover). A pick, or
+ * any call with the switch off, lands there. A DEFER (switch on):
+ * - BELOW HIGH, NO DEADLINE, L AT OR AFTER THE NEXT ROLLOVER: the target goes
+ *   to the rollover moment itself — not L (Trent's "tomorrow" is morning_time
+ *   8:30, his rollover 6:30) — and the task is marked for the queue.
+ *   Repeating tasks included (rule 5 / B3: the rollover handles them). A
+ *   6:00 "+1h" lands at 6:30 and is marked (resolution 12).
+ * - L BEFORE THE NEXT ROLLOVER: moves as always. (A marked task's target IS
+ *   the rollover, so it is never over target and never swept before then.)
+ * - DEADLINE TASKS: move as always, capped at the deadline. Never marked.
+ * - REPEATING BELOW HIGH, NOT MARKED: a defer never carries it past its next
+ *   occurrence (B2) — it lands on the occurrence instead, and is counted.
+ *   Picks (multi-select included) are never capped: a manual move may pass it.
+ * - TRY TOMORROW: the same as a sweep landing on the next rollover, plus the
+ *   `try_tomorrow` flag. On a High/Urgent (never stripped) or deadline task,
+ *   a plain move to the next rollover, with no mark and no flag.
+ *
+ * The tier is `bulkSnoozeTier` (a passed deadline counts as High).
+ */
+function planLanding(task: Task, landing: string, ctx: DeferContext): Landing {
+  const plain = { dueAt: landing, mark: false, tryTomorrow: false, cappedOccurrence: false }
+  if (!ctx.defer || !ctx.rollover) return plain
+  const belowHigh = bulkSnoozeTier(task, ctx.now) < HIGH_PRIORITY_THRESHOLD
+  if (belowHigh && !task.deadline_at && Date.parse(landing) >= ctx.rollover.getTime()) {
     return {
-      tasksAffected: 0,
-      tasksSkipped: 0,
-      urgentSkipped: 0,
-      highSkipped: 0,
-      highSnoozed: 0,
-      reminderSkipped: 0,
-      noDueDateSkipped: 0,
-      deadlineSkipped: 0,
-      deadlineCapped: 0,
-      snoozedIds: [],
+      dueAt: ctx.rollover.toISOString(),
+      mark: true,
+      tryTomorrow: ctx.source === 'try_tomorrow',
+      cappedOccurrence: false,
     }
   }
+  if (belowHigh && isRecurring(task.rrule)) {
+    const next = nextOccurrenceOf(task, ctx.timezone, ctx.now)
+    if (next && Date.parse(landing) > Date.parse(next)) {
+      return { ...plain, dueAt: next, cappedOccurrence: true }
+    }
+  }
+  return plain
+}
 
-  validateSnoozeMode(until, deltaMinutes)
+/**
+ * A repeating task's next scheduled occurrence after now — the one a skip
+ * would land on (`skip.ts`): from its scheduled occurrence, never its moved
+ * target (§6).
+ */
+function nextOccurrenceOf(task: Task, timezone: string, now: Date): string | null {
+  if (!task.rrule) return null
+  const prev = task.occurrence_at ?? task.due_at
+  return computeNextOccurrence({
+    rrule: task.rrule,
+    recurrenceMode: task.recurrence_mode,
+    anchorTime: task.anchor_time,
+    timezone,
+    completedAt: now,
+    prevDueAt: prev ? new Date(prev) : null,
+    anchorAt: prev ? new Date(prev) : null,
+  }).toISOString()
+}
 
-  const nowStr = nowUtc()
+/** The request's landing time for one task (before `planLanding`). */
+function requestedLanding(
+  task: Task,
+  until: string | undefined,
+  deltaMinutes: number | undefined,
+  ctx: DeferContext,
+): string {
+  if (ctx.source === 'try_tomorrow' && ctx.rollover) return ctx.rollover.toISOString()
+  // Absolute mode: every task gets the same target. Relative mode: the delta
+  // is added to each task's own due_at (dateless tasks were filtered out).
+  return until !== undefined
+    ? until
+    : new Date(new Date(task.due_at!).getTime() + deltaMinutes! * 60_000).toISOString()
+}
 
-  const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
+/** The empty result, with the counts a call made before it moved anything. */
+function emptySnoozeResult(counts: Partial<BulkSnoozeResult> = {}): BulkSnoozeResult {
+  const result: BulkSnoozeResult = {
+    tasksAffected: 0,
+    tasksSkipped: 0,
+    urgentSkipped: 0,
+    highSkipped: 0,
+    highSnoozed: 0,
+    reminderSkipped: 0,
+    noDueDateSkipped: 0,
+    deadlineSkipped: 0,
+    deadlineCapped: 0,
+    snoozedIds: [],
+    queued: 0,
+    queuedName: null,
+    cappedOccurrence: 0,
+    snoozedHighName: null,
+    summary: '',
+    ...counts,
+  }
+  return { ...result, summary: snoozeSummary(result, null, '') }
+}
 
-  // P0-P2 always; P3 (and a passed deadline) once nothing lower is left; P4
-  // never — unless explicitly included. See `filterForBulkSnooze`.
-  const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
-  const { eligible, urgentSkipped, highSkipped, deadlineSkipped, reminderSkipped } =
-    filterForBulkSnooze(tasks, includeSet)
+/**
+ * The standard summary line for a result (`bulkSnoozeMessage`). With the
+ * switch off the queue fields are all zero / null and nothing is named, so
+ * the line is the one the web toast and `message` always showed.
+ */
+function snoozeSummary(
+  result: Omit<BulkSnoozeResult, 'summary'>,
+  rollover: Date | null,
+  timezone: string,
+  singleName: string | null = null,
+): string {
+  return bulkSnoozeMessage({
+    affected: result.tasksAffected,
+    highAffected: result.highSnoozed,
+    high: result.highSkipped,
+    urgent: result.urgentSkipped - result.highSkipped,
+    deadline: result.deadlineSkipped,
+    capped: result.deadlineCapped,
+    queued: result.queued,
+    queuedName: result.queuedName,
+    queueAt: rollover ? formatTimeInTimezone(rollover.toISOString(), timezone) : undefined,
+    singleName,
+    highName: result.snoozedHighName,
+    cappedOccurrence: result.cappedOccurrence,
+  })
+}
 
+/**
+ * Which tasks a call will consider moving: the priority filter, then (in
+ * relative mode) the dateless ones dropped. Try Tomorrow is one task the user
+ * pointed at, so it passes the priority filter like an explicit pick
+ * (`includeTaskIds`) — reminders and quotas are still refused.
+ */
+function selectSnoozeable(
+  tasks: Task[],
+  options: Pick<BulkSnoozeOptions, 'includeTaskIds' | 'deltaMinutes' | 'source'>,
+): BulkSnoozeFilterResult & { snoozeable: Task[]; noDueDateSkipped: number } {
+  const { includeTaskIds, deltaMinutes, source } = options
+  const include = new Set(includeTaskIds ?? [])
+  if (source === 'try_tomorrow') tasks.forEach((t) => include.add(t.id))
+  // P0-P2 always; P3 (and a passed deadline) once nothing lower is left — all
+  // of it, or with the task queue on, one per press; P4 never — unless
+  // explicitly included. See `filterForBulkSnooze`.
+  const filtered = filterForBulkSnooze(tasks, include.size ? include : undefined, new Date(), {
+    oneHigh: taskQueueEnabled(),
+  })
   // In relative mode, skip tasks without a due_at (can't add delta to nothing)
   let noDueDateSkipped = 0
   const snoozeable =
-    deltaMinutes !== undefined
-      ? eligible.filter((t) => {
+    deltaMinutes !== undefined && source !== 'try_tomorrow'
+      ? filtered.eligible.filter((t) => {
           if (!t.due_at) {
             noDueDateSkipped++
             return false
           }
           return true
         })
-      : eligible
+      : filtered.eligible
+  return { ...filtered, snoozeable, noDueDateSkipped }
+}
 
-  const skippedCount = tasks.length - snoozeable.length
-  if (snoozeable.length === 0) {
-    return {
-      tasksAffected: 0,
-      tasksSkipped: skippedCount,
-      urgentSkipped,
-      highSkipped,
-      highSnoozed: 0,
-      reminderSkipped,
-      noDueDateSkipped,
-      deadlineSkipped,
-      deadlineCapped: 0,
-      snoozedIds: [],
-    }
+/**
+ * Bulk snooze
+ *
+ * Snoozes all specified tasks. Supports two modes:
+ * - Absolute (until): Sets all tasks to the same target time
+ * - Relative (deltaMinutes): Adds minutes to each task's current due_at
+ *
+ * Which tasks it will actually touch is `filterForBulkSnooze`'s decision —
+ * P0-P2 always, P3 once nothing lower is left in the batch (one per press
+ * with the task queue on), P4 never (unless named in `includeTaskIds`);
+ * reminders and quotas are always skipped.
+ *
+ * What it writes to each of those is the single snooze's and bulk/edit's own
+ * rule, through the same `collectFieldChanges` + `applyFieldChanges` pair: a
+ * dated task's target moves (its first-target date kept, the snooze stat); a
+ * dateless task (absolute mode only) gets its first date, which is not a
+ * snooze; a task already due at the target is left alone and not counted.
+ * Every move stops at a deadline still ahead (§8.2): `deadlineCapped` counts
+ * those. A task whose deadline has passed is held to the High tier
+ * (`filterForBulkSnooze`), counted in `deadlineSkipped` when held back.
+ *
+ * With the task queue on, a DEFER (`source`) is classed per task by where it
+ * lands (`planLanding`): at or after the next rollover, below High and with
+ * no deadline, it is marked for the queue.
+ */
+export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
+  const { userId, userTimezone, taskIds, until, deltaMinutes, dueBeforeIds, source } = options
+
+  if (taskIds.length === 0) return emptySnoozeResult()
+
+  validateSnoozeMode(until, deltaMinutes, source)
+  if (source === 'try_tomorrow' && new Set(taskIds).size !== 1) {
+    throw new ValidationError('Try Tomorrow takes exactly one task')
   }
 
+  const nowStr = nowUtc()
+
+  const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
+  const selected = selectSnoozeable(tasks, options)
+  const { snoozeable, noDueDateSkipped, urgentSkipped, highSkipped, deadlineSkipped } = selected
+  const counts = {
+    tasksSkipped: tasks.length - snoozeable.length,
+    urgentSkipped,
+    highSkipped,
+    reminderSkipped: selected.reminderSkipped,
+    noDueDateSkipped,
+    deadlineSkipped,
+  }
+  if (snoozeable.length === 0) return emptySnoozeResult(counts)
+
   const nowDate = new Date()
+  const ctx = deferContext(userId, userTimezone, source, nowDate)
   let deadlineCapped = 0
+  let cappedOccurrence = 0
+  const queuedTasks: Task[] = []
   const targetCtx = getTargetContext(userId)
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
@@ -572,17 +816,13 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   // The tasks that actually got a snapshot, in order. A no-op target (the task
   // is already due at `until`) drops out of every count below.
   const moved: Task[] = []
+  // Each moved task's new target, for the badge arithmetic.
+  const newTargets: string[] = []
   let snoozeScenarioCount = 0
 
   const result = withTransaction((tx) => {
     for (const task of snoozeable) {
-      // Absolute mode: every task gets the same target. Relative mode: the
-      // delta is added to each task's own due_at (dateless tasks were filtered
-      // out above).
-      const newDueAt =
-        until !== undefined
-          ? until
-          : new Date(new Date(task.due_at!).getTime() + deltaMinutes! * 60_000).toISOString()
+      const landing = planLanding(task, requestedLanding(task, until, deltaMinutes, ctx), ctx)
 
       // THE SAME CHANGE COLLECTION AS bulk/edit AND THE SINGLE PATCH (D1,
       // 2026-09-29). This loop used to write due_at / original_due_at /
@@ -593,37 +833,43 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       // of `{ due_at }`. The reminder and quota filters above still run first,
       // so a sweep skips those rows instead of failing; the refusals inside
       // `collectFieldChanges` are only a safety net here. It also stops the
-      // move at the deadline (§8.2).
+      // move at the deadline (§8.2). A defer's queue mark rides in the same
+      // write, so its undo clears the mark with the target.
       const data = collectFieldChanges({
         task,
-        input: { due_at: newDueAt },
+        input: {
+          due_at: landing.dueAt,
+          ...(landing.mark ? { queue_mark: true } : {}),
+          ...(landing.tryTomorrow ? { try_tomorrow: true } : {}),
+        },
         userId,
         userTimezone,
         now: nowDate,
         skipProjectValidation: true,
         targetCtx,
       })
-      if (wasCapped(data)) deadlineCapped++
       if (data.fieldsChanged.length === 0) continue
+      if (wasCapped(data)) deadlineCapped++
+      if (landing.cappedOccurrence) cappedOccurrence++
+      if (landing.mark) queuedTasks.push(task)
 
       const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
       snapshots.push(snapshot)
       activityEntries.push({ userId, ...activity, source: 'bulk', batchId })
       data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
       moved.push(task)
+      newTargets.push((data.afterState.due_at ?? task.due_at)!)
       if (data.isSnoozeScenario) snoozeScenarioCount++
     }
 
     if (snapshots.length > 0) {
-      let bulkSnoozeDesc: string
-      if (until !== undefined) {
-        const target = formatSnoozeTarget(until, userTimezone)
-        bulkSnoozeDesc = `Snoozed ${snapshots.length} tasks to ${target}`
-      } else {
-        const delta = formatDurationDelta(0, deltaMinutes! * 60 * 1000)
-        bulkSnoozeDesc = `Snoozed ${snapshots.length} tasks (${delta})`
-      }
-      logAction(userId, 'bulk_snooze', bulkSnoozeDesc, Array.from(allFieldsChanged), snapshots)
+      logAction(
+        userId,
+        'bulk_snooze',
+        bulkSnoozeDescription(snapshots.length, until, deltaMinutes, ctx, userTimezone),
+        Array.from(allFieldsChanged),
+        snapshots,
+      )
     }
     logActivityBatch(activityEntries)
 
@@ -632,19 +878,23 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       incrementDailyStat(userId, 'snoozes', userTimezone, snoozeScenarioCount)
     }
 
-    return {
+    const oneHigh = moved.find((t) => t.id === selected.oneHighId)
+    const done: Omit<BulkSnoozeResult, 'summary'> = {
+      ...counts,
       // A no-op target is neither affected nor skipped, as in bulk/edit.
       tasksAffected: moved.length,
-      tasksSkipped: skippedCount,
-      urgentSkipped,
-      highSkipped,
       highSnoozed: moved.filter((t) => t.priority === HIGH_PRIORITY_THRESHOLD).length,
-      reminderSkipped,
-      noDueDateSkipped,
-      deadlineSkipped,
       deadlineCapped,
       snoozedIds: moved.map((t) => t.id),
+      queued: queuedTasks.length,
+      queuedName: queuedTasks.length === 1 ? queuedTasks[0].title : null,
+      cappedOccurrence,
+      snoozedHighName: oneHigh?.title ?? null,
     }
+    // Spec rule 4: a press that moved exactly one task names it (switch on
+    // only — off, the line stays exactly what it was).
+    const single = taskQueueEnabled() && moved.length === 1 ? moved[0].title : null
+    return { ...done, summary: snoozeSummary(done, ctx.rollover, userTimezone, single) }
   })
 
   if (moved.length === 0) return result
@@ -655,7 +905,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   dismissNotificationsForTasks(
     userId,
     result.snoozedIds,
-    stillDueAfterSnooze(dueBeforeIds, result.snoozedIds, until),
+    stillDueAfterSnooze(dueBeforeIds, result.snoozedIds, newTargets),
   )
 
   for (const task of moved) {
@@ -669,6 +919,38 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   }
 
   return result
+}
+
+/**
+ * The task queue's additive response fields, the same on `/bulk/snooze` and
+ * `/bulk/snooze-overdue` (docs/openapi.yaml). Present with the switch off too,
+ * as zero / null, with `summary` the line the toast always showed.
+ */
+export function taskQueueFields(result: BulkSnoozeResult) {
+  return {
+    queued: result.queued,
+    queued_name: result.queuedName,
+    capped_occurrence: result.cappedOccurrence,
+    snoozed_high_name: result.snoozedHighName,
+    summary: result.summary,
+  }
+}
+
+/** The undo entry's description: "Snoozed 3 tasks to tomorrow 9:00 AM", "(+1h)", "to the queue". */
+function bulkSnoozeDescription(
+  count: number,
+  until: string | undefined,
+  deltaMinutes: number | undefined,
+  ctx: DeferContext,
+  userTimezone: string,
+): string {
+  if (ctx.source === 'try_tomorrow' && ctx.rollover) {
+    return `Snoozed ${count} tasks to ${formatSnoozeTarget(ctx.rollover.toISOString(), userTimezone)}`
+  }
+  if (until !== undefined) {
+    return `Snoozed ${count} tasks to ${formatSnoozeTarget(until, userTimezone)}`
+  }
+  return `Snoozed ${count} tasks (${formatDurationDelta(0, deltaMinutes! * 60 * 1000)})`
 }
 
 /**
@@ -704,22 +986,27 @@ function cancelPendingEnrichment(tasks: Task[]): void {
  * recurring task — measured at 69ms on a 512-task/193-recurring account, so
  * ~208ms of the request was the same question asked three times. When the
  * caller already measured what was due (`dueBeforeIds`), the surviving count
- * follows from arithmetic: everything snoozed went to `until`, so what stays
- * due is precisely what was due and did not move.
+ * follows from arithmetic: everything snoozed went to a time in the future,
+ * so what stays due is precisely what was due and did not move.
  *
- * That only holds while `until` is an absolute time genuinely in the future.
+ * PER-TASK TARGETS (task queue, 2026-10-19): one press can now land its tasks
+ * on different targets (the queued ones on the rollover, a repeating one on
+ * its next occurrence, a capped one on its deadline), so each moved task's
+ * ACTUAL new target is checked (`newTargets`, in `snoozedIds` order).
+ *
+ * That only holds while every new target is genuinely in the future.
  * bulkSnooze deliberately permits a past target ("tasks will just appear
- * overdue immediately"), and a relative move can land anywhere, so in those
- * cases this returns undefined and the badge is measured — rather than report
- * one that is too low.
+ * overdue immediately"), so if any landed at or before now this returns
+ * undefined and the badge is measured — rather than report one too low.
  */
 function stillDueAfterSnooze(
   dueBeforeIds: number[] | undefined,
   snoozedIds: number[],
-  until: string | undefined,
+  newTargets: string[],
 ): number | undefined {
-  if (!dueBeforeIds || until === undefined) return undefined
-  if (new Date(until).getTime() <= Date.now()) return undefined
+  if (!dueBeforeIds) return undefined
+  const now = Date.now()
+  if (newTargets.some((t) => Date.parse(t) <= now)) return undefined
   const snoozed = new Set(snoozedIds)
   return dueBeforeIds.filter((id) => !snoozed.has(id)).length
 }

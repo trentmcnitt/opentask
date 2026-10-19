@@ -5,12 +5,15 @@
  *
  * Body (absolute mode): { ids: [1, 2, 3, ...], until: "ISO8601 datetime" }
  * Body (relative mode): { ids: [1, 2, 3, ...], delta_minutes: 60 }
+ * Optional `source`: 'sweep' (Snooze-all) or 'try_tomorrow' — a DEFER under the
+ * task queue (docs/TASK-MODEL.md § Picks and defers); absent = a pick.
  */
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
+import { taskQueueFields } from '@/core/tasks/bulk'
 import { validateBulkSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -34,6 +37,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until: input.until,
       deltaMinutes: input.delta_minutes,
       includeTaskIds: input.include_task_ids,
+      // Pick (absent) or defer (task queue): passed straight through.
+      source: input.source,
       // `allow_past_deadline_ids` / `cap_at_deadline_ids` are accepted and
       // ignored (2026-10-12): every move stops at its deadline (§8.2).
     })
@@ -61,6 +66,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       skipped_deadline: result.deadlineSkipped,
       // Snoozed only as far as a deadline still ahead (§8.2).
       capped_deadline: result.deadlineCapped,
+      ...taskQueueFields(result),
     })
   } catch (err) {
     if (err instanceof AuthError) {

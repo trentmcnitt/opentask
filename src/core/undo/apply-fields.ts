@@ -52,6 +52,12 @@ const VALID_TASK_COLUMNS = new Set([
   'attempts',
   'attempts_counted_through',
   'growth_kept_at',
+  // The task queue (2026-10-19): a marking sweep's undo clears the mark, and
+  // the undo of a pick that cleared it puts it back.
+  'queue_mark',
+  'try_tomorrow',
+  'queued_at',
+  'queued_from_due_at',
   // Retired 2026-10-12 but KEPT: undo entries written before then name them,
   // and an unknown field throws (wedging the stack — see `is_tracked`).
   'deadline_nag_off',
@@ -92,6 +98,12 @@ const VALID_TASK_COLUMNS = new Set([
   'quota_prompt_config',
   'quota_day_state',
 ])
+
+/**
+ * 0/1 flag columns the snapshot holds as booleans: the retired nag flag, the
+ * automatic target (§8), and the task queue's mark and Try Tomorrow flag.
+ */
+const FLAG_COLUMNS = new Set(['deadline_nag_off', 'target_auto', 'queue_mark', 'try_tomorrow'])
 
 /** Task columns holding a JSON object; undo writes them back serialized. */
 const JSON_OBJECT_COLUMNS = new Set(['quota_prompt_config', 'quota_day_state'])
@@ -146,9 +158,9 @@ export function applyFieldsToTask(
         // so without this branch better-sqlite3 refuses the raw JS boolean.
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
-      } else if (dbColumn === 'deadline_nag_off' || dbColumn === 'target_auto') {
+      } else if (FLAG_COLUMNS.has(dbColumn)) {
         // A boolean in the snapshot, 0/1 in the column. Without this an Undo
-        // that names either throws and wedges the stack.
+        // that names one throws and wedges the stack.
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as Record<string, unknown>)[stateKey] ? 1 : 0)
       } else if (JSON_OBJECT_COLUMNS.has(dbColumn)) {

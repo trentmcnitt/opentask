@@ -25,6 +25,8 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError, extractBearerToken } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
+import { taskQueueFields } from '@/core/tasks/bulk'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
@@ -102,6 +104,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         skipped_deadline: 0,
         until,
         message: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
+        queued: 0,
+        queued_name: null,
+        capped_occurrence: 0,
+        snoozed_high_name: null,
+        summary: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
         feedback_notification: false,
       })
     }
@@ -120,6 +127,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until,
       includeTaskIds,
       dueBeforeIds: dueNow,
+      // Snooze-overdue is always a sweep — a DEFER under the task queue
+      // (docs/TASK-MODEL.md § Picks and defers): every native "All" button,
+      // widget and Shortcut reaches it.
+      source: 'sweep',
     })
 
     // The feedback push (sweep-feedback.ts): decided here, after the sweep
@@ -140,6 +151,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until,
       timezone: user.timezone,
       totalOverdueCount: dueNow.filter((id) => !snoozed.has(id)).length,
+      // The task queue: the push's title is the standard summary line.
+      summary: taskQueueEnabled() ? result.summary : undefined,
     })
     if (feedback) void sendSweepFeedback(user.id, feedback)
 
@@ -168,16 +181,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until,
       // Ready-to-display summary for clients that can't branch on the counts
       // (Apple Shortcuts show `data.message` as-is). Same copy as the web
-      // toast (`useSnoozeOverdue`): `skipped_urgent` counts High AND Urgent, so
-      // Urgent alone is the difference.
-      message: bulkSnoozeMessage({
-        deadline: result.deadlineSkipped,
-        capped: result.deadlineCapped,
-        affected: result.tasksAffected,
-        highAffected: result.highSnoozed,
-        high: result.highSkipped,
-        urgent: result.urgentSkipped - result.highSkipped,
-      }),
+      // toast (`useSnoozeOverdue`). It IS `summary` (`bulkSnoozeMessage`, built
+      // in `bulkSnooze`): with the task queue off that is exactly the line
+      // this field always carried; on, it adds the queue wording and names.
+      message: result.summary,
+      ...taskQueueFields(result),
       // Whether this call sent the feedback push — so a Shortcut can show
       // `message` only when no notification is coming.
       feedback_notification: feedback !== null,

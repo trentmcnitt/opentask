@@ -69,6 +69,10 @@
  *     GET  /api/tasks/{id}                      → task-interval-quota.json
  *     GET  /api/reminders                       → reminders-interval.json
  *        (its prompt's `period_interval` 2 and `period_label` "by …")
+ * 14. With the task queue switched on (the test-only /api/test/task-queue):
+ *     POST /api/tasks/bulk/snooze-overdue       → bulk-snooze-overdue.json
+ *        (`queued`, `queued_name`, `summary`, `message`; step 12's two
+ *        slipping tasks swept, step 9's Urgent one skipped)
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -109,7 +113,7 @@ import prettier from 'prettier'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
 import { describe, test, expect, beforeAll } from 'vitest'
-import { apiFetchB, resetTestData } from './helpers'
+import { apiFetchB, resetTestData, setTaskQueue } from './helpers'
 
 const FIXTURE_DIR = path.join(process.cwd(), 'tests', 'fixtures', 'contract')
 const WRITE = process.env.CONTRACT_WRITE === '1'
@@ -351,6 +355,28 @@ async function call(
   const json = (await res.json()) as Json
   if (!res.ok) throw new Error(`${method} ${pathname} → ${res.status}: ${JSON.stringify(json)}`)
   return json
+}
+
+/**
+ * Step 14. Snooze all overdue, as every native "All" button, widget bar and
+ * Shortcut sends it — with the task queue ON (OPENTASK_TASK_QUEUE), the way it
+ * will run. What is over target by then: the two slipping tasks from step 12
+ * (one with a deadline ahead) and the Urgent one from step 9 (never swept).
+ * The one with no deadline is a defer landing after the next rollover, so it
+ * is marked for the queue (`queued`, `queued_name`, the `summary` line); the
+ * deadline one just moves. `notify: false`: no feedback push. Last, so
+ * nothing captured before it moves.
+ */
+async function snoozeOverdueWithQueue(): Promise<Json> {
+  await setTaskQueue(true)
+  try {
+    return await call('/api/tasks/bulk/snooze-overdue', {
+      until: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(),
+      notify: false,
+    })
+  } finally {
+    await setTaskQueue(false)
+  }
 }
 
 interface Prompt {
@@ -597,6 +623,12 @@ describe('contract fixtures (native clients)', () => {
     captured['reminders-interval'] = await call('/api/reminders')
   })
 
+  // 14. Snooze all overdue with the task queue on (`snoozeOverdueWithQueue`).
+  // Its own hook, run after the one above, so nothing captured there moves.
+  beforeAll(async () => {
+    captured['bulk-snooze-overdue'] = await snoozeOverdueWithQueue()
+  })
+
   const names = [
     'user-preferences',
     'reminders-initial',
@@ -616,6 +648,7 @@ describe('contract fixtures (native clients)', () => {
     'quota-prompts-restore',
     'task-counts',
     'bulk-snooze',
+    'bulk-snooze-overdue',
     'task-badges',
     'task-interval-quota',
     'reminders-interval',

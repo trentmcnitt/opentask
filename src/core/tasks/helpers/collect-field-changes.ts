@@ -44,6 +44,15 @@ export type FieldChangesInput = TaskUpdateInput & {
    * targeting puts the previous stamp back with the target.
    */
   segment_targeted_at?: string
+  /**
+   * Server-internal (task queue, 2026-10-19): a DEFER landing at or after the
+   * next rollover sets the queue mark in the same write as its target, so one
+   * undo entry covers both (`bulkSnooze`). `try_tomorrow` likewise, from Try
+   * Tomorrow. Present = this write is the defer, so `stampTargetSet` keeps the
+   * mark instead of clearing it.
+   */
+  queue_mark?: boolean
+  try_tomorrow?: boolean
 }
 
 export interface FieldChangeData {
@@ -230,12 +239,47 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     )
   }
 
+  // The task queue (2026-10-19): a defer's mark, before the stamp so the
+  // stamp sees it and leaves it (`src/core/tasks/target-set.ts`).
+  collectQueueFields(data, task, input)
+
   // Upcoming (2026-10-12): any change to the target or the deadline restarts
   // the wait its heads-ups are counted over (`src/core/tasks/target-set.ts`).
-  // Last, once everything above has decided `due_at` and `deadline_at`.
-  stampTargetSet(data, task, now.toISOString())
+  // Last, once everything above has decided `due_at` and `deadline_at`. It
+  // also clears the queue mark — unless this write is the defer that set it.
+  stampTargetSet(data, task, now.toISOString(), {
+    keepQueue: input.queue_mark !== undefined || input.try_tomorrow !== undefined,
+  })
 
   return data
+}
+
+/**
+ * The queue mark and Try Tomorrow flag a defer sets (task queue, 2026-10-19).
+ * Written only when they change, like every other tracked field; booleans in
+ * the snapshot, 0/1 in the column.
+ */
+function collectQueueFields(data: FieldChangeData, task: Task, input: FieldChangesInput): void {
+  if (input.queue_mark !== undefined && input.queue_mark !== task.queue_mark) {
+    trackField(
+      data,
+      'queue_mark',
+      task.queue_mark,
+      input.queue_mark,
+      undefined,
+      input.queue_mark ? 1 : 0,
+    )
+  }
+  if (input.try_tomorrow !== undefined && input.try_tomorrow !== task.try_tomorrow) {
+    trackField(
+      data,
+      'try_tomorrow',
+      task.try_tomorrow,
+      input.try_tomorrow,
+      undefined,
+      input.try_tomorrow ? 1 : 0,
+    )
+  }
 }
 
 /**

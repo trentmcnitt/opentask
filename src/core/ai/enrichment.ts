@@ -2204,6 +2204,10 @@ const INTERNAL_FIELDS = [
   'anchor_dom',
   'horizon_set_at',
   'target_set_at',
+  // The task queue (2026-10-19): a target the AI set clears the queue mark.
+  'queue_mark',
+  'try_tomorrow',
+  'queued_at',
 ]
 
 /**

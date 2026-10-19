@@ -34,6 +34,56 @@
 
 import type { Task } from '@/types'
 
+/*
+ * THE QUEUE MARK RIDES ON THE SAME STAMP (task queue, 2026-10-19; spec
+ * "Picks and defers"). "Any target, auto included, clears the queue mark. A
+ * pick clears the mark." So every write that moves the target also clears
+ * `queue_mark`, `try_tomorrow` and `queued_at` (a queued task that gets a
+ * target leaves the queue, spec rule 8) — except the defer that SETS the mark
+ * (`bulkSnooze`), which puts `queue_mark` in `fieldsChanged` first or passes
+ * `keepQueue`. `queued_from_due_at` is left alone: it is the remembered
+ * original target. Only the fields that are actually set are written into the
+ * snapshot, so a task with no queue state gets no noise fields.
+ *
+ * The fixed-SQL writers (completion advance, skip, put-back) clear them in
+ * their own statements, with `QUEUE_CLEAR_SQL` and `queueStateToClear`.
+ */
+
+/** The queue columns a target write clears, as a SQL fragment (always safe to run). */
+export const QUEUE_CLEAR_SQL = 'queue_mark = 0, try_tomorrow = 0, queued_at = NULL'
+
+type QueueState = Pick<Task, 'queue_mark' | 'try_tomorrow' | 'queued_at'>
+
+/**
+ * The queue fields this task has SET, and the cleared values — for a snapshot.
+ * Empty when the task has no queue state (nothing to restore on undo).
+ */
+export function queueStateToClear(task: Partial<QueueState>): {
+  fields: (keyof QueueState)[]
+  before: Partial<QueueState>
+  after: Partial<QueueState>
+} {
+  const fields: (keyof QueueState)[] = []
+  const before: Partial<QueueState> = {}
+  const after: Partial<QueueState> = {}
+  if (task.queue_mark) {
+    fields.push('queue_mark')
+    before.queue_mark = true
+    after.queue_mark = false
+  }
+  if (task.try_tomorrow) {
+    fields.push('try_tomorrow')
+    before.try_tomorrow = true
+    after.try_tomorrow = false
+  }
+  if (task.queued_at) {
+    fields.push('queued_at')
+    before.queued_at = task.queued_at
+    after.queued_at = null
+  }
+  return { fields, before, after }
+}
+
 /** The column, for the writers whose SQL is a fixed statement. */
 export const TARGET_SET_FIELD = 'target_set_at'
 
@@ -59,11 +109,24 @@ export interface CollectedWrite {
  */
 export function stampTargetSet(
   write: CollectedWrite,
-  task: Pick<Task, 'target_set_at'> & Partial<Pick<Task, 'attempts' | 'attempts_counted_through'>>,
+  task: Pick<Task, 'target_set_at'> &
+    Partial<Pick<Task, 'attempts' | 'attempts_counted_through'> & QueueState>,
   nowStr: string,
+  opts: { keepQueue?: boolean } = {},
 ): boolean {
   if (!movesTarget(write.fieldsChanged) || write.fieldsChanged.includes(TARGET_SET_FIELD)) {
     return false
+  }
+  // The queue mark (see above): a target write clears it, unless this write
+  // is the defer that sets it.
+  if (!opts.keepQueue && !write.fieldsChanged.includes('queue_mark')) {
+    const clear = queueStateToClear(task)
+    for (const field of clear.fields) {
+      write.setClauses.push(field === 'queued_at' ? 'queued_at = NULL' : `${field} = 0`)
+      write.fieldsChanged.push(field)
+      if (write.beforeState) Object.assign(write.beforeState, { [field]: clear.before[field] })
+      if (write.afterState) Object.assign(write.afterState, { [field]: clear.after[field] })
+    }
   }
   if (typeof task.attempts === 'number' && !write.fieldsChanged.includes('attempts')) {
     write.setClauses.push('attempts = ?', 'attempts_counted_through = ?')
