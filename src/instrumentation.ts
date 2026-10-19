@@ -133,6 +133,10 @@ export async function register() {
 
     // Run initial notification check after a short delay
     setTimeout(async () => {
+      // The rollover first, as in the minute jobs (`makeTaskRollover`): a
+      // restart at 06:40 after downtime across 06:30 must strip the tasks a
+      // sweep marked for 06:30 before this check would nag them.
+      taskRollover()
       log.info('notifications', 'Running initial overdue check')
       await checkOverdueTasks()
     }, 5000)

@@ -524,6 +524,26 @@ describe('TQ-P: repeating tasks at the rollover', () => {
     expect(task(t.id).queued_at).not.toBeNull()
   })
 
+  test('TQ-P05b: PINNED — done on the arrival day BEFORE the occurrence re-fires that day', () => {
+    // A consequence of the brief's clear-only wait-over (no auto-skip to the
+    // arrived occurrence, unlike spec rule 5b's wording): `occurrence_at`
+    // still names the missed Monday, so a done at 07:00 on the next Monday
+    // advances to that same day's 08:00, not the Monday after. Reported.
+    stamp('2026-10-19')
+    const t = makeAt('2026-10-12T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-19T08:00'),
+    })
+    for (const d of ['20', '21', '22', '23', '24', '25', '26']) roll(`2026-10-${d}T06:30`)
+    expect(task(t.id).queued_at).not.toBeNull()
+    setClock('2026-10-26T07:00')
+    markDone({ ...u, taskId: t.id })
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-26T08:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+    })
+  })
+
   test('TQ-P06: from_completion steps from the existing occurrence, never from now', () => {
     // Every 3 days from completion, last occurrence Sat 10-17 08:00 (missed).
     const t = makeAt('2026-10-17T07:00', {
