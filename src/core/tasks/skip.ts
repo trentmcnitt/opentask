@@ -31,6 +31,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { isTracked } from '@/lib/track'
 import { loadTaskForMutation } from './access'
+import type Database from 'better-sqlite3'
 import type { Task } from '@/types'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
 
@@ -87,76 +88,17 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
     if (recurring) {
       // §5: a quota has no date to advance — see the same guard in
       // `computeMarkDone`. Skipping one is still a period boundary, so the
-      // progress reset below stands.
-      //
-      // From the SCHEDULED occurrence, like done (§6, 2026-10-12): a moved
-      // target never drags the schedule.
-      const prevOccurrence = task.occurrence_at ?? task.due_at
-      const nextOccurrenceAt = isTracked(task)
-        ? null
-        : computeNextOccurrence({
-            rrule: task.rrule!,
-            recurrenceMode: task.recurrence_mode,
-            anchorTime: task.anchor_time,
-            timezone: userTimezone,
-            completedAt: new Date(),
-            prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
-            // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
-            anchorAt: prevOccurrence ? new Date(prevOccurrence) : null,
-          }).toISOString()
-      // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`).
-      const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, userTimezone)
-      // The target is the occurrence, never past its deadline (§8.2).
-      const nextDueAt = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
-
-      // §5: advancing the occurrence is a period boundary, so a tracked task's
-      // progress resets here exactly as it would on completion.
-      tx.prepare(
-        `UPDATE tasks
-            SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
-                progress_current = 0, ${TARGET_SET_FIELD} = ?,
-                attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL},
-                updated_at = ?
-          WHERE id = ?`,
-      ).run(
-        nextDueAt,
+      // progress reset in `writeRecurringSkip` stands.
+      const nextOccurrenceAt = isTracked(task) ? null : nextOccurrenceAfterSkip(task, userTimezone)
+      const write = writeRecurringSkip(tx, {
+        task,
         nextOccurrenceAt,
-        nextDueAt,
-        nextDeadlineAt,
-        skipCount,
+        skipsAdded: 1,
         nowStr,
-        nowStr,
-        taskId,
-      )
-
-      after = {
-        ...task,
-        due_at: nextDueAt,
-        occurrence_at: nextOccurrenceAt,
-        original_due_at: nextDueAt,
-        deadline_at: nextDeadlineAt,
-        skip_count: skipCount,
-        progress_current: 0,
-        // Upcoming (2026-10-12): the next occurrence's wait counts from the skip.
-        target_set_at: nowStr,
-        // §7: a new occurrence starts its attempts afresh.
-        attempts: 0,
-        attempts_counted_through: null,
-        // The task queue (2026-10-19): the new target clears the queue state.
-        ...queueStateToClear(task).after,
-      }
-      fieldsChanged = [
-        'due_at',
-        'occurrence_at',
-        'original_due_at',
-        'deadline_at',
-        'skip_count',
-        'progress_current',
-        TARGET_SET_FIELD,
-        'attempts',
-        'attempts_counted_through',
-        ...queueStateToClear(task).fields,
-      ]
+        timezone: userTimezone,
+      })
+      after = write.after
+      fieldsChanged = write.fieldsChanged
     } else {
       // Archived, never completed. done stays 0 — that is the entire point.
       tx.prepare(
@@ -197,4 +139,100 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
     wasRecurring: recurring,
     description: recurring ? `Skipped "${task.title}"` : `Skipped and archived "${task.title}"`,
   }
+}
+
+/**
+ * The occurrence one skip lands on: the next one after the SCHEDULED
+ * occurrence, like done (§6, 2026-10-12) — a moved target never drags the
+ * schedule. Counted from now when the occurrence has already passed, so an
+ * over-target task lands on its next one still ahead (the rule's
+ * `max(prevDueAt, completedAt)`). Not for a quota (no date to advance).
+ */
+export function nextOccurrenceAfterSkip(
+  task: Pick<Task, 'rrule' | 'recurrence_mode' | 'anchor_time' | 'occurrence_at' | 'due_at'>,
+  timezone: string,
+  now: Date = new Date(),
+): string {
+  const prevOccurrence = task.occurrence_at ?? task.due_at
+  return computeNextOccurrence({
+    rrule: task.rrule!,
+    recurrenceMode: task.recurrence_mode,
+    anchorTime: task.anchor_time,
+    timezone,
+    completedAt: now,
+    prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
+    // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
+    anchorAt: prevOccurrence ? new Date(prevOccurrence) : null,
+  }).toISOString()
+}
+
+export interface RecurringSkipWrite {
+  task: Task
+  /** The occurrence the task lands on; null for a quota (no date to advance). */
+  nextOccurrenceAt: string | null
+  /** How many occurrences this skip passes over (`skip_count` += it). One for skip-occurrence. */
+  skipsAdded: number
+  nowStr: string
+  timezone: string
+}
+
+/**
+ * THE WRITE OF A REPEATING TASK'S SKIP, shared by `skipOccurrence` (one
+ * occurrence) and `skipUntil` (one or many at once): inside the caller's
+ * transaction, it moves the occurrence and the target to `nextOccurrenceAt`
+ * and returns the after-state and the fields for the undo snapshot. The
+ * caller logs the undo entry and the activity row.
+ */
+export function writeRecurringSkip(
+  tx: Database.Database,
+  { task, nextOccurrenceAt, skipsAdded, nowStr, timezone }: RecurringSkipWrite,
+): { after: Task; fieldsChanged: string[] } {
+  const skipCount = (task.skip_count ?? 0) + skipsAdded
+  // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`),
+  // measured from the scheduled occurrence to the one landed on.
+  const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, timezone)
+  // The target is the occurrence, never past its deadline (§8.2).
+  const nextDueAt = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
+
+  // §5: advancing the occurrence is a period boundary, so a tracked task's
+  // progress resets here exactly as it would on completion.
+  tx.prepare(
+    `UPDATE tasks
+        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
+            progress_current = 0, ${TARGET_SET_FIELD} = ?,
+            attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL},
+            updated_at = ?
+      WHERE id = ?`,
+  ).run(nextDueAt, nextOccurrenceAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, nowStr, task.id)
+
+  const queue = queueStateToClear(task)
+  const after: Task = {
+    ...task,
+    due_at: nextDueAt,
+    occurrence_at: nextOccurrenceAt,
+    original_due_at: nextDueAt,
+    deadline_at: nextDeadlineAt,
+    skip_count: skipCount,
+    progress_current: 0,
+    // Upcoming (2026-10-12): the next occurrence's wait counts from the skip.
+    target_set_at: nowStr,
+    // §7: a new occurrence starts its attempts afresh.
+    attempts: 0,
+    attempts_counted_through: null,
+    // The task queue (2026-10-19): the new target clears the queue state.
+    ...queue.after,
+  }
+  const fieldsChanged = [
+    'due_at',
+    'occurrence_at',
+    'original_due_at',
+    'deadline_at',
+    'skip_count',
+    'progress_current',
+    TARGET_SET_FIELD,
+    'attempts',
+    'attempts_counted_through',
+    ...queue.fields,
+  ]
+  return { after, fieldsChanged }
 }
