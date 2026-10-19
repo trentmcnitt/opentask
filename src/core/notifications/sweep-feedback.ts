@@ -42,7 +42,10 @@
  *
  * The title follows `bulkSnoozeMessage` (the web toast and `data.message`):
  * "Snoozed N tasks", or "N high-priority tasks" on the second press of a double
- * snooze. The body uses the watch's and Mac's wording for what stayed
+ * snooze. With the task queue on (OPENTASK_TASK_QUEUE) it IS that builder's
+ * line with every name suppressed (`bulkSnoozeCountSummary`): "3 will move to
+ * the Tasks queue at 6:30 AM · Snoozed 1 task". The toast and `summary` name
+ * tasks; this push never does. The body uses the watch's and Mac's wording for what stayed
  * (`SweepLine` in `ios/Shared/SweepSummary.swift`: "N High still overdue",
  * "N Urgent still overdue"), so every surface names the tiers alike. `until`
  * is formatted in the user's timezone like the activity log's snooze target
@@ -180,12 +183,13 @@ export interface SweepFeedbackInput {
   /** Overdue tasks left after the sweep — the bulk grid's header count. */
   totalOverdueCount: number
   /**
-   * The task queue (OPENTASK_TASK_QUEUE on): the sweep's standard summary
-   * line (`bulkSnoozeMessage`), used as the title so the push reads the same
-   * as the toast and `message`. Absent (switch off): the title is built here,
-   * as it always was.
+   * The task queue (OPENTASK_TASK_QUEUE on): the sweep's summary line with
+   * COUNTS ONLY (`bulkSnoozeCountSummary` — the toast's builder with every
+   * name suppressed), used as the title so the push reads like the toast
+   * without a title on the lock screen. Absent (switch off): the title is
+   * built here, as it always was.
    */
-  summary?: string
+  countSummary?: string
 }
 
 export interface SweepFeedback extends SweepFeedbackContent {
@@ -202,10 +206,10 @@ export function decideSweepFeedback(
   if (!user.sweep_feedback_notifications_enabled) return null
 
   const content = sweepFeedbackContent(input.counts, input.until, input.timezone, {
-    onePerPress: input.summary !== undefined,
+    onePerPress: input.countSummary !== undefined,
   })
   if (!content) return null
-  const title = input.summary ?? content.title
+  const title = input.countSummary ?? content.title
   return { ...content, title, totalOverdueCount: input.totalOverdueCount }
 }
 

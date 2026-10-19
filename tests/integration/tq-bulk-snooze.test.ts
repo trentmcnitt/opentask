@@ -88,6 +88,8 @@ describe('Task queue: bulk snooze routes (switch on)', () => {
     )
     const task = await getTask(id)
     expect(task).toMatchObject({ queue_mark: true, try_tomorrow: false, queued_at: null })
+    // `queued_until` is the marked task's own target (the rollover).
+    expect(r.json.data.queued_until).toBe(task.due_at)
     // The target is the next rollover, never the requested landing.
     expect(Date.parse(task.due_at)).toBeLessThan(Date.parse(daysFromNow(3)))
   })
@@ -160,6 +162,7 @@ describe('Task queue: bulk snooze routes (switch off)', () => {
       queued_name: null,
       capped_occurrence: 0,
       snoozed_high_name: null,
+      queued_until: null,
       summary: 'Snoozed 1 task',
       message: 'Snoozed 1 task',
     })

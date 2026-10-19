@@ -180,7 +180,7 @@ function executeOneOffMarkDone(
     UPDATE tasks
     SET done = 1, done_at = ?, archived_at = ?, attempts = 0, attempts_counted_through = NULL,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-        updated_at = ?
+        queue_mark = 0, try_tomorrow = 0, updated_at = ?
     WHERE id = ?
   `,
   ).run(
@@ -193,12 +193,16 @@ function executeOneOffMarkDone(
     task.id,
   )
 
+  // The task queue: the mark and flag, when set (see computeMarkDone).
+  const queueClear = queueStateToClear(task, { includeQueued: false })
+
   // Build snapshot manually (like recurring path) to include _completion data
   // for redo. createTaskSnapshot would strip _completion since it's not in
   // fieldsChanged.
   const snapshot: UndoSnapshot = {
     task_id: task.id,
     before_state: {
+      ...queueClear.before,
       id: task.id,
       title: task.title,
       done: false,
@@ -211,6 +215,7 @@ function executeOneOffMarkDone(
       attempts_counted_through: task.attempts_counted_through,
     },
     after_state: {
+      ...queueClear.after,
       id: task.id,
       done: true,
       attempts: 0,

@@ -12,6 +12,7 @@ import path from 'path'
 import { describe, test, expect } from 'vitest'
 import { bulkSnoozeMessage, type BulkSnoozeSkips } from '@/lib/snooze'
 import { decideSweepFeedback } from '@/core/notifications/sweep-feedback'
+import { bulkSnoozeCountSummary } from '@/core/tasks/bulk'
 
 const AT = '6:30 AM'
 
@@ -93,7 +94,31 @@ describe('TQ-S: the summary line', () => {
   })
 })
 
-describe('TQ-F: the sweep-feedback push uses the summary', () => {
+describe('TQ-F: the sweep-feedback push uses the count-only summary', () => {
+  test('TQ-F00: bulkSnoozeCountSummary names nothing; summary does', () => {
+    const result = {
+      tasksAffected: 2,
+      tasksSkipped: 1,
+      urgentSkipped: 1,
+      highSkipped: 1,
+      highSnoozed: 1,
+      reminderSkipped: 0,
+      noDueDateSkipped: 0,
+      deadlineSkipped: 0,
+      deadlineCapped: 0,
+      snoozedIds: [1, 2],
+      queued: 1,
+      queuedName: 'Call the bank',
+      cappedOccurrence: 0,
+      snoozedHighName: 'Pay rent',
+      queuedUntil: '2026-10-21T11:30:00.000Z',
+      summary: 'unused',
+    }
+    expect(bulkSnoozeCountSummary(result, 'America/Chicago')).toBe(
+      '1 will move to the Tasks queue at 6:30 AM · Snoozed 1 high-priority task (1 high skipped)',
+    )
+  })
+
   const user = { is_demo: 0, notifications_enabled: 1, sweep_feedback_notifications_enabled: 1 }
   const base = {
     viaBearer: true,
@@ -104,10 +129,10 @@ describe('TQ-F: the sweep-feedback push uses the summary', () => {
     totalOverdueCount: 2,
   }
 
-  test('TQ-F01: switch on (a summary passed): the title is the summary', () => {
-    const summary = '3 will move to the Tasks queue at 6:30 AM (2 high skipped)'
-    const fb = decideSweepFeedback({ ...base, summary }, user)!
-    expect(fb.title).toBe(summary)
+  test('TQ-F01: switch on (a count summary passed): the title is that line', () => {
+    const countSummary = '3 will move to the Tasks queue at 6:30 AM (2 high skipped)'
+    const fb = decideSweepFeedback({ ...base, countSummary }, user)!
+    expect(fb.title).toBe(countSummary)
     // One High per press: the next press moves one, not "the High ones".
     expect(fb.body).toBe('2 High still over target. Snooze again to move the next one')
   })

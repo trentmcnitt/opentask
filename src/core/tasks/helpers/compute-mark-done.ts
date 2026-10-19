@@ -151,6 +151,9 @@ export function computeMarkDone(
         'last_completed_at',
         'attempts',
         'attempts_counted_through',
+        // The task queue (2026-10-19): a done task is out of every list, so
+        // its mark and flag go (only those that were set; undo restores them).
+        ...queueStateToClear(task, { includeQueued: false }).fields,
       ],
     }
   }

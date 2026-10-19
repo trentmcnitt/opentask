@@ -23,6 +23,7 @@ import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
 import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
 import { bulkSnoozeMessage } from '@/lib/snooze'
+import { taskWord } from '@/lib/utils'
 import { nextRollover, rolloverTimeOf } from '@/lib/opentask-day'
 import { taskQueueEnabled } from './task-queue'
 import { validateLabelsExist } from '@/core/labels'
@@ -388,7 +389,7 @@ function filterForBulkSnooze(
   // The ceiling this call sweeps up to, inclusive. Normally P2; once nothing
   // lower is left, the High tier joins in. P4 is above both and never included.
   //
-  // ONE HIGH PER PRESS (task queue, B8 / resolution 8, switch on): once
+  // ONE HIGH PER PRESS (task queue, B8 / resolution 8, switch on, defers only): once
   // nothing lower is left, the press takes ONE task of the High tier instead
   // of all of it — the oldest target first, then the nearest deadline, then
   // the lowest id (`pickOneHigh`) — and the toast names it. The rest stay
@@ -514,9 +515,16 @@ export interface BulkSnoozeResult {
   /** Task queue (B8): the one High this press moved, by title; else null. */
   snoozedHighName: string | null
   /**
+   * Task queue: the rollover moment (ISO) the queued tasks were targeted at;
+   * null when nothing was queued. A client words marked tasks from this,
+   * never from the request's `until`.
+   */
+  queuedUntil: string | null
+  /**
    * The standard one-line summary (spec rule 4) — the web toast, the
-   * snooze-overdue `message` the Shortcuts show, the sweep-feedback push and
-   * (later) the native apps all read it. `bulkSnoozeMessage`.
+   * snooze-overdue `message` the Shortcuts show and (later) the native apps
+   * read it. `bulkSnoozeMessage`. It names tasks; the lock-screen push uses
+   * the count-only twin (`bulkSnoozeCountSummary`).
    */
   summary: string
 }
@@ -688,10 +696,11 @@ function emptySnoozeResult(counts: Partial<BulkSnoozeResult> = {}): BulkSnoozeRe
     queuedName: null,
     cappedOccurrence: 0,
     snoozedHighName: null,
+    queuedUntil: null,
     summary: '',
     ...counts,
   }
-  return { ...result, summary: snoozeSummary(result, null, '') }
+  return { ...result, summary: snoozeSummary(result, '') }
 }
 
 /**
@@ -701,10 +710,10 @@ function emptySnoozeResult(counts: Partial<BulkSnoozeResult> = {}): BulkSnoozeRe
  */
 function snoozeSummary(
   result: Omit<BulkSnoozeResult, 'summary'>,
-  rollover: Date | null,
   timezone: string,
   named: { single?: string | null; highByDeadline?: boolean } = {},
 ): string {
+  const rollover = result.queuedUntil
   return bulkSnoozeMessage({
     affected: result.tasksAffected,
     highAffected: result.highSnoozed,
@@ -714,12 +723,21 @@ function snoozeSummary(
     capped: result.deadlineCapped,
     queued: result.queued,
     queuedName: result.queuedName,
-    queueAt: rollover ? formatTimeInTimezone(rollover.toISOString(), timezone) : undefined,
+    queueAt: rollover ? formatTimeInTimezone(rollover, timezone) : undefined,
     singleName: named.single ?? null,
     highName: result.snoozedHighName,
     highByDeadline: named.highByDeadline,
     cappedOccurrence: result.cappedOccurrence,
   })
+}
+
+/**
+ * The summary line with COUNTS ONLY — no task named (no `queued_name`, no
+ * single task, no High) — for the sweep-feedback push: titles never go on the
+ * lock screen (Trent; `sweep-feedback.ts`). Same builder as `summary`.
+ */
+export function bulkSnoozeCountSummary(result: BulkSnoozeResult, timezone: string): string {
+  return snoozeSummary({ ...result, queuedName: null, snoozedHighName: null }, timezone)
 }
 
 /**
@@ -736,10 +754,12 @@ function selectSnoozeable(
   const include = new Set(includeTaskIds ?? [])
   if (source === 'try_tomorrow') tasks.forEach((t) => include.add(t.id))
   // P0-P2 always; P3 (and a passed deadline) once nothing lower is left — all
-  // of it, or with the task queue on, one per press; P4 never — unless
+  // of it, or for a defer with the task queue on, one per press; P4 never — unless
   // explicitly included. See `filterForBulkSnooze`.
   const filtered = filterForBulkSnooze(tasks, include.size ? include : undefined, new Date(), {
-    oneHigh: taskQueueEnabled(),
+    // A defer only (the task queue's one High per press): a pick keeps the
+    // whole-tier rule, as bulk/edit does.
+    oneHigh: taskQueueEnabled() && source !== undefined,
   })
   // In relative mode, skip tasks without a due_at (can't add delta to nothing)
   let noDueDateSkipped = 0
@@ -842,8 +862,8 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         task,
         input: {
           due_at: landing.dueAt,
-          ...(landing.mark ? { queue_mark: true } : {}),
-          ...(landing.tryTomorrow ? { try_tomorrow: true } : {}),
+          // A plain sweep's mark also clears a Try Tomorrow flag left from before.
+          ...(landing.mark ? { queue_mark: true, try_tomorrow: landing.tryTomorrow } : {}),
         },
         userId,
         userTimezone,
@@ -869,7 +889,13 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       logAction(
         userId,
         'bulk_snooze',
-        bulkSnoozeDescription(snapshots.length, until, deltaMinutes, ctx, userTimezone),
+        bulkSnoozeDescription(
+          { count: snapshots.length, queued: queuedTasks.length },
+          until,
+          deltaMinutes,
+          ctx,
+          userTimezone,
+        ),
         Array.from(allFieldsChanged),
         snapshots,
       )
@@ -893,13 +919,14 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       queuedName: queuedTasks.length === 1 ? queuedTasks[0].title : null,
       cappedOccurrence,
       snoozedHighName: oneHigh?.title ?? null,
+      queuedUntil: queuedTasks.length > 0 && ctx.rollover ? ctx.rollover.toISOString() : null,
     }
     // Spec rule 4: a press that moved exactly one task names it (switch on
     // only — off, the line stays exactly what it was).
     const single = taskQueueEnabled() && moved.length === 1 ? moved[0].title : null
     // The one High may be below High by priority, in the tier by a passed deadline.
     const highByDeadline = oneHigh !== undefined && oneHigh.priority < HIGH_PRIORITY_THRESHOLD
-    const summary = snoozeSummary(done, ctx.rollover, userTimezone, { single, highByDeadline })
+    const summary = snoozeSummary(done, userTimezone, { single, highByDeadline })
     return { ...done, summary }
   })
 
@@ -938,18 +965,30 @@ export function taskQueueFields(result: BulkSnoozeResult) {
     queued_name: result.queuedName,
     capped_occurrence: result.cappedOccurrence,
     snoozed_high_name: result.snoozedHighName,
+    queued_until: result.queuedUntil,
     summary: result.summary,
   }
 }
 
-/** The undo entry's description: "Snoozed 3 tasks to tomorrow 9:00 AM", "(+1h)", "to the queue". */
+/**
+ * The undo entry's (and History's) description, worded for what happened:
+ * "Snoozed 3 tasks to tomorrow 9:00 AM", "Snoozed 3 tasks (+1h)"; with the
+ * task queue, "Sent 3 tasks to the queue at 6:30 AM" when every task was
+ * marked, "Snoozed 5 tasks (3 to the queue at 6:30 AM)" when some were.
+ */
 function bulkSnoozeDescription(
-  count: number,
+  { count, queued }: { count: number; queued: number },
   until: string | undefined,
   deltaMinutes: number | undefined,
   ctx: DeferContext,
   userTimezone: string,
 ): string {
+  if (queued > 0 && ctx.rollover) {
+    const at = formatTimeInTimezone(ctx.rollover.toISOString(), userTimezone)
+    return queued === count
+      ? `Sent ${count} ${taskWord(count)} to the queue at ${at}`
+      : `Snoozed ${count} tasks (${queued} to the queue at ${at})`
+  }
   if (ctx.source === 'try_tomorrow' && ctx.rollover) {
     return `Snoozed ${count} tasks to ${formatSnoozeTarget(ctx.rollover.toISOString(), userTimezone)}`
   }

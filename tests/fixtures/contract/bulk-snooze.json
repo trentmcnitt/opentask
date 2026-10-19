@@ -13,6 +13,7 @@
     "queued_name": null,
     "capped_occurrence": 0,
     "snoozed_high_name": null,
+    "queued_until": null,
     "summary": "Snoozed 2 tasks (1 urgent skipped)"
   }
 }

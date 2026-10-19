@@ -14,6 +14,7 @@
     "queued_name": "Oil the hinges",
     "capped_occurrence": 0,
     "snoozed_high_name": null,
+    "queued_until": "2026-01-15T16:00:00.000Z",
     "summary": "\"Oil the hinges\" will move to the Tasks queue at 7:00 AM · Snoozed 1 task (1 urgent skipped)",
     "feedback_notification": false
   }

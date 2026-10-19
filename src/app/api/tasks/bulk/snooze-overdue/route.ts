@@ -25,7 +25,7 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError, extractBearerToken } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
-import { taskQueueFields } from '@/core/tasks/bulk'
+import { bulkSnoozeCountSummary, taskQueueFields } from '@/core/tasks/bulk'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
@@ -108,6 +108,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         queued_name: null,
         capped_occurrence: 0,
         snoozed_high_name: null,
+        queued_until: null,
         summary: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
         feedback_notification: false,
       })
@@ -151,8 +152,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until,
       timezone: user.timezone,
       totalOverdueCount: dueNow.filter((id) => !snoozed.has(id)).length,
-      // The task queue: the push's title is the standard summary line.
-      summary: taskQueueEnabled() ? result.summary : undefined,
+      // The task queue: the push's title is the summary line with counts
+      // only — never a title on the lock screen.
+      countSummary: taskQueueEnabled() ? bulkSnoozeCountSummary(result, user.timezone) : undefined,
     })
     if (feedback) void sendSweepFeedback(user.id, feedback)
 

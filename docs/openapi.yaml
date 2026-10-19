@@ -1136,8 +1136,9 @@ paths:
           the next rollover, marked, plus `try_tomorrow` on the task. On a High
           or Urgent (or deadline) task, a plain move there with no mark.
 
-        Also with the switch on, ONE HIGH PER PRESS: once nothing lower is left,
-        a call moves one task of the High tier — the oldest target first, then
+        Also with the switch on, ONE HIGH PER PRESS for a defer (`source` set;
+        a pick keeps the whole-tier rule): once nothing lower is left, the
+        call moves one task of the High tier — the oldest target first, then
         the nearest deadline, then the lowest id — named in `snoozed_high_name`;
         the rest stay skipped and counted as before. `include_task_ids` still
         moves the tasks it names.
@@ -1329,6 +1330,13 @@ paths:
                       snoozed_high_name:
                         type: [string, 'null']
                         description: The one High task this press moved (task queue on), by title.
+                      queued_until:
+                        type: [string, 'null']
+                        format: date-time
+                        description: >-
+                          The rollover moment the queued tasks were targeted at (task queue
+                          on); null when nothing was queued. Word marked tasks from this,
+                          never from `until`.
                       summary:
                         type: string
                         description: >-
@@ -5734,6 +5742,13 @@ components:
         snoozed_high_name:
           type: [string, 'null']
           description: bulk/snooze only. The one High task this press moved (one High per press), by title.
+        queued_until:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            bulk/snooze only. The rollover moment the queued tasks were targeted
+            at; null when nothing was queued. Word marked tasks from this, never
+            from `until`.
         summary:
           type: string
           description: |

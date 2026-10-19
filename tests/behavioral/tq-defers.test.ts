@@ -110,6 +110,8 @@ describe('TQ-L: where a sweep lands, for every option', () => {
     expect(task(t.id).try_tomorrow).toBe(false)
     expect(r.queued).toBe(1)
     expect(r.queuedName).toBe('Task')
+    // The marked tasks' own target, for a client to word them by — not `until`.
+    expect(r.queuedUntil).toBe(at('2026-10-21T06:30'))
     expect(r.summary).toBe('"Task" will move to the Tasks queue at 6:30 AM')
   })
 
@@ -372,6 +374,15 @@ describe('TQ-H: one High per press (B8, resolution 8)', () => {
     expect(r.snoozedHighName).toBeNull()
   })
 
+  test('TQ-H04: a pick (no source) keeps the whole-tier rule with the switch on', () => {
+    const a = make({ title: 'A', priority: 3, due_at: at('2026-10-18T10:00') })
+    const b = make({ title: 'B', priority: 3, due_at: at('2026-10-17T10:00') })
+    const r = sweep([a.id, b.id], { until: at('2026-10-21T08:30') }, 'pick')
+    expect(r).toMatchObject({ tasksAffected: 2, highSnoozed: 2, snoozedHighName: null })
+    expect(task(a.id).due_at).toBe(at('2026-10-21T08:30'))
+    expect(task(b.id).due_at).toBe(at('2026-10-21T08:30'))
+  })
+
   test('TQ-H03: switch off → the whole High tier on the second press, as before', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
     const a = make({ title: 'A', priority: 3, due_at: at('2026-10-18T10:00') })
@@ -467,6 +478,18 @@ describe('TQ-C: every pick clears the mark (and its undo puts it back)', () => {
     sweep([t.id], { until: at('2026-10-21T08:30') })
     expect(task(t.id).queue_mark).toBe(true)
     clearedThenRestored(t.id, () => markDone({ ...u, taskId: t.id }))
+  })
+
+  test('TQ-C07b: done of a one-off clears the mark and flag; undo puts them back', () => {
+    const t = make({ due_at: at('2026-10-20T15:00') })
+    sweep([t.id], {}, 'try_tomorrow')
+    expect(task(t.id)).toMatchObject({ queue_mark: true, try_tomorrow: true })
+    markDone({ ...u, taskId: t.id })
+    expect(task(t.id)).toMatchObject({ done: true, queue_mark: false, try_tomorrow: false })
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ done: false, queue_mark: true, try_tomorrow: true })
+    executeRedo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ done: true, queue_mark: false, try_tomorrow: false })
   })
 
   test('TQ-C08: bulk done of a repeating task', () => {
@@ -607,6 +630,69 @@ describe('TQ-U: undo and redo of a marking sweep', () => {
   })
 })
 
+/** The newest undo entry's description (what Undo and History show). */
+function lastUndoDescription(): string {
+  return (
+    getDb()
+      .prepare('SELECT description FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+      .get(TEST_USER_ID) as { description: string }
+  ).description
+}
+
+describe('TQ-W: the undo / History description says what happened', () => {
+  test('TQ-W01: every task marked → "Sent N tasks to the queue at 6:30 AM"', () => {
+    const a = make({ due_at: at('2026-10-20T15:00') })
+    const b = make({ due_at: at('2026-10-20T15:00') })
+    sweep([a.id, b.id], { until: at('2026-10-21T08:30') })
+    expect(lastUndoDescription()).toBe('Sent 2 tasks to the queue at 6:30 AM')
+  })
+
+  test('TQ-W02: a mixed press → "Snoozed N tasks (M to the queue at 6:30 AM)"', () => {
+    const a = make({ due_at: at('2026-10-20T15:00') })
+    const d = make({ due_at: at('2026-10-20T15:00'), deadline_at: at('2026-10-25T17:00') })
+    sweep([a.id, d.id], { until: at('2026-10-21T08:30') })
+    expect(lastUndoDescription()).toBe('Snoozed 2 tasks (1 to the queue at 6:30 AM)')
+  })
+
+  test('TQ-W03: nothing marked → the old wording', () => {
+    const a = make({ due_at: at('2026-10-20T15:00') })
+    sweep([a.id], { until: at('2026-10-20T22:00') })
+    expect(lastUndoDescription()).toBe('Snoozed 1 tasks to 10:00 PM')
+  })
+})
+
+describe('TQ-Q: queued_at and the Try Tomorrow flag on a defer’s own write', () => {
+  function queue(id: number) {
+    getDb()
+      .prepare('UPDATE tasks SET queued_at = ?, queued_from_due_at = ?, due_at = NULL WHERE id = ?')
+      .run(at('2026-10-20T06:30'), at('2026-10-19T15:00'), id)
+  }
+
+  test('TQ-Q01: Try Tomorrow on a queued task puts it back on a target, out of the queue', () => {
+    const t = make({ title: 'Queued' })
+    queue(t.id)
+    sweep([t.id], {}, 'try_tomorrow')
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-21T06:30'),
+      queue_mark: true,
+      try_tomorrow: true,
+      queued_at: null,
+      queued_from_due_at: at('2026-10-19T15:00'),
+    })
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ queued_at: at('2026-10-20T06:30'), queue_mark: false })
+  })
+
+  test('TQ-Q02: a plain sweep that marks clears an earlier Try Tomorrow flag', () => {
+    const t = make({ due_at: at('2026-10-20T15:00') })
+    getDb().prepare('UPDATE tasks SET try_tomorrow = 1 WHERE id = ?').run(t.id)
+    sweep([t.id], { until: at('2026-10-21T08:30') })
+    expect(task(t.id)).toMatchObject({ queue_mark: true, try_tomorrow: false })
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ queue_mark: false, try_tomorrow: true })
+  })
+})
+
 describe('TQ-T: Try Tomorrow', () => {
   test('TQ-T01: on a P1 — the next rollover, marked, flagged (whatever until says)', () => {
     setClock('2026-10-20T10:00')
@@ -692,6 +778,7 @@ describe('TQ-O: switch off — a sweep is exactly today’s', () => {
       queuedName: null,
       cappedOccurrence: 0,
       snoozedHighName: null,
+      queuedUntil: null,
       summary: 'Snoozed 3 tasks (1 high skipped) · 1 stopped at its deadline',
     })
   })
