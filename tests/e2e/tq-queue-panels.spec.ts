@@ -133,10 +133,12 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     ids.push(old, weekly)
     // The weekly task's last occurrence was four days ago: at the rollover
     // two days ago it has no occurrence that day, so it waits in the queue.
+    // Made six days ago, so the days it sat over target count as attempts.
     sql(
-      'UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?',
+      'UPDATE tasks SET due_at = ?, occurrence_at = ?, created_at = ? WHERE id = ?',
       daysFromNow(-4),
       daysFromNow(-4),
+      daysFromNow(-6),
       weekly,
     )
     await strip(page, { earlier: [old, weekly] })
@@ -156,6 +158,12 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     })
     expect(tt.ok()).toBeTruthy()
     await strip(page, { today: [fresh, tryTomorrow] })
+    // Made 40 days ago: an undated task past the weeks threshold has an age
+    // badge (">1 mo") everywhere but the queue.
+    sql(
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-40 days') WHERE id = ?`,
+      old,
+    )
 
     await page.goto('/reminders')
     const today = panel(page, 'queue_today')
@@ -182,6 +190,14 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     await expect(row(earlier, weekly)).toBeVisible()
     // The waiting weekly task names its schedule.
     await expect(row(earlier, weekly)).toContainText(/weekly|every/i)
+    // No badges on any queue row (designer ruling): no attempts, though the
+    // waiting weekly task has a target and attempts behind it, and no age.
+    expect((await stateOf(page, weekly)).attempts as number).toBeGreaterThan(0)
+    expect((await stateOf(page, old)).age_label).not.toBeNull()
+    for (const p of [today, earlier]) {
+      await expect(p.locator('[data-attempts]')).toHaveCount(0)
+      await expect(p.locator('[data-age-label]')).toHaveCount(0)
+    }
 
     // The dashboard's right panel opens on the queue too.
     await page.goto('/')

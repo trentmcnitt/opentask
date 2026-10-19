@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, FileText, FolderOpen } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen, Pencil } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
@@ -396,7 +396,7 @@ function TaskSegmentRowActions({
           // mouse, 44px with a finger, pulled back to the row's line height.
           className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 relative -my-2 flex size-8 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors pointer-coarse:-my-3 pointer-coarse:size-11"
         >
-          <FileText className={panel ? 'size-4' : 'size-[18px]'} />
+          <Pencil className={panel ? 'size-4' : 'size-[18px]'} />
         </button>
       ) : queueUi === 'pending' ? (
         // Preferences still loading: the slot both controls share, empty,
@@ -523,7 +523,10 @@ function TaskSegmentMeta({
           deadline {deadline.toFormat('LLL d')}
         </span>
       )}
-      <BadgeChips task={task} timezone={timezone} />
+      {/* No badges on a queue row (designer, 10-19) — neither attempts nor
+          age: the queue is read at a glance. A waiting repeating task keeps a
+          target (its next occurrence) and its count, so it would read "226×". */}
+      {!isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />}
     </div>
   )
 }
