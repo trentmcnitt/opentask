@@ -18,6 +18,7 @@ vi.mock('@/core/notifications/dismiss', () => ({
   dismissNotificationsForTasks: vi.fn(),
   syncBadgeCount: vi.fn(),
 }))
+vi.mock('@/core/webhooks/dispatch', () => ({ dispatchWebhookEvent: vi.fn() }))
 vi.mock('@/lib/sync-events', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/sync-events')>()
   return { ...actual, emitSyncEvent: vi.fn() }
@@ -26,6 +27,9 @@ vi.mock('@/lib/sync-events', async (importOriginal) => {
 import { getDb, stampRolloverDates } from '@/core/db'
 import { dismissNotificationsForTasks, syncBadgeCount } from '@/core/notifications/dismiss'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { markUndone } from '@/core/tasks/mark-done'
+import { updateTask } from '@/core/tasks'
 import { createTask, markDone, bulkSnooze } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { targetTasksToday } from '@/core/tasks/task-segments'
@@ -33,6 +37,7 @@ import { runTaskRollover } from '@/core/tasks/task-rollover'
 import { findStrippedTargets, restoreStrippedTargets } from '@/core/tasks/restore-stripped'
 import { executeUndo, executeRedo } from '@/core/undo'
 import { formatTaskResponse } from '@/lib/format-task'
+import { queueRetiredOffer } from '@/lib/task-segments'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -95,6 +100,7 @@ function setupTuesday() {
   vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
   setClock('2026-10-20T06:00')
   stamp('2026-10-19')
+  vi.mocked(dispatchWebhookEvent).mockClear()
   vi.mocked(dismissNotificationsForTasks).mockClear()
   vi.mocked(syncBadgeCount).mockClear()
   vi.mocked(emitSyncEvent).mockClear()
@@ -309,6 +315,15 @@ describe('TQ-F: the undo fence, the events, the activity rows', () => {
     roll('2026-10-20T06:30')
     expect(dismissNotificationsForTasks).toHaveBeenCalledWith(TEST_USER_ID, [t.id])
     expect(emitSyncEvent).toHaveBeenCalledWith(TEST_USER_ID)
+    // A webhook per changed task, after commit, with the target it had.
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      'task.updated',
+      expect.objectContaining({ previous_due_at: at('2026-10-19T09:00') }),
+    )
+    expect(vi.mocked(dispatchWebhookEvent).mock.calls.map((c) => c[1])).not.toContain(
+      'task.skipped',
+    )
 
     // A run that only releases a wait (no target moved) resyncs the badge itself.
     vi.mocked(syncBadgeCount).mockClear()
@@ -431,8 +446,8 @@ describe('TQ-S: what a strip keeps', () => {
   })
 
   test('TQ-S03: attempts per OpenTask day — a miss at 00:00–06:29 is the previous day', () => {
-    // A night owl's 2 AM target on Sat: Friday's OpenTask day.
-    const t = makeAt('2026-10-16T22:00', { due_at: at('2026-10-17T02:00') })
+    // A night owl's 2 AM target on Sat, picked at 1 AM: Friday's OpenTask day.
+    const t = makeAt('2026-10-17T01:00', { due_at: at('2026-10-17T02:00') })
     setClock('2026-10-17T02:30')
     expect(task(t.id).attempts).toBe(1)
     expect(task(t.id).attempts_counted_through).toBe('2026-10-16')
@@ -445,6 +460,52 @@ describe('TQ-S: what a strip keeps', () => {
     // Stripped at 06:30, the count kept (no reset on strip).
     roll('2026-10-17T06:30')
     expect(task(t.id)).toMatchObject({ due_at: null, attempts: 1 })
+  })
+
+  test('TQ-S06: an evening pick for early tomorrow is spared at its first rollover', () => {
+    // 22:00 Fri: "tomorrow 6:00" — a pick for the coming day.
+    const t = makeAt('2026-10-16T22:00', { due_at: at('2026-10-17T06:00') })
+    roll('2026-10-17T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-17T06:00'), queued_at: null })
+    // Still there at the NEXT rollover: the ordinary rule strips it.
+    roll('2026-10-18T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: null, queued_from_due_at: at('2026-10-17T06:00') })
+  })
+
+  test('TQ-S07: the boundary at exactly midnight', () => {
+    // Set the evening before for exactly 00:00: spared.
+    const kept = makeAt('2026-10-16T23:00', { title: 'Kept', due_at: at('2026-10-17T00:00') })
+    // Set AT 00:00 for 00:00 the same calendar day: the evening's day, stripped.
+    const night = makeAt('2026-10-17T00:00', { title: 'Night', due_at: at('2026-10-17T00:00') })
+    // 23:59 the day before: before midnight, an ordinary leftover, stripped.
+    const late = makeAt('2026-10-16T20:00', { title: 'Late', due_at: at('2026-10-16T23:59') })
+    roll('2026-10-17T06:30')
+    expect(task(kept.id).due_at).toBe(at('2026-10-17T00:00'))
+    expect(task(night.id).due_at).toBeNull()
+    expect(task(late.id).due_at).toBeNull()
+  })
+
+  test('TQ-S08: a marked early-morning task is still stripped', () => {
+    // A defer always lands a mark ON the rollover (PR 1), so a mark on an
+    // early-morning target only arises from a rollover time moved since; the
+    // rule still strips it — the spare is for picks only.
+    const t = makeAt('2026-10-16T22:00', { due_at: at('2026-10-17T06:00') })
+    getDb().prepare('UPDATE tasks SET queue_mark = 1 WHERE id = ?').run(t.id)
+    roll('2026-10-17T06:30')
+    expect(task(t.id).due_at).toBeNull()
+  })
+
+  test('TQ-S09: a put-back between midnight and the rollover keeps the OpenTask day', () => {
+    // Over target Fri 20:00 (Friday's attempt), done Sat 01:00, put back Sat 02:00.
+    const t = makeAt('2026-10-16T19:00', { due_at: at('2026-10-16T20:00') })
+    setClock('2026-10-17T01:00')
+    markDone({ ...u, taskId: t.id })
+    setClock('2026-10-17T02:00')
+    markUndone({ ...u, taskId: t.id })
+    expect(task(t.id)).toMatchObject({ attempts: 1, attempts_counted_through: '2026-10-16' })
+    // Saturday's OpenTask day (from 06:30) over target is a new attempt.
+    setClock('2026-10-17T07:00')
+    expect(task(t.id).attempts).toBe(2)
   })
 
   test('TQ-S04: a Today tap from the queue is a new attempt', () => {
@@ -470,6 +531,7 @@ describe('TQ-S: what a strip keeps', () => {
 
 describe('TQ-P: repeating tasks at the rollover', () => {
   beforeEach(() => {
+    vi.mocked(dispatchWebhookEvent).mockClear()
     setupTestDb()
     seedPeriods()
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
@@ -498,6 +560,12 @@ describe('TQ-P: repeating tasks at the rollover', () => {
       .prepare("SELECT action FROM activity_log WHERE task_id = ? AND source = 'rollover'")
       .get(t.id) as { action: string }
     expect(row.action).toBe('skip')
+    expect(
+      vi
+        .mocked(dispatchWebhookEvent)
+        .mock.calls.map((c) => c[1])
+        .filter((e) => e !== 'task.created'),
+    ).toEqual(['task.updated', 'task.skipped'])
   })
 
   test('TQ-P02: a daily at 06:30 rolls to the occurrence AT the rollover', () => {
@@ -624,6 +692,113 @@ describe('TQ-W: a wait ends on its occurrence day (spec rule 5b)', () => {
       skip_count: 1,
     })
   })
+})
+
+describe('TQ-N: no skip that never happened, archived tasks, the guard', () => {
+  beforeEach(() => {
+    vi.mocked(dispatchWebhookEvent).mockClear()
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-19T05:00')
+    stamp('2026-10-18')
+  })
+  afterEach(cleanup)
+  afterAll(() => teardownTestDb())
+
+  test('TQ-P08: a target pulled ahead of an occurrence and missed: the wait ends with no skip', () => {
+    // Weekly Monday 08:00; on Fri the user pulls the target to Sat 09:00 and misses it.
+    const t = makeAt('2026-10-19T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-26T08:00'),
+    })
+    setClock('2026-10-23T10:00')
+    updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-24T09:00') } })
+    for (const d of ['19', '20', '21', '22', '23', '24']) roll(`2026-10-${d}T06:30`)
+    // Sun: Sat's target missed, the occurrence (Mon) not this day's — it waits.
+    roll('2026-10-25T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-26T08:00'), skip_count: 0 })
+    expect(task(t.id).queued_at).not.toBeNull()
+    const attempts = task(t.id).attempts
+    expect(attempts).toBe(1)
+    // Mon, its day: released, but nothing was passed over — no skip.
+    roll('2026-10-26T06:30')
+    expect(task(t.id)).toMatchObject({
+      queued_at: null,
+      occurrence_at: at('2026-10-26T08:00'),
+      skip_count: 0,
+    })
+    expect(task(t.id).attempts).toBe(attempts)
+    const row = getDb()
+      .prepare(
+        "SELECT action FROM activity_log WHERE task_id = ? AND source = 'rollover' ORDER BY id DESC",
+      )
+      .get(t.id) as { action: string }
+    expect(row.action).toBe('edit')
+  })
+
+  test('TQ-P09: a target pulled ahead of an occurrence later the same day rolls with no skip', () => {
+    const t = makeAt('2026-10-19T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-26T08:00'),
+    })
+    setClock('2026-10-24T10:00')
+    updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-25T09:00') } })
+    for (const d of ['19', '20', '21', '22', '23', '24', '25']) roll(`2026-10-${d}T06:30`)
+    vi.mocked(dispatchWebhookEvent).mockClear()
+    roll('2026-10-26T06:30')
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-26T08:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+      skip_count: 0,
+      attempts: 1,
+    })
+    const row = getDb()
+      .prepare(
+        "SELECT action FROM activity_log WHERE task_id = ? AND source = 'rollover' ORDER BY id DESC",
+      )
+      .get(t.id) as { action: string }
+    expect(row.action).toBe('edit')
+    expect(vi.mocked(dispatchWebhookEvent).mock.calls.map((c) => c[1])).toEqual(['task.updated'])
+  })
+
+  test('TQ-P10: an archived waiting task is left alone (wait, flag, restore)', () => {
+    const t = makeAt('2026-10-12T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-19T08:00'),
+    })
+    getDb()
+      .prepare(
+        'UPDATE tasks SET queued_at = ?, try_tomorrow = 1, due_at = ?, archived_at = ? WHERE id = ?',
+      )
+      .run(at('2026-10-13T06:30'), at('2026-10-19T08:00'), at('2026-10-14T09:00'), t.id)
+    const one = makeAt('2026-10-12T09:00', { title: 'Archived one-off' })
+    getDb()
+      .prepare(
+        'UPDATE tasks SET queued_at = ?, queued_from_due_at = ?, archived_at = ? WHERE id = ?',
+      )
+      .run(at('2026-10-13T06:30'), at('2026-10-12T10:00'), at('2026-10-14T09:00'), one.id)
+    const r = roll('2026-10-19T06:30')
+    expect(r).toMatchObject({ released: 0, flagsCleared: 0 })
+    expect(task(t.id)).toMatchObject({ try_tomorrow: true, skip_count: 0 })
+    expect(task(t.id).queued_at).not.toBeNull()
+    expect(findStrippedTargets(TEST_USER_ID)).toEqual([])
+  })
+
+  test('TQ-P11: a from_completion rule that cannot reach M within the guard is left alone', () => {
+    const t = makeAt('2026-10-18T07:00', {
+      rrule: 'FREQ=DAILY',
+      recurrence_mode: 'from_completion',
+      due_at: at('2026-10-18T08:00'),
+    })
+    // An occurrence 20 years stale: more daily steps than the guard allows.
+    getDb()
+      .prepare('UPDATE tasks SET occurrence_at = ? WHERE id = ?')
+      .run(at('2006-10-18T08:00'), t.id)
+    const r = roll('2026-10-19T06:30')
+    expect(r).toMatchObject({ rolled: 0, waiting: 0 })
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-18T08:00'), queued_at: null })
+  })
 
   test('TQ-P06: from_completion steps from the existing occurrence, never from now', () => {
     // Every 3 days from completion, last occurrence Sat 10-17 08:00 (missed).
@@ -693,6 +868,22 @@ describe('TQ-O: the 3× offer by task kind (resolution 1)', () => {
     // Switch off: as before.
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
     expect(formatTaskResponse(task(plain.id), tz).attempts_offer).toBe('remove')
+  })
+
+  test('TQ-O02: the web row reads the offer live; the server field only suppresses', () => {
+    const plain = threeDays({ title: 'P2', priority: 2 })
+    // Switch on: the server sent null at 3× on a strippable task — retired.
+    expect(queueRetiredOffer(formatTaskResponse(plain, tz), 'remove')).toBe(true)
+    // Switch off: the server sent "remove" — the live offer stands.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    expect(queueRetiredOffer(formatTaskResponse(task(plain.id), tz), 'remove')).toBe(false)
+    // Fetched at 2× (null), crossing to 3× live: shown at once, as on main.
+    expect(queueRetiredOffer({ ...plain, attempts: 2, attempts_offer: null }, 'remove')).toBe(false)
+    // A row built in the browser (no server field): never suppressed.
+    expect(queueRetiredOffer({ ...plain }, 'remove')).toBe(false)
+    // High and deadline tasks: never.
+    const high = threeDays({ title: 'High', priority: 3 })
+    expect(queueRetiredOffer({ ...high, attempts_offer: null }, 'remove')).toBe(false)
   })
 })
 

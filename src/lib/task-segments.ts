@@ -640,11 +640,21 @@ export function putBackCountedThrough(
   targetWas: string | null,
   timezone: string,
   now: Date,
+  /**
+   * The owner's rollover time when the task queue is on (B7): the days are
+   * then OPENTASK days, like `effectiveAttempts` — so a put-back between
+   * midnight and the rollover checkpoints the right day. Null: calendar days.
+   */
+  rolloverTime: string | null = null,
 ): string {
-  const completedDay = localDay(completedAt, timezone)
+  const dayOf = (instant: Date): DateTime =>
+    rolloverTime
+      ? DateTime.fromISO(openTaskDayOf(instant, timezone, rolloverTime), { zone: timezone })
+      : DateTime.fromJSDate(instant).setZone(timezone).startOf('day')
+  const completedDay = dayOf(new Date(completedAt))
   const arrived = targetWas !== null && Date.parse(targetWas) <= Date.parse(completedAt)
   const counted = arrived ? completedDay : completedDay.minus({ days: 1 })
-  const yesterday = DateTime.fromJSDate(now).setZone(timezone).startOf('day').minus({ days: 1 })
+  const yesterday = dayOf(now).minus({ days: 1 })
   return DateTime.max(counted, yesterday)!.toFormat(ATTEMPTS_DATE_FORMAT)
 }
 
@@ -710,6 +720,26 @@ export function queueStrippable(task: {
   priority?: number
 }): boolean {
   return !task.rrule && task.deadline_at === null && (task.priority ?? 0) < QUEUE_KEEP_PRIORITY
+}
+
+/**
+ * Whether the server retired this row's live "Remove target?" (the task
+ * queue, see the offer above): it sent `attempts_offer: null` for a
+ * strippable task it had already counted at 3× or more.
+ */
+export function queueRetiredOffer(
+  task: {
+    rrule?: string | null
+    deadline_at: string | null
+    priority?: number
+    attempts?: number
+    /** The server's field; absent on a row built in the browser. */
+    attempts_offer?: 'remove' | 'auto' | null
+  },
+  liveOffer: 'remove' | 'auto' | null,
+): boolean {
+  if (liveOffer !== 'remove' || !queueStrippable(task)) return false
+  return task.attempts_offer === null && (task.attempts ?? 0) >= ATTEMPTS_OFFER_REMOVE
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */

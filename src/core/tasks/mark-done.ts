@@ -4,6 +4,7 @@
  * Handles both recurring (advance in place) and one-off (archive) tasks.
  */
 
+import { attemptsRolloverTime } from './rollover-time'
 import { advanceDeadline, putBackCountedThrough } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
@@ -200,6 +201,7 @@ export function markUndone(options: MarkDoneOptions): Task {
         completion.due_at_was,
         options.userTimezone,
         new Date(),
+        attemptsRolloverTime(task.user_id),
       )
     : null
 
@@ -342,6 +344,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     latest.due_at_was,
     userTimezone,
     new Date(),
+    attemptsRolloverTime(task.user_id),
   )
   const queueClear = queueStateToClear(task)
   const fieldsChanged = [

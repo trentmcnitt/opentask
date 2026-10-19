@@ -79,11 +79,15 @@ import { computeNextOccurrence } from '@/core/recurrence'
 import { dismissNotificationsForTasks, syncBadgeCount } from '@/core/notifications/dismiss'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
-import { latestRollover, nextRollover, openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
+import { DateTime } from 'luxon'
+import { latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
 import { effectiveAttempts, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
-import { rowToTask, taskColumns, type TaskRow } from './read'
+import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { TARGET_SET_FIELD } from './target-set'
 import { taskQueueEnabled } from './task-queue'
+import { rolloverTimeForUser } from './rollover-time'
 import type { Task } from '@/types'
 
 /** What one run did, summed over users. */
@@ -118,17 +122,9 @@ interface UserRow {
   last_rollover_date: string | null
 }
 
-/** The user's rollover time (HH:MM): the earliest period's start, else morning_time. */
-export function rolloverTimeForUser(userId: number): string {
-  const db = getDb()
-  const slots = db.prepare('SELECT start_time FROM time_slots WHERE user_id = ?').all(userId) as {
-    start_time: string
-  }[]
-  const user = db.prepare('SELECT morning_time FROM users WHERE id = ?').get(userId) as
-    | { morning_time: string | null }
-    | undefined
-  return rolloverTimeOf(slots, user?.morning_time ?? '09:00')
-}
+// The user's rollover time lives with the switch (`task-queue.ts`); re-exported
+// for the day simulator.
+export { rolloverTimeForUser }
 
 /** Run the rollover for every user (or one) whose OpenTask day has turned. */
 export function runTaskRollover(opts: TaskRolloverOptions = {}): TaskRolloverResult {
@@ -165,6 +161,16 @@ interface UserRun {
   moved: number[]
   /** Anything changed at all (moved, released, flags). */
   changed: boolean
+  /** The webhooks to send after commit, one per strip / roll / wait / release. */
+  hooks: RolloverHook[]
+}
+
+/** One task the rollover changed, for its webhooks after commit. */
+interface RolloverHook {
+  id: number
+  previousDueAt: string | null
+  /** A real skip was logged (a missed occurrence passed over): also `task.skipped`. */
+  skipped: boolean
 }
 
 function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): void {
@@ -185,7 +191,7 @@ function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): voi
     // NULL: the first sight of this user (made after the deploy stamp) —
     // stamp only, like the deploy stamp. Switch off: stamp only.
     if (user.last_rollover_date === null || !taskQueueEnabled())
-      return { moved: [], changed: false }
+      return { moved: [], changed: false, hooks: [] }
     result.ran++
     const m = latestRollover(now, user.timezone, rolloverTime)
     const nextM = nextRollover(m, user.timezone, rolloverTime)
@@ -198,6 +204,27 @@ function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): voi
   if (run.moved.length > 0) dismissNotificationsForTasks(user.id, run.moved)
   else syncBadgeCount(user.id)
   emitSyncEvent(user.id)
+  dispatchRolloverWebhooks(user, run.hooks)
+}
+
+/**
+ * Webhooks, after commit, as every core mutation sends them (AGENTS.md):
+ * `task.updated` with `previous_due_at` for each strip, roll, wait and
+ * release, and `task.skipped` too where a missed occurrence was passed over
+ * (`skipOccurrence`'s event). A Try Tomorrow flag cleared alone sends none.
+ */
+function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[]): void {
+  for (const hook of hooks) {
+    const fresh = getTaskById(hook.id)
+    if (!fresh) continue
+    const task = formatTaskResponse(fresh, user.timezone)
+    dispatchWebhookEvent(user.id, 'task.updated', {
+      task,
+      previous_due_at: hook.previousDueAt,
+      source: 'rollover',
+    })
+    if (hook.skipped) dispatchWebhookEvent(user.id, 'task.skipped', { task, source: 'rollover' })
+  }
 }
 
 /** The tasks the rollover may strip, roll or send to wait (module doc: EXCLUDED). */
@@ -218,7 +245,7 @@ function applyRollover(
   const db = getDb()
   const nowStr = now.toISOString()
   const mMs = m.getTime()
-  const run: UserRun = { moved: [], changed: false }
+  const run: UserRun = { moved: [], changed: false, hooks: [] }
 
   // 3. Waits that are over: a queued repeating task whose target (its next
   // occurrence) falls in this OpenTask day — or arrived earlier, on a run
@@ -228,12 +255,13 @@ function applyRollover(
     .prepare(
       `SELECT id, title, due_at, occurrence_at, skip_count FROM tasks
         WHERE user_id = ? AND rrule IS NOT NULL AND queued_at IS NOT NULL
-          AND due_at IS NOT NULL AND done = 0 AND deleted_at IS NULL`,
+          AND due_at IS NOT NULL AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
     )
     .all(user.id) as WaitRow[]
   for (const w of waits) {
     if (Date.parse(w.due_at) >= nextM.getTime()) continue
-    release(w, user.id, nowStr)
+    const skipped = release(w, user.id, nowStr)
+    run.hooks.push({ id: w.id, previousDueAt: w.due_at, skipped })
     released.add(w.id)
     result.released++
     run.changed = true
@@ -250,16 +278,21 @@ function applyRollover(
     if (task.target_set_at && Date.parse(task.target_set_at) > mMs) continue
     const due = Date.parse(task.due_at!)
     if (!task.queue_mark && !(due < mMs)) continue
+    let skipped = false
     if (!task.rrule) {
+      if (!task.queue_mark && earlyMorningPick(task, user.timezone, m)) continue
       strip(row, task, user, rolloverTime, m, nowStr)
       result.stripped++
     } else {
       // A waiting task (queued, target ahead) is not marked and not before M.
       const outcome = rollRepeating(row, task, user, rolloverTime, m, nextM, nowStr)
-      if (outcome === 'rolled') result.rolled++
-      else result.waiting++
+      if (outcome === 'untouched') continue
+      if (outcome === 'waiting') result.waiting++
+      else result.rolled++
+      skipped = outcome === 'rolled-skip'
     }
     run.moved.push(task.id)
+    run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped })
     run.changed = true
   }
 
@@ -267,7 +300,8 @@ function applyRollover(
   const flagged = db
     .prepare(
       `SELECT id, title, queued_at FROM tasks
-        WHERE user_id = ? AND try_tomorrow = 1 AND queued_at IS NOT NULL AND deleted_at IS NULL`,
+        WHERE user_id = ? AND try_tomorrow = 1 AND queued_at IS NOT NULL
+          AND deleted_at IS NULL AND archived_at IS NULL`,
     )
     .all(user.id) as { id: number; title: string; queued_at: string }[]
   for (const f of flagged) {
@@ -323,6 +357,26 @@ function checkpoint(
  */
 function keptTarget(task: Task): string | null {
   return task.queue_mark && task.queued_from_due_at ? task.queued_from_due_at : task.due_at
+}
+
+/**
+ * AN EARLY-MORNING PICK IS SPARED AT ITS FIRST ROLLOVER (designer ruling,
+ * 2026-10-19). An unmarked one-off whose target falls between local midnight
+ * and M on M's calendar day, and was SET on an earlier calendar day than its
+ * target's — at 22:00, "tomorrow 6:00" — is a pick for the coming day, not
+ * yesterday's leftover: the 6:30 rollover keeps it (it stays over target and
+ * nags), and if it is still there at the NEXT rollover the ordinary rule
+ * strips it. A pick made after midnight for before the rollover (the night
+ * owl's 1 AM pick of 2 AM) stays with the evening's day and is stripped, and
+ * a marked task (a defer) is always stripped.
+ */
+function earlyMorningPick(task: Task, timezone: string, m: Date): boolean {
+  const due = DateTime.fromISO(task.due_at!, { zone: 'utc' }).setZone(timezone)
+  const midnight = DateTime.fromJSDate(m).setZone(timezone).startOf('day')
+  if (due < midnight || due.toMillis() >= m.getTime()) return false
+  const setAt = task.target_set_at ?? task.created_at
+  const setDay = DateTime.fromISO(setAt, { zone: 'utc' }).setZone(timezone).startOf('day')
+  return setDay < due.startOf('day')
 }
 
 /** 1. Strip a one-off's target into the queue. */
@@ -384,6 +438,15 @@ function occurrenceFrom(
     for (let i = 0; i < 5000 && at.getTime() < m.getTime(); i++) {
       at = computeNextOccurrence({ ...base, recurrenceMode: 'from_completion', completedAt: at })
     }
+    if (at.getTime() < m.getTime()) {
+      // The guard ran out before reaching M: leave the task alone, loudly,
+      // rather than hand back a past target as this day's.
+      log.warn(
+        'cron',
+        `Task rollover: task ${task.id}'s rule never reached the rollover; left as is`,
+      )
+      return null
+    }
     return { at: at.toISOString(), skipped: true }
   }
   // from_due: `rule.after` is STRICT, so ask from just before M — an
@@ -417,29 +480,53 @@ interface WaitRow {
  * target is already that occurrence (a from_completion rule's was stepped
  * from the missed one, so nothing re-anchors here either).
  */
-function release(w: WaitRow, userId: number, nowStr: string): void {
-  const skipCount = (w.skip_count ?? 0) + 1
-  getDb()
-    .prepare(
+function release(w: WaitRow, userId: number, nowStr: string): boolean {
+  // Only a stored occurrence BEFORE the one it is released onto was passed
+  // over. One still at or after it (a target the user pulled earlier and
+  // missed, the occurrence itself not yet come) was never skipped: the wait
+  // just ends — no skip_count, attempts kept, no 'skip'.
+  const skipped = w.occurrence_at !== null && Date.parse(w.occurrence_at) < Date.parse(w.due_at)
+  const db = getDb()
+  if (skipped) {
+    const skipCount = (w.skip_count ?? 0) + 1
+    db.prepare(
       `UPDATE tasks
           SET occurrence_at = due_at, original_due_at = due_at, skip_count = ?,
               attempts = 0, attempts_counted_through = NULL,
               queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
               rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
+    ).run(skipCount, nowStr, nowStr, w.id)
+    logRollover(
+      userId,
+      w.id,
+      w.title,
+      'released',
+      ['occurrence_at', 'skip_count', 'queued_at', 'queued_from_due_at'],
+      { occurrence_at: w.occurrence_at, skip_count: w.skip_count ?? 0 },
+      { occurrence_at: w.due_at, skip_count: skipCount, queued_at: null },
+      { skipped: true },
+      'skip',
     )
-    .run(skipCount, nowStr, nowStr, w.id)
+    return true
+  }
+  db.prepare(
+    `UPDATE tasks
+        SET queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
+            rolled_over_at = ?, updated_at = ?
+      WHERE id = ?`,
+  ).run(nowStr, nowStr, w.id)
   logRollover(
     userId,
     w.id,
     w.title,
     'released',
-    ['occurrence_at', 'skip_count', 'queued_at', 'queued_from_due_at'],
-    { occurrence_at: w.occurrence_at, skip_count: w.skip_count ?? 0 },
-    { occurrence_at: w.due_at, skip_count: skipCount, queued_at: null },
-    { skipped: true },
-    'skip',
+    ['queued_at', 'queued_from_due_at'],
+    {},
+    { queued_at: null },
+    { skipped: false },
   )
+  return false
 }
 
 /** 2. A repeating task: roll to this day's occurrence, or wait for the next. */
@@ -451,20 +538,38 @@ function rollRepeating(
   m: Date,
   nextM: Date,
   nowStr: string,
-): 'rolled' | 'waiting' {
+): 'rolled' | 'rolled-skip' | 'waiting' | 'untouched' {
   const db = getDb()
   const next = occurrenceFrom(task, user.timezone, m)
-  if (next && Date.parse(next.at) < nextM.getTime()) {
-    // Rule 5a: roll to this day's occurrence; the missed one is a skip.
+  if (!next) return 'untouched'
+  if (Date.parse(next.at) < nextM.getTime()) {
+    // Rule 5a: roll to this day's occurrence. The missed one is a skip — a
+    // new occurrence, attempts afresh — only when one was passed over; an
+    // occurrence not yet come (a target pulled ahead of it and missed) keeps
+    // its attempts, checkpointed as of M.
     const skipCount = (task.skip_count ?? 0) + (next.skipped ? 1 : 0)
+    const counted = next.skipped
+      ? { attempts: 0, countedThrough: null }
+      : checkpoint(row, task, user, rolloverTime, m)
     db.prepare(
       `UPDATE tasks
           SET due_at = ?, occurrence_at = ?, original_due_at = ?, skip_count = ?,
-              ${TARGET_SET_FIELD} = ?, attempts = 0, attempts_counted_through = NULL,
+              ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
               queue_mark = 0, try_tomorrow = 0, queued_at = NULL, queued_from_due_at = NULL,
               rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
-    ).run(next.at, next.at, next.at, skipCount, nowStr, nowStr, nowStr, task.id)
+    ).run(
+      next.at,
+      next.at,
+      next.at,
+      skipCount,
+      nowStr,
+      counted.attempts,
+      counted.countedThrough,
+      nowStr,
+      nowStr,
+      task.id,
+    )
     logRollover(
       user.id,
       task.id,
@@ -474,13 +579,13 @@ function rollRepeating(
       { due_at: task.due_at, occurrence_at: task.occurrence_at, skip_count: task.skip_count },
       { due_at: next.at, occurrence_at: next.at, skip_count: skipCount },
       { skipped: next.skipped },
-      'skip',
+      next.skipped ? 'skip' : 'edit',
     )
-    return 'rolled'
+    return next.skipped ? 'rolled-skip' : 'rolled'
   }
   // B3: wait in the queue for the next occurrence; `occurrence_at` stays.
   const counted = checkpoint(row, task, user, rolloverTime, m)
-  const target = next?.at ?? null
+  const target = next.at
   const kept = keptTarget(task)
   db.prepare(
     `UPDATE tasks

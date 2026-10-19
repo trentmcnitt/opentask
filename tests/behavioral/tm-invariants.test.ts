@@ -504,6 +504,15 @@ describe('TM-INV: the rollover over a random list', () => {
             if (task.rrule || task.deadline_at || task.done || task.deleted_at) continue
             if (task.is_reminder || task.is_tracked || task.priority >= 3) continue
             if (task.target_set_at && Date.parse(task.target_set_at) > m) continue
+            // Spared: an unmarked pick set on an earlier calendar day for
+            // between midnight and M (designer ruling, 10-19).
+            if (task.due_at) {
+              const due = DateTime.fromISO(task.due_at).setZone(tz)
+              const setDay = DateTime.fromISO(task.target_set_at ?? task.created_at)
+                .setZone(tz)
+                .startOf('day')
+              if (+due >= +day && +due < m && setDay < due.startOf('day')) continue
+            }
             const label = `seed ${SEED6} ${day.toISODate()} task ${id}`
             if (task.due_at) {
               expect(Date.parse(task.due_at), `${label}: targeted before M`).toBeGreaterThanOrEqual(

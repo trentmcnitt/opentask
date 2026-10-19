@@ -35,7 +35,7 @@ export function findStrippedTargets(userId: number): StrippedTarget[] {
       `SELECT id, title, queued_from_due_at, queued_at FROM tasks
         WHERE user_id = ? AND queued_at IS NOT NULL AND due_at IS NULL
           AND queued_from_due_at IS NOT NULL AND rrule IS NULL
-          AND done = 0 AND deleted_at IS NULL
+          AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
         ORDER BY id`,
     )
     .all(userId) as StrippedTarget[]

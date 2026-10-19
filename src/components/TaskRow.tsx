@@ -29,6 +29,7 @@ import { formatDueTimeParts } from '@/lib/format-date'
 import {
   ageLabel,
   attemptsOffer,
+  queueRetiredOffer,
   effectiveAttempts,
   isPastDeadline,
   targetReset,
@@ -386,20 +387,17 @@ export function TaskRow({
   // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
   // target the user picked; nothing on an automatic target or a repeating task.
   //
-  // The OFFER follows the server's `attempts_offer` whenever the row came from
-  // the API (task queue, resolution 1: with the server's switch on, which the
-  // browser cannot read, "Remove target?" is retired on a strippable one-off).
-  // A row with no such field (built in the browser) reads the rule itself.
-  // The cost: a row crossing to 3× while the page is open shows the offer at
-  // the next refetch, not that instant.
+  // The task queue (resolution 1) retires "Remove target?" on a strippable
+  // one-off — but only with the SERVER's switch on, which the browser can't
+  // read yet (PR 3 gives it the switch). Until then the offer is read live, as
+  // always, and the server's `attempts_offer` only SUPPRESSES: when the server
+  // already counted 3× (`task.attempts`) on a strippable task and still sent
+  // null, it retired the offer. With the switch off the server sends "remove"
+  // there, so the row behaves exactly as before.
   const attempts = effectiveAttempts(task, timezone, new Date()).attempts
-  const serverOffer = (task as { attempts_offer?: 'remove' | 'auto' | null }).attempts_offer
-  const offer =
-    onRemoveTarget && !isSelectionMode && !tracked && task.due_at !== null
-      ? serverOffer !== undefined
-        ? serverOffer
-        : attemptsOffer({ ...task, attempts })
-      : null
+  const liveOffer =
+    onRemoveTarget && !isSelectionMode && !tracked ? attemptsOffer({ ...task, attempts }) : null
+  const offer = queueRetiredOffer(task, liveOffer) ? null : liveOffer
   const corner = rowCorner({
     task,
     attempts: !tracked && task.due_at !== null ? attempts : 0,

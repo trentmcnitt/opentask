@@ -462,16 +462,18 @@ export const taskQueueScenarios: GoldenScenario[] = [
   },
   {
     id: 'tq-night-owl',
-    title: "A night owl's 2 AM target is the evening's attempt, stripped at 06:30",
-    source: 'Red-team resolutions ("The OpenTask day runs from rollover to rollover"); B7',
-    from: '2026-10-19',
+    title: "A night owl's 1 AM pick of 2 AM is the evening's attempt, stripped at 06:30",
+    source:
+      'Red-team resolutions ("The OpenTask day runs from rollover to rollover"); B7; ' +
+      'designer ruling 10-19 (a pick made after midnight stays with the evening)',
+    from: '2026-10-20',
     to: '2026-10-20',
     policy: ['tap'],
     queue: QUEUE,
     tasks: [
       {
         name: 'task',
-        created: '2026-10-19T20:00',
+        created: '2026-10-20T01:00',
         input: { title: 'Synthetic late one', due_at: iso('2026-10-20T02:00') },
       },
     ],
@@ -482,6 +484,42 @@ export const taskQueueScenarios: GoldenScenario[] = [
       },
       { at: '2026-10-20T06:31', run: check('task', { due_at: null, attempts: 1 }) },
     ],
-    expect: { task: { '2026-10-19': 'quiet', '2026-10-20': 'quiet queued 1×' } },
+    expect: { task: { '2026-10-20': 'quiet queued 1×' } },
+  },
+  {
+    id: 'tq-evening-pick-early-morning',
+    title: 'At 20:00, "tomorrow 6:00": kept at 06:30 (it nags), stripped the next morning',
+    source: 'designer ruling 10-19 (an early-morning pick is spared at its first rollover)',
+    from: '2026-10-19',
+    to: '2026-10-21',
+    policy: ['tap'],
+    queue: QUEUE,
+    tasks: [
+      {
+        name: 'task',
+        created: '2026-10-19T20:00',
+        input: { title: 'Synthetic early one', due_at: iso('2026-10-20T06:00') },
+      },
+    ],
+    events: [
+      {
+        at: '2026-10-20T06:31',
+        run: check('task', { due_at: iso('2026-10-20T06:00'), queued_at: null }),
+      },
+      {
+        at: '2026-10-21T06:31',
+        run: check('task', { due_at: null, queued_from_due_at: iso('2026-10-20T06:00') }),
+      },
+    ],
+    expect: {
+      task: {
+        // Made Monday for Tuesday 6:00 (wait 1): no heads-up.
+        '2026-10-19': 'quiet',
+        // 06:00 belongs to Monday's OpenTask day (1×); kept at 06:30 and over
+        // target on Tuesday's too (2×).
+        '2026-10-20': 'over 2×',
+        '2026-10-21': 'quiet queued 2×',
+      },
+    },
   },
 ]

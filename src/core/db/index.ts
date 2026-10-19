@@ -433,28 +433,6 @@ function logTargetMigration(counts: TargetMigrationCounts): void {
 }
 
 /**
- * Rewrite a stored retired `default_grouping` to `'project'` (Now):
- *
- * - `'time'` — the due-date grouping. The dashboard's "All" chip became the
- *   by-project grouping again on 2026-09-30; this reversed
- *   `retireProjectGrouping`, the 2026-09-29 step that rewrote every 'project'
- *   to 'time' when the Projects view was retired by mistake.
- * - `'slot'` — the Today view (§7.3), dropped on 2026-10-14 when All became
- *   Now (`src/lib/grouping.ts`).
- *
- * Every reader already coerces both to 'project' (`coerceGrouping`), so this
- * is not what makes those users land on Now; it makes the column say what
- * they see, so nothing downstream has to keep remembering the old values. It
- * also covers users created on a database whose `users` table was made while
- * the column's default was 'time': SQLite keeps that old `DEFAULT 'time'`
- * (only a fresh `schema.sql` has `DEFAULT 'project'`), so such a user holds
- * 'time' until the next start runs this again.
- *
- * Data-only and idempotent by construction — the WHERE clause matches nothing
- * once it has run — so, like `clearQuotaDueDates`, it runs on every start.
- * Exported so a behavioral test can call it directly.
- */
-/**
  * THE ROLLOVER'S DEPLOY STAMP (task queue PR 2, 2026-10-19). Every user whose
  * `last_rollover_date` is NULL gets their CURRENT OpenTask day — so the first
  * deploy strips nothing, and the first strip is the next real rollover.
@@ -487,6 +465,28 @@ export function stampRolloverDates(database: Database.Database, now: Date = new 
   return stamped
 }
 
+/**
+ * Rewrite a stored retired `default_grouping` to `'project'` (Now):
+ *
+ * - `'time'` — the due-date grouping. The dashboard's "All" chip became the
+ *   by-project grouping again on 2026-09-30; this reversed
+ *   `retireProjectGrouping`, the 2026-09-29 step that rewrote every 'project'
+ *   to 'time' when the Projects view was retired by mistake.
+ * - `'slot'` — the Today view (§7.3), dropped on 2026-10-14 when All became
+ *   Now (`src/lib/grouping.ts`).
+ *
+ * Every reader already coerces both to 'project' (`coerceGrouping`), so this
+ * is not what makes those users land on Now; it makes the column say what
+ * they see, so nothing downstream has to keep remembering the old values. It
+ * also covers users created on a database whose `users` table was made while
+ * the column's default was 'time': SQLite keeps that old `DEFAULT 'time'`
+ * (only a fresh `schema.sql` has `DEFAULT 'project'`), so such a user holds
+ * 'time' until the next start runs this again.
+ *
+ * Data-only and idempotent by construction — the WHERE clause matches nothing
+ * once it has run — so, like `clearQuotaDueDates`, it runs on every start.
+ * Exported so a behavioral test can call it directly.
+ */
 export function restoreProjectGrouping(database: Database.Database): void {
   database.exec(
     `UPDATE users SET default_grouping = 'project' WHERE default_grouping IN ('time', 'slot')`,
