@@ -381,10 +381,14 @@ function daysFromNow(days: number): string {
   return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString()
 }
 
-/** The RRULE weekday of an instant in User B's zone (America/New_York): "MO" … "SU". */
-function weekdayCode(iso: string): string {
-  const day = DateTime.fromISO(iso).setZone('America/New_York').weekday
-  return ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][day - 1]
+/** 09:00 in User B's zone (America/New_York), `days` local days from today. */
+function nineAm(days: number): string {
+  return DateTime.now()
+    .setZone('America/New_York')
+    .plus({ days })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()!
 }
 
 /** User B's id in the integration seed (scripts/seed-test.ts). */
@@ -398,10 +402,11 @@ const USER_B_ID = 2
  * target was set before its moment (as of M), so every task here has its
  * `target_set_at` backdated; nothing earlier in the scenario is old enough.
  *
- * 1. As of two days ago: a one-off four days late is stripped, and a weekly
- *    task whose occurrence was four days ago WAITS for its next one (three
- *    days ahead — no occurrence in that OpenTask day). Both are queued then:
- *    "Previously targeted" today.
+ * 1. As of two days ago: a one-off five days late is stripped, and a
+ *    repeating task (every 10 days at 09:00 — a rule whose text never
+ *    depends on the day the test runs) whose occurrence was four days ago
+ *    WAITS for its next one, six days ahead (no occurrence in that OpenTask
+ *    day). Both are queued then: "Previously targeted" today.
  * 2. As of now: a one-off two days late is stripped, and a Try Tomorrow row
  *    (`/bulk/snooze` with `source: 'try_tomorrow'`: target at the next
  *    rollover, marked) is stripped as marked, its flag kept: "Stripped today".
@@ -412,19 +417,21 @@ async function queuePanels(
 ): Promise<Json> {
   await setTaskQueue(true)
   try {
-    await make('queueOld', { title: 'Return the library books', target_at: daysFromNow(-4) })
+    // Five days ago at 09:00: older than the repeating task's missed
+    // occurrence, so it sorts first in its panel at any hour.
+    await make('queueOld', { title: 'Return the library books', target_at: nineAm(-5) })
     await make('queueWeekly', {
       title: 'Water the ferns',
-      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
-      target_at: daysFromNow(3),
+      rrule: 'FREQ=DAILY;INTERVAL=10;BYHOUR=9;BYMINUTE=0',
+      target_at: nineAm(6),
     })
     const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
     try {
-      // The weekly task's last occurrence was four days ago (its rule is
-      // weekly from the day it was made, so a week before the one ahead).
+      // Its last occurrence was four days ago: one interval before the one
+      // ahead.
       db.prepare('UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?').run(
-        daysFromNow(-4),
-        daysFromNow(-4),
+        nineAm(-4),
+        nineAm(-4),
         created.queueWeekly,
       )
     } finally {
