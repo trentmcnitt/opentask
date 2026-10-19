@@ -36,6 +36,10 @@ vi.mock('@/core/ai/quick-take', () => ({
 let currentStream: FakeStreamControl
 const mockQuery = vi.fn()
 
+// The CLI resolver would run `claude --version` (and refuse the old bundled
+// CLI on a machine without one); the SDK is mocked, so no CLI is needed.
+vi.mock('@/core/ai/cli-path', () => ({ getClaudeCliPath: () => '/usr/local/bin/claude' }))
+
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: (...args: unknown[]) => mockQuery(...args),
 }))

@@ -82,7 +82,7 @@ The AI system supports three backends, selectable per-user per-feature:
 
 | Provider  | Backend                       | Requirements                                    | Use case                                              |
 | --------- | ----------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| SDK       | Claude Agent SDK (subprocess) | Claude Code installed + authenticated           | Self-hosted with Max subscription                     |
+| SDK       | Claude Agent SDK (subprocess) | Claude Code ≥ 2.1.101 installed + logged in     | Self-hosted with Max subscription                     |
 | Anthropic | Anthropic Messages API (HTTP) | `ANTHROPIC_API_KEY`                             | Docker, no Claude Code needed                         |
 | OpenAI    | OpenAI-compatible API (HTTP)  | `OPENAI_API_KEY` (+ optional `OPENAI_BASE_URL`) | OpenAI, OpenRouter, Ollama, Groq, xAI, DeepSeek, etc. |
 
@@ -93,6 +93,8 @@ Provider resolution order:
 3. Auto-detection: Anthropic → OpenAI (first available API key wins)
 
 All three providers share the same `AIQueryResult` interface, so callers never need to know which backend is in use.
+
+**SDK mode requires an installed, logged-in Claude Code, version 2.1.101 or newer.** OpenTask never runs the CLI bundled inside the Agent SDK package. Running in Docker, or anywhere without Claude Code? Use an API provider (`OPENTASK_AI_PROVIDER=anthropic` or `openai`); those never look for the CLI. See [Which Claude Code CLI runs](#which-claude-code-cli-runs).
 
 ### AI query dispatcher
 
@@ -487,18 +489,29 @@ AI disabled (server-wide, or the user's Insights mode off) returns an empty list
 
 Short names (`haiku`, `sonnet`, `opus`) are mapped to full Anthropic model IDs automatically. OpenAI model strings pass through as-is.
 
+### Which Claude Code CLI runs
+
+`src/core/ai/cli-path.ts` picks the CLI every SDK subprocess spawns (the cold `sdkQuery()` path and both warm slots), once per process:
+
+1. `OPENTASK_AI_CLI_PATH`, when set. PATH is not searched behind it, so a deliberately dead path stays dead (the screenshot harness relies on that).
+2. Otherwise the first `claude` on `PATH` (searched directly, no shell).
+
+Its version comes from `<path> --version` and must be **2.1.101 or newer**. At first resolution (at boot when the default provider is `sdk`, otherwise on the first SDK call) the server logs `[ai] Claude CLI: <path> v<version> (env|path)`. If no CLI is found, or it is older than the floor, or its version can't be read, the server logs an error and every SDK call throws `ClaudeCliError` ("Claude Code CLI not found: install Claude Code … or set OPENTASK_AI_PROVIDER=anthropic (or openai) …"); the feature fails visibly (activity log, error notification, a dead warm slot).
+
+**Why there is no fallback to the SDK's bundled CLI.** `@anthropic-ai/claude-agent-sdk` 0.2.37 bundles Claude Code 2.1.37 and runs it whenever it isn't given a path. OpenTask spawns it without `settingSources`, and CLIs before 2.1.101 then run their background cleanup without the user's settings: they ignore `cleanupPeriodDays` and delete every `~/.claude/projects` transcript older than 30 days (fixed upstream in 2.1.101). On a dev machine, an eval run or a cloud box, an AI call would quietly wipe a month of that machine's Claude Code history. So the SDK is always handed an installed CLI, and an old one is refused rather than run. The API providers (`anthropic`, `openai`) never resolve the CLI.
+
 ### SDK-specific settings
 
 These only apply when using the Claude Agent SDK (subprocess) provider:
 
-| Env var                            | Default | Description                                     |
-| ---------------------------------- | ------- | ----------------------------------------------- |
-| `OPENTASK_AI_MAX_REUSES`           | `8`     | Max queries per warm enrichment subprocess      |
-| `OPENTASK_AI_QUICKTAKE_MAX_REUSES` | `4`     | Max queries per warm quick take subprocess      |
-| `OPENTASK_AI_QUICKTAKE_TIMEOUT_MS` | `40000` | Timeout for quick take queries in milliseconds  |
-| `OPENTASK_AI_CLI_PATH`             | (auto)  | Path to Claude Code CLI executable              |
-| `OPENTASK_AI_MAX_CONCURRENT`       | `4`     | Maximum concurrent SDK subprocesses (per-query) |
-| `OPENTASK_AI_QUEUE_TIMEOUT_MS`     | `30000` | Maximum wait time for semaphore slot            |
+| Env var                            | Default | Description                                              |
+| ---------------------------------- | ------- | -------------------------------------------------------- |
+| `OPENTASK_AI_MAX_REUSES`           | `8`     | Max queries per warm enrichment subprocess               |
+| `OPENTASK_AI_QUICKTAKE_MAX_REUSES` | `4`     | Max queries per warm quick take subprocess               |
+| `OPENTASK_AI_QUICKTAKE_TIMEOUT_MS` | `40000` | Timeout for quick take queries in milliseconds           |
+| `OPENTASK_AI_CLI_PATH`             | (PATH)  | Claude Code CLI (≥ 2.1.101); default: `claude` on `PATH` |
+| `OPENTASK_AI_MAX_CONCURRENT`       | `4`     | Maximum concurrent SDK subprocesses (per-query)          |
+| `OPENTASK_AI_QUEUE_TIMEOUT_MS`     | `30000` | Maximum wait time for semaphore slot                     |
 
 ### Shared settings
 
