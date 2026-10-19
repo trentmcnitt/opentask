@@ -39,6 +39,7 @@
  */
 
 import { DateTime } from 'luxon'
+import { openTaskDayOf } from '@/lib/opentask-day'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
@@ -581,6 +582,15 @@ export function effectiveAttempts(
   task: BadgeTaskFields,
   timezone: string,
   now: Date,
+  /**
+   * The owner's rollover time (HH:MM) when the task queue is on (B7,
+   * 2026-10-19): every "day" below is then an OPENTASK day, rollover to
+   * rollover (`openTaskDayOf`) — 00:00–06:29 belongs to the day before, so a
+   * night owl's 2 AM miss is the evening's attempt, not a new one — and
+   * `attempts_counted_through` names an OpenTask day (same format). Omitted
+   * or null: local calendar days, as before the queue.
+   */
+  rolloverTime: string | null = null,
 ): { attempts: number; countedThrough: string | null } {
   const stored = {
     attempts: task.attempts ?? 0,
@@ -598,13 +608,13 @@ export function effectiveAttempts(
   const dates = [task.due_at, setAt, task.created_at, stored.countedThrough ?? task.created_at]
   if (dates.some((d) => Number.isNaN(Date.parse(d)))) return stored
   const arrived = Date.parse(task.due_at) <= now.getTime()
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  const dayOf = (iso: string): DateTime =>
+    rolloverTime
+      ? DateTime.fromISO(openTaskDayOf(new Date(iso), timezone, rolloverTime), { zone: timezone })
+      : localDay(iso, timezone)
+  const today = dayOf(now.toISOString())
   const end = arrived ? today : today.minus({ days: 1 })
-  const starts = [
-    localDay(task.due_at, timezone),
-    localDay(setAt, timezone),
-    localDay(task.created_at, timezone),
-  ]
+  const starts = [dayOf(task.due_at), dayOf(setAt), dayOf(task.created_at)]
   if (stored.countedThrough) {
     starts.push(
       DateTime.fromISO(stored.countedThrough, { zone: timezone }).startOf('day').plus({ days: 1 }),
@@ -667,12 +677,39 @@ export function attemptsOffer(
     target_auto?: boolean
     rrule?: string | null
     attempts?: number
+    priority?: number
   },
   now: Date = new Date(),
+  /**
+   * The task queue is on (server callers pass `taskQueueEnabled()`; this
+   * module also runs in the browser, which cannot read the switch). Then
+   * "Remove target?" is RETIRED on a strippable task (`queueStrippable`,
+   * build-plan resolution 1): the rollover takes its target off on its own,
+   * so the queue does the offer's job. High and deadline tasks keep theirs.
+   */
+  opts: { queue?: boolean } = {},
 ): 'auto' | 'remove' | null {
   if ((task.attempts ?? 0) < ATTEMPTS_OFFER_REMOVE) return null
   const reset = targetReset(task)
+  if (reset === 'remove' && opts.queue && queueStrippable(task)) return null
   return reset === 'auto' && isPastDeadline(task.deadline_at, now) ? null : reset
+}
+
+/** Priority from which the rollover never strips (High = 3, Urgent = 4). */
+export const QUEUE_KEEP_PRIORITY = 3
+
+/**
+ * A task whose target the rollover may STRIP (task queue, 2026-10-19; spec
+ * rule 2, resolution 3): a one-off below High with no deadline (passed or
+ * ahead). The kind test only — the rollover also excludes reminders, quotas,
+ * done and deleted tasks (`eligible` in src/core/tasks/task-rollover.ts).
+ */
+export function queueStrippable(task: {
+  rrule?: string | null
+  deadline_at: string | null
+  priority?: number
+}): boolean {
+  return !task.rrule && task.deadline_at === null && (task.priority ?? 0) < QUEUE_KEEP_PRIORITY
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */

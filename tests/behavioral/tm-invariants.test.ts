@@ -29,6 +29,7 @@ import { DateTime } from 'luxon'
 import { createTask, updateTask, markDone, bulkSnooze, bulkEdit } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { getTaskById } from '@/core/tasks/read'
+import { getDb } from '@/core/db'
 import { targetTasksToday } from '@/core/tasks/task-segments'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
 import { segmentState, upcomingState, hasPickedTarget } from '@/lib/task-segments'
@@ -440,5 +441,110 @@ describe('TM-INV: the day simulator over a random list', () => {
         prev.set(t.id, t.attempts)
       }
     }
+  })
+})
+
+/**
+ * TM-INV-06 (task queue PR 2): the same random list with random moves, the
+ * task queue ON and its rollover run at each day's 06:30 (the first period).
+ * Right after every rollover, NO below-High one-off without a deadline is
+ * still targeted before that rollover moment — it was stripped into the
+ * queue — unless its target was set after the moment (as of M). And every
+ * day's placement rules still hold.
+ */
+describe('TM-INV: the rollover over a random list', () => {
+  afterAll(() => teardownTestDb())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  test('TM-INV-06: after a rollover, no strippable one-off is targeted before M', () => {
+    const SEED6 = SEED + 6
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setupTestDb()
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, 'Morning', '06:30', 0)",
+    ).run(TEST_USER_ID)
+    db.prepare("UPDATE users SET last_rollover_date = '2026-10-19' WHERE id = ?").run(TEST_USER_ID)
+    const start = DateTime.fromISO('2026-10-20T00:00', { zone: tz }) // across Nov 1
+    const { events, r } = randomList(SEED6, start)
+    for (let m = 0; m < 60; m++) {
+      const at = start.plus({ minutes: Math.floor(r() * 40 * 24 * 60) })
+      const which = Math.floor(r() * 40)
+      const shift = Math.round((r() * 2 - 0.7) * 6 * 24 * 60)
+      events.push({
+        at: at.toFormat("yyyy-MM-dd'T'HH:mm"),
+        run: (ctx) => {
+          const id = ctx.ids[`t${which}`]
+          const task = id ? getTaskById(id) : null
+          if (!task || task.done) return
+          updateTask({
+            ...u,
+            taskId: id,
+            input: { due_at: at.plus({ minutes: shift }).toUTC().toISO()! },
+          })
+        },
+      })
+    }
+    let ids: Record<string, number> = {}
+    let checked = 0
+    let stripped = 0
+    // Half a minute after each day's rollover: the state the rollover left.
+    for (let d = 0; d < 40; d++) {
+      const day = start.plus({ days: d })
+      events.push({
+        at: day.set({ hour: 6, minute: 30, second: 30 }).toISO()!,
+        run: () => {
+          const m = day.set({ hour: 6, minute: 30 }).toMillis()
+          for (const id of Object.values(ids)) {
+            const task = getTaskById(id)!
+            if (task.queued_at && !task.rrule) stripped++
+            if (task.rrule || task.deadline_at || task.done || task.deleted_at) continue
+            if (task.is_reminder || task.is_tracked || task.priority >= 3) continue
+            if (task.target_set_at && Date.parse(task.target_set_at) > m) continue
+            const label = `seed ${SEED6} ${day.toISODate()} task ${id}`
+            if (task.due_at) {
+              expect(Date.parse(task.due_at), `${label}: targeted before M`).toBeGreaterThanOrEqual(
+                m,
+              )
+            }
+            checked++
+          }
+        },
+      })
+    }
+    const days = simulateDays({
+      userId: TEST_USER_ID,
+      timezone: tz,
+      from: start.toISODate()!,
+      days: 40,
+      at: '23:59',
+      policy: ['never'],
+      rollover: true,
+      events: events.map((e) => ({
+        ...e,
+        run: (ctx) => {
+          ids = ctx.ids
+          e.run(ctx)
+        },
+      })),
+      taskIds: () => Object.values(ids),
+      setClock: (dt) => vi.setSystemTime(dt),
+    })
+    // Each day's places (as recorded that day): one segment at most, never
+    // Upcoming and over target at once.
+    for (const day of days) {
+      for (const t of day.tasks) {
+        const label = `seed ${SEED6} ${day.date} task ${t.id}`
+        const segs = t.places.filter((p) => p !== 'over' && p !== 'done' && p !== 'quiet')
+        expect(segs.length, `${label}: two segments`).toBeLessThanOrEqual(1)
+        expect(t.places.includes('upcoming') && t.places.includes('over'), label).toBe(false)
+      }
+    }
+    // The list really exercised the rollover.
+    expect(checked).toBeGreaterThan(100)
+    expect(stripped).toBeGreaterThan(5)
   })
 })

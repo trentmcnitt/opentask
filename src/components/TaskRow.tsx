@@ -385,9 +385,21 @@ export function TaskRow({
   // without a refetch. At 3× the row OFFERS to drop the target (never does it
   // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
   // target the user picked; nothing on an automatic target or a repeating task.
+  //
+  // The OFFER follows the server's `attempts_offer` whenever the row came from
+  // the API (task queue, resolution 1: with the server's switch on, which the
+  // browser cannot read, "Remove target?" is retired on a strippable one-off).
+  // A row with no such field (built in the browser) reads the rule itself.
+  // The cost: a row crossing to 3× while the page is open shows the offer at
+  // the next refetch, not that instant.
   const attempts = effectiveAttempts(task, timezone, new Date()).attempts
+  const serverOffer = (task as { attempts_offer?: 'remove' | 'auto' | null }).attempts_offer
   const offer =
-    onRemoveTarget && !isSelectionMode && !tracked ? attemptsOffer({ ...task, attempts }) : null
+    onRemoveTarget && !isSelectionMode && !tracked && task.due_at !== null
+      ? serverOffer !== undefined
+        ? serverOffer
+        : attemptsOffer({ ...task, attempts })
+      : null
   const corner = rowCorner({
     task,
     attempts: !tracked && task.due_at !== null ? attempts : 0,

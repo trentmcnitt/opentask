@@ -1,0 +1,631 @@
+/**
+ * Task queue PR 2: the rollover (src/core/tasks/task-rollover.ts;
+ * docs/TASK-MODEL.md § The rollover). With OPENTASK_TASK_QUEUE on, once per
+ * OpenTask day at the user's rollover, a below-High task with no deadline on
+ * a previous day's target (or marked by a Snooze-all) is handed to the queue:
+ * a one-off is stripped, a repeating task rolls to this day's occurrence or
+ * waits for its next one.
+ *
+ * The user: periods 06:30 / 12:00 / 20:30 (rollover 06:30), morning_time
+ * 08:30, America/Chicago. "Today" is Tue 2026-10-20; every test sets the
+ * user's `last_rollover_date` itself (never relative to the real date).
+ */
+
+import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
+import { DateTime } from 'luxon'
+
+vi.mock('@/core/notifications/dismiss', () => ({
+  dismissNotificationsForTasks: vi.fn(),
+  syncBadgeCount: vi.fn(),
+}))
+vi.mock('@/lib/sync-events', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/sync-events')>()
+  return { ...actual, emitSyncEvent: vi.fn() }
+})
+
+import { getDb, stampRolloverDates } from '@/core/db'
+import { dismissNotificationsForTasks, syncBadgeCount } from '@/core/notifications/dismiss'
+import { emitSyncEvent } from '@/lib/sync-events'
+import { createTask, markDone, bulkSnooze } from '@/core/tasks'
+import { getTaskById } from '@/core/tasks/read'
+import { targetTasksToday } from '@/core/tasks/task-segments'
+import { runTaskRollover } from '@/core/tasks/task-rollover'
+import { findStrippedTargets, restoreStrippedTargets } from '@/core/tasks/restore-stripped'
+import { executeUndo, executeRedo } from '@/core/undo'
+import { formatTaskResponse } from '@/lib/format-task'
+import type { Task } from '@/types'
+import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+
+const tz = TEST_TIMEZONE
+const u = { userId: TEST_USER_ID, userTimezone: tz }
+
+function at(local: string): string {
+  return DateTime.fromISO(local, { zone: tz }).toUTC().toISO()!
+}
+function setClock(local: string) {
+  vi.setSystemTime(new Date(at(local)))
+}
+
+/** Make a task with the clock at `madeAt` (so `target_set_at` is then), then put it back. */
+function makeAt(madeAt: string, input: Record<string, unknown>): Task {
+  const now = new Date()
+  setClock(madeAt)
+  try {
+    return createTask({ ...u, input: { title: 'Task', ...input } })
+  } finally {
+    vi.setSystemTime(now)
+  }
+}
+
+function task(id: number): Task {
+  return getTaskById(id)!
+}
+
+function stamp(date: string | null) {
+  getDb().prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?').run(date, TEST_USER_ID)
+}
+function stampOf(): string | null {
+  return (
+    getDb().prepare('SELECT last_rollover_date FROM users WHERE id = ?').get(TEST_USER_ID) as {
+      last_rollover_date: string | null
+    }
+  ).last_rollover_date
+}
+
+/** Run the job at a Chicago wall-clock time (the clock moves there too). */
+function roll(local: string) {
+  setClock(local)
+  return runTaskRollover({ now: new Date(at(local)), userId: TEST_USER_ID })
+}
+
+function seedPeriods(starts: string[] = ['06:30', '12:00', '20:30'], morning = '08:30') {
+  const db = getDb()
+  db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
+  const insert = db.prepare(
+    'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
+  )
+  starts.forEach((s, i) => insert.run(TEST_USER_ID, `Period ${i}`, s, i))
+  db.prepare('UPDATE users SET morning_time = ? WHERE id = ?').run(morning, TEST_USER_ID)
+}
+
+/** Tue 2026-10-20 06:00, switch on, Monday's rollover already run. */
+function setupTuesday() {
+  setupTestDb()
+  seedPeriods()
+  vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+  setClock('2026-10-20T06:00')
+  stamp('2026-10-19')
+  vi.mocked(dismissNotificationsForTasks).mockClear()
+  vi.mocked(syncBadgeCount).mockClear()
+  vi.mocked(emitSyncEvent).mockClear()
+}
+
+function cleanup() {
+  vi.unstubAllEnvs()
+  vi.useRealTimers()
+}
+
+describe('TQ-R: the rollover', () => {
+  beforeEach(setupTuesday)
+  afterEach(cleanup)
+  afterAll(() => teardownTestDb())
+
+  test('TQ-R01: strips a one-off left over target from yesterday, exactly once, at 06:30', () => {
+    const t = makeAt('2026-10-19T09:00', { due_at: at('2026-10-19T16:00') })
+    expect(roll('2026-10-20T06:29').ran).toBe(0)
+    expect(task(t.id).due_at).toBe(at('2026-10-19T16:00'))
+
+    const r = roll('2026-10-20T06:30')
+    expect(r).toMatchObject({ ran: 1, stripped: 1 })
+    const after = task(t.id)
+    expect(after.due_at).toBeNull()
+    expect(after.queued_from_due_at).toBe(at('2026-10-19T16:00'))
+    expect(Date.parse(after.queued_at!)).toBe(Date.parse(at('2026-10-20T06:30')))
+    expect(Date.parse(after.rolled_over_at!)).toBe(Date.parse(at('2026-10-20T06:30')))
+    expect(after.queue_mark).toBe(false)
+    expect(stampOf()).toBe('2026-10-20')
+
+    // Exactly once: a second tick, later that day, does nothing.
+    makeAt('2026-10-20T06:40', { title: 'Later', due_at: at('2026-10-20T07:00') })
+    expect(roll('2026-10-20T06:31').ran).toBe(0)
+    expect(roll('2026-10-20T23:59').ran).toBe(0)
+  })
+
+  test('TQ-R02: a target today (after the rollover) and a target picked for later are kept', () => {
+    const today = makeAt('2026-10-19T20:00', { due_at: at('2026-10-20T09:00') })
+    const later = makeAt('2026-10-19T20:00', { due_at: at('2026-10-22T09:00') })
+    roll('2026-10-20T06:30')
+    expect(task(today.id).due_at).toBe(at('2026-10-20T09:00'))
+    expect(task(later.id).due_at).toBe(at('2026-10-22T09:00'))
+  })
+
+  test('TQ-R03: a timezone change mid-day never runs it twice', () => {
+    roll('2026-10-20T06:30')
+    expect(stampOf()).toBe('2026-10-20')
+    const t = makeAt('2026-10-20T07:00', { due_at: at('2026-10-20T07:30') })
+    getDb()
+      .prepare("UPDATE users SET timezone = 'America/Los_Angeles' WHERE id = ?")
+      .run(TEST_USER_ID)
+    // 08:30 Chicago is 06:30 in Los Angeles: a new rollover moment, the same day.
+    expect(roll('2026-10-20T08:30').ran).toBe(0)
+    expect(roll('2026-10-20T12:00').ran).toBe(0)
+    expect(task(t.id).due_at).toBe(at('2026-10-20T07:30'))
+  })
+
+  test('TQ-R04: catch-up after two days down runs ONCE, as of the latest rollover', () => {
+    stamp('2026-10-17')
+    const old = makeAt('2026-10-16T09:00', { due_at: at('2026-10-17T10:00') })
+    const daily = makeAt('2026-10-17T07:00', {
+      title: 'Daily',
+      rrule: 'FREQ=DAILY',
+      due_at: at('2026-10-17T08:00'),
+    })
+    // Moved at 06:45 today — after the rollover moment — while the server was down.
+    const sweptLate = makeAt('2026-10-19T09:00', { due_at: at('2026-10-19T10:00') })
+    getDb()
+      .prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
+      .run(at('2026-10-20T06:45'), sweptLate.id)
+    const skipsBefore = task(daily.id).skip_count
+
+    const r = roll('2026-10-20T07:10')
+    expect(r).toMatchObject({ ran: 1, stripped: 1, rolled: 1 })
+    expect(stampOf()).toBe('2026-10-20')
+    expect(task(old.id).due_at).toBeNull()
+    // Rolled to TODAY's occurrence (not one run per missed day), one skip logged.
+    expect(task(daily.id).due_at).toBe(at('2026-10-20T08:00'))
+    expect(task(daily.id).occurrence_at).toBe(at('2026-10-20T08:00'))
+    expect(task(daily.id).skip_count).toBe(skipsBefore + 1)
+    // As of M: a target set after 06:30 is left alone.
+    expect(task(sweptLate.id).due_at).toBe(at('2026-10-19T10:00'))
+  })
+
+  test('TQ-R05: the exclusion filter', () => {
+    const due = at('2026-10-19T16:00')
+    const make = (title: string, extra: Record<string, unknown> = {}) =>
+      makeAt('2026-10-19T09:00', { title, due_at: due, ...extra })
+    const control = make('P2 one-off', { priority: 2 })
+    const reminder = make('Reminder')
+    const quota = make('Quota')
+    const multi = make('Progress 2')
+    const deadlinePassed = make('Deadline passed', { deadline_at: at('2026-10-19T17:00') })
+    const deadlineAhead = make('Deadline ahead', { deadline_at: at('2026-10-25T17:00') })
+    const p3 = make('High', { priority: 3 })
+    const p4 = make('Urgent', { priority: 4 })
+    const db = getDb()
+    db.prepare('UPDATE tasks SET is_reminder = 1 WHERE id = ?').run(reminder.id)
+    db.prepare('UPDATE tasks SET is_tracked = 1 WHERE id = ?').run(quota.id)
+    db.prepare('UPDATE tasks SET progress_target = 2 WHERE id = ?').run(multi.id)
+    const before = Object.fromEntries(
+      [reminder, quota, multi, deadlinePassed, deadlineAhead, p3, p4].map((t) => [
+        t.id,
+        task(t.id).due_at,
+      ]),
+    )
+
+    const r = roll('2026-10-20T06:30')
+    expect(r.stripped).toBe(1)
+    expect(task(control.id).due_at).toBeNull()
+    for (const [id, dueAt] of Object.entries(before)) {
+      const t = task(Number(id))
+      expect(t.due_at, t.title).toBe(dueAt)
+      expect(t.queued_at, t.title).toBeNull()
+      expect(t.rolled_over_at, t.title).toBeNull()
+    }
+  })
+
+  test('TQ-R06: the deploy stamp — NULL becomes the current OpenTask day; nothing strips', () => {
+    const t = makeAt('2026-10-18T09:00', { due_at: at('2026-10-19T16:00') })
+    stamp(null)
+    expect(stampRolloverDates(getDb(), new Date(at('2026-10-20T05:00')))).toBe(1)
+    expect(stampOf()).toBe('2026-10-19') // 05:00 still belongs to Monday's OpenTask day
+    stamp(null)
+    stampRolloverDates(getDb(), new Date(at('2026-10-20T07:00')))
+    expect(stampOf()).toBe('2026-10-20')
+    expect(roll('2026-10-20T07:01').ran).toBe(0)
+    expect(task(t.id).due_at).toBe(at('2026-10-19T16:00'))
+    // A second run of the stamp is a no-op.
+    expect(stampRolloverDates(getDb(), new Date(at('2026-10-21T07:00')))).toBe(0)
+  })
+
+  test('TQ-R07: the job reads NULL as "stamp only", never "never ran"', () => {
+    const t = makeAt('2026-10-18T09:00', { due_at: at('2026-10-19T16:00') })
+    stamp(null)
+    const r = roll('2026-10-20T07:00')
+    expect(r).toMatchObject({ stamped: 1, ran: 0, stripped: 0 })
+    expect(stampOf()).toBe('2026-10-20')
+    expect(task(t.id).due_at).toBe(at('2026-10-19T16:00'))
+  })
+
+  test('TQ-R08: switch off → the stamp advances, nothing else', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    const t = makeAt('2026-10-18T09:00', { due_at: at('2026-10-19T16:00') })
+    const r = roll('2026-10-20T06:30')
+    expect(r).toMatchObject({ stamped: 1, ran: 0 })
+    expect(stampOf()).toBe('2026-10-20')
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-19T16:00'), queued_at: null })
+    // Turned on later the same day: today's rollover has run; no catch-up.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    expect(roll('2026-10-20T09:00').ran).toBe(0)
+  })
+})
+
+describe('TQ-F: the undo fence, the events, the activity rows', () => {
+  beforeEach(setupTuesday)
+  afterEach(cleanup)
+  afterAll(() => teardownTestDb())
+
+  test('TQ-R09: the undo fence — Undo of last night’s sweep restores only the task not stripped; redo likewise', () => {
+    const a = makeAt('2026-10-19T08:00', { title: 'A', due_at: at('2026-10-19T09:00') })
+    const b = makeAt('2026-10-19T08:00', { title: 'B', due_at: at('2026-10-19T09:00') })
+    const c = makeAt('2026-10-19T08:00', {
+      title: 'C (deadline)',
+      due_at: at('2026-10-19T09:00'),
+      deadline_at: at('2026-10-24T17:00'),
+    })
+    setClock('2026-10-19T21:00')
+    bulkSnooze({
+      ...u,
+      taskIds: [a.id, b.id, c.id],
+      until: at('2026-10-20T08:30'),
+      source: 'sweep',
+    })
+    expect(task(a.id).queue_mark).toBe(true)
+    expect(task(c.id).due_at).toBe(at('2026-10-20T08:30'))
+
+    expect(roll('2026-10-20T06:30').stripped).toBe(2)
+    setClock('2026-10-20T06:31')
+    expect(executeUndo(TEST_USER_ID)).not.toBeNull()
+    expect(task(a.id).due_at).toBeNull()
+    expect(task(b.id).due_at).toBeNull()
+    expect(task(a.id).queued_at).not.toBeNull()
+    expect(task(c.id).due_at).toBe(at('2026-10-19T09:00'))
+    const entry = getDb()
+      .prepare('SELECT undone FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+      .get(TEST_USER_ID) as { undone: number }
+    expect(entry.undone).toBe(1)
+
+    expect(executeRedo(TEST_USER_ID)).not.toBeNull()
+    expect(task(c.id).due_at).toBe(at('2026-10-20T08:30'))
+    expect(task(a.id).due_at).toBeNull()
+    expect(task(a.id).queued_at).not.toBeNull()
+  })
+
+  test('TQ-R10: an entry written AFTER the rollover is not fenced', () => {
+    const t = makeAt('2026-10-19T08:00', { due_at: at('2026-10-19T09:00') })
+    roll('2026-10-20T06:30')
+    setClock('2026-10-20T07:00')
+    targetTasksToday(TEST_USER_ID, tz, [t.id])
+    expect(task(t.id).due_at).not.toBeNull()
+    expect(task(t.id).queued_at).toBeNull()
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id).due_at).toBeNull()
+    expect(task(t.id).queued_at).not.toBeNull()
+  })
+
+  test('TQ-R11: after commit — dismiss the moved tasks, sync the badge, emit sync', () => {
+    const t = makeAt('2026-10-19T08:00', { due_at: at('2026-10-19T09:00') })
+    vi.mocked(dismissNotificationsForTasks).mockClear()
+    vi.mocked(emitSyncEvent).mockClear()
+    roll('2026-10-20T06:30')
+    expect(dismissNotificationsForTasks).toHaveBeenCalledWith(TEST_USER_ID, [t.id])
+    expect(emitSyncEvent).toHaveBeenCalledWith(TEST_USER_ID)
+
+    // A run that only releases a wait (no target moved) resyncs the badge itself.
+    vi.mocked(syncBadgeCount).mockClear()
+    vi.mocked(emitSyncEvent).mockClear()
+    const weekly = makeAt('2026-10-12T07:00', {
+      title: 'Weekly',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-12T08:00'),
+    })
+    getDb()
+      .prepare('UPDATE tasks SET queued_at = ?, due_at = ? WHERE id = ?')
+      .run(at('2026-10-14T06:30'), at('2026-10-20T06:00'), weekly.id)
+    roll('2026-10-21T06:30')
+    expect(syncBadgeCount).toHaveBeenCalledWith(TEST_USER_ID)
+    expect(emitSyncEvent).toHaveBeenCalledWith(TEST_USER_ID)
+
+    // Nothing to do (the released weekly gone): no events.
+    getDb()
+      .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
+      .run(at('2026-10-21T07:00'), weekly.id)
+    vi.mocked(emitSyncEvent).mockClear()
+    roll('2026-10-22T06:30')
+    expect(emitSyncEvent).not.toHaveBeenCalled()
+  })
+
+  test('TQ-R12: the activity rows carry source "rollover"', () => {
+    const t = makeAt('2026-10-19T08:00', { due_at: at('2026-10-19T09:00') })
+    roll('2026-10-20T06:30')
+    const row = getDb()
+      .prepare('SELECT action, source, metadata FROM activity_log WHERE task_id = ? AND source = ?')
+      .get(t.id, 'rollover') as { action: string; source: string; metadata: string }
+    expect(row.action).toBe('edit')
+    expect(JSON.parse(row.metadata).rollover).toBe('stripped')
+    // No undo entry.
+    const undo = getDb()
+      .prepare("SELECT COUNT(*) AS n FROM undo_log WHERE snapshot LIKE '%rolled_over_at%'")
+      .get() as { n: number }
+    expect(undo.n).toBe(0)
+  })
+})
+
+describe('TQ-S: what a strip keeps', () => {
+  beforeEach(() => {
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-17T06:00')
+    stamp('2026-10-16')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+  afterAll(() => teardownTestDb())
+
+  test('TQ-S01: a marked task (swept to the rollover) is stripped AT it, with no new attempt', () => {
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
+    roll('2026-10-16T06:30') // stamped 10-16 already: nothing
+    setClock('2026-10-16T21:00')
+    expect(task(t.id).attempts).toBe(1)
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-17T08:30'), source: 'sweep' })
+    expect(task(t.id).due_at).toBe(at('2026-10-17T06:30'))
+    roll('2026-10-17T06:30')
+    const after = task(t.id)
+    expect(after.due_at).toBeNull()
+    expect(after.queued_from_due_at).toBe(at('2026-10-17T06:30'))
+    expect(after.attempts).toBe(1) // the 6:30 target gave the new day no attempt
+  })
+
+  test('TQ-S02: Try Tomorrow keeps its flag while in Stripped today; the next rollover drops it', () => {
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
+    setClock('2026-10-16T15:00')
+    bulkSnooze({ ...u, taskIds: [t.id], source: 'try_tomorrow' })
+    expect(task(t.id).try_tomorrow).toBe(true)
+    roll('2026-10-17T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: null, try_tomorrow: true })
+    roll('2026-10-18T06:30')
+    expect(task(t.id).try_tomorrow).toBe(false)
+    expect(task(t.id).queued_at).not.toBeNull()
+  })
+
+  test('TQ-S03: attempts per OpenTask day — a miss at 00:00–06:29 is the previous day', () => {
+    // A night owl's 2 AM target on Sat: Friday's OpenTask day.
+    const t = makeAt('2026-10-16T22:00', { due_at: at('2026-10-17T02:00') })
+    setClock('2026-10-17T02:30')
+    expect(task(t.id).attempts).toBe(1)
+    expect(task(t.id).attempts_counted_through).toBe('2026-10-16')
+    setClock('2026-10-17T06:29')
+    expect(task(t.id).attempts).toBe(1)
+    // Switch off: calendar days, so 2:30 AM Saturday is Saturday.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    expect(task(t.id).attempts_counted_through).toBe('2026-10-17')
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    // Stripped at 06:30, the count kept (no reset on strip).
+    roll('2026-10-17T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: null, attempts: 1 })
+  })
+
+  test('TQ-S04: a Today tap from the queue is a new attempt', () => {
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
+    roll('2026-10-17T06:30')
+    expect(task(t.id).attempts).toBe(1)
+    setClock('2026-10-17T07:00')
+    targetTasksToday(TEST_USER_ID, tz, [t.id], at('2026-10-17T07:30'))
+    expect(task(t.id).queued_at).toBeNull()
+    expect(task(t.id).attempts).toBe(1)
+    setClock('2026-10-17T08:00')
+    expect(task(t.id).attempts).toBe(2)
+  })
+
+  test('TQ-S05: the rollover moment with no periods is morning_time', () => {
+    seedPeriods([], '08:30')
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
+    expect(roll('2026-10-17T08:29').ran).toBe(0)
+    expect(roll('2026-10-17T08:30').stripped).toBe(1)
+    expect(task(t.id).due_at).toBeNull()
+  })
+})
+
+describe('TQ-P: repeating tasks at the rollover', () => {
+  beforeEach(() => {
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-19T05:00')
+    stamp('2026-10-18')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+  afterAll(() => teardownTestDb())
+
+  test('TQ-P01: a daily missed yesterday rolls to today, logged as a skip; nags normally', () => {
+    const t = makeAt('2026-10-18T07:00', { rrule: 'FREQ=DAILY', due_at: at('2026-10-18T08:00') })
+    const r = roll('2026-10-19T06:30')
+    expect(r.rolled).toBe(1)
+    const after = task(t.id)
+    expect(after).toMatchObject({
+      due_at: at('2026-10-19T08:00'),
+      occurrence_at: at('2026-10-19T08:00'),
+      skip_count: 1,
+      queued_at: null,
+      attempts: 0,
+    })
+    const row = getDb()
+      .prepare("SELECT action FROM activity_log WHERE task_id = ? AND source = 'rollover'")
+      .get(t.id) as { action: string }
+    expect(row.action).toBe('skip')
+  })
+
+  test('TQ-P02: a daily at 06:30 rolls to the occurrence AT the rollover', () => {
+    const t = makeAt('2026-10-18T06:00', { rrule: 'FREQ=DAILY', due_at: at('2026-10-18T06:30') })
+    roll('2026-10-19T06:30')
+    expect(task(t.id).due_at).toBe(at('2026-10-19T06:30'))
+  })
+
+  test('TQ-P03: a manual target ahead wins (not touched)', () => {
+    const t = makeAt('2026-10-18T07:00', { rrule: 'FREQ=DAILY', due_at: at('2026-10-18T08:00') })
+    setClock('2026-10-18T09:00')
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-19T10:00') }) // a pick
+    roll('2026-10-19T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-19T10:00'), skip_count: 0 })
+  })
+
+  test('TQ-P04: a weekly missed Monday waits; done on Wednesday lands next Monday', () => {
+    // Mon 10-19 08:00, missed; the rollover is Tue 10-20.
+    stamp('2026-10-19')
+    const t = makeAt('2026-10-12T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-19T08:00'),
+    })
+    const r = roll('2026-10-20T06:30')
+    expect(r.waiting).toBe(1)
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-26T08:00'),
+      occurrence_at: at('2026-10-19T08:00'),
+      queued_from_due_at: at('2026-10-19T08:00'),
+      skip_count: 0,
+    })
+    expect(task(t.id).queued_at).not.toBeNull()
+    // Still waiting on Wednesday's rollover (its occurrence hasn't come).
+    roll('2026-10-21T06:30')
+    expect(task(t.id).queued_at).not.toBeNull()
+    setClock('2026-10-21T10:00')
+    markDone({ ...u, taskId: t.id })
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-26T08:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+      queued_at: null,
+    })
+  })
+
+  test('TQ-P05: a wait is over at the rollover after its occurrence arrives', () => {
+    stamp('2026-10-19')
+    const t = makeAt('2026-10-12T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-19T08:00'),
+    })
+    roll('2026-10-20T06:30')
+    for (const d of ['21', '22', '23', '24', '25', '26']) roll(`2026-10-${d}T06:30`)
+    // Mon 10-26 06:30: the occurrence (08:00) has not arrived — still queued.
+    expect(task(t.id).queued_at).not.toBeNull()
+    expect(roll('2026-10-27T06:30').released).toBe(1)
+    expect(task(t.id)).toMatchObject({
+      queued_at: null,
+      queued_from_due_at: null,
+      due_at: at('2026-10-26T08:00'),
+    })
+    // Still unhandled at the NEXT rollover: it waits again (next Monday).
+    roll('2026-10-28T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-11-02T08:00') })
+    expect(task(t.id).queued_at).not.toBeNull()
+  })
+
+  test('TQ-P06: from_completion steps from the existing occurrence, never from now', () => {
+    // Every 3 days from completion, last occurrence Sat 10-17 08:00 (missed).
+    const t = makeAt('2026-10-17T07:00', {
+      rrule: 'FREQ=DAILY;INTERVAL=3',
+      recurrence_mode: 'from_completion',
+      due_at: at('2026-10-17T08:00'),
+    })
+    roll('2026-10-19T06:30')
+    // Next on the existing grid is Tue 10-20 08:00 (17 + 3), not now + 3.
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-20T08:00'),
+      occurrence_at: at('2026-10-17T08:00'),
+    })
+    expect(task(t.id).queued_at).not.toBeNull()
+    // And a daily from_completion rolls to today at its time.
+    const d = makeAt('2026-10-19T07:00', {
+      rrule: 'FREQ=DAILY',
+      recurrence_mode: 'from_completion',
+      due_at: at('2026-10-19T09:00'),
+    })
+    roll('2026-10-20T06:30')
+    expect(task(d.id)).toMatchObject({
+      due_at: at('2026-10-20T09:00'),
+      occurrence_at: at('2026-10-20T09:00'),
+    })
+  })
+
+  test('TQ-P07: a High repeating task is never touched', () => {
+    const t = makeAt('2026-10-18T07:00', {
+      rrule: 'FREQ=DAILY',
+      due_at: at('2026-10-18T08:00'),
+      priority: 3,
+    })
+    roll('2026-10-19T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-18T08:00'), skip_count: 0 })
+  })
+})
+
+describe('TQ-O: the 3× offer by task kind (resolution 1)', () => {
+  beforeEach(() => {
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-20T10:00')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+  afterAll(() => teardownTestDb())
+
+  /** A task 3 OpenTask days over target. */
+  function threeDays(extra: Record<string, unknown>): Task {
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-18T09:00'), ...extra })
+    return task(t.id)
+  }
+
+  test('TQ-O01: strippable one-off: retired; High one-off: kept; deadline: kept', () => {
+    const plain = threeDays({ title: 'P2', priority: 2 })
+    const high = threeDays({ title: 'High', priority: 3 })
+    const deadline = threeDays({ title: 'Deadline', deadline_at: at('2026-10-30T17:00') })
+    expect(plain.attempts).toBe(3)
+    expect(formatTaskResponse(plain, tz).attempts_offer).toBeNull()
+    expect(formatTaskResponse(high, tz).attempts_offer).toBe('remove')
+    expect(formatTaskResponse(deadline, tz).attempts_offer).toBe('auto')
+    // Switch off: as before.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    expect(formatTaskResponse(task(plain.id), tz).attempts_offer).toBe('remove')
+  })
+})
+
+describe('TQ-X: restoring stripped targets (the rollback script)', () => {
+  beforeEach(() => {
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-20T06:00')
+    stamp('2026-10-19')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+  afterAll(() => teardownTestDb())
+
+  test('TQ-X01: dry run lists; apply restores only queued, untargeted one-offs', () => {
+    const a = makeAt('2026-10-19T08:00', { title: 'A', due_at: at('2026-10-19T09:00') })
+    const b = makeAt('2026-10-19T08:00', { title: 'B', due_at: at('2026-10-19T10:00') })
+    const weekly = makeAt('2026-10-12T09:00', {
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      due_at: at('2026-10-19T08:00'),
+    })
+    roll('2026-10-20T06:30')
+    setClock('2026-10-20T07:00')
+    targetTasksToday(TEST_USER_ID, tz, [b.id]) // b left the queue
+    expect(findStrippedTargets(TEST_USER_ID).map((t) => t.id)).toEqual([a.id])
+    expect(task(a.id).due_at).toBeNull() // a dry run writes nothing
+
+    const restored = restoreStrippedTargets(TEST_USER_ID)
+    expect(restored.map((t) => t.id)).toEqual([a.id])
+    expect(task(a.id)).toMatchObject({ due_at: at('2026-10-19T09:00'), queued_at: null })
+    expect(task(weekly.id).queued_at).not.toBeNull() // the waiting repeat is left alone
+    expect(findStrippedTargets(TEST_USER_ID)).toEqual([])
+  })
+})

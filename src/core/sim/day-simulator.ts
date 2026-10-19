@@ -25,6 +25,9 @@ import { considerTasks, getTaskSegments } from '@/core/tasks/task-segments'
 import { getTaskById } from '@/core/tasks/read'
 import { markDone } from '@/core/tasks/mark-done'
 import { ageLabel, attemptsOffer, type SegmentKind } from '@/lib/task-segments'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
+import { rolloverTimeForUser, runTaskRollover } from '@/core/tasks/task-rollover'
+import { rolloverMoment } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 
 /**
@@ -64,6 +67,8 @@ export interface SimTaskDay {
   /** Its segment row's state, when in a segment. */
   segmentState: string | null
   hasTarget: boolean
+  /** In the task queue (`queued_at`, task-queue PR 2): stripped, or a repeating task waiting. */
+  queued: boolean
   attempts: number
   age: string | null
   offer: 'remove' | 'auto' | null
@@ -95,6 +100,16 @@ export interface SimOptions {
   /** Report only these tasks (default: every open task of the user at each tick). */
   taskIds?: () => number[]
   setClock: (d: Date) => void
+  /**
+   * Run the task queue's rollover (`runTaskRollover`, task-queue PR 2) at
+   * each day's rollover moment, as the minute cron does: an extra tick at
+   * exactly M (the user's first period, else morning_time; read at the
+   * time, so periods an event made count), in daily and hourly mode alike,
+   * after the events due by then. `late` moves a date's run to a later local
+   * time (HH:mm) — a missed run caught up, which still runs as of M. It
+   * strips only with the switch on (`OPENTASK_TASK_QUEUE`).
+   */
+  rollover?: boolean | { late?: Record<string, string> }
   /** Called after each day is recorded (the CLI prints as it goes). */
   onDay?: (day: SimDay) => void
 }
@@ -131,9 +146,10 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
       places,
       segmentState: segment.get(id)?.[0]?.state ?? null,
       hasTarget: task.due_at !== null,
+      queued: task.queued_at !== null,
       attempts: task.attempts,
       age: ageLabel(task, now, timezone),
-      offer: attemptsOffer(task, now),
+      offer: attemptsOffer(task, now, { queue: taskQueueEnabled() }),
     })
   }
   return out
@@ -146,6 +162,7 @@ function blank(id: number, place: Place): SimTaskDay {
     places: [place],
     segmentState: null,
     hasTarget: false,
+    queued: false,
     attempts: 0,
     age: null,
     offer: null,
@@ -155,11 +172,16 @@ function blank(id: number, place: Place): SimTaskDay {
 /**
  * The one-line form a golden timeline states: the place, then the badges
  * the row would draw — "over 3× →remove", "upcoming", "weeks >1 mo",
- * "quiet 1×" (a target moved ahead after a miss).
+ * "quiet 1×" (a target moved ahead after a miss). A task in the task queue
+ * (task-queue PR 2) adds "queued" after the place, and keeps showing its
+ * attempts with no target (B7: a strip never resets them): "weeks queued 2×".
  */
 export function dayLine(t: SimTaskDay): string {
   const parts: string[] = [t.place]
-  if (t.place !== 'done' && t.hasTarget && t.attempts > 0) parts.push(`${t.attempts}×`)
+  if (t.place !== 'done' && t.queued) parts.push('queued')
+  if (t.place !== 'done' && (t.hasTarget || t.queued) && t.attempts > 0) {
+    parts.push(`${t.attempts}×`)
+  }
   if (t.age) parts.push(t.age)
   if (t.place !== 'done' && t.offer) parts.push(`→${t.offer}`)
   return parts.join(' ')
@@ -196,6 +218,16 @@ function defaultIds(userId: number, now: Date, timezone: string): number[] {
     .concat(getCurrentlyDueTaskIds(userId, now))
 }
 
+/** When a day's rollover runs in the simulation: its moment, or the day's `late` time. */
+function rolloverTick(opts: SimOptions, userId: number, timezone: string, day: DateTime): DateTime {
+  const date = day.toISODate()!
+  const late = typeof opts.rollover === 'object' ? opts.rollover.late?.[date] : undefined
+  if (late) return DateTime.fromISO(`${date}T${late}`, { zone: timezone })
+  return DateTime.fromJSDate(rolloverMoment(date, timezone, rolloverTimeForUser(userId))).setZone(
+    timezone,
+  )
+}
+
 /** Step the days. Events run at their times; each day records at its tick. */
 export function simulateDays(opts: SimOptions): SimDay[] {
   const { userId, timezone } = opts
@@ -223,7 +255,17 @@ export function simulateDays(opts: SimOptions): SimDay[] {
       ? Array.from({ length: 24 }, (_, h) => day.set({ hour: h, minute }))
       : [record]
     let recorded: SimDay | null = null
+    let rolled = !opts.rollover
     for (const tick of ticks) {
+      if (!rolled) {
+        const at = rolloverTick(opts, userId, timezone, day)
+        if (+at <= +tick) {
+          runEventsUntil(at.toMillis())
+          opts.setClock(at.toJSDate())
+          runTaskRollover({ now: at.toJSDate(), userId })
+          rolled = true
+        }
+      }
       runEventsUntil(tick.toMillis())
       const now = tick.toJSDate()
       opts.setClock(now)
@@ -234,6 +276,7 @@ export function simulateDays(opts: SimOptions): SimDay[] {
         for (const t of tasks) {
           for (const p of t.places) counts[p] = (counts[p] ?? 0) + 1
           if (t.offer && t.place !== 'done') counts.offers = (counts.offers ?? 0) + 1
+          if (t.queued && t.place !== 'done') counts.queued = (counts.queued ?? 0) + 1
         }
         recorded = { date: day.toISODate()!, weekday: day.toFormat('ccc'), tasks, counts }
       }

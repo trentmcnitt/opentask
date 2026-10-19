@@ -165,6 +165,12 @@ export interface Task {
   try_tomorrow: boolean
   queued_at: string | null
   queued_from_due_at: string | null
+  /**
+   * When the rollover (task-queue PR 2) last changed this task — a strip, a
+   * repeating roll or a wait. The undo fence's witness: an undo entry written
+   * before it skips this task. Null = never.
+   */
+  rolled_over_at: string | null
 
   // Notifications
   last_notified_at: string | null

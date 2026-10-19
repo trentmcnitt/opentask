@@ -44,8 +44,9 @@ export function logAction(
   const result = db
     .prepare(
       `
-    INSERT INTO undo_log (user_id, action, description, fields_changed, snapshot, slot_state)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO undo_log (user_id, action, description, fields_changed, snapshot, slot_state,
+                          created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `,
     )
     .run(
@@ -55,6 +56,10 @@ export function logAction(
       JSON.stringify(fieldsChanged),
       JSON.stringify(snapshots),
       slotState ? JSON.stringify(slotState) : null,
+      // Written from the app's clock (not the column's SQLite default) so it
+      // compares exactly with the instants the app writes, `rolled_over_at`
+      // above all (the rollover's undo fence, `rollover-fence.ts`).
+      new Date().toISOString(),
     )
 
   return Number(result.lastInsertRowid)

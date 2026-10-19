@@ -32,7 +32,12 @@ export interface ActivityEntry {
   userId: number
   taskId: number
   action: ActivityAction
-  source?: 'single' | 'bulk'
+  /**
+   * 'rollover': the task queue's rollover job (task-queue PR 2), a system
+   * action — `metadata.rollover` says what it did (stripped, rolled,
+   * waiting, released, try_tomorrow_cleared).
+   */
+  source?: 'single' | 'bulk' | 'rollover'
   batchId?: string
   fields?: string[]
   before?: Partial<Task>

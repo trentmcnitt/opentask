@@ -7,7 +7,7 @@
  *
  *   npx tsx scripts/simulate-days.ts <database> --user <id> [--days 61]
  *       [--policy never|tap|complete-repeating|complete[,…]] [--from yyyy-MM-dd]
- *       [--at HH:mm] [--hourly] [--titles] [--json]
+ *       [--at HH:mm] [--hourly] [--rollover] [--titles] [--json]
  *
  * NEVER WRITES TO <database>. It is opened READ-ONLY and copied with SQLite's
  * online backup into a temporary file, which the simulation runs on and which
@@ -16,6 +16,12 @@
  * webhooks), so a simulated "done" can never reach a real phone or URL.
  * Still: run it on a `.backup` copy of production, never the live file (ruling
  * Q11), and keep that copy out of the repo.
+ *
+ * `--rollover` turns the task queue on (OPENTASK_TASK_QUEUE=1, in this process
+ * only) and runs its rollover at each day's rollover moment
+ * (src/core/tasks/task-rollover.ts) — the go-live dry run. Each user's stamp
+ * on the copy is set to the day before `--from`, so the first simulated
+ * morning rolls.
  *
  * Ids only by default; `--titles` prints titles too — for local use only, never
  * paste the output anywhere public.
@@ -37,6 +43,7 @@ interface Args {
   from: string | null
   at: string
   hourly: boolean
+  rollover: boolean
   titles: boolean
   json: boolean
 }
@@ -44,7 +51,7 @@ interface Args {
 const POLICIES: SimPolicy[] = ['never', 'tap', 'complete-repeating', 'complete']
 const USAGE =
   'Usage: npx tsx scripts/simulate-days.ts <database> --user <id> [--days 61] [--policy tap] ' +
-  '[--from yyyy-MM-dd] [--at HH:mm] [--hourly] [--titles] [--json]'
+  '[--from yyyy-MM-dd] [--at HH:mm] [--hourly] [--rollover] [--titles] [--json]'
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -55,6 +62,7 @@ function parseArgs(argv: string[]): Args {
     from: null,
     at: '21:00',
     hourly: false,
+    rollover: false,
     titles: false,
     json: false,
   }
@@ -67,6 +75,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--from') args.from = next()
     else if (a === '--at') args.at = next()
     else if (a === '--hourly') args.hourly = true
+    else if (a === '--rollover') args.rollover = true
     else if (a === '--titles') args.titles = true
     else if (a === '--json') args.json = true
     else if (!a.startsWith('--') && !args.db) args.db = a
@@ -131,7 +140,7 @@ function printDay(day: SimDay, titles: Map<number, string> | null): void {
   const head =
     `${day.weekday} ${day.date}  ` +
     SEGMENTS.map((s) => `${s} ${c(s)}`).join('  ') +
-    `  | over ${c('over')}  3×+ ${c('offers')}`
+    `  | over ${c('over')}  3×+ ${c('offers')}  queued ${c('queued')}`
   console.log(head)
   for (const kind of ['upcoming', 'over'] as const) {
     const ids = day.tasks.filter((t) => t.places.includes(kind)).map((t) => t.id)
@@ -149,6 +158,7 @@ async function main() {
   // Point the app's database at the copy BEFORE any core module loads.
   process.env.OPENTASK_DB_PATH = copy
   process.env.OPENTASK_AI_ENABLED = 'false'
+  if (args.rollover) process.env.OPENTASK_TASK_QUEUE = '1'
   try {
     const setClock = installClock()
     const { getDb } = await import('../src/core/db')
@@ -169,10 +179,15 @@ async function main() {
         )
       : null
     const from = args.from ?? DateTime.now().setZone(user.timezone).toISODate()!
+    if (args.rollover) {
+      // On the copy only: the first simulated morning is the first rollover.
+      const before = DateTime.fromISO(from).minus({ days: 1 }).toISODate()
+      getDb().prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?').run(before, user.id)
+    }
     if (!args.json) {
       console.log(
         `user ${user.id} (${user.timezone}) · ${args.days} days from ${from} at ${args.at}` +
-          `${args.hourly ? ' (hourly)' : ''} · policy ${args.policy.join('+')} · on a copy`,
+          `${args.hourly ? ' (hourly)' : ''}${args.rollover ? ' · rollover' : ''} · policy ${args.policy.join('+')} · on a copy`,
       )
     }
     const days = simulateDays({
@@ -183,6 +198,7 @@ async function main() {
       at: args.at,
       hourly: args.hourly,
       policy: args.policy,
+      rollover: args.rollover,
       setClock,
       onDay: args.json ? undefined : (day) => printDay(day, titles),
     })

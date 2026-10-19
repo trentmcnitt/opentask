@@ -82,3 +82,15 @@ export function nextRollover(now: Date, timezone: string, rolloverTime: string):
   if (today.getTime() > now.getTime()) return today
   return rolloverMoment(local.plus({ days: 1 }).toISODate()!, timezone, rolloverTime)
 }
+
+/**
+ * The latest rollover moment AT OR BEFORE `now` (the mirror of
+ * `nextRollover`): at exactly 6:30:00 it is today's; at 6:29 it is
+ * yesterday's. The rollover job runs as of this moment (task-queue PR 2).
+ */
+export function latestRollover(now: Date, timezone: string, rolloverTime: string): Date {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const today = rolloverMoment(local.toISODate()!, timezone, rolloverTime)
+  if (today.getTime() <= now.getTime()) return today
+  return rolloverMoment(local.minus({ days: 1 }).toISODate()!, timezone, rolloverTime)
+}

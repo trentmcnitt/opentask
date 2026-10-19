@@ -6,6 +6,7 @@ import { creationDayScenarios } from './creation-day'
 import { ruleTimeScenarios } from './rule-time'
 import { yearlyScenarios } from './yearly'
 import { moveEarlierScenarios } from './move-earlier'
+import { taskQueueScenarios } from './task-queue'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -15,4 +16,5 @@ export const goldenScenarios = [
   ...ruleTimeScenarios,
   ...yearlyScenarios,
   ...moveEarlierScenarios,
+  ...taskQueueScenarios,
 ]

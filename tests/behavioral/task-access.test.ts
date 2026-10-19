@@ -95,9 +95,10 @@ describe('taskColumns', () => {
   afterEach(() => teardownTestDb())
 
   // The last entries are not columns: the owner's timezone, for the attempts
-  // read (spec §7), and week start, for a quota's served period (2026-10-16),
-  // as subqueries on the (aliased) table.
-  const OWNER_FIELDS = [' AS owner_timezone', ' AS owner_week_start']
+  // read (spec §7), week start, for a quota's served period (2026-10-16),
+  // and rollover time, for attempts per OpenTask day (task queue), as
+  // subqueries on the (aliased) table.
+  const OWNER_FIELDS = [' AS owner_timezone', ' AS owner_week_start', ' AS owner_rollover_time']
   const columnsOf = (list: string) =>
     list.split(', ').filter((c) => !OWNER_FIELDS.some((f) => c.endsWith(f)))
 
@@ -114,5 +115,7 @@ describe('taskColumns', () => {
     expect(aliased).toEqual(plain.map((c) => `tasks.${c}`))
     expect(taskColumns('t')).toContain('WHERE users.id = t.user_id) AS owner_timezone')
     expect(taskColumns('t')).toContain('WHERE users.id = t.user_id) AS owner_week_start')
+    expect(taskColumns('t')).toContain('WHERE users.id = t.user_id)) AS owner_rollover_time')
+    expect(taskColumns('t')).toContain('WHERE time_slots.user_id = t.user_id)')
   })
 })
