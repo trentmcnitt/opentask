@@ -391,6 +391,10 @@ Task-queue PR 3 (2026-10-19; design rules 6–9, build-plan resolutions 6, 9, 10
 
 **State.** The shared stamps (rule 7: one considered state): considered today, deferred today, else waiting. Considered rows sit behind "Show N considered" with their put-back, as in every segment.
 
+**Days.** The panels split on the rollover (an OpenTask day), but a row's considered/deferred state is read on the local calendar day, like every segment's (resolution 4: the OpenTask day governs attempts and stripping only): a repeating task considered at 23:00 is waiting again after midnight, still in "Stripped today" until the rollover moves it to "Previously targeted".
+
+**Put back is not re-queue.** "Show N considered" → put back on a one-off that left the queue clears the stamps only: the row waits again in its horizon segment. Only Undo of the consider puts it back in the queue.
+
 **Gestures (rule 8).**
 
 | Gesture           | What it does                                                                                                                                                                                                                                                                                                                                                          |

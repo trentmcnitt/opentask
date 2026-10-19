@@ -76,13 +76,15 @@ export function DashboardTasksPanel({
   // No page is a slot: the natural page is the first segment still waiting.
   const pager = usePanelPager(pages, 0, 0)
   const hint = useSegmentHint()
-  const queueOn = useTaskQueue().enabled
+  const queueEnabled = useTaskQueue().enabled
   if (!pager) return null
   if (pages.every((p) => p.waiting === 0)) {
     return <TasksDoneLine segments={actions.segments} actions={actions} />
   }
   const { page, index, expanded, setExpanded, showConsidered } = pager
   const { segment } = page
+  // A queue panel is only ever sent with the switch on (`useQueueOn`).
+  const queueOn = queueEnabled || isQueueKind(segment.horizon)
   return (
     <section
       aria-label="Tasks"

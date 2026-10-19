@@ -21,10 +21,10 @@ import {
   segmentKey,
   segmentLabel,
   segmentTitleColor,
+  useQueueOn,
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { useTaskQueue } from '@/components/PreferencesProvider'
 import { isQueueKind } from '@/lib/task-segments'
 
 /**
@@ -70,7 +70,7 @@ export function TaskSegmentGroup({
 }) {
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
   const hint = useSegmentHint()
-  const queueOn = useTaskQueue().enabled
+  const queueOn = useQueueOn(segment.horizon)
   const color = segmentColor(segment.horizon)
   const label = segmentLabel(segment)
   const waiting = waitingRows(segment)

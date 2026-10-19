@@ -13,7 +13,10 @@
  * OpenTask day before `now`'s, in the same synchronous step as the run, so
  * this call runs the rollover as of `now` even when the minute cron already
  * stamped the day (an E2E user it saw first) — with no window for the cron to
- * run in between. Requires `user_id`.
+ * run in between. Requires `user_id`. A run as of a PAST `now` leaves the
+ * stamp on that past day, so the minute cron (switch on) runs a real
+ * rollover for the user within the minute; a test should expect that, or
+ * follow with a forced run as of now.
  *
  * Gated by OPENTASK_TEST_MODE=1, like /api/test/reset: a 404 otherwise.
  */

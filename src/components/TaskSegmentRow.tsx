@@ -95,6 +95,16 @@ export function segmentCounts(segment: SegmentView): { handled: number; total: n
   return { handled: segment.considered + segment.deferred, total: segment.rows.length }
 }
 
+/**
+ * Whether the task queue's UI applies (PR 3): the switch from GET
+ * /api/user/preferences (`useTaskQueue`) — or a queue panel itself, which the
+ * server sends only with the switch on, so its rows never wear the
+ * switch-off controls in the moment before the preferences load.
+ */
+export function useQueueOn(kind: SegmentKind): boolean {
+  return useTaskQueue().enabled || isQueueKind(kind)
+}
+
 /** A segment's one word: its horizon's, "Upcoming", or a queue panel's. */
 export function segmentWord(kind: SegmentKind): string {
   if (isQueueKind(kind)) return QUEUE_PANEL_WORDS[kind]
@@ -298,7 +308,7 @@ export function TaskSegmentRow({
         {segmentHorizon === 'upcoming' ? (
           <UpcomingMeta row={row} actions={actions} timezone={timezone} />
         ) : (
-          <TaskSegmentMeta task={task} timezone={timezone} />
+          <TaskSegmentMeta task={task} timezone={timezone} segmentHorizon={segmentHorizon} />
         )}
       </div>
       {!considered && (
@@ -341,7 +351,7 @@ function TaskSegmentRowActions({
   segmentHorizon: SegmentKind
 }) {
   const { task } = row
-  const queue = useTaskQueue()
+  const queueOn = useQueueOn(segmentHorizon)
   const showToday = segmentHorizon !== 'upcoming' || upcomingRowActions(row).today
   return (
     <div
@@ -350,7 +360,7 @@ function TaskSegmentRowActions({
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
-      {queue.enabled ? (
+      {queueOn ? (
         <button
           type="button"
           data-segment-details
@@ -431,9 +441,17 @@ function TaskSegmentRowActions({
  * target), since the details icon took the dot's place on the right — and a
  * repeating task waiting in the queue names its schedule ("every Wed").
  */
-function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
+function TaskSegmentMeta({
+  task,
+  timezone,
+  segmentHorizon,
+}: {
+  task: Task
+  timezone: string
+  segmentHorizon: SegmentKind
+}) {
   const { projects } = useProjects()
-  const queue = useTaskQueue()
+  const queueOn = useQueueOn(segmentHorizon)
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const target = task.due_at ? DateTime.fromISO(task.due_at).setZone(timezone) : null
@@ -442,7 +460,7 @@ function TaskSegmentMeta({ task, timezone }: { task: Task; timezone: string }) {
   // priority, a future target and the deadline.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      {queue.enabled && showsHorizonDot(task) && <HorizonDotButton task={task} variant="meta" />}
+      {queueOn && showsHorizonDot(task) && <HorizonDotButton task={task} variant="meta" />}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
