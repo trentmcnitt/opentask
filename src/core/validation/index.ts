@@ -18,6 +18,7 @@ export {
   validateBulkSnooze,
   validateBulkEdit,
   validateBulkDelete,
+  validateBulkSkipUntil,
   validateSegmentIds,
   validateSegmentTarget,
   validateBulkSnoozeOverdue,
