@@ -461,6 +461,10 @@ describe('TM-INV: the rollover over a random list', () => {
 
   test('TM-INV-06: after a rollover, no strippable one-off is targeted before M', () => {
     const SEED6 = SEED + 6
+    // Three weeks from Oct 20 crosses the Nov 1 fall-back. It's a seeded
+    // simulation with a rollover every day, so it gets its own timeout
+    // (CI runs it ~2.5x slower than a laptop).
+    const DAYS = 21
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
     setupTestDb()
     const db = getDb()
@@ -471,7 +475,7 @@ describe('TM-INV: the rollover over a random list', () => {
     const start = DateTime.fromISO('2026-10-20T00:00', { zone: tz }) // across Nov 1
     const { events, r } = randomList(SEED6, start)
     for (let m = 0; m < 60; m++) {
-      const at = start.plus({ minutes: Math.floor(r() * 40 * 24 * 60) })
+      const at = start.plus({ minutes: Math.floor(r() * DAYS * 24 * 60) })
       const which = Math.floor(r() * 40)
       const shift = Math.round((r() * 2 - 0.7) * 6 * 24 * 60)
       events.push({
@@ -492,7 +496,7 @@ describe('TM-INV: the rollover over a random list', () => {
     let checked = 0
     let stripped = 0
     // Half a minute after each day's rollover: the state the rollover left.
-    for (let d = 0; d < 40; d++) {
+    for (let d = 0; d < DAYS; d++) {
       const day = start.plus({ days: d })
       events.push({
         at: day.set({ hour: 6, minute: 30, second: 30 }).toISO()!,
@@ -528,7 +532,7 @@ describe('TM-INV: the rollover over a random list', () => {
       userId: TEST_USER_ID,
       timezone: tz,
       from: start.toISODate()!,
-      days: 40,
+      days: DAYS,
       at: '23:59',
       policy: ['never'],
       rollover: true,
@@ -555,5 +559,5 @@ describe('TM-INV: the rollover over a random list', () => {
     // The list really exercised the rollover.
     expect(checked).toBeGreaterThan(100)
     expect(stripped).toBeGreaterThan(5)
-  })
+  }, 30_000)
 })
