@@ -80,6 +80,7 @@ import { notifyError } from '@/lib/error-notify'
 import { getClaudeCliPath } from './cli-path'
 import { toCliJsonSchema } from './json-schema'
 import { createMessageChannel, type MessageChannel } from './message-channel'
+import { ISOLATED_SETTING_SOURCES } from './sdk-options'
 import {
   type SlotState,
   type BaseSlotStats,
@@ -478,6 +479,7 @@ function buildQueryOptions(config: WarmSlotConfig): Options {
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     persistSession: false,
+    settingSources: ISOLATED_SETTING_SOURCES,
     systemPrompt: config.getSystemPrompt(),
     ...(outputSchema && {
       outputFormat: {

@@ -110,11 +110,20 @@ describe('enrichment slot initialization', () => {
     await initWithWarmup()
 
     const { options } = mockQuery.mock.calls[0][0] as {
-      options: { maxTurns: number; outputFormat?: { type: string; schema: unknown } }
+      options: {
+        maxTurns: number
+        outputFormat?: { type: string; schema: unknown }
+        persistSession?: boolean
+        settingSources?: string[]
+      }
     }
     expect(options.maxTurns).toBe(50)
     expect(options.outputFormat?.type).toBe('json_schema')
     expect(options.outputFormat?.schema).toBeTypeOf('object')
+    // No transcript on disk, and no filesystem settings (Agent SDK 0.3 loads
+    // them unless settingSources is passed explicitly — see sdk-options.ts)
+    expect(options.persistSession).toBe(false)
+    expect(options.settingSources).toEqual([])
   })
 
   // The slot pins a JSON schema, so the CLI forces the model to answer with an
