@@ -35,6 +35,7 @@ import {
   resolveFeatureProvider,
   type FeatureProviderConfig,
 } from './models'
+import { ISOLATED_SETTING_SOURCES, fixedThinkingBudget } from './sdk-options'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
 let aiEnabled: boolean | null = null
@@ -290,12 +291,13 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         persistSession: false,
+        settingSources: ISOLATED_SETTING_SOURCES,
         // Clear NODE_OPTIONS to prevent debugger bootloaders (VS Code, etc.)
         // from being inherited by the Claude CLI subprocess, which causes
         // it to crash with exit code 1.
         env: { ...process.env, NODE_OPTIONS: '' },
         ...(systemPrompt && { systemPrompt }),
-        ...(maxThinkingTokens && { maxThinkingTokens }),
+        ...(maxThinkingTokens && { thinking: fixedThinkingBudget(maxThinkingTokens) }),
         pathToClaudeCodeExecutable: cliPath,
       }
 

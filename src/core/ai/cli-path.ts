@@ -2,9 +2,10 @@
  * Which Claude Code CLI the Agent SDK spawns (SDK provider only — the
  * Anthropic and OpenAI providers never call this).
  *
- * Why this exists: the Agent SDK we pin bundles its own CLI (0.2.37 bundles
- * Claude Code 2.1.37), and the SDK runs that copy whenever it isn't handed a
- * path. We spawn it without `settingSources`, and a CLI before 2.1.101 then
+ * Why this exists: the Agent SDK bundles its own CLI (0.2.37 bundled Claude
+ * Code 2.1.37; 0.3 ships it as a per-platform optional package), and the SDK
+ * runs that copy whenever it isn't handed a path. We spawn it with no settings
+ * (`settingSources: []`, sdk-options.ts), and a CLI before 2.1.101 then
  * runs its background cleanup without the user's settings, so it ignores
  * `cleanupPeriodDays` and deletes every ~/.claude/projects transcript older
  * than 30 days. Upstream fixed this in 2.1.101 ("--setting-sources without
