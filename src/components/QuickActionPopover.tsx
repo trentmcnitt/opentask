@@ -31,6 +31,12 @@ interface QuickActionPopoverProps {
   onMarkDone?: (taskId: number) => void
   /** Called to navigate to task detail page */
   onNavigateToDetail?: (taskId: number) => void
+  /**
+   * Skip until (task queue PR 4): skip a repeating task's occurrence, or every
+   * one before `until`. Resolves after the host's request and toast (rejects
+   * on a failure); the popover then closes, as after Done.
+   */
+  onSkipUntil?: (taskId: number, until: string | null) => Promise<void>
   /** Available projects for project picker in the quick panel */
   projects?: Project[]
   /** AI annotation text to display in the panel */
@@ -47,6 +53,7 @@ export function QuickActionPopover({
   onDelete,
   onMarkDone,
   onNavigateToDetail,
+  onSkipUntil,
   projects,
   annotation,
   insightsCommentary,
@@ -73,6 +80,15 @@ export function QuickActionPopover({
       onClose()
     }
   }, [focusedTask, onMarkDone, onClose])
+
+  const handleSkipUntil = useCallback(
+    async (until: string | null) => {
+      if (!focusedTask || !onSkipUntil) return
+      await onSkipUntil(focusedTask.id, until)
+      onClose()
+    },
+    [focusedTask, onSkipUntil, onClose],
+  )
 
   // Batched save handler - wraps onSaveAll with taskId. It does not close the
   // popover itself: the panel calls onSave (= onClose) once the save resolves,
@@ -132,6 +148,7 @@ export function QuickActionPopover({
         onSaveAll={handleSaveAll}
         onDelete={onDelete ? handleDelete : undefined}
         onMarkDone={onMarkDone ? handleMarkDone : undefined}
+        onSkipUntil={onSkipUntil ? handleSkipUntil : undefined}
         onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
         onSave={onClose}
         onCancel={onClose}

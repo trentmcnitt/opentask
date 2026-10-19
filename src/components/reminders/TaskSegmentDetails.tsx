@@ -7,6 +7,7 @@ import { useProjects } from '@/components/ProjectsProvider'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
+import { runSkipUntil } from '@/lib/skip-until'
 import type { TaskSegmentActions } from '@/hooks/useTaskSegments'
 
 // The dashboard loads its popover the same way (`DashboardClient`): the panel
@@ -23,7 +24,8 @@ const QuickActionPopover = dynamic(() =>
  * not reinvented: the save is the shared `saveTaskChanges` PATCH with the
  * server's description on an Undo toast, Done is the row's own done, and
  * delete is the dashboard's soft delete with Undo. "Open" goes to the task
- * page, as on the dashboard.
+ * page, as on the dashboard. Skip until (PR 4) is the panel's own, with the
+ * same request and toast as on the dashboard (`runSkipUntil`).
  *
  * A new target from here goes through the same PATCH as every editor, which
  * clears `queued_at` (`stampTargetSet`): a queued task that gets a target
@@ -91,6 +93,19 @@ export function SegmentDetailsModal({
     [onUndo, onCompleted, refresh],
   )
 
+  const skipUntil = useCallback(
+    async (taskId: number, until: string | null) => {
+      await runSkipUntil([taskId], until, {
+        onUndo,
+        afterSkip: () => {
+          onCompleted?.()
+          void refresh()
+        },
+      })
+    },
+    [onUndo, onCompleted, refresh],
+  )
+
   return (
     <QuickActionPopover
       focusedTask={task}
@@ -102,6 +117,7 @@ export function SegmentDetailsModal({
         if (task) void done(task)
       }}
       onNavigateToDetail={(id) => router.push(`/tasks/${id}`)}
+      onSkipUntil={skipUntil}
       projects={projects}
     />
   )

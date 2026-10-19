@@ -26,6 +26,7 @@ import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { useRequireSession } from '@/hooks/useRequireSession'
 import { PageLoading } from '@/components/PageLoading'
 import { useTaskActions } from '@/hooks/useTaskActions'
+import { runSkipUntil } from '@/lib/skip-until'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
 import { useInsightsData } from '@/hooks/useInsightsData'
@@ -251,6 +252,19 @@ export default function TaskDetailPage() {
     }
   }
 
+  // Skip until (task queue PR 4): the panel's More menu. The task stays on
+  // its page, moved to the occurrence it lands on (the refetch shows it).
+  const handleSkipUntil = async (until: string | null) => {
+    if (!task) return
+    await runSkipUntil([task.id], until, {
+      onUndo: actions.handleUndo,
+      afterSkip: (result) => {
+        if (result.tasks_affected > 0) actions.bumpUndoCount()
+        void fetchTask()
+      },
+    })
+  }
+
   // Considering a reminder from its page is a round trip: the thought is
   // done for today, so the page's job is done too and Reminders is where the
   // next one waits. (A task's Done stays on the page — the task may recur.)
@@ -392,6 +406,7 @@ export default function TaskDetailPage() {
               projects={projects}
               onDelete={handleDelete}
               onMarkDone={actions.handleDone}
+              onSkipUntil={handleSkipUntil}
               dirty={panelDirty}
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}

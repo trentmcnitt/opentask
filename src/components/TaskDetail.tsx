@@ -12,6 +12,8 @@ interface TaskDetailProps {
   projects?: Project[]
   onDelete?: () => void
   onMarkDone?: () => void
+  /** Skip until (task queue PR 4), offered in the panel's More menu for a repeating task. */
+  onSkipUntil?: (until: string | null) => Promise<void>
   /**
    * Whether the editor holds unsaved edits, as the host last heard through
    * `onDirtyChange`. The host owns the dirty state (it also guards navigation
@@ -41,6 +43,7 @@ export function TaskDetail({
   projects = [],
   onDelete,
   onMarkDone,
+  onSkipUntil,
   dirty,
   onDirtyChange,
   saveRef,
@@ -67,6 +70,7 @@ export function TaskDetail({
             onSaveAll={onSaveAll}
             onDelete={onDelete}
             onMarkDone={onMarkDone}
+            onSkipUntil={onSkipUntil}
             onDirtyChange={onDirtyChange}
             saveRef={saveRef}
             annotation={annotation}

@@ -402,7 +402,7 @@ Task-queue PR 3 (2026-10-19; design rules 6–9, build-plan resolutions 6, 9, 10
 | Row tap or circle | Consider (`/api/task-segments/consider`). A **stripped one-off** also leaves the queue in the same write: `queued_at` and `try_tomorrow` cleared (both in the snapshot), `queued_from_due_at` kept. It goes back to its horizon segment, shown considered there today. A **waiting repeating task** stays queued and shows again tomorrow. One Undo puts either back. |
 | Today             | Retarget (`targetTasksToday`, where Snooze-all lands; hold for a period, Custom for a time). Every target write clears `queued_at` (`stampTargetSet`), so the task leaves the queue; its target is a new attempt.                                                                                                                                                     |
 | Checkbox          | Done.                                                                                                                                                                                                                                                                                                                                                                 |
-| Details icon      | The dashboard's Quick panel for the task (`SegmentDetailsModal`). Any retarget from it clears `queued_at` through the same PATCH. "Skip until" arrives with PR 4.                                                                                                                                                                                                     |
+| Details icon      | The dashboard's Quick panel for the task (`SegmentDetailsModal`). Any retarget from it clears `queued_at` through the same PATCH. On a repeating task its More menu has **Skip until…** (see [Skip until](#skip-until)), which takes the task out of the queue too.                                                                                                   |
 
 No selection mode on segment rows (resolution 9: a tap considers). Queue panels have no Defer all.
 
@@ -448,6 +448,22 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 - **Recurring tasks** advance in place: completing a daily task moves `due_at` forward and leaves `done=0`
 - **One-off (non-recurring) tasks**: when completed, the app sets `done=1` and `archived_at` to the current time
+
+## Skip until
+
+**Skip until [date]** (spec rule 10, task queue PR 4, 2026-10-19): "A tap with the default skips this occurrence; a date skips every occurrence before it (the vacation case)." For repeating tasks only, on one or many at once — `POST /api/tasks/bulk/skip-until { ids, until? }`, `skipUntil` in `src/core/tasks/skip-until.ts`. Mostly driven through AI, so a mixed list is never refused: one-offs, reminders, quotas and done, archived or trashed tasks are left alone and **counted** (`skipped_not_repeating`, `skipped_reminders`, `skipped_quotas`, `skipped_inactive`). An id that does not exist or is not the user's refuses the batch (400), as on every bulk route. There is deliberately no away mode.
+
+| `until`                                           | What happens                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Omitted / null                                    | Exactly `skip-occurrence`: the next occurrence after the scheduled one (after now, when it has passed). One skip.                                                                                                                                                                 |
+| A day (`yyyy-MM-dd`, the user's timezone)         | The task lands on its **first occurrence on or after that day's start**; `occurrence_at` and the target go there. Every occurrence passed over is a skip (`skip_count` += them): the current one — one however long it has been over target — then each later one before the day. |
+| A day, the current occurrence already on/after it | Nothing is before the day, so nothing is skipped: the task is left as it is and counted in `already_clear`.                                                                                                                                                                       |
+
+**A from_completion rule** (resolution 7): it has no schedule to walk, so it **lands on the date itself, at the rule's time of day** (`anchor_time`, else the rule's `BYHOUR`), and the interval restarts from there — done on that day, the next one is an interval after the completion. Its skip count steps the interval from the current occurrence, as if each had been done on time (the rollover's stepping).
+
+`until` is today or later (today skips an over-target occurrence onto today's; the web picker starts at tomorrow), at most 10 years ahead; a walk is capped at 5,000 steps, which no real rule reaches in 10 years. Each skip is the same write as `skip-occurrence` (`writeRecurringSkip` in `skip.ts`): never a completion (`completion_count` untouched, `task.skipped` webhooks), the deadline moves with the occurrence and caps the target, attempts start afresh, `target_set_at` is stamped, and the queue state is cleared (it is a target write). One undo entry (`bulk_skip`) for the batch with each task's snapshot, one activity row (`skip`, `metadata.until`, `occurrences_skipped`) per task; after the commit the delivered notifications go, and open tabs and widgets refresh. A batch that skips nothing writes nothing, and the web offers Undo only when something was skipped.
+
+**On the web:** the Quick panel's More menu has **Skip until…** for a single repeating task (the dashboard popover, a task segment's details, the task page); the selection sheet (the action bar's More) has a **Skip until…** button under Remove target, counting the selection's repeating tasks when not all of them repeat. Both open the same picker (`SkipUntilDialog`): **Skip this occurrence** (the default), or a day on the calendar. The toast is the server's `summary` ("Skipped 2 tasks until Mon, Nov 2 (14 occurrences) · 1 not repeating") with Undo. Both are disabled while the panel has unsaved edits.
 
 ## Snooze
 
@@ -542,7 +558,7 @@ Functions from `@/core/undo`:
 ```ts
 logAction(
   userId: number,
-  action: UndoAction, // 'done' | 'undone' | 'snooze' | 'edit' | 'delete' | 'create' | 'restore' | 'bulk_*' | 'progress' | 'skip' | 'time_slot_*' | 'quota_prompt' | 'task_segment'
+  action: UndoAction, // 'done' | 'undone' | 'snooze' | 'edit' | 'delete' | 'create' | 'restore' | 'bulk_*' | 'progress' | 'skip' | 'bulk_skip' | 'time_slot_*' | 'quota_prompt' | 'task_segment'
   description: string | null,
   fieldsChanged: string[],
   snapshots: UndoSnapshot[],

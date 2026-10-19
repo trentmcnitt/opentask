@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Check, FileText, Trash2, XCircle } from 'lucide-react'
+import { Check, FileText, SkipForward, Trash2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -40,6 +40,8 @@ import { DirtyCard } from '@/components/DirtyCard'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
 import { removableTargetIds } from '@/lib/row-corner'
 import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { canSkipUntil } from '@/lib/skip-until'
+import { SkipUntilDialog } from '@/components/SkipUntilDialog'
 import type { Task, Project } from '@/types'
 
 interface SnoozeCategories {
@@ -116,6 +118,12 @@ interface SelectionActionSheetProps {
    */
   onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
   onClear: () => void
+  /**
+   * Skip until (task queue PR 4): skip the selection's repeating tasks past
+   * this occurrence (`until` null) or to a day. The host does the request and
+   * the toast, and rejects on a failure (the sheet and selection then stay).
+   */
+  onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
   /** Available projects for project picker (enables inline project selection) */
@@ -131,6 +139,7 @@ export function SelectionActionSheet({
   onDelete,
   onSaveAll,
   onClear,
+  onSkipUntil,
   onNavigateToDetail,
   projects,
   sheetOpenRef,
@@ -385,6 +394,18 @@ export function SelectionActionSheet({
           onClear()
         }}
       />
+      {onSkipUntil && (
+        <BulkSkipUntil
+          selectedTasks={selectedTasks}
+          disabled={isPanelDirty}
+          timezone={timezone}
+          onSkipUntil={onSkipUntil}
+          onFinished={() => {
+            setSheetOpen(false)
+            onClear()
+          }}
+        />
+      )}
       <QuickActionPanel
         task={null}
         selectedTasks={selectedTasks}
@@ -648,5 +669,71 @@ function BulkRemoveTarget({
       {word}
       {count}
     </Button>
+  )
+}
+
+/**
+ * SKIP UNTIL for the selection (task queue PR 4; spec rule 10), under Remove
+ * target at the top of the More sheet — the same shape: an action button, not
+ * a staged edit, disabled while the panel below has unsaved edits.
+ *
+ * It applies to the selection's repeating tasks (`canSkipUntil`: not
+ * reminders or quotas), and says how many when that is not all of them; the
+ * picker (`SkipUntilDialog`) offers "Skip this occurrence" and a day. The
+ * whole selection is sent: the server skips the repeating tasks and counts the
+ * rest, so the toast says how many were skipped and how many were not
+ * repeating. One request, one undo entry (`bulk_skip`).
+ */
+function BulkSkipUntil({
+  selectedTasks,
+  disabled,
+  timezone,
+  onSkipUntil,
+  onFinished,
+}: {
+  selectedTasks: Task[]
+  disabled: boolean
+  timezone: string
+  onSkipUntil: (ids: number[], until: string | null) => Promise<void>
+  onFinished: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const repeating = selectedTasks.filter(canSkipUntil)
+  if (repeating.length === 0) return null
+  const count = repeating.length < selectedTasks.length ? ` (${repeating.length})` : ''
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        data-bulk-skip-until
+        disabled={disabled}
+        title={
+          disabled
+            ? 'Save or reset your changes first'
+            : 'Skip this occurrence, or every one before a day'
+        }
+        onClick={() => setOpen(true)}
+        className="w-full justify-start"
+      >
+        <SkipForward className="mr-1 size-4" />
+        Skip until…{count}
+      </Button>
+      <SkipUntilDialog
+        open={open}
+        onOpenChange={setOpen}
+        tasks={repeating}
+        leftAlone={selectedTasks.length - repeating.length}
+        timezone={timezone}
+        onSkip={async (until) => {
+          await onSkipUntil(
+            selectedTasks.map((t) => t.id),
+            until,
+          )
+          onFinished()
+        }}
+      />
+    </>
   )
 }
