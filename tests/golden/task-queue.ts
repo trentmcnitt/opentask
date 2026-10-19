@@ -502,9 +502,14 @@ export const taskQueueScenarios: GoldenScenario[] = [
       },
     ],
     events: [
+      // Over target from 06:00 — 1× at once, counted for Tuesday, not Monday.
+      {
+        at: '2026-10-20T06:10',
+        run: check('task', { attempts: 1, attempts_counted_through: '2026-10-20' }),
+      },
       {
         at: '2026-10-20T06:31',
-        run: check('task', { due_at: iso('2026-10-20T06:00'), queued_at: null }),
+        run: check('task', { due_at: iso('2026-10-20T06:00'), queued_at: null, attempts: 1 }),
       },
       {
         at: '2026-10-21T06:31',
@@ -515,10 +520,10 @@ export const taskQueueScenarios: GoldenScenario[] = [
       task: {
         // Made Monday for Tuesday 6:00 (wait 1): no heads-up.
         '2026-10-19': 'quiet',
-        // 06:00 belongs to Monday's OpenTask day (1×); kept at 06:30 and over
-        // target on Tuesday's too (2×).
-        '2026-10-20': 'over 2×',
-        '2026-10-21': 'quiet queued 2×',
+        // An early-morning pick belongs to Tuesday: one attempt, from 06:00.
+        '2026-10-20': 'over 1×',
+        // Still over at the next rollover: stripped, the one attempt kept.
+        '2026-10-21': 'quiet queued 1×',
       },
     },
   },

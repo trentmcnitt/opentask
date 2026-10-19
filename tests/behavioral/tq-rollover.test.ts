@@ -38,6 +38,7 @@ import { findStrippedTargets, restoreStrippedTargets } from '@/core/tasks/restor
 import { executeUndo, executeRedo } from '@/core/undo'
 import { formatTaskResponse } from '@/lib/format-task'
 import { queueRetiredOffer } from '@/lib/task-segments'
+import { isEarlyMorningPick, targetOpenTaskDay } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -461,15 +462,52 @@ describe('TQ-S: what a strip keeps', () => {
     roll('2026-10-17T06:30')
     expect(task(t.id)).toMatchObject({ due_at: null, attempts: 1 })
   })
+})
+
+describe('TQ-E: early-morning picks, and the put-back', () => {
+  beforeEach(() => {
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-17T06:00')
+    stamp('2026-10-16')
+  })
+  afterEach(cleanup)
+  afterAll(() => teardownTestDb())
 
   test('TQ-S06: an evening pick for early tomorrow is spared at its first rollover', () => {
     // 22:00 Fri: "tomorrow 6:00" — a pick for the coming day.
     const t = makeAt('2026-10-16T22:00', { due_at: at('2026-10-17T06:00') })
+    // Over from 06:00: one attempt at once, counted for Saturday (its day).
+    setClock('2026-10-17T06:10')
+    expect(task(t.id)).toMatchObject({ attempts: 1, attempts_counted_through: '2026-10-17' })
     roll('2026-10-17T06:30')
     expect(task(t.id)).toMatchObject({ due_at: at('2026-10-17T06:00'), queued_at: null })
-    // Still there at the NEXT rollover: the ordinary rule strips it.
+    setClock('2026-10-17T21:00')
+    expect(task(t.id).attempts).toBe(1)
+    // Still there at the NEXT rollover: the ordinary rule strips it, 1× kept.
     roll('2026-10-18T06:30')
-    expect(task(t.id)).toMatchObject({ due_at: null, queued_from_due_at: at('2026-10-17T06:00') })
+    expect(task(t.id)).toMatchObject({
+      due_at: null,
+      queued_from_due_at: at('2026-10-17T06:00'),
+      attempts: 1,
+    })
+  })
+
+  test('TQ-S06b: one rule decides both the spare and the attempts day', () => {
+    const tz6 = '06:30'
+    // 22:00 the day before, for 06:00: an early-morning pick, its calendar day.
+    expect(isEarlyMorningPick(at('2026-10-17T06:00'), at('2026-10-16T22:00'), tz, tz6)).toBe(true)
+    expect(targetOpenTaskDay(at('2026-10-17T06:00'), at('2026-10-16T22:00'), tz, tz6)).toBe(
+      '2026-10-17',
+    )
+    // The night owl's 1 AM pick of 2 AM: the evening's day.
+    expect(isEarlyMorningPick(at('2026-10-17T02:00'), at('2026-10-17T01:00'), tz, tz6)).toBe(false)
+    expect(targetOpenTaskDay(at('2026-10-17T02:00'), at('2026-10-17T01:00'), tz, tz6)).toBe(
+      '2026-10-16',
+    )
+    // At the rollover or after: an ordinary target, never a pick of this kind.
+    expect(isEarlyMorningPick(at('2026-10-17T06:30'), at('2026-10-16T22:00'), tz, tz6)).toBe(false)
   })
 
   test('TQ-S07: the boundary at exactly midnight', () => {

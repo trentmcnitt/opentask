@@ -39,7 +39,7 @@
  */
 
 import { DateTime } from 'luxon'
-import { openTaskDayOf } from '@/lib/opentask-day'
+import { openTaskDayOf, targetOpenTaskDay } from '@/lib/opentask-day'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
@@ -612,9 +612,17 @@ export function effectiveAttempts(
     rolloverTime
       ? DateTime.fromISO(openTaskDayOf(new Date(iso), timezone, rolloverTime), { zone: timezone })
       : localDay(iso, timezone)
+  // The target's day: an early-morning pick belongs to its calendar day, not
+  // the evening's OpenTask day (`targetOpenTaskDay`, the rollover's spare rule).
+  const targetDay = rolloverTime
+    ? DateTime.fromISO(targetOpenTaskDay(task.due_at, setAt, timezone, rolloverTime), {
+        zone: timezone,
+      })
+    : localDay(task.due_at, timezone)
   const today = dayOf(now.toISOString())
-  const end = arrived ? today : today.minus({ days: 1 })
-  const starts = [dayOf(task.due_at), dayOf(setAt), dayOf(task.created_at)]
+  // Arrived, such a target counts at once — before that day's rollover too.
+  const end = arrived ? DateTime.max(today, targetDay)! : today.minus({ days: 1 })
+  const starts = [targetDay, dayOf(setAt), dayOf(task.created_at)]
   if (stored.countedThrough) {
     starts.push(
       DateTime.fromISO(stored.countedThrough, { zone: timezone }).startOf('day').plus({ days: 1 }),

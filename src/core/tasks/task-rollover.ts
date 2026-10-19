@@ -82,7 +82,7 @@ import { log } from '@/lib/logger'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { DateTime } from 'luxon'
-import { latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
+import { isEarlyMorningPick, latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
 import { effectiveAttempts, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { TARGET_SET_FIELD } from './target-set'
@@ -280,7 +280,7 @@ function applyRollover(
     if (!task.queue_mark && !(due < mMs)) continue
     let skipped = false
     if (!task.rrule) {
-      if (!task.queue_mark && earlyMorningPick(task, user.timezone, m)) continue
+      if (!task.queue_mark && earlyMorningPick(task, user.timezone, rolloverTime, m)) continue
       strip(row, task, user, rolloverTime, m, nowStr)
       result.stripped++
     } else {
@@ -368,15 +368,16 @@ function keptTarget(task: Task): string | null {
  * nags), and if it is still there at the NEXT rollover the ordinary rule
  * strips it. A pick made after midnight for before the rollover (the night
  * owl's 1 AM pick of 2 AM) stays with the evening's day and is stripped, and
- * a marked task (a defer) is always stripped.
+ * a marked task (a defer) is always stripped. The rule is shared with the
+ * attempts read (`isEarlyMorningPick`): the pick's attempts count its day.
  */
-function earlyMorningPick(task: Task, timezone: string, m: Date): boolean {
-  const due = DateTime.fromISO(task.due_at!, { zone: 'utc' }).setZone(timezone)
-  const midnight = DateTime.fromJSDate(m).setZone(timezone).startOf('day')
-  if (due < midnight || due.toMillis() >= m.getTime()) return false
-  const setAt = task.target_set_at ?? task.created_at
-  const setDay = DateTime.fromISO(setAt, { zone: 'utc' }).setZone(timezone).startOf('day')
-  return setDay < due.startOf('day')
+function earlyMorningPick(task: Task, timezone: string, rolloverTime: string, m: Date): boolean {
+  const dueDay = DateTime.fromISO(task.due_at!, { zone: 'utc' }).setZone(timezone).toISODate()
+  const mDay = DateTime.fromJSDate(m).setZone(timezone).toISODate()
+  return (
+    dueDay === mDay &&
+    isEarlyMorningPick(task.due_at!, task.target_set_at ?? task.created_at, timezone, rolloverTime)
+  )
 }
 
 /** 1. Strip a one-off's target into the queue. */
