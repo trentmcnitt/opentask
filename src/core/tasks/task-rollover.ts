@@ -9,8 +9,10 @@
  * is still sitting on a previous day's target, or that a Snooze-all marked
  * for the queue (`queue_mark`, PR 1), is handed to the task queue:
  *
- *   1. A ONE-OFF has its target STRIPPED: `due_at` → NULL, the old target
- *      kept in `queued_from_due_at`, `queued_at` = now, the mark cleared.
+ *   1. A ONE-OFF has its target STRIPPED: `due_at` → NULL, the remembered
+ *      target in `queued_from_due_at` (a marked task's pre-sweep target, as
+ *      its sweep recorded it; else the target it had), `queued_at` = now,
+ *      the mark cleared.
  *      Attempts are checkpointed and kept (B7: no reset on strip); Try
  *      Tomorrow's flag stays while the row is in "Stripped today".
  *   2. A REPEATING task is never stripped (rule 5):
@@ -21,13 +23,15 @@
  *        Resolution 2.
  *      - otherwise it WAITS (B3): the target moves to the next occurrence,
  *        `occurrence_at` stays on the missed one (so done from the queue
- *        advances from max(missed, now), as today), `queued_at` = now. It
- *        shows in the queue each morning until that occurrence arrives.
+ *        advances from max(missed, now), as today), `queued_at` = now, the
+ *        remembered target kept (`keptTarget`). It shows in the queue each
+ *        morning until that occurrence's day.
  *      - from_completion rules are stepped from the existing occurrence by
  *        their interval, never from now: a system move never re-anchors.
- *   3. A WAIT THAT IS OVER — a queued repeating task whose target has
- *      arrived by M — leaves the queue (`queued_at` / `queued_from_due_at`
- *      cleared): an ordinary over-target task again. If it is still
+ *   3. A WAIT IS OVER at the rollover of the day its occurrence arrives (its
+ *      target falls in [M, next M)): it AUTO-SKIPS to it (spec rule 5b) —
+ *      `occurrence_at` = the occurrence, a skip of the missed one logged —
+ *      and leaves the queue. It nags that day like any task; if still
  *      unhandled at the NEXT rollover, it rolls or waits per 2.
  *   4. Try Tomorrow's flag is cleared on any task queued before M (it has
  *      moved to "Previously targeted").
@@ -216,24 +220,20 @@ function applyRollover(
   const mMs = m.getTime()
   const run: UserRun = { moved: [], changed: false }
 
-  // 3. Waits that are over: a queued repeating task whose target arrived by M.
-  // First, so a task released here is not rolled in the same run.
+  // 3. Waits that are over: a queued repeating task whose target (its next
+  // occurrence) falls in this OpenTask day — or arrived earlier, on a run
+  // caught up after downtime. First, so it is not rolled in the same run.
   const released = new Set<number>()
   const waits = db
     .prepare(
-      `SELECT id, title, due_at FROM tasks
+      `SELECT id, title, due_at, occurrence_at, skip_count FROM tasks
         WHERE user_id = ? AND rrule IS NOT NULL AND queued_at IS NOT NULL
           AND due_at IS NOT NULL AND done = 0 AND deleted_at IS NULL`,
     )
-    .all(user.id) as { id: number; title: string; due_at: string }[]
+    .all(user.id) as WaitRow[]
   for (const w of waits) {
-    if (Date.parse(w.due_at) > mMs) continue
-    db.prepare(
-      `UPDATE tasks SET queued_at = NULL, queued_from_due_at = NULL, rolled_over_at = ?,
-              updated_at = ?
-        WHERE id = ?`,
-    ).run(nowStr, nowStr, w.id)
-    logRollover(user.id, w.id, w.title, 'released', ['queued_at', 'queued_from_due_at'], {})
+    if (Date.parse(w.due_at) >= nextM.getTime()) continue
+    release(w, user.id, nowStr)
     released.add(w.id)
     result.released++
     run.changed = true
@@ -313,6 +313,18 @@ function checkpoint(
   )
 }
 
+/**
+ * The target the queue remembers (spec rule 2, "the original target is
+ * remembered"): a task a defer MARKED keeps the pre-sweep target its sweep
+ * recorded (`bulkSnooze`) — not the rollover moment the sweep moved it to;
+ * a task on a previous day's target unmarked keeps its current target. A
+ * marked row with nothing recorded (marked before the sweep recorded it)
+ * falls back to its current target.
+ */
+function keptTarget(task: Task): string | null {
+  return task.queue_mark && task.queued_from_due_at ? task.queued_from_due_at : task.due_at
+}
+
 /** 1. Strip a one-off's target into the queue. */
 function strip(
   row: TaskRow,
@@ -323,15 +335,16 @@ function strip(
   nowStr: string,
 ): void {
   const counted = checkpoint(row, task, user, rolloverTime, m)
+  const kept = keptTarget(task)
   getDb()
     .prepare(
       `UPDATE tasks
           SET attempts = ?, attempts_counted_through = ?,
-              queued_from_due_at = due_at, due_at = NULL, queued_at = ?, queue_mark = 0,
+              queued_from_due_at = ?, due_at = NULL, queued_at = ?, queue_mark = 0,
               ${TARGET_SET_FIELD} = ?, rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
     )
-    .run(counted.attempts, counted.countedThrough, nowStr, nowStr, nowStr, nowStr, task.id)
+    .run(counted.attempts, counted.countedThrough, kept, nowStr, nowStr, nowStr, nowStr, task.id)
   logRollover(
     user.id,
     task.id,
@@ -339,7 +352,7 @@ function strip(
     'stripped',
     ['due_at', 'queued_at', 'queued_from_due_at', 'queue_mark', TARGET_SET_FIELD],
     { due_at: task.due_at },
-    { due_at: null, queued_at: nowStr, queued_from_due_at: task.due_at },
+    { due_at: null, queued_at: nowStr, queued_from_due_at: kept },
     { marked: task.queue_mark },
   )
 }
@@ -385,6 +398,50 @@ function occurrenceFrom(
   return { at: at.toISOString(), skipped: true }
 }
 
+interface WaitRow {
+  id: number
+  title: string
+  due_at: string
+  occurrence_at: string | null
+  skip_count: number | null
+}
+
+/**
+ * 3. A WAIT IS OVER (spec rule 5b: "waits ... until the next occurrence
+ * arrives, then auto-skips to it and nags normally"). On the day its
+ * occurrence arrives — its target, the next occurrence the wait set, falls
+ * inside [M, next M) — the task AUTO-SKIPS to it: `occurrence_at` = that
+ * occurrence, logged as a skip of the missed one (`skip_count`, attempts
+ * afresh — the 5a roll's write, no undo entry), and it leaves the queue. It
+ * nags normally that day, and done lands on the occurrence after it. The
+ * target is already that occurrence (a from_completion rule's was stepped
+ * from the missed one, so nothing re-anchors here either).
+ */
+function release(w: WaitRow, userId: number, nowStr: string): void {
+  const skipCount = (w.skip_count ?? 0) + 1
+  getDb()
+    .prepare(
+      `UPDATE tasks
+          SET occurrence_at = due_at, original_due_at = due_at, skip_count = ?,
+              attempts = 0, attempts_counted_through = NULL,
+              queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
+              rolled_over_at = ?, updated_at = ?
+        WHERE id = ?`,
+    )
+    .run(skipCount, nowStr, nowStr, w.id)
+  logRollover(
+    userId,
+    w.id,
+    w.title,
+    'released',
+    ['occurrence_at', 'skip_count', 'queued_at', 'queued_from_due_at'],
+    { occurrence_at: w.occurrence_at, skip_count: w.skip_count ?? 0 },
+    { occurrence_at: w.due_at, skip_count: skipCount, queued_at: null },
+    { skipped: true },
+    'skip',
+  )
+}
+
 /** 2. A repeating task: roll to this day's occurrence, or wait for the next. */
 function rollRepeating(
   row: TaskRow,
@@ -424,13 +481,24 @@ function rollRepeating(
   // B3: wait in the queue for the next occurrence; `occurrence_at` stays.
   const counted = checkpoint(row, task, user, rolloverTime, m)
   const target = next?.at ?? null
+  const kept = keptTarget(task)
   db.prepare(
     `UPDATE tasks
         SET attempts = ?, attempts_counted_through = ?,
-            queued_from_due_at = due_at, due_at = ?, queued_at = ?, queue_mark = 0,
+            queued_from_due_at = ?, due_at = ?, queued_at = ?, queue_mark = 0,
             ${TARGET_SET_FIELD} = ?, rolled_over_at = ?, updated_at = ?
       WHERE id = ?`,
-  ).run(counted.attempts, counted.countedThrough, target, nowStr, nowStr, nowStr, nowStr, task.id)
+  ).run(
+    counted.attempts,
+    counted.countedThrough,
+    kept,
+    target,
+    nowStr,
+    nowStr,
+    nowStr,
+    nowStr,
+    task.id,
+  )
   logRollover(
     user.id,
     task.id,
@@ -438,7 +506,7 @@ function rollRepeating(
     'waiting',
     ['due_at', 'queued_at', 'queued_from_due_at', 'queue_mark', TARGET_SET_FIELD],
     { due_at: task.due_at },
-    { due_at: target, queued_at: nowStr, queued_from_due_at: task.due_at },
+    { due_at: target, queued_at: nowStr, queued_from_due_at: kept },
     {},
   )
   return 'waiting'

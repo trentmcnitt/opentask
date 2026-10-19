@@ -664,6 +664,24 @@ function nextOccurrenceOf(task: Task, timezone: string, now: Date): string | nul
   }).toISOString()
 }
 
+/**
+ * The queue fields a defer's landing writes with its target (task queue). A
+ * plain sweep's mark also clears a Try Tomorrow flag left from before. "The
+ * original target is remembered" (spec rule 2): the defer that NEWLY marks
+ * the task records its pre-sweep target in `queued_from_due_at`; a second
+ * defer of a marked task keeps what the first one wrote, and so does Try
+ * Tomorrow on a queued task with no target (the stripped one stays).
+ */
+function deferQueueFields(
+  task: Task,
+  landing: Landing,
+): { queue_mark?: boolean; try_tomorrow?: boolean; queued_from_due_at?: string } {
+  if (!landing.mark) return {}
+  const fields = { queue_mark: true, try_tomorrow: landing.tryTomorrow }
+  if (task.queue_mark || task.due_at === null) return fields
+  return { ...fields, queued_from_due_at: task.due_at }
+}
+
 /** The request's landing time for one task (before `planLanding`). */
 function requestedLanding(
   task: Task,
@@ -862,8 +880,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         task,
         input: {
           due_at: landing.dueAt,
-          // A plain sweep's mark also clears a Try Tomorrow flag left from before.
-          ...(landing.mark ? { queue_mark: true, try_tomorrow: landing.tryTomorrow } : {}),
+          ...deferQueueFields(task, landing),
         },
         userId,
         userTimezone,

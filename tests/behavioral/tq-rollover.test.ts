@@ -374,8 +374,48 @@ describe('TQ-S: what a strip keeps', () => {
     roll('2026-10-17T06:30')
     const after = task(t.id)
     expect(after.due_at).toBeNull()
-    expect(after.queued_from_due_at).toBe(at('2026-10-17T06:30'))
+    // The ORIGINAL target is remembered (rule 2), not the 6:30 the sweep moved it to.
+    expect(after.queued_from_due_at).toBe(at('2026-10-16T09:00'))
     expect(after.attempts).toBe(1) // the 6:30 target gave the new day no attempt
+  })
+
+  test('TQ-S01b: the marking sweep records the pre-sweep target; undo restores; a second sweep keeps it', () => {
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
+    setClock('2026-10-16T21:00')
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-17T08:30'), source: 'sweep' })
+    expect(task(t.id)).toMatchObject({
+      queue_mark: true,
+      due_at: at('2026-10-17T06:30'),
+      queued_from_due_at: at('2026-10-16T09:00'),
+    })
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({
+      queue_mark: false,
+      due_at: at('2026-10-16T09:00'),
+      queued_from_due_at: null,
+    })
+    executeRedo(TEST_USER_ID)
+    expect(task(t.id).queued_from_due_at).toBe(at('2026-10-16T09:00'))
+    // A second sweep of the marked task (its target is now 6:30) keeps the first value.
+    setClock('2026-10-16T22:00')
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-17T12:00'), source: 'sweep' })
+    expect(task(t.id).queued_from_due_at).toBe(at('2026-10-16T09:00'))
+    roll('2026-10-17T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: null, queued_from_due_at: at('2026-10-16T09:00') })
+  })
+
+  test('TQ-S01c: an unmarked task with a stale remembered target gets its current target', () => {
+    const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
+    setClock('2026-10-16T21:00')
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-17T08:30'), source: 'sweep' })
+    // A pick clears the mark; the remembered value from that sweep is stale.
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-16T22:00') })
+    expect(task(t.id)).toMatchObject({
+      queue_mark: false,
+      queued_from_due_at: at('2026-10-16T09:00'),
+    })
+    roll('2026-10-17T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: null, queued_from_due_at: at('2026-10-16T22:00') })
   })
 
   test('TQ-S02: Try Tomorrow keeps its flag while in Stripped today; the next rollover drops it', () => {
@@ -501,46 +541,87 @@ describe('TQ-P: repeating tasks at the rollover', () => {
       queued_at: null,
     })
   })
+})
 
-  test('TQ-P05: a wait is over at the rollover after its occurrence arrives', () => {
+describe('TQ-W: a wait ends on its occurrence day (spec rule 5b)', () => {
+  beforeEach(() => {
+    setupTestDb()
+    seedPeriods()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setClock('2026-10-19T05:00')
+    stamp('2026-10-18')
+  })
+  afterEach(cleanup)
+  afterAll(() => teardownTestDb())
+
+  test('TQ-P05: on its occurrence day the wait ends with an auto-skip (spec rule 5b)', () => {
     stamp('2026-10-19')
     const t = makeAt('2026-10-12T09:00', {
       rrule: 'FREQ=WEEKLY;BYDAY=MO',
       due_at: at('2026-10-19T08:00'),
     })
-    roll('2026-10-20T06:30')
-    for (const d of ['21', '22', '23', '24', '25', '26']) roll(`2026-10-${d}T06:30`)
-    // Mon 10-26 06:30: the occurrence (08:00) has not arrived — still queued.
+    for (const d of ['20', '21', '22', '23', '24', '25']) roll(`2026-10-${d}T06:30`)
     expect(task(t.id).queued_at).not.toBeNull()
-    expect(roll('2026-10-27T06:30').released).toBe(1)
+    // Mon 10-26 06:30: the occurrence (08:00) is this OpenTask day's — released,
+    // and the missed Monday logged as a skip. Never in the queue on its day.
+    expect(roll('2026-10-26T06:30').released).toBe(1)
     expect(task(t.id)).toMatchObject({
       queued_at: null,
       queued_from_due_at: null,
       due_at: at('2026-10-26T08:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+      skip_count: 1,
+      attempts: 0,
     })
-    // Still unhandled at the NEXT rollover: it waits again (next Monday).
-    roll('2026-10-28T06:30')
-    expect(task(t.id)).toMatchObject({ due_at: at('2026-11-02T08:00') })
+    const row = getDb()
+      .prepare(
+        "SELECT action, metadata FROM activity_log WHERE task_id = ? AND source = 'rollover' ORDER BY id DESC",
+      )
+      .get(t.id) as { action: string; metadata: string }
+    expect(row.action).toBe('skip')
+    expect(JSON.parse(row.metadata).rollover).toBe('released')
+    // Still unhandled at the NEXT rollover: it waits again, for next Monday,
+    // from the occurrence it skipped to.
+    roll('2026-10-27T06:30')
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-11-02T08:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+    })
     expect(task(t.id).queued_at).not.toBeNull()
   })
 
-  test('TQ-P05b: PINNED — done on the arrival day BEFORE the occurrence re-fires that day', () => {
-    // A consequence of the brief's clear-only wait-over (no auto-skip to the
-    // arrived occurrence, unlike spec rule 5b's wording): `occurrence_at`
-    // still names the missed Monday, so a done at 07:00 on the next Monday
-    // advances to that same day's 08:00, not the Monday after. Reported.
+  test('TQ-P05b: done on the arrival day before the occurrence lands on the NEXT one', () => {
     stamp('2026-10-19')
     const t = makeAt('2026-10-12T09:00', {
       rrule: 'FREQ=WEEKLY;BYDAY=MO',
       due_at: at('2026-10-19T08:00'),
     })
     for (const d of ['20', '21', '22', '23', '24', '25', '26']) roll(`2026-10-${d}T06:30`)
-    expect(task(t.id).queued_at).not.toBeNull()
+    expect(task(t.id).queued_at).toBeNull()
     setClock('2026-10-26T07:00')
     markDone({ ...u, taskId: t.id })
     expect(task(t.id)).toMatchObject({
-      due_at: at('2026-10-26T08:00'),
-      occurrence_at: at('2026-10-26T08:00'),
+      due_at: at('2026-11-02T08:00'),
+      occurrence_at: at('2026-11-02T08:00'),
+    })
+  })
+
+  test('TQ-P05c: a from_completion wait is released on its day without re-anchoring', () => {
+    // Every 3 days from completion; Sat 10-17 08:00 missed → waits for Tue 10-20 08:00.
+    stamp('2026-10-18')
+    const t = makeAt('2026-10-17T07:00', {
+      rrule: 'FREQ=DAILY;INTERVAL=3',
+      recurrence_mode: 'from_completion',
+      due_at: at('2026-10-17T08:00'),
+    })
+    roll('2026-10-19T06:30')
+    expect(task(t.id).due_at).toBe(at('2026-10-20T08:00'))
+    roll('2026-10-20T06:30')
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-20T08:00'),
+      occurrence_at: at('2026-10-20T08:00'),
+      queued_at: null,
+      skip_count: 1,
     })
   })
 
@@ -636,15 +717,21 @@ describe('TQ-X: restoring stripped targets (the rollback script)', () => {
       rrule: 'FREQ=WEEKLY;BYDAY=MO',
       due_at: at('2026-10-19T08:00'),
     })
+    // c: swept last night — its remembered target is the pre-sweep one.
+    const c = makeAt('2026-10-19T08:00', { title: 'C', due_at: at('2026-10-19T11:00') })
+    setClock('2026-10-19T21:00')
+    bulkSnooze({ ...u, taskIds: [c.id], until: at('2026-10-20T08:30'), source: 'sweep' })
     roll('2026-10-20T06:30')
     setClock('2026-10-20T07:00')
     targetTasksToday(TEST_USER_ID, tz, [b.id]) // b left the queue
-    expect(findStrippedTargets(TEST_USER_ID).map((t) => t.id)).toEqual([a.id])
+    expect(findStrippedTargets(TEST_USER_ID).map((t) => t.id)).toEqual([a.id, c.id])
     expect(task(a.id).due_at).toBeNull() // a dry run writes nothing
 
     const restored = restoreStrippedTargets(TEST_USER_ID)
-    expect(restored.map((t) => t.id)).toEqual([a.id])
+    expect(restored.map((t) => t.id)).toEqual([a.id, c.id])
     expect(task(a.id)).toMatchObject({ due_at: at('2026-10-19T09:00'), queued_at: null })
+    // The swept task gets its real target back, not the 6:30 it was swept to.
+    expect(task(c.id)).toMatchObject({ due_at: at('2026-10-19T11:00'), queued_at: null })
     expect(task(weekly.id).queued_at).not.toBeNull() // the waiting repeat is left alone
     expect(findStrippedTargets(TEST_USER_ID)).toEqual([])
   })

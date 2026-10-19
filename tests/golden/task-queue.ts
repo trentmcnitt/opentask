@@ -83,10 +83,11 @@ export const taskQueueScenarios: GoldenScenario[] = [
       },
       {
         at: '2026-10-20T06:31',
+        // The original target is remembered (rule 2), not the 6:30 it was swept to.
         run: check('task', {
           due_at: null,
           queue_mark: false,
-          queued_from_due_at: iso('2026-10-20T06:30'),
+          queued_from_due_at: iso('2026-10-19T16:00'),
           attempts: 1,
         }),
       },
@@ -242,8 +243,8 @@ export const taskQueueScenarios: GoldenScenario[] = [
   },
   {
     id: 'tq-weekly-waits',
-    title: 'A weekly task missed Monday waits in the queue, then nags on its day',
-    source: 'rule 5 (longer rules); B3; B4; brief §2 (the wait is over at the next rollover)',
+    title: 'A weekly task missed Monday waits in the queue, then auto-skips to its day and nags',
+    source: 'rule 5 (longer rules, "then auto-skips to it and nags normally"); B3; B4',
     from: '2026-10-19',
     to: '2026-10-28',
     policy: ['tap'],
@@ -265,11 +266,21 @@ export const taskQueueScenarios: GoldenScenario[] = [
           skip_count: 0,
         }),
       },
+      // Its day: auto-skipped to the arrived occurrence (rule 5b), out of the queue.
       {
-        at: '2026-10-28T06:31',
+        at: '2026-10-26T06:31',
+        run: check('task', {
+          due_at: iso('2026-10-26T08:00'),
+          occurrence_at: iso('2026-10-26T08:00'),
+          queued_at: null,
+          skip_count: 1,
+        }),
+      },
+      {
+        at: '2026-10-27T06:31',
         run: check('task', {
           due_at: iso('2026-11-02T08:00'),
-          occurrence_at: iso('2026-10-19T08:00'),
+          occurrence_at: iso('2026-10-26T08:00'),
         }),
       },
     ],
@@ -279,12 +290,11 @@ export const taskQueueScenarios: GoldenScenario[] = [
         // Moved by the rollover on Tue to Mon 26 (wait 6): a heads-up the day before.
         '2026-10-20..2026-10-24': 'quiet queued 1×',
         '2026-10-25': 'upcoming queued 1×',
-        // Its occurrence arrives: it nags, still queued until the next rollover.
-        '2026-10-26': 'over queued 2×',
-        // The wait is over (Tue rollover): an ordinary over-target task.
-        '2026-10-27': 'over 3×',
+        // Its day: the rollover auto-skips it to this occurrence (attempts afresh),
+        // out of the queue; it nags from 08:00 like any task.
+        '2026-10-26': 'over 1×',
         // Still unhandled at the next rollover: it waits again, for Mon Nov 2.
-        '2026-10-28': 'quiet queued 3×',
+        '2026-10-27..2026-10-28': 'quiet queued 1×',
       },
     },
   },
@@ -341,18 +351,24 @@ export const taskQueueScenarios: GoldenScenario[] = [
     events: [
       // Mon 08:00 + 3 days = Thu 08:00 (not Tue + 3 = Fri).
       { at: '2026-10-20T06:31', run: check('task', { due_at: iso('2026-10-22T08:00') }) },
-      // Sat: still on Mon's grid — Mon + 6 days = Sun 08:00.
-      { at: '2026-10-24T06:31', run: check('task', { due_at: iso('2026-10-25T08:00') }) },
+      // Thu, its day: auto-skipped to Thu 08:00 (the occurrence moves, no re-anchor).
+      {
+        at: '2026-10-22T06:31',
+        run: check('task', { occurrence_at: iso('2026-10-22T08:00'), queued_at: null }),
+      },
+      // Fri, still unhandled: waits for Thu + 3 = Sun 08:00 (the grid, not now + 3).
+      { at: '2026-10-23T06:31', run: check('task', { due_at: iso('2026-10-25T08:00') }) },
     ],
     expect: {
       task: {
         '2026-10-19': 'over 1×',
         '2026-10-20': 'quiet queued 1×',
         '2026-10-21': 'upcoming queued 1×',
-        '2026-10-22': 'over queued 2×',
-        '2026-10-23': 'over 3×',
-        '2026-10-24': 'quiet queued 3×',
-        '2026-10-25': 'over queued 4×',
+        '2026-10-22': 'over 1×',
+        '2026-10-23': 'quiet queued 1×',
+        // Set Fri for Sun (wait 2): a heads-up the day before.
+        '2026-10-24': 'upcoming queued 1×',
+        '2026-10-25': 'over 1×',
       },
     },
   },
