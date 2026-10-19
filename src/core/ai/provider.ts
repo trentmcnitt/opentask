@@ -18,21 +18,39 @@ import { log } from '@/lib/logger'
 
 export type AIProvider = 'sdk' | 'anthropic' | 'openai'
 
+import { probeClaudeCli, refusalMessage } from './cli-path'
+
 // Cached detection results (set once, never change during process lifetime)
 let sdkAvailable: boolean | null = null
 let anthropicAvailable: boolean | null = null
 let openaiAvailable: boolean | null = null
 
-/** Check if the Claude Agent SDK is importable (Claude Code installed). */
+/**
+ * Whether the SDK provider can run: the Agent SDK is importable AND an
+ * installed Claude Code CLI ≥ the floor was found (cli-path.ts — OpenTask never
+ * runs the SDK's bundled CLI). Without a usable CLI the SDK provider is simply
+ * unavailable: initAI() falls back to an API provider and warns once
+ * (`sdkUnavailableReason`), and no warm slot starts.
+ */
 export async function isSdkAvailable(): Promise<boolean> {
   if (sdkAvailable !== null) return sdkAvailable
   try {
     await import('@anthropic-ai/claude-agent-sdk')
-    sdkAvailable = true
+    const cli = probeClaudeCli()
+    sdkAvailable = cli.ok
+    if (!cli.ok) sdkUnavailable = refusalMessage(cli)
   } catch {
     sdkAvailable = false
+    sdkUnavailable = 'the Claude Agent SDK package could not be imported'
   }
   return sdkAvailable
+}
+
+let sdkUnavailable: string | null = null
+
+/** Why the SDK provider is unavailable (after isSdkAvailable()), or null. */
+export function sdkUnavailableReason(): string | null {
+  return sdkUnavailable
 }
 
 /**

@@ -77,6 +77,7 @@
 
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
+import { getClaudeCliPath } from './cli-path'
 import { toCliJsonSchema } from './json-schema'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import {
@@ -464,8 +465,13 @@ function abandonSubprocess<TOp, S>({ g, config }: Runtime<TOp, S>): void {
   g.slot.deliverResult = null
 }
 
+/**
+ * Throws ClaudeCliError when no installed Claude Code CLI ≥ the floor is found
+ * (see cli-path.ts) — the SDK's bundled CLI is never used.
+ */
 function buildQueryOptions(config: WarmSlotConfig): Options {
   const outputSchema = config.getOutputSchema?.()
+  const cliPath = getClaudeCliPath()
   return {
     model: config.getModel(),
     maxTurns: config.maxTurns,
@@ -479,9 +485,7 @@ function buildQueryOptions(config: WarmSlotConfig): Options {
         schema: toCliJsonSchema(z.toJSONSchema(outputSchema)),
       },
     }),
-    ...(process.env.OPENTASK_AI_CLI_PATH && {
-      pathToClaudeCodeExecutable: process.env.OPENTASK_AI_CLI_PATH,
-    }),
+    pathToClaudeCodeExecutable: cliPath,
   }
 }
 

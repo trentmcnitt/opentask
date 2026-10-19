@@ -18,9 +18,11 @@ import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
 import { toCliJsonSchema } from './json-schema'
 import { withSlot } from './queue'
+import { getClaudeCliPath } from './cli-path'
 import {
   type AIProvider,
   isSdkAvailable,
+  sdkUnavailableReason,
   isAnthropicAvailable,
   isOpenAIAvailable,
   getServerDefaultProvider,
@@ -61,6 +63,10 @@ export async function initAI(): Promise<void> {
   }
 
   const sdkOk = await isSdkAvailable()
+  // No usable Claude Code CLI: SDK mode is off on this box (an API-only or
+  // Docker install, or a too-old CLI). Say why once; the fallback below picks
+  // an API provider when one is configured.
+  if (!sdkOk) log.warn('ai', `SDK provider unavailable: ${sdkUnavailableReason()}`)
   const anthropicOk = isAnthropicAvailable()
   const openaiOk = isOpenAIAvailable()
 
@@ -108,6 +114,17 @@ export async function initAI(): Promise<void> {
     .filter(Boolean)
     .join(', ')
   log.info('ai', `AI features enabled — default provider: ${effective}, available: [${available}]`)
+
+  // SDK mode: resolve the Claude Code CLI now, so a missing or too-old CLI is
+  // logged at boot rather than on the first AI call (the error is cached and
+  // thrown again by every SDK call). API providers never resolve it.
+  if (effective === 'sdk') {
+    try {
+      getClaudeCliPath()
+    } catch {
+      // Already logged by getClaudeCliPath()
+    }
+  }
 
   // Log resolved config per feature showing both SDK and API model info.
   // SDK models always resolve (fallback to 'sonnet'). API models may not be configured.
@@ -259,13 +276,14 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
     // The slot is released after the query completes (success or failure).
     return await withSlot(async () => {
       const { query } = await import('@anthropic-ai/claude-agent-sdk')
+      // The installed Claude Code CLI to spawn, never the SDK's bundled copy.
+      // Throws when none is found or it is too old to keep the user's
+      // transcripts (it would prune ~/.claude/projects). See cli-path.ts.
+      const cliPath = getClaudeCliPath()
 
       // Build query options using the SDK's Options type.
       // bypassPermissions requires allowDangerouslySkipPermissions safety flag.
       // persistSession=false avoids writing enrichment sessions to ~/.claude/.
-      // pathToClaudeCodeExecutable resolves the globally installed CLI when
-      // running inside a bundled Next.js standalone app (where the SDK's
-      // default resolution finds the wrong cli.js).
       const queryOptions: Options = {
         model: resolvedModel,
         maxTurns,
@@ -278,9 +296,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         env: { ...process.env, NODE_OPTIONS: '' },
         ...(systemPrompt && { systemPrompt }),
         ...(maxThinkingTokens && { maxThinkingTokens }),
-        ...(process.env.OPENTASK_AI_CLI_PATH && {
-          pathToClaudeCodeExecutable: process.env.OPENTASK_AI_CLI_PATH,
-        }),
+        pathToClaudeCodeExecutable: cliPath,
       }
 
       if (outputSchema) {
