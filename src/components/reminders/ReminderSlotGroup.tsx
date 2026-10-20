@@ -377,7 +377,10 @@ export function SlotHeaderRow({
   const finished = count === 0 && considered > 0
   const labelEl = (
     <span
-      className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase"
+      // May wrap, never truncate: "TASK QUEUE · PREVIOUSLY STAGED" (2026-10-20)
+      // is wider than a phone's header beside its count and Considered all,
+      // and on one line it ran under the count. A period's name fits as before.
+      className="text-muted-foreground min-w-0 text-xs font-semibold tracking-wider text-balance uppercase"
       // A task segment's title wears its horizon's teal (2026-10-11).
       style={accent ? { color: accent } : undefined}
     >

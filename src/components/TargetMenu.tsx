@@ -1,6 +1,6 @@
 'use client'
 
-import { Sun } from 'lucide-react'
+import { SunSolid } from '@/components/icons/SunSolid'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
@@ -205,12 +205,12 @@ export function TargetTodayButton({
   )
 }
 
-/** Today's icon (a sun), and its word from `sm` up when `showLabel`. */
+/** Today's icon (`SunSolid`), and its word from `sm` up when `showLabel`. */
 function TodayFace({ iconClassName, showLabel }: { iconClassName?: string; showLabel: boolean }) {
   return (
     <>
-      {/* A sun (Trent, 2026-10-20): "today", beside On deck's bookmark. */}
-      <Sun className={iconClassName} strokeWidth={1.75} />
+      {/* A sun with a solid core (Trent, 2026-10-20): "today", beside On deck. */}
+      <SunSolid className={iconClassName} strokeWidth={1.75} />
       {showLabel ? (
         // Icon-only on a phone, so the title keeps the width.
         <span className="sr-only sm:not-sr-only">Today</span>

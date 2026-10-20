@@ -170,11 +170,11 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     const earlier = panel(page, 'queue_previous')
     await expect(today).toBeVisible()
     await expect(earlier).toBeVisible()
-    // One title each and nothing after it (Trent, 2026-10-20).
-    await expect(today).toHaveAttribute('aria-label', 'Queued')
-    await expect(earlier).toHaveAttribute('aria-label', 'Previously queued')
-    await expect(today.getByText('Queued', { exact: true })).toBeVisible()
-    await expect(earlier.getByText('Previously queued', { exact: true })).toBeVisible()
+    // "Task queue · <word>", nothing after it (Trent, 2026-10-20).
+    await expect(today).toHaveAttribute('aria-label', 'Task queue · Staged')
+    await expect(earlier).toHaveAttribute('aria-label', 'Task queue · Previously staged')
+    await expect(today.getByText('Task queue · Staged', { exact: true })).toBeVisible()
+    await expect(earlier.getByText('Task queue · Previously staged', { exact: true })).toBeVisible()
     await expect(today.getByText('Stripped today')).toHaveCount(0)
     await expect(earlier.getByText('Previously targeted')).toHaveCount(0)
     // First among the task segments.
@@ -424,7 +424,9 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     // No Defer all on a queue panel.
     await expect(earlier.getByRole('button', { name: /^Defer all/ })).toHaveCount(0)
     await earlier
-      .getByRole('button', { name: /^Mark all \d+ in Previously queued as considered$/ })
+      .getByRole('button', {
+        name: /^Mark all \d+ in Task queue · Previously staged as considered$/,
+      })
       .click()
     await expect(row(page, a)).toHaveCount(0)
     await expect(row(page, b)).toHaveCount(0)
@@ -506,6 +508,87 @@ test('the sweep toast says what moves to the Tasks queue', async ({ page }) => {
         default_snooze_option: was.default_snooze_option,
       },
     })
+    await trash(page, ids)
+  }
+})
+
+test('row polish: the empty On deck slot lines up the column, the dot follows the project, every control has the hand', async ({
+  page,
+}) => {
+  // Trent, 2026-10-20. A repeating row has no On deck, so its pencil sat
+  // elsewhere; the one-off's horizon dot came before the project, so the
+  // project names zig-zagged; Today and On deck showed the arrow cursor.
+  const ids: number[] = []
+  try {
+    const oneOff = await create(page, { title: uniqueTitle('TQ one-off'), due_at: daysFromNow(-4) })
+    const weekly = await create(page, {
+      title: uniqueTitle('TQ repeating'),
+      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+      due_at: daysFromNow(3),
+    })
+    ids.push(oneOff, weekly)
+    sql(
+      'UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?',
+      daysFromNow(-4),
+      daysFromNow(-4),
+      weekly,
+    )
+    await strip(page, { today: [oneOff, weekly] })
+
+    const x = async (l: Locator) => (await l.boundingBox())!.x
+    const check = async (scope: Locator) => {
+      const a = row(scope, oneOff)
+      const w = row(scope, weekly)
+      await expect(a).toBeVisible()
+      await expect(w).toBeVisible()
+      // The one-off has On deck; the repeating row keeps its place empty.
+      await expect(a.locator('[data-on-deck]')).toHaveCount(1)
+      await expect(w.locator('[data-on-deck]')).toHaveCount(0)
+      await expect(w.locator('[data-deck-slot-empty]')).toHaveCount(1)
+      for (const sel of [
+        '[data-segment-details]',
+        '[data-target-today]',
+        '[data-segment-project]',
+      ]) {
+        // The pencil and Today line up down the column, and so do the
+        // project names (the dot no longer comes before them).
+        expect(await x(w.locator(sel)), sel).toBeCloseTo(await x(a.locator(sel)), 0)
+      }
+      const dotAfterProject = await a.locator('[data-horizon-meta]').evaluate((dot) => {
+        const project = dot.parentElement!.querySelector('[data-segment-project]')!
+        return !!(project.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING)
+      })
+      expect(dotAfterProject).toBe(true)
+      // Today's icon is the sun with a solid core (Trent, 2026-10-20).
+      await expect(a.locator('[data-target-today] [data-sun-solid]')).toHaveCount(1)
+      // Every control on the row shows the hand.
+      for (const sel of [
+        '[data-on-deck]',
+        '[data-target-today]',
+        '[data-segment-details]',
+        '[data-horizon-meta]',
+        '[aria-label^="Mark"]',
+        '[aria-label^="Done"]',
+      ]) {
+        await expect(a.locator(sel).first(), sel).toHaveCSS('cursor', 'pointer')
+      }
+    }
+
+    await page.goto('/reminders')
+    const today = panel(page, 'queue_today')
+    await check(today)
+    await expect(today.locator('[data-segment-consider-all]')).toHaveCSS('cursor', 'pointer')
+
+    // The dashboard's right panel: the same rows, and its pager header.
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.goto('/')
+    const card = page.locator('[data-tasks-panel]')
+    await expect(card).toHaveAttribute('data-task-segment', 'queue_today')
+    await check(card)
+    await expect(card.locator('[data-slot-header-toggle]')).toHaveCSS('cursor', 'pointer')
+    const next = card.getByRole('button', { name: 'Next task segment' })
+    if (await next.isEnabled()) await expect(next).toHaveCSS('cursor', 'pointer')
+  } finally {
     await trash(page, ids)
   }
 })

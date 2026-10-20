@@ -26,6 +26,7 @@ import {
   QUEUE_PANEL_TITLES,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
+  taskQueueTitle,
   UPCOMING_LABEL,
 } from '@/lib/task-model-words'
 import {
@@ -119,14 +120,14 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
 }
 
 /**
- * A segment kind's panel title (Trent, 2026-10-20): "Queued", "Previously
- * queued", "Upcoming", "Daily", "Weekly", "Monthly", "Quarterly". One word or
- * phrase and nothing else — no "Tasks · " prefix, no hint after it — the
- * whole header on both surfaces, like a period's name.
+ * A segment kind's panel title (Trent, 2026-10-20): "Task queue · Staged",
+ * "… · Previously staged", "… · Upcoming", "… · Daily", "Weekly", "Monthly",
+ * "Quarterly" (`taskQueueTitle`) — one format, the whole header on both
+ * surfaces (uppercased there), no hint after it.
  */
 export function segmentTitle(kind: SegmentKind): string {
-  if (isQueueKind(kind)) return QUEUE_PANEL_TITLES[kind]
-  return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
+  if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
+  return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
 }
 
 /** `segmentTitle` for a segment: its header, section and list names. */
@@ -209,9 +210,9 @@ export function TaskSegmentRow({
     if (!considered) void actions.consider(task)
   }
   // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
-  // like the priority tab, on a "Queued" row only. The row is NOT
+  // like the priority tab, on a "Staged" row only. The row is NOT
   // lifted to the top — it keeps its place in the priority sort. The rollover
-  // clears the flag once the row moves to "Previously queued".
+  // clears the flag once the row moves to "Previously staged".
   const tryTomorrow = segmentHorizon === 'queue_today' && task.try_tomorrow
   return (
     <li
@@ -353,6 +354,18 @@ export function TaskSegmentRow({
  */
 const HOVER_BOX = { page: 'h-8', panel: 'h-6.5' } as const
 
+/**
+ * On deck's and Today's HIT TARGET (2026-10-20, Trent: tighten pencil · On
+ * deck · Today): 44px tall always, and 44px wide for a finger — but with a
+ * mouse only as wide as the hover box, the pencil's own rule (`size-8`, 44
+ * only on `pointer-coarse`). The 44px width used to leave 6–9px of empty
+ * button either side of each hover box, so the three read as spread apart.
+ */
+const CONTROL_HIT = '-my-3 h-11 min-w-11 pointer-fine:min-w-0'
+
+/** On deck's hover box, and the empty slot's (`DeckSlotSpacer`). */
+const DECK_BOX = { page: `${HOVER_BOX.page} w-8`, panel: `${HOVER_BOX.panel} w-6.5` } as const
+
 function TaskSegmentRowActions({
   row,
   actions,
@@ -372,7 +385,9 @@ function TaskSegmentRowActions({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center gap-0.5 sm:gap-1.5',
+        // 8px between the hover boxes with a mouse; with a finger the 44px hit
+        // targets abut and their own padding is the gap (2026-10-20).
+        'flex shrink-0 items-center gap-2 pointer-coarse:gap-0',
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
@@ -446,7 +461,7 @@ function TaskSegmentRowActions({
           // The grey hover block is the inner box, the details icon's
           // (`HOVER_BOX`), so it stays inside the row: the whole 44px button
           // used to paint it, poking out of every row (2026-10-20).
-          className="-my-3 mr-3 h-11 min-w-11"
+          className={`${CONTROL_HIT} mr-3`}
           boxClassName={
             panel ? `${HOVER_BOX.panel} min-w-6.5 sm:px-1.5` : `${HOVER_BOX.page} min-w-8 sm:px-2`
           }
@@ -502,16 +517,20 @@ function SegmentDeckSlot({
   panel: boolean
   queueUi: 'on' | 'off' | 'pending'
 }) {
-  if (queueUi === 'off' || row.recurring || !offersDeck(row.task)) return null
-  if (queueUi === 'pending') return <DeckPlaceholder />
+  if (queueUi === 'off') return null
+  if (queueUi === 'pending') return <DeckPlaceholder panel={panel} />
+  // A row without the button (a repeating task, or a target the user picked)
+  // keeps its place empty (Trent, 2026-10-20), so the pencil and Today line
+  // up down the column, one-off or repeating.
+  if (row.recurring || !offersDeck(row.task)) return <DeckSlotSpacer panel={panel} empty />
   return (
     <OnDeckButton
       task={row.task}
       timezone={timezone}
       onDeck={(t, day) => void actions.deck(t, day)}
       // Icon only (Trent, 2026-10-20): the tooltip and the name say "On deck".
-      className="-my-3 h-11 min-w-11"
-      boxClassName={panel ? `${HOVER_BOX.panel} w-6.5` : `${HOVER_BOX.page} w-8`}
+      className={CONTROL_HIT}
+      boxClassName={panel ? DECK_BOX.panel : DECK_BOX.page}
       iconClassName={panel ? 'size-[18px]' : 'size-[22px]'}
     />
   )
@@ -522,11 +541,26 @@ function SegmentDeckSlot({
  * saw the switch ON (`useLastKnownQueueOn`). Off, or unknown: nothing, so a
  * switch-off row never shifts by 44px when they land (review #4).
  */
-function DeckPlaceholder() {
+function DeckPlaceholder({ panel }: { panel: boolean }) {
   const lastOn = useLastKnownQueueOn()
-  return lastOn ? (
-    <span data-deck-placeholder aria-hidden className="-my-3 h-11 min-w-11 shrink-0" />
-  ) : null
+  return lastOn ? <DeckSlotSpacer panel={panel} /> : null
+}
+
+/**
+ * Empty space exactly On deck's size: its hit target around its hover box
+ * (`CONTROL_HIT`, `DECK_BOX`), so nothing beside it moves.
+ */
+function DeckSlotSpacer({ panel, empty = false }: { panel: boolean; empty?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      data-deck-placeholder={empty ? undefined : ''}
+      data-deck-slot-empty={empty ? '' : undefined}
+      className={cn('flex shrink-0 items-center justify-center', CONTROL_HIT)}
+    >
+      <span className={panel ? DECK_BOX.panel : DECK_BOX.page} />
+    </span>
+  )
 }
 
 /**
@@ -566,14 +600,18 @@ function TaskSegmentMeta({
   // priority, a future target and the deadline.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      {queueOn && showsHorizonDot(task) && (
-        <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
-      )}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
           {project.name}
         </span>
+      )}
+      {/* The horizon dot AFTER the project (Trent, 2026-10-20), not before
+          it: only one-offs wear it, so in front it pushed their project names
+          right of the repeating rows'. Now every row's project starts at the
+          same x. */}
+      {queueOn && showsHorizonDot(task) && (
+        <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
       )}
       {priority && (
         <span data-segment-priority className={priority.color}>
