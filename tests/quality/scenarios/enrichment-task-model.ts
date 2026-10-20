@@ -316,7 +316,7 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
   {
     id: 'enrich-tm-do-it-day-is-target',
     feature: 'enrichment',
-    description: '"do it Saturday" is a target — no deadline',
+    description: '"do it Saturday" is a day to do it (on deck) — no deadline',
     input: {
       text: `clean out the car, do it ${weekday(3)}`,
       timezone: TZ,
@@ -324,13 +324,14 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        due_at: iso(3),
+        on_deck_day: iso(3),
+        due_at: null,
         deadline_at: null,
         horizon: null,
         labels: [],
       },
       quality_notes:
-        `due_at = the coming ${weekday(3)} at the default task time. deadline_at MUST be null — the day says when to do it, not when it must be done by. ` +
+        `On deck for the coming ${weekday(3)} (a day with no time, 2026-10-20): on_deck_day that day, due_at null. deadline_at MUST be null — the day says when to do it, not when it must be done by. ` +
         'Title "Clean out the car".',
     },
   },
