@@ -81,6 +81,14 @@ function undoCount(): number {
   ).n
 }
 
+/** The panel (segment kind) a task sits in at a Chicago wall-clock time. */
+function panelOf(local: string, id: number): string | undefined {
+  setClock(local)
+  for (const seg of getTaskSegments(TEST_USER_ID, tz, new Date(at(local)), { queuePanels: true }))
+    if (seg.tasks.some((row) => row.task.id === id)) return seg.horizon
+  return undefined
+}
+
 function clearEvents() {
   vi.mocked(dispatchWebhookEvent).mockClear()
   vi.mocked(dismissNotificationsForTasks).mockClear()
@@ -163,7 +171,10 @@ describe('TQ-N: roll over now — what it moves', () => {
       due_at: null,
       queued_from_due_at: at('2026-10-20T10:00'),
     })
-    expect(Date.parse(task(f.passed.id).queued_at!)).toBe(Date.parse(at('2026-10-20T21:00')))
+    // Handed to the next OpenTask day: queued as of Wed's rollover; the
+    // fence stamp is the run's own moment.
+    expect(Date.parse(task(f.passed.id).queued_at!)).toBe(Date.parse(at('2026-10-21T06:30')))
+    expect(Date.parse(task(f.passed.id).rolled_over_at!)).toBe(Date.parse(at('2026-10-20T21:00')))
     expect(task(f.pulled.id)).toMatchObject({
       due_at: at('2026-10-20T23:00'),
       occurrence_at: at('2026-10-20T23:00'),
@@ -182,14 +193,33 @@ describe('TQ-N: roll over now — what it moves', () => {
   test('TQ-N02: stripped rows land in "Stripped today", the wait too', () => {
     const f = fixture()
     runNow('2026-10-20T21:00')
-    const where: Record<number, string> = {}
-    for (const seg of getTaskSegments(TEST_USER_ID, tz, new Date(at('2026-10-20T21:00')), {
-      queuePanels: true,
-    })) {
-      for (const row of seg.tasks) where[row.task.id] = seg.horizon
-    }
-    expect(where[f.passed.id]).toBe('queue_today')
-    expect(where[f.daily.id]).toBe('queue_today')
+    expect(panelOf('2026-10-20T21:00', f.passed.id)).toBe('queue_today')
+    expect(panelOf('2026-10-20T21:00', f.daily.id)).toBe('queue_today')
+  })
+
+  test('TQ-N02b: an evening run hands Try Tomorrow rows to the next day, flag kept', () => {
+    const t = makeAt('2026-10-20T08:00', { due_at: at('2026-10-20T10:00') })
+    setClock('2026-10-20T15:00')
+    bulkSnooze({ ...u, taskIds: [t.id], source: 'try_tomorrow' })
+    expect(task(t.id)).toMatchObject({ try_tomorrow: true, queue_mark: true })
+    runNow('2026-10-20T21:00')
+    expect(task(t.id)).toMatchObject({ due_at: null, try_tomorrow: true })
+    expect(panelOf('2026-10-20T21:05', t.id)).toBe('queue_today')
+    // Wed's rollover: still "Stripped today", the flag kept.
+    roll('2026-10-21T06:30')
+    expect(panelOf('2026-10-21T07:00', t.id)).toBe('queue_today')
+    expect(task(t.id).try_tomorrow).toBe(true)
+    // The rollover after moves it on, as for any strip.
+    roll('2026-10-22T06:30')
+    expect(panelOf('2026-10-22T07:00', t.id)).toBe('queue_previous')
+    expect(task(t.id).try_tomorrow).toBe(false)
+  })
+
+  test('TQ-N02c: a morning run shows in "Stripped today"', () => {
+    const t = makeAt('2026-10-19T08:00', { due_at: at('2026-10-20T07:00') })
+    runNow('2026-10-20T07:30')
+    expect(task(t.id).due_at).toBeNull()
+    expect(panelOf('2026-10-20T07:31', t.id)).toBe('queue_today')
   })
 
   test('TQ-N03: does not touch last_rollover_date; tomorrow’s rollover runs as usual', () => {
@@ -344,7 +374,11 @@ describe('TQ-N: roll over now — undo, events, refusals', () => {
     expect(dispatchWebhookEvent).toHaveBeenCalledWith(
       TEST_USER_ID,
       'task.updated',
-      expect.objectContaining({ previous_due_at: at('2026-10-20T10:00'), source: 'rollover' }),
+      expect.objectContaining({
+        previous_due_at: at('2026-10-20T10:00'),
+        source: 'rollover',
+        manual: true,
+      }),
     )
     const row = getDb()
       .prepare("SELECT metadata FROM activity_log WHERE task_id = ? AND source = 'rollover'")

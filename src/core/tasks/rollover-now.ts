@@ -6,9 +6,7 @@
  * THE SAME RULES AS THE CRON (`applyRollover` in task-rollover.ts — not a
  * copy), with M = now and the day window [now, the next real rollover):
  *   - a below-High one-off with no deadline that is marked, or whose target
- *     is before now, is stripped into the queue (`queued_at` = now, so it
- *     lands in "Stripped today": the panels split on the REAL latest
- *     rollover, and now is at or after it);
+ *     is before now, is stripped into the queue;
  *   - a repeating one rolls to an occurrence before the next real rollover,
  *     or waits for the one after (rule 5, B3); waits due before the next real
  *     rollover are released, as the cron would;
@@ -16,9 +14,22 @@
  *     quotas and archived tasks are untouched.
  * What differs from the cron (`ApplyCtx.manual`): no early-morning-pick
  * spare (a rule about the rollover boundary — this is not one), no Try
- * Tomorrow flag clearing (see `applyRollover` step 4), and
+ * Tomorrow flag clearing (see `applyRollover` step 4),
  * `users.last_rollover_date` is not touched, so tomorrow's rollover runs as
- * usual.
+ * usual — and `queued_at` (below).
+ *
+ * HANDED TO THE NEXT DAY. "End my day now" gives the rows to the coming
+ * OpenTask day, so a strip or a wait stamps `queued_at` = the NEXT real
+ * rollover moment, not now (a FUTURE instant). The panels split on
+ * `queued_at >= latestRollover` (`queueKind`), so the rows show in
+ * "Stripped today" at once AND are still there after the next rollover,
+ * which neither counts them "before M" nor clears their Try Tomorrow flag;
+ * they move to "Previously targeted" the rollover after. With `queued_at` =
+ * now, a 21:00 run's rows would land in "Previously targeted" at 6:30 and
+ * lose the flag. Every other reader only asks whether `queued_at` is set
+ * (`restore-stripped.ts`, the day simulator, `stampTargetSet`); the queue
+ * sorts by `queued_from_due_at`, never `queued_at`; nothing displays it.
+ * `rolled_over_at` stays now (the fence's ordering, below).
  *
  * A USER ACTION, so — unlike the cron — ONE UNDO ENTRY (`task_rollover`)
  * with each changed task's snapshot. The writes stamp `rolled_over_at` = now
@@ -41,6 +52,7 @@ import { createTaskSnapshot, logAction } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { latestRollover, nextRollover } from '@/lib/opentask-day'
 import { getTaskById } from './read'
+import { TARGET_SET_FIELD } from './target-set'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
 import {
@@ -70,7 +82,7 @@ const UNDO_FIELDS = [
   'occurrence_at',
   'original_due_at',
   'skip_count',
-  'target_set_at',
+  TARGET_SET_FIELD,
   'attempts',
   'attempts_counted_through',
   'queue_mark',
@@ -109,7 +121,8 @@ export function runRolloverNow(opts: {
   }
   const ids: RolloverIds = { stripped: [], rolled: [], waiting: [], released: [] }
   const before = new Map<number, Task>()
-  const ctx = { manual: true, collect: { before, ids } }
+  // queued_at = the next real rollover (module doc: HANDED TO THE NEXT DAY).
+  const ctx = { manual: true, collect: { before, ids }, queuedAt: nextM.toISOString() }
 
   let run: UserRun | null = null
   let undoId: number | null = null
@@ -142,7 +155,7 @@ export function runRolloverNow(opts: {
       `${counts.stripped} stripped, ${counts.rolled} rolled, ${counts.waiting} waiting, ` +
       `${counts.released} released`,
   )
-  afterRolloverCommit(user, done)
+  afterRolloverCommit(user, done, true)
   return result
 }
 

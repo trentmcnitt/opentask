@@ -210,11 +210,11 @@ function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): voi
  * open tabs and widgets refresh, webhooks go out. Shared by the cron and the
  * manual run (`runRolloverNow`).
  */
-export function afterRolloverCommit(user: UserRow, run: UserRun): void {
+export function afterRolloverCommit(user: UserRow, run: UserRun, manual = false): void {
   if (run.moved.length > 0) dismissNotificationsForTasks(user.id, run.moved)
   else syncBadgeCount(user.id)
   emitSyncEvent(user.id)
-  dispatchRolloverWebhooks(user, run.hooks)
+  dispatchRolloverWebhooks(user, run.hooks, manual)
 }
 
 /**
@@ -222,8 +222,10 @@ export function afterRolloverCommit(user: UserRow, run: UserRun): void {
  * `task.updated` with `previous_due_at` for each strip, roll, wait and
  * release, and `task.skipped` too where a missed occurrence was passed over
  * (`skipOccurrence`'s event). A Try Tomorrow flag cleared alone sends none.
+ * A manual run (`runRolloverNow`) adds `manual: true` to each payload.
  */
-function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[]): void {
+function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[], manual: boolean): void {
+  const marker = manual ? { manual: true } : {}
   for (const hook of hooks) {
     const fresh = getTaskById(hook.id)
     if (!fresh) continue
@@ -232,8 +234,10 @@ function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[]): void {
       task,
       previous_due_at: hook.previousDueAt,
       source: 'rollover',
+      ...marker,
     })
-    if (hook.skipped) dispatchWebhookEvent(user.id, 'task.skipped', { task, source: 'rollover' })
+    if (hook.skipped)
+      dispatchWebhookEvent(user.id, 'task.skipped', { task, source: 'rollover', ...marker })
   }
 }
 
@@ -262,6 +266,11 @@ export interface ApplyCtx {
   manual: boolean
   /** Each changed task as it was before the write, and the ids by outcome. */
   collect?: { before: Map<number, Task>; ids: RolloverIds }
+  /**
+   * The `queued_at` a strip or a wait stamps (default: now). A manual run
+   * passes the NEXT real rollover moment — see `runRolloverNow`.
+   */
+  queuedAt?: string
 }
 
 const CRON_CTX: ApplyCtx = { manual: false }
@@ -473,7 +482,16 @@ function strip(
               ${TARGET_SET_FIELD} = ?, rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
     )
-    .run(counted.attempts, counted.countedThrough, kept, nowStr, nowStr, nowStr, nowStr, task.id)
+    .run(
+      counted.attempts,
+      counted.countedThrough,
+      kept,
+      ctx.queuedAt ?? nowStr,
+      nowStr,
+      nowStr,
+      nowStr,
+      task.id,
+    )
   logRollover(
     user.id,
     task.id,
@@ -481,7 +499,7 @@ function strip(
     'stripped',
     ['due_at', 'queued_at', 'queued_from_due_at', 'queue_mark', TARGET_SET_FIELD],
     { due_at: task.due_at },
-    { due_at: null, queued_at: nowStr, queued_from_due_at: kept },
+    { due_at: null, queued_at: ctx.queuedAt ?? nowStr, queued_from_due_at: kept },
     { marked: task.queue_mark, ...ctxMeta(ctx) },
   )
 }
@@ -674,7 +692,7 @@ function rollRepeating(
     counted.countedThrough,
     kept,
     target,
-    nowStr,
+    ctx.queuedAt ?? nowStr,
     nowStr,
     nowStr,
     nowStr,
@@ -687,7 +705,7 @@ function rollRepeating(
     'waiting',
     ['due_at', 'queued_at', 'queued_from_due_at', 'queue_mark', TARGET_SET_FIELD],
     { due_at: task.due_at },
-    { due_at: target, queued_at: nowStr, queued_from_due_at: kept },
+    { due_at: target, queued_at: ctx.queuedAt ?? nowStr, queued_from_due_at: kept },
     ctxMeta(ctx),
   )
   return 'waiting'

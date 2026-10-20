@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterAll } from 'vitest'
-import { apiAnon, apiFetch, resetTestData, setTaskQueue } from './helpers'
+import { apiAnon, apiFetch, apiFetchB, resetTestData, setTaskQueue } from './helpers'
 
 const DAY = 24 * 3600 * 1000
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString()
@@ -80,6 +80,27 @@ describe('Task queue: roll over now', () => {
     expect(r.status).toBe(409)
     expect(r.json.code).toBe('CONFLICT')
     expect((await getTask(plain)).due_at).not.toBeNull()
+  })
+
+  test("TQ-I23: only the caller's tasks: another user's past targets survive", async () => {
+    const mine = await make({ title: 'Mine', due_at: daysFromNow(-2) })
+    const res = await apiFetchB('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Theirs', due_at: daysFromNow(-2) },
+    })
+    expect(res.status).toBe(201)
+    const theirs = (await res.json()).data.id
+    const before = (await (await apiFetchB(`/api/tasks/${theirs}`)).json()).data
+
+    const r = await runNow()
+    expect(r.status).toBe(200)
+    expect(r.json.data.ids.stripped).toContain(mine)
+    expect(r.json.data.ids.stripped).not.toContain(theirs)
+
+    const after = (await (await apiFetchB(`/api/tasks/${theirs}`)).json()).data
+    expect(after.due_at).toBe(before.due_at)
+    expect(after.queued_at).toBeNull()
+    expect(after.rolled_over_at).toBeNull()
   })
 
   test('TQ-I22: requires auth', async () => {

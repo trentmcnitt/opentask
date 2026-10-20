@@ -54,13 +54,31 @@ export function runNowTitle(r: RunNowResult): string {
   return r.stripped > 0 ? `Move ${tasks(r.stripped)} to the queue?` : 'Roll over now?'
 }
 
-/** The confirm's detail: the repeating tasks, only the counts that aren't zero. */
-export function runNowDetail(r: RunNowResult): string {
-  const parts: string[] = []
-  if (r.waiting > 0) parts.push(`${r.waiting} repeating wait in the queue for their next time`)
-  if (r.rolled > 0) parts.push(`${r.rolled} repeating move to their next time`)
-  if (r.released > 0) parts.push(`${r.released} repeating come back today`)
-  return parts.length > 0 ? `${parts.join('; ')}.` : ''
+/** "1 repeating task will … its" / "2 repeating tasks will … their". */
+function repeating(n: number): { subject: string; their: string } {
+  return n === 1
+    ? { subject: '1 repeating task', their: 'its' }
+    : { subject: `${n} repeating tasks`, their: 'their' }
+}
+
+/**
+ * The confirm's detail lines: one full sentence per repeating outcome, only
+ * the counts that aren't zero. "There" is the queue the title names; with no
+ * one-offs the title is "Roll over now?", so the line names the queue itself.
+ */
+export function runNowDetail(r: RunNowResult): string[] {
+  const lines: string[] = []
+  if (r.waiting > 0) {
+    const { subject, their } = repeating(r.waiting)
+    const where = r.stripped > 0 ? 'there' : 'in the queue'
+    lines.push(`${subject} will wait ${where} until ${their} next time.`)
+  }
+  if (r.rolled > 0) lines.push(`${repeating(r.rolled).subject} will roll to today's time.`)
+  if (r.released > 0) {
+    const n = r.released
+    lines.push(`${n} waiting repeating ${n === 1 ? 'task comes' : 'tasks come'} back today.`)
+  }
+  return lines
 }
 
 function errorMessage(err: unknown): string {
@@ -131,7 +149,7 @@ export function RolloverNowRow() {
   }
 
   if (!loaded || !enabled) return null
-  const detail = preview ? runNowDetail(preview) : ''
+  const detail = preview ? runNowDetail(preview) : []
   return (
     <>
       <SettingRow
@@ -153,8 +171,12 @@ export function RolloverNowRow() {
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle>{preview ? runNowTitle(preview) : ''}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {detail ? `${detail} ` : ''}You can undo afterward.
+            <AlertDialogDescription data-rollover-now-detail>
+              {[...detail, 'You can undo afterward.'].map((line) => (
+                <span key={line} className="block">
+                  {line}
+                </span>
+              ))}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

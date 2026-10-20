@@ -60,6 +60,12 @@ function sql(statement: string, ...args: unknown[]) {
   }
 }
 
+/** The RRULE weekday of an instant in the user's zone: "MO" … "SU". */
+function weekdayCode(iso: string): string {
+  const day = DateTime.fromISO(iso).setZone(TZ).weekday
+  return ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][day - 1]
+}
+
 const tasks = (n: number) => `${n} ${n === 1 ? 'task' : 'tasks'}`
 const segRow = (scope: Page | Locator, id: number) => scope.locator(`[data-segment-task="${id}"]`)
 
@@ -81,17 +87,37 @@ test('Settings → Roll over now: confirm names the count, Undo puts it back, th
     const a = await create(page, { title: uniqueTitle('RN a'), due_at: daysFromNow(-2) })
     const b = await create(page, { title: uniqueTitle('RN b'), due_at: daysFromNow(-3) })
     const later = await create(page, { title: uniqueTitle('RN later'), due_at: daysFromNow(2) })
-    ids.push(a, b, later)
+    // A weekly task whose last occurrence was four days ago and whose next is
+    // in three: it has no occurrence before the next rollover, so it waits.
+    const weekly = await create(page, {
+      title: uniqueTitle('RN weekly'),
+      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+      due_at: daysFromNow(3),
+    })
+    sql(
+      'UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?',
+      daysFromNow(-4),
+      daysFromNow(-4),
+      weekly,
+    )
+    ids.push(a, b, later, weekly)
 
     const dry = (await (await page.request.post('/api/rollover/run-now?dry_run=1')).json()).data
     expect(dry.ids.stripped).toEqual(expect.arrayContaining([a, b]))
     expect(dry.ids.stripped).not.toContain(later)
+    expect(dry.ids.waiting).toEqual([weekly])
+    expect(dry.rolled + dry.released).toBe(0)
 
     await page.goto('/settings')
     const button = page.locator('[data-rollover-now]')
     await button.click()
     const dialog = page.getByRole('alertdialog')
     await expect(dialog).toContainText(`Move ${tasks(dry.stripped)} to the queue?`)
+    // One full sentence per line: the repeating count, then the undo line.
+    await expect(dialog.locator('[data-rollover-now-detail] > span')).toHaveText([
+      '1 repeating task will wait there until its next time.',
+      'You can undo afterward.',
+    ])
     await dialog.locator('[data-rollover-now-confirm]').click()
     const toast = page.locator('[data-sonner-toast]').filter({ hasText: /to the queue/ })
     await expect(toast).toContainText(`Moved ${tasks(dry.stripped)} to the queue`)
