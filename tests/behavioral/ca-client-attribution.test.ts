@@ -13,6 +13,7 @@ import { NextRequest } from 'next/server'
 import { getDb } from '@/core/db'
 import { createTask } from '@/core/tasks'
 import { bulkSnooze } from '@/core/tasks/bulk'
+import { incrementProgress } from '@/core/tasks/progress'
 import { createApiToken } from '@/core/auth/tokens'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { currentAttribution, runAsSystem, setClientHint } from '@/core/request-context'
@@ -293,5 +294,87 @@ describe('api_tokens.last_used_at', () => {
     const { id } = createApiToken(TEST_USER_ID, 'cli')
     expect(validateBearerToken('x'.repeat(64))).toBeNull()
     expect(lastUsed(id)).toBeNull()
+  })
+})
+
+describe('api_tokens.last_used_at never fails or blocks a request', () => {
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /** Spy on the db's `prepare`, optionally making the last_used_at UPDATE throw. */
+  function spyOnTouch(throwOnUpdate: boolean): () => number {
+    const db = getDb()
+    const original = db.prepare.bind(db)
+    let updates = 0
+    vi.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
+      if (/^\s*UPDATE api_tokens/.test(sql)) {
+        updates++
+        if (throwOnUpdate) throw new Error('database is locked')
+      }
+      return original(sql)
+    }) as typeof db.prepare)
+    return () => updates
+  }
+
+  test('a throwing UPDATE still authenticates', () => {
+    const { raw } = createApiToken(TEST_USER_ID, 'cli')
+    const updates = spyOnTouch(true)
+    expect(validateBearerToken(raw)?.id).toBe(TEST_USER_ID)
+    expect(updates()).toBe(1)
+  })
+
+  test('a fresh last_used_at does no UPDATE at all', () => {
+    const { id, raw } = createApiToken(TEST_USER_ID, 'cli')
+    getDb()
+      .prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?')
+      .run('2026-01-15T15:59:30.000Z', id)
+    const updates = spyOnTouch(false)
+    expect(validateBearerToken(raw)?.id).toBe(TEST_USER_ID)
+    expect(updates()).toBe(0)
+
+    // A minute after the last stamp it writes again.
+    vi.setSystemTime(new Date('2026-01-15T16:00:31Z'))
+    validateBearerToken(raw)
+    expect(updates()).toBe(1)
+  })
+})
+
+describe('quota period rollover rows are system, even inside a request', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  test('a +1 that closes last week: period_rollover is system, the +1 is the client', async () => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z')) // Thursday
+    setupTestDb()
+    const quotaId = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Eggs', rrule: 'FREQ=WEEKLY', progress_target: 2, is_tracked: true },
+    }).id
+    const { raw } = createApiToken(TEST_USER_ID, 'shortcuts')
+
+    vi.setSystemTime(new Date('2026-01-20T16:00:00Z')) // the next Tuesday: last week ended
+    await inRequest({}, () => {
+      validateBearerToken(raw)
+      incrementProgress({ userId: TEST_USER_ID, taskId: quotaId, delta: 1 })
+    })
+
+    const rollover = getDb()
+      .prepare(
+        "SELECT client, token_name FROM activity_log WHERE task_id = ? AND action = 'period_rollover'",
+      )
+      .all(quotaId) as LogRow[]
+    expect(rollover.length).toBeGreaterThan(0)
+    for (const row of rollover) expect(row).toEqual({ client: 'system', token_name: null })
+    expect(lastUndo()).toEqual({ client: 'shortcut', token_name: 'shortcuts' })
   })
 })

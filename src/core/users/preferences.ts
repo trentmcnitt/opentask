@@ -10,7 +10,6 @@
 import { getDb, withTransaction } from '@/core/db'
 import { createLabel, deleteLabel, SYSTEM_LABELS, isReservedLabel } from '@/core/labels'
 import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
-import { runAsSystem } from '@/core/request-context'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { nowUtc } from '@/core/recurrence'
 import type { PriorityDisplayConfig } from '@/types'
@@ -229,12 +228,8 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
     })
   }
 
-  // The rollover closes periods on the system's behalf, as the cron does, so
-  // its activity rows are `system` rather than the client that saved the
-  // preference (client attribution, src/core/request-context.ts).
-  if (changes.week_start !== undefined) {
-    runAsSystem(() => rolloverTrackedPeriods(new Date(), userId))
-  }
+  // Its activity rows are `system` (the rollover runs as the system itself).
+  if (changes.week_start !== undefined) rolloverTrackedPeriods(new Date(), userId)
 
   if (columns.length > 0) emitSyncEvent(userId, { widgets: labelConfigChanged })
 

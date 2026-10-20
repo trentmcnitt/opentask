@@ -56,6 +56,7 @@ import { quotaPeriodUnit, quotaUnitStart } from '@/lib/track'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
+import { runAsSystem } from '@/core/request-context'
 import { coerceWeekStart, quotaPeriodEnd } from '@/lib/week-start'
 
 interface QuotaRow {
@@ -173,8 +174,17 @@ interface QuotaRolloverOutcome {
 /**
  * Anchor or close ONE quota's periods, up to `now` — the body of the cron job,
  * factored out so a progress write can run it for its own task first.
+ *
+ * Always runs as the system (`runAsSystem`): closing a period is the
+ * system's act even when a request sets it off (`rolloverQuotaNow` from a
+ * progress write, a `week_start` change), so its `period_rollover` activity
+ * rows say `system`, never the client of that request.
  */
 function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
+  return runAsSystem(() => rolloverQuotaAsSystem(q, now))
+}
+
+function rolloverQuotaAsSystem(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   const none = { anchored: false, closed: 0 }
   const nowStr = now.toISOString()
   const period = quotaPeriodUnit(q.rrule)
