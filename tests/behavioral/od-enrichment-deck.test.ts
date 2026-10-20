@@ -41,6 +41,7 @@ import {
   enrichSingleTask,
   postProcessTaskDates,
   deckDayAsTarget,
+  saidTomorrowBeforeRollover,
   _resetCircuitBreaker,
   _resetProcessingState,
 } from '@/core/ai/enrichment'
@@ -223,9 +224,58 @@ describe('A4: "tomorrow" said between midnight and the rollover is the coming da
     )
   })
 
-  test('A4 is for the deck only: a timed "tomorrow at 3pm" at 00:30 is unchanged', () => {
+  test('A4 for targets too: "tomorrow at 3pm" at 00:30 → the calendar today, 3 PM', () => {
+    // The model reads the calendar: Wednesday. Or already Tuesday: kept.
     expect(
       pipe('call mom tomorrow at 3pm', { due_at: '2026-10-22T15:00:00' }, { now: AT_0030 }),
+    ).toEqual(target('2026-10-21T15:00:00'))
+    expect(
+      pipe('call mom tomorrow at 3pm', { due_at: '2026-10-21T15:00:00' }, { now: AT_0030 }),
+    ).toEqual(target('2026-10-21T15:00:00'))
+  })
+
+  test('A4 for targets: "tomorrow morning" at 00:30 → this morning', () => {
+    expect(
+      pipe('call the vet tomorrow morning', { due_at: '2026-10-22T09:00:00' }, { now: AT_0030 }),
+    ).toEqual(target('2026-10-21T09:00:00'))
+  })
+
+  test('"tomorrow at 3pm" at 23:30 → the next calendar day, 3 PM', () => {
+    expect(
+      pipe('call mom tomorrow at 3pm', { due_at: '2026-10-21T15:00:00' }, { now: AT_2330 }),
+    ).toEqual(target('2026-10-21T15:00:00'))
+  })
+
+  test('after the rollover (07:00), "tomorrow at 3pm" is the next calendar day', () => {
+    const AT_0700 = new Date('2026-10-21T07:00:00-05:00')
+    expect(
+      pipe('call mom tomorrow at 3pm', { due_at: '2026-10-22T15:00:00' }, { now: AT_0700 }),
+    ).toEqual(target('2026-10-22T15:00:00'))
+  })
+
+  test('A4 never moves a target into the past: "tomorrow at 12:15am" at 00:30 stays', () => {
+    expect(
+      pipe('call mom tomorrow at 12:15am', { due_at: '2026-10-22T00:15:00' }, { now: AT_0030 }),
+    ).toEqual(target('2026-10-22T00:15:00'))
+  })
+
+  test('one window for both: the helper and the deck agree at the rollover minute', () => {
+    const AT_0629 = new Date('2026-10-21T06:29:00-05:00')
+    const AT_0630 = new Date('2026-10-21T06:30:00-05:00')
+    expect(saidTomorrowBeforeRollover('call mom tomorrow', TZ, '06:30', AT_0629)).toBe(true)
+    expect(saidTomorrowBeforeRollover('call mom tomorrow', TZ, '06:30', AT_0630)).toBe(false)
+    expect(saidTomorrowBeforeRollover('call mom', TZ, '06:30', AT_0629)).toBe(false)
+    expect(pipe('call mom tomorrow', { due_at: '2026-10-22' }, { now: AT_0629 })).toEqual(
+      deck('2026-10-21'),
+    )
+    expect(pipe('call mom tomorrow', { due_at: '2026-10-22' }, { now: AT_0630 })).toEqual(
+      deck('2026-10-22'),
+    )
+    expect(
+      pipe('call mom tomorrow at 3pm', { due_at: '2026-10-22T15:00:00' }, { now: AT_0629 }),
+    ).toEqual(target('2026-10-21T15:00:00'))
+    expect(
+      pipe('call mom tomorrow at 3pm', { due_at: '2026-10-22T15:00:00' }, { now: AT_0630 }),
     ).toEqual(target('2026-10-22T15:00:00'))
   })
 })

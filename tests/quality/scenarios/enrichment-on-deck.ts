@@ -209,6 +209,30 @@ export const enrichmentOnDeckScenarios: AITestScenario[] = [
     },
   },
 
+  {
+    id: 'enrich-a4-timed-tomorrow-after-midnight',
+    feature: 'enrichment',
+    description: 'A4 for a target: "tomorrow at 3pm" said at 00:30 → the calendar today at 3 PM',
+    input: input('call the dentist tomorrow at 3pm', at(1, '00:30')),
+    requirements: {
+      must_include: { due_at: `~datetime:${TUE}T15:00`, on_deck_day: null, deadline_at: null },
+      quality_notes:
+        'Now is 12:30 AM on Tuesday — before the rollover, so the user is still in Monday night. "tomorrow at 3pm" means the coming day: due_at Tuesday 3:00 PM (the calendar today), never Wednesday. A time is a target, not on deck. Title "Call the dentist".',
+    },
+  },
+  {
+    id: 'enrich-a4-timed-tomorrow-late-evening',
+    feature: 'enrichment',
+    description:
+      'A4 negative for a target: "tomorrow at 3pm" said at 23:30 → the next calendar day',
+    input: input('call the dentist tomorrow at 3pm', at(0, '23:30')),
+    requirements: {
+      must_include: { due_at: `~datetime:${TUE}T15:00`, on_deck_day: null, deadline_at: null },
+      quality_notes:
+        'Now is Monday 11:30 PM. "tomorrow at 3pm" is Tuesday 3:00 PM. A time is a target, not on deck. Title "Call the dentist".',
+    },
+  },
+
   // -------------------------------------------------------------------------
   // Repeating tasks are unchanged
   // -------------------------------------------------------------------------

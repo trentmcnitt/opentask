@@ -833,7 +833,8 @@ export interface PostProcessOptions {
  * the quality harness both call this, so the two cannot drift:
  * deadline/horizon guard → a day with no time on deck (else the date-only
  * target, `resolveDeckDay`) → bare time → soon today →
- * "now that" drop → "today" on today's local date → same-day past /
+ * "now that" drop → "today" on today's local date → A4's "tomorrow" before
+ * the rollover → same-day past /
  * "tomorrow" → unstated past dates →
  * deadline alignment → unnamed-day pin → a repeat's passed start rolled on.
  */
@@ -850,7 +851,8 @@ export function postProcessTaskDates(
   result = resolveSoonTarget(result, inputText, timezone, now)
   result = dropNowPhraseTarget(result, inputText, timezone, now)
   result = resolveTodayLocalDate(result, inputText, timezone, opts.todayTarget, now)
-  result = resolveSameDayPast(result, inputText, timezone, now)
+  result = resolveEarlyTomorrow(result, inputText, timezone, opts.rolloverTime, now)
+  result = resolveSameDayPast(result, inputText, timezone, now, opts.rolloverTime)
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
   result = pinUnnamedDay(result, inputText, timezone, now)
@@ -1123,8 +1125,7 @@ function timelessDay(
  *   · "tomorrow" said between local midnight and the rollover → the coming
  *     day, the CALENDAR TODAY (A4: at 00:30 the user means "after I sleep");
  *     said after the rollover and dated today → tomorrow (`resolveSameDayPast`).
- *     A4 is for the deck only: a TIMED "tomorrow at 3pm" said at 00:30 keeps
- *     the target rules' reading, unchanged;
+ *     The same window moves a TIMED "tomorrow at 3pm" (`resolveEarlyTomorrow`);
  *   · a bare "this weekend" (not "sometime this weekend", a pace) → today on
  *     a weekend day, else the coming check-in day when that is a weekend day,
  *     else Saturday.
@@ -1166,6 +1167,59 @@ export function resolveDeckDay(
 }
 
 /**
+ * A4 — ONE RULE FOR DECKS AND TARGETS (red team A4; designer 2026-10-20):
+ * "tomorrow" said between local midnight and the user's rollover means the
+ * coming day — the CALENDAR TODAY. At 00:30 on Tuesday the user is still in
+ * Monday night: "tomorrow" is Tuesday, "tomorrow at 3pm" is Tuesday 3 PM.
+ * The window is the same for both (`settleDeckDay` for a deck,
+ * `resolveEarlyTomorrow` for a target), so they can't drift. No rollover
+ * passed (a pure call that doesn't know the user): never.
+ */
+export function saidTomorrowBeforeRollover(
+  inputText: string,
+  timezone: string,
+  rolloverTime: string | undefined,
+  now: Date,
+): boolean {
+  if (!rolloverTime || !TOMORROW_WORD.test(inputText)) return false
+  const today = DateTime.fromJSDate(now).setZone(timezone).toFormat('yyyy-MM-dd')
+  return now.getTime() < rolloverMoment(today, timezone, rolloverTime).getTime()
+}
+
+/**
+ * A4 FOR A TARGET (designer 2026-10-20): a one-off target the model dated on
+ * the CALENDAR tomorrow, from words that say "tomorrow" between midnight and
+ * the rollover (`saidTomorrowBeforeRollover`), moves back one day — "tomorrow
+ * at 3pm" at 00:30 Tuesday → Tuesday 3 PM (the model, reading the calendar,
+ * says Wednesday). A target the model already put on the calendar today is
+ * left alone, and `resolveSameDayPast` does not push it to tomorrow in this
+ * window. Not when the moved time would already have passed ("tomorrow at
+ * 12:15am" said at 00:30 stays the next night's): a target never lands in
+ * the past. Repeating tasks are their rule's business. Runs after
+ * `resolveTodayLocalDate` and before `resolveSameDayPast`, on the model's
+ * LOCAL value. Pure apart from `now`; exported for the harness and tests.
+ */
+export function resolveEarlyTomorrow(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  rolloverTime: string | undefined,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const value = enrichment.due_at
+  if (!value || enrichment.rrule) return enrichment
+  if (!saidTomorrowBeforeRollover(inputText, timezone, rolloverTime, now)) return enrichment
+  const target = parseLocalDateTime(value, timezone)
+  if (!target) return enrichment
+  const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
+  if (!target.hasSame(nowLocal.plus({ days: 1 }), 'day')) return enrichment
+  const moved = target.minus({ days: 1 })
+  if (moved <= nowLocal) return enrichment
+  log.info('ai', 'Enrichment: "tomorrow" said before the rollover — the coming day (A4)')
+  return { ...enrichment, due_at: toLocalIso(moved, value) }
+}
+
+/**
  * The deck day after the fixes `resolveDeckDay` lists ("today" as the only
  * day, A4's "tomorrow", the same-day "tomorrow", a bare "this weekend"), and
  * whether the words name TODAY (which a deck today needs).
@@ -1178,10 +1232,7 @@ function settleDeckDay(
   now: Date,
 ): { deck: DateTime; todayNamed: boolean } {
   const tomorrow = today.plus({ days: 1 })
-  const rollover = opts.rolloverTime
-    ? rolloverMoment(today.toFormat('yyyy-MM-dd'), today.zoneName!, opts.rolloverTime)
-    : null
-  const beforeRollover = rollover !== null && now.getTime() < rollover.getTime()
+  const early = saidTomorrowBeforeRollover(inputText, today.zoneName!, opts.rolloverTime, now)
   const saysTomorrow = TOMORROW_WORD.test(inputText)
   const saysToday = TODAY_CUE.test(inputText)
   const weekendDay =
@@ -1191,15 +1242,15 @@ function settleDeckDay(
 
   let deck = day
   if (saysToday && !OTHER_DAY_WORD.test(inputText)) deck = today
-  else if (saysTomorrow && beforeRollover && +deck === +tomorrow)
+  else if (early && +deck === +tomorrow)
     deck = today // A4
-  else if (saysTomorrow && !beforeRollover && +deck === +today) deck = tomorrow
+  else if (saysTomorrow && !early && +deck === +today) deck = tomorrow
   else if (weekendDay) deck = weekendDay
 
   const todayNamed =
     saysToday ||
     WEEKDAY_WORDS[today.weekday].test(inputText) ||
-    (saysTomorrow && beforeRollover) ||
+    early ||
     (weekendDay !== null && +weekendDay === +today)
   return { deck, todayNamed }
 }
@@ -1789,6 +1840,8 @@ export function resolveSameDayPast(
   inputText: string,
   timezone: string,
   now: Date = new Date(),
+  /** The user's rollover: before it, "tomorrow" IS today (A4), so rule 1 stands down. */
+  rolloverTime?: string,
 ): EnrichmentResult {
   const value = enrichment.due_at
   if (!value || enrichment.rrule || TODAY_WORDS.test(inputText)) return enrichment
@@ -1796,7 +1849,9 @@ export function resolveSameDayPast(
   if (!target) return enrichment
   const nowMinute = DateTime.fromJSDate(now).setZone(timezone).startOf('minute')
   if (!target.hasSame(nowMinute, 'day')) return enrichment
-  const saidTomorrow = TOMORROW_WORD.test(inputText)
+  const saidTomorrow =
+    TOMORROW_WORD.test(inputText) &&
+    !saidTomorrowBeforeRollover(inputText, timezone, rolloverTime, now)
   const passedUnnamed = target < nowMinute && !CLOCK_TIME.test(inputText)
   if (!saidTomorrow && !passedUnnamed) return enrichment
   const next = toLocalIso(target.plus({ days: 1 }), value)
