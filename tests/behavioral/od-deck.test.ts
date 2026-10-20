@@ -398,6 +398,10 @@ describe('OD-W: deckTasks', () => {
     })
     expect(task(repeating.id).on_deck_day).toBeNull()
   })
+})
+
+describe('OD-W: refusals, un-deck, the queue, PATCH, undo', () => {
+  hooks()
 
   test('OD-W07: a past day, someone else’s task, and the switch off are refused whole', () => {
     const t = make()
@@ -708,7 +712,7 @@ describe('OD-RO: the rollover sends an ended deck to the queue', () => {
     expect(onDeckToday(TEST_USER_ID, tz).map((t) => t.id)).toEqual([tomorrow.id])
     // Exactly once: a second call the same OpenTask day does nothing.
     expect(roll('2026-10-21T07:00').deckStripped).toBe(0)
-    // Next day: "Previously targeted".
+    // Next day: "Previously queued".
     roll('2026-10-22T06:30')
     expect(placesOf(low.id)).toEqual(['queue_previous'])
   })
