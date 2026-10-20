@@ -128,6 +128,8 @@ const TASK: Record<keyof FormattedTask, Field> = {
   try_tomorrow: BOOL,
   queued_at: STR_N,
   queued_from_due_at: STR_N,
+  on_deck_day: STR_N,
+  queued_from_deck_day: STR_N,
   rolled_over_at: STR_N,
   attempts_label: STR_N,
   attempts_offer: STR_N,
@@ -476,5 +478,27 @@ describe('contract fixtures: interval quotas', () => {
       .flatMap((g) => g.prompts as unknown as QuotaPrompt[])
       .find((p) => p.title === 'Go for a run')!
     expect(run).toMatchObject({ period_interval: 1, period_label: null })
+  })
+})
+
+describe('contract fixtures: on deck (2026-10-20)', () => {
+  test('a future deck is an Upcoming row (with ?deck=1), every row a segment row with on_deck_day', () => {
+    // `GET /api/reminders?queue=1&deck=1`: a one-off on deck for tomorrow, on
+    // its heads-up day. A plain segment row with `on_deck_day` set and no
+    // target — the native PR draws "On deck …" from it.
+    const segs = data('reminders-deck').task_segments as Obj[]
+    const upcoming = segs.find((s) => s.horizon === 'upcoming') as { tasks: Obj[] }
+    const decked = upcoming.tasks.filter((r) => r.on_deck_day !== null)
+    expect(decked).toHaveLength(1)
+    expect(decked[0]).toMatchObject({ due_at: null, target_at: null, recurring: false })
+    expect(decked[0].on_deck_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    for (const seg of segs) {
+      for (const row of seg.tasks as Obj[]) {
+        const task = Object.fromEntries(
+          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+        )
+        expectShape(task, TASK, `deck fixture task ${row.id}`)
+      }
+    }
   })
 })

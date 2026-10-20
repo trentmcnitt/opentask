@@ -55,7 +55,7 @@ export const JUST_ADDED_WINDOW_MINUTES = 15
 export const JUST_ADDED_WINDOW_MS = JUST_ADDED_WINDOW_MINUTES * 60 * 1000
 
 /** Which event put the task in the card. */
-export type JustAddedKind = 'added' | 'targeted'
+export type JustAddedKind = 'added' | 'targeted' | 'decked'
 
 export interface JustAddedEvent {
   kind: JustAddedKind
@@ -77,7 +77,9 @@ function latestEvent(task: Task): JustAddedEvent | null {
   const created = Date.parse(task.created_at)
   const targeted = task.segment_targeted_at ? Date.parse(task.segment_targeted_at) : NaN
   if (!Number.isNaN(targeted) && (Number.isNaN(created) || targeted > created)) {
-    return { kind: 'targeted', at: targeted }
+    // On deck (D2): a deck stamps the same moment Today does (A7), and the
+    // task still on deck says that is what it was — "On deck", not "Targeted".
+    return { kind: task.on_deck_day ? 'decked' : 'targeted', at: targeted }
   }
   return Number.isNaN(created) ? null : { kind: 'added', at: created }
 }
@@ -164,15 +166,15 @@ export function formatJustAddedAge(task: Task, now: number): string {
   return minutes < 1 ? 'just now' : `${minutes}m ago`
 }
 
-/** The entry's age line: "Added 2m ago", "Targeted just now". */
+/** The entry's age line: "Added 2m ago", "Targeted just now", "On deck 3m ago". */
 export function formatJustAddedLabel(entry: JustAddedEntry, now: number): string {
-  const verb = entry.kind === 'targeted' ? 'Targeted' : 'Added'
+  const verb = { targeted: 'Targeted', decked: 'On deck', added: 'Added' }[entry.kind]
   return `${verb} ${formatJustAddedAge(entry.task, now)}`
 }
 
-/** The tag on the task's real row: "New" for an add, "Targeted" for a targeting. */
+/** The tag on the task's real row: "New" for an add, "Targeted" for a targeting, "On deck" for a deck. */
 export function justAddedTag(task: Task, now: number): string | undefined {
   const event = justAddedEvent(task, now)
   if (!event) return undefined
-  return event.kind === 'targeted' ? 'Targeted' : 'New'
+  return { targeted: 'Targeted', decked: 'On deck', added: 'New' }[event.kind]
 }

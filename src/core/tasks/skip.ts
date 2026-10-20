@@ -33,6 +33,7 @@ import { isTracked } from '@/lib/track'
 import { loadTaskForMutation } from './access'
 import type { Task } from '@/types'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
+import { DECK_CLEAR_SQL } from './deck-clear'
 
 export interface SkipOccurrenceOptions {
   userId: number
@@ -115,7 +116,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         `UPDATE tasks
             SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
                 progress_current = 0, ${TARGET_SET_FIELD} = ?,
-                attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL},
+                attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL},
                 updated_at = ?
           WHERE id = ?`,
       ).run(

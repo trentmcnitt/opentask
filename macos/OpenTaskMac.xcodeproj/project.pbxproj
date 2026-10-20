@@ -190,6 +190,7 @@
 		B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
 		B0B3717E7812E581C8D7C470 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DDB2CAFBB44F5A3830F6C7 /* MacSettingsView.swift */; };
 		B252D549BA90D16F4EB3184A /* WidgetRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903ACB0C682D367B55AA9A1E /* WidgetRenderTests.swift */; };
+		B302F4DC907D17535F4F600E /* reminders-deck.json in Resources */ = {isa = PBXBuildFile; fileRef = C96B2E041EAF0E38730453F4 /* reminders-deck.json */; };
 		B33E4A29D8A2EB85702448E6 /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77660CA27D2B28508DE93F7A /* QuotaCount.swift */; };
 		B52912B70847963A140477AE /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B46ABD580807D58325D969 /* TaskDayProgress.swift */; };
 		B52C7BAC45B80C91ADDAFF1D /* ServerURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F8A73C48D197AA6F7D2CF1A /* ServerURLTests.swift */; };
@@ -415,6 +416,7 @@
 		C8978A06D1EC922FE90F1F98 /* RemindersTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersTimeline.swift; sourceTree = "<group>"; };
 		C92C74F59E9D3BDE167E4172 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C93991B196F33DC054AF3D3C /* Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fixtures.swift; sourceTree = "<group>"; };
+		C96B2E041EAF0E38730453F4 /* reminders-deck.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-deck.json"; sourceTree = "<group>"; };
 		CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-restore.json"; sourceTree = "<group>"; };
 		CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		CF865E3EF02E02F147369E30 /* TargetAgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAgeTests.swift; sourceTree = "<group>"; };
@@ -466,6 +468,7 @@
 				7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */,
 				CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */,
 				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
+				C96B2E041EAF0E38730453F4 /* reminders-deck.json */,
 				37C29187973C3150F91CA3B7 /* reminders-initial.json */,
 				A3976D6271B79475E88E8901 /* reminders-interval.json */,
 				9692247898AD0E30DCD14FCD /* reminders-queue.json */,
@@ -847,6 +850,7 @@
 				CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */,
 				D5CFE82513923A9DD0563FB9 /* quota-prompts-restore.json in Resources */,
 				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,
+				B302F4DC907D17535F4F600E /* reminders-deck.json in Resources */,
 				51E68089F8B7C825FD40F5EB /* reminders-initial.json in Resources */,
 				416BA9F4F61DED457A9F058E /* reminders-interval.json in Resources */,
 				0C23FC92332C00DEA90A64AD /* reminders-queue.json in Resources */,

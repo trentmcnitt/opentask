@@ -110,6 +110,8 @@ export interface TaskRolloverResult {
   released: number
   /** Try Tomorrow flags cleared (the row moved to Previously queued). */
   flagsCleared: number
+  /** On deck (2026-10-20): undone decks whose day ended, sent to the queue (or just cleared). */
+  deckStripped: number
 }
 
 export interface TaskRolloverOptions {
@@ -141,6 +143,7 @@ export function runTaskRollover(opts: TaskRolloverOptions = {}): TaskRolloverRes
     waiting: 0,
     released: 0,
     flagsCleared: 0,
+    deckStripped: 0,
   }
   const sql = 'SELECT id, timezone, morning_time, last_rollover_date FROM users'
   const users = (
@@ -254,6 +257,8 @@ export interface RolloverIds {
   rolled: number[]
   waiting: number[]
   released: number[]
+  /** On deck (2026-10-20): decks whose day ended (`stripDecks`). */
+  deck_stripped: number[]
 }
 
 /**
@@ -338,6 +343,9 @@ export function applyRollover(
     run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: outcome === 'rolled-skip' })
     run.changed = true
   }
+
+  // 5. On deck (2026-10-20): decks whose day has ended go to the queue.
+  if (stripDecks(user, rolloverTime, m, nowStr, ctx, run, result)) run.changed = true
 
   // 4. Try Tomorrow's mark lasts only while the row is in "Queued".
   // Not on a manual run: its M is now, not a rollover, so every queued row
@@ -711,12 +719,98 @@ function rollRepeating(
   return 'waiting'
 }
 
+/**
+ * 5. ON DECK (2026-10-20; docs/TASK-MODEL.md § On deck; red-team B5, A3). An
+ * undone deck whose day has ENDED goes to the queue at EVERY priority — a deck
+ * never nagged, so High and Urgent decks are queued too (A8) — remembering its
+ * day: `queued_from_deck_day` = the day, `on_deck_day` → NULL, `queued_at` as
+ * a strip's (the next real rollover on a manual run), `rolled_over_at` (the
+ * undo fence). `queued_from_due_at` is cleared: the row's remembered plan is
+ * the deck day, so the queue sorts it by that day (`compareQueueRows`) and the
+ * stripped-target restore never resurrects an older target for it. `due_at`
+ * and `target_set_at` are untouched: a deadline deck keeps its automatic
+ * target, and leaves the queue on its own once that target arrives
+ * (`queueKind`). Belt and braces: a deck whose automatic target has ALREADY
+ * arrived (A1 strict keeps this out; only a morning_time before the rollover,
+ * or a hand-written row, can reach it) is nagging on the dashboard: its deck
+ * is just cleared, not queued.
+ *
+ * Which days: the cron strips days BEFORE the rollover's OpenTask day (a deck
+ * for today made at 1 AM, a calendar date, A2, survives the 6:30 rollover);
+ * Roll over now strips days up to AND including the current OpenTask day and
+ * leaves the coming day's (A3).
+ *
+ * Its own pass: the strip pass above needs a target and no deadline
+ * (`ELIGIBLE_SQL`), and a deck has no picked target, so no row meets both.
+ */
+function stripDecks(
+  user: UserRow,
+  rolloverTime: string,
+  m: Date,
+  nowStr: string,
+  ctx: ApplyCtx,
+  run: UserRun,
+  result: TaskRolloverResult,
+): boolean {
+  const db = getDb()
+  const day = openTaskDayOf(m, user.timezone, rolloverTime)
+  const rows = db
+    .prepare(
+      `SELECT ${taskColumns()} FROM tasks
+        WHERE user_id = ? AND on_deck_day IS NOT NULL AND on_deck_day ${ctx.manual ? '<=' : '<'} ?
+          AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
+    )
+    .all(user.id, day) as TaskRow[]
+  const queuedAt = ctx.queuedAt ?? nowStr
+  for (const row of rows) {
+    const task = rowToTask(row)
+    const nagging = task.due_at !== null && Date.parse(task.due_at) <= Date.parse(nowStr)
+    if (nagging) {
+      db.prepare(
+        'UPDATE tasks SET on_deck_day = NULL, rolled_over_at = ?, updated_at = ? WHERE id = ?',
+      ).run(nowStr, nowStr, task.id)
+    } else {
+      db.prepare(
+        `UPDATE tasks
+            SET on_deck_day = NULL, queued_from_deck_day = ?, queued_from_due_at = NULL,
+                queued_at = ?, queue_mark = 0, try_tomorrow = 0,
+                rolled_over_at = ?, updated_at = ?
+          WHERE id = ?`,
+      ).run(task.on_deck_day, queuedAt, nowStr, nowStr, task.id)
+    }
+    logRollover(
+      user.id,
+      task.id,
+      task.title,
+      nagging ? 'deck_cleared' : 'deck_stripped',
+      nagging ? ['on_deck_day'] : ['on_deck_day', 'queued_at', 'queued_from_deck_day'],
+      { on_deck_day: task.on_deck_day },
+      nagging
+        ? { on_deck_day: null }
+        : { on_deck_day: null, queued_at: queuedAt, queued_from_deck_day: task.on_deck_day },
+      ctxMeta(ctx),
+    )
+    ctx.collect?.before.set(task.id, task)
+    ctx.collect?.ids.deck_stripped.push(task.id)
+    run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: false })
+    result.deckStripped++
+  }
+  return rows.length > 0
+}
+
 /** One activity row per changed task, `source: 'rollover'`. */
 function logRollover(
   userId: number,
   taskId: number,
   title: string,
-  outcome: 'stripped' | 'rolled' | 'waiting' | 'released' | 'try_tomorrow_cleared',
+  outcome:
+    | 'stripped'
+    | 'rolled'
+    | 'waiting'
+    | 'released'
+    | 'try_tomorrow_cleared'
+    | 'deck_stripped'
+    | 'deck_cleared',
   fields: string[],
   before: Partial<Task>,
   after: Partial<Task> = {},

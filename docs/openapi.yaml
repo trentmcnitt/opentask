@@ -1101,6 +1101,90 @@ paths:
 
   # --- Bulk Operations ---
 
+  /api/tasks/deck:
+    post:
+      summary: Put tasks on deck for a day, or take them off
+      operationId: deckTasks
+      tags: [Tasks]
+      description: >
+        ON DECK (2026-10-20): a target's DAY without its nag — "I'd like to get to this that
+        day". `day` is the caller's local CALENDAR date (yyyy-MM-dd), today or later; omitted =
+        today (between midnight and the rollover that is the coming calendar day, not the
+        OpenTask day); `null` takes the tasks off deck. One-off tasks only: repeating tasks,
+        reminders, quotas, done and trashed tasks are skipped and counted, never refusing the
+        batch. A task carries a picked target or a deck, never both: decking drops a picked
+        target (time and all); a deadline task keeps its automatic target. A deadline task can
+        be decked only while its automatic target is still ahead and only on a day BEFORE that
+        target's day — otherwise it is refused per task (`deadline_nagging`,
+        `after_auto_target`). Decking takes a task out of the task queue, stamps
+        `target_set_at` (the Upcoming heads-up anchor; only when the day changes),
+        `last_considered_at` and `segment_targeted_at`, and cancels a pending AI enrichment. A deck never nags (no over target, no badge, no Snooze-all); a
+        future deck shows in Upcoming on its heads-up days (`GET /api/reminders?deck=1`); at the
+        rollover an undone deck whose day has ended goes to the task queue at every priority
+        (`queued_from_deck_day`). Any later target the user picks (PATCH, snooze, Today,
+        enrichment) clears the deck; a deadline change or Back to auto does not — unless the
+        deadline's automatic target then reminds on or before the deck day (or already has):
+        the deadline wins and the deck is cleared in the same write. One undo
+        entry (`deck`). An id that is not one of the caller's own tasks is a 400. 409 when the
+        server's task queue (`OPENTASK_TASK_QUEUE`) is off.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+                  minItems: 1
+                  maxItems: 500
+                day:
+                  type: [string, 'null']
+                  format: date
+                  description: The local calendar date; omitted = today; null = take off deck.
+      responses:
+        '200':
+          description: What was decked, skipped and refused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      day:
+                        type: [string, 'null']
+                        format: date
+                      decked: { type: integer }
+                      undecked: { type: integer }
+                      skipped_recurring: { type: integer }
+                      skipped_reminder: { type: integer }
+                      skipped_quota: { type: integer }
+                      skipped_done: { type: integer }
+                      skipped_trashed: { type: integer }
+                      refused:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            reason:
+                              type: string
+                              enum: [deadline_nagging, after_auto_target]
+                      summary:
+                        type: string
+                        description: One line for a toast ("3 tasks on deck for tomorrow · 1 repeating skipped").
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The task queue is off on this server
   /api/tasks/bulk/done:
     post:
       summary: Mark multiple tasks done
@@ -1467,6 +1551,10 @@ paths:
                     horizon:
                       type: [string, 'null']
                       enum: [days, weeks, months, eventually, null]
+                    on_deck_day:
+                      type: [string, 'null']
+                      format: date
+                      description: On deck for this local calendar date, or off deck (`null`) — see TaskUpdate. Sent alone (no date fields in the same changes, and no `delta_minutes`).
                     deadline_nag_off:
                       type: boolean
                       deprecated: true
@@ -1907,6 +1995,9 @@ paths:
                       rolled: { type: integer }
                       waiting: { type: integer }
                       released: { type: integer }
+                      deck_stripped:
+                        type: integer
+                        description: Undone decks for days up to the current OpenTask day, sent to the queue (the coming day's stay).
                       ids:
                         type: object
                         properties:
@@ -1914,6 +2005,7 @@ paths:
                           rolled: { type: array, items: { type: integer } }
                           waiting: { type: array, items: { type: integer } }
                           released: { type: array, items: { type: integer } }
+                          deck_stripped: { type: array, items: { type: integer } }
                       dry_run: { type: boolean }
                       undo_id:
                         type: [integer, 'null']
@@ -2141,6 +2233,17 @@ paths:
             `1`: this client shows the task queue's panels (`queue_today`,
             `queue_previous` in `task_segments`). The web sends it. Omitted:
             queued tasks are left out of `task_segments`.
+        - name: deck
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1` (On deck, 2026-10-20): this client draws a future deck's Upcoming row (a task
+            with `on_deck_day` set and no target; "On deck Sat Oct 24"), on the heads-up days a
+            picked target would get. Omitted: a decked task is in no segment at all (a client
+            that predates decks would draw a dateless row). A deck is never in a horizon segment.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -5180,6 +5283,17 @@ components:
           type: [string, 'null']
           format: date-time
           description: When the task queue's rollover last changed the task (stripped its target, rolled or queued a repeating task). Undo of an action from before it leaves the task as the rollover left it. Server-set.
+        on_deck_day:
+          type: [string, 'null']
+          format: date
+          description: >
+            On deck (2026-10-20): the owner's local calendar date the task is on deck for — a
+            day with no nag. Never together with a picked target. Null = not on deck. Set with
+            `POST /api/tasks/deck` or PATCH `on_deck_day`.
+        queued_from_deck_day:
+          type: [string, 'null']
+          format: date
+          description: The deck day the rollover remembered when it sent the undone deck to the task queue. Server-set.
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -5342,6 +5456,16 @@ components:
           type: [string, 'null']
           format: date-time
           description: The target (primary name). `due_at` is accepted as its deprecated alias; sending both with different values is a 400.
+        on_deck_day:
+          type: [string, 'null']
+          format: date
+          description: >
+            On deck (2026-10-20): create the task on deck for this local calendar date — the
+            same checks as `POST /api/tasks/deck`: a one-off only, today or later, and with a
+            `deadline_at` in the same body only on a day before its automatic target's day
+            (else 400). With `target_at` / `due_at` it is a 400 (a task is on deck or has a
+            target). A deck counts as structured input: the task is not sent for AI
+            enrichment. 409 when the server's task queue is off.
         deadline_at:
           type: [string, 'null']
           format: date-time
@@ -5577,6 +5701,18 @@ components:
           type: boolean
           description: >
             Keep the current horizon (an unset horizon stays unset) and stamp `growth_kept_at` = now, so Process asks to grow it again only one threshold period later (ruling Q7, 2026-10-12; it used to restart `horizon_set_at`). Process's "keep" answer to a growth ask. Ignored when the same request changes `horizon`. Also accepted in bulk edit `changes`.
+        on_deck_day:
+          type: [string, 'null']
+          format: date
+          description: >
+            On deck (2026-10-20): put the task on deck for this local calendar date (today or
+            later), or take it off (`null`) — the same rules as `POST /api/tasks/deck`, but an
+            ineligible task (repeating, a reminder, a quota, done) or a refused deadline task is
+            a 400. With `target_at` / `due_at` in the same body it is a 400 (a task is on deck or
+            has a target); a `deadline_at` may come with it — one write, one undo entry, the
+            deadline rule judged against that new deadline. A new deck day marks the task
+            considered (as the deck endpoint does); taking it off stamps nothing. Also accepted in bulk edit `changes`. 409 (putting on deck) when
+            the server's task queue is off.
         allow_past_deadline:
           type: boolean
           deprecated: true
@@ -5915,6 +6051,7 @@ components:
             - quota_prompt
             - task_segment
             - task_rollover
+            - deck
         description:
           type: [string, 'null']
         tasks_affected:

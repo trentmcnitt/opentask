@@ -4,6 +4,8 @@ import { targetReset, type HorizonValue } from '@/lib/task-segments'
 import { HorizonPicker } from '@/components/HorizonDot'
 import { BACK_TO_AUTO, TARGET_WORD } from '@/lib/task-model-words'
 import { TaskModelFields } from '@/components/TaskModelFields'
+import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
+import { deckLimit } from '@/lib/deck-menu'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Repeat,
@@ -138,6 +140,8 @@ export interface QuickActionPanelChanges {
   /** Task model (2026-10-10). Single-task only. */
   deadline_at?: string | null
   horizon?: HorizonValue | null
+  /** On deck (D2): a yyyy-MM-dd day, or null = off deck. Single-task only. */
+  on_deck_day?: string | null
 }
 
 export interface QuickActionPanelProps {
@@ -211,6 +215,7 @@ type DirtyField =
   | 'notes'
   | 'deadline'
   | 'horizon'
+  | 'deck'
 
 /**
  * The fields that make create mode dirty (besides the title, which is compared
@@ -385,6 +390,8 @@ export function QuickActionPanel({
   // Task model (2026-10-10): undefined = no change, null = clear.
   const [pendingDeadline, setPendingDeadline] = useState<string | null | undefined>(undefined)
   const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
+  // On deck (D2, `OnDeckLine`): undefined = no change, null = off deck, else a day.
+  const [pendingDeck, setPendingDeck] = useState<string | null | undefined>(undefined)
 
   // Single task mode hook. A repeating task waiting in the task queue
   // (2026-10-20, `queuedRepeatOccurrence`, with the queue switch on) has no
@@ -532,6 +539,7 @@ export function QuickActionPanel({
     notes: pendingNotes !== undefined,
     deadline: pendingDeadline !== undefined,
     horizon: pendingHorizon !== undefined,
+    deck: pendingDeck !== undefined,
   }
   // Edit mode: any staged field at all.
   const hasPendingChanges = Object.values(fieldDirty).some(Boolean)
@@ -597,8 +605,12 @@ export function QuickActionPanel({
 
   // The target line's "no target" state: a target staged for removal, or none
   // stored and none picked.
+  // ON DECK (D2, rule 1): a deck staged with no target staged after it
+  // (`deckShadowed`) drops a picked target on Save, so the line shows it gone.
+  const deckShadowed = isDateDirty || pendingDueAtCleared
+  const deckStaged = typeof pendingDeck === 'string' && !deckShadowed
   const showsNoTarget =
-    pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null)
+    pendingDueAtCleared || deckStaged || (allNoDueDate && !isDateDirty && pendingDueAt === null)
 
   // A DEADLINE ALWAYS HAS A VISIBLE TARGET (§8, 2026-10-12): the target line
   // labels a deadline's automatic target "auto · Tue, Oct 20, 9:00 AM (3 days
@@ -609,7 +621,11 @@ export function QuickActionPanel({
       ? { label: null, staged: false }
       : stagedAutoTarget(
           effectiveTask,
-          { pendingDeadline, targetCleared: pendingDueAtCleared, datePicked: isDateDirty },
+          {
+            pendingDeadline,
+            targetCleared: pendingDueAtCleared || deckStaged,
+            datePicked: isDateDirty,
+          },
           timezone,
         )
   // The … menu's target reset (§8.3, ruling Q9): "Remove target", "Back to
@@ -647,6 +663,41 @@ export function QuickActionPanel({
   const applyIncrement = isBulkMode ? bulkHook.applyIncrement : singleHook.applyIncrement
   const reset = isBulkMode ? bulkHook.reset : singleHook.reset
   const workingDate = singleHook.workingDate
+
+  // ON DECK (D2): staging a deck drops a staged target (rule 1 — a task has
+  // one or the other); a target staged after it wins (`deckShadowed`).
+  const showDeckLine =
+    queueEnabled &&
+    !isBulkMode &&
+    !isCreateMode &&
+    !isReminderLike &&
+    !displayRrule &&
+    !!effectiveTask &&
+    !effectiveTask.done
+  // A deck staged while the line is shown, then hidden (a recurrence or the
+  // Reminder toggle staged after it): the deck goes too — never sent for a
+  // task that can't be on deck (adjusted during render, not in an effect).
+  if (!showDeckLine && pendingDeck !== undefined) setPendingDeck(undefined)
+  // `clearTarget`: the deck wins over a staged target (a tap on the line, or
+  // the hold menu's stored day, after a target was staged — review #3).
+  const stageDeck = useCallback(
+    (day: string | null | undefined, clearTarget: boolean) => {
+      if (clearTarget) {
+        setPendingDueAt(null)
+        setPendingDueAtCleared(false)
+        setPendingDatePicked(false)
+        reset()
+      }
+      setPendingDeck(day)
+    },
+    [reset],
+  )
+  // The hold menu's A1 limit from a STAGED deadline (`deckLimit`); with none
+  // staged, the button works it out from the task.
+  const stagedDeckLimit =
+    pendingDeadline !== undefined && effectiveTask
+      ? deckLimit({ deadline_at: pendingDeadline, due_at: null }, timezone)
+      : undefined
 
   // Handler for smart buttons (Now, Next Hour)
   const handleSmartButton = useCallback(
@@ -842,12 +893,20 @@ export function QuickActionPanel({
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     if (pendingDeadline !== undefined) changes.deadline_at = pendingDeadline
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
+    // On deck (D2): unless a target staged after it overrides it — the pick
+    // takes the task off deck on the server (`deck-clear.ts`).
+    if (showDeckLine && pendingDeck !== undefined && !isDateDirty && !pendingDueAtCleared) {
+      changes.on_deck_day = pendingDeck
+    }
     // A cleared target on a task with a deadline is "Back to auto" (§8.3): the
     // server puts the deadline's automatic target back. Nothing extra to send.
     return changes
   }, [
     pendingDeadline,
     pendingHorizon,
+    pendingDeck,
+    showDeckLine,
+    isDateDirty,
     pendingTitle,
     editingTitle,
     titleDraft,
@@ -890,6 +949,7 @@ export function QuickActionPanel({
     setNotesExpanded(false)
     setPendingDeadline(undefined)
     setPendingHorizon(undefined)
+    setPendingDeck(undefined)
   }, [])
 
   // Create mode handler: collects all staged fields + title, calls onCreate, then resets.
@@ -1284,7 +1344,9 @@ export function QuickActionPanel({
                 <span
                   className={cn(
                     'font-medium',
-                    pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
+                    pendingDueAtCleared || (deckStaged && !allNoDueDate)
+                      ? 'text-blue-500'
+                      : 'text-muted-foreground',
                   )}
                 >
                   No target
@@ -1380,6 +1442,18 @@ export function QuickActionPanel({
               emptyAnchor={
                 displayRrule ? (pendingDueAt ?? effectiveTask?.due_at ?? workingDate) : null
               }
+            />
+          )}
+          {/* ON DECK (D2, spec rule 8): one-offs only (rule 6), one task at a
+              time, with the task queue on. */}
+          {showDeckLine && effectiveTask && (
+            <OnDeckLine
+              task={effectiveTask}
+              timezone={timezone}
+              staged={pendingDeck}
+              shadowed={deckShadowed}
+              limit={stagedDeckLimit}
+              onStage={stageDeck}
             />
           )}
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}

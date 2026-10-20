@@ -39,6 +39,8 @@ import { BACK_TO_AUTO } from '@/lib/task-model-words'
 import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/lib/row-corner'
 import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
+import { OnDeckButton } from '@/components/OnDeckButton'
+import { offersDeck } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
@@ -108,6 +110,19 @@ interface TaskRowProps {
    * menu. Without it the row has no Today button.
    */
   onTargetAt?: (task: Task, at?: string) => void
+  /**
+   * On deck (D2, 2026-10-20, the hover On deck beside Today): `day`
+   * undefined = today, a yyyy-MM-dd day, null = take off deck. Without it, or
+   * with the task queue off, the row has no On deck button.
+   */
+  onDeck?: (task: Task, day: string | null | undefined) => void
+  /**
+   * A row of Now's On deck section (D2 review, phone-first): its On deck
+   * (active chip) and Today are always shown, on touch too — not hover-only — so a
+   * deck can be taken off, or targeted, from a phone. Other rows keep the
+   * mouse-only hover controls.
+   */
+  dayControlsOnTouch?: boolean
   isOverdue?: boolean
   isSelected?: boolean
   isSelectionMode?: boolean
@@ -225,6 +240,8 @@ export function TaskRow({
   onRemoveTarget,
   onSetHorizon,
   onTargetAt,
+  onDeck,
+  dayControlsOnTouch = false,
   isOverdue,
   isSelected = false,
   isSelectionMode = false,
@@ -422,11 +439,15 @@ export function TaskRow({
   // the row selects.
   const timeControl = !isSelectionMode && !tracked && task.due_at !== null && !queuedOccurrence
   const showToday = !isSelectionMode && !!onTargetAt && offersTargetToday(task)
+  // On deck (spec rule 8) beside Today — the queue switch on, the same rows
+  // as Today plus any task already on deck (its active button takes it off).
+  const showDeck = !isSelectionMode && !!onDeck && queue.loaded && queue.enabled && offersDeck(task)
   const cornerPresent = corner.dot || corner.attempts >= 1 || corner.priority !== null
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
   const hasIndicators =
+    insightsScore !== undefined ||
     !!task.rrule ||
     task.auto_snooze_minutes !== null ||
     !!(task.notes && task.notes.trim()) ||
@@ -650,6 +671,24 @@ export function TaskRow({
               </span>
             )}
 
+            {/* The AI score (2026-10-20, Trent): a chip on this meta line, next
+                to the notes mark — the label chips' shape — not a column in
+                the card's right gutter. Shown only when scores are on, as
+                before (the caller passes it then). */}
+            {insightsScore !== undefined && (
+              <Badge
+                data-tour="task-score"
+                data-task-score={insightsScore}
+                className={cn(
+                  'border-0 px-1.5 py-0 text-xs font-semibold tabular-nums',
+                  getScoreColor(insightsScore),
+                )}
+                title={`AI attention score: ${insightsScore}/100`}
+              >
+                {insightsScore}
+              </Badge>
+            )}
+
             {hasLabels && (
               <LabelBadges
                 labels={task.labels}
@@ -715,20 +754,6 @@ export function TaskRow({
         )}
       </div>
 
-      {/* Insights score badge */}
-      {insightsScore !== undefined && (
-        <span
-          data-tour="task-score"
-          className={cn(
-            'flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
-            getScoreColor(insightsScore),
-          )}
-          title={`AI attention score: ${insightsScore}/100`}
-        >
-          {insightsScore}
-        </span>
-      )}
-
       {/* The hover buttons, Today and Snooze (hidden in selection mode, and
           on a phone — swipe and the row's own gestures cover both there).
           Under a corner they sit 7px lower (`mt-3.5` on a centred item), so
@@ -736,21 +761,39 @@ export function TaskRow({
       {!isSelectionMode && (
         <div
           className={cn(
-            'hidden shrink-0 items-center gap-1 md:flex pointer-fine:flex',
+            'shrink-0 items-center gap-1',
+            dayControlsOnTouch ? 'flex' : 'hidden md:flex pointer-fine:flex',
             cornerPresent && 'mt-3.5',
           )}
         >
-          {/* TODAY (2026-10-14): on an untargeted row, the segment rows' own
+          {/* ON DECK (D2): Today's twin, left of it — tap decks it for
+              today (or, active, takes today's deck off), hold picks the day.
+              TODAY (2026-10-14): on an untargeted row, the segment rows' own
               Today (`TargetTodayButton`) — a tap targets it today, a hold or
-              a right-click opens the Target menu. Mouse only: a finger has
+              a right-click opens the Target menu. Mouse only, except in Now's
+              On deck section (`dayControlsOnTouch`): elsewhere a finger has
               the row's swipe and editor. */}
+          {showDeck && (
+            <OnDeckButton
+              task={task}
+              timezone={timezone}
+              onDeck={(t, day) => onDeck?.(t, day)}
+              className={dayControlClasses(
+                dayControlsOnTouch,
+                // A deck stays visible while it is set: the active chip is
+                // the row's only sign of it.
+                !!task.on_deck_day,
+              )}
+              iconClassName="size-4"
+            />
+          )}
           {showToday && (
             <TargetTodayButton
               task={task}
               timezone={timezone}
               onTargetToday={(t) => onTargetAt?.(t)}
               onTargetAt={(t, at) => onTargetAt?.(t, at)}
-              className="hidden size-9 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-fine:flex"
+              className={dayControlClasses(dayControlsOnTouch, false)}
               iconClassName="size-4"
             />
           )}
@@ -790,6 +833,19 @@ export function TaskRow({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The hover On deck / Today buttons' classes: mouse-only and shown on hover
+ * (or when `visible`); with `onTouch` (Now's On deck section) always shown,
+ * with a finger-sized target on a coarse pointer.
+ */
+function dayControlClasses(onTouch: boolean, visible: boolean): string {
+  if (onTouch) return 'flex size-9 pointer-coarse:size-11'
+  return cn(
+    'hidden size-9 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-fine:flex',
+    visible ? 'opacity-100' : 'opacity-0',
   )
 }
 

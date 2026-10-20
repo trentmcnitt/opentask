@@ -31,6 +31,7 @@ import { snoozeTask } from '@/core/tasks/snooze'
 import { getTaskById } from '@/core/tasks/read'
 import { getDb } from '@/core/db'
 import { targetTasksToday } from '@/core/tasks/task-segments'
+import { deckTasks } from '@/core/tasks/deck'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
 import { segmentState, upcomingState, hasPickedTarget } from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
@@ -559,5 +560,161 @@ describe('TM-INV: the rollover over a random list', () => {
     // The list really exercised the rollover.
     expect(checked).toBeGreaterThan(100)
     expect(stripped).toBeGreaterThan(5)
+  }, 30_000)
+})
+
+/**
+ * ON DECK (2026-10-20): a random list with random decks, un-decks, picks,
+ * deadline writes, Back to auto and sweeps, and a rollover every morning.
+ * After every write and on every day:
+ *  - a deck and a PICKED target never coexist (rule 1, the B1 clear);
+ *  - a deck is never queued, never in a horizon segment, and never on a
+ *    repeating task, a reminder or a quota;
+ *  - a deck NEVER nags (A1 strict, review 10-20): no undone deck's target
+ *    has arrived — a pick clears it, and a deadline that would remind on or
+ *    before its day wins (the rollover strips a deck at 06:30, before the
+ *    09:00 morning an automatic target starts at);
+ *  - after a rollover no undone deck is older than the OpenTask day.
+ */
+describe('TM-INV: on deck over a random list', () => {
+  afterAll(() => teardownTestDb())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  test('TM-INV-07: a deck and a picked target never coexist; a deck never nags', () => {
+    const SEED7 = SEED + 7
+    const DAYS = 21
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setupTestDb()
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, 'Morning', '06:30', 0)",
+    ).run(TEST_USER_ID)
+    db.prepare("UPDATE users SET last_rollover_date = '2026-10-19' WHERE id = ?").run(TEST_USER_ID)
+    const start = DateTime.fromISO('2026-10-20T00:00', { zone: tz })
+    const { events, r } = randomList(SEED7, start)
+    let ids: Record<string, number> = {}
+    let decked = 0
+    const check = (label: string) => {
+      for (const id of Object.values(ids)) {
+        const task = getTaskById(id)!
+        if (!task.on_deck_day) continue
+        const l = `seed ${SEED7} ${label} task ${id}`
+        expect(hasPickedTarget(task), `${l}: deck + picked target`).toBe(false)
+        expect(task.queued_at, `${l}: deck + queued`).toBeNull()
+        expect(task.rrule, `${l}: repeating deck`).toBeNull()
+        expect(segmentState(task, tz, new Date()), `${l}: deck in a segment`).toBeNull()
+        if (!task.done) {
+          const arrived = task.due_at !== null && Date.parse(task.due_at) <= Date.now()
+          expect(arrived, `${l}: a deck nags`).toBe(false)
+        }
+      }
+    }
+    const writes: ((id: number, at: DateTime) => void)[] = [
+      (id, at) => {
+        const day = at.plus({ days: Math.floor(r() * 6) }).toISODate()!
+        try {
+          deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day })
+          decked++
+        } catch {
+          // A deck refused whole (a past day can't happen; nothing else throws per task).
+        }
+      },
+      (id) => deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day: null }),
+      (id, at) =>
+        updateTask({
+          ...u,
+          taskId: id,
+          input: {
+            due_at: at
+              .plus({ hours: 1 + Math.floor(r() * 72) })
+              .toUTC()
+              .toISO()!,
+          },
+        }),
+      (id, at) =>
+        updateTask({
+          ...u,
+          taskId: id,
+          input: {
+            deadline_at: at
+              .plus({ days: 2 + Math.floor(r() * 20) })
+              .toUTC()
+              .toISO()!,
+          },
+        }),
+      (id) => updateTask({ ...u, taskId: id, input: { due_at: null } }),
+      (id, at) =>
+        bulkSnooze({
+          ...u,
+          taskIds: [id],
+          until: at.plus({ hours: 3 }).toUTC().toISO()!,
+          source: 'sweep',
+        }),
+      (id) => targetTasksToday(TEST_USER_ID, tz, [id]),
+    ]
+    for (let m = 0; m < 200; m++) {
+      const at = start.plus({ minutes: Math.floor(r() * DAYS * 24 * 60) })
+      const which = Math.floor(r() * 40)
+      const write = writes[Math.floor(r() * writes.length)]
+      events.push({
+        at: at.toFormat("yyyy-MM-dd'T'HH:mm"),
+        run: (ctx) => {
+          const id = ctx.ids[`t${which}`]
+          const task = id ? getTaskById(id) : null
+          if (!task || task.done || task.rrule) return
+          write(id, at)
+          check(at.toISO()!)
+        },
+      })
+    }
+    // Half a minute after each rollover: no deck older than the new OpenTask day.
+    for (let d = 0; d < DAYS; d++) {
+      const day = start.plus({ days: d })
+      events.push({
+        at: day.set({ hour: 6, minute: 30, second: 30 }).toISO()!,
+        run: () => {
+          for (const id of Object.values(ids)) {
+            const task = getTaskById(id)!
+            if (task.on_deck_day && !task.done) {
+              expect(task.on_deck_day >= day.toISODate()!, `${day.toISODate()} task ${id}`).toBe(
+                true,
+              )
+            }
+          }
+        },
+      })
+    }
+    const days = simulateDays({
+      userId: TEST_USER_ID,
+      timezone: tz,
+      from: start.toISODate()!,
+      days: DAYS,
+      at: '21:00',
+      policy: ['tap'],
+      rollover: true,
+      events: events.map((e) => ({
+        ...e,
+        run: (ctx) => {
+          ids = ctx.ids
+          e.run(ctx)
+        },
+      })),
+      taskIds: () => Object.values(ids),
+      setClock: (dt) => vi.setSystemTime(dt),
+    })
+    for (const day of days) {
+      for (const t of day.tasks) {
+        const label = `seed ${SEED7} ${day.date} task ${t.id}`
+        // On deck today is a place of its own: never with a segment or Upcoming.
+        if (t.places.includes('deck')) {
+          const other = t.places.filter((p) => p !== 'deck' && p !== 'over' && p !== 'done')
+          expect(other, label).toEqual([])
+        }
+      }
+    }
+    expect(decked).toBeGreaterThan(10)
   }, 30_000)
 })

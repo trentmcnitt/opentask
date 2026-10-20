@@ -259,6 +259,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- snapshot of this task from an entry written before it
   -- (src/core/undo/rollover-fence.ts). No target write clears it.
   rolled_over_at TEXT DEFAULT NULL,
+  -- ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): the owner's local
+  -- CALENDAR date (yyyy-MM-dd) the task is on deck for — "I'd like to get to
+  -- this that day", a day with no nag. Never together with a picked target
+  -- (src/core/tasks/deck-clear.ts). queued_from_deck_day: the deck day the
+  -- rollover remembered when it sent an undone deck to the queue.
+  on_deck_day TEXT DEFAULT NULL,
+  queued_from_deck_day TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

@@ -308,6 +308,8 @@ export async function sendApnsSummaryNotification(
  *   the checklist lists both kinds, so the total is the number it will show).
  *   The name predates quota prompts and is kept so shipped builds read it.
  * - `prompt_count` — how many of those are quota prompts (informational)
+ * - `deck_count` — today's undone on-deck tasks (On deck, 2026-10-20;
+ *   informational, NOT in `reminder_count`: the checklist never lists them)
  *
  * `collapseId` is per-slot, so a later push for the same slot REPLACES the
  * earlier one rather than stacking: the slot's banner always shows the current
@@ -325,6 +327,12 @@ export interface ApnsSlotReminderPayload {
    * server has prompts switched off. Defaults to 0.
    */
   promptCount?: number
+  /**
+   * On deck (2026-10-20, A12): today's undone decks. Appended to the DEFAULT
+   * body only ("3 reminders waiting · 5 on deck"; the nag passes its own body
+   * and no count) and sent as `deck_count` — never in `reminder_count`.
+   */
+  deckCount?: number
   /**
    * Alert body override. Defaults to `slotWaitingBody(count, promptCount)`.
    *
@@ -352,12 +360,18 @@ export function slotWaitingBody(reminders: number, prompts = 0): string {
   return `${parts.join(' · ')} waiting`
 }
 
+/** "· N on deck" after a slot's body, when N > 0 (On deck, A12). */
+export function withDeckCount(body: string, decks: number): string {
+  return decks > 0 ? `${body} · ${decks} on deck` : body
+}
+
 export async function sendApnsSlotReminder(
   userId: number,
   payload: ApnsSlotReminderPayload,
 ): Promise<void> {
   const prompts = payload.promptCount ?? 0
-  const body = payload.body ?? slotWaitingBody(payload.count, prompts)
+  const decks = payload.deckCount ?? 0
+  const body = payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)
 
   await sendToAllDevices(
     userId,
@@ -374,6 +388,7 @@ export async function sendApnsSlotReminder(
           slot_label: payload.slotLabel,
           reminder_count: payload.count + prompts,
           prompt_count: prompts,
+          deck_count: decks,
         },
         aps: {
           // Reminders carry no debt (§6) — they must never interrupt like an

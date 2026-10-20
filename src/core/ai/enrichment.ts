@@ -53,6 +53,7 @@ import {
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { runAsSystem } from '@/core/request-context'
 import { stampTargetSet } from '@/core/tasks/target-set'
+import { collectDeckClear } from '@/core/tasks/deck-clear'
 import { getTargetContext } from '@/core/tasks/target-context'
 import { resolveTarget } from '@/lib/task-segments'
 import { log } from '@/lib/logger'
@@ -2228,6 +2229,7 @@ function collectEnrichmentTarget(
   const deadlineAt = changes.fieldsChanged.includes('deadline_at')
     ? (enrichment.deadline_at ?? null)
     : task.deadline_at
+  const targetCtx = getTargetContext(opts.userId)
   const resolved = resolveTarget(
     {
       dueAt: opts.proposedDue ?? task.due_at,
@@ -2237,7 +2239,7 @@ function collectEnrichmentTarget(
       deadlineChanged: deadlineAt !== task.deadline_at,
       autoEligible: !rrule && !task.is_reminder && !opts.tracked,
     },
-    getTargetContext(opts.userId),
+    targetCtx,
   )
   if (resolved.dueAt !== task.due_at) {
     changes.setClauses.push('due_at = ?')
@@ -2249,6 +2251,23 @@ function collectEnrichmentTarget(
     changes.values.push(resolved.auto ? 1 : 0)
     changes.fieldsChanged.push('target_auto')
   }
+  // On deck (2026-10-20, B1): a target the AI set is a pick, and a pick takes
+  // the deck off (rule 1); a deadline it found leaves an automatic target, and
+  // the deck stays (`deck-clear.ts`).
+  collectDeckClear(changes, task, {
+    dueAt: resolved.dueAt,
+    auto: resolved.auto,
+    rrule: rrule ?? null,
+    isReminder: task.is_reminder,
+    isTracked: opts.tracked,
+    // A deadline it found that reminds on or before the deck day wins (A1).
+    deadline: {
+      at: deadlineAt,
+      changed: deadlineAt !== task.deadline_at,
+      ctx: targetCtx,
+      now: new Date(),
+    },
+  })
   // A repeating task's date set here is its occurrence (a schedule, not a move).
   const occurrenceAt = rrule && !opts.tracked && opts.proposedDue ? opts.proposedDue : undefined
   if (occurrenceAt !== undefined && occurrenceAt !== task.occurrence_at) {
@@ -2340,6 +2359,8 @@ const INTERNAL_FIELDS = [
   'queue_mark',
   'try_tomorrow',
   'queued_at',
+  // On deck (2026-10-20): a target the AI set takes the task off deck.
+  'on_deck_day',
 ]
 
 /**

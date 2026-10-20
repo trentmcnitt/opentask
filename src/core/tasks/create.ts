@@ -4,7 +4,15 @@
 
 import { TARGET_SET_FIELD } from './target-set'
 import { getTargetContext } from './target-context'
-import { resolveTarget, type TargetContext } from '@/lib/task-segments'
+import {
+  DECK_REFUSAL_MESSAGES,
+  deckDayProblem,
+  deckRefusal,
+  deckSkip,
+  resolveTarget,
+  type TargetContext,
+} from '@/lib/task-segments'
+import { taskQueueEnabled } from './task-queue'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -22,7 +30,7 @@ import { getInboxId } from '@/core/projects'
 import { syncBadgeCount } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { AppError, NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import {
   QUOTA_DUE_DATE_MESSAGE,
   QUOTA_INTERVAL_MESSAGE,
@@ -181,10 +189,15 @@ export function createTask(options: CreateTaskOptions): Task {
     !input.labels?.length &&
     !input.rrule &&
     !input.deadline_at &&
-    !input.horizon
+    !input.horizon &&
+    // A deck is the caller's own plan (On deck, 2026-10-20): enrichment must
+    // not land a target on it (a target would take it straight off deck).
+    !input.on_deck_day
 
   const targetCtx = getTargetContext(userId)
   const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone)
+  const onDeckDay = input.on_deck_day ?? null
+  if (onDeckDay) assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx)
 
   let dueAt = tracked
     ? null
@@ -264,8 +277,8 @@ export function createTask(options: CreateTaskOptions): Task {
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
-        target_auto, occurrence_at, progress_period_start, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        target_auto, occurrence_at, progress_period_start, on_deck_day, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -306,6 +319,8 @@ export function createTask(options: CreateTaskOptions): Task {
         // made — this unit's start, in the owner's clock — not lazily by the
         // rollover's first pass (`quotaAnchorNow`).
         tracked ? quotaAnchorNow(userId, rrule) : null,
+        // On deck (2026-10-20): checked by `assertCreateDeck` above.
+        onDeckDay,
         now,
         now,
       )
@@ -330,6 +345,7 @@ export function createTask(options: CreateTaskOptions): Task {
         'due_at',
         'deadline_at',
         'horizon',
+        'on_deck_day',
         'rrule',
         'priority',
         'labels',
@@ -363,6 +379,45 @@ export function createTask(options: CreateTaskOptions): Task {
   })
 
   return createdTask
+}
+
+/**
+ * CREATE ON DECK (2026-10-20; docs/TASK-MODEL.md § On deck) — the same checks
+ * as a deck write (`prepareDeck` in collect-field-changes.ts), on the row
+ * being made: the task queue switch (409 off), never with a target (the
+ * schema refuses it too), one-offs only, a calendar day today or later, and
+ * the A1 rule against a deadline sent in the same body (its automatic target,
+ * computed now, must be ahead and on a later day than the deck).
+ */
+function assertCreateDeck(
+  input: TaskCreateInput,
+  day: string,
+  rrule: string | null | undefined,
+  tracked: boolean,
+  ctx: TargetContext,
+): void {
+  if (!taskQueueEnabled()) {
+    throw new AppError('On deck needs the task queue, which is off on this server', 409, 'CONFLICT')
+  }
+  if (input.due_at) {
+    throw new ValidationError('A task is on deck or has a target, not both')
+  }
+  const skip = deckSkip({
+    rrule: rrule ?? null,
+    is_reminder: !!input.is_reminder,
+    is_tracked: tracked,
+  })
+  if (skip) throw new ValidationError(`Only a one-off task can go on deck (this is ${skip})`)
+  const now = new Date()
+  const problem = deckDayProblem(day, ctx.timezone, now)
+  if (problem) throw new ValidationError(problem)
+  const refusal = deckRefusal(
+    { due_at: null, deadline_at: input.deadline_at ?? null, target_auto: false },
+    day,
+    ctx,
+    now,
+  )
+  if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
 }
 
 /**

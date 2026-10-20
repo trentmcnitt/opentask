@@ -11,6 +11,7 @@ import {
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
+import { deckToastMessage, sendDeck } from '@/lib/deck-request'
 import type { Task } from '@/types'
 
 /**
@@ -44,6 +45,13 @@ import type { Task } from '@/types'
  *   its horizon segment (ticked there today); a waiting repeating task stays
  * - the details icon (resolution 10) → `openDetails`: the Quick panel for
  *   that task (`SegmentDetailsModal`, which each surface renders)
+ * - On deck (D2, 2026-10-20) → `POST /api/tasks/deck`: a tap decks it for
+ *   today, or takes a today's deck off (A10); a hold picks the day. The row
+ *   leaves at once, like Today: today's deck is in the dashboard's On deck
+ *   section, a later one in Upcoming (on its heads-up days), an un-decked one
+ *   back in its horizon segment. A refusal (A1) comes back as a 200 with
+ *   nothing changed: the row comes back and the toast says why
+ *   (`src/lib/deck-request.ts`)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
  *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
  */
@@ -222,7 +230,9 @@ export function useTaskSegments({
   const [detailsTask, setDetailsTask] = useState<Task | null>(null)
 
   const removeTarget = useRemoveTarget(run)
+  const deck = useDeck(setOverlay, inFlight, timezone, onUndo, refresh, onCompleted)
   const actions = {
+    deck,
     consider,
     considerAll,
     done,
@@ -306,6 +316,54 @@ type RunSegmentAction = (
   send: () => Promise<unknown>,
   message: string,
 ) => Promise<void>
+
+/**
+ * On deck (D2): like `run`, optimistic — the row leaves — but the answer
+ * decides: a deck write that changed nothing (an A1 refusal, a skipped kind)
+ * puts the row back and toasts the server's reason as an error.
+ */
+function useDeck(
+  setOverlay: React.Dispatch<React.SetStateAction<Map<number, Overlay>>>,
+  inFlight: { current: number },
+  timezone: string,
+  onUndo: () => void,
+  refresh: () => Promise<void>,
+  onCompleted?: () => void,
+) {
+  return useCallback(
+    async (task: Task, day: string | null | undefined) => {
+      const putBack = () =>
+        setOverlay((prev) => {
+          const next = new Map(prev)
+          next.delete(task.id)
+          return next
+        })
+      setOverlay((prev) => new Map(prev).set(task.id, 'gone'))
+      inFlight.current++
+      try {
+        const result = await sendDeck([task.id], day)
+        const message = deckToastMessage(result, task.title, timezone)
+        if (message) {
+          toastResult(message, onUndo)
+          onCompleted?.()
+        } else {
+          putBack()
+          showToast({ message: result.summary, type: 'error' })
+        }
+      } catch (err) {
+        putBack()
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Something went wrong',
+          type: 'error',
+        })
+      } finally {
+        inFlight.current--
+        void refresh()
+      }
+    },
+    [setOverlay, inFlight, timezone, onUndo, refresh, onCompleted],
+  )
+}
 
 /**
  * Remove target / Back to auto (2026-10-12, `targetReset`): the same PATCH
