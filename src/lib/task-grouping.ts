@@ -16,7 +16,13 @@ import { effectiveHorizon, HORIZON_ORDER } from '@/lib/task-segments'
 import { isOverdue } from '@/lib/task-counts'
 import type { LabelColor, Project, Task } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
-import { splitNow, type NowOptions, type NowSplit } from '@/lib/now-view'
+import {
+  deckSectionOrder,
+  inDeckSection,
+  splitNow,
+  type NowOptions,
+  type NowSplit,
+} from '@/lib/now-view'
 
 /**
  * The sort options for a task list. Default directions (reversed flips them;
@@ -159,7 +165,14 @@ export interface TaskGroup {
   color?: LabelColor | null
   /** The project's id, on project groups — what Now's fold state is keyed by. */
   projectId?: number
+  /** Now's On deck section (`withDeckSection`), not a project. */
+  deck?: boolean
 }
+
+/** The On deck section's group label — its collapse key, never a project's name. */
+export const DECK_GROUP_LABEL = '_on_deck'
+/** Its heading. */
+export const DECK_GROUP_TITLE = 'On deck'
 
 /**
  * Now (`'project'`): one group per project that has open tasks, in the order
@@ -264,7 +277,38 @@ export function applyNowFolds(
   now: Date,
   opts: NowOptions = {},
 ): SortedTaskGroup[] {
-  return groups.map((g) => ({ ...g, now: splitNow(g.sortedTasks, timezone, now, opts) }))
+  return groups.map((g) =>
+    g.deck ? g : { ...g, now: splitNow(g.sortedTasks, timezone, now, opts) },
+  )
+}
+
+/**
+ * NOW'S ON DECK SECTION (D2; `inDeckSection` in src/lib/now-view.ts): today's
+ * decks come OUT of their project groups — out of the rows and the fold
+ * alike, so no task is drawn twice (one row id, one place in the keyboard
+ * order) — into one group after the projects, sorted priority then id. A
+ * project left with nothing is dropped, like any project with no open tasks.
+ * No decks: the groups unchanged, and no section (no empty chrome). Applied
+ * before `applyNowFolds`, only while Now's folds are on.
+ */
+export function withDeckSection(
+  groups: SortedTaskGroup[],
+  timezone: string,
+  now: Date,
+): SortedTaskGroup[] {
+  const decks: Task[] = []
+  const projects: SortedTaskGroup[] = []
+  for (const g of groups) {
+    const keep = (t: Task) => !inDeckSection(t, timezone, now)
+    const rest = g.tasks.filter(keep)
+    decks.push(...g.tasks.filter((t) => !keep(t)))
+    if (rest.length === g.tasks.length) projects.push(g)
+    else if (rest.length > 0)
+      projects.push({ ...g, tasks: rest, sortedTasks: g.sortedTasks.filter(keep) })
+  }
+  if (decks.length === 0) return groups
+  const sorted = [...decks].sort(deckSectionOrder)
+  return [...projects, { label: DECK_GROUP_LABEL, deck: true, tasks: sorted, sortedTasks: sorted }]
 }
 
 /**

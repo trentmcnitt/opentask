@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { TargetTodayButton } from '@/components/TargetMenu'
+import { OnDeckButton } from '@/components/OnDeckButton'
+import { offersDeck } from '@/lib/deck-menu'
 import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
@@ -326,7 +328,9 @@ export function TaskSegmentRow({
 }
 
 /**
- * The row's right side: horizon dot, "Today", and the done square.
+ * The row's right side: horizon dot, "On deck", "Today", and the done square
+ * — pencil · On deck · Today · checkbox with the queue on (spec rule 8; both
+ * act in one tap, for rapid-fire passes).
  *
  * On an UPCOMING row (2026-10-12) there is no horizon dot — a targeted task's
  * horizon decides nothing until the target is removed (spec §1).
@@ -420,6 +424,13 @@ function TaskSegmentRowActions({
           />
         )
       )}
+      <SegmentDeckSlot
+        row={row}
+        actions={actions}
+        timezone={timezone}
+        panel={panel}
+        queueUi={queueUi}
+      />
       {showToday && (
         <TargetTodayButton
           task={task}
@@ -465,6 +476,44 @@ function TaskSegmentRowActions({
         />
       </button>
     </div>
+  )
+}
+
+/**
+ * ON DECK (D2, spec rule 8) on a segment row: between the details icon and
+ * Today, with the task queue on — one-offs only (rule 6; an Upcoming
+ * repeating row has none, B9), never beside a target the user picked (rule
+ * 1). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
+ * dead space belongs between Today and the done square only. While the
+ * preferences load, its place is kept empty (as the details icon's is).
+ */
+function SegmentDeckSlot({
+  row,
+  actions,
+  timezone,
+  panel,
+  queueUi,
+}: {
+  row: SegmentRow
+  actions: TaskSegmentActions
+  timezone: string
+  panel: boolean
+  queueUi: 'on' | 'off' | 'pending'
+}) {
+  if (queueUi === 'off' || row.recurring || !offersDeck(row.task)) return null
+  if (queueUi === 'pending') return <span aria-hidden className="-my-3 h-11 min-w-11 shrink-0" />
+  return (
+    <OnDeckButton
+      task={row.task}
+      timezone={timezone}
+      onDeck={(t, day) => void actions.deck(t, day)}
+      showLabel
+      className="-my-3 h-11 min-w-11"
+      boxClassName={
+        panel ? `${HOVER_BOX.panel} min-w-6.5 sm:px-1.5` : `${HOVER_BOX.page} min-w-8 sm:px-2`
+      }
+      iconClassName={panel ? 'size-[18px]' : 'size-[22px]'}
+    />
   )
 }
 

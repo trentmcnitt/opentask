@@ -16,6 +16,8 @@ import { saveTaskChanges } from '@/lib/save-task-changes'
 import { targetWhen } from '@/hooks/useTaskSegments'
 import { useTimezone } from '@/hooks/useTimezone'
 import { DateTime } from 'luxon'
+import { deckToastMessage, sendDeck } from '@/lib/deck-request'
+import { calendarToday } from '@/lib/task-segments'
 
 /**
  * Shared task action handlers used by the dashboard and the task detail page.
@@ -106,6 +108,55 @@ function useHandleTargetAt(
       } catch (err) {
         cfg.onRefresh()
         showSaveError(err)
+      }
+    },
+    [configRef, bumpUndoCount, handleUndoRef],
+  )
+}
+
+/**
+ * On deck (D2, 2026-10-20, the dashboard row's hover On deck beside Today):
+ * `day` undefined = today, a yyyy-MM-dd day, or null = take off deck
+ * (`OnDeckButton`). OPTIMISTIC, so a deck for today moves the row into Now's
+ * On deck section at once (and an un-deck back out); the refresh is the
+ * truth. A write that changed nothing (an A1 refusal) comes back as a 200:
+ * the refresh puts the row back and the toast gives the server's reason
+ * (`src/lib/deck-request.ts`). List mode only.
+ */
+function useHandleDeck(
+  configRef: MutableRefObject<UseTaskActionsConfig>,
+  bumpUndoCount: () => void,
+  handleUndoRef: MutableRefObject<(() => Promise<void>) | null>,
+) {
+  const timezone = useTimezone()
+  const timezoneRef = useRef(timezone)
+  useEffect(() => {
+    timezoneRef.current = timezone
+  })
+  return useCallback(
+    async (task: Task, day: string | null | undefined) => {
+      const cfg = configRef.current
+      if (cfg.mode !== 'list') return
+      const zone = timezoneRef.current
+      const next = day === undefined ? calendarToday(zone, new Date()) : day
+      cfg.setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, on_deck_day: next } : t)))
+      try {
+        const result = await sendDeck([task.id], day)
+        const message = deckToastMessage(result, task.title, zone)
+        if (!message) {
+          showToast({ message: result.summary, type: 'error' })
+          return
+        }
+        bumpUndoCount()
+        showToast({
+          message,
+          type: 'success',
+          action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+        })
+      } catch (err) {
+        showSaveError(err)
+      } finally {
+        cfg.onRefresh()
       }
     },
     [configRef, bumpUndoCount, handleUndoRef],
@@ -209,6 +260,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
   )
 
   const handleTargetAt = useHandleTargetAt(configRef, bumpUndoCount, handleUndoRef)
+  const handleDeck = useHandleDeck(configRef, bumpUndoCount, handleUndoRef)
 
   const handleSaveAllChangesList = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
@@ -276,6 +328,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       handleDone: handleDoneList,
       handleSnooze,
       handleTargetAt,
+      handleDeck,
       handleSaveAllChanges: handleSaveAllChangesList,
     }
   }
@@ -296,6 +349,7 @@ export type ListTaskActionsReturn = {
   handleDone: (taskId: number) => Promise<void>
   handleSnooze: (taskId: number, until: string) => Promise<void>
   handleTargetAt: (task: Task, at?: string) => Promise<void>
+  handleDeck: (task: Task, day: string | null | undefined) => Promise<void>
   handleSaveAllChanges: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   undoCount: number
   redoCount: number

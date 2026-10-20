@@ -39,6 +39,8 @@ import { BACK_TO_AUTO } from '@/lib/task-model-words'
 import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/lib/row-corner'
 import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
+import { OnDeckButton } from '@/components/OnDeckButton'
+import { offersDeck } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
@@ -108,6 +110,12 @@ interface TaskRowProps {
    * menu. Without it the row has no Today button.
    */
   onTargetAt?: (task: Task, at?: string) => void
+  /**
+   * On deck (D2, 2026-10-20, the hover On deck beside Today): `day`
+   * undefined = today, a yyyy-MM-dd day, null = take off deck. Without it, or
+   * with the task queue off, the row has no On deck button.
+   */
+  onDeck?: (task: Task, day: string | null | undefined) => void
   isOverdue?: boolean
   isSelected?: boolean
   isSelectionMode?: boolean
@@ -225,6 +233,7 @@ export function TaskRow({
   onRemoveTarget,
   onSetHorizon,
   onTargetAt,
+  onDeck,
   isOverdue,
   isSelected = false,
   isSelectionMode = false,
@@ -422,6 +431,9 @@ export function TaskRow({
   // the row selects.
   const timeControl = !isSelectionMode && !tracked && task.due_at !== null && !queuedOccurrence
   const showToday = !isSelectionMode && !!onTargetAt && offersTargetToday(task)
+  // On deck (spec rule 8) beside Today — the queue switch on, the same rows
+  // as Today plus any task already on deck (its filled button takes it off).
+  const showDeck = !isSelectionMode && !!onDeck && queue.loaded && queue.enabled && offersDeck(task)
   const cornerPresent = corner.dot || corner.attempts >= 1 || corner.priority !== null
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
@@ -744,6 +756,22 @@ export function TaskRow({
               Today (`TargetTodayButton`) — a tap targets it today, a hold or
               a right-click opens the Target menu. Mouse only: a finger has
               the row's swipe and editor. */}
+          {/* ON DECK (D2): Today's twin, left of it — tap decks it for
+              today (or, filled, takes today's deck off), hold picks the day. */}
+          {showDeck && (
+            <OnDeckButton
+              task={task}
+              timezone={timezone}
+              onDeck={(t, day) => onDeck?.(t, day)}
+              className={cn(
+                'hidden size-9 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-fine:flex',
+                // A deck stays visible while it is set: the filled mark is
+                // the row's only sign of it.
+                task.on_deck_day ? 'opacity-100' : 'opacity-0',
+              )}
+              iconClassName="size-4"
+            />
+          )}
           {showToday && (
             <TargetTodayButton
               task={task}

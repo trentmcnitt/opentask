@@ -12,11 +12,12 @@ import {
   nowFoldKey,
   orderedTaskIds,
   sortTaskGroups,
+  withDeckSection,
   type SortOption,
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
 import { useNowFolds } from '@/hooks/useNowFolds'
-import { isRelevantNow } from '@/lib/now-view'
+import { inDeckSection, isRelevantNow } from '@/lib/now-view'
 import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
 import type { GroupingMode } from '@/lib/grouping'
 import { resolveTaskLink, missingTaskMessage } from '@/lib/task-link'
@@ -1150,20 +1151,28 @@ function HomeContent({
   // list — search, filter chips, the AI filter or signal chips: the user
   // asked for exactly those rows, and a match behind "+ N more" would read
   // as no match (see `src/lib/now-view.ts`).
+  const taskQueue = useTaskQueue()
   const listNarrowed =
     !!searchQuery ||
     activeFilterCount > 0 ||
     (aiMode !== 'off' && (aiFilterActive || selectedSignals.length > 0))
   const nowAvailable = grouping === 'project' && !listNarrowed
   // The task queue switch: with it on, a queued undated High folds (A8).
-  const queueOn = useTaskQueue().enabled
+  const queueOn = taskQueue.enabled
+  // Now's On deck section (D2, `withDeckSection`): today's decks, with the
+  // task queue on — part of what Now shows, so part of its count.
+  const deckSection = nowAvailable && queueOn
   // "N of M now": the rows relevant now, out of the whole list.
   const nowRelevantCount = useMemo(
     () =>
       nowAvailable
-        ? tasks_.filter((t) => isRelevantNow(t, timezone, now, { queue: queueOn })).length
+        ? tasks_.filter(
+            (t) =>
+              (deckSection && inDeckSection(t, timezone, now)) ||
+              isRelevantNow(t, timezone, now, { queue: queueOn }),
+          ).length
         : 0,
-    [nowAvailable, tasks_, timezone, now, queueOn],
+    [nowAvailable, deckSection, tasks_, timezone, now, queueOn],
   )
   // Something is folded. When nothing is (every row relevant, or no rows),
   // there is no fold to lift: the strip hides, and Show all — which would
@@ -1179,8 +1188,20 @@ function HomeContent({
   const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
   const sortedGroups = useMemo(() => {
     const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
-    return nowFolds ? applyNowFolds(sorted, timezone, now, { queue: queueOn }) : sorted
-  }, [taskGroups, listSort, listReversed, listScoreMap, nowFolds, timezone, now, queueOn])
+    if (!nowFolds) return sorted
+    const withDecks = deckSection ? withDeckSection(sorted, timezone, now) : sorted
+    return applyNowFolds(withDecks, timezone, now, { queue: queueOn })
+  }, [
+    taskGroups,
+    listSort,
+    listReversed,
+    listScoreMap,
+    nowFolds,
+    deckSection,
+    timezone,
+    now,
+    queueOn,
+  ])
   const orderedIds = useMemo(
     () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),
     [sortedGroups, isCollapsed, isFoldOpen],
@@ -2454,6 +2475,7 @@ function DashboardView({
               void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
             }
             onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
+            onDeck={(task, day) => void actions.handleDeck(task, day)}
             onLabelClick={onToggleLabel}
             onTaskFocus={onTaskFocus}
             keyboardFocusedId={keyboardFocusedId}

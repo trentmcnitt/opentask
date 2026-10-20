@@ -52,7 +52,7 @@
  */
 import type { Task } from '@/types'
 import { isOverdue } from '@/lib/task-counts'
-import { targetIsToday, upcomingState } from '@/lib/task-segments'
+import { deckIsToday, targetIsToday, upcomingState } from '@/lib/task-segments'
 
 /** High (3) and Urgent (4): the priorities an undated task needs to be relevant now. */
 export const NOW_PRIORITY_MIN = 3
@@ -118,4 +118,23 @@ export function splitNow(
     else more.push(task)
   }
   return { relevant, more }
+}
+
+/**
+ * NOW'S ON DECK SECTION (D2, 2026-10-20; spec rule 9, red-team A13): the
+ * tasks it holds — on deck for today, or an earlier day the rollover has not
+ * stripped yet (A2) — except one already over target (a deadline's automatic
+ * target arrived, A1), which nags and so stays in its project's relevant
+ * rows, as the server's `onDeckToday` leaves it out. Below the project groups,
+ * sorted priority then id (`deckSectionOrder`). Only while Now's folds are on
+ * (with Show all, a search or a filter, decks are ordinary rows in their
+ * project), and only with the task queue on.
+ */
+export function inDeckSection(task: Task, timezone: string, now: Date): boolean {
+  return deckIsToday(task, timezone, now) && !isOverdue(task, now)
+}
+
+/** The On deck section's order: priority, highest first, then id (A13). */
+export function deckSectionOrder(a: Task, b: Task): number {
+  return (b.priority ?? 0) - (a.priority ?? 0) || a.id - b.id
 }

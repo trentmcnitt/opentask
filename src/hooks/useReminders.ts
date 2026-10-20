@@ -169,8 +169,10 @@ export interface UseRemindersReturn {
  * The web shows the task queue's panels (task-queue PR 3), so it opts in to
  * them (`?queue=1`); without it the server leaves queued tasks out of
  * `task_segments` altogether, for native builds that predate the queue.
+ * It draws a future deck's Upcoming row ("On deck Sat Oct 24", On deck D2)
+ * too (`?deck=1`); without it a decked task is left out of Upcoming.
  */
-const REMINDERS_URL = '/api/reminders?queue=1'
+const REMINDERS_URL = '/api/reminders?queue=1&deck=1'
 
 export interface ReminderCreateInput {
   title: string

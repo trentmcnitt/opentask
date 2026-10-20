@@ -19,6 +19,7 @@ import type { GroupingMode } from '@/lib/grouping'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
 import {
+  DECK_GROUP_TITLE,
   isFlatGrouping,
   nowFoldKey,
   shownGroupTasks,
@@ -98,6 +99,8 @@ interface TaskListProps {
    */
   onSetHorizon?: (task: Task, horizon: HorizonValue | null) => void
   onTargetAt?: (task: Task, at?: string) => void
+  /** The rows' hover On deck (D2) — `actions.handleDeck`. */
+  onDeck?: (task: Task, day: string | null | undefined) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -222,6 +225,7 @@ export function TaskList({
   onRemoveTarget,
   onSetHorizon,
   onTargetAt,
+  onDeck,
   onLabelClick,
   onTaskFocus,
   keyboardFocusedId,
@@ -430,6 +434,7 @@ export function TaskList({
           onRemoveTarget={onRemoveTarget}
           onSetHorizon={onSetHorizon}
           onTargetAt={onTargetAt}
+          onDeck={onDeck}
           // `isOverdue` is the Tasks page's one definition (the
           // top bar's pills use it too). §5: it never counts a
           // quota — its period is what is "due", and the bar
@@ -544,7 +549,7 @@ export function TaskList({
           // reachable while the list still reads at a glance. Project groups
           // preview at the user's `project_preview_count` while Now's folds
           // are lifted; the flat lists and Now's own rows show everything.
-          const previewed = !isFlat && !nowSplit
+          const previewed = isPreviewed(group, isFlat)
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
             previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : shownTasks
@@ -554,7 +559,12 @@ export function TaskList({
             // `data-task-group` + `scroll-below-header`: the dashboard's
             // overdue/today jump scrolls the FIRST of these to just under the
             // top bar (`useJumpToTaskList`).
-            <section key={group.label} data-task-group className="scroll-below-header">
+            <section
+              key={group.label}
+              data-task-group
+              data-deck-section={group.deck ? '' : undefined}
+              className="scroll-below-header"
+            >
               {/* Skip group header in unified mode — all tasks render in a single flat list */}
               {!isFlat && (
                 <div
@@ -565,7 +575,7 @@ export function TaskList({
                       type="button"
                       onClick={() => toggleCollapse(group.label)}
                       aria-expanded={!collapsed}
-                      aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
+                      aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${groupTitle(group)}`}
                       className="text-muted-foreground hover:text-foreground -mr-1.5 flex items-center justify-center p-0.5 transition-colors"
                     >
                       <ChevronDown
@@ -602,26 +612,7 @@ export function TaskList({
                       }}
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
-                      {/* A PROJECT heading is a tag in its project's color
-                          (2026-09-23, option C of four rendered: "I lose
-                          track of what color is for what"). The same tinted
-                          pair labels use, so it reads the same in light and
-                          dark. A project with no color, and Today's slot
-                          headings, keep the plain heading. */}
-                      {group.color ? (
-                        <span
-                          data-project-heading-tag
-                          className={cn(
-                            'rounded-md px-2 py-0.5',
-                            LABEL_COLORS[group.color].bg,
-                            LABEL_COLORS[group.color].text,
-                          )}
-                        >
-                          {group.label}
-                        </span>
-                      ) : (
-                        group.label
-                      )}
+                      <GroupHeadingText group={group} />
                       <GroupCount total={group.tasks.length} nowSplit={nowSplit} />
                     </button>
                   </div>
@@ -666,6 +657,43 @@ export function TaskList({
       </div>
       <SnoozeGuardDialog {...dialogProps} />
     </div>
+  )
+}
+
+/**
+ * Whether a group is capped at the preview count: project groups with Now's
+ * folds lifted only — not the flat lists, not Now's own rows, and not Now's
+ * On deck section (D2, `withDeckSection`).
+ */
+function isPreviewed(group: SortedTaskGroup, isFlat: boolean): boolean {
+  return !isFlat && !group.now && !group.deck
+}
+
+/** A group's name on screen: the project's, or "On deck" for Now's deck section. */
+function groupTitle(group: SortedTaskGroup): string {
+  return group.deck ? DECK_GROUP_TITLE : group.label
+}
+
+/**
+ * A group heading's words. A PROJECT heading is a tag in its project's color
+ * (2026-09-23, option C of four rendered: "I lose track of what color is for
+ * what"). The same tinted pair labels use, so it reads the same in light and
+ * dark. A project with no color keeps the plain heading, and so does Now's
+ * On deck section (D2, spec rule 9 — a section, not a project).
+ */
+function GroupHeadingText({ group }: { group: SortedTaskGroup }) {
+  if (!group.color) return <>{groupTitle(group)}</>
+  return (
+    <span
+      data-project-heading-tag
+      className={cn(
+        'rounded-md px-2 py-0.5',
+        LABEL_COLORS[group.color].bg,
+        LABEL_COLORS[group.color].text,
+      )}
+    >
+      {group.label}
+    </span>
   )
 }
 
