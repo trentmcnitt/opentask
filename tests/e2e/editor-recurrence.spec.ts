@@ -58,8 +58,11 @@ test.describe('Task editor sheet on a phone', () => {
         const line = sheet.locator('[data-quick-panel-recurrence]')
         await expect(line).toHaveText('Target Sundays at 9:00 AM')
         await expect(line).toHaveAttribute('aria-expanded', 'false')
-        // The button names its action, not the task's state.
-        const repeat = sheet.getByRole('button', { name: 'Edit recurrence', exact: true })
+        // The button names its action, led by the rule it has (2026-10-20).
+        const repeat = sheet.getByRole('button', {
+          name: 'Repeats: Sundays at 9:00 AM · Edit recurrence',
+          exact: true,
+        })
         await expect(repeat).toBeVisible()
 
         await line.tap()
@@ -185,6 +188,35 @@ test.describe('Task editor sheet on a phone', () => {
       })
     } finally {
       await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+  test('the Repeat button reads active on a repeating task, plain on a one-off', async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent, 2026-10-20: the button looked the same either way. A rule is a
+    // blue tint (not the solid toggle fill ruled out 10-12) and leads its label.
+    const repeating = await createTask(page, { title: uniqueTitle('Rep on'), rrule: WEEKLY })
+    const oneOff = await createTask(page, {
+      title: uniqueTitle('Rep off'),
+      due_at: new Date(Date.now() + DAY_MS).toISOString(),
+    })
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        let sheet = await openEditor(page, repeating)
+        const on = sheet.getByRole('button', { name: /^Repeats: Sundays at 9:00 AM/ })
+        await expect(on).toHaveAttribute('data-repeat-active', '')
+        await expect(on).not.toHaveAttribute('aria-pressed')
+        const onColor = await on.evaluate((el) => getComputedStyle(el).color)
+
+        sheet = await openEditor(page, oneOff)
+        const off = sheet.getByRole('button', { name: 'Edit recurrence', exact: true })
+        await expect(off).toBeVisible()
+        await expect(off).not.toHaveAttribute('data-repeat-active')
+        expect(await off.evaluate((el) => getComputedStyle(el).color)).not.toBe(onColor)
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${repeating}`)
+      await page.request.delete(`/api/tasks/${oneOff}`)
     }
   })
 })
