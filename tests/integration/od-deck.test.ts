@@ -149,6 +149,47 @@ describe('On deck over HTTP', () => {
     expect((await patch(weekly, { on_deck_day: day(1) })).status).toBe(200)
   })
 
+  test('OD-I07: bulk edit takes on_deck_day; with a date in the same changes it is a 400', async () => {
+    const a = await make({ title: 'One' })
+    const b = await make({ title: 'Two' })
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [a, b], changes: { on_deck_day: day(2) } },
+    })
+    expect(res.status).toBe(200)
+    expect((await getTask(a)).on_deck_day).toBe(day(2))
+    expect((await getTask(b)).on_deck_day).toBe(day(2))
+    const bad = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [a], changes: { on_deck_day: day(2), target_at: daysFromNow(1) } },
+    })
+    expect(bad.status).toBe(400)
+  })
+
+  test('OD-I08: GET /api/reminders?deck=1 lists a future deck in Upcoming on its heads-up day only', async () => {
+    const id = await make({ title: 'One' })
+    // Decked today for tomorrow: wait 1, no heads-up — and never in a horizon segment.
+    await deck({ ids: [id], day: day(1) })
+    type Segs = { data: { task_segments: { horizon: string; tasks: { id: number }[] }[] } }
+    const where = async (q: string) =>
+      ((await (await apiFetch(`/api/reminders${q}`)).json()) as Segs).data.task_segments
+        .filter((s) => s.tasks.some((t) => t.id === id))
+        .map((s) => s.horizon)
+    expect(await where('?queue=1&deck=1')).toEqual([])
+    expect(await where('')).toEqual([])
+  })
+})
+
+describe('On deck over HTTP: repeating tasks (2026-10-20)', () => {
+  beforeEach(async () => {
+    await resetTestData()
+    await setTaskQueue(true)
+  })
+
+  afterAll(async () => {
+    await setTaskQueue(false)
+  })
+
   test('OD-I11: a repeating task on deck — no target while decked, never over target, back on un-deck', async () => {
     // A daily moved to a target already passed: over target.
     const daily = await make({ title: 'Water the ferns', rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' })
@@ -183,36 +224,6 @@ describe('On deck over HTTP', () => {
       target_at: before.occurrence_at,
       occurrence_at: before.occurrence_at,
     })
-  })
-
-  test('OD-I07: bulk edit takes on_deck_day; with a date in the same changes it is a 400', async () => {
-    const a = await make({ title: 'One' })
-    const b = await make({ title: 'Two' })
-    const res = await apiFetch('/api/tasks/bulk/edit', {
-      method: 'POST',
-      body: { ids: [a, b], changes: { on_deck_day: day(2) } },
-    })
-    expect(res.status).toBe(200)
-    expect((await getTask(a)).on_deck_day).toBe(day(2))
-    expect((await getTask(b)).on_deck_day).toBe(day(2))
-    const bad = await apiFetch('/api/tasks/bulk/edit', {
-      method: 'POST',
-      body: { ids: [a], changes: { on_deck_day: day(2), target_at: daysFromNow(1) } },
-    })
-    expect(bad.status).toBe(400)
-  })
-
-  test('OD-I08: GET /api/reminders?deck=1 lists a future deck in Upcoming on its heads-up day only', async () => {
-    const id = await make({ title: 'One' })
-    // Decked today for tomorrow: wait 1, no heads-up — and never in a horizon segment.
-    await deck({ ids: [id], day: day(1) })
-    type Segs = { data: { task_segments: { horizon: string; tasks: { id: number }[] }[] } }
-    const where = async (q: string) =>
-      ((await (await apiFetch(`/api/reminders${q}`)).json()) as Segs).data.task_segments
-        .filter((s) => s.tasks.some((t) => t.id === id))
-        .map((s) => s.horizon)
-    expect(await where('?queue=1&deck=1')).toEqual([])
-    expect(await where('')).toEqual([])
   })
 })
 
