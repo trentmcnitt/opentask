@@ -6,10 +6,15 @@
  * time-sensitive tasks without hard deadlines, and overdue/deadline distinction.
  */
 
+import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
 import { daysAgo, daysAgoAt, weeksAgo, monthsAgo, todayAt, daysFromNowAt } from '../helpers/dates'
 
 const tz = 'America/Chicago'
+
+/** A local day n days from now (yyyy-MM-dd), for `on_deck_day`. */
+const deckDay = (n: number) =>
+  DateTime.now().setZone('America/Chicago').plus({ days: n }).toFormat('yyyy-MM-dd')
 
 export const whatsNextScenarios: AITestScenario[] = [
   {
@@ -617,6 +622,98 @@ export const whatsNextScenarios: AITestScenario[] = [
         'Task 501 has been sitting for ~8 weeks — easy to overlook with young kids. ' +
         'Task 502 (insurance) is also ~6 weeks old and should likely be surfaced. ' +
         'Commentary should be grounded in task data and user context without hallucinating.',
+    },
+  },
+  {
+    id: 'whats-next-on-deck-planned',
+    feature: 'whats_next',
+    description:
+      'On deck (2026-10-20): old tasks on deck are planned for a day — never surfaced as forgotten or unplanned',
+    input: {
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 700,
+          title: 'Grab winter gloves',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: weeksAgo(7),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(1),
+        },
+        {
+          id: 701,
+          title: 'Return the library books',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: weeksAgo(6),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(0),
+        },
+        {
+          id: 702,
+          title: 'Schedule the eye exam',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: weeksAgo(8),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 703,
+          title: 'Send thank-you card to Aunt Ruth',
+          priority: 1,
+          due_at: null,
+          original_due_at: null,
+          created_at: weeksAgo(5),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: 710 + i,
+          title: `Routine task ${i + 1}`,
+          priority: 0,
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        })),
+      ],
+    },
+    requirements: {
+      must_include: {},
+      quality_notes:
+        'IDs 700 and 701 are ON DECK (`on deck:` in the task line): the user planned them for tomorrow and today. ' +
+        'They should NOT be surfaced as forgotten, lingering or unplanned; if one is surfaced at all, the reason must ' +
+        'say it is on deck / planned for that day, never "no target", "no date" or "sitting untouched". ' +
+        'IDs 702 (eye exam, ~8 weeks, no target, not on deck) and 703 (thank-you card, ~5 weeks) are the genuinely ' +
+        'lingering ones and should be surfaced. Routine tasks need not be.',
     },
   },
 ]

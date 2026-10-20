@@ -10,7 +10,8 @@
  *
  *   title: the task's cleaned title                    "Call the dentist"
  *   body:  "Added to <project>" + what the task now carries, in the card's
- *          formats: due (relative · absolute), priority, recurrence, labels.
+ *          formats: due (relative · absolute) or "On deck <day>", priority,
+ *          recurrence, labels.
  *          "Added to Work · Mon 9:00 AM · High · Weekly on Monday at 9:00 AM · errands"
  *          A reminder says its period instead of a project:
  *          "Added to Evening · Daily at 8:30 PM"
@@ -67,6 +68,7 @@ import { getTaskById } from '@/core/tasks'
 import { listTimeSlots } from '@/core/time-slots'
 import { log } from '@/lib/logger'
 import { formatDueTimeParts } from '@/lib/format-date'
+import { deckDayWords } from '@/lib/task-segments'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
 import { JUST_ADDED_WINDOW_MS } from '@/lib/just-added'
@@ -129,6 +131,10 @@ export function buildEnrichedNotificationContent(params: {
     if (task.due_at) {
       const due = formatDueTimeParts(task.due_at, timezone)
       parts.push(due.absolute ? `${due.relative} · ${due.absolute}` : due.relative)
+    }
+    // On deck (D3): a day with no time — "On deck tomorrow", "On deck Sat Oct 24".
+    if (task.on_deck_day) {
+      parts.push(`On deck ${deckDayWords(task.on_deck_day, timezone, new Date())}`)
     }
   }
 

@@ -10,6 +10,7 @@
  * create a specific context the AI should pick up on.
  */
 
+import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
 import {
   daysAgo,
@@ -22,6 +23,10 @@ import {
 } from '../helpers/dates'
 
 const tz = 'America/Chicago'
+
+/** A local day n days from now (yyyy-MM-dd), for `on_deck_day`. */
+const deckDay = (n: number) =>
+  DateTime.now().setZone('America/Chicago').plus({ days: n }).toFormat('yyyy-MM-dd')
 
 export const quickTakeScenarios: AITestScenario[] = [
   // -------------------------------------------------------------------------
@@ -1473,6 +1478,99 @@ export const quickTakeScenarios: AITestScenario[] = [
         'joining a list dominated by Client Work." Must NOT claim "only personal errand," "only ' +
         'errand," or "first personal task." Must not fabricate numbers or categories not present in ' +
         'the data. Max 25 words.',
+    },
+  },
+  {
+    id: 'quick-take-on-deck-not-undated',
+    feature: 'quick_take',
+    description:
+      'On deck (2026-10-20): tasks on deck have a day — the stats count none undated, and the take must not say otherwise',
+    input: {
+      newTaskTitle: 'Pick up dog food',
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 800,
+          title: 'Grab winter gloves',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(3),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(0),
+        },
+        {
+          id: 801,
+          title: 'Return the library books',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(2),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(0),
+        },
+        {
+          id: 802,
+          title: 'Drop off the dry cleaning',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(2),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(0),
+        },
+        {
+          id: 803,
+          title: 'Buy stamps',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(1),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(1),
+        },
+        {
+          id: 804,
+          title: 'Call the vet',
+          priority: 1,
+          due_at: daysFromNowAt(0, 9, 0, tz),
+          original_due_at: daysFromNowAt(0, 9, 0, tz),
+          created_at: daysAgo(1),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+      ],
+    },
+    requirements: {
+      quality_notes:
+        'Four existing tasks are on deck (three for today, one for tomorrow — `deck:` in the list) and one has a ' +
+        'due date today; the summary says 0 undated and 4 on deck. A good take notices the errand theme or the ' +
+        'stacked day ("another errand for a busy errand day"). It must NOT say the existing tasks have no dates, ' +
+        'are undated, or sit unscheduled. Max 25 words.',
     },
   },
 ]
