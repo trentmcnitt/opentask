@@ -1058,6 +1058,75 @@ const CLOCK_TIME =
 const DAY_NAMED =
   /\b(today|tonight|tomorrow|tmrw|tomm?orr?ow|yesterday|next|this|weekend|week|month|year|days?|weeks?|months?)\b|\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)(day|nesday|sday|urday)?\b|\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\bin \d+ (minutes?|hours?|mins?|hrs?)\b|\bin an? (hour|minute)\b/i
 
+/** Day words a misspelling could be: relative days, weekdays, months. */
+const DAY_WORDS = [
+  'today',
+  'tonight',
+  'tomorrow',
+  'yesterday',
+  'weekend',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+  'january',
+  'february',
+  'march',
+  'april',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+]
+
+/**
+ * Shorthand for "tomorrow" / "next" ("tmr", "2moro", "nxt"), and days named by
+ * an occasion rather than a date ("Halloween party at 7pm" the day before).
+ */
+const DAY_HINT =
+  /\b(tom|tmr|tmw|2mor|2moro|nxt)|\b(christmas|xmas|thanksgiving|halloween|easter|valentines?|hanukkah|passover|holiday|birthday|anniversary|payday)\b/i
+
+/**
+ * Optimal string alignment distance: insertions, deletions, substitutions and
+ * swaps of two neighbouring letters ("thrusday") each count 1.
+ */
+function editDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i])
+  for (let j = 1; j <= b.length; j++) d[0][j] = j
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1)
+      }
+    }
+  }
+  return d[a.length][b.length]
+}
+
+/**
+ * Could the words name a day `DAY_NAMED` can't read? True on any number left
+ * once the clock time is taken out ("on the 15 at noon"), a `DAY_HINT`, or a
+ * word of 4+ letters within 2 edits of a day word (1 for words of 5 or fewer
+ * letters): "tommorow", "thrusday", "wensday", "ocotber". Deliberately
+ * generous — a false hit only means the model's date is kept.
+ */
+function mayNameADay(inputText: string): boolean {
+  const rest = inputText.replace(new RegExp(CLOCK_TIME.source, 'gi'), ' ')
+  if (/\d/.test(rest) || DAY_HINT.test(rest)) return true
+  const words = rest.toLowerCase().match(/[a-z]{4,}/g) ?? []
+  return words.some((w) =>
+    DAY_WORDS.some((day) => editDistance(w, day) <= (day.length <= 5 ? 1 : 2)),
+  )
+}
+
 /**
  * A TIME WITH NO DAY is its next occurrence (Trent, 2026-10-14: "Add Matthew
  * time 8:30am … It's supposed to actually be at 8:30 am this morning"): today
@@ -1065,10 +1134,19 @@ const DAY_NAMED =
  * catches the model returning one already passed ("8:30am" said at 10 AM, given
  * today at 8:30), which would land over target the moment it is made.
  *
- * FORWARD ONLY: a target still ahead is never pulled earlier. Whether the
- * words name a day is a regex's guess, and a day it can't read — "tommorow at
- * 3pm" — is still a day: pulling the model's correct "tomorrow" back to today
- * was the first version's bug (quality run, 2026-10-14).
+ * Forward, with ONE narrow exception. Whether the words name a day is a
+ * regex's guess, and a day it can't read — "tommorow at 3pm" — is still a day:
+ * pulling the model's correct "tomorrow" back to today was the first version's
+ * bug (quality run, 2026-10-14). So a target still ahead is left alone, except
+ * when it is EXACTLY tomorrow, the same time today is still ahead, and nothing
+ * in the words could be a day the regex missed (`mayNameADay`: a misspelled
+ * day or month, "tmr"/"nxt", a number, an occasion like "Halloween"). Then
+ * tomorrow contradicts the rule above (prod, 2026-10-20: "Order replacement
+ * books at noon urgent priority" at 10:58 AM came back tomorrow noon, while
+ * the model's own reasoning said today) and is pulled back to today. That does
+ * not reopen the 10-14 bug: "tommorow" is within two edits of "tomorrow" (and
+ * `DAY_NAMED` reads it now besides), so its tomorrow stays. The root fix is
+ * `reasoning` first in `EnrichmentResultSchema`; this is the backstop.
  *
  * Only a one-off whose input names a clock time (`CLOCK_TIME`) and no day
  * (`DAY_NAMED`) is touched, and only its DATE: the hour and minute stay the
@@ -1099,6 +1177,14 @@ export function resolveBareTime(
     second: 0,
     millisecond: 0,
   })
+  if (
+    next > nowLocal &&
+    local.hasSame(nowLocal.plus({ days: 1 }), 'day') &&
+    !mayNameADay(inputText)
+  ) {
+    log.info('ai', 'Enrichment: moved a time with no day from tomorrow back to today')
+    return { ...enrichment, due_at: toLocalIso(next, value) }
+  }
   if (local > nowLocal) return enrichment
   if (next <= nowLocal) next = next.plus({ days: 1 })
   log.info('ai', 'Enrichment: moved a time with no day to its next occurrence')
@@ -1882,8 +1968,9 @@ export function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
  * Search). Never from topic. Once name matches were allowed, the model began
  * filing tasks by topic again ("fix the leak in the kitchen" → Home, "pick up
  * bananas" → Shopping List, "apply to Acme" → Job Search) — its reasoning
- * often said null, but `project_name` is emitted before `reasoning`, so the
- * field was already set. Prompt wording did not get that to zero; this does.
+ * often said null, but `project_name` was then emitted before `reasoning`, so
+ * the field was already set (reasoning has come first since 2026-10-20).
+ * Prompt wording did not get that to zero; this does.
  *
  * Division of labor. This guard is necessary, not sufficient: it keeps the
  * model's project only if at least one word of the project's name (3+
