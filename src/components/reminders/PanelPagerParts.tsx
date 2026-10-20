@@ -110,9 +110,12 @@ export function SlotPagerHeader({
         data-slot-header-toggle
         className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
       >
-        <span className="min-w-0 flex-1 truncate">
+        {/* The name may wrap, never truncate: "TASK QUEUE · PREVIOUSLY
+            STAGED" (2026-10-20) is wider than a phone's header and read
+            "TASK QUEUE · PREVI…". A period's name and time fit as before. */}
+        <span className="min-w-0 flex-1 text-xs text-balance">
           <span
-            className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase"
+            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
             // A task segment's title wears its horizon's teal (2026-10-11).
             style={accent ? { color: accent } : undefined}
           >
