@@ -488,10 +488,18 @@ describe('contract fixtures: on deck (2026-10-20)', () => {
     // target — the native PR draws "On deck …" from it.
     const segs = data('reminders-deck').task_segments as Obj[]
     const upcoming = segs.find((s) => s.horizon === 'upcoming') as { tasks: Obj[] }
+    // A repeating task on deck too (2026-10-20): `recurring: true`, no target
+    // while decked, its `occurrence_at` kept.
     const decked = upcoming.tasks.filter((r) => r.on_deck_day !== null)
-    expect(decked).toHaveLength(1)
-    expect(decked[0]).toMatchObject({ due_at: null, target_at: null, recurring: false })
-    expect(decked[0].on_deck_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(decked).toHaveLength(2)
+    expect(decked.map((r) => r.recurring).sort()).toEqual([false, true])
+    for (const row of decked) {
+      expect(row).toMatchObject({ due_at: null, target_at: null })
+      expect(row.on_deck_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+    const repeating = decked.find((r) => r.recurring)!
+    expect(repeating.rrule).toEqual(expect.any(String))
+    expect(repeating.occurrence_at).toEqual(expect.any(String))
     for (const seg of segs) {
       for (const row of seg.tasks as Obj[]) {
         const task = Object.fromEntries(

@@ -486,9 +486,16 @@ async function deckRows(
   await setTaskQueue(true)
   try {
     await make('decked', { title: 'Pick up the winter gloves' })
+    // A REPEATING task on deck (2026-10-20): no target while decked
+    // (`due_at`/`target_at` null), its occurrence kept, `recurring: true`.
+    await make('deckedRepeating', {
+      title: 'Water the ferns',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
+    })
     const tomorrow = DateTime.now().setZone('America/New_York').plus({ days: 1 }).toISODate()
-    await call('/api/tasks/deck', { ids: [created.decked], day: tomorrow })
-    backdate([created.decked], 10, ['target_set_at', 'last_considered_at'])
+    const decks = [created.decked, created.deckedRepeating]
+    await call('/api/tasks/deck', { ids: decks, day: tomorrow })
+    backdate(decks, 10, ['target_set_at', 'last_considered_at'])
     return {
       withDeck: await call('/api/reminders?queue=1&deck=1'),
       plain: await call('/api/reminders?queue=1'),
@@ -794,12 +801,15 @@ describe('contract fixtures (native clients)', () => {
         task_segments: { horizon: string; tasks: { id: number; on_deck_day: string | null }[] }[]
       }
     }
-    const decked = created.decked
     const plain = (plainWithoutDeck as unknown as Segs).data.task_segments
-    for (const seg of plain) for (const t of seg.tasks) expect(t.id).not.toBe(decked)
     const withDeck = (captured['reminders-deck'] as unknown as Segs).data.task_segments
     const upcoming = withDeck.find((s) => s.horizon === 'upcoming')!
-    expect(upcoming.tasks.find((t) => t.id === decked)?.on_deck_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    for (const decked of [created.decked, created.deckedRepeating]) {
+      for (const seg of plain) for (const t of seg.tasks) expect(t.id).not.toBe(decked)
+      expect(upcoming.tasks.find((t) => t.id === decked)?.on_deck_day).toMatch(
+        /^\d{4}-\d{2}-\d{2}$/,
+      )
+    }
   })
 
   test('without ?queue=1 the switch-on payload has no queue kinds and no queued task', () => {

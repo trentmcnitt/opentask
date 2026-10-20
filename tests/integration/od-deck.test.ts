@@ -79,13 +79,14 @@ describe('On deck over HTTP', () => {
     expect(r.status).toBe(200)
     expect(r.json.data).toMatchObject({
       day: day(1),
-      decked: 2,
-      skipped_recurring: 1,
+      // A repeating task is decked too since 2026-10-20 (`skipped_recurring` stays, 0).
+      decked: 3,
+      skipped_recurring: 0,
       skipped_reminder: 1,
       refused: [{ id: nagging, reason: 'deadline_nagging' }],
     })
     expect((await getTask(a)).on_deck_day).toBe(day(1))
-    expect((await getTask(weekly)).on_deck_day).toBeNull()
+    expect(await getTask(weekly)).toMatchObject({ on_deck_day: day(1), target_at: null })
   })
 
   test('OD-I03: day null takes tasks off deck', async () => {
@@ -133,14 +134,55 @@ describe('On deck over HTTP', () => {
     const picked = await patch(id, { target_at: daysFromNow(3) })
     expect(picked.json.data).toMatchObject({ on_deck_day: null })
     expect(picked.json.data.fields_changed).toContain('on_deck_day')
-    // Null takes it off; a repeating task can't go on deck.
+    // Null takes it off. A repeating task can go on deck — but not with a rule in the body.
     await patch(id, { on_deck_day: day(2) })
     expect((await patch(id, { on_deck_day: null })).json.data.on_deck_day).toBeNull()
     const weekly = await make({
       title: 'Weekly',
       rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
     })
-    expect((await patch(weekly, { on_deck_day: day(1) })).status).toBe(400)
+    const withRule = await patch(weekly, {
+      on_deck_day: day(1),
+      rrule: 'FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0',
+    })
+    expect(withRule.status).toBe(400)
+    expect((await patch(weekly, { on_deck_day: day(1) })).status).toBe(200)
+  })
+
+  test('OD-I11: a repeating task on deck — no target while decked, never over target, back on un-deck', async () => {
+    // A daily moved to a target already passed: over target.
+    const daily = await make({ title: 'Water the ferns', rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' })
+    await patch(daily, { target_at: daysFromNow(-1) })
+    const before = await getTask(daily)
+    const overdueIds = async () =>
+      (
+        (await (await apiFetch('/api/tasks?overdue=true&limit=1000')).json()).data.tasks as {
+          id: number
+        }[]
+      ).map((t) => t.id)
+    const overdueCount = async () =>
+      (await (await apiFetch('/api/tasks/counts')).json()).data.overdue as number
+    expect(await overdueIds()).toContain(daily)
+    const countBefore = await overdueCount()
+    const r = await deck({ ids: [daily] })
+    expect(r.json.data).toMatchObject({ decked: 1, skipped_recurring: 0 })
+    const decked = await getTask(daily)
+    expect(decked).toMatchObject({
+      on_deck_day: day(0),
+      target_at: null,
+      due_at: null,
+      occurrence_at: before.occurrence_at,
+    })
+    expect(await overdueIds()).not.toContain(daily)
+    expect(await overdueCount()).toBe(countBefore - 1)
+    // Off deck: the target is back on the scheduled occurrence (not the moved target).
+    const off = await deck({ ids: [daily], day: null })
+    expect(off.json.data.undecked).toBe(1)
+    expect(await getTask(daily)).toMatchObject({
+      on_deck_day: null,
+      target_at: before.occurrence_at,
+      occurrence_at: before.occurrence_at,
+    })
   })
 
   test('OD-I07: bulk edit takes on_deck_day; with a date in the same changes it is a 400', async () => {
