@@ -316,6 +316,9 @@ export type UndoAction =
   // Task model (2026-10-10): a task segment's circle (considered) or Defer All.
   // Field snapshots of last_considered_at / segment_deferred_at; never a completion.
   | 'task_segment'
+  // The task queue (2026-10-20): "Roll over now" — the rollover run by hand
+  // (src/core/tasks/rollover-now.ts). The cron's rollover writes no entry.
+  | 'task_rollover'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,
