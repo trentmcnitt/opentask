@@ -86,9 +86,9 @@ test.describe('Upcoming', () => {
       await page.goto('/reminders')
       const section = upcoming(page)
       await expect(section).toBeVisible()
-      // One-word title, no "Heads-up" hint (2026-10-20).
-      await expect(section).toHaveAttribute('aria-label', 'Upcoming')
-      await expect(section.getByText('Upcoming', { exact: true })).toBeVisible()
+      // "Task queue · Upcoming", no "Heads-up" hint (2026-10-20).
+      await expect(section).toHaveAttribute('aria-label', 'Task queue · Upcoming')
+      await expect(section.getByText('Task queue · Upcoming', { exact: true })).toBeVisible()
       await expect(section.getByText('Heads-up')).toHaveCount(0)
       // Directly after Days.
       const order = await page
@@ -205,7 +205,7 @@ test.describe('Upcoming', () => {
       await expect(strip.locator('[data-slot-segment="tasks:upcoming"]')).toHaveCount(1)
       await strip.locator('[data-slot-segment="tasks:upcoming"]').click()
       await expect(card).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
-      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Upcoming')
+      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Task queue · Upcoming')
       const r = card.locator(`[data-segment-task="${t.repeating}"]`)
       await expect(r.locator('[data-target-today]')).toHaveCount(1)
       await r.getByRole('button', { name: /as considered/ }).click()
@@ -243,9 +243,9 @@ test.describe('Check-in day', () => {
       await page.goto('/reminders')
       const section = page.locator('[data-task-segment="weeks"]')
       await expect(section.locator(`[data-segment-task="${weeks}"]`)).toBeVisible()
-      // The header is "Weekly" alone: the weekday hint went with the panel
-      // titles (2026-10-20).
-      await expect(section).toHaveAttribute('aria-label', 'Weekly')
+      // The header is "Task queue · Weekly" alone: the weekday hint went
+      // with the panel titles (2026-10-20).
+      await expect(section).toHaveAttribute('aria-label', 'Task queue · Weekly')
       await expect(section.getByText(`${today.toFormat('cccc')}s`)).toHaveCount(0)
 
       const tomorrow = today.plus({ days: 1 }).weekday

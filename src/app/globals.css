@@ -46,7 +46,7 @@
   /* The task queue's two panels (2026-10-19, provisional): a deeper, greyer
      cyan-teal than the horizons — the same family (they are task rows), a
      step apart so the first bars in the strip read as their own thing.
-     "Queued" is the strong one, "Previously queued" the muted. */
+     "Staged" is the strong one, "Previously staged" the muted. */
   --segment-queue_today: #0d7f8c;
   --segment-queue_previous: #5c9ba3;
   /* Titles: one darker teal in light mode, so the small uppercase label
@@ -190,6 +190,16 @@
        content that grows past the viewport (opening a slot, expanding a
        group) does not shove the whole centered layout sideways. */
     scrollbar-gutter: stable;
+  }
+  /* Every enabled button is pressable, so it gets the hand (2026-10-20: Today
+     and On deck on the task rows, the pager chevrons, Considered all and Show
+     more all showed the arrow — browsers give a <button> `cursor: default`,
+     and only the controls that spelled out `cursor-pointer` had one). In the
+     base layer, so a `cursor-*` utility on a button still wins, and a
+     disabled button keeps the arrow. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
   }
   body {
     @apply bg-background text-foreground;

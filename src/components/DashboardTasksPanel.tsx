@@ -38,7 +38,7 @@ import { isQueueKind } from '@/lib/task-segments'
  * across today's segments (the task queue's two panels first, with the
  * switch on, then Daily, Upcoming, Weekly, Monthly, Quarterly), its own strip of
  * teal bars (the current one taller, as a slot's is; green when finished), the
- * same header (the one-word title, "DAILY", as a slot shows its name; "X of Y"
+ * same header (the title, "TASK QUEUE · DAILY", as a slot shows its name; "X of Y"
  * that opens what was considered with put-back, ‹ ›), the same rows, and
  * "Defer all" behind the header tap where a slot has "Considered all".
  *

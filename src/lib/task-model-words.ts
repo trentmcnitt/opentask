@@ -31,8 +31,9 @@ export const HORIZON_LABELS: Record<HorizonValue, string> = {
 }
 
 /**
- * The horizon segments' panel titles (Trent, 2026-10-20): one word each and
- * the whole header — no "TASKS · " prefix and no hint after it. Display text
+ * The horizon segments' WORDS (Trent, 2026-10-20): one each. A panel header
+ * is `TASK_QUEUE_PREFIX` · the word (`segmentTitle` in TaskSegmentRow); the
+ * horizon-move toast says the bare word ("Moved to Weekly"). Display text
  * only: the segment kinds the API sends (`days` … `eventually`) do not change.
  */
 export const SEGMENT_TITLES: Record<HorizonValue, string> = {
@@ -59,24 +60,35 @@ export function horizonHints(checkInDay: CheckInDay): Record<HorizonValue, strin
 }
 
 /**
- * Upcoming (2026-10-12, spec §2): the heads-up segment's title — its rows are
- * targeted tasks on their heads-up days, not a cadence. One word like every
- * panel title; its "Heads-up" hint went with the others' (2026-10-20).
+ * Upcoming (2026-10-12, spec §2): the heads-up segment's word — its rows are
+ * targeted tasks on their heads-up days, not a cadence. Its "Heads-up" hint
+ * went with the others' (2026-10-20).
  */
 export const UPCOMING_LABEL = 'Upcoming'
 
 /**
  * THE TASK QUEUE (task queue PR 3, 2026-10-19; spec rule 6): the two panels'
- * titles (Trent, 2026-10-20). "Queued" holds the latest rollover's strips,
- * a manual Roll over now's included (`queue_today`); "Previously queued" the
+ * words (Trent, 2026-10-20). "Staged" holds the latest rollover's strips,
+ * a manual Roll over now's included (`queue_today`); "Previously staged" the
  * ones stripped before it (`queue_previous`). Display text only: the kind
  * strings the API sends do not change.
  */
 export const QUEUE_PANEL_TITLES = {
-  queue_today: 'Queued',
-  queue_previous: 'Previously queued',
+  queue_today: 'Staged',
+  queue_previous: 'Previously staged',
 } as const
-/** Try Tomorrow's mark on a "Queued" row (its tooltip and accessible name). */
+
+/**
+ * Every task-segment panel's title is "Task queue · <word>" (Trent,
+ * 2026-10-20: one format everywhere) — "TASK QUEUE · STAGED", "TASK QUEUE ·
+ * DAILY", "TASK QUEUE · UPCOMING" on screen, where the header's `uppercase`
+ * does the capitals. A middle dot, never an em dash.
+ */
+export const TASK_QUEUE_PREFIX = 'Task queue'
+export function taskQueueTitle(word: string): string {
+  return `${TASK_QUEUE_PREFIX} · ${word}`
+}
+/** Try Tomorrow's mark on a "Staged" row (its tooltip and accessible name). */
 export const TRY_TOMORROW_MARK = 'Try tomorrow'
 
 /** The weekday names for the check-in day setting, 1 = Monday … 7 = Sunday. */
