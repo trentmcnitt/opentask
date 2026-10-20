@@ -512,12 +512,13 @@ test('the sweep toast says what moves to the Tasks queue', async ({ page }) => {
   }
 })
 
-test('row polish: the empty On deck slot lines up the column, the dot follows the project, every control has the hand', async ({
+test('row polish: On deck lines up the column, the dot follows the project, every control has the hand', async ({
   page,
 }) => {
-  // Trent, 2026-10-20. A repeating row has no On deck, so its pencil sat
-  // elsewhere; the one-off's horizon dot came before the project, so the
-  // project names zig-zagged; Today and On deck showed the arrow cursor.
+  // Trent, 2026-10-20. A repeating row had no On deck, so its pencil sat
+  // elsewhere (now it has On deck too, 2026-10-20); the one-off's horizon dot
+  // came before the project, so the project names zig-zagged; Today and On
+  // deck showed the arrow cursor.
   const ids: number[] = []
   try {
     const oneOff = await create(page, { title: uniqueTitle('TQ one-off'), due_at: daysFromNow(-4) })
@@ -541,10 +542,10 @@ test('row polish: the empty On deck slot lines up the column, the dot follows th
       const w = row(scope, weekly)
       await expect(a).toBeVisible()
       await expect(w).toBeVisible()
-      // The one-off has On deck; the repeating row keeps its place empty.
+      // Both have On deck (a repeating task decks its occurrence, 2026-10-20).
       await expect(a.locator('[data-on-deck]')).toHaveCount(1)
-      await expect(w.locator('[data-on-deck]')).toHaveCount(0)
-      await expect(w.locator('[data-deck-slot-empty]')).toHaveCount(1)
+      await expect(w.locator('[data-on-deck]')).toHaveCount(1)
+      await expect(w.locator('[data-deck-slot-empty]')).toHaveCount(0)
       for (const sel of [
         '[data-segment-details]',
         '[data-target-today]',

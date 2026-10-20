@@ -80,6 +80,38 @@ const toast = (page: Page, text: string | RegExp) =>
   page.locator('[data-sonner-toast]').filter({ hasText: text })
 const dashRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
+/** The user's overdue set (the badge's): `GET /api/tasks?overdue=true`. */
+async function overdueIds(page: Page): Promise<number[]> {
+  const res = await page.request.get('/api/tasks?overdue=true&limit=1000')
+  return ((await res.json()).data.tasks as { id: number }[]).map((t) => t.id)
+}
+
+/** The rrule weekday code of an instant in the user's zone. */
+function weekdayCode(iso: string): string {
+  const day = DateTime.fromISO(iso).setZone(TZ).weekday
+  return ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][day - 1]
+}
+
+/**
+ * A weekly task whose occurrence was four days ago (over target), its next
+ * one three days out — so the rollover makes it WAIT in the queue.
+ */
+async function missedWeekly(page: Page, title: string): Promise<number> {
+  const id = await create(page, {
+    title,
+    rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+    due_at: daysFromNow(3),
+  })
+  sql(
+    'UPDATE tasks SET due_at = ?, occurrence_at = ?, target_set_at = ? WHERE id = ?',
+    daysFromNow(-4),
+    daysFromNow(-4),
+    daysFromNow(-5),
+    id,
+  )
+  return id
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.beforeEach(async ({ page }) => {
@@ -287,8 +319,9 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     await expect.poll(() => deckOf(page, id)).toBeNull()
     expect((await stateOf(page, id)).target_at).not.toBeNull()
 
-    // A repeating Upcoming row has no On deck (rule 6, B9) — seeded as
-    // up-upcoming.spec.ts does: due tomorrow, its target set ten days ago.
+    // A repeating Upcoming row has On deck too (2026-10-20: it decks the
+    // occurrence) — seeded as up-upcoming.spec.ts does: due tomorrow, its
+    // target set ten days ago.
     const repeating = await create(page, {
       title: uniqueTitle('OD repeating'),
       rrule: 'FREQ=DAILY;INTERVAL=3;BYHOUR=11;BYMINUTE=0',
@@ -305,7 +338,8 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     const w = segRow(segment(page, 'upcoming'), repeating)
     await expect(w).toBeVisible()
     await expect(w.locator('[data-target-today]')).toBeVisible()
-    await expect(w.locator('[data-on-deck]')).toHaveCount(0)
+    await expect(w.locator('[data-on-deck]')).toHaveCount(1)
+    await expect(w.locator('[data-on-deck]')).not.toHaveAttribute('data-on-deck-active', '')
   } finally {
     await trash(page, ids)
   }
@@ -743,4 +777,105 @@ test.describe('touch', () => {
       await trash(page, ids)
     }
   })
+})
+
+test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietly); a future deck, then Today', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    const title = uniqueTitle('OD weekly')
+    const id = await missedWeekly(page, title)
+    ids.push(id)
+    const res = await page.request.post('/api/test/rollover', {
+      data: { user_id: QUEUE_USER_ID, force: true },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const waiting = await stateOf(page, id)
+    expect(waiting.queued_at).not.toBeNull()
+
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/reminders')
+    const r = segRow(segment(page, 'queue_today'), id)
+    const button = r.locator('[data-on-deck]')
+    await expect(button).toBeVisible()
+    await expect(r.locator('[data-deck-slot-empty]')).toHaveCount(0)
+    await button.click()
+    await expect(r).toHaveCount(0)
+    await expect(toast(page, `On deck for today: “${title}”`)).toBeVisible()
+    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    const decked = await stateOf(page, id)
+    expect(decked).toMatchObject({ target_at: null, queued_at: null })
+    expect(decked.occurrence_at).toBe(waiting.occurrence_at)
+    expect(await overdueIds(page)).not.toContain(id)
+
+    // Re-deck for tomorrow (hold), backdated so today is its heads-up day:
+    // an Upcoming row, "On deck <day>"; Today on it is a pick — the deck goes.
+    await deck(page, [id], calendarDay(1))
+    sql(
+      'UPDATE tasks SET target_set_at = ?, last_considered_at = ?, segment_targeted_at = NULL WHERE id = ?',
+      daysFromNow(-10),
+      daysFromNow(-10),
+      id,
+    )
+    await page.reload()
+    const u = segRow(segment(page, 'upcoming'), id)
+    const day = DateTime.fromISO(calendarDay(1)).toFormat('ccc LLL d')
+    // A repeating row's chip goes on with its schedule ("· every Fri at …").
+    await expect(u.locator('[data-target-chip]')).toHaveText(new RegExp(`^On deck ${day} · every `))
+    await expect(u.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
+    await page.screenshot({ path: '.tmp/od-repeating-upcoming-1280.png' })
+    await u.locator('[data-target-today]').click()
+    await expect(toast(page, /Targeted/)).toBeVisible()
+    await expect.poll(() => deckOf(page, id)).toBeNull()
+    expect((await stateOf(page, id)).target_at).not.toBeNull()
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('REPEATING: a dashboard row over target — tap leaves the nagging list for On deck; tap again, the debt is back', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    const title = uniqueTitle('OD weekly dash')
+    const id = await missedWeekly(page, title)
+    ids.push(id)
+    const occurrence = (await stateOf(page, id)).occurrence_at
+    expect(await overdueIds(page)).toContain(id)
+
+    for (const size of [
+      { width: 1280, height: 800 },
+      { width: 375, height: 812 },
+    ]) {
+      await page.setViewportSize(size)
+      await page.goto('/')
+      await expect(dashRow(page, id)).toBeVisible()
+      await page.screenshot({ path: `.tmp/od-repeating-dash-${size.width}.png` })
+    }
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    await dashRow(page, id).hover()
+    const button = dashRow(page, id).locator('[data-on-deck]')
+    await expect(button).toBeVisible()
+    await button.click()
+    await expect(toast(page, `On deck for today: “${title}”`)).toBeVisible()
+    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    expect(await overdueIds(page)).not.toContain(id)
+    const section = page.locator('[data-deck-section]')
+    await expect(section.locator(`#task-row-${id}`)).toBeVisible()
+    await page.screenshot({ path: '.tmp/od-repeating-section-1280.png' })
+
+    // The filled button takes it off deck: the target is back on the occurrence.
+    await section.locator(`#task-row-${id}`).hover()
+    await section.locator(`#task-row-${id}`).locator('[data-on-deck]').click()
+    await expect(toast(page, 'Taken off deck')).toBeVisible()
+    await expect.poll(() => deckOf(page, id)).toBeNull()
+    expect((await stateOf(page, id)).target_at).toBe(occurrence)
+    await expect.poll(() => overdueIds(page)).toContain(id)
+    await expect(page.locator('[data-deck-section]')).toHaveCount(0)
+  } finally {
+    await trash(page, ids)
+  }
 })
