@@ -256,6 +256,9 @@ const deckDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date (yyyy-M
 export const DECK_WITH_DATE_MESSAGE =
   'Send on_deck_day on its own: not with target_at / due_at or deadline_at in the same request'
 
+export const CREATE_DECK_WITH_TARGET_MESSAGE =
+  'Send on_deck_day or target_at / due_at, not both: a task is on deck or has a target'
+
 function deckAlone(data: {
   on_deck_day?: string | null
   due_at?: string | null
@@ -307,8 +310,16 @@ export const taskCreateSchema = z
     // OMITTED means "put it in my default reminder slot" (createTask), while
     // an explicit null means "no schedule" (the editor's one-time thought).
     enrich: z.boolean().optional(),
+    // ON DECK (2026-10-20): create the task on deck for this local calendar
+    // date. One-offs only, today or later, the A1 rule against any deadline
+    // in the same body — checked in `createTask`. Never with a target.
+    on_deck_day: deckDay.nullable().optional(),
   })
   .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })
+  .refine((data) => !(data.on_deck_day && data.due_at !== undefined && data.due_at !== null), {
+    message: CREATE_DECK_WITH_TARGET_MESSAGE,
+    path: ['on_deck_day'],
+  })
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
@@ -488,6 +499,11 @@ export const bulkEditSchema = z
   })
   .refine((data) => !(data.delta_minutes !== undefined && data.changes.due_at !== undefined), {
     message: 'Cannot provide both changes.due_at and delta_minutes',
+  })
+  // On deck: a relative move is a target too (rule 1, never both).
+  .refine((data) => !(data.delta_minutes !== undefined && data.changes.on_deck_day !== undefined), {
+    message: DECK_WITH_DATE_MESSAGE,
+    path: ['changes', 'on_deck_day'],
   })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>

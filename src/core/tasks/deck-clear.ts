@@ -10,7 +10,10 @@
  *
  * What does NOT clear it: a deadline added or changed, or "Back to auto" — the
  * target they leave is the deadline's AUTOMATIC one, which a deck lives beside
- * ("the deadline protects regardless"). That is why this can't ride on
+ * ("the deadline protects regardless") — UNLESS that automatic target has
+ * arrived, or falls on or before the deck's day (A1, strict, review 10-20):
+ * then the deadline wins and the deck goes in the same write, because a deck
+ * never nags. That is why this can't ride on
  * `stampTargetSet` (target-set.ts), which fires on ANY `due_at` or
  * `deadline_at` write, automatic targets included.
  *
@@ -28,6 +31,7 @@
  */
 
 import type { Task } from '@/types'
+import { deckRefusal, type TargetContext } from '@/lib/task-segments'
 import type { CollectedWrite } from './target-set'
 
 /** The deck clear as a fixed SQL fragment, for the writers whose SQL is a fixed statement. */
@@ -43,13 +47,29 @@ export interface DeckClearAfter {
   rrule: string | null
   isReminder: boolean
   isTracked: boolean
+  /**
+   * The deadline the write leaves, when the caller can say (A1, strict): a
+   * deadline added or moved on a decked task re-runs the deck check — if the
+   * new automatic target has arrived, or its day is on or before the deck's,
+   * THE DEADLINE WINS and the deck goes. Decks never nag.
+   */
+  deadline?: { at: string | null; changed: boolean; ctx: TargetContext; now: Date }
 }
 
 /** Whether a write leaving `after` must clear the task's deck (see the module doc). */
 export function deckClearedBy(task: Pick<Task, 'on_deck_day'>, after: DeckClearAfter): boolean {
   if (!task.on_deck_day) return false
   const picked = after.dueAt !== null && !after.auto
-  return picked || after.rrule !== null || after.isReminder || after.isTracked
+  if (picked || after.rrule !== null || after.isReminder || after.isTracked) return true
+  return deadlineOutranksDeck(task.on_deck_day, after)
+}
+
+/** A1 strict: the deadline this write added or moved now reminds on or before the deck day. */
+function deadlineOutranksDeck(day: string, after: DeckClearAfter): boolean {
+  const d = after.deadline
+  if (!d || !d.changed || d.at === null) return false
+  const left = { due_at: after.dueAt, deadline_at: d.at, target_auto: after.auto }
+  return deckRefusal(left, day, d.ctx, d.now) !== null
 }
 
 /**

@@ -196,6 +196,8 @@ export const onDeckScenarios: GoldenScenario[] = [
     ],
     events: [
       { at: '2026-10-19T10:00', run: refused('task', '2026-10-28', 'after_auto_target') },
+      // Strict A1: the auto target's own day is refused too (it would nag that morning).
+      { at: '2026-10-19T10:00', run: refused('task', '2026-10-27', 'after_auto_target') },
       { at: '2026-10-19T10:01', run: deck(['task'], '2026-10-24') },
       {
         at: '2026-10-19T10:02',
@@ -257,6 +259,46 @@ export const onDeckScenarios: GoldenScenario[] = [
         '2026-10-21': 'upcoming',
         '2026-10-22': 'deck',
         '2026-10-23': 'queue_today queued',
+      },
+    },
+  },
+  {
+    id: 'od-deadline-wins',
+    title: 'A NEAR deadline added to a decked task wins: the deck goes, the deadline nags',
+    source: 'A1 strict (review 10-20): decks never nag',
+    from: '2026-10-19',
+    to: '2026-10-25',
+    policy: ['never'],
+    queue: QUEUE,
+    tasks: [{ name: 'task', created: '2026-10-19T09:00', input: UNDATED }],
+    events: [
+      { at: '2026-10-19T10:00', run: deck(['task'], '2026-10-24') },
+      // Tue: deadline Tue Oct 27 23:59 → wait 7 → lead 3 → auto Sat Oct 24
+      // 08:30, the deck's own day: the deadline wins.
+      {
+        at: '2026-10-20T10:00',
+        run: (ctx) =>
+          updateTask({
+            userId: ctx.userId,
+            userTimezone: ctx.timezone,
+            taskId: ctx.ids.task,
+            input: { deadline_at: iso('2026-10-27T23:59') },
+          }),
+      },
+      {
+        at: '2026-10-20T10:01',
+        run: check('task', { on_deck_day: null, due_at: iso('2026-10-24T08:30') }),
+      },
+    ],
+    expect: {
+      task: {
+        // An automatic target is not quiet: its horizon segment until the
+        // target arrives Saturday. Tue 21:00 the deadline is 7.1 days out
+        // (weeks, so the Saturday check-in: quiet); from Wed it is within 7
+        // days and pulls the horizon in to Days.
+        '2026-10-21..2026-10-23': 'days',
+        '2026-10-24': 'over 1×',
+        '2026-10-25': 'over 2×',
       },
     },
   },

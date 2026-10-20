@@ -1114,15 +1114,17 @@ paths:
         reminders, quotas, done and trashed tasks are skipped and counted, never refusing the
         batch. A task carries a picked target or a deck, never both: decking drops a picked
         target (time and all); a deadline task keeps its automatic target. A deadline task can
-        be decked only while its automatic target is still ahead and only on or before that
+        be decked only while its automatic target is still ahead and only on a day BEFORE that
         target's day — otherwise it is refused per task (`deadline_nagging`,
         `after_auto_target`). Decking takes a task out of the task queue, stamps
-        `target_set_at` (the Upcoming heads-up anchor), `last_considered_at` and
-        `segment_targeted_at`. A deck never nags (no over target, no badge, no Snooze-all); a
+        `target_set_at` (the Upcoming heads-up anchor; only when the day changes),
+        `last_considered_at` and `segment_targeted_at`, and cancels a pending AI enrichment. A deck never nags (no over target, no badge, no Snooze-all); a
         future deck shows in Upcoming on its heads-up days (`GET /api/reminders?deck=1`); at the
         rollover an undone deck whose day has ended goes to the task queue at every priority
         (`queued_from_deck_day`). Any later target the user picks (PATCH, snooze, Today,
-        enrichment) clears the deck; a deadline change or Back to auto does not. One undo
+        enrichment) clears the deck; a deadline change or Back to auto does not — unless the
+        deadline's automatic target then reminds on or before the deck day (or already has):
+        the deadline wins and the deck is cleared in the same write. One undo
         entry (`deck`). An id that is not one of the caller's own tasks is a 400. 409 when the
         server's task queue (`OPENTASK_TASK_QUEUE`) is off.
       parameters:
@@ -1552,7 +1554,7 @@ paths:
                     on_deck_day:
                       type: [string, 'null']
                       format: date
-                      description: On deck for this local calendar date, or off deck (`null`) — see TaskUpdate. Sent alone (no date fields in the same changes).
+                      description: On deck for this local calendar date, or off deck (`null`) — see TaskUpdate. Sent alone (no date fields in the same changes, and no `delta_minutes`).
                     deadline_nag_off:
                       type: boolean
                       deprecated: true
@@ -5454,6 +5456,16 @@ components:
           type: [string, 'null']
           format: date-time
           description: The target (primary name). `due_at` is accepted as its deprecated alias; sending both with different values is a 400.
+        on_deck_day:
+          type: [string, 'null']
+          format: date
+          description: >
+            On deck (2026-10-20): create the task on deck for this local calendar date — the
+            same checks as `POST /api/tasks/deck`: a one-off only, today or later, and with a
+            `deadline_at` in the same body only on a day before its automatic target's day
+            (else 400). With `target_at` / `due_at` it is a 400 (a task is on deck or has a
+            target). A deck counts as structured input: the task is not sent for AI
+            enrichment. 409 when the server's task queue is off.
         deadline_at:
           type: [string, 'null']
           format: date-time

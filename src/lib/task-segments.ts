@@ -1133,7 +1133,7 @@ export function upcomingRowActions(row: {
  *  6. One-offs only (no repeating task, reminder or quota).
  *
  * A deadline task can be decked only while its automatic target is still
- * ahead, and only on or before that target's day (red-team A1), so a deck
+ * ahead, and only BEFORE that target's day (red-team A1), so a deck
  * never sits on a task that is already nagging (`deckRefusal`).
  */
 
@@ -1212,12 +1212,13 @@ export function deckSkip(task: {
 
 /**
  * A1 (red team, APPROVED 2026-10-20): a deadline task goes on deck only while
- * its AUTOMATIC target is still ahead, and only on or before that target's
+ * its AUTOMATIC target is still ahead, and only BEFORE that target's
  * local day — so a deck never nags and Snooze-all never meets one.
  *  - `deadline_nagging`: the automatic target has arrived (or the deadline
  *    has passed) — "This deadline is close and already reminding you — use
  *    Today."
- *  - `after_auto_target`: the day is after the automatic target's day.
+ *  - `after_auto_target`: the day is ON OR AFTER the automatic target's day
+ *    (strict, review 2026-10-20: on its own day the deck would meet the nag).
  * The automatic target is the one the deck leaves: the stored one when the
  * target already is automatic, else (decking drops a picked target) the one
  * "Back to auto" computes now. No deadline: never refused.
@@ -1235,7 +1236,7 @@ export function deckRefusal(
   const autoDay = DateTime.fromISO(auto, { zone: 'utc' })
     .setZone(ctx.timezone)
     .toFormat(DECK_DAY_FORMAT)
-  return day > autoDay ? 'after_auto_target' : null
+  return day >= autoDay ? 'after_auto_target' : null
 }
 
 /** The refusal's words (the API's `refused[].message`; D2's toast reads the first). */

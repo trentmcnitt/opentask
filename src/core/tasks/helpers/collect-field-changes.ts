@@ -13,6 +13,7 @@ import { deriveAnchorFields, computeFirstOccurrence, fillRuleTime } from '@/core
 import { AppError, NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { DateTime } from 'luxon'
 import {
+  DECK_WITH_DATE_MESSAGE,
   QUOTA_DUE_DATE_MESSAGE,
   QUOTA_INTERVAL_MESSAGE,
   QUOTA_PERIOD_MESSAGE,
@@ -277,6 +278,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     auto: target.auto,
     isReminder: willBeReminder,
     isTracked: willBeTracked,
+    ctx,
+    now,
   })
 
   // Upcoming (2026-10-12): any change to the target or the deadline restarts
@@ -286,7 +289,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // A deck write stamps too (A6) and takes the task out of the queue (B8).
   stampTargetSet(data, task, now.toISOString(), {
     keepQueue: input.queue_mark !== undefined || input.try_tomorrow !== undefined,
-    deck: typeof input.on_deck_day === 'string',
+    // Only a NEW deck day: re-decking for the same day keeps the heads-up anchor.
+    deck: typeof input.on_deck_day === 'string' && input.on_deck_day !== task.on_deck_day,
   })
 
   return data
@@ -418,6 +422,12 @@ function prepareDeck(
   if (!taskQueueEnabled()) {
     throw new AppError('On deck needs the task queue, which is off on this server', 409, 'CONFLICT')
   }
+  // Never both (rule 1), on EVERY path: a deck write carrying its own target
+  // (a PATCH, a bulk edit's `changes.due_at` or `delta_minutes`) is refused,
+  // not resolved — the schemas refuse it too; this is the core's guarantee.
+  if (input.due_at !== undefined || input.deadline_at !== undefined) {
+    throw new ValidationError(DECK_WITH_DATE_MESSAGE)
+  }
   const skip = deckSkip({
     rrule: input.rrule !== undefined ? input.rrule : task.rrule,
     is_reminder: opts.willBeReminder,
@@ -430,7 +440,7 @@ function prepareDeck(
   if (problem) throw new ValidationError(problem)
   const refusal = deckRefusal(task, day, opts.ctx, opts.now)
   if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
-  return hasPickedTarget(task) && input.due_at === undefined ? { ...input, due_at: null } : input
+  return hasPickedTarget(task) ? { ...input, due_at: null } : input
 }
 
 /**
@@ -441,7 +451,7 @@ function collectDeckChange(
   data: FieldChangeData,
   task: Task,
   input: FieldChangesInput,
-  left: { auto: boolean; isReminder: boolean; isTracked: boolean },
+  left: { auto: boolean; isReminder: boolean; isTracked: boolean; ctx: TargetContext; now: Date },
 ): void {
   if (input.on_deck_day !== undefined) {
     if (input.on_deck_day !== task.on_deck_day) {
@@ -449,10 +459,17 @@ function collectDeckChange(
     }
     return
   }
+  const { ctx, now, ...kind } = left
   collectDeckClear(data, task, {
     dueAt: data.afterState.due_at !== undefined ? data.afterState.due_at : task.due_at,
     rrule: input.rrule !== undefined ? input.rrule : task.rrule,
-    ...left,
+    ...kind,
+    deadline: {
+      at: input.deadline_at !== undefined ? input.deadline_at : task.deadline_at,
+      changed: data.fieldsChanged.includes('deadline_at'),
+      ctx,
+      now,
+    },
   })
 }
 

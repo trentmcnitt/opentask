@@ -168,3 +168,56 @@ describe('On deck over HTTP', () => {
     expect(await where('')).toEqual([])
   })
 })
+
+describe('On deck over HTTP: review fixes (10-20)', () => {
+  beforeEach(async () => {
+    await resetTestData()
+    await setTaskQueue(true)
+  })
+
+  afterAll(async () => {
+    await setTaskQueue(false)
+  })
+
+  test('OD-I09: POST /api/tasks creates on deck; with a target it is a 400; switch off 409', async () => {
+    const res = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Grab the gloves', on_deck_day: day(1) },
+    })
+    expect(res.status).toBe(201)
+    const created = (await res.json()).data
+    expect(created).toMatchObject({ on_deck_day: day(1), target_at: null })
+    const both = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'x', on_deck_day: day(1), target_at: daysFromNow(2) },
+    })
+    expect(both.status).toBe(400)
+    const past = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'x', on_deck_day: day(-1) },
+    })
+    expect(past.status).toBe(400)
+    // A deadline two days out already reminds: no deck.
+    const near = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'x', on_deck_day: day(0), deadline_at: daysFromNow(2) },
+    })
+    expect(near.status).toBe(400)
+    await setTaskQueue(false)
+    const off = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'x', on_deck_day: day(1) },
+    })
+    expect(off.status).toBe(409)
+  })
+
+  test('OD-I10: bulk edit with delta_minutes and on_deck_day is a 400', async () => {
+    const id = await make({ title: 'One', target_at: daysFromNow(1) })
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [id], changes: { on_deck_day: day(2) }, delta_minutes: 60 },
+    })
+    expect(res.status).toBe(400)
+    expect((await getTask(id)).on_deck_day).toBeNull()
+  })
+})

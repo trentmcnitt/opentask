@@ -4,10 +4,12 @@
  *
  *   npx tsx scripts/clear-decks.ts <database> --user <id> [--apply]
  *
- * Lists every open task of the user that is on deck, and its day. DRY RUN by
- * default: nothing is written without `--apply`, which takes them all off
- * deck (back to their horizon segments; no target to restore — a deck never
- * carries a picked one).
+ * Lists every open task of the user that is on deck (and its day), and every
+ * one the rollover sent to the queue FROM a deck (`queued_from_deck_day`)
+ * that is still queued. DRY RUN by default: nothing is written without
+ * `--apply`, which takes the first off deck and the second out of the queue
+ * (`queued_at` and `try_tomorrow` cleared) — back to their horizon segments;
+ * no target to restore, since a deck never carries a picked one.
  *
  * Opens <database> directly (with --apply it WRITES to it). Stop the server
  * first, take a `.backup`, and never run it on production without Trent. Ids
@@ -44,11 +46,17 @@ async function main() {
   process.env.OPENTASK_AI_ENABLED = 'false'
   const { findDecks, clearDecks } = await import('../src/core/tasks/clear-decks')
   const found = args.apply ? clearDecks(args.user) : findDecks(args.user)
-  for (const t of found) console.log(`#${t.id}  on deck ${t.on_deck_day}`)
+  for (const t of found) {
+    console.log(
+      t.on_deck_day
+        ? `#${t.id}  on deck ${t.on_deck_day}`
+        : `#${t.id}  queued ${t.queued_at} from the deck of ${t.queued_from_deck_day}`,
+    )
+  }
   console.log(
     args.apply
-      ? `Cleared ${found.length} deck(s) for user ${args.user}.`
-      : `Dry run: ${found.length} deck(s) would be cleared for user ${args.user}. Pass --apply to write.`,
+      ? `Cleared ${found.length} deck row(s) for user ${args.user}.`
+      : `Dry run: ${found.length} deck row(s) would be cleared for user ${args.user}. Pass --apply to write.`,
   )
 }
 

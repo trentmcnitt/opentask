@@ -57,9 +57,25 @@ import { targetIsToday, upcomingState } from '@/lib/task-segments'
 /** High (3) and Urgent (4): the priorities an undated task needs to be relevant now. */
 export const NOW_PRIORITY_MIN = 3
 
-export function isRelevantNow(task: Task, timezone: string, now: Date): boolean {
-  // Over target first: a deck on a deadline task decked for its automatic
-  // target's own day nags from that target, deck or not (A1).
+/**
+ * `opts.queue`: the task queue's server switch (the browser's `useTaskQueue`,
+ * like `attemptsOffer`). Only with it on does the undated-High rule skip a
+ * queued task (A8); off, main's behaviour exactly — a rollback leaves no
+ * High task hidden behind a fold.
+ */
+export interface NowOptions {
+  queue?: boolean
+}
+
+export function isRelevantNow(
+  task: Task,
+  timezone: string,
+  now: Date,
+  opts: NowOptions = {},
+): boolean {
+  // Over target first. Belt and braces: A1 (strict) keeps a deck off a task
+  // whose automatic target has arrived, but one that nags is relevant, deck
+  // or not.
   if (task.due_at !== null && isOverdue(task, now)) return true
   // ON DECK (2026-10-20, A13). Today's decks (and yesterday's leftovers until
   // the rollover strips them, A2) are not relevant in their project group:
@@ -70,9 +86,12 @@ export function isRelevantNow(task: Task, timezone: string, now: Date): boolean 
     const heads = upcomingState(task, timezone, now)
     return heads !== null && heads.state !== 'deferred'
   }
-  // Undated High/Urgent — but not a QUEUED one (A8): the queue already holds
-  // it, so it is not on two surfaces at once.
-  if (task.due_at === null) return !task.queued_at && (task.priority ?? 0) >= NOW_PRIORITY_MIN
+  // Undated High/Urgent — but, with the queue on, not a QUEUED one (A8): the
+  // queue already holds it, so it is not on two surfaces at once.
+  if (task.due_at === null) {
+    if (opts.queue && task.queued_at) return false
+    return (task.priority ?? 0) >= NOW_PRIORITY_MIN
+  }
   if (targetIsToday(task.due_at, timezone, now)) return true
   const heads = upcomingState(task, timezone, now)
   return heads !== null && heads.state !== 'deferred'
@@ -86,11 +105,16 @@ export interface NowSplit {
   more: Task[]
 }
 
-export function splitNow(sortedTasks: Task[], timezone: string, now: Date): NowSplit {
+export function splitNow(
+  sortedTasks: Task[],
+  timezone: string,
+  now: Date,
+  opts: NowOptions = {},
+): NowSplit {
   const relevant: Task[] = []
   const more: Task[] = []
   for (const task of sortedTasks) {
-    if (isRelevantNow(task, timezone, now)) relevant.push(task)
+    if (isRelevantNow(task, timezone, now, opts)) relevant.push(task)
     else more.push(task)
   }
   return { relevant, more }

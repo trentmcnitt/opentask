@@ -39,7 +39,7 @@ import {
   type DeckRefusal,
   type DeckResultCounts,
 } from '@/lib/task-segments'
-import { bulkEdit } from './bulk'
+import { bulkEdit, cancelPendingEnrichment } from './bulk'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { getTargetContext } from './target-context'
 import { taskQueueEnabled } from './task-queue'
@@ -132,7 +132,14 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
       },
     })
     if (day === null) result.undecked = edit.tasksAffected
-    else result.decked = edit.tasksAffected
+    else {
+      result.decked = edit.tasksAffected
+      // A deck is the user's own plan for the task: like a manual target
+      // change, it cancels a pending AI enrichment (which could otherwise land
+      // a target and take the deck straight off). PATCH does the same in
+      // `updateTask`, for every manual edit.
+      cancelPendingEnrichment(eligible)
+    }
   }
   result.summary = deckSummary(result, opts.timezone, now)
   return result
@@ -142,7 +149,11 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
  * TODAY'S DECKS (A13; the On deck section D2 draws, and the slot push's
  * count): the user's own open tasks on deck for the calendar today or an
  * earlier day not yet stripped (A2: the leftovers between midnight and the
- * rollover). Priority, highest first, then id.
+ * rollover). Priority, highest first, then id. Belt and braces (A1, strict):
+ * a row whose target has ARRIVED is left out — it is nagging, so it is over
+ * target on the dashboard, not on deck (the A1 checks keep this from
+ * happening; a deck can only meet its deadline's automatic target in the
+ * minutes between a morning_time earlier than the rollover and the rollover).
  */
 export function onDeckToday(userId: number, timezone: string, now: Date = new Date()): Task[] {
   const rows = getDb()
@@ -150,8 +161,9 @@ export function onDeckToday(userId: number, timezone: string, now: Date = new Da
       `SELECT ${taskColumns()} FROM tasks
         WHERE user_id = ? AND on_deck_day IS NOT NULL AND on_deck_day <= ?
           AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
+          AND (due_at IS NULL OR due_at > ?)
         ORDER BY priority DESC, id ASC`,
     )
-    .all(userId, calendarToday(timezone, now)) as TaskRow[]
+    .all(userId, calendarToday(timezone, now), now.toISOString()) as TaskRow[]
   return rows.map(rowToTask)
 }

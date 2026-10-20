@@ -16,7 +16,7 @@ import { effectiveHorizon, HORIZON_ORDER } from '@/lib/task-segments'
 import { isOverdue } from '@/lib/task-counts'
 import type { LabelColor, Project, Task } from '@/types'
 import type { GroupingMode } from '@/lib/grouping'
-import { splitNow, type NowSplit } from '@/lib/now-view'
+import { splitNow, type NowOptions, type NowSplit } from '@/lib/now-view'
 
 /**
  * The sort options for a task list. Default directions (reversed flips them;
@@ -262,8 +262,9 @@ export function applyNowFolds(
   groups: SortedTaskGroup[],
   timezone: string,
   now: Date,
+  opts: NowOptions = {},
 ): SortedTaskGroup[] {
-  return groups.map((g) => ({ ...g, now: splitNow(g.sortedTasks, timezone, now) }))
+  return groups.map((g) => ({ ...g, now: splitNow(g.sortedTasks, timezone, now, opts) }))
 }
 
 /**

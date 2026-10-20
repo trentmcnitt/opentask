@@ -1026,7 +1026,7 @@ function bulkSnoozeDescription(
  * `bulkSnooze` is synchronous from its read to here (nothing interleaves), so
  * their label lists are still current.
  */
-function cancelPendingEnrichment(tasks: Task[]): void {
+export function cancelPendingEnrichment(tasks: Task[]): void {
   const pending = tasks.filter((t) => t.labels.includes('ai-to-process'))
   if (pending.length === 0) return
   const stmt = getDb().prepare('UPDATE tasks SET labels = ? WHERE id = ?')

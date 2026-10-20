@@ -15,6 +15,7 @@ import {
   formatTimeInTimezone,
   formatDurationDelta,
 } from '@/lib/format-date'
+import { DateTime } from 'luxon'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { parseDeckDay } from '@/lib/task-segments'
 import { getPriorityOption } from '@/lib/priority'
@@ -233,7 +234,7 @@ function buildFieldFragment(
     case 'is_reminder':
       return afterState.is_reminder ? 'Moved to Reminders' : 'Removed from Reminders'
     case 'on_deck_day':
-      return buildDeckFragment(afterState)
+      return buildDeckFragment(afterState, userTimezone)
     default:
       return null
   }
@@ -241,11 +242,24 @@ function buildFieldFragment(
 
 /**
  * On deck fragment (2026-10-20): "On deck for Sat Oct 24", or "Taken off
- * deck" (an un-deck, or a pick that cleared the deck).
+ * deck" (an un-deck, or a pick that cleared the deck). When a deadline added
+ * or moved in the same write took it off (A1, strict: the deadline wins), it
+ * says why: "Taken off deck: the deadline reminds you from Tue".
  */
-function buildDeckFragment(afterState: Partial<Record<string, unknown>>): string {
+function buildDeckFragment(
+  afterState: Partial<Record<string, unknown>>,
+  userTimezone: string,
+): string {
   const day = afterState.on_deck_day
-  if (typeof day !== 'string') return 'Taken off deck'
+  if (typeof day !== 'string') {
+    if (afterState.deadline_at === undefined) return 'Taken off deck'
+    const target = afterState.due_at
+    if (typeof target !== 'string' || Date.parse(target) <= Date.now()) {
+      return 'Taken off deck: the deadline is already reminding you'
+    }
+    const from = DateTime.fromISO(target, { zone: 'utc' }).setZone(userTimezone).toFormat('ccc')
+    return `Taken off deck: the deadline reminds you from ${from}`
+  }
   const parsed = parseDeckDay(day, 'utc')
   return `On deck for ${parsed ? parsed.toFormat('ccc LLL d') : day}`
 }

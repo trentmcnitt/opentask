@@ -570,8 +570,10 @@ describe('TM-INV: the rollover over a random list', () => {
  *  - a deck and a PICKED target never coexist (rule 1, the B1 clear);
  *  - a deck is never queued, never in a horizon segment, and never on a
  *    repeating task, a reminder or a quota;
- *  - a deck is over target only through a deadline's automatic target (A1:
- *    a pick would have cleared it);
+ *  - a deck NEVER nags (A1 strict, review 10-20): no undone deck's target
+ *    has arrived — a pick clears it, and a deadline that would remind on or
+ *    before its day wins (the rollover strips a deck at 06:30, before the
+ *    09:00 morning an automatic target starts at);
  *  - after a rollover no undone deck is older than the OpenTask day.
  */
 describe('TM-INV: on deck over a random list', () => {
@@ -581,7 +583,7 @@ describe('TM-INV: on deck over a random list', () => {
     vi.useRealTimers()
   })
 
-  test('TM-INV-07: a deck and a picked target never coexist; a deck nags only through an automatic target', () => {
+  test('TM-INV-07: a deck and a picked target never coexist; a deck never nags', () => {
     const SEED7 = SEED + 7
     const DAYS = 21
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
@@ -604,8 +606,9 @@ describe('TM-INV: on deck over a random list', () => {
         expect(task.queued_at, `${l}: deck + queued`).toBeNull()
         expect(task.rrule, `${l}: repeating deck`).toBeNull()
         expect(segmentState(task, tz, new Date()), `${l}: deck in a segment`).toBeNull()
-        if (task.due_at && Date.parse(task.due_at) <= Date.now() && !task.done) {
-          expect(task.target_auto, `${l}: a deck nags on a picked target`).toBe(true)
+        if (!task.done) {
+          const arrived = task.due_at !== null && Date.parse(task.due_at) <= Date.now()
+          expect(arrived, `${l}: a deck nags`).toBe(false)
         }
       }
     }

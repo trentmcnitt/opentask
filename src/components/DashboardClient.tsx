@@ -71,6 +71,7 @@ import {
   useDefaultSort,
   useAiAvailable,
   useAiPreferences,
+  useTaskQueue,
 } from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
@@ -1154,10 +1155,15 @@ function HomeContent({
     activeFilterCount > 0 ||
     (aiMode !== 'off' && (aiFilterActive || selectedSignals.length > 0))
   const nowAvailable = grouping === 'project' && !listNarrowed
+  // The task queue switch: with it on, a queued undated High folds (A8).
+  const queueOn = useTaskQueue().enabled
   // "N of M now": the rows relevant now, out of the whole list.
   const nowRelevantCount = useMemo(
-    () => (nowAvailable ? tasks_.filter((t) => isRelevantNow(t, timezone, now)).length : 0),
-    [nowAvailable, tasks_, timezone, now],
+    () =>
+      nowAvailable
+        ? tasks_.filter((t) => isRelevantNow(t, timezone, now, { queue: queueOn })).length
+        : 0,
+    [nowAvailable, tasks_, timezone, now, queueOn],
   )
   // Something is folded. When nothing is (every row relevant, or no rows),
   // there is no fold to lift: the strip hides, and Show all — which would
@@ -1173,8 +1179,8 @@ function HomeContent({
   const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
   const sortedGroups = useMemo(() => {
     const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
-    return nowFolds ? applyNowFolds(sorted, timezone, now) : sorted
-  }, [taskGroups, listSort, listReversed, listScoreMap, nowFolds, timezone, now])
+    return nowFolds ? applyNowFolds(sorted, timezone, now, { queue: queueOn }) : sorted
+  }, [taskGroups, listSort, listReversed, listScoreMap, nowFolds, timezone, now, queueOn])
   const orderedIds = useMemo(
     () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),
     [sortedGroups, isCollapsed, isFoldOpen],
