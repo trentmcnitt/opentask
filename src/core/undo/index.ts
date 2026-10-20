@@ -23,7 +23,8 @@ export function getUndoHistory(userId: number, limit: number = 50): UndoLogEntry
   const entries = db
     .prepare(
       `
-    SELECT id, user_id, action, description, fields_changed, snapshot, created_at, undone
+    SELECT id, user_id, action, description, fields_changed, snapshot, created_at, undone,
+           client, token_name
     FROM undo_log
     WHERE user_id = ?
     ORDER BY id DESC
@@ -39,6 +40,8 @@ export function getUndoHistory(userId: number, limit: number = 50): UndoLogEntry
     snapshot: string
     created_at: string
     undone: number
+    client: string | null
+    token_name: string | null
   }>
 
   return entries.map((e) => ({
@@ -50,6 +53,8 @@ export function getUndoHistory(userId: number, limit: number = 50): UndoLogEntry
     snapshot: JSON.parse(e.snapshot),
     created_at: e.created_at,
     undone: e.undone === 1,
+    client: e.client,
+    token_name: e.token_name,
   }))
 }
 

@@ -10,6 +10,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { currentAttribution } from '@/core/request-context'
 import type { Task } from '@/types'
 
 export type ActivityAction =
@@ -45,14 +46,16 @@ export interface ActivityEntry {
   metadata?: Record<string, unknown>
 }
 
+// `client` and `token_name`: which client made the write, from the request
+// context (`system` outside a request — see src/core/request-context.ts).
 const INSERT_SQL = `
-  INSERT INTO activity_log (user_id, task_id, action, source, batch_id, fields, before, after, metadata)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO activity_log (user_id, task_id, action, source, batch_id, fields, before, after,
+                            metadata, client, token_name)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
-export function logActivity(entry: ActivityEntry): void {
-  const db = getDb()
-  db.prepare(INSERT_SQL).run(
+function insertValues(entry: ActivityEntry, client: string, tokenName: string | null): unknown[] {
+  return [
     entry.userId,
     entry.taskId,
     entry.action,
@@ -62,24 +65,18 @@ export function logActivity(entry: ActivityEntry): void {
     entry.before ? JSON.stringify(entry.before) : null,
     entry.after ? JSON.stringify(entry.after) : null,
     entry.metadata ? JSON.stringify(entry.metadata) : null,
-  )
+    client,
+    tokenName,
+  ]
+}
+
+export function logActivity(entry: ActivityEntry): void {
+  logActivityBatch([entry])
 }
 
 export function logActivityBatch(entries: ActivityEntry[]): void {
   if (entries.length === 0) return
-  const db = getDb()
-  const stmt = db.prepare(INSERT_SQL)
-  for (const entry of entries) {
-    stmt.run(
-      entry.userId,
-      entry.taskId,
-      entry.action,
-      entry.source ?? 'single',
-      entry.batchId ?? null,
-      entry.fields ? JSON.stringify(entry.fields) : null,
-      entry.before ? JSON.stringify(entry.before) : null,
-      entry.after ? JSON.stringify(entry.after) : null,
-      entry.metadata ? JSON.stringify(entry.metadata) : null,
-    )
-  }
+  const { client, tokenName } = currentAttribution()
+  const stmt = getDb().prepare(INSERT_SQL)
+  for (const entry of entries) stmt.run(...insertValues(entry, client, tokenName))
 }

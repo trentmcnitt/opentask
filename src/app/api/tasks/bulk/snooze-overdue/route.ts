@@ -37,6 +37,7 @@ import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
+import { setClientHint } from '@/core/request-context'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
 import { planSweepFeedback, sendSweepFeedback } from '@/core/notifications/sweep-feedback'
 
@@ -45,6 +46,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     const user = await requireAuth(request)
     const body = await request.json()
     const input = validateBulkSnoozeOverdue(body)
+    // Client attribution: `notify: false` comes from the iOS Home Screen quick
+    // actions and Shortcuts. Used only when the X-OpenTask-Client header is
+    // absent (`inferClient`).
+    if (input.notify === false) setClientHint('shortcut')
 
     // Compute absolute snooze target from now
     let until: string

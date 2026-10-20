@@ -13,6 +13,7 @@ import { extractBearerToken, validateBearerToken } from './bearer'
 import { getProxyAuthUser } from './proxy'
 import { toAuthUser } from './helpers'
 import { AuthError } from '@/core/errors'
+import { recordAuth } from '@/core/request-context'
 import type { AuthUser } from '@/types'
 
 export { validateBearerToken, extractBearerToken } from './bearer'
@@ -75,6 +76,7 @@ export async function getSessionAuthUser(): Promise<SessionAuthResult> {
   const user = session.user as unknown as AuthUser & { id?: string | number }
   if (!user.id) return { user: null, reason: 'no-user-id' }
 
+  recordAuth('session')
   return {
     user: toAuthUser({
       id: typeof user.id === 'string' ? parseInt(user.id, 10) : user.id,

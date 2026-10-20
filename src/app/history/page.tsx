@@ -8,6 +8,7 @@ import {
   getTimezoneDayBoundaries,
 } from '@/lib/format-date'
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
+import { clientLabel } from '@/lib/client-attribution'
 import { getPriorityOption } from '@/lib/priority'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useRequireSession } from '@/hooks/useRequireSession'
@@ -53,6 +54,9 @@ interface UndoEntry {
   undone: boolean
   fields_changed: string[]
   snapshot: UndoSnapshot[]
+  /** Which client made it (`src/lib/client-attribution.ts`); null on older rows. */
+  client?: string | null
+  token_name?: string | null
 }
 
 type TabId = 'completions' | 'activity' | 'ai'
@@ -757,6 +761,23 @@ function ActivityTab({
 }
 
 /**
+ * " · Watch" after an entry's time: the client that made it (client
+ * attribution, 2026-10-20). Nothing for an unknown client or a row from
+ * before the client was recorded. The token's name, when there is one, is the
+ * hover title — not worth a place in the row.
+ */
+function ClientTag({ client, tokenName }: { client?: string | null; tokenName?: string | null }) {
+  const label = clientLabel(client)
+  if (!label) return null
+  return (
+    <span data-activity-client={client} title={tokenName ? `Token: ${tokenName}` : undefined}>
+      {' · '}
+      {label}
+    </span>
+  )
+}
+
+/**
  * Expandable activity item with chevron to show/hide full details.
  * Collapsed: shows truncated description with chevron
  * Expanded: shows full description, field badges, and before/after values
@@ -818,6 +839,7 @@ function ExpandableActivityItem({
                 minute: '2-digit',
                 hour12: true,
               })}
+              <ClientTag client={activity.client} tokenName={activity.token_name} />
               {activity.undone && ' (undone)'}
             </p>
           </div>

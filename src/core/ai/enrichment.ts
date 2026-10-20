@@ -47,6 +47,7 @@ import {
   rollPassedFirstOccurrence,
 } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { runAsSystem } from '@/core/request-context'
 import { stampTargetSet } from '@/core/tasks/target-set'
 import { getTargetContext } from '@/core/tasks/target-context'
 import { resolveTarget } from '@/lib/task-segments'
@@ -478,8 +479,16 @@ function buildEnrichmentDescription(
  * Called fire-and-forget from the task creation API route. Checks that the
  * task has the `ai-to-process` label, guards against double-processing,
  * runs enrichTask(), and handles success/failure.
+ *
+ * Runs as the system (`runAsSystem`): the route only starts it, and the AI's
+ * edit is not the client's — without this the request context would follow
+ * the fire-and-forget promise and stamp the AI's undo entry `web` or `ios`.
  */
-export async function enrichSingleTask(taskId: number, userId: number): Promise<void> {
+export function enrichSingleTask(taskId: number, userId: number): Promise<void> {
+  return runAsSystem(() => enrichSingleTaskAsSystem(taskId, userId))
+}
+
+async function enrichSingleTaskAsSystem(taskId: number, userId: number): Promise<void> {
   if (!isAIEnabled()) return
 
   const row = claimTask(taskId, userId)
