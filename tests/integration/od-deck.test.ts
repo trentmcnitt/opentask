@@ -70,7 +70,7 @@ describe('On deck over HTTP', () => {
     const b = await make({ title: 'Two' })
     const weekly = await make({
       title: 'Water the ferns',
-      rrule: 'FREQ=WEEKLY;BYHOUR=9;BYMINUTE=0',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
     })
     const reminder = await make({ title: 'Stretch', is_reminder: true, rrule: null })
     // A deadline two days out: its automatic target has already arrived.
@@ -131,7 +131,10 @@ describe('On deck over HTTP', () => {
     // Null takes it off; a repeating task can't go on deck.
     await patch(id, { on_deck_day: day(2) })
     expect((await patch(id, { on_deck_day: null })).json.data.on_deck_day).toBeNull()
-    const weekly = await make({ title: 'Weekly', rrule: 'FREQ=WEEKLY;BYHOUR=9;BYMINUTE=0' })
+    const weekly = await make({
+      title: 'Weekly',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
+    })
     expect((await patch(weekly, { on_deck_day: day(1) })).status).toBe(400)
   })
 
