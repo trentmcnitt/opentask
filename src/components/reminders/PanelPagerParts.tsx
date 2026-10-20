@@ -54,7 +54,6 @@ export function SlotPagerHeader({
   onToggleExpanded,
   showConsidered,
   onToggleConsidered,
-  stackTime = false,
 }: {
   label: string
   /** A colour for the label — a task segment's teal. */
@@ -76,15 +75,6 @@ export function SlotPagerHeader({
   onToggleExpanded: () => void
   showConsidered: boolean
   onToggleConsidered: () => void
-  /**
-   * Below `sm`, put `time` on its own line under the label instead of after
-   * it. A task segment's hint (2026-10-12): "TASKS · EVENTUALLY · Quarterly"
-   * beside the count, Defer all and both chevrons does not fit a 390px phone
-   * on one line, and the hint truncated to "Shown e…". Two 12px lines fit
-   * the 44px row, so the card does not grow. A slot's start time is short and
-   * stays inline.
-   */
-  stackTime?: boolean
 }) {
   // Same numbers the slot bar fills with — no parallel notion of "finished".
   // `total > 0` matters here: an empty slot reading "0 of 0" is not complete,
@@ -118,39 +108,23 @@ export function SlotPagerHeader({
         onClick={onToggleExpanded}
         aria-expanded={expanded}
         data-slot-header-toggle
-        className={cn(
-          'hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 text-left transition-colors',
-          // Two 16px lines fit the 44px row only without the vertical padding.
-          stackTime ? 'py-0 sm:py-1' : 'py-1',
-        )}
+        className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
       >
-        <span
-          className={cn(
-            'min-w-0 flex-1',
-            stackTime ? 'flex flex-col sm:block sm:truncate' : 'truncate',
-          )}
-        >
+        <span className="min-w-0 flex-1 truncate">
           <span
-            className={cn(
-              'text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase',
-              stackTime && 'truncate',
-            )}
+            className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase"
             // A task segment's title wears its horizon's teal (2026-10-11).
             style={accent ? { color: accent } : undefined}
           >
             {label}
           </span>
-          {/* The slot's time / segment's hint: ~#8a8a8a light, ~#8f8f8f dark
-              (2026-10-11 visual QA; /50 measured 1.9:1 and 2.9:1). */}
+          {/* A slot's start time (a task segment has none, only its title):
+              ~#8a8a8a light, ~#8f8f8f dark (2026-10-11 visual QA; /50
+              measured 1.9:1 and 2.9:1). */}
           {time && (
-            <span
-              className={cn(
-                'text-muted-foreground/80 dark:text-muted-foreground/90 text-xs whitespace-nowrap',
-                stackTime && 'truncate',
-              )}
-            >
-              <span className={stackTime ? 'hidden sm:inline' : undefined}> &middot; </span>
-              {time}
+            <span className="text-muted-foreground/80 dark:text-muted-foreground/90 text-xs whitespace-nowrap">
+              {' '}
+              &middot; {time}
             </span>
           )}
         </span>

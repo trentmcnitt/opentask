@@ -398,7 +398,7 @@ test.describe('Row corner · target time and segments', () => {
       await page.screenshot({ path: `${SHOTS}/segment-menu-desktop.png`, animations: 'disabled' })
       await page.getByRole('menuitemradio', { name: /^Months/ }).click()
       await expect.poll(async () => (await stateOf(page, id)).horizon).toBe('months')
-      await undoFromToast(page, 'Moved to Tasks · Months')
+      await undoFromToast(page, 'Moved to Monthly')
       await expect.poll(async () => (await stateOf(page, id)).horizon).toBe('days')
     } finally {
       await trash(page, [id])

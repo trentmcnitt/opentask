@@ -212,7 +212,7 @@ export default async function globalSetup() {
   // AHEAD, so they stay out of today's segments; tests/e2e/tm-task-segments.spec.ts
   // makes its own. Not "now": a task considered TODAY is still in its segment,
   // as a considered row, and since 2026-10-11 every segment is a page of the
-  // dashboard panel's pager — a "Tasks · Eventually 3 of 3" page after the
+  // dashboard panel's pager — a "Quarterly 3 of 3" page after the
   // slots that every pager spec would have to step over. A day ahead is never
   // "today" and is past every segment day, so the segment never forms.
   //

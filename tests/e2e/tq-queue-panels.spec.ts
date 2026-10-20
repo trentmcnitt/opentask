@@ -1,7 +1,7 @@
 /**
  * The task queue's panels on the web (task-queue PR 3; docs/TASK-MODEL.md
- * § The task queue): "Task reminders · Today" (stripped by this OpenTask
- * day's rollover) and "Task reminders · Earlier" (stripped before), first
+ * § The task queue): "Queued" (stripped by this OpenTask day's rollover)
+ * and "Previously queued" (stripped before), first
  * among the task segments, with the switch on (`POST /api/test/task-queue`).
  *
  * Its own user (`queue@opentask.local`, seeded in globalSetup with nothing
@@ -170,8 +170,13 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     const earlier = panel(page, 'queue_previous')
     await expect(today).toBeVisible()
     await expect(earlier).toBeVisible()
-    await expect(today).toContainText(/Task reminders · Today/i)
-    await expect(earlier).toContainText(/Task reminders · Earlier/i)
+    // One title each and nothing after it (Trent, 2026-10-20).
+    await expect(today).toHaveAttribute('aria-label', 'Queued')
+    await expect(earlier).toHaveAttribute('aria-label', 'Previously queued')
+    await expect(today.getByText('Queued', { exact: true })).toBeVisible()
+    await expect(earlier.getByText('Previously queued', { exact: true })).toBeVisible()
+    await expect(today.getByText('Stripped today')).toHaveCount(0)
+    await expect(earlier.getByText('Previously targeted')).toHaveCount(0)
     // First among the task segments.
     const kinds = await page
       .locator('[data-task-segments] > [data-task-segment]')
@@ -419,7 +424,7 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     // No Defer all on a queue panel.
     await expect(earlier.getByRole('button', { name: /^Defer all/ })).toHaveCount(0)
     await earlier
-      .getByRole('button', { name: /^Mark all \d+ in Task reminders · Earlier as considered$/ })
+      .getByRole('button', { name: /^Mark all \d+ in Previously queued as considered$/ })
       .click()
     await expect(row(page, a)).toHaveCount(0)
     await expect(row(page, b)).toHaveCount(0)

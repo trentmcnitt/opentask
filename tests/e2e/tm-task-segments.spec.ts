@@ -142,9 +142,9 @@ test.describe('Task segments', () => {
       await expect.poll(async () => (await stateOf(page, ids[0])).last_considered_at).toBeNull()
 
       // The header folds the section like a slot's, and opens it again.
-      await days.getByRole('button', { name: /^Tasks · Days/, expanded: true }).click()
+      await days.getByRole('button', { name: /^Daily\b/, expanded: true }).click()
       await expect(segmentRow(page, ids[1])).toHaveCount(0)
-      await days.getByRole('button', { name: /^Tasks · Days/, expanded: false }).click()
+      await days.getByRole('button', { name: /^Daily\b/, expanded: false }).click()
       await expect(segmentRow(page, ids[1])).toBeVisible()
     } finally {
       await trash(page, ids)
@@ -159,9 +159,10 @@ test.describe('Task segments', () => {
       await segmentRow(page, id).locator('[data-horizon-chip]').click()
       await page.getByRole('menuitemradio', { name: 'Months' }).click()
       await expect.poll(async () => (await stateOf(page, id)).horizon).toBe('months')
-      // It left the days segment, and the toast says where it went (2026-10-11).
+      // It left the days segment, and the toast says where it went (2026-10-11),
+      // by the panel's title (2026-10-20).
       await expect(
-        page.locator('[data-sonner-toast]', { hasText: 'Moved to Tasks · Months' }),
+        page.locator('[data-sonner-toast]', { hasText: 'Moved to Monthly' }),
       ).toBeVisible()
     } finally {
       await trash(page, [id])
@@ -259,7 +260,9 @@ test.describe('Task segments on the dashboard', () => {
       const strip = tasks.getByRole('group', { name: "Today's task segments" })
       await expect(strip.getByRole('button')).toHaveCount(2)
       await expect(strip.locator('[data-segment-divider]')).toHaveCount(0)
-      await expect(tasks.getByText('Tasks · Days')).toBeVisible()
+      // The header is the one-word title, nothing after it (2026-10-20).
+      const header = tasks.locator('[data-slot-header-toggle]')
+      await expect(header).toHaveText('Daily')
 
       // Consider one: "X of Y" climbs and opens it, with its put-back.
       await consider(page, days[0])
