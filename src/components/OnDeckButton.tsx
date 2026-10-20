@@ -233,6 +233,9 @@ export function DeckMenu({
       title="On deck"
       options={options}
       onSelect={select}
+      // A Radix popover on desktop, so the menu also works in the Quick
+      // panel's dialog (`OptionMenu`'s `anchored`).
+      anchored
       after={
         <DeckDatePicker
           key={pickerKey}

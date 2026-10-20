@@ -3,6 +3,7 @@
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { OnDeckButton } from '@/components/OnDeckButton'
+import type { DeckLimit } from '@/lib/deck-menu'
 import { calendarToday, deckDayWords } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
@@ -27,6 +28,7 @@ export function OnDeckLine({
   timezone,
   staged,
   shadowed,
+  limit,
   onStage,
 }: {
   task: Task
@@ -35,15 +37,22 @@ export function OnDeckLine({
   staged: string | null | undefined
   /** A staged target overrides the deck (it takes the task off deck on Save). */
   shadowed: boolean
-  onStage: (day: string | null | undefined) => void
+  /** The hold menu's A1 limit from a staged deadline; omitted = from the task. */
+  limit?: DeckLimit | null
+  /**
+   * Stage a deck (undefined = back to what is stored). `clearTarget`: drop a
+   * staged target — any choice made here while a target is staged goes back
+   * to the deck (review #3), and so does staging a new deck day.
+   */
+  onStage: (day: string | null | undefined, clearTarget: boolean) => void
 }) {
   const now = new Date()
   const shown = shadowed ? null : staged !== undefined ? staged : task.on_deck_day
   const dirty = shadowed ? !!task.on_deck_day : staged !== undefined
   const stage = (day: string | null | undefined) => {
     const next = day === undefined ? calendarToday(timezone, now) : day
-    // Back to what is stored: nothing staged.
-    onStage(next === task.on_deck_day ? undefined : next)
+    // Back to what is stored: nothing staged — but a staged target still goes.
+    onStage(next === task.on_deck_day ? undefined : next, shadowed || typeof next === 'string')
   }
   const wasOnDeck =
     !shown && task.queued_at && task.queued_from_deck_day
@@ -55,6 +64,7 @@ export function OnDeckLine({
         task={{ ...task, on_deck_day: shown }}
         timezone={timezone}
         onDeck={(_t, day) => stage(day)}
+        limit={limit}
         className="-my-1 -ml-1 size-6"
         iconClassName="size-3.5"
       />

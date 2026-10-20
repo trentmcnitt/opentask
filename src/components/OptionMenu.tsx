@@ -9,6 +9,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
 
@@ -71,6 +72,7 @@ export function OptionMenu({
   onSelect,
   children,
   after,
+  anchored = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -82,6 +84,14 @@ export function OptionMenu({
   children?: React.ReactNode
   /** Rendered beside the menu (the callers' own pickers, which open from it). */
   after?: React.ReactNode
+  /**
+   * Desktop: a Radix popover anchored at the trigger instead of the hand-made
+   * portal dropdown. It joins Radix's layer stack, so it works INSIDE a
+   * dialog — the Quick panel's On deck line (D2 review): the hand-made one
+   * sits under the dialog's pointer-events lock, and a click on it counts as
+   * a click outside the dialog.
+   */
+  anchored?: boolean
 }) {
   const isMobile = useIsMobile()
   const triggerRef = useRef<HTMLDivElement>(null)
@@ -119,6 +129,30 @@ export function OptionMenu({
         </Sheet>
         {after}
       </>
+    )
+  }
+
+  if (anchored) {
+    return (
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverAnchor asChild>
+          <div className="relative inline-flex">{children}</div>
+        </PopoverAnchor>
+        <PopoverContent
+          data-no-row-press
+          role="menu"
+          aria-label={`${title} options`}
+          align="end"
+          className="w-auto min-w-[200px] p-1"
+          // Focus stays where it was: the trigger's own keys still work.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          {options.map((opt) => (
+            <OptionItem key={opt.option} opt={opt} isChoice={isChoice} onSelect={onSelect} />
+          ))}
+        </PopoverContent>
+        {after}
+      </Popover>
     )
   }
 
@@ -220,32 +254,47 @@ function OptionDropdown({
   return createPortal(
     <div
       ref={ref}
+      data-no-row-press
       role="menu"
       aria-label={label}
       className="bg-popover text-popover-foreground fixed z-50 min-w-[200px] rounded-md border p-1 shadow-md"
       style={{ transform: 'translateX(-100%)' }}
     >
       {options.map((opt) => (
-        <button
-          key={opt.option}
-          role="menuitem"
-          type="button"
-          disabled={opt.disabled}
-          aria-disabled={opt.disabled || undefined}
-          onClick={(e) => {
-            if (isChoice(e)) onSelect(opt.option)
-          }}
-          className={cn(
-            'hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors',
-            'disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:flex-shrink-0',
-          )}
-        >
-          {opt.icon}
-          {opt.label}
-          <Caption text={opt.caption} />
-        </button>
+        <OptionItem key={opt.option} opt={opt} isChoice={isChoice} onSelect={onSelect} />
       ))}
     </div>,
     document.body,
+  )
+}
+
+/** One desktop menu row. */
+function OptionItem({
+  opt,
+  isChoice,
+  onSelect,
+}: {
+  opt: OptionMenuItem
+  isChoice: (e: React.MouseEvent) => boolean
+  onSelect: (option: string) => void
+}) {
+  return (
+    <button
+      role="menuitem"
+      type="button"
+      disabled={opt.disabled}
+      aria-disabled={opt.disabled || undefined}
+      onClick={(e) => {
+        if (isChoice(e)) onSelect(opt.option)
+      }}
+      className={cn(
+        'hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors',
+        'disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:flex-shrink-0',
+      )}
+    >
+      {opt.icon}
+      {opt.label}
+      <Caption text={opt.caption} />
+    </button>
   )
 }

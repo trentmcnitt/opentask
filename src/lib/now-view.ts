@@ -81,8 +81,9 @@ export function isRelevantNow(
   // the rollover strips them, A2) are not relevant in their project group:
   // they live in the On deck section (D2), and fold behind "+ N more" here so
   // "Show all" stays complete. A future deck is a plan, like a future picked
-  // target: relevant only on its Upcoming heads-up days.
-  if (task.on_deck_day) {
+  // target: relevant only on its Upcoming heads-up days. With the queue
+  // switch on only, like A8 — off, main's behaviour exactly.
+  if (opts.queue && task.on_deck_day) {
     const heads = upcomingState(task, timezone, now)
     return heads !== null && heads.state !== 'deferred'
   }
@@ -125,8 +126,8 @@ export function splitNow(
  * tasks it holds — on deck for today, or an earlier day the rollover has not
  * stripped yet (A2) — except one already over target (a deadline's automatic
  * target arrived, A1), which nags and so stays in its project's relevant
- * rows, as the server's `onDeckToday` leaves it out. Below the project groups,
- * sorted priority then id (`deckSectionOrder`). Only while Now's folds are on
+ * rows, as the server's `onDeckToday` leaves it out. At the top of Now (D2
+ * review), sorted priority then id (`deckSectionOrder`). Only while Now's folds are on
  * (with Show all, a search or a filter, decks are ordinary rows in their
  * project), and only with the task queue on.
  */

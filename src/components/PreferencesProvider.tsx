@@ -2,6 +2,7 @@
 
 import { useTimezone } from '@/hooks/useTimezone'
 import { setClientTargetContext } from '@/lib/task-segments'
+import { rememberQueueOn } from '@/lib/last-known-queue'
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
@@ -420,6 +421,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // paint already agrees with the server. A plain module value, not state —
   // nothing re-renders on it; the prefs that feed it already do.
   setClientTargetContext({ timezone, morningTime: prefs.morningTime })
+
+  // The switch as last seen, for the next load's placeholders (`last-known-queue.ts`).
+  useEffect(() => {
+    if (preferencesLoaded) rememberQueueOn(prefs.taskQueue)
+  }, [preferencesLoaded, prefs.taskQueue])
 
   return (
     <PreferencesContext.Provider

@@ -5,6 +5,7 @@ import { HorizonPicker } from '@/components/HorizonDot'
 import { BACK_TO_AUTO, TARGET_WORD } from '@/lib/task-model-words'
 import { TaskModelFields } from '@/components/TaskModelFields'
 import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
+import { deckLimit } from '@/lib/deck-menu'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Repeat,
@@ -673,9 +674,15 @@ export function QuickActionPanel({
     !displayRrule &&
     !!effectiveTask &&
     !effectiveTask.done
+  // A deck staged while the line is shown, then hidden (a recurrence or the
+  // Reminder toggle staged after it): the deck goes too — never sent for a
+  // task that can't be on deck (adjusted during render, not in an effect).
+  if (!showDeckLine && pendingDeck !== undefined) setPendingDeck(undefined)
+  // `clearTarget`: the deck wins over a staged target (a tap on the line, or
+  // the hold menu's stored day, after a target was staged — review #3).
   const stageDeck = useCallback(
-    (day: string | null | undefined) => {
-      if (typeof day === 'string') {
+    (day: string | null | undefined, clearTarget: boolean) => {
+      if (clearTarget) {
         setPendingDueAt(null)
         setPendingDueAtCleared(false)
         setPendingDatePicked(false)
@@ -685,6 +692,12 @@ export function QuickActionPanel({
     },
     [reset],
   )
+  // The hold menu's A1 limit from a STAGED deadline (`deckLimit`); with none
+  // staged, the button works it out from the task.
+  const stagedDeckLimit =
+    pendingDeadline !== undefined && effectiveTask
+      ? deckLimit({ deadline_at: pendingDeadline, due_at: null }, timezone)
+      : undefined
 
   // Handler for smart buttons (Now, Next Hour)
   const handleSmartButton = useCallback(
@@ -882,7 +895,7 @@ export function QuickActionPanel({
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
     // On deck (D2): unless a target staged after it overrides it — the pick
     // takes the task off deck on the server (`deck-clear.ts`).
-    if (pendingDeck !== undefined && !isDateDirty && !pendingDueAtCleared) {
+    if (showDeckLine && pendingDeck !== undefined && !isDateDirty && !pendingDueAtCleared) {
       changes.on_deck_day = pendingDeck
     }
     // A cleared target on a task with a deadline is "Back to auto" (§8.3): the
@@ -892,6 +905,7 @@ export function QuickActionPanel({
     pendingDeadline,
     pendingHorizon,
     pendingDeck,
+    showDeckLine,
     isDateDirty,
     pendingTitle,
     editingTitle,
@@ -1438,6 +1452,7 @@ export function QuickActionPanel({
               timezone={timezone}
               staged={pendingDeck}
               shadowed={deckShadowed}
+              limit={stagedDeckLimit}
               onStage={stageDeck}
             />
           )}

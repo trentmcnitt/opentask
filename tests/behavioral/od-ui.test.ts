@@ -208,9 +208,10 @@ describe("OD-UI-03: Now's On deck section", () => {
   ] as Project[]
   const sorted = (tasks: Task[]) =>
     sortTaskGroups(buildTaskGroups(tasks, projects, 'project'), 'due_date', false)
-  const build = (tasks: Task[]) => applyNowFolds(withDeckSection(sorted(tasks), TZ, NOW), TZ, NOW)
+  const build = (tasks: Task[]) =>
+    applyNowFolds(withDeckSection(sorted(tasks), TZ, NOW), TZ, NOW, { queue: true })
 
-  test("today's decks leave their projects for one section after them, priority then id", () => {
+  test("today's decks leave their projects for one section before them, priority then id", () => {
     const low = makeTask({ project_id: 1, on_deck_day: '2026-01-15', priority: 1 })
     const high = makeTask({ project_id: 2, on_deck_day: '2026-01-15', priority: 3 })
     const leftover = makeTask({ project_id: 1, on_deck_day: '2026-01-14', priority: 1 })
@@ -218,21 +219,21 @@ describe("OD-UI-03: Now's On deck section", () => {
     const plain = makeTask({ project_id: 1 })
     const groups = build([low, high, leftover, later, plain])
     // Home held only a deck, so it is gone.
-    expect(groups.map((g) => g.label)).toEqual(['Inbox', DECK_GROUP_LABEL])
-    const deck = groups[1]
+    expect(groups.map((g) => g.label)).toEqual([DECK_GROUP_LABEL, 'Inbox'])
+    const deck = groups[0]
     expect(deck.deck).toBe(true)
     expect(deck.now).toBeUndefined()
     expect(deck.sortedTasks.map((t) => t.id)).toEqual([high.id, low.id, leftover.id])
     // Not drawn twice: the project keeps the rest only (in its fold).
-    expect(groups[0].tasks.map((t) => t.id).sort()).toEqual([later.id, plain.id].sort())
-    // The keyboard order reaches each deck once, after the projects.
+    expect(groups[1].tasks.map((t) => t.id).sort()).toEqual([later.id, plain.id].sort())
+    // The keyboard order reaches each deck once, first — as drawn.
     const ids = orderedTaskIds(
       groups,
       () => false,
       () => true,
     )
     expect(ids.filter((id) => id === high.id)).toHaveLength(1)
-    expect(ids.slice(-3)).toEqual([high.id, low.id, leftover.id])
+    expect(ids.slice(0, 3)).toEqual([high.id, low.id, leftover.id])
   })
 
   test('no decks today: no section (no empty chrome), the groups unchanged', () => {

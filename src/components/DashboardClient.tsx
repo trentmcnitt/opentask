@@ -1005,148 +1005,6 @@ function HomeContent({
     [taskGroups],
   )
 
-  /**
-   * Support `?task=<id>` — two shapes, sharing one URL:
-   *
-   * - `?task=<id>` alone: a NOTIFICATION tap — the iPhone and Mac apps
-   *   (`WebViewManager.navigateToTask`, i.e. `DeepLinkRouter.notificationTaskPath`)
-   *   and every Web Push click (`overdue-checker.ts`, `enrichment-notify.ts`,
-   *   `enrichment-failed-notify.ts`, `notifications/test/route.ts`). Brings the row into view, flashes it and
-   *   SELECTS it, so the action bar is up for the task the notification was
-   *   about. Opens nothing (Trent, 2026-09-29; it used to open the quick
-   *   panel). If a search or filter hides the task, that is undone first,
-   *   and a row behind Now's fold has its fold opened — see `resolveTaskLink`
-   *   (`src/lib/task-link.ts`) for the steps. A reminder goes to `/reminders?reminder=<id>&select=1`, a quota to
-   *   `/quotas?quota=<id>`; a task that is done, deleted or gone gets a toast.
-   * - `?task=<id>&highlight=1`: the widget's deep link
-   *   (`WidgetLink.task`/`OpenTaskApp.handleWidgetLink`). Brings the row into
-   *   view and flashes it once; selects nothing, and quietly does nothing if
-   *   the current view hides it — mirrors RemindersView's `?reminder=<id>`.
-   *
-   * WHY THE BARE PARAM CHANGED MEANING rather than a new one being added: every
-   * producer of the bare shape is a notification (nothing in the app links to
-   * `/?task=` to open an editor), and the installed iPhone and Mac builds load
-   * exactly this URL — so the new behavior reached them with a server deploy,
-   * no app update. The URL shape is also what the login redirect and
-   * dashboardPath() already pass through (`src/lib/login-redirect.ts`,
-   * `src/app/page.tsx`).
-   *
-   * The param is consumed (and stripped from the URL) only once resolution is
-   * DEFINITIVE: the task was found and shown, or the list is non-empty and
-   * provably doesn't contain it. `loading === false` alone is not proof the
-   * list is ready — on WebKit (iOS webview, Safari) the initial fetch can fail
-   * transiently during hydration, flipping `loading` false with zero tasks;
-   * consuming the param then means a notification tap opens the app but never
-   * the task. With an empty list we leave the param in place and let the
-   * effect re-run when a retry/sync populates tasks. The notification path
-   * also stays unconsumed across its corrective steps (clear the filters,
-   * switch the view): each takes a render to land, and this effect re-runs on
-   * the new `tasks_`/`taskGroups`.
-   */
-  const taskParamProcessed = useRef(false)
-  const taskLinkTried = useRef({ narrowing: false })
-  // Unfold the row's group — and its Now fold, if the row is behind one — and
-  // flash it. `TaskList` lifts the group's "Show all" cap for the highlighted
-  // row, and `TaskRow` scrolls it into view — the reveal the Just now card's
-  // tap uses, minus its quick-panel fallback.
-  const revealRow = useCallback(
-    (taskId: number, groupLabel: string) => {
-      if (isCollapsed(groupLabel)) expand(groupLabel)
-      const group = taskGroups.find((g) => g.label === groupLabel)
-      if (group) openFold(nowFoldKey(group))
-      setHighlightTaskId(taskId)
-    },
-    [isCollapsed, expand, taskGroups, openFold],
-  )
-  useEffect(() => {
-    if (taskParamProcessed.current || loading) return
-    const taskIdParam = searchParams.get('task')
-    if (!taskIdParam) return
-    const taskId = parseInt(taskIdParam, 10)
-    // Strip the param with a raw history rewrite, NOT router.replace: a router
-    // navigation issues an RSC fetch, and if that fetch fails (WebKit does
-    // this under flaky transport) Next falls back to a full page navigation
-    // that remounts this component and loses what was just done. Same
-    // pattern as AppLayout's ?action=create handling.
-    const consume = () => {
-      taskParamProcessed.current = true
-      window.history.replaceState(window.history.state, '', window.location.pathname)
-    }
-    if (isNaN(taskId)) return consume()
-    if (tasks.length === 0) return
-    const step = resolveTaskLink({
-      taskId,
-      tasks,
-      listed: tasks_,
-      groups: taskGroups,
-      tried: taskLinkTried.current,
-    })
-    // The row's group depends on the view, and `defaultGrouping` starts at a
-    // hardcoded fallback until `PreferencesProvider`'s own fetch resolves (see
-    // `useDefaultGrouping`'s doc comment) — resolving against the fallback
-    // expanded the wrong group, or switched views for nothing. Found by
-    // browser-verifying against Trent's dev account, whose real default
-    // (`slot`) differed from the fallback of the day.
-    if (!groupingLoaded && step.kind !== 'missing' && step.kind !== 'quota') return
-
-    if (searchParams.get('highlight') === '1') {
-      // The widget's link: flash the row if the view shows it, else nothing.
-      // §5: a quota's editor is its detail route (the widget links quotas via
-      // `/quotas?quota=` anyway; this is the last path to the old one).
-      if (step.kind === 'quota') router.push(`/tasks/${step.task.id}`)
-      if (step.kind === 'show') revealRow(step.task.id, step.groupLabel)
-      return consume()
-    }
-
-    switch (step.kind) {
-      case 'clear-narrowing':
-        taskLinkTried.current.narrowing = true
-        clearListNarrowing()
-        return
-      case 'show':
-        revealRow(step.task.id, step.groupLabel)
-        // `selectAll([id])`, not `selectOnly`: that one TOGGLES, so a second
-        // tap on the same notification would deselect the row.
-        selection.selectAll([step.task.id])
-        break
-      case 'reminder':
-        router.push(`/reminders?reminder=${step.task.id}&select=1`)
-        break
-      case 'quota':
-        router.push(`/quotas?quota=${step.task.id}`)
-        break
-      case 'missing':
-        void toastForUnshownTask(taskId)
-        break
-      case 'unreachable':
-        showToast({ message: `Couldn’t show “${step.task.title}”` })
-        break
-    }
-    consume()
-  }, [
-    searchParams,
-    loading,
-    tasks,
-    tasks_,
-    taskGroups,
-    grouping,
-    router,
-    revealRow,
-    groupingLoaded,
-    selection,
-    clearListNarrowing,
-  ])
-
-  // Just now (`src/lib/just-added.ts`): each task created — or targeted from
-  // a task segment — in the last 15 minutes is listed in the Just now card
-  // under the add field, and its real row wears a "New" (or "Targeted") tag. Drawn from `visibleTasks` — unfiltered on
-  // purpose — and off while searching. The clock advances itself at each
-  // minute and age-out, so entries count up and leave without a reload. The
-  // card is not part of the list: nothing here (keyboard order, counts,
-  // Select All) sees it.
-  const justAddedNow = useJustAddedClock(visibleTasks)
-  const justAddedSource = searchQuery ? null : visibleTasks
-
   // Now's folds are on in Now, unless Show all is, or anything narrows the
   // list — search, filter chips, the AI filter or signal chips: the user
   // asked for exactly those rows, and a match behind "+ N more" would read
@@ -1206,6 +1064,150 @@ function HomeContent({
     () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),
     [sortedGroups, isCollapsed, isFoldOpen],
   )
+
+  /**
+   * Support `?task=<id>` — two shapes, sharing one URL:
+   *
+   * - `?task=<id>` alone: a NOTIFICATION tap — the iPhone and Mac apps
+   *   (`WebViewManager.navigateToTask`, i.e. `DeepLinkRouter.notificationTaskPath`)
+   *   and every Web Push click (`overdue-checker.ts`, `enrichment-notify.ts`,
+   *   `enrichment-failed-notify.ts`, `notifications/test/route.ts`). Brings the row into view, flashes it and
+   *   SELECTS it, so the action bar is up for the task the notification was
+   *   about. Opens nothing (Trent, 2026-09-29; it used to open the quick
+   *   panel). If a search or filter hides the task, that is undone first,
+   *   and a row behind Now's fold has its fold opened — see `resolveTaskLink`
+   *   (`src/lib/task-link.ts`) for the steps. A reminder goes to `/reminders?reminder=<id>&select=1`, a quota to
+   *   `/quotas?quota=<id>`; a task that is done, deleted or gone gets a toast.
+   * - `?task=<id>&highlight=1`: the widget's deep link
+   *   (`WidgetLink.task`/`OpenTaskApp.handleWidgetLink`). Brings the row into
+   *   view and flashes it once; selects nothing, and quietly does nothing if
+   *   the current view hides it — mirrors RemindersView's `?reminder=<id>`.
+   *
+   * WHY THE BARE PARAM CHANGED MEANING rather than a new one being added: every
+   * producer of the bare shape is a notification (nothing in the app links to
+   * `/?task=` to open an editor), and the installed iPhone and Mac builds load
+   * exactly this URL — so the new behavior reached them with a server deploy,
+   * no app update. The URL shape is also what the login redirect and
+   * dashboardPath() already pass through (`src/lib/login-redirect.ts`,
+   * `src/app/page.tsx`).
+   *
+   * The param is consumed (and stripped from the URL) only once resolution is
+   * DEFINITIVE: the task was found and shown, or the list is non-empty and
+   * provably doesn't contain it. `loading === false` alone is not proof the
+   * list is ready — on WebKit (iOS webview, Safari) the initial fetch can fail
+   * transiently during hydration, flipping `loading` false with zero tasks;
+   * consuming the param then means a notification tap opens the app but never
+   * the task. With an empty list we leave the param in place and let the
+   * effect re-run when a retry/sync populates tasks. The notification path
+   * also stays unconsumed across its corrective steps (clear the filters,
+   * switch the view): each takes a render to land, and this effect re-runs on
+   * the new `tasks_`/`taskGroups`.
+   */
+  const taskParamProcessed = useRef(false)
+  const taskLinkTried = useRef({ narrowing: false })
+  // Unfold the row's group — and its Now fold, if the row is behind one — and
+  // flash it. `TaskList` lifts the group's "Show all" cap for the highlighted
+  // row, and `TaskRow` scrolls it into view — the reveal the Just now card's
+  // tap uses, minus its quick-panel fallback.
+  const revealRow = useCallback(
+    (taskId: number, groupLabel: string) => {
+      if (isCollapsed(groupLabel)) expand(groupLabel)
+      const group = sortedGroups.find((g) => g.label === groupLabel)
+      if (group && !group.deck) openFold(nowFoldKey(group))
+      setHighlightTaskId(taskId)
+    },
+    [isCollapsed, expand, sortedGroups, openFold],
+  )
+  useEffect(() => {
+    if (taskParamProcessed.current || loading) return
+    const taskIdParam = searchParams.get('task')
+    if (!taskIdParam) return
+    const taskId = parseInt(taskIdParam, 10)
+    // Strip the param with a raw history rewrite, NOT router.replace: a router
+    // navigation issues an RSC fetch, and if that fetch fails (WebKit does
+    // this under flaky transport) Next falls back to a full page navigation
+    // that remounts this component and loses what was just done. Same
+    // pattern as AppLayout's ?action=create handling.
+    const consume = () => {
+      taskParamProcessed.current = true
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
+    if (isNaN(taskId)) return consume()
+    if (tasks.length === 0) return
+    const step = resolveTaskLink({
+      taskId,
+      tasks,
+      listed: tasks_,
+      // The groups as drawn: a task in Now's On deck section is shown there.
+      groups: sortedGroups,
+      tried: taskLinkTried.current,
+    })
+    // The row's group depends on the view, and `defaultGrouping` starts at a
+    // hardcoded fallback until `PreferencesProvider`'s own fetch resolves (see
+    // `useDefaultGrouping`'s doc comment) — resolving against the fallback
+    // expanded the wrong group, or switched views for nothing. Found by
+    // browser-verifying against Trent's dev account, whose real default
+    // (`slot`) differed from the fallback of the day.
+    if (!groupingLoaded && step.kind !== 'missing' && step.kind !== 'quota') return
+
+    if (searchParams.get('highlight') === '1') {
+      // The widget's link: flash the row if the view shows it, else nothing.
+      // §5: a quota's editor is its detail route (the widget links quotas via
+      // `/quotas?quota=` anyway; this is the last path to the old one).
+      if (step.kind === 'quota') router.push(`/tasks/${step.task.id}`)
+      if (step.kind === 'show') revealRow(step.task.id, step.groupLabel)
+      return consume()
+    }
+
+    switch (step.kind) {
+      case 'clear-narrowing':
+        taskLinkTried.current.narrowing = true
+        clearListNarrowing()
+        return
+      case 'show':
+        revealRow(step.task.id, step.groupLabel)
+        // `selectAll([id])`, not `selectOnly`: that one TOGGLES, so a second
+        // tap on the same notification would deselect the row.
+        selection.selectAll([step.task.id])
+        break
+      case 'reminder':
+        router.push(`/reminders?reminder=${step.task.id}&select=1`)
+        break
+      case 'quota':
+        router.push(`/quotas?quota=${step.task.id}`)
+        break
+      case 'missing':
+        void toastForUnshownTask(taskId)
+        break
+      case 'unreachable':
+        showToast({ message: `Couldn’t show “${step.task.title}”` })
+        break
+    }
+    consume()
+  }, [
+    searchParams,
+    loading,
+    tasks,
+    tasks_,
+    sortedGroups,
+    grouping,
+    router,
+    revealRow,
+    groupingLoaded,
+    selection,
+    clearListNarrowing,
+  ])
+
+  // Just now (`src/lib/just-added.ts`): each task created — or targeted from
+  // a task segment — in the last 15 minutes is listed in the Just now card
+  // under the add field, and its real row wears a "New" (or "Targeted") tag. Drawn from `visibleTasks` — unfiltered on
+  // purpose — and off while searching. The clock advances itself at each
+  // minute and age-out, so entries count up and leave without a reload. The
+  // card is not part of the list: nothing here (keyboard order, counts,
+  // Select All) sees it.
+  const justAddedNow = useJustAddedClock(visibleTasks)
+  const justAddedSource = searchQuery ? null : visibleTasks
+
   // Shutting a fold deselects the rows it hides, as collapsing a group does.
   const handleToggleFold = useCallback(
     (key: string) => {
@@ -1223,7 +1225,7 @@ function HomeContent({
     (label: string) => {
       if (!isCollapsed(label)) {
         // About to collapse — deselect tasks in this group
-        const group = taskGroups.find((g) => g.label === label)
+        const group = sortedGroups.find((g) => g.label === label)
         if (group && selection.isSelectionMode) {
           const groupIds = group.tasks.map((t) => t.id)
           selection.removeAll(groupIds)
@@ -1231,7 +1233,7 @@ function HomeContent({
       }
       toggleCollapse(label)
     },
-    [isCollapsed, toggleCollapse, taskGroups, selection],
+    [isCollapsed, toggleCollapse, sortedGroups, selection],
   )
 
   const bulk = useBulkActions(
@@ -1263,7 +1265,8 @@ function HomeContent({
   const keyboardNavEnabled = !quickActionOpen && !showShortcutsDialog && !createPanelOpen
   const keyboard = useKeyboardNavigation({
     orderedIds,
-    groups: taskGroups,
+    // The groups as drawn, Now's On deck section included.
+    groups: sortedGroups,
     keyboardFocusedId,
     setKeyboardFocusedId,
     selection,
@@ -2239,6 +2242,97 @@ function DashboardView({
       )
     : []
   const revealTaskRef = useRef<((task: Task) => void) | null>(null)
+  // NOW'S ON DECK SECTION AT THE TOP (D2 review, 2026-10-20, provisional):
+  // the list is drawn in two parts — the section under the filter row,
+  // above the task-segment panel and the project groups; the rest in its
+  // usual place (`TaskList`'s `part`). One set of props for both.
+  const deckRevealRef = useRef<((task: Task) => void) | null>(null)
+  const renderTaskList = (part: 'deck' | 'rest') => (
+    <TaskList
+      part={part}
+      deckRevealRef={deckRevealRef}
+      tasks={tasks}
+      timeSlots={timeSlots}
+      uncapped={overdueFilterOn}
+      sortedGroups={sortedGroups}
+      orderedIds={orderedIds}
+      projects={projects}
+      grouping={grouping}
+      now={now}
+      highlightTaskId={highlightTaskId}
+      onHighlightDone={onHighlightDone}
+      justAddedSource={justAddedSource}
+      justAddedNow={justAddedNow}
+      revealRef={revealTaskRef}
+      onDone={actions.handleDone}
+      onSnooze={actions.handleSnooze}
+      // Remove target (2026-10-10): back to its horizon's task segment.
+      // On a deadline task the same clear is "Back to auto" (§8.3): the
+      // server puts the deadline's automatic target back.
+      onRemoveTarget={(task) =>
+        void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
+      }
+      // The row's horizon dot menu and its hover Today (and the Today
+      // hold's Target menu) — on every row, the ones inside an open Now
+      // fold included.
+      onSetHorizon={(task, horizon) =>
+        void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
+      }
+      onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
+      onDeck={(task, day) => void actions.handleDeck(task, day)}
+      onLabelClick={onToggleLabel}
+      onTaskFocus={onTaskFocus}
+      keyboardFocusedId={keyboardFocusedId}
+      isKeyboardActive={isKeyboardActive}
+      onKeyDown={onKeyDown}
+      onListFocus={onListFocus}
+      onListBlur={onListBlur}
+      sortOption={sortOption}
+      reversed={reversed}
+      setSortOption={setSortOption}
+      isCollapsed={isCollapsed}
+      toggleCollapse={toggleCollapse}
+      isFoldOpen={isFoldOpen}
+      onToggleFold={onToggleFold}
+      onActivate={onActivate}
+      onDoubleClick={onDoubleClick}
+      annotationMap={effectiveAnnotationMap}
+      showAnnotations={showAnnotations}
+      wnTaskIds={aiInsights.aiTaskIds}
+      showWnHighlight={showWnHighlight}
+      onReprocess={onReprocess}
+      insightsScoreMap={
+        showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+      }
+      insightsSignalMap={
+        showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
+      }
+      insightsCommentaryMap={effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined}
+      showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
+      aiScoreDisabled={!showInsights || aiMode === 'off'}
+      headerLeft={
+        tasks.length > 0 ? (
+          <button
+            onClick={() => {
+              const allSelected =
+                tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+              if (allSelected) {
+                selection.clear()
+              } else {
+                selection.selectAll(tasks.map((t) => t.id))
+              }
+            }}
+            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+          >
+            {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+              ? 'Select None'
+              : 'Select All'}
+          </button>
+        ) : undefined
+      }
+      onUnifiedChange={onUnifiedChange}
+    />
+  )
 
   return (
     <div className="flex flex-1 flex-col">
@@ -2425,6 +2519,9 @@ function DashboardView({
               </button>
             </div>
           )}
+
+          {/* Now's On deck section (D2): under the filter row, at the top. */}
+          {renderTaskList('deck')}
         </div>
 
         <TrackColumn
@@ -2446,90 +2543,7 @@ function DashboardView({
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
-          <TaskList
-            tasks={tasks}
-            timeSlots={timeSlots}
-            uncapped={overdueFilterOn}
-            sortedGroups={sortedGroups}
-            orderedIds={orderedIds}
-            projects={projects}
-            grouping={grouping}
-            now={now}
-            highlightTaskId={highlightTaskId}
-            onHighlightDone={onHighlightDone}
-            justAddedSource={justAddedSource}
-            justAddedNow={justAddedNow}
-            revealRef={revealTaskRef}
-            onDone={actions.handleDone}
-            onSnooze={actions.handleSnooze}
-            // Remove target (2026-10-10): back to its horizon's task segment.
-            // On a deadline task the same clear is "Back to auto" (§8.3): the
-            // server puts the deadline's automatic target back.
-            onRemoveTarget={(task) =>
-              void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
-            }
-            // The row's horizon dot menu and its hover Today (and the Today
-            // hold's Target menu) — on every row, the ones inside an open Now
-            // fold included.
-            onSetHorizon={(task, horizon) =>
-              void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
-            }
-            onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
-            onDeck={(task, day) => void actions.handleDeck(task, day)}
-            onLabelClick={onToggleLabel}
-            onTaskFocus={onTaskFocus}
-            keyboardFocusedId={keyboardFocusedId}
-            isKeyboardActive={isKeyboardActive}
-            onKeyDown={onKeyDown}
-            onListFocus={onListFocus}
-            onListBlur={onListBlur}
-            sortOption={sortOption}
-            reversed={reversed}
-            setSortOption={setSortOption}
-            isCollapsed={isCollapsed}
-            toggleCollapse={toggleCollapse}
-            isFoldOpen={isFoldOpen}
-            onToggleFold={onToggleFold}
-            onActivate={onActivate}
-            onDoubleClick={onDoubleClick}
-            annotationMap={effectiveAnnotationMap}
-            showAnnotations={showAnnotations}
-            wnTaskIds={aiInsights.aiTaskIds}
-            showWnHighlight={showWnHighlight}
-            onReprocess={onReprocess}
-            insightsScoreMap={
-              showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
-            }
-            insightsSignalMap={
-              showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
-            }
-            insightsCommentaryMap={
-              effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
-            }
-            showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
-            aiScoreDisabled={!showInsights || aiMode === 'off'}
-            headerLeft={
-              tasks.length > 0 ? (
-                <button
-                  onClick={() => {
-                    const allSelected =
-                      tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                    if (allSelected) {
-                      selection.clear()
-                    } else {
-                      selection.selectAll(tasks.map((t) => t.id))
-                    }
-                  }}
-                  className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-                >
-                  {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                    ? 'Select None'
-                    : 'Select All'}
-                </button>
-              ) : undefined
-            }
-            onUnifiedChange={onUnifiedChange}
-          />
+          {renderTaskList('rest')}
         </div>
       </main>
 

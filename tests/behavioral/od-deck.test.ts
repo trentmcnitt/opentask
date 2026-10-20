@@ -255,16 +255,19 @@ describe('OD-R: the rules', () => {
 
   test('OD-R06: Now — today’s decks fold; a future deck on its heads-up day; queued High folds (A8, A13)', () => {
     const high = bare({ priority: 3 })
+    const on = { queue: true }
     expect(isRelevantNow(high, tz, tue10)).toBe(true)
-    expect(isRelevantNow({ ...high, on_deck_day: '2026-10-20' }, tz, tue10)).toBe(false)
+    expect(isRelevantNow({ ...high, on_deck_day: '2026-10-20' }, tz, tue10, on)).toBe(false)
+    // The deck rules with the queue switch on only (D2 review): off, main's.
+    expect(isRelevantNow({ ...high, on_deck_day: '2026-10-20' }, tz, tue10)).toBe(true)
     // A8 with the queue switch on only: off, main's behaviour (relevant).
     const queuedHigh = { ...high, queued_at: at('2026-10-20T06:30') }
     expect(isRelevantNow(queuedHigh, tz, tue10, { queue: true })).toBe(false)
     expect(isRelevantNow(queuedHigh, tz, tue10)).toBe(true)
     // Decked Tue for Sat Oct 31 → heads-up Wed Oct 28.
     const future = bare({ on_deck_day: '2026-10-31' })
-    expect(isRelevantNow(future, tz, tue10)).toBe(false)
-    expect(isRelevantNow(future, tz, new Date(at('2026-10-28T10:00')))).toBe(true)
+    expect(isRelevantNow(future, tz, tue10, on)).toBe(false)
+    expect(isRelevantNow(future, tz, new Date(at('2026-10-28T10:00')), on)).toBe(true)
     // Belt and braces: a deck whose automatic target has arrived (the A1 checks
     // keep this from happening) nags, so it is relevant.
     const nagging = bare({
@@ -273,7 +276,7 @@ describe('OD-R: the rules', () => {
       due_at: at('2026-10-20T08:30'),
       target_auto: true,
     })
-    expect(isRelevantNow(nagging, tz, tue10)).toBe(true)
+    expect(isRelevantNow(nagging, tz, tue10, on)).toBe(true)
   })
 
   test('OD-R07: the summary line', () => {

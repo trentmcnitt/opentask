@@ -181,6 +181,20 @@ interface TaskListProps {
    * outside the list) calls on a tap.
    */
   revealRef?: React.MutableRefObject<((task: Task) => void) | null>
+  /**
+   * NOW'S ON DECK SECTION AT THE TOP (D2 review, 2026-10-20, provisional):
+   * the dashboard draws the list in two parts — `'deck'`, the On deck
+   * section alone (no sort row, nothing when empty), under the filter row and
+   * above the task-segment panel; `'rest'`, everything else, in its usual
+   * place. `'all'` (default): one list. The order the keyboard follows
+   * (`orderedIds`) puts the section first, as drawn.
+   */
+  part?: 'all' | 'deck' | 'rest'
+  /**
+   * The two parts' Just now reveal: the deck part fills it in; the rest part
+   * (which holds `revealRef`) hands a task in the section over to it.
+   */
+  deckRevealRef?: React.MutableRefObject<((task: Task) => void) | null>
 }
 
 /** Labels shown on the compact sort button — direction-aware. */
@@ -259,6 +273,8 @@ export function TaskList({
   justAddedSource = null,
   justAddedNow = 0,
   revealRef,
+  part = 'all',
+  deckRevealRef,
 }: TaskListProps) {
   // Sort and collapse state are lifted into the dashboard (it owns the sort
   // dropdown's preference and the collapsed-group set), and so is the order
@@ -371,12 +387,16 @@ export function TaskList({
    * `revealRef` after each render, so it always reads this render's groups.
    */
   useEffect(() => {
-    if (!revealRef) return
-    revealRef.current = (task: Task) => {
+    const reveal = (task: Task) => {
       const unified = isFlatGrouping(grouping)
       const group = sortedGroups.find((g) => g.tasks.some((t) => t.id === task.id))
       if (!group) {
         onDoubleClick?.(task)
+        return
+      }
+      // The On deck section is the other part's (see `part`).
+      if (part === 'rest' && group.deck) {
+        deckRevealRef?.current?.(task)
         return
       }
       if (!unified && isCollapsed(group.label)) toggleCollapse(group.label)
@@ -391,7 +411,17 @@ export function TaskList({
       }
       setFlashTaskId(task.id)
     }
+    if (part === 'deck') {
+      if (deckRevealRef) deckRevealRef.current = reveal
+    } else if (revealRef) {
+      revealRef.current = reveal
+    }
   })
+
+  // The groups this part draws (see `part`).
+  const groups =
+    part === 'all' ? sortedGroups : sortedGroups.filter((g) => !!g.deck === (part === 'deck'))
+  if (part === 'deck' && groups.length === 0) return null
 
   if (tasks.length === 0) {
     return (
@@ -415,7 +445,11 @@ export function TaskList({
 
   const newBadge = (task: Task) => (justAddedSource ? justAddedTag(task, justAddedNow) : undefined)
 
-  const renderTaskRow = (task: Task) => {
+  /**
+   * `inDeck`: a row of Now's On deck section — no "On deck" just-now pill
+   * (the heading says it), and its On deck and Today always shown on touch.
+   */
+  const renderTaskRow = (task: Task, inDeck = false) => {
     const cancelRef = { current: null as (() => void) | null }
     return (
       <SwipeableRow
@@ -459,7 +493,8 @@ export function TaskList({
           insightsCommentary={insightsCommentaryMap?.get(task.id)}
           projectName={projectNameMap?.get(task.project_id)}
           projectColor={projectColorMap?.get(task.project_id)}
-          justAddedBadge={newBadge(task)}
+          justAddedBadge={inDeck ? undefined : newBadge(task)}
+          dayControlsOnTouch={inDeck}
           highlighted={[highlightTaskId, flashTaskId].includes(task.id)}
           onHighlightDone={() => handleHighlightDone(task.id)}
         />
@@ -469,69 +504,74 @@ export function TaskList({
 
   return (
     <div
-      ref={listRef}
+      ref={part === 'deck' ? undefined : listRef}
       role="listbox"
-      aria-label="Task list"
+      aria-label={part === 'deck' ? DECK_GROUP_TITLE : 'Task list'}
+      data-deck-list={part === 'deck' ? '' : undefined}
       aria-activedescendant={
-        isKeyboardActive && keyboardFocusedId ? `task-row-${keyboardFocusedId}` : undefined
+        isKeyboardActive && keyboardFocusedId && hasRow(groups, keyboardFocusedId)
+          ? `task-row-${keyboardFocusedId}`
+          : undefined
       }
       tabIndex={0}
       onKeyDown={onKeyDown}
       onFocus={onListFocus}
       onBlur={onListBlur}
-      className="outline-none"
+      className={cn('outline-none', part === 'deck' && 'mb-6')}
     >
-      <div className="mb-4 flex items-center justify-between px-1">
-        {headerLeft ?? <div />}
-        <div className="flex items-center gap-1">
-          {/* New is already flat, so the "Unified" button has nothing to
+      {part !== 'deck' && (
+        <div className="mb-4 flex items-center justify-between px-1">
+          {headerLeft ?? <div />}
+          <div className="flex items-center gap-1">
+            {/* New is already flat, so the "Unified" button has nothing to
               switch there — pressing it would leave New for Unified, a
               second flat list in a different order. Hidden in New. */}
-          {onUnifiedChange && !isNew && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'h-6 px-2 text-xs',
-                isFlat
-                  ? 'text-foreground bg-muted font-medium'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              onClick={() => onUnifiedChange(!isFlat)}
-              title={isFlat ? 'Show grouped again' : 'Show all tasks in one list'}
-            >
-              <Layers className="mr-1 size-3" />
-              Unified
-            </Button>
-          )}
-          {/* New ignores the sort preference (`effectiveSort`): its order is
+            {onUnifiedChange && !isNew && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'h-6 px-2 text-xs',
+                  isFlat
+                    ? 'text-foreground bg-muted font-medium'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => onUnifiedChange(!isFlat)}
+                title={isFlat ? 'Show grouped again' : 'Show all tasks in one list'}
+              >
+                <Layers className="mr-1 size-3" />
+                Unified
+              </Button>
+            )}
+            {/* New ignores the sort preference (`effectiveSort`): its order is
               what makes it New. A sort control there would either do
               nothing (confusing) or turn New into a different view, so it
               is replaced by a plain caption that says what the order is —
               not a disabled dropdown, which would read as broken. The
               caption sits where the dropdown was so the row doesn't jump
               when switching views. */}
-          {isNew ? (
-            <span
-              data-new-order
-              className="text-muted-foreground flex h-6 items-center px-2 text-xs"
-            >
-              <ArrowUpDown className="mr-1 size-3" />
-              Newest added
-            </span>
-          ) : (
-            <SortDropdown
-              sortOption={sortOption}
-              reversed={reversed}
-              onSort={setSortOption}
-              showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
-              aiScoreDisabled={aiScoreDisabledProp ?? false}
-            />
-          )}
+            {isNew ? (
+              <span
+                data-new-order
+                className="text-muted-foreground flex h-6 items-center px-2 text-xs"
+              >
+                <ArrowUpDown className="mr-1 size-3" />
+                Newest added
+              </span>
+            ) : (
+              <SortDropdown
+                sortOption={sortOption}
+                reversed={reversed}
+                onSort={setSortOption}
+                showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
+                aiScoreDisabled={aiScoreDisabledProp ?? false}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div className={isFlat ? 'space-y-1' : 'space-y-6'}>
-        {sortedGroups.map((group) => {
+        {groups.map((group) => {
           const { sortedTasks, now: nowSplit } = group
           const collapsed = !isFlat && isCollapsed(group.label)
 
@@ -620,7 +660,7 @@ export function TaskList({
               )}
               {!collapsed && (
                 <div className="space-y-1">
-                  {visibleTasks.map((task) => renderTaskRow(task))}
+                  {visibleTasks.map((task) => renderTaskRow(task, !!group.deck))}
                   {nowSplit && (
                     <NowFoldRow
                       projectLabel={group.label}
@@ -667,6 +707,11 @@ export function TaskList({
  */
 function isPreviewed(group: SortedTaskGroup, isFlat: boolean): boolean {
   return !isFlat && !group.now && !group.deck
+}
+
+/** Whether one of these groups holds the task. */
+function hasRow(groups: SortedTaskGroup[], id: number): boolean {
+  return groups.some((g) => g.tasks.some((t) => t.id === id))
 }
 
 /** A group's name on screen: the project's, or "On deck" for Now's deck section. */

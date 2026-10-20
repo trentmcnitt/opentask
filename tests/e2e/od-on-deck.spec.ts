@@ -136,9 +136,7 @@ test('a horizon row: tap decks it for today (the row leaves), Undo puts it back'
   }
 })
 
-test("Now's On deck section: appears below the projects, sorts by priority, empties", async ({
-  page,
-}) => {
+test("Now's On deck section: at the top of Now, sorts by priority, empties", async ({ page }) => {
   const ids: number[] = []
   try {
     const low = await create(page, { title: uniqueTitle('OD low'), priority: 1 })
@@ -156,15 +154,46 @@ test("Now's On deck section: appears below the projects, sorts by priority, empt
     const section = page.locator('[data-deck-section]')
     await expect(section).toBeVisible()
     await expect(section).toContainText('On deck')
-    // The last group on the page, priority first.
-    await expect(page.locator('[data-task-group]').last()).toHaveAttribute('data-deck-section', '')
+    // Priority first.
     const rows = await section.locator('[role="option"]').evaluateAll((els) => els.map((e) => e.id))
     expect(rows).toEqual([`task-row-${high}`, `task-row-${low}`])
-    await section.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: '.tmp/od-now-section-1280.png' })
-    await page.setViewportSize({ width: 375, height: 812 })
-    await section.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: '.tmp/od-now-section-375.png' })
+    // At the TOP of Now (designer, 10-20): under the filter row, above the
+    // task-segment panel and the project groups — desktop and phone.
+    for (const size of [
+      { width: 1280, height: 800 },
+      { width: 375, height: 812 },
+    ]) {
+      await page.setViewportSize(size)
+      await expect(section).toBeVisible()
+      const where = await page.evaluate(() => {
+        const deckList = document.querySelector('[data-deck-list]')!
+        const pos = (el: Element | null | undefined) =>
+          el ? deckList.compareDocumentPosition(el) : null
+        const filters = [...document.querySelectorAll('button')].find((b) =>
+          b.textContent?.trim().startsWith('Filters'),
+        )
+        return {
+          filters: pos(filters),
+          list: pos(document.querySelector('[aria-label="Task list"]')),
+          panel: pos(document.querySelector('[data-tasks-panel]')),
+        }
+      })
+      // The filter row before it; the project list and the panel after it.
+      expect(where.filters! & 2 /* PRECEDING */).toBeTruthy()
+      expect(where.list! & 4 /* FOLLOWING */).toBeTruthy()
+      if (where.panel !== null) expect(where.panel & 4 /* FOLLOWING */).toBeTruthy()
+      const deckTop = (await section.boundingBox())!.y
+      const projectTop = (await page
+        .locator('[aria-label="Task list"] [data-task-group]')
+        .first()
+        .boundingBox())!.y
+      expect(deckTop).toBeLessThan(projectTop)
+      // The row inside the section has no "On deck" pill: the heading says it.
+      await expect(
+        section.locator(`#task-row-${high}`).getByText('On deck', { exact: true }),
+      ).toHaveCount(0)
+      await page.screenshot({ path: `.tmp/od-now-section-${size.width}.png` })
+    }
     await page.setViewportSize({ width: 1280, height: 800 })
     // Each deck is drawn once, with its filled (active) On deck button.
     await expect(dashRow(page, high)).toHaveCount(1)
@@ -387,4 +416,323 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
   } finally {
     await trash(page, ids)
   }
+})
+
+// ===========================================================================
+// D2 review (10-20): the Quick panel, the placeholder, the date picker, touch
+// ===========================================================================
+
+const setQueue = async (page: Page, enabled: boolean) => {
+  const res = await page.request.post('/api/test/task-queue', { data: { enabled } })
+  expect(res.ok()).toBeTruthy()
+}
+
+/** Open the dashboard's Quick panel on a row (desktop: a double-click). */
+async function openPanel(page: Page, id: number): Promise<Locator> {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/')
+  await dashRow(page, id).dblclick()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.locator('[data-quick-panel-deck]')).toBeVisible()
+  return dialog
+}
+
+/** Stage a deadline `days` out (the picker's own time) in the open panel. */
+async function stageDeadline(page: Page, dialog: Locator, days: number) {
+  await dialog.locator('[data-quick-panel-deadline]').click()
+  const t = DateTime.now().setZone(TZ).plus({ days })
+  const key = await page.evaluate(
+    ([y, m, d]) => new Date(y, m - 1, d).toLocaleDateString(),
+    [t.year, t.month, t.day],
+  )
+  const cell = page.locator(`button[data-day="${key}"]`).first()
+  if ((await cell.count()) === 0) await page.getByRole('button', { name: /next month/i }).click()
+  await cell.click()
+  await page.getByRole('button', { name: 'Set Date', exact: true }).click()
+  await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
+}
+
+const lastUndo = (page: Page) =>
+  page
+    .locator('[data-sonner-toast]')
+    .filter({ has: page.getByRole('button', { name: 'Undo' }) })
+    .last()
+    .getByRole('button', { name: 'Undo' })
+
+test('panel: a staged deadline and deck save in ONE request; the menu greys from the staged deadline', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    const id = await create(page, { title: uniqueTitle('OD panel deadline'), priority: 3 })
+    ids.push(id)
+    const dialog = await openPanel(page, id)
+    // A deadline six days out reminds from three days before it: the later
+    // days are greyed, with the reason.
+    await stageDeadline(page, dialog, 6)
+    await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click({ button: 'right' })
+    const menu = page.getByRole('menu', { name: 'On deck options' })
+    await expect(menu.locator('[data-option-caption]').first()).toHaveText(
+      /^deadline reminds from \w{3}$/,
+    )
+    const greyed = menu.locator('[role="menuitem"][aria-disabled="true"]')
+    expect(await greyed.count()).toBeGreaterThan(0)
+    await menu.getByRole('menuitem', { name: /^Tomorrow/ }).click()
+    await expect(dialog.locator('[data-quick-panel-deck-day]')).toHaveText('tomorrow')
+
+    const patches: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'PATCH' && r.url().endsWith(`/api/tasks/${id}`)) patches.push(r.url())
+    })
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+    expect((await stateOf(page, id)).deadline_at).not.toBeNull()
+    expect(patches).toHaveLength(1)
+    // One undo entry: Undo puts both back.
+    await lastUndo(page).click()
+    await expect.poll(() => deckOf(page, id)).toBeNull()
+    expect((await stateOf(page, id)).deadline_at).toBeNull()
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('panel: a refused deck saves nothing — the error shows and the panel stays dirty', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    const id = await create(page, { title: uniqueTitle('OD panel refused'), priority: 3 })
+    ids.push(id)
+    const dialog = await openPanel(page, id)
+    // Two days out: its automatic target has already arrived (A1).
+    await stageDeadline(page, dialog, 2)
+    await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
+    const day = dialog.locator('[data-quick-panel-deck-day]')
+    await expect(day).toHaveText('today')
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    await expect(toast(page, 'This deadline is close and already reminding you')).toBeVisible()
+    await expect(dialog).toBeVisible()
+    await expect(day).toHaveClass(/text-blue-500/)
+    await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
+    const state = await stateOf(page, id)
+    expect(state.on_deck_day).toBeNull()
+    expect(state.deadline_at).toBeNull()
+    await dialog.getByRole('button', { name: 'Reset' }).click()
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('panel: a deck staged, then Reminder staged — the line goes and no deck is sent', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    const id = await create(page, { title: uniqueTitle('OD panel reminder'), priority: 3 })
+    ids.push(id)
+    const dialog = await openPanel(page, id)
+    await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
+    await expect(dialog.locator('[data-quick-panel-deck-day]')).toHaveText('today')
+    await dialog.getByRole('button', { name: 'More options' }).click()
+    await page.getByRole('menuitemcheckbox', { name: 'Reminder' }).click()
+    await page.keyboard.press('Escape')
+    await expect(dialog.locator('[data-quick-panel-deck]')).toHaveCount(0)
+    const sent = page.waitForRequest(
+      (r) => r.method() === 'PATCH' && r.url().endsWith(`/api/tasks/${id}`),
+    )
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    const body = (await sent).postDataJSON() as Record<string, unknown>
+    expect(body).not.toHaveProperty('on_deck_day')
+    expect(body.is_reminder).toBe(true)
+    await expect.poll(async () => (await stateOf(page, id)).is_reminder).toBe(true)
+    expect(await deckOf(page, id)).toBeNull()
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('panel: On deck after a staged target goes back to the deck', async ({ page }) => {
+  const ids: number[] = []
+  try {
+    // Not on deck: stage a target, then tap On deck — the target goes, the deck stays.
+    const id = await create(page, { title: uniqueTitle('OD panel target'), priority: 3 })
+    ids.push(id)
+    const dialog = await openPanel(page, id)
+    const dateLine = dialog.locator('[data-quick-panel-date]')
+    // Stage a target with the panel's own increment button.
+    await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
+    await expect(dateLine.locator('.text-blue-500').first()).toBeVisible()
+    await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
+    await expect(dialog.locator('[data-quick-panel-deck-day]')).toHaveText('today')
+    await expect(dateLine.locator('.text-blue-500')).toHaveCount(0)
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    expect((await stateOf(page, id)).target_at).toBeNull()
+
+    // On deck already: a staged target shadows it ("Not on deck", blue); a
+    // tap back to the stored day unstages the target and leaves nothing dirty.
+    const dialog2 = await openPanel(page, id)
+    const line = dialog2.locator('[data-quick-panel-deck-day]')
+    const dateLine2 = dialog2.locator('[data-quick-panel-date]')
+    await dialog2.getByRole('button', { name: '+1 day', exact: true }).click()
+    await expect(line).toHaveText('Not on deck')
+    await expect(line).toHaveClass(/text-blue-500/)
+    await dialog2.locator('[data-quick-panel-deck] [data-on-deck]').click()
+    await expect(line).toHaveText('today')
+    await expect(line).not.toHaveClass(/text-blue-500/)
+    await expect(dateLine2.locator('.text-blue-500')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('the date picker: opens on an allowed day, resets on reopen, refuses a day it can’t take', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    const id = await create(page, { title: uniqueTitle('OD picker'), priority: 3 })
+    const nagging = await create(page, {
+      title: uniqueTitle('OD picker deadline'),
+      deadline_at: daysFromNow(2),
+    })
+    ids.push(id, nagging)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const openPicker = async (taskId: number) => {
+      await dashRow(page, taskId).hover()
+      await dashRow(page, taskId).locator('[data-on-deck]').click({ button: 'right' })
+      await page
+        .getByRole('menu', { name: 'On deck options' })
+        .getByRole('menuitem', { name: 'Pick a date…' })
+        .click()
+      const picker = page.getByRole('dialog', { name: 'On deck for…' })
+      await expect(picker).toBeVisible()
+      return picker
+    }
+    const dayOf = (n: number) => String(DateTime.now().setZone(TZ).plus({ days: n }).day)
+    let picker = await openPicker(id)
+    // Tomorrow, selected, and choosable.
+    await expect(picker.locator('[data-selected-single="true"]')).toHaveText(dayOf(1))
+    await expect(picker.locator('[data-deck-date-submit]')).toBeEnabled()
+    // Pick another day, close without choosing: the next open starts afresh.
+    const three = DateTime.now().setZone(TZ).plus({ days: 3 })
+    const key = await page.evaluate(
+      ([y, m, d]) => new Date(y, m - 1, d).toLocaleDateString(),
+      [three.year, three.month, three.day],
+    )
+    const cell = picker.locator(`button[data-day="${key}"]`).first()
+    if ((await cell.count()) > 0) {
+      await cell.click()
+      await expect(picker.locator('[data-selected-single="true"]')).toHaveText(dayOf(3))
+    }
+    await page.keyboard.press('Escape')
+    await expect(picker).toHaveCount(0)
+    picker = await openPicker(id)
+    await expect(picker.locator('[data-selected-single="true"]')).toHaveText(dayOf(1))
+    await picker.locator('[data-deck-date-submit]').click()
+    await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+
+    // A deadline already reminding: every day greyed, and nothing to put on deck.
+    await dashRow(page, nagging).hover()
+    await dashRow(page, nagging).locator('[data-on-deck]').click({ button: 'right' })
+    const menu = page.getByRole('menu', { name: 'On deck options' })
+    const days = menu.locator('[role="menuitem"]:has([data-option-caption])')
+    expect(await days.count()).toBeGreaterThanOrEqual(6)
+    await menu.getByRole('menuitem', { name: 'Pick a date…' }).click()
+    const refused = page.getByRole('dialog', { name: 'On deck for…' })
+    await expect(refused.locator('[data-deck-date-submit]')).toBeDisabled()
+    await page.keyboard.press('Escape')
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('switch off: no On deck placeholder while the preferences load, unless it was on last time', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  const held: (() => void)[] = []
+  try {
+    const id = await create(page, { title: uniqueTitle('OD placeholder'), horizon: 'days' })
+    ids.push(id)
+    madeYesterday(id)
+    await page.goto('/reminders')
+    await page.evaluate(() => window.localStorage.setItem('opentask.taskQueueOn', '1'))
+    await setQueue(page, false)
+    // Hold the preferences until the row has been looked at.
+    await page.route('**/api/user/preferences', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      await new Promise<void>((resolve) => held.push(resolve))
+      // A request the page dropped meanwhile (a reload) is already handled.
+      await route.continue().catch(() => {})
+    })
+    const r = () => segRow(segment(page, 'days'), id)
+
+    // Last seen ON: On deck's place is kept while they load.
+    await page.reload()
+    await expect(r()).toBeVisible()
+    await expect(r().locator('[data-deck-placeholder]')).toHaveCount(1)
+    held.splice(0).forEach((go) => go())
+    await expect(r().locator('[data-deck-placeholder]')).toHaveCount(0)
+    await expect(r().locator('[data-on-deck]')).toHaveCount(0)
+    // Loaded with the switch off: remembered as off.
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem('opentask.taskQueueOn')))
+      .toBe('0')
+
+    // Last seen OFF: no placeholder from the first paint.
+    await page.reload()
+    await expect(r()).toBeVisible()
+    await expect(r().locator('[data-deck-placeholder]')).toHaveCount(0)
+    held.splice(0).forEach((go) => go())
+  } finally {
+    held.splice(0).forEach((go) => go())
+    await page.unroute('**/api/user/preferences')
+    await setQueue(page, true)
+    await trash(page, ids)
+  }
+})
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } })
+
+  test("Now's On deck section shows On deck and Today on touch; other rows don't", async ({
+    page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const decked = await create(page, { title: uniqueTitle('OD touch deck'), priority: 3 })
+      const plain = await create(page, { title: uniqueTitle('OD touch plain'), priority: 3 })
+      ids.push(decked, plain)
+      await deck(page, [decked])
+      await page.goto('/')
+      const section = page.locator('[data-deck-list]')
+      const row = section.locator(`#task-row-${decked}`)
+      await expect(row).toBeVisible()
+      const deckButton = row.locator('[data-on-deck]')
+      await expect(deckButton).toBeVisible()
+      await expect(deckButton).toHaveAttribute('aria-pressed', 'true')
+      await expect(row.locator('[data-target-today]')).toBeVisible()
+      await expect(dashRow(page, plain).locator('[data-on-deck]')).toBeHidden()
+      await page.screenshot({ path: '.tmp/od-now-section-touch-375.png' })
+
+      // A tap takes it off deck…
+      await deckButton.tap()
+      await expect(toast(page, 'Taken off deck')).toBeVisible()
+      await expect.poll(() => deckOf(page, decked)).toBeNull()
+
+      // …and Today on a section row targets it (the deck goes).
+      await deck(page, [decked])
+      await page.reload()
+      await page.locator(`[data-deck-list] #task-row-${decked} [data-target-today]`).tap()
+      await expect(toast(page, /Targeted/)).toBeVisible()
+      await expect.poll(() => deckOf(page, decked)).toBeNull()
+      expect((await stateOf(page, decked)).target_at).not.toBeNull()
+    } finally {
+      await trash(page, ids)
+    }
+  })
 })

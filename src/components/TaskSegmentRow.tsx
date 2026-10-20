@@ -8,6 +8,7 @@ import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { offersDeck } from '@/lib/deck-menu'
+import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
@@ -485,7 +486,8 @@ function TaskSegmentRowActions({
  * repeating row has none, B9), never beside a target the user picked (rule
  * 1). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
  * dead space belongs between Today and the done square only. While the
- * preferences load, its place is kept empty (as the details icon's is).
+ * preferences load, its place is kept empty only if the switch was on last
+ * time (`DeckPlaceholder`).
  */
 function SegmentDeckSlot({
   row,
@@ -501,7 +503,7 @@ function SegmentDeckSlot({
   queueUi: 'on' | 'off' | 'pending'
 }) {
   if (queueUi === 'off' || row.recurring || !offersDeck(row.task)) return null
-  if (queueUi === 'pending') return <span aria-hidden className="-my-3 h-11 min-w-11 shrink-0" />
+  if (queueUi === 'pending') return <DeckPlaceholder />
   return (
     <OnDeckButton
       task={row.task}
@@ -515,6 +517,18 @@ function SegmentDeckSlot({
       iconClassName={panel ? 'size-[18px]' : 'size-[22px]'}
     />
   )
+}
+
+/**
+ * On deck's place while the preferences load — only when this viewer last
+ * saw the switch ON (`useLastKnownQueueOn`). Off, or unknown: nothing, so a
+ * switch-off row never shifts by 44px when they land (review #4).
+ */
+function DeckPlaceholder() {
+  const lastOn = useLastKnownQueueOn()
+  return lastOn ? (
+    <span data-deck-placeholder aria-hidden className="-my-3 h-11 min-w-11 shrink-0" />
+  ) : null
 }
 
 /**
