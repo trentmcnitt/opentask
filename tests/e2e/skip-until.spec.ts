@@ -212,6 +212,22 @@ test.describe('Skip until', () => {
         for (const id of [a, b]) expect((await stateOf(page, id)).target_at).toBe(nineAm(4))
         expect((await stateOf(page, oneOff)).target_at).toBe(nineAm(1))
 
+        // The page still answers clicks: the sheet unmounted under an open
+        // picker, and a Radix layer left behind would leave `pointer-events:
+        // none` on the body. A row click selects it again.
+        await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
+        expect(await page.evaluate(() => getComputedStyle(document.body).pointerEvents)).not.toBe(
+          'none',
+        )
+        await cmdClickRow(row(page, oneOff))
+        await expect(row(page, oneOff)).toHaveAttribute('aria-selected', 'true')
+        // One task selected: the bar offers Details.
+        await expect(
+          page.locator('[data-selection-sheet]').getByRole('button', { name: 'Details' }),
+        ).toBeVisible()
+        await page.locator('[data-selection-sheet]').getByRole('button', { name: /clear/i }).click()
+        await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
+
         const undone = page.waitForResponse('**/api/undo')
         await expect(
           page.locator('[data-sonner-toast]', {

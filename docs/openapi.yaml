@@ -1531,12 +1531,19 @@ paths:
         task lands on its first occurrence on or after the start of that day,
         and its occurrence and target go there. Every occurrence passed over is
         a skip (`skip_count`) — the current one (one however long it has been
-        over target), then each later one before the date. A task whose
-        current occurrence is already on or after the date has nothing before
-        it to skip: it is left as it is and counted in `already_clear`.
+        over target), then each later one before the date.
+
+        Nothing nags before the date: a task whose occurrence is already on or
+        after it has nothing to skip, but if its target was pulled before the
+        date the target goes back to the occurrence (a target move, no skip;
+        counted in `tasks_affected` and `targets_moved`). Only a task whose
+        target and occurrence are both on or after the date is left as it is
+        (`already_clear`).
 
         A `from_completion` rule has no schedule to walk: it lands on the date
-        itself at the rule's time of day, and its interval restarts from there.
+        itself at the rule's time of day, and its interval restarts from there
+        — but never earlier than skipping this occurrence would land it (one
+        interval on from the current occurrence).
 
         As for any skip: never a completion (`completion_count` untouched,
         `task.skipped` webhooks), the deadline moves with the occurrence and
@@ -1564,8 +1571,9 @@ paths:
                   type: [string, 'null']
                   format: date
                   description: |
-                    `yyyy-MM-dd`, the user's local day: today or later, at most
-                    10 years ahead. Omitted or null: skip this occurrence.
+                    `yyyy-MM-dd`, the user's local day: tomorrow or later (today
+                    is a 400), at most 10 years ahead. Omitted or null: skip this
+                    occurrence.
                   example: '2026-11-02'
       responses:
         '200':
@@ -1594,9 +1602,14 @@ paths:
                       skipped_inactive:
                         type: integer
                         description: Done, archived or trashed tasks
+                      targets_moved:
+                        type: integer
+                        description: |
+                          Nothing to skip, but the target was before `until`: moved
+                          to the occurrence (included in `tasks_affected`)
                       already_clear:
                         type: integer
-                        description: Current occurrence already on or after `until`
+                        description: Target and occurrence already on or after `until`
                       task_ids:
                         type: array
                         items:

@@ -36,6 +36,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     return success({
       tasks_affected: result.tasksAffected,
       occurrences_skipped: result.occurrencesSkipped,
+      targets_moved: result.targetsMoved,
       skipped_not_repeating: result.skippedNotRepeating,
       skipped_reminders: result.skippedReminders,
       skipped_quotas: result.skippedQuotas,

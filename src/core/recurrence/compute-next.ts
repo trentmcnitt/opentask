@@ -255,18 +255,7 @@ function computeFromDue(
   anchorAt?: Date | null,
 ): Date {
   const components = parseRRule(rruleStr)
-
-  // Get anchor time (local hour/minute)
-  let hour = 0
-  let minute = 0
-  if (anchorTime) {
-    const parsed = parseAnchorTime(anchorTime)
-    hour = parsed.hour
-    minute = parsed.minute
-  } else if (components.byhour !== undefined) {
-    hour = components.byhour
-    minute = components.byminute ?? 0
-  }
+  const { hour, minute } = ruleTimeOf(rruleStr, anchorTime)
 
   // Reference point: the later of prevDueAt and completedAt. This ensures the next
   // occurrence is strictly after the previous due, so completing early (or completing
@@ -276,6 +265,59 @@ function computeFromDue(
   const refDt = prevDueDt && prevDueDt > completedDt ? prevDueDt : completedDt
   const refNaive = toNaiveLocal(refDt)
 
+  const rule = buildDueRule(components, hour, minute, timezone, refNaive, anchorAt)
+
+  // Get the next occurrence (in "naive local")
+  const nextNaive = rule.after(refNaive, false)
+
+  if (!nextNaive) {
+    // Fallback: shouldn't happen for infinite rules
+    // Return tomorrow at anchor time (relative to the reference, not completion)
+    const tomorrow = refDt.plus({ days: 1 }).set({ hour, minute, second: 0, millisecond: 0 })
+    return tomorrow.toJSDate()
+  }
+
+  // Convert back to timezone-aware DateTime
+  let nextDt = fromNaiveLocal(nextNaive, timezone)
+
+  // DST fix: rrule.js works in UTC, so when DST changes between dtstart and the
+  // result date, the local hour shifts. Force the hour to match the anchor time.
+  if (nextDt.hour !== hour) {
+    nextDt = nextDt.set({ hour, minute, second: 0, millisecond: 0 })
+  }
+
+  return nextDt.toJSDate()
+}
+
+/**
+ * The rule's time of day: the task's `anchor_time`, else the rule's BYHOUR /
+ * BYMINUTE, else local midnight — the one fallback every computation uses,
+ * so the time a skip lands on is the time the next Done keeps.
+ */
+export function ruleTimeOf(
+  rruleStr: string,
+  anchorTime: string | null,
+): { hour: number; minute: number } {
+  if (anchorTime) return parseAnchorTime(anchorTime)
+  const components = parseRRule(rruleStr)
+  if (components.byhour !== undefined) {
+    return { hour: components.byhour, minute: components.byminute ?? 0 }
+  }
+  return { hour: 0, minute: 0 }
+}
+
+/**
+ * The from_due rule as rrule.js runs it, in "naive local" time, with its
+ * dtstart slid next to `refNaive` (see computeFromDue).
+ */
+function buildDueRule(
+  components: RRuleComponents,
+  hour: number,
+  minute: number,
+  timezone: string,
+  refNaive: Date,
+  anchorAt: Date | null | undefined,
+): RRule {
   // Create DTSTART in "naive" format (UTC slot) with the anchor time. Using
   // Date.UTC keeps the pattern independent of the server's local timezone —
   // critical on DST-observing hosts where new Date(2020,0,1,h,m) would carry
@@ -321,28 +363,42 @@ function computeFromDue(
     ruleOptions.bysetpos = [components.bysetpos]
   }
 
-  const rule = new RRule(ruleOptions)
+  return new RRule(ruleOptions)
+}
 
-  // Get the next occurrence (in "naive local")
-  const nextNaive = rule.after(refNaive, false)
+/** A naive-local rrule result as the real instant, at the rule's hour across DST. */
+function naiveToInstant(naive: Date, timezone: string, hour: number, minute: number): Date {
+  let dt = fromNaiveLocal(naive, timezone)
+  if (dt.hour !== hour) dt = dt.set({ hour, minute, second: 0, millisecond: 0 })
+  return dt.toJSDate()
+}
 
-  if (!nextNaive) {
-    // Fallback: shouldn't happen for infinite rules
-    // Return tomorrow at anchor time (relative to the reference, not completion)
-    const tomorrow = refDt.plus({ days: 1 }).set({ hour, minute, second: 0, millisecond: 0 })
-    return tomorrow.toJSDate()
-  }
-
-  // Convert back to timezone-aware DateTime
-  let nextDt = fromNaiveLocal(nextNaive, timezone)
-
-  // DST fix: rrule.js works in UTC, so when DST changes between dtstart and the
-  // result date, the local hour shifts. Force the hour to match the anchor time.
-  if (nextDt.hour !== hour) {
-    nextDt = nextDt.set({ hour, minute, second: 0, millisecond: 0 })
-  }
-
-  return nextDt.toJSDate()
+/**
+ * SKIP UNTIL's walk for a from_due rule, in two rrule.js calls rather than a
+ * step per occurrence: how many occurrences fall in [`from`, `before`), and
+ * the first one on or after `before`. `from` is an occurrence on the rule
+ * (the one a plain skip lands on); `anchorAt` anchors a floating rule's grid
+ * as in computeNextOccurrence.
+ */
+export function occurrencesFromDue(options: {
+  rrule: string
+  anchorTime: string | null
+  timezone: string
+  from: Date
+  before: Date
+  anchorAt?: Date | null
+}): { count: number; firstOnOrAfter: Date } {
+  const { rrule, anchorTime, timezone, from, before, anchorAt } = options
+  const components = parseRRule(rrule)
+  const { hour, minute } = ruleTimeOf(rrule, anchorTime)
+  const fromNaive = toNaiveLocal(DateTime.fromJSDate(from).setZone(timezone))
+  const beforeNaive = toNaiveLocal(DateTime.fromJSDate(before).setZone(timezone))
+  const rule = buildDueRule(components, hour, minute, timezone, fromNaive, anchorAt)
+  const inRange = rule.between(fromNaive, beforeNaive, true)
+  const count = inRange.filter((d) => d.getTime() < beforeNaive.getTime()).length
+  const next = rule.after(beforeNaive, true)
+  if (!next) throw new Error('occurrencesFromDue: the rule has no occurrence after the date')
+  return { count, firstOnOrAfter: naiveToInstant(next, timezone, hour, minute) }
 }
 
 /**
@@ -364,16 +420,7 @@ function computeFromCompletion(
   const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
 
   // Get anchor time for snapping
-  let hour = 0
-  let minute = 0
-  if (anchorTime) {
-    const parsed = parseAnchorTime(anchorTime)
-    hour = parsed.hour
-    minute = parsed.minute
-  } else if (components.byhour !== undefined) {
-    hour = components.byhour
-    minute = components.byminute ?? 0
-  }
+  const { hour, minute } = ruleTimeOf(rruleStr, anchorTime)
 
   const interval = components.interval || 1
   let nextDt: DateTime

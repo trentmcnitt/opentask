@@ -10,16 +10,23 @@ import type { Task } from '@/types'
 
 /**
  * Whether Skip until applies to a task: a repeating task that is not a
- * reminder or a quota, and not done or trashed. The server applies the same
- * test and counts the rest, so a stale selection is never refused.
+ * reminder or a quota, and not done, archived or trashed. The server applies
+ * the same test and counts the rest, so a stale selection is never refused.
  */
 export function canSkipUntil(
   task: Pick<
     Task,
-    'rrule' | 'is_reminder' | 'is_tracked' | 'progress_target' | 'done' | 'deleted_at'
+    | 'rrule'
+    | 'is_reminder'
+    | 'is_tracked'
+    | 'progress_target'
+    | 'done'
+    | 'deleted_at'
+    | 'archived_at'
   >,
 ): boolean {
-  return !!task.rrule && !task.is_reminder && !isTracked(task) && !task.done && !task.deleted_at
+  if (task.done || task.deleted_at || task.archived_at) return false
+  return !!task.rrule && !task.is_reminder && !isTracked(task)
 }
 
 export interface SkipUntilResponse {

@@ -279,8 +279,11 @@ describe('Skip until: batches, undo and checks', () => {
       recurrence_mode: 'from_completion',
       due_at: at('2026-03-05T07:30'),
     })
+    // Resolution 7 never lands earlier than the plain skip: Mar 5 + 2 weeks = Mar 19
+    // is after Mar 12, so Mar 19 (7:30 CDT).
     skipUntil({ ...u, taskIds: [f.id], until: '2026-03-12' })
-    expect(task(f.id).occurrence_at).toBe('2026-03-12T12:30:00.000Z')
+    expect(task(f.id).occurrence_at).toBe('2026-03-19T12:30:00.000Z')
+    expect(task(f.id).skip_count).toBe(1)
   })
 
   test('SKU-012: the date is checked in the user timezone; a foreign id refuses the batch', () => {
@@ -289,8 +292,11 @@ describe('Skip until: batches, undo and checks', () => {
     expect(() => skipUntil({ ...u, taskIds: [t.id], until: '2026-02-30' })).toThrow(ValidationError)
     expect(() => skipUntil({ ...u, taskIds: [t.id], until: '2037-01-01' })).toThrow(ValidationError)
     expect(() => skipUntil({ ...u, taskIds: [t.id, 999999] })).toThrow(ValidationError)
-    // Today is allowed: the occurrence (tomorrow) is already after it.
-    expect(skipUntil({ ...u, taskIds: [t.id], until: '2026-01-15' }).alreadyClear).toBe(1)
+    // Today is refused: "skip this occurrence" is the no-date call.
+    expect(() => skipUntil({ ...u, taskIds: [t.id], until: '2026-01-15' })).toThrow(
+      'until must be tomorrow or later',
+    )
+    expect(task(t.id).skip_count ?? 0).toBe(0)
   })
 
   test('SKU-013: nothing skipped writes nothing — no undo entry, no activity', () => {
@@ -311,7 +317,7 @@ describe('Skip until: batches, undo and checks', () => {
       .all(t.id) as { action: string; metadata: string }[]
     expect(rows).toHaveLength(1)
     expect(JSON.parse(rows[0].metadata)).toMatchObject({
-      until: '2026-01-18',
+      skip_until: '2026-01-18',
       occurrences_skipped: 2,
     })
     expect(task(t.id).attempts).toBe(0)
@@ -319,8 +325,83 @@ describe('Skip until: batches, undo and checks', () => {
 
   test('SKU-015: the plan is pure — a far date walks a daily rule without a write', () => {
     const t = make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', due_at: at('2026-01-16T09:00') })
-    const plan = planSkipUntil(t, tz, '2026-04-15', '09:00', new Date())
+    const plan = planSkipUntil(t, tz, '2026-04-15', new Date())
     expect(plan).toEqual({ kind: 'skip', landing: at('2026-04-15T09:00'), skipped: 89 })
     expect(task(t.id).skip_count ?? 0).toBe(0)
+  })
+})
+
+describe('Skip until: targets, far dates and rule times', () => {
+  useFixedDay()
+
+  test('SKU-016: an occurrence past the date with a target before it — the target goes to the occurrence', () => {
+    const t = make({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
+      due_at: at('2026-01-19T09:00'),
+    })
+    // The target pulled earlier, to tomorrow; the occurrence stays Mon Jan 19.
+    set(t.id, { due_at: at('2026-01-16T09:00'), queue_mark: 1, attempts: 2 })
+    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-18' })
+    expect(r.tasksAffected).toBe(1)
+    expect(r.targetsMoved).toBe(1)
+    expect(r.occurrencesSkipped).toBe(0)
+    expect(r.alreadyClear).toBe(0)
+    expect(r.summary).toBe('Moved "Task" to its occurrence · Mon, Jan 19')
+    const after = task(t.id)
+    expect(after.due_at).toBe(at('2026-01-19T09:00'))
+    expect(after.occurrence_at).toBe(at('2026-01-19T09:00'))
+    // A move, not a new occurrence: no skip, attempts kept; the queue mark goes.
+    expect(after.skip_count ?? 0).toBe(0)
+    expect(after.attempts).toBe(2)
+    expect(after.queue_mark).toBe(false)
+
+    const entries = undoEntries()
+    expect(entries.at(-1)!.action).toBe('bulk_skip')
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id).due_at).toBe(at('2026-01-16T09:00'))
+    expect(task(t.id).queue_mark).toBe(true)
+  })
+
+  test('SKU-017: a multi-BYHOUR daily rule two years out, counted in one pass', () => {
+    const t = make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', due_at: at('2026-01-16T09:00') })
+    // Stored straight: validation never makes one, but an old row or the API could hold it.
+    // The engine reads a rule's first BYHOUR as its time of day, so it is one a day at 9:00.
+    set(t.id, { rrule: 'FREQ=DAILY;BYHOUR=9,13,17;BYMINUTE=0', anchor_time: '09:00' })
+    const started = performance.now()
+    const plan = planSkipUntil(task(t.id), tz, '2028-01-16', new Date())
+    expect(performance.now() - started).toBeLessThan(1000)
+    // Jan 16 2026 up to Jan 15 2028: 730 days.
+    expect(plan).toEqual({ kind: 'skip', landing: at('2028-01-16T09:00'), skipped: 730 })
+  })
+
+  test('SKU-018: past the guard is a 400 (ValidationError), never a 500', () => {
+    const daily = make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', due_at: at('2026-01-16T09:00') })
+    const fromDone = make({
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      recurrence_mode: 'from_completion',
+      due_at: at('2026-01-16T09:00'),
+    })
+    // Pure plans, so the 10-year limit on `until` is not in the way: ~14 years of days.
+    expect(() => planSkipUntil(task(daily.id), tz, '2040-01-01', new Date())).toThrow(
+      ValidationError,
+    )
+    expect(() => planSkipUntil(task(fromDone.id), tz, '2040-01-01', new Date())).toThrow(
+      ValidationError,
+    )
+  })
+
+  test('SKU-019: from_completion with no time in the rule lands at the time the next Done keeps', () => {
+    const t = make({
+      rrule: 'FREQ=DAILY;INTERVAL=3;BYHOUR=9;BYMINUTE=0',
+      recurrence_mode: 'from_completion',
+      due_at: at('2026-01-16T09:00'),
+    })
+    // An old row: no BYHOUR, no anchor_time. computeFromCompletion's fallback is midnight.
+    set(t.id, { rrule: 'FREQ=DAILY;INTERVAL=3', anchor_time: null })
+    skipUntil({ ...u, taskIds: [t.id], until: '2026-01-26' })
+    expect(task(t.id).occurrence_at).toBe(at('2026-01-26T00:00'))
+    vi.setSystemTime(new Date(at('2026-01-26T10:00')))
+    markDone({ ...u, taskId: t.id })
+    expect(task(t.id).due_at).toBe(at('2026-01-29T00:00'))
   })
 })

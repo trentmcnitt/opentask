@@ -97,8 +97,9 @@ export function SegmentDetailsModal({
     async (taskId: number, until: string | null) => {
       await runSkipUntil([taskId], until, {
         onUndo,
-        afterSkip: () => {
-          onCompleted?.()
+        afterSkip: (result) => {
+          // `onCompleted` bumps the host's undo count: only when an entry was written.
+          if (result.tasks_affected > 0) onCompleted?.()
           void refresh()
         },
       })

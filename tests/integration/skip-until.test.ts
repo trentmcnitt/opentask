@@ -93,6 +93,10 @@ describe('POST /api/tasks/bulk/skip-until', () => {
     const t = await make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', due_at: nineAm(1) })
     expect((await skip({ ids: [t], until: 'next week' })).status).toBe(400)
     expect((await skip({ ids: [t], until: day(-1) })).status).toBe(400)
+    // Today too: "skip this occurrence" is the no-date call.
+    const today = await skip({ ids: [t], until: day(0) })
+    expect(today.status).toBe(400)
+    expect((await today.json()).error).toMatch(/tomorrow or later/)
     expect((await skip({ ids: [] })).status).toBe(400)
     expect((await skip({ ids: [t], until: '2026-02-30' })).status).toBe(400)
     // User B cannot skip user A's task.

@@ -64,12 +64,18 @@ export function SkipUntilDialog({
       })
     : null
 
+  // Every way out — Cancel, Escape, the overlay, a done skip — goes through
+  // here, so the next open starts with no day picked.
+  const close = () => {
+    setPicked(undefined)
+    onOpenChange(false)
+  }
+
   const run = async (until: string | null) => {
     setBusy(true)
     try {
       await onSkip(until)
-      setPicked(undefined)
-      onOpenChange(false)
+      close()
     } catch {
       // Toasted by the host; the picker stays open.
     } finally {
@@ -85,8 +91,8 @@ export function SkipUntilDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setPicked(undefined)
-        onOpenChange(next)
+        if (next) onOpenChange(true)
+        else if (!busy) close()
       }}
     >
       <DialogContent className="w-[22rem] max-w-[calc(100%-2rem)] p-4" data-skip-until-dialog>
@@ -129,7 +135,7 @@ export function SkipUntilDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" disabled={busy} onClick={close}>
             Cancel
           </Button>
           <Button
