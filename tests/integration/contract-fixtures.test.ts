@@ -84,6 +84,11 @@
  *     not captured)
  *        (`queue_previous`: the old strip and the waiting weekly task;
  *        `queue_today`: the new strip and the Try Tomorrow row)
+ * 16. On deck (2026-10-20), switch on: a one-off decked for tomorrow
+ *     (`POST /api/tasks/deck`), its stamps backdated so today is its heads-up
+ *     GET  /api/reminders?queue=1&deck=1        → reminders-deck.json
+ *     (and the form without `deck=1`: the decked task in no segment —
+ *     asserted, not captured)
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -466,6 +471,33 @@ async function queuePanels(
   }
 }
 
+/**
+ * Step 16. On deck (2026-10-20), switch on: a one-off decked for TOMORROW
+ * (User B's calendar day), its deck stamps (`target_set_at`, considered)
+ * backdated 10 days, so today is its day-before heads-up (wait 11) and the
+ * row waits. `?deck=1` draws it in Upcoming ("On deck …"); the default form
+ * leaves it out of every segment (an old native build would draw a dateless
+ * row). Every task in every capture carries `on_deck_day`.
+ */
+async function deckRows(
+  make: (name: string, body: Record<string, unknown>) => Promise<void>,
+  created: Record<string, number>,
+): Promise<{ withDeck: Json; plain: Json }> {
+  await setTaskQueue(true)
+  try {
+    await make('decked', { title: 'Pick up the winter gloves' })
+    const tomorrow = DateTime.now().setZone('America/New_York').plus({ days: 1 }).toISODate()
+    await call('/api/tasks/deck', { ids: [created.decked], day: tomorrow })
+    backdate([created.decked], 10, ['target_set_at', 'last_considered_at'])
+    return {
+      withDeck: await call('/api/reminders?queue=1&deck=1'),
+      plain: await call('/api/reminders?queue=1'),
+    }
+  } finally {
+    await setTaskQueue(false)
+  }
+}
+
 async function snoozeOverdueWithQueue(): Promise<Json> {
   await setTaskQueue(true)
   try {
@@ -491,7 +523,7 @@ interface Prompt {
 function backdate(
   taskIds: number[],
   days: number,
-  columns: ('target_set_at' | 'created_at')[] = ['target_set_at'],
+  columns: ('target_set_at' | 'created_at' | 'last_considered_at')[] = ['target_set_at'],
 ) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
   try {
@@ -514,6 +546,7 @@ describe('contract fixtures (native clients)', () => {
   const captured: Record<string, Json> = {}
   const created: Record<string, number> = {}
   let plainWithQueueOn: Json = null
+  let plainWithoutDeck: Json = null
 
   beforeAll(async () => {
     await resetTestData()
@@ -742,6 +775,33 @@ describe('contract fixtures (native clients)', () => {
     plainWithQueueOn = forms.plain
   })
 
+  // 16. On deck (`deckRows`). After the queue's panels, so nothing there moves.
+  beforeAll(async () => {
+    let placeholder = 101 + Object.keys(created).length
+    const make = async (name: string, body: Record<string, unknown>) => {
+      const res = (await call('/api/tasks', body)) as { data: { id: number } }
+      created[name] = res.data.id
+      ids.register('task', res.data.id, placeholder++)
+    }
+    const forms = await deckRows(make, created)
+    captured['reminders-deck'] = forms.withDeck
+    plainWithoutDeck = forms.plain
+  })
+
+  test('without ?deck=1 a decked task is in no segment; with it, an Upcoming row', () => {
+    type Segs = {
+      data: {
+        task_segments: { horizon: string; tasks: { id: number; on_deck_day: string | null }[] }[]
+      }
+    }
+    const decked = created.decked
+    const plain = (plainWithoutDeck as unknown as Segs).data.task_segments
+    for (const seg of plain) for (const t of seg.tasks) expect(t.id).not.toBe(decked)
+    const withDeck = (captured['reminders-deck'] as unknown as Segs).data.task_segments
+    const upcoming = withDeck.find((s) => s.horizon === 'upcoming')!
+    expect(upcoming.tasks.find((t) => t.id === decked)?.on_deck_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
   test('without ?queue=1 the switch-on payload has no queue kinds and no queued task', () => {
     type Segs = { data: { task_segments: { horizon: string; tasks: { id: number }[] }[] } }
     const queued = new Set(
@@ -782,6 +842,7 @@ describe('contract fixtures (native clients)', () => {
     'task-interval-quota',
     'reminders-interval',
     'reminders-queue',
+    'reminders-deck',
   ]
 
   for (const name of names) {

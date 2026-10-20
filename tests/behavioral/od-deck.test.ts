@@ -41,6 +41,7 @@ import {
 } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { deckTasks, onDeckToday } from '@/core/tasks/deck'
+import { clearDecks, findDecks } from '@/core/tasks/clear-decks'
 import { getTaskSegments, targetTasksToday, considerTasks } from '@/core/tasks/task-segments'
 import { runTaskRollover } from '@/core/tasks/task-rollover'
 import { runRolloverNow } from '@/core/tasks/rollover-now'
@@ -829,5 +830,27 @@ describe('OD-P: "· N on deck" rides on slot pushes that already fire', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
     setClock('2026-10-21T12:00')
     expect(pendingSlotNotifications(now())[0].deckCount).toBe(0)
+  })
+})
+
+// ===========================================================================
+// OD-C: the rollback
+// ===========================================================================
+
+describe('OD-C: clear-decks (rollback)', () => {
+  hooks()
+
+  test('OD-C01: lists, then clears every open deck; done and deadline targets untouched', () => {
+    const a = make()
+    const b = make({ deadline_at: at('2026-10-30T23:59') })
+    const done = make()
+    deck([a.id, b.id, done.id], '2026-10-23')
+    markDone({ ...u, taskId: done.id })
+    expect(findDecks(TEST_USER_ID).map((t) => t.id)).toEqual([a.id, b.id])
+    expect(clearDecks(TEST_USER_ID).map((t) => t.id)).toEqual([a.id, b.id])
+    expect(task(a.id).on_deck_day).toBeNull()
+    expect(task(b.id)).toMatchObject({ on_deck_day: null, target_auto: true })
+    expect(task(done.id).on_deck_day).toBe('2026-10-23')
+    expect(findDecks(TEST_USER_ID)).toEqual([])
   })
 })
