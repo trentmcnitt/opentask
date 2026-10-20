@@ -23,7 +23,8 @@
  *   lands on the date at the rule's time of day, and the interval restarts
  *   from there (the next one is counted from when that one is done). Its
  *   skips are counted by stepping the interval from the current occurrence,
- *   as if each had been done on time (the rollover's stepping).
+ *   as if each had been done on time (stepped like the rollover, but each
+ *   step counts; the rollover adds one skip whatever it steps over).
  *
  * Only repeating tasks. A one-off, a reminder, a quota, or a trashed /
  * archived task in the batch is left alone and COUNTED, never a refusal of the

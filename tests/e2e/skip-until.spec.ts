@@ -113,6 +113,15 @@ test.describe('Skip until', () => {
         await page.getByRole('menuitem', { name: 'Skip until…' }).click()
         await expect(skipDialog(page)).toBeVisible()
 
+        // Cancel leaves the Quick panel usable (a layer opened from a menu
+        // item must not leave the page unclickable), and nothing was sent.
+        await skipDialog(page).getByRole('button', { name: 'Cancel' }).click()
+        await expect(skipDialog(page)).toHaveCount(0)
+        await panel.getByRole('button', { name: 'More options' }).click()
+        await page.getByRole('menuitem', { name: 'Skip until…' }).click()
+        await expect(skipDialog(page)).toBeVisible()
+        expect((await stateOf(page, id)).skip_count ?? 0).toBe(0)
+
         const sent = page.waitForResponse(isSkip)
         await skipDialog(page).getByRole('button', { name: 'Skip this occurrence' }).click()
         const res = await sent
