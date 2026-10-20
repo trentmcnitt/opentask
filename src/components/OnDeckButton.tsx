@@ -54,7 +54,6 @@ export function OnDeckButton({
   className,
   iconClassName,
   boxClassName,
-  showLabel = false,
 }: {
   task: Task
   timezone: string
@@ -68,8 +67,6 @@ export function OnDeckButton({
   iconClassName?: string
   /** The inner HOVER BOX (segment rows), as on `TargetTodayButton`. */
   boxClassName?: string
-  /** The word "On deck" from `sm` up (segment rows); icon-only otherwise. */
-  showLabel?: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const press = useSimpleLongPress({
@@ -83,8 +80,8 @@ export function OnDeckButton({
   // row's only sign of it) but is not "pressed" — a tap moves it to today.
   const forToday = active && deckIsToday(task, timezone, new Date())
   const title = forToday
-    ? 'On deck today · tap to take off · hold for a day'
-    : 'On deck today · hold for a day'
+    ? 'On deck — today · tap to take off · hold for a day'
+    : 'On deck — today · hold for a day'
   return (
     <span
       className="contents"
@@ -137,10 +134,10 @@ export function OnDeckButton({
                 boxClassName,
               )}
             >
-              <DeckFace active={active} iconClassName={iconClassName} showLabel={showLabel} />
+              <DeckFace active={active} iconClassName={iconClassName} />
             </span>
           ) : (
-            <DeckFace active={active} iconClassName={iconClassName} showLabel={showLabel} />
+            <DeckFace active={active} iconClassName={iconClassName} />
           )}
         </button>
       </DeckMenu>
@@ -148,25 +145,17 @@ export function OnDeckButton({
   )
 }
 
-/** The bookmark, filled while the task is on deck (A10), and its word from `sm`. */
-function DeckFace({
-  active,
-  iconClassName,
-  showLabel,
-}: {
-  active: boolean
-  iconClassName?: string
-  showLabel: boolean
-}) {
+/**
+ * The bookmark, filled while the task is on deck (A10). Icon only, everywhere
+ * (Trent, 2026-10-20): the tooltip and the accessible name say "On deck".
+ */
+function DeckFace({ active, iconClassName }: { active: boolean; iconClassName?: string }) {
   return (
-    <>
-      <Bookmark
-        className={iconClassName}
-        strokeWidth={1.75}
-        fill={active ? 'currentColor' : 'none'}
-      />
-      {showLabel ? <span className="sr-only sm:not-sr-only">On deck</span> : null}
-    </>
+    <Bookmark
+      className={iconClassName}
+      strokeWidth={1.75}
+      fill={active ? 'currentColor' : 'none'}
+    />
   )
 }
 

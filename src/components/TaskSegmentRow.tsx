@@ -509,11 +509,9 @@ function SegmentDeckSlot({
       task={row.task}
       timezone={timezone}
       onDeck={(t, day) => void actions.deck(t, day)}
-      showLabel
+      // Icon only (Trent, 2026-10-20): the tooltip and the name say "On deck".
       className="-my-3 h-11 min-w-11"
-      boxClassName={
-        panel ? `${HOVER_BOX.panel} min-w-6.5 sm:px-1.5` : `${HOVER_BOX.page} min-w-8 sm:px-2`
-      }
+      boxClassName={panel ? `${HOVER_BOX.panel} w-6.5` : `${HOVER_BOX.page} w-8`}
       iconClassName={panel ? 'size-[18px]' : 'size-[22px]'}
     />
   )
