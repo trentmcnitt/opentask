@@ -86,8 +86,10 @@ test.describe('Upcoming', () => {
       await page.goto('/reminders')
       const section = upcoming(page)
       await expect(section).toBeVisible()
-      await expect(section.getByText(/Tasks · Upcoming/i)).toBeVisible()
-      await expect(section.getByText('Heads-up')).toBeVisible()
+      // One-word title, no "Heads-up" hint (2026-10-20).
+      await expect(section).toHaveAttribute('aria-label', 'Upcoming')
+      await expect(section.getByText('Upcoming', { exact: true })).toBeVisible()
+      await expect(section.getByText('Heads-up')).toHaveCount(0)
       // Directly after Days.
       const order = await page
         .locator('[data-task-segments] [data-task-segment]')
@@ -203,7 +205,7 @@ test.describe('Upcoming', () => {
       await expect(strip.locator('[data-slot-segment="tasks:upcoming"]')).toHaveCount(1)
       await strip.locator('[data-slot-segment="tasks:upcoming"]').click()
       await expect(card).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
-      await expect(card.getByText('Tasks · Upcoming')).toBeVisible()
+      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Upcoming')
       const r = card.locator(`[data-segment-task="${t.repeating}"]`)
       await expect(r.locator('[data-target-today]')).toHaveCount(1)
       await r.getByRole('button', { name: /as considered/ }).click()

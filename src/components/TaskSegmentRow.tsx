@@ -20,24 +20,20 @@ import {
   HORIZON_LABELS,
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
-  QUEUE_PANEL_HINTS,
-  QUEUE_PANEL_WORDS,
-  QUEUE_WORD,
+  QUEUE_PANEL_TITLES,
+  SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
-  UPCOMING_HINT,
   UPCOMING_LABEL,
-  horizonHints,
 } from '@/lib/task-model-words'
 import {
   SEGMENT_NUDGE_THRESHOLD,
   isQueueKind,
-  type CheckInDay,
   type HorizonValue,
   type SegmentKind,
 } from '@/lib/task-segments'
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
-import { useCheckInDay, useTaskQueue } from '@/components/PreferencesProvider'
+import { useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -119,37 +115,20 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
   return enabled ? 'on' : 'off'
 }
 
-/** A segment's one word: its horizon's, "Upcoming", or a queue panel's. */
-export function segmentWord(kind: SegmentKind): string {
-  if (isQueueKind(kind)) return QUEUE_PANEL_WORDS[kind]
-  return kind === 'upcoming' ? UPCOMING_LABEL : HORIZON_LABELS[kind]
+/**
+ * A segment kind's panel title (Trent, 2026-10-20): "Queued", "Previously
+ * queued", "Upcoming", "Daily", "Weekly", "Monthly", "Quarterly". One word or
+ * phrase and nothing else — no "Tasks · " prefix, no hint after it — the
+ * whole header on both surfaces, like a period's name.
+ */
+export function segmentTitle(kind: SegmentKind): string {
+  if (isQueueKind(kind)) return QUEUE_PANEL_TITLES[kind]
+  return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
 }
 
-/**
- * "Tasks · Days": the segment's name on both surfaces. A task queue panel
- * (PR 3) has the queue's own provisional name instead: "Task reminders ·
- * Today" / "Task reminders · Earlier" (`QUEUE_WORD`).
- */
+/** `segmentTitle` for a segment: its header, section and list names. */
 export function segmentLabel(segment: SegmentView): string {
-  const word = segmentWord(segment.horizon)
-  return isQueueKind(segment.horizon) ? `${QUEUE_WORD} · ${word}` : `Tasks · ${word}`
-}
-
-/**
- * What sits where a slot shows its start time: when the segment comes round
- * — Weeks and Months name the user's check-in day ("Tuesdays", "1st
- * Tuesday"). Upcoming says what it is instead: "Heads-up".
- */
-export function segmentHint(segment: SegmentView, checkInDay: CheckInDay): string {
-  const kind = segment.horizon
-  if (isQueueKind(kind)) return QUEUE_PANEL_HINTS[kind]
-  return kind === 'upcoming' ? UPCOMING_HINT : horizonHints(checkInDay)[kind]
-}
-
-/** `segmentHint` with the signed-in user's check-in day. */
-export function useSegmentHint(): (segment: SegmentView) => string {
-  const { checkInDay } = useCheckInDay()
-  return (segment) => segmentHint(segment, checkInDay)
+  return segmentTitle(segment.horizon)
 }
 
 /**
@@ -227,9 +206,9 @@ export function TaskSegmentRow({
     if (!considered) void actions.consider(task)
   }
   // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
-  // like the priority tab, on a "Stripped today" row only. The row is NOT
+  // like the priority tab, on a "Queued" row only. The row is NOT
   // lifted to the top — it keeps its place in the priority sort. The rollover
-  // clears the flag once the row moves to "Previously targeted".
+  // clears the flag once the row moves to "Previously queued".
   const tryTomorrow = segmentHorizon === 'queue_today' && task.try_tomorrow
   return (
     <li

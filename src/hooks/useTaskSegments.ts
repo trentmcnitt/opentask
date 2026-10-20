@@ -9,7 +9,7 @@ import {
   type SegmentKind,
   type SegmentState,
 } from '@/lib/task-segments'
-import { HORIZON_LABELS } from '@/lib/task-model-words'
+import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import type { Task } from '@/types'
 
@@ -45,7 +45,7 @@ import type { Task } from '@/types'
  * - the details icon (resolution 10) → `openDetails`: the Quick panel for
  *   that task (`SegmentDetailsModal`, which each surface renders)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
- *   toast then says "Moved to Tasks · <Horizon>")
+ *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
  */
 
 type Overlay = SegmentState | 'gone'
@@ -386,15 +386,16 @@ export function targetWhen(when: DateTime, today: DateTime): string {
 
 /**
  * The horizon chip's toast. When the change moves the row to another segment,
- * it says where it went ("Moved to Tasks · Months", 2026-10-11) — the row is
- * about to leave the list, and "Horizon: Months" didn't say that. Compared on
- * the EFFECTIVE horizon (a deadline can pull a task in, so a new set horizon
- * may leave it where it is); unchanged, it keeps the plain "Horizon: X".
+ * it says where it went, by the panel's title ("Moved to Monthly", 2026-10-11;
+ * the title since 2026-10-20) — the row is about to leave the list, and
+ * "Horizon: Months" didn't say that. Compared on the EFFECTIVE horizon (a
+ * deadline can pull a task in, so a new set horizon may leave it where it
+ * is); unchanged, it keeps the plain "Horizon: X".
  */
 function horizonToast(task: Task, horizon: HorizonValue | null, segment?: SegmentKind): string {
   if (segment) {
     const next = effectiveHorizon({ horizon, deadline_at: task.deadline_at }, new Date())
-    if (next !== segment) return `Moved to Tasks · ${HORIZON_LABELS[next]}`
+    if (next !== segment) return `Moved to ${SEGMENT_TITLES[next]}`
   }
   return horizon ? `Horizon: ${HORIZON_LABELS[horizon]}` : 'Horizon cleared'
 }

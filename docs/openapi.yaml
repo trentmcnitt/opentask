@@ -1875,12 +1875,12 @@ paths:
       description: >
         Runs the task queue's daily rollover for the caller now, with now as the rollover moment
         ("end my day now"): every one-off below High with no deadline whose target has passed (or
-        that a Snooze-all marked) is stripped into the queue's "Stripped today"; a repeating one
+        that a Snooze-all marked) is stripped into the queue's "Queued" panel; a repeating one
         rolls to its occurrence before the next real rollover, or waits for the one after; a wait
         due before the next real rollover is released. Later targets, High and Urgent, deadline
         tasks, reminders, quotas and archived tasks are untouched. The daily rollover is not moved
         (it runs as usual). The rows are handed to the next OpenTask day: their `queued_at` is the
-        next rollover moment (a future instant), so they stay in "Stripped today" through that
+        next rollover moment (a future instant), so they stay in "Queued" through that
         rollover, Try Tomorrow flags kept. One undo entry (`task_rollover`). Webhooks go out as the
         daily rollover's do (`task.updated` with `previous_due_at`, `task.skipped` where a missed
         occurrence was passed over; `source: rollover`), each payload with `manual: true` added.
@@ -2194,7 +2194,7 @@ paths:
                           segment): two more segments come FIRST. `queue_today` holds the tasks queued at or
                           after the user's latest rollover moment ("Stripped
                           today"); `queue_previous` those queued before it and
-                          never handed back ("Previously targeted" — it drops
+                          never handed back ("Previously queued" — it drops
                           nothing). A queued task is a one-off whose target the
                           rollover stripped (`queued_at` set, `due_at` null,
                           the old target in `queued_from_due_at`) or a

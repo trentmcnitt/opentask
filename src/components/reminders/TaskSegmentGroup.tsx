@@ -17,7 +17,6 @@ import {
   handledRows,
   segmentCounts,
   segmentColor,
-  useSegmentHint,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -34,8 +33,8 @@ import { isQueueKind } from '@/lib/task-segments'
  * similarly to the segments for reminders." It replaced the separate card.
  *
  * The same frame, built from the slot's own pieces: the collapsible header
- * (`SlotHeaderRow`: chevron, label, and the segment's hint where a slot shows
- * its time), "X of Y", the hairline, the rows, and "Show N considered" with
+ * (`SlotHeaderRow`: chevron and the segment's title — one word, with no time
+ * or hint after it, 2026-10-20), "X of Y", the hairline, the rows, and "Show N considered" with
  * put-back. Where a slot has "Considered all" a segment has "Defer all" (no
  * confirm: one Undo reverses it, and it only ever takes rows off TODAY's list).
  *
@@ -69,7 +68,6 @@ export function TaskSegmentGroup({
   onScrollServed?: (seq: number) => void
 }) {
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
-  const hint = useSegmentHint()
   const queueOn = useQueueOn(segment.horizon)
   const color = segmentColor(segment.horizon)
   const label = segmentLabel(segment)
@@ -79,13 +77,12 @@ export function TaskSegmentGroup({
   const headerRow = (
     <SlotHeaderRow
       label={label}
-      time={hint(segment)}
+      time={null}
       count={waiting.length}
       considered={handledCount}
       open={open}
       started
       accent={segmentTitleColor(segment.horizon)}
-      stackTime
     />
   )
   return (
@@ -104,9 +101,7 @@ export function TaskSegmentGroup({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          // py-1.5 below `sm`: the hint's own line (stackTime) still fits the
-          // 44px row. A slot's header is one line, py-2.
-          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 text-left transition-colors sm:py-2"
+          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left transition-colors"
         >
           {headerRow}
         </button>

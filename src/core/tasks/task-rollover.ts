@@ -14,7 +14,7 @@
  *      its sweep recorded it; else the target it had), `queued_at` = now,
  *      the mark cleared.
  *      Attempts are checkpointed and kept (B7: no reset on strip); Try
- *      Tomorrow's flag stays while the row is in "Stripped today".
+ *      Tomorrow's flag stays while the row is in "Queued".
  *   2. A REPEATING task is never stripped (rule 5):
  *      - the rule has an occurrence inside this OpenTask day [M, next M) →
  *        it ROLLS to that occurrence (target and `occurrence_at`), logged as
@@ -34,7 +34,7 @@
  *      and leaves the queue. It nags that day like any task; if still
  *      unhandled at the NEXT rollover, it rolls or waits per 2.
  *   4. Try Tomorrow's flag is cleared on any task queued before M (it has
- *      moved to "Previously targeted").
+ *      moved to "Previously queued").
  *
  * EXCLUDED (never touched by 1 and 2): done, deleted, archived, reminders,
  * quotas (`is_tracked`, `progress_target > 1`), High and Urgent, and ANY
@@ -108,7 +108,7 @@ export interface TaskRolloverResult {
   waiting: number
   /** Waiting repeating tasks whose occurrence arrived (queue cleared). */
   released: number
-  /** Try Tomorrow flags cleared (the row moved to Previously targeted). */
+  /** Try Tomorrow flags cleared (the row moved to Previously queued). */
   flagsCleared: number
 }
 
@@ -339,11 +339,11 @@ export function applyRollover(
     run.changed = true
   }
 
-  // 4. Try Tomorrow's mark lasts only while the row is in "Stripped today".
+  // 4. Try Tomorrow's mark lasts only while the row is in "Queued".
   // Not on a manual run: its M is now, not a rollover, so every queued row
   // would count as "before M" — but the panels' today/previous split stays on
   // the real latest rollover, so rows stripped this morning are still in
-  // "Stripped today" and keep the mark. The real rollover cleared the rest.
+  // "Queued" and keep the mark. The real rollover cleared the rest.
   if (ctx.manual) return run
   const flagged = db
     .prepare(

@@ -46,7 +46,7 @@
   /* The task queue's two panels (2026-10-19, provisional): a deeper, greyer
      cyan-teal than the horizons — the same family (they are task rows), a
      step apart so the first bars in the strip read as their own thing.
-     "Stripped today" is the strong one, "Previously targeted" the muted. */
+     "Queued" is the strong one, "Previously queued" the muted. */
   --segment-queue_today: #0d7f8c;
   --segment-queue_previous: #5c9ba3;
   /* Titles: one darker teal in light mode, so the small uppercase label
