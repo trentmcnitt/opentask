@@ -447,6 +447,7 @@ export function TaskRow({
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
   const hasIndicators =
+    insightsScore !== undefined ||
     !!task.rrule ||
     task.auto_snooze_minutes !== null ||
     !!(task.notes && task.notes.trim()) ||
@@ -670,6 +671,24 @@ export function TaskRow({
               </span>
             )}
 
+            {/* The AI score (2026-10-20, Trent): a chip on this meta line, next
+                to the notes mark — the label chips' shape — not a column in
+                the card's right gutter. Shown only when scores are on, as
+                before (the caller passes it then). */}
+            {insightsScore !== undefined && (
+              <Badge
+                data-tour="task-score"
+                data-task-score={insightsScore}
+                className={cn(
+                  'border-0 px-1.5 py-0 text-xs font-semibold tabular-nums',
+                  getScoreColor(insightsScore),
+                )}
+                title={`AI attention score: ${insightsScore}/100`}
+              >
+                {insightsScore}
+              </Badge>
+            )}
+
             {hasLabels && (
               <LabelBadges
                 labels={task.labels}
@@ -734,20 +753,6 @@ export function TaskRow({
           </div>
         )}
       </div>
-
-      {/* Insights score badge */}
-      {insightsScore !== undefined && (
-        <span
-          data-tour="task-score"
-          className={cn(
-            'flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
-            getScoreColor(insightsScore),
-          )}
-          title={`AI attention score: ${insightsScore}/100`}
-        >
-          {insightsScore}
-        </span>
-      )}
 
       {/* The hover buttons, Today and Snooze (hidden in selection mode, and
           on a phone — swipe and the row's own gestures cover both there).
