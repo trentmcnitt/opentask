@@ -257,4 +257,37 @@ test.describe('Recurrence editor on a phone: the starting time', () => {
       await page.request.delete(`/api/tasks/${id}`)
     }
   })
+
+  test('a "1st Saturday" rule keeps its weekday when only its time is edited', async ({
+    authenticatedPage: page,
+  }) => {
+    // The picker has no weekday-of-month control; before 2026-10-20 any edit
+    // rewrote such a rule to BYMONTHDAY=1. It is carried through now.
+    const id = await createTask(page, {
+      title: uniqueTitle('Craft'),
+      rrule: 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=9;BYMINUTE=0',
+    })
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        const sheet = await openEditor(page, id)
+        await expect(sheet.locator('[data-quick-panel-recurrence]')).toContainText(
+          'Monthly on the 1st Sat at 9:00 AM',
+        )
+        await sheet.getByRole('button', { name: /^Repeats: / }).tap()
+        const editor = sheet.locator('#quick-panel-recurrence-editor')
+        await expect(editor).toBeVisible()
+        const selects = editor.getByRole('combobox')
+        await expect(selects.filter({ hasText: /^1st Sat$/ })).toHaveCount(1)
+        await selects.filter({ hasText: /^9$/ }).tap()
+        await page.getByRole('option', { name: '10', exact: true }).tap()
+
+        await sheet.getByRole('button', { name: 'Save' }).tap()
+        await expect
+          .poll(async () => (await (await page.request.get(`/api/tasks/${id}`)).json()).data.rrule)
+          .toBe('FREQ=MONTHLY;BYDAY=1SA;BYHOUR=10;BYMINUTE=0')
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
 })
