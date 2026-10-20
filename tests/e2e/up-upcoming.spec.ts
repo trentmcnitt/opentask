@@ -221,7 +221,7 @@ test.describe('Upcoming', () => {
 })
 
 test.describe('Check-in day', () => {
-  test('the setting moves Weeks to its weekday, and the header names it', async ({
+  test('the setting moves Weeks to its weekday, under its one-word title', async ({
     authenticatedPage: page,
   }) => {
     const today = DateTime.now().setZone(TZ)
@@ -243,7 +243,10 @@ test.describe('Check-in day', () => {
       await page.goto('/reminders')
       const section = page.locator('[data-task-segment="weeks"]')
       await expect(section.locator(`[data-segment-task="${weeks}"]`)).toBeVisible()
-      await expect(section.getByText(`${today.toFormat('cccc')}s`)).toBeVisible()
+      // The header is "Weekly" alone: the weekday hint went with the panel
+      // titles (2026-10-20).
+      await expect(section).toHaveAttribute('aria-label', 'Weekly')
+      await expect(section.getByText(`${today.toFormat('cccc')}s`)).toHaveCount(0)
 
       const tomorrow = today.plus({ days: 1 }).weekday
       await page.request.patch('/api/user/preferences', { data: { check_in_day: tomorrow } })
