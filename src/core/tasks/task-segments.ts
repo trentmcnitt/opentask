@@ -60,7 +60,7 @@ import { rowToTask, taskColumns, type TaskRow } from './read'
 import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
-import { latestRollover } from '@/lib/opentask-day'
+import { latestRollover, rolloverMoment } from '@/lib/opentask-day'
 
 export interface SegmentTask {
   task: Task
@@ -159,7 +159,19 @@ export function getTaskSegments(
   userId: number,
   timezone: string,
   now = new Date(),
-  { queuePanels = false }: { queuePanels?: boolean } = {},
+  {
+    queuePanels = false,
+    deckRows = false,
+  }: {
+    queuePanels?: boolean
+    /**
+     * On deck (2026-10-20): the caller can draw a future deck's Upcoming row
+     * ("On deck Sat Oct 24"; `GET /api/reminders?deck=1`). Without it a
+     * decked task is simply absent from Upcoming: a shipped native build
+     * would draw a dateless row. A deck is in no horizon segment either way.
+     */
+    deckRows?: boolean
+  } = {},
 ): TaskSegment[] {
   const byKind = new Map<SegmentKind, SegmentTask[]>()
   const checkInDay = getCheckInDay(userId)
@@ -170,6 +182,7 @@ export function getTaskSegments(
     byKind.set(kind, list)
   }
   const placeInQueue = queuePlacer(userId, timezone, now)
+  const deckMoment = deckMomentFor(userId, timezone)
   // Queued, but the caller can't show the queue: left out of every segment.
   const place = (task: Task) => {
     const queued = placeInQueue(task)
@@ -185,6 +198,13 @@ export function getTaskSegments(
     if (queued === 'hidden') continue
     if (queued) {
       add(queued.kind, queued.entry)
+      continue
+    }
+    // ON DECK (B6): quiet like a picked target — in no horizon segment; a
+    // future deck in Upcoming on its heads-up days (for a caller that draws
+    // deck rows); today's in the On deck section (`onDeckToday`), not here.
+    if (task.on_deck_day) {
+      if (deckRows) addUpcoming(task)
       continue
     }
     if (upcomingCandidate(task)) {
@@ -210,12 +230,21 @@ export function getTaskSegments(
   return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
     const tasks = byKind.get(kind)!
     if (kind === 'queue_today' || kind === 'queue_previous') {
-      tasks.sort((a, b) => compareQueueRows(a.task, b.task))
+      tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
     } else if (kind !== 'upcoming') {
       tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
     }
     return segmentOf(kind, tasks)
   })
+}
+
+/**
+ * A deck day's place in the queue order (On deck, B5): the rollover moment
+ * that started that day, in the owner's zone. Read once per call.
+ */
+function deckMomentFor(userId: number, timezone: string): (day: string) => number {
+  const rolloverTime = rolloverTimeForUser(userId)
+  return (day) => rolloverMoment(day, timezone, rolloverTime).getTime()
 }
 
 /**

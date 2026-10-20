@@ -25,6 +25,14 @@
  * inside `getQuotaPromptsBySlot`, so with either one off this module is back
  * to reminders only. Prompts never reach the badge or the overdue count.
  *
+ * ON DECK RIDES ALONG (2026-10-20, red-team B10/A12). A push that already
+ * fires appends today's undone deck count ("3 reminders waiting · 5 on
+ * deck"). Decks never make a slot notify (an empty slot stays silent), never
+ * join the hourly nag or its "unfinished" test (`waitingBySlot` does not
+ * count them), and never count toward `reminder_count`; the payload carries
+ * them as `deck_count`. Slot pushes are APNs-only, so a user with no periods
+ * or with Web Push only gets no count — accepted.
+ *
  * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces an unfinished
  * slot on the hour, at most three times a day, at Trent's request (2026-09-21).
  * It still writes nothing, still never marks anything overdue or badged, and
@@ -40,6 +48,8 @@ import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts
 import { getRemindersBySlot } from '@/core/tasks/reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { onDeckToday } from '@/core/tasks/deck'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
 
 interface NotifiableUser {
   id: number
@@ -107,6 +117,12 @@ export interface PendingSlotNotification {
   count: number
   /** Quota prompts waiting in the slot. */
   promptCount: number
+  /**
+   * On deck (2026-10-20, B10/A12): the user's undone decks for today
+   * (calendar day), appended to the body as "· N on deck". Never part of the
+   * slot's emptiness test or `reminder_count`; 0 with the task queue off.
+   */
+  deckCount: number
 }
 
 /**
@@ -128,6 +144,9 @@ export function pendingSlotNotifications(now: Date = new Date()): PendingSlotNot
     if (due.length === 0) continue
 
     const waiting = waitingBySlot(user.id, user.timezone, now)
+    // Today's decks ride on a push that already fires (A12): read once per
+    // user, and only for a user whose slot opens now.
+    const deckCount = taskQueueEnabled() ? onDeckToday(user.id, user.timezone, now).length : 0
 
     for (const slot of due) {
       const inSlot = waiting.get(slot.id)
@@ -142,6 +161,7 @@ export function pendingSlotNotifications(now: Date = new Date()): PendingSlotNot
         slotLabel: slot.label,
         count: inSlot.reminders,
         promptCount: inSlot.prompts,
+        deckCount,
       })
     }
   }
@@ -160,6 +180,7 @@ export async function checkSlotReminders(nowOverride?: Date): Promise<void> {
         slotLabel: item.slotLabel,
         count: item.count,
         promptCount: item.promptCount,
+        deckCount: item.deckCount,
       })
     }
   } catch (err) {

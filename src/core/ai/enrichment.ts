@@ -53,6 +53,7 @@ import {
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { runAsSystem } from '@/core/request-context'
 import { stampTargetSet } from '@/core/tasks/target-set'
+import { collectDeckClear } from '@/core/tasks/deck-clear'
 import { getTargetContext } from '@/core/tasks/target-context'
 import { resolveTarget } from '@/lib/task-segments'
 import { log } from '@/lib/logger'
@@ -2162,6 +2163,16 @@ function collectEnrichmentTarget(
     changes.values.push(resolved.auto ? 1 : 0)
     changes.fieldsChanged.push('target_auto')
   }
+  // On deck (2026-10-20, B1): a target the AI set is a pick, and a pick takes
+  // the deck off (rule 1); a deadline it found leaves an automatic target, and
+  // the deck stays (`deck-clear.ts`).
+  collectDeckClear(changes, task, {
+    dueAt: resolved.dueAt,
+    auto: resolved.auto,
+    rrule: rrule ?? null,
+    isReminder: task.is_reminder,
+    isTracked: opts.tracked,
+  })
   // A repeating task's date set here is its occurrence (a schedule, not a move).
   const occurrenceAt = rrule && !opts.tracked && opts.proposedDue ? opts.proposedDue : undefined
   if (occurrenceAt !== undefined && occurrenceAt !== task.occurrence_at) {

@@ -166,6 +166,7 @@ describe('TQ-N: roll over now — what it moves', () => {
       rolled: [f.pulled.id],
       waiting: [f.daily.id],
       released: [],
+      deck_stripped: [],
     })
     expect(task(f.passed.id)).toMatchObject({
       due_at: null,

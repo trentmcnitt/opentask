@@ -18,7 +18,13 @@
  *    does not — deferring says "not today";
  * 4. undated High or Urgent — priority 3 or 4 with no target at all. (A
  *    deadline task always carries a target, its automatic one, so "undated"
- *    means no dates at all.)
+ *    means no dates at all.) Not while it is in the task queue (A8, 2026-10-20).
+ *
+ * ON DECK (2026-10-20): a task on deck for today (or an earlier day not yet
+ * stripped) is NOT relevant here — it belongs to the On deck section — unless
+ * a deadline's automatic target has arrived; a future deck is relevant on its
+ * Upcoming heads-up days only. The server's list of today's decks is
+ * `onDeckToday` (src/core/tasks/deck.ts).
  *
  * Everything else in the project — later targets, Low/Medium/unset with no
  * date — sits behind the project's fold row, "+ N more in <Project>", which
@@ -52,8 +58,21 @@ import { targetIsToday, upcomingState } from '@/lib/task-segments'
 export const NOW_PRIORITY_MIN = 3
 
 export function isRelevantNow(task: Task, timezone: string, now: Date): boolean {
-  if (task.due_at === null) return (task.priority ?? 0) >= NOW_PRIORITY_MIN
-  if (isOverdue(task, now)) return true
+  // Over target first: a deck on a deadline task decked for its automatic
+  // target's own day nags from that target, deck or not (A1).
+  if (task.due_at !== null && isOverdue(task, now)) return true
+  // ON DECK (2026-10-20, A13). Today's decks (and yesterday's leftovers until
+  // the rollover strips them, A2) are not relevant in their project group:
+  // they live in the On deck section (D2), and fold behind "+ N more" here so
+  // "Show all" stays complete. A future deck is a plan, like a future picked
+  // target: relevant only on its Upcoming heads-up days.
+  if (task.on_deck_day) {
+    const heads = upcomingState(task, timezone, now)
+    return heads !== null && heads.state !== 'deferred'
+  }
+  // Undated High/Urgent — but not a QUEUED one (A8): the queue already holds
+  // it, so it is not on two surfaces at once.
+  if (task.due_at === null) return !task.queued_at && (task.priority ?? 0) >= NOW_PRIORITY_MIN
   if (targetIsToday(task.due_at, timezone, now)) return true
   const heads = upcomingState(task, timezone, now)
   return heads !== null && heads.state !== 'deferred'

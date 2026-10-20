@@ -78,6 +78,8 @@ export interface ProcessTaskFields {
   attempts?: number
   target_auto?: boolean
   rrule?: string | null
+  /** On deck (2026-10-20): a deck is a plan, like a picked target — no growth ask (B7). */
+  on_deck_day?: string | null
 }
 
 export interface GrowthAsk {
@@ -106,6 +108,8 @@ export function growthAsk(task: ProcessTaskFields, timezone: string, now: Date):
   // A target the user picked: quiet until its date, its horizon shown nowhere
   // (spec §1, 2026-10-12) — "grow it?" would ask about a hidden setting.
   if (hasPickedTarget(task)) return null
+  // On deck (2026-10-20, B7): the same — a plan for a day, horizon shown nowhere.
+  if (task.on_deck_day) return null
   if (targetIsToday(task.due_at, timezone, now)) return null
   if (deadlineHorizon(task.deadline_at, now) !== null) return null
   const from = setHorizon(task.horizon)

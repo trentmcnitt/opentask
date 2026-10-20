@@ -313,6 +313,8 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     queued_at: null,
     queued_from_due_at: null,
     rolled_over_at: null,
+    on_deck_day: null,
+    queued_from_deck_day: null,
     target_auto: false,
     last_notified_at: null,
     last_critical_alert_at: null,

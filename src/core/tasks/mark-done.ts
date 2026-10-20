@@ -23,6 +23,7 @@ import { computeMarkDone, executeMarkDone } from './helpers'
 import { isTracked } from '@/lib/track'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
+import { DECK_CLEAR_SQL } from './deck-clear'
 
 export interface MarkDoneOptions {
   userId: number
@@ -371,7 +372,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?,
             ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-            ${QUEUE_CLEAR_SQL}, updated_at = ?
+            ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
         WHERE id = ?`,
     ).run(
       latest.due_at_was,

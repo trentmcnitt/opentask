@@ -11,7 +11,10 @@
  *     or waits for the one after (rule 5, B3); waits due before the next real
  *     rollover are released, as the cron would;
  *   - targets later than now, High and Urgent, any deadline, reminders,
- *     quotas and archived tasks are untouched.
+ *     quotas and archived tasks are untouched;
+ *   - ON DECK (2026-10-20, A3): undone decks for days up to and including the
+ *     current OpenTask day go to the queue; the coming day's (a deck for
+ *     "today" made after midnight) stay.
  * What differs from the cron (`ApplyCtx.manual`): no early-morning-pick
  * spare (a rule about the rollover boundary — this is not one), no Try
  * Tomorrow flag clearing (see `applyRollover` step 4),
@@ -70,6 +73,8 @@ export interface RolloverNowResult {
   rolled: number
   waiting: number
   released: number
+  /** On deck (2026-10-20): decks up to the current OpenTask day sent to the queue (A3). */
+  deck_stripped: number
   ids: RolloverIds
   dry_run: boolean
   /** The undo entry (null on a dry run or when nothing changed). */
@@ -89,6 +94,8 @@ const UNDO_FIELDS = [
   'try_tomorrow',
   'queued_at',
   'queued_from_due_at',
+  'on_deck_day',
+  'queued_from_deck_day',
 ] as const
 
 /** Thrown inside a dry run's transaction to roll it back. */
@@ -118,8 +125,15 @@ export function runRolloverNow(opts: {
     waiting: 0,
     released: 0,
     flagsCleared: 0,
+    deckStripped: 0,
   }
-  const ids: RolloverIds = { stripped: [], rolled: [], waiting: [], released: [] }
+  const ids: RolloverIds = {
+    stripped: [],
+    rolled: [],
+    waiting: [],
+    released: [],
+    deck_stripped: [],
+  }
   const before = new Map<number, Task>()
   // queued_at = the next real rollover (module doc: HANDED TO THE NEXT DAY).
   const ctx = { manual: true, collect: { before, ids }, queuedAt: nextM.toISOString() }
@@ -141,6 +155,7 @@ export function runRolloverNow(opts: {
     rolled: counts.rolled,
     waiting: counts.waiting,
     released: counts.released,
+    deck_stripped: counts.deckStripped,
     ids,
     dry_run: !!opts.dryRun,
     undo_id: undoId,
@@ -190,5 +205,6 @@ function describe(c: TaskRolloverResult): string {
   if (c.rolled) parts.push(`${c.rolled} repeating rolled`)
   if (c.waiting) parts.push(`${c.waiting} repeating waiting`)
   if (c.released) parts.push(`${c.released} released`)
+  if (c.deckStripped) parts.push(`${c.deckStripped} from deck`)
   return `Rolled over now: ${parts.join(', ')}`
 }

@@ -9,6 +9,7 @@ import type { Database } from 'better-sqlite3'
 import type { Task, UndoSnapshot } from '@/types'
 import type { MarkDoneComputation } from './compute-mark-done'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from '../target-set'
+import { DECK_CLEAR_SQL } from '../deck-clear'
 
 export interface ExecuteMarkDoneResult {
   snapshot: UndoSnapshot
@@ -82,7 +83,7 @@ function executeRecurringMarkDone(
     SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         progress_current = 0, attempts = 0, attempts_counted_through = NULL,
-        ${QUEUE_CLEAR_SQL}, updated_at = ?
+        ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
     WHERE id = ?
   `,
   ).run(

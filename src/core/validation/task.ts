@@ -242,6 +242,29 @@ const quotaPromptConfig = z
  * task segment on the reminders screen the task appears in. `null` = unset,
  * treated as weeks but never reported as set.
  */
+/**
+ * A deck day: a local calendar date, yyyy-MM-dd (On deck, 2026-10-20). Only
+ * the shape here; "today or later" needs the owner's zone (`deckDayProblem`).
+ */
+const deckDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date (yyyy-MM-dd)')
+
+/**
+ * A target and a deck never travel together (rule 1: a task has one or the
+ * other). A deck write also refuses a deadline in the same body: the A1 rule
+ * judges a deck against the deadline the task HAS, so the two are sent apart.
+ */
+export const DECK_WITH_DATE_MESSAGE =
+  'Send on_deck_day on its own: not with target_at / due_at or deadline_at in the same request'
+
+function deckAlone(data: {
+  on_deck_day?: string | null
+  due_at?: string | null
+  deadline_at?: string | null
+}): boolean {
+  if (data.on_deck_day === undefined) return true
+  return data.due_at === undefined && data.deadline_at === undefined
+}
+
 export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
@@ -332,10 +355,16 @@ export const taskUpdateSchema = z
     is_reminder: isReminderFlag.optional(),
     is_tracked: z.boolean().optional(),
     quota_prompt_config: quotaPromptConfig.optional(),
+    // ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): the local calendar
+    // date (yyyy-MM-dd) to put the task on deck for; null takes it off deck.
+    // Today or later, one-offs only, and the A1 deadline rule — checked in
+    // `collectFieldChanges`, which knows the task and the owner's zone.
+    on_deck_day: deckDay.nullable().optional(),
   })
   // A PATCH carrying a bare period rule must say the task is tracked in the
   // same request (is_tracked or progress_target); the schema has no task to ask.
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
+  .refine(deckAlone, { message: DECK_WITH_DATE_MESSAGE, path: ['on_deck_day'] })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
 
@@ -468,6 +497,16 @@ export type BulkEditInput = z.infer<typeof bulkEditSchema>
  * `{ ids: [taskId, ...] }` — the caller's own open tasks only.
  */
 export const segmentIdsSchema = z.object({ ids: bulkIds })
+
+/**
+ * POST /api/tasks/deck (On deck, 2026-10-20): `{ ids, day? }`. `day` is the
+ * local calendar date (yyyy-MM-dd); omitted = today; null = take off deck.
+ */
+export const deckSchema = z.object({ ids: bulkIds, day: deckDay.nullable().optional() })
+
+export function validateDeck(input: unknown): { ids: number[]; day?: string | null } {
+  return deckSchema.parse(input)
+}
 
 export function validateSegmentIds(input: unknown): { ids: number[] } {
   return segmentIdsSchema.parse(input)

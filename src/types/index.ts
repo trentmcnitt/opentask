@@ -171,6 +171,15 @@ export interface Task {
    * before it skips this task. Null = never.
    */
   rolled_over_at: string | null
+  /**
+   * ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): the owner's local
+   * CALENDAR date (yyyy-MM-dd) the task is on deck for — a day with no nag.
+   * Never together with a picked target (rule 1). Null = not on deck.
+   * `queued_from_deck_day`: the deck day the rollover remembered when it sent
+   * the undone deck to the queue (shown in details only, never on the row).
+   */
+  on_deck_day: string | null
+  queued_from_deck_day: string | null
 
   // Notifications
   last_notified_at: string | null
@@ -323,6 +332,9 @@ export type UndoAction =
   // The task queue (2026-10-20): "Roll over now" — the rollover run by hand
   // (src/core/tasks/rollover-now.ts). The cron's rollover writes no entry.
   | 'task_rollover'
+  // On deck (2026-10-20): POST /api/tasks/deck — decked or un-decked
+  // (src/core/tasks/deck.ts). Field snapshots, like a bulk edit.
+  | 'deck'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,

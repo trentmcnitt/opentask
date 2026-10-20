@@ -398,6 +398,12 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'rolled_over_at')) {
     database.exec('ALTER TABLE tasks ADD COLUMN rolled_over_at TEXT DEFAULT NULL')
   }
+  // On deck (2026-10-20, docs/TASK-MODEL.md § On deck). No backfill.
+  for (const col of ['on_deck_day', 'queued_from_deck_day']) {
+    if (!hasColumn(database, 'tasks', col)) {
+      database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
+    }
+  }
   if (!hasColumn(database, 'completions', 'attempts')) {
     database.exec('ALTER TABLE completions ADD COLUMN attempts INTEGER DEFAULT NULL')
   }

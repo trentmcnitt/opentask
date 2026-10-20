@@ -10,7 +10,7 @@
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence, fillRuleTime } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { AppError, NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { DateTime } from 'luxon'
 import {
   QUOTA_DUE_DATE_MESSAGE,
@@ -22,10 +22,21 @@ import {
 import { isTracked, quotaIntervalAllowed, quotaPeriodOf } from '@/lib/track'
 import { loggedSince, quotaAnchorNow, rolloverQuotaNow } from '../period-rollover'
 import { getTaskById } from '../read'
-import { capAtDeadline, resolveTarget, type TargetContext } from '@/lib/task-segments'
+import {
+  DECK_REFUSAL_MESSAGES,
+  capAtDeadline,
+  deckDayProblem,
+  deckRefusal,
+  deckSkip,
+  hasPickedTarget,
+  resolveTarget,
+  type TargetContext,
+} from '@/lib/task-segments'
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
+import { collectDeckClear } from '../deck-clear'
+import { taskQueueEnabled } from '../task-queue'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -177,7 +188,11 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     willBeTracked,
     { morningTime: ctx.morningTime, timezone: userTimezone },
   )
-  const target = resolveTargetInput(task, retired, {
+  // ON DECK (2026-10-20): a deck write is judged here, up front, and drops a
+  // picked target (rule 1) — before `resolveTargetInput`, so a deadline task
+  // gets its automatic target back exactly as "Back to auto" would.
+  const decking = prepareDeck(task, retired, { willBeTracked, willBeReminder, ctx, now })
+  const target = resolveTargetInput(task, decking, {
     willBeTracked,
     willBeReminder,
     ctx,
@@ -206,7 +221,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // Track due_at changes and move detection. Only a date the USER sent is a
   // move — not a clear, and not the automatic target the server put in its
   // place (a deadline edit, "Back to auto").
-  const userMoved = retired.due_at !== undefined && retired.due_at !== null
+  const userMoved = decking.due_at !== undefined && decking.due_at !== null
   collectDueAtChanges(
     data,
     task,
@@ -252,12 +267,26 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // stamp sees it and leaves it (`src/core/tasks/target-set.ts`).
   collectQueueFields(data, task, input)
 
+  // On deck (2026-10-20): the deck this write sets or clears, and — the
+  // pick-only clear (B1, `deck-clear.ts`) — a write that leaves a PICKED
+  // target (or a rule, a reminder, a quota) takes an existing deck off.
+  // Judged on the RESULTING row, so a rule change that computes its own
+  // `due_at` clears it too. A deadline change or Back to auto leaves an
+  // automatic target, and the deck stays.
+  collectDeckChange(data, task, input, {
+    auto: target.auto,
+    isReminder: willBeReminder,
+    isTracked: willBeTracked,
+  })
+
   // Upcoming (2026-10-12): any change to the target or the deadline restarts
   // the wait its heads-ups are counted over (`src/core/tasks/target-set.ts`).
   // Last, once everything above has decided `due_at` and `deadline_at`. It
   // also clears the queue mark — unless this write is the defer that set it.
+  // A deck write stamps too (A6) and takes the task out of the queue (B8).
   stampTargetSet(data, task, now.toISOString(), {
     keepQueue: input.queue_mark !== undefined || input.try_tomorrow !== undefined,
+    deck: typeof input.on_deck_day === 'string',
   })
 
   return data
@@ -359,6 +388,72 @@ function resolveTargetInput(
   )
   const out = resolved.dueAt === left ? input : { ...input, due_at: resolved.dueAt }
   return { input: out, auto: resolved.auto, capped: resolved.capped && dueWritten }
+}
+
+/**
+ * ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): a write that puts the
+ * task on deck (`on_deck_day` a date) is checked and prepared here.
+ *
+ * Refused (the whole write — the deck endpoint filters first and counts
+ * instead, `src/core/tasks/deck.ts`):
+ *  - with the task queue off (409: decks need the rollover that clears them);
+ *  - a task that can't be on deck: done, repeating, a reminder, a quota
+ *    (rule 6) — asked of the RESULTING row;
+ *  - a day that is not a date, or before the calendar today;
+ *  - a deadline task whose automatic target has arrived, or a day after it
+ *    (A1, `deckRefusal`).
+ *
+ * Rule 1, "never both": a PICKED target is dropped (`due_at: null`), which
+ * `resolveTargetInput` turns into the deadline's automatic target when the
+ * task has one. The time goes with it. Taking a task OFF deck (null) needs
+ * no check and changes nothing else.
+ */
+function prepareDeck(
+  task: Task,
+  input: FieldChangesInput,
+  opts: { willBeTracked: boolean; willBeReminder: boolean; ctx: TargetContext; now: Date },
+): FieldChangesInput {
+  const day = input.on_deck_day
+  if (typeof day !== 'string') return input
+  if (!taskQueueEnabled()) {
+    throw new AppError('On deck needs the task queue, which is off on this server', 409, 'CONFLICT')
+  }
+  const skip = deckSkip({
+    rrule: input.rrule !== undefined ? input.rrule : task.rrule,
+    is_reminder: opts.willBeReminder,
+    is_tracked: opts.willBeTracked,
+    done: task.done,
+    deleted_at: task.deleted_at,
+  })
+  if (skip) throw new ValidationError(`Only an open one-off task can go on deck (this is ${skip})`)
+  const problem = deckDayProblem(day, opts.ctx.timezone, opts.now)
+  if (problem) throw new ValidationError(problem)
+  const refusal = deckRefusal(task, day, opts.ctx, opts.now)
+  if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
+  return hasPickedTarget(task) && input.due_at === undefined ? { ...input, due_at: null } : input
+}
+
+/**
+ * The deck this write sets or clears itself (`on_deck_day` in the input), or
+ * else the pick-only clear on the RESULTING row (`deck-clear.ts`).
+ */
+function collectDeckChange(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  left: { auto: boolean; isReminder: boolean; isTracked: boolean },
+): void {
+  if (input.on_deck_day !== undefined) {
+    if (input.on_deck_day !== task.on_deck_day) {
+      trackField(data, 'on_deck_day', task.on_deck_day, input.on_deck_day)
+    }
+    return
+  }
+  collectDeckClear(data, task, {
+    dueAt: data.afterState.due_at !== undefined ? data.afterState.due_at : task.due_at,
+    rrule: input.rrule !== undefined ? input.rrule : task.rrule,
+    ...left,
+  })
 }
 
 /** A period move's explicit reschedule of a reminder — not a snooze (see the guard above). */

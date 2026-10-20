@@ -20,6 +20,8 @@ export {
   validateBulkDelete,
   validateSegmentIds,
   validateSegmentTarget,
+  validateDeck,
+  DECK_WITH_DATE_MESSAGE,
   validateBulkSnoozeOverdue,
   TRACKED_REMINDER_MESSAGE,
   QUOTA_DUE_DATE_MESSAGE,
