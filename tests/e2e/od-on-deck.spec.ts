@@ -258,17 +258,25 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     await expect.poll(() => deckOf(page, id)).toBeNull()
     expect((await stateOf(page, id)).target_at).not.toBeNull()
 
-    // A repeating Upcoming row has no On deck (rule 6).
-    const weekly = await create(page, {
-      title: uniqueTitle('OD weekly'),
-      rrule: 'FREQ=DAILY',
-      due_at: daysFromNow(1),
+    // A repeating Upcoming row has no On deck (rule 6, B9) — seeded as
+    // up-upcoming.spec.ts does: due tomorrow, its target set ten days ago.
+    const repeating = await create(page, {
+      title: uniqueTitle('OD repeating'),
+      rrule: 'FREQ=DAILY;INTERVAL=3;BYHOUR=11;BYMINUTE=0',
+      target_at: DateTime.now()
+        .setZone(TZ)
+        .plus({ days: 1 })
+        .set({ hour: 11, minute: 0 })
+        .toUTC()
+        .toISO(),
     })
-    ids.push(weekly)
-    sql('UPDATE tasks SET target_set_at = ? WHERE id = ?', daysFromNow(-10), weekly)
+    ids.push(repeating)
+    sql('UPDATE tasks SET target_set_at = ? WHERE id = ?', daysFromNow(-10), repeating)
     await page.reload()
-    const w = segRow(segment(page, 'upcoming'), weekly)
-    if ((await w.count()) > 0) await expect(w.locator('[data-on-deck]')).toHaveCount(0)
+    const w = segRow(segment(page, 'upcoming'), repeating)
+    await expect(w).toBeVisible()
+    await expect(w.locator('[data-target-today]')).toBeVisible()
+    await expect(w.locator('[data-on-deck]')).toHaveCount(0)
   } finally {
     await trash(page, ids)
   }
