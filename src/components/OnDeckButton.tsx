@@ -1,6 +1,6 @@
 'use client'
 
-import { Bookmark, CalendarDays, XCircle } from 'lucide-react'
+import { CalendarDays, Layers2, XCircle } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -76,7 +76,7 @@ export function OnDeckButton({
     tapOn: 'click',
   })
   const active = !!task.on_deck_day
-  // What a tap toggles: on deck for TODAY. A later deck is drawn filled (the
+  // What a tap toggles: on deck for TODAY. A later deck wears the active chip (the
   // row's only sign of it) but is not "pressed" — a tap moves it to today.
   const forToday = active && deckIsToday(task, timezone, new Date())
   const title = forToday
@@ -122,7 +122,13 @@ export function OnDeckButton({
           className={cn(
             'flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
             active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-            boxClassName ? 'group/deck' : 'hover:bg-foreground/5',
+            // The ACTIVE CHIP (on deck): a grey fill behind a full-strength
+            // icon — on the inner hover box where there is one.
+            boxClassName
+              ? 'group/deck'
+              : active
+                ? 'bg-foreground/10 hover:bg-foreground/15'
+                : 'hover:bg-foreground/5',
             className,
           )}
         >
@@ -130,7 +136,10 @@ export function OnDeckButton({
             <span
               data-on-deck-box
               className={cn(
-                'group-hover/deck:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
+                'flex items-center justify-center gap-1 rounded-md transition-colors',
+                active
+                  ? 'bg-foreground/10 group-hover/deck:bg-foreground/15'
+                  : 'group-hover/deck:bg-foreground/5',
                 boxClassName,
               )}
             >
@@ -146,17 +155,14 @@ export function OnDeckButton({
 }
 
 /**
- * The bookmark, filled while the task is on deck (A10). Icon only, everywhere
- * (Trent, 2026-10-20): the tooltip and the accessible name say "On deck".
+ * On deck's icon: lucide `Layers2`, icon only, everywhere (Trent, 2026-10-20;
+ * the tooltip and the accessible name say "On deck"). PROVISIONAL — Trent:
+ * not thrilled, candidate for a custom icon. On deck (A10) it is NOT filled —
+ * two filled layers read as one muddy block — the button wears the neutral
+ * active chip instead (grey fill, full-strength icon; see the button).
  */
-function DeckFace({ active, iconClassName }: { active: boolean; iconClassName?: string }) {
-  return (
-    <Bookmark
-      className={iconClassName}
-      strokeWidth={1.75}
-      fill={active ? 'currentColor' : 'none'}
-    />
-  )
+function DeckFace({ iconClassName }: { active: boolean; iconClassName?: string }) {
+  return <Layers2 className={iconClassName} strokeWidth={1.75} />
 }
 
 const PICK_DATE = 'deck-pick-date'
@@ -203,7 +209,7 @@ export function DeckMenu({
       option: d.day,
       disabled: d.disabled,
       caption: d.caption,
-      icon: <Bookmark />,
+      icon: <Layers2 />,
     })),
     { label: 'Pick a date…', option: PICK_DATE, icon: <CalendarDays /> },
     ...(task.on_deck_day ? [{ label: 'Remove', option: REMOVE, icon: <XCircle /> }] : []),
@@ -322,7 +328,7 @@ function DeckDatePicker({
           }}
           className="w-full"
         >
-          <Bookmark className="mr-1.5 size-4" />
+          <Layers2 className="mr-1.5 size-4" />
           Put on deck
         </Button>
       </DialogContent>

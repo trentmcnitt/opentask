@@ -718,6 +718,14 @@ test.describe('touch', () => {
       await expect(row.locator('[data-target-today]')).toBeVisible()
       await expect(dashRow(page, plain).locator('[data-on-deck]')).toBeHidden()
       await page.screenshot({ path: '.tmp/od-now-section-touch-375.png' })
+      // The active chip in the dark theme too.
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await page.reload()
+      await expect(row.locator('[data-on-deck]')).toBeVisible()
+      await page.screenshot({ path: '.tmp/od-now-section-touch-375-dark.png' })
+      await page.emulateMedia({ colorScheme: 'light' })
+      await page.reload()
+      await expect(row.locator('[data-on-deck]')).toBeVisible()
 
       // A tap takes it off deck…
       await deckButton.tap()

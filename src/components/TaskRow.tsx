@@ -118,7 +118,7 @@ interface TaskRowProps {
   onDeck?: (task: Task, day: string | null | undefined) => void
   /**
    * A row of Now's On deck section (D2 review, phone-first): its On deck
-   * (filled) and Today are always shown, on touch too — not hover-only — so a
+   * (active chip) and Today are always shown, on touch too — not hover-only — so a
    * deck can be taken off, or targeted, from a phone. Other rows keep the
    * mouse-only hover controls.
    */
@@ -440,7 +440,7 @@ export function TaskRow({
   const timeControl = !isSelectionMode && !tracked && task.due_at !== null && !queuedOccurrence
   const showToday = !isSelectionMode && !!onTargetAt && offersTargetToday(task)
   // On deck (spec rule 8) beside Today — the queue switch on, the same rows
-  // as Today plus any task already on deck (its filled button takes it off).
+  // as Today plus any task already on deck (its active button takes it off).
   const showDeck = !isSelectionMode && !!onDeck && queue.loaded && queue.enabled && offersDeck(task)
   const cornerPresent = corner.dot || corner.attempts >= 1 || corner.priority !== null
   // Filter ai-to-process from visible label count (animation conveys that state)
@@ -767,7 +767,7 @@ export function TaskRow({
           )}
         >
           {/* ON DECK (D2): Today's twin, left of it — tap decks it for
-              today (or, filled, takes today's deck off), hold picks the day.
+              today (or, active, takes today's deck off), hold picks the day.
               TODAY (2026-10-14): on an untargeted row, the segment rows' own
               Today (`TargetTodayButton`) — a tap targets it today, a hold or
               a right-click opens the Target menu. Mouse only, except in Now's
@@ -780,7 +780,7 @@ export function TaskRow({
               onDeck={(t, day) => onDeck?.(t, day)}
               className={dayControlClasses(
                 dayControlsOnTouch,
-                // A deck stays visible while it is set: the filled mark is
+                // A deck stays visible while it is set: the active chip is
                 // the row's only sign of it.
                 !!task.on_deck_day,
               )}
