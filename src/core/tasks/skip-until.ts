@@ -24,8 +24,8 @@
  *   it is (`already_clear`).
  * - a from_completion rule (resolution 7): it has no schedule to walk, so it
  *   lands on the date at the rule's time of day, and the interval restarts
- *   from there — never earlier than the plain skip would land (one interval
- *   on from the current occurrence). See `walkFromCompletion`.
+ *   from there — never earlier than the plain (no-date) skip would land.
+ *   See `walkFromCompletion`.
  *
  * Only repeating tasks. A one-off, a reminder, a quota, or a trashed /
  * archived task in the batch is left alone and COUNTED, never a refusal of the
@@ -152,9 +152,11 @@ function walkFromDue(
  * A from_completion rule (resolution 7) has no schedule to walk, so it lands
  * on the date itself at the rule's time (`ruleTimeOf`, the fallback the next
  * Done uses too) and the interval restarts from there — but NEVER earlier
- * than the plain skip would land: one interval on from the current occurrence
- * (from now, when it has passed). Every 2 weeks, current Mar 5, until Mar 12:
- * Mar 12 is before Mar 19, so Mar 19. Its skips are counted by stepping the
+ * than the plain skip would land: the floor is exactly the no-date skip's
+ * landing (`nextOccurrenceAfterSkip`, the path `skipOccurrence` uses — for
+ * from_completion, one interval on from now). Every 2 weeks, now Mar 4,
+ * until Mar 12: the plain skip lands Mar 18, after Mar 12, so Mar 18. Its
+ * skips are counted by stepping the
  * interval from the current occurrence to the date, as if each had been done
  * on time (stepped like the rollover, but each step counts; the rollover adds
  * one skip whatever it steps over).
@@ -173,10 +175,12 @@ function walkFromCompletion(
       timezone,
       completedAt: from,
     })
+  // The floor: exactly where "skip this occurrence" lands.
+  const plain = new Date(nextOccurrenceAfterSkip(task, timezone, now))
+  // The count: interval steps from the current occurrence (from now, when it has passed).
   const current = task.occurrence_at ?? task.due_at
-  const plain = step(current && Date.parse(current) > now.getTime() ? new Date(current) : now)
   const untilStart = untilDay.toMillis()
-  let at = plain
+  let at = step(current && Date.parse(current) > now.getTime() ? new Date(current) : now)
   let skipped = 1
   while (at.getTime() < untilStart) {
     if (++skipped > MAX_SKIPPED) throw tooManySkips()

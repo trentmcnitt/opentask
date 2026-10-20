@@ -11,7 +11,7 @@ import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { createTask, markDone, deleteTask } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
-import { skipOccurrence } from '@/core/tasks/skip'
+import { skipOccurrence, nextOccurrenceAfterSkip } from '@/core/tasks/skip'
 import { skipUntil, planSkipUntil } from '@/core/tasks/skip-until'
 import { executeUndo, executeRedo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
@@ -279,10 +279,13 @@ describe('Skip until: batches, undo and checks', () => {
       recurrence_mode: 'from_completion',
       due_at: at('2026-03-05T07:30'),
     })
-    // Resolution 7 never lands earlier than the plain skip: Mar 5 + 2 weeks = Mar 19
-    // is after Mar 12, so Mar 19 (7:30 CDT).
+    // Resolution 7 never lands earlier than the plain skip — the no-date skip's
+    // own landing, computed the same way (for from_completion: two weeks from now,
+    // Mar 18 at 7:30 CDT). Mar 12 is earlier, so it lands on Mar 18.
+    const plain = nextOccurrenceAfterSkip(task(f.id), tz, new Date())
+    expect(plain).toBe('2026-03-18T12:30:00.000Z')
     skipUntil({ ...u, taskIds: [f.id], until: '2026-03-12' })
-    expect(task(f.id).occurrence_at).toBe('2026-03-19T12:30:00.000Z')
+    expect(task(f.id).occurrence_at).toBe(plain)
     expect(task(f.id).skip_count).toBe(1)
   })
 
