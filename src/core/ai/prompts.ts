@@ -81,8 +81,9 @@ Write **reasoning** FIRST, then the fields in the order below. Work each field o
    **Repeat wording never stays in the title.** Once a repeat is in rrule (or auto_snooze_minutes), every word of it leaves the title — "every other day", "twice a week", "every Monday", "daily", "every morning", "on weekdays", "every 3 months", and the time that goes with it ("at 9am"). The rule carries it; in the title it only repeats itself. Keep the rest of the title in the user's words. "Water the ferns every other day" → title "Water the ferns"; "go to the gym twice a week" → "Go to the gym". A repeat word that is part of a name stays: "weekly standup every Monday 9am" → "Weekly standup".
 
 2. **due_at** — the day, and the time if one is stated, that the user said to DO it, or to be reminded. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "call the plumber Thursday", "do it Saturday", "remind me Thursday at 9", "remind me Monday at 3"). If neither a day nor a time is mentioned, return null. Two forms:
-   - **A day with no time → the date alone**, \`YYYY-MM-DD\`, no time part: "call the plumber Thursday", "do it Saturday", "tomorrow", "today", "next Tuesday", "in 3 days", "remind me Monday", "order the cake for Saturday" ("for" a day is not a cutoff). The app puts the task **on deck** for that day — planned for the day, with no reminder time. Never fill in a time the user did not say.
+   - **A day with no time → the date alone**, \`YYYY-MM-DD\`, no time part: "call the plumber Thursday", "do it Saturday", "tomorrow", "today", "next Tuesday", "in 3 days", "order the cake for Saturday" ("for" a day is not a cutoff). The app puts the task **on deck** for that day — planned for the day, with no reminder time. Never fill in a time the user did not say.
    - **A time, or a part of the day → a full ISO 8601 local datetime** (no Z suffix, no offset) — the **target**, when reminding starts: "Friday at 2pm", "remind me Thursday at 9", "at noon", "tomorrow morning", "this afternoon", "this evening", "tonight", "after work", "before bed". A part of the day with no clock time uses the times in the user prompt ("morning" → the default task time).
+   - **"remind me" + a day with no time** asks for a reminder, so it is a target too: that day at the default task time ("remind me Monday to call the bank" → Monday 9:00 AM when the default is 9:00 AM).
 
    The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
 
@@ -894,7 +895,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Soon today: "now" / "right now" → ~15 min out, rounded UP to the quarter hour; "in an hour" → now + 1h, rounded up to the quarter hour; "in an hour or two" / "in 2 or 3 hours" → a whole hour (hh:00) inside the range
 - horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
 - Return due_at and deadline_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
-- Never fill in a time the user did not say: a day with no time is the date alone. A bare "this weekend" → the coming Saturday's date; "sometime this weekend" → horizon days. No day mentioned at all → due_at null, never today
+- Never fill in a time the user did not say: a day with no time is the date alone ("remind me <day>" is the one exception: that day at the default task time). A bare "this weekend" → the coming Saturday's date; "sometime this weekend" → horizon days. No day mentioned at all → due_at null, never today
 - When uncertain about priority, prefer 0 over guessing — but don't ignore strong emotional signals (hyperbolic urgency = P3-4, not P0)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
 - Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL. Yearly is FREQ=YEARLY (never MONTHLY;INTERVAL=12); a yearly repeat in a named month with no day named is BYMONTHDAY=1, not today's date
@@ -982,7 +983,7 @@ User's timezone: ${timezone}
 Current local time: ${localNow}
 
 User's schedule:
-- Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
+- Default task time: ${formattedMorning} (for "morning" and "remind me <day>" with no clock time; a day with no time at all is the date alone)
 - Wakes up: ${formattedWake}
 - Goes to sleep: ${formattedSleep}
 

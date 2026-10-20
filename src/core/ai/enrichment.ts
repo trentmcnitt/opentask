@@ -58,6 +58,7 @@ import { getTargetContext } from '@/core/tasks/target-context'
 import {
   CHECK_IN_DAY_DEFAULT,
   coerceCheckInDay,
+  calendarToday,
   deckDayProblem,
   deckDayWords,
   deckSkip,
@@ -290,7 +291,7 @@ function claimTask(taskId: number, userId: number): PendingTaskRow | null {
 
   const row = getDb()
     .prepare(
-      `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule, is_reminder
+      `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder
        FROM tasks
        WHERE id = ? AND user_id = ?
          AND deleted_at IS NULL
@@ -336,7 +337,7 @@ export async function processEnrichmentQueue(): Promise<void> {
     // the ai-to-process label when both labels are present).
     const pendingTasks = db
       .prepare(
-        `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule, is_reminder
+        `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder
          FROM tasks
          WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
            AND deleted_at IS NULL
@@ -1063,6 +1064,59 @@ function thisWeekendDay(today: DateTime, checkInDay: CheckInDay): DateTime {
   return today.plus({ days: target - today.weekday })
 }
 
+/** A minute count from now: "in 30 minutes", "in a few mins", "in ten minutes". */
+const IN_MINUTES_CUE =
+  /\bin (a few|a couple( of)?|an?|\d{1,3}|five|ten|fifteen|twenty|thirty|forty|forty-five|fifty) (minutes?|mins?)\b/i
+
+/**
+ * Words that say WHEN in the day: a clock time, a part of day, "remind me"
+ * (D3 ruling: the one phrase that asks for a nag), or a count from now (in
+ * hours or minutes). A bare date from such words is a target, never a deck.
+ */
+function saysATime(inputText: string): boolean {
+  return [
+    CLOCK_TIME,
+    PART_OF_DAY,
+    REMIND_ME,
+    NOW_CUE,
+    IN_HOURS_CUE,
+    IN_HOURS_RANGE_CUE,
+    IN_MINUTES_CUE,
+  ].some((re) => re.test(inputText))
+}
+
+/** "remind me Monday" asks for a nag at a time: a target at the default time, not a deck. */
+const REMIND_ME = /\bremind me\b/i
+
+/** Day phrases with numbers in them, taken out before `mayStateATime` looks for a number. */
+const DAY_NUMBER_PHRASES = [
+  /\bin (\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|a couple( of)?|a few) (days?|weeks?|months?)\b/gi,
+  /\b\d{1,2}(st|nd|rd|th)\b/gi,
+  /\b\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?\b/g,
+  /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? \d{1,2}\b/gi,
+  /\b(19|20)\d{2}\b/g,
+]
+
+/**
+ * THE FLOOR'S BLOCK (D3 review): words that may state a time `CLOCK_TIME`
+ * can't read — any number left once the day phrases with numbers are taken
+ * out ("Thursday 9", "9:00", "0900", "9a", "9 a m", "@ 9", "around 9"), a
+ * number word ("at nine", "nine o'clock"), "o'clock", or "in the AM/PM".
+ * With one, the model's time may be the user's, so the floor stays off.
+ * Deliberately generous: a false hit only keeps the target.
+ */
+function mayStateATime(inputText: string): boolean {
+  const rest = DAY_NUMBER_PHRASES.reduce((text, re) => text.replace(re, ' '), inputText)
+  return (
+    /\d/.test(rest) ||
+    /\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|thirty|forty|half past|quarter (past|to|after|of))\b/i.test(
+      rest,
+    ) ||
+    /\b(at|around|about|by) one\b|\bone (o'?clock|thirty|fifteen)\b/i.test(rest) ||
+    /\bo'?clock\b|\bin the (am|pm|a\.m\.|p\.m\.)|\b[ap]\.m\./i.test(rest)
+  )
+}
+
 /**
  * The local calendar day a TIMELESS target names, or null when the target is
  * not timeless. Timeless is:
@@ -1082,15 +1136,8 @@ function timelessDay(
   const value = enrichment.due_at?.trim()
   if (!value) return null
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  if (
-    enrichment.rrule ||
-    CLOCK_TIME.test(inputText) ||
-    PART_OF_DAY.test(inputText) ||
-    [NOW_CUE, IN_HOURS_CUE, IN_HOURS_RANGE_CUE].some((re) => re.test(inputText)) ||
-    !(DAY_NAMED.test(inputText) || mayNameADay(inputText))
-  ) {
-    return null
-  }
+  if (enrichment.rrule || saysATime(inputText) || mayStateATime(inputText)) return null
+  if (!(DAY_NAMED.test(inputText) || mayNameADay(inputText))) return null
   const local = parseLocalDateTime(value, timezone)
   if (!local) return null
   const [hour, minute] = (morningTime || '09:00').split(':').map(Number)
@@ -1151,10 +1198,20 @@ export function resolveDeckDay(
   const day = DateTime.fromISO(stated, { zone: timezone })
   if (!day.isValid) return { ...enrichment, due_at: null }
   // A1 / repeating: the target it always was (the floor's datetime already is one).
-  if (enrichment.rrule || enrichment.deadline_at) return asTarget()
+  // So is a bare date from words that say when in the day (D3 review): "Friday
+  // evening", "Saturday at 3pm", "remind me Monday" go to the target path.
+  if (enrichment.rrule || enrichment.deadline_at || saysATime(inputText)) return asTarget()
 
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  const { deck, todayNamed } = settleDeckDay(day.startOf('day'), inputText, today, opts, now)
+  const settled = settleDeckDay(day.startOf('day'), inputText, today, opts, now)
+  // A deck never lands in the past (D3 ruling): yesterday — the words were
+  // said before midnight, the model answered after — is the calendar today
+  // (and the words named that day, so it counts as named).
+  const fromYesterday =
+    +settled.deck === +today.minus({ days: 1 }) &&
+    (DAY_NAMED.test(inputText) || mayNameADay(inputText))
+  const todayNamed = settled.todayNamed || fromYesterday
+  const deck = fromYesterday ? today : settled.deck
   if (deck < today) return asTarget()
   const named = +deck === +today ? todayNamed : DAY_NAMED.test(inputText) || mayNameADay(inputText)
   if (!named) {
@@ -1181,7 +1238,7 @@ export function saidTomorrowBeforeRollover(
   rolloverTime: string | undefined,
   now: Date,
 ): boolean {
-  if (!rolloverTime || !TOMORROW_WORD.test(inputText)) return false
+  if (!rolloverTime || !saysTomorrow(inputText)) return false
   const today = DateTime.fromJSDate(now).setZone(timezone).toFormat('yyyy-MM-dd')
   return now.getTime() < rolloverMoment(today, timezone, rolloverTime).getTime()
 }
@@ -1206,17 +1263,20 @@ export function resolveEarlyTomorrow(
   rolloverTime: string | undefined,
   now: Date = new Date(),
 ): EnrichmentResult {
-  const value = enrichment.due_at
-  if (!value || enrichment.rrule) return enrichment
+  if (enrichment.rrule) return enrichment
   if (!saidTomorrowBeforeRollover(inputText, timezone, rolloverTime, now)) return enrichment
-  const target = parseLocalDateTime(value, timezone)
-  if (!target) return enrichment
   const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
-  if (!target.hasSame(nowLocal.plus({ days: 1 }), 'day')) return enrichment
-  const moved = target.minus({ days: 1 })
-  if (moved <= nowLocal) return enrichment
+  const back = (value: string | null): string | null => {
+    const at = value ? parseLocalDateTime(value, timezone) : null
+    if (!at || !at.hasSame(nowLocal.plus({ days: 1 }), 'day')) return value
+    const moved = at.minus({ days: 1 })
+    return moved <= nowLocal ? value : toLocalIso(moved, value)
+  }
+  const dueAt = back(enrichment.due_at)
+  const deadlineAt = back(enrichment.deadline_at)
+  if (dueAt === enrichment.due_at && deadlineAt === enrichment.deadline_at) return enrichment
   log.info('ai', 'Enrichment: "tomorrow" said before the rollover — the coming day (A4)')
-  return { ...enrichment, due_at: toLocalIso(moved, value) }
+  return { ...enrichment, due_at: dueAt, deadline_at: deadlineAt }
 }
 
 /**
@@ -1233,10 +1293,12 @@ function settleDeckDay(
 ): { deck: DateTime; todayNamed: boolean } {
   const tomorrow = today.plus({ days: 1 })
   const early = saidTomorrowBeforeRollover(inputText, today.zoneName!, opts.rolloverTime, now)
-  const saysTomorrow = TOMORROW_WORD.test(inputText)
+  const tomorrowSaid = saysTomorrow(inputText)
   const saysToday = TODAY_CUE.test(inputText)
+  // Only when no weekday is named: "plan Sunday brunch this weekend" keeps Sunday.
+  const namesWeekday = Object.values(WEEKDAY_WORDS).some((re) => re.test(inputText))
   const weekendDay =
-    THIS_WEEKEND.test(inputText) && !WEEKEND_PACE.test(inputText)
+    THIS_WEEKEND.test(inputText) && !WEEKEND_PACE.test(inputText) && !namesWeekday
       ? thisWeekendDay(today, opts.checkInDay ?? CHECK_IN_DAY_DEFAULT)
       : null
 
@@ -1244,7 +1306,7 @@ function settleDeckDay(
   if (saysToday && !OTHER_DAY_WORD.test(inputText)) deck = today
   else if (early && +deck === +tomorrow)
     deck = today // A4
-  else if (saysTomorrow && !early && +deck === +today) deck = tomorrow
+  else if (tomorrowSaid && !early && +deck === +today) deck = tomorrow
   else if (weekendDay) deck = weekendDay
 
   const todayNamed =
@@ -1793,7 +1855,18 @@ export function resolveTodayLocalDate(
 }
 
 /** "tomorrow" as a word ("Tomorrowland" is not one), or the common "tmrw". */
-const TOMORROW_WORD = /\b(tomorrow|tmrw)\b/i
+const TOMORROW_WORD = /\b(tomm?orr?ow|tmrw|tmr|tmw|2moro|2morrow|tomoro)\b/i
+
+/**
+ * Whether the words say "tomorrow" — also misspelled (D3 review): the common
+ * spellings above, or a word of 6+ letters within 2 edits of "tomorrow"
+ * ("tomorow", "tommorrow", "tomorrw"). "Tomorrowland" is one word, not this.
+ */
+function saysTomorrow(inputText: string): boolean {
+  if (TOMORROW_WORD.test(inputText)) return true
+  const words = inputText.toLowerCase().match(/[a-z]{6,}/g) ?? []
+  return words.some((w) => editDistance(w, 'tomorrow') <= 2)
+}
 
 /**
  * Words that put the task on TODAY, or count from now: with one, a target
@@ -1850,8 +1923,7 @@ export function resolveSameDayPast(
   const nowMinute = DateTime.fromJSDate(now).setZone(timezone).startOf('minute')
   if (!target.hasSame(nowMinute, 'day')) return enrichment
   const saidTomorrow =
-    TOMORROW_WORD.test(inputText) &&
-    !saidTomorrowBeforeRollover(inputText, timezone, rolloverTime, now)
+    saysTomorrow(inputText) && !saidTomorrowBeforeRollover(inputText, timezone, rolloverTime, now)
   const passedUnnamed = target < nowMinute && !CLOCK_TIME.test(inputText)
   if (!saidTomorrow && !passedUnnamed) return enrichment
   const next = toLocalIso(target.plus({ days: 1 }), value)
@@ -2688,14 +2760,19 @@ function resolveProjectChange(
  * them for the user's own deck tap): the user has not seen this task yet, so
  * nothing was considered — the same reason an AI target doesn't stamp them.
  */
-function deckOrTarget(
+export function deckOrTarget(
   task: Task,
   enrichment: EnrichmentResult,
   user: { id: number; timezone: string },
   now: Date = new Date(),
 ): EnrichmentResult {
-  const day = enrichment.on_deck_day
-  if (!day) return enrichment
+  const stated = enrichment.on_deck_day
+  if (!stated) return enrichment
+  // Never in the past (D3 ruling): a day that ended while the model ran (the
+  // words said before midnight) is decked for the current calendar day.
+  const today = calendarToday(user.timezone, now)
+  const day = stated < today ? today : stated
+  if (day !== stated) enrichment = { ...enrichment, on_deck_day: day }
   const skip = deckSkip({
     rrule: enrichment.rrule ?? task.rrule,
     is_reminder: task.is_reminder,
@@ -2720,6 +2797,43 @@ function deckOrTarget(
     now,
   )
   return { ...enrichment, on_deck_day: null, due_at: dueAt }
+}
+
+/**
+ * THE USER WINS A RACE WITH THE MODEL (D3 review). The model runs for
+ * seconds; meanwhile the user may deck the task, give it a target, or edit
+ * it. `applyEnrichment` re-reads the row, and compares it with the row it
+ * claimed:
+ * - `edited`: `ai-to-process` is gone. Every manual edit (PATCH, the deck
+ *   endpoint, bulk edit) removes it (`cancelPendingEnrichment`), so the user
+ *   changed SOMETHING — maybe the title — and the whole answer is dropped:
+ *   any field the model would write could overwrite theirs.
+ * - `dated`: the label is still there but the row's target or deck moved (a
+ *   writer that doesn't cancel enrichment — a Snooze-all sweep, a rollover).
+ *   Only the date fields are dropped (`withoutDateFields`); the title,
+ *   priority, labels, project and notes still apply.
+ */
+function racedByUser(row: PendingTaskRow, task: Task): 'edited' | 'dated' | null {
+  if (!task.labels.includes('ai-to-process')) return 'edited'
+  if (task.due_at !== row.due_at || (task.on_deck_day ?? null) !== (row.on_deck_day ?? null)) {
+    return 'dated'
+  }
+  return null
+}
+
+/** The answer with every date-shaped field left out (`racedByUser`'s `dated`). */
+function withoutDateFields(enrichment: EnrichmentResult): EnrichmentResult {
+  log.info('ai', 'Enrichment: the date moved while the model ran — its date fields not applied')
+  return {
+    ...enrichment,
+    due_at: null,
+    on_deck_day: null,
+    deadline_at: null,
+    horizon: null,
+    rrule: null,
+    recurrence_mode: null,
+    auto_snooze_minutes: null,
+  }
 }
 
 /** Bookkeeping columns that ride along with a change but are not news to the user. */
@@ -2750,9 +2864,19 @@ function applyEnrichment(
   const task = getTaskById(row.id)
   if (!task) return []
 
+  const raced = racedByUser(row, task)
+  if (raced === 'edited') {
+    log.info(
+      'ai',
+      `Task ${row.id}: edited by the user while the model ran — enrichment not applied`,
+    )
+    return []
+  }
+  const answer = raced === 'dated' ? withoutDateFields(enrichment) : enrichment
+
   const changes = collectEnrichmentChanges(
     task,
-    withEnrichmentRuleTime(task, deckOrTarget(task, enrichment, user), user),
+    withEnrichmentRuleTime(task, deckOrTarget(task, answer, user), user),
     user,
     inputText,
   )
@@ -2844,6 +2968,8 @@ interface PendingTaskRow {
   labels: string
   priority: number
   due_at: string | null
+  /** As claimed: a deck the user makes while the model runs must win (`racedByUser`). */
+  on_deck_day?: string | null
   rrule: string | null
   is_reminder: number
 }

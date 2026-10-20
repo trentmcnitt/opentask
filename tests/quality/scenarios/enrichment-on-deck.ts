@@ -26,6 +26,7 @@ const WED = day(2)
 const THU = day(3)
 const FRI = day(4)
 const SAT = day(5)
+const SUN = day(6)
 
 const input = (text: string, now = MON_2PM) => ({ text, timezone: TZ, projects: INBOX, now })
 
@@ -230,6 +231,89 @@ export const enrichmentOnDeckScenarios: AITestScenario[] = [
       must_include: { due_at: `~datetime:${TUE}T15:00`, on_deck_day: null, deadline_at: null },
       quality_notes:
         'Now is Monday 11:30 PM. "tomorrow at 3pm" is Tuesday 3:00 PM. A time is a target, not on deck. Title "Call the dentist".',
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // D3 review and rulings
+  // -------------------------------------------------------------------------
+  {
+    id: 'enrich-remind-me-day-target',
+    feature: 'enrichment',
+    description:
+      'Ruling: "remind me <day>" with no time is a target at the default time, not a deck',
+    input: input('remind me Thursday to call the bank'),
+    requirements: {
+      must_include: { due_at: `~datetime:${THU}T09:00`, on_deck_day: null, deadline_at: null },
+      quality_notes:
+        '"remind me" asks for a reminder: due_at Thursday at the default task time (9:00 AM), on_deck_day null. Title "Call the bank".',
+    },
+  },
+  {
+    id: 'enrich-remind-me-tomorrow-after-midnight',
+    feature: 'enrichment',
+    description:
+      'Ruling + A4: "remind me tomorrow" at 00:30 → the calendar today at the default time',
+    input: input('remind me tomorrow to renew the parking permit', at(1, '00:30')),
+    requirements: {
+      must_include: { due_at: `~datetime:${TUE}T09:00`, on_deck_day: null, deadline_at: null },
+      quality_notes:
+        'Now is 12:30 AM Tuesday, before the rollover: "tomorrow" is the coming day, Tuesday. "remind me" is a target: due_at Tuesday 9:00 AM, on_deck_day null. Title "Renew the parking permit".',
+    },
+  },
+  {
+    id: 'enrich-deck-plain-day-not-remind',
+    feature: 'enrichment',
+    description: 'Negative of the ruling: "call the bank Thursday" (no "remind me") still decks',
+    input: input('call the bank Thursday'),
+    requirements: {
+      must_include: { on_deck_day: THU, due_at: null, deadline_at: null },
+      quality_notes:
+        'A day with no time and no "remind me": on deck Thursday, due_at null. Title "Call the bank".',
+    },
+  },
+  {
+    id: 'enrich-deck-weekend-named-weekday',
+    feature: 'enrichment',
+    description: 'Review: "this weekend" beside a named weekday keeps the weekday',
+    input: input('plan Sunday brunch this weekend'),
+    requirements: {
+      must_include: { on_deck_day: SUN, due_at: null, deadline_at: null },
+      quality_notes:
+        '"Sunday" is named, so "this weekend" only says which Sunday: on deck this Sunday, not Saturday. Title like "Plan Sunday brunch" (the word Sunday may stay, it is part of the event).',
+    },
+  },
+  {
+    id: 'enrich-deck-misspelled-tomorrow-after-midnight',
+    feature: 'enrichment',
+    description: 'Review: "tommorow" at 00:30 → on deck the coming day (calendar today)',
+    input: input('pick up the dry cleaning tommorow', at(1, '00:30')),
+    requirements: {
+      must_include: { on_deck_day: TUE, due_at: null, deadline_at: null },
+      quality_notes:
+        'Now is 12:30 AM Tuesday. "tommorow" is "tomorrow", the coming day: on deck Tuesday, due_at null. Title "Pick up the dry cleaning".',
+    },
+  },
+  {
+    id: 'enrich-deck-day-and-part-of-day-target',
+    feature: 'enrichment',
+    description: 'Review: "Friday evening" is a target, never a deck',
+    input: input('call grandma Friday evening'),
+    requirements: {
+      must_include: { due_at: `~date:${FRI}`, on_deck_day: null, deadline_at: null },
+      quality_notes:
+        '"Friday evening" names a part of the day: due_at Friday in the evening (about 5–8 PM), on_deck_day null. Title "Call grandma".',
+    },
+  },
+  {
+    id: 'enrich-a4-deadline-by-tomorrow-after-midnight',
+    feature: 'enrichment',
+    description: 'Ruling: "by tomorrow" at 00:30 → the deadline is the calendar today',
+    input: input('send the permit forms by tomorrow', at(1, '00:30')),
+    requirements: {
+      must_include: { deadline_at: `~date:${TUE}`, on_deck_day: null },
+      quality_notes:
+        'Now is 12:30 AM Tuesday, before the rollover: "by tomorrow" is a cutoff on the coming day — deadline_at Tuesday 23:59 — with no deck (the app gives the deadline its own automatic target). Title "Send the permit forms".',
     },
   },
 

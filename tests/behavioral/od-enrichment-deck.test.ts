@@ -37,10 +37,12 @@ vi.mock('@/core/ai/enrichment-slot', () => ({
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, updateTask } from '@/core/tasks'
 import { executeUndo } from '@/core/undo'
+import { deckTasks } from '@/core/tasks/deck'
 import {
   enrichSingleTask,
   postProcessTaskDates,
   deckDayAsTarget,
+  deckOrTarget,
   saidTomorrowBeforeRollover,
   _resetCircuitBreaker,
   _resetProcessingState,
@@ -317,6 +319,132 @@ describe('"this weekend" (A5)', () => {
   })
 })
 
+describe('D3 review: the floor never decks a time the user said', () => {
+  // Thursday Oct 22, the model at the default time (9:00).
+  const THU_9 = '2026-10-22T09:00:00'
+  test.each([
+    'call mom Thursday 9',
+    'call mom Thursday 9:00',
+    'call mom Thursday at nine',
+    "call mom Thursday 9 o'clock",
+    'call mom around 9 Thursday',
+    'call mom Thursday @ 9',
+    'call mom Thursday 0900',
+    'call mom Thursday 9a',
+    'call mom Thursday 9 a m',
+    'call mom Thursday in the AM',
+    'call mom Thursday nine-ish',
+  ])('%s → the target stays', (text) => {
+    expect(pipe(text, { due_at: THU_9 })).toEqual(target(THU_9))
+  })
+
+  test('"in 30 minutes" is never a day', () => {
+    expect(pipe('call mom in 30 minutes', { due_at: '2026-10-20T14:30:00' }).on_deck_day).toBeNull()
+    expect(pipe('call mom in 30 minutes', { due_at: '2026-10-20' }).on_deck_day).toBeNull()
+  })
+
+  test('numbers that are part of the day still deck: "in 3 days", "Oct 24", "the 24th"', () => {
+    expect(pipe('return the drill in 3 days', { due_at: '2026-10-23T09:00:00' })).toEqual(
+      deck('2026-10-23'),
+    )
+    expect(pipe('return the drill Oct 24', { due_at: '2026-10-24T09:00:00' })).toEqual(
+      deck('2026-10-24'),
+    )
+    expect(pipe('return the drill on the 24th', { due_at: '2026-10-24T09:00:00' })).toEqual(
+      deck('2026-10-24'),
+    )
+  })
+})
+
+describe('D3 review: a bare date from words that say a time is a target', () => {
+  test.each([
+    ['call the vet tomorrow morning', '2026-10-21'],
+    ['call grandma Friday evening', '2026-10-23'],
+    ['mow the lawn Saturday at 3pm', '2026-10-24'],
+  ])('%s (bare %s) → a target, not a deck', (text, bare) => {
+    const out = pipe(text, { due_at: bare })
+    expect(out.on_deck_day).toBeNull()
+    expect(out.due_at).toMatch(new RegExp(`^${bare}T`))
+  })
+})
+
+describe('D3 review: misspelled "tomorrow"', () => {
+  const AT_0030 = new Date('2026-10-21T00:30:00-05:00')
+  test('"tommorow" at 00:30 → on deck the coming day (calendar today), never dropped', () => {
+    expect(pipe('call mom tommorow', { due_at: '2026-10-22' }, { now: AT_0030 })).toEqual(
+      deck('2026-10-21'),
+    )
+    expect(pipe('call mom tommorow', { due_at: '2026-10-21' }, { now: AT_0030 })).toEqual(
+      deck('2026-10-21'),
+    )
+  })
+  test('"tomorow" dated today after the rollover → tomorrow', () => {
+    expect(pipe('call mom tomorow', { due_at: '2026-10-20' })).toEqual(deck('2026-10-21'))
+  })
+  test('"Tomorrowland" is not "tomorrow"', () => {
+    expect(pipe('buy Tomorrowland tickets', { due_at: '2026-10-20' })).toEqual(NONE)
+  })
+})
+
+describe('D3 review: "this weekend" beside a named weekday keeps the weekday', () => {
+  test('"plan Sunday brunch this weekend" → on deck Sunday', () => {
+    expect(pipe('plan Sunday brunch this weekend', { due_at: '2026-10-25' })).toEqual(
+      deck('2026-10-25'),
+    )
+  })
+})
+
+describe('D3 ruling: a deadline follows A4 too', () => {
+  test('"by tomorrow" at 00:30 → the deadline is the calendar today', () => {
+    const AT_0030 = new Date('2026-10-21T00:30:00-05:00')
+    const out = postProcessTaskDates(
+      result({ deadline_at: '2026-10-22T23:59:00' }),
+      'send the permit form by tomorrow',
+      TZ,
+      {
+        morningTime: '09:00',
+        todayTarget: TODAY_TARGET,
+        rolloverTime: '06:30',
+        now: AT_0030,
+        newTask: true,
+      },
+    )
+    expect(out.deadline_at).toBe('2026-10-21T23:59:00')
+  })
+})
+
+describe('D3 ruling: a deck never lands in the past', () => {
+  test('"do it Tuesday" said Tuesday night, answered just after midnight → on deck Wednesday', () => {
+    const WED_0001 = new Date('2026-10-21T00:00:30-05:00')
+    expect(pipe('do it Tuesday', { due_at: '2026-10-20' }, { now: WED_0001 })).toEqual(
+      deck('2026-10-21'),
+    )
+  })
+})
+
+describe('D3 ruling: "remind me <day>" is a target at the default time', () => {
+  test('"remind me Monday to call the bank" → Monday 9:00 (bare or timed answer)', () => {
+    expect(pipe('remind me Monday to call the bank', { due_at: '2026-10-26' })).toEqual(
+      target('2026-10-26T09:00:00'),
+    )
+    expect(pipe('remind me Monday to call the bank', { due_at: '2026-10-26T09:00:00' })).toEqual(
+      target('2026-10-26T09:00:00'),
+    )
+  })
+  test('"remind me tomorrow" → tomorrow 9:00; at 00:30, the calendar today (A4)', () => {
+    expect(pipe('remind me tomorrow to call the bank', { due_at: '2026-10-21' })).toEqual(
+      target('2026-10-21T09:00:00'),
+    )
+    const AT_0030 = new Date('2026-10-21T00:30:00-05:00')
+    expect(
+      pipe('remind me tomorrow to call the bank', { due_at: '2026-10-22' }, { now: AT_0030 }),
+    ).toEqual(target('2026-10-21T09:00:00'))
+  })
+  test('"call the bank Monday" still decks', () => {
+    expect(pipe('call the bank Monday', { due_at: '2026-10-26' })).toEqual(deck('2026-10-26'))
+  })
+})
+
 describe('deckDayAsTarget (the fallback when the deck cannot be written)', () => {
   test('today → the "Target today" time; another day → the default task time', () => {
     expect(deckDayAsTarget('2026-10-20', TZ, '09:00', TODAY_TARGET, TUE_2PM)).toBe(TODAY_TARGET)
@@ -465,6 +593,69 @@ describe('the enrichment write', () => {
     expect(after.on_deck_day).toBeNull()
     expect(after.rrule).toContain('BYDAY=SA')
     expect(after.due_at).not.toBeNull()
+  })
+
+  test('race: the user decks while the model answers a timed target → the user wins', async () => {
+    const task = titleOnly('call mom tomorrow at 3pm')
+    mockEnrichmentQuery.mockImplementationOnce(async () => {
+      deckTasks({
+        userId: TEST_USER_ID,
+        timezone: TEST_TIMEZONE,
+        ids: [task.id],
+        day: '2026-10-23',
+      })
+      return modelAnswer({ title: 'Call mom', due_at: '2026-10-21T15:00:00' })
+    })
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    const after = getTaskById(task.id)!
+    expect(after.on_deck_day).toBe('2026-10-23')
+    expect(after.due_at).toBeNull()
+    // A manual edit cancels the enrichment: nothing of the answer lands.
+    expect(after.title).toBe('call mom tomorrow at 3pm')
+  })
+
+  test('race: the user decks while the model answers another deck day → the user wins', async () => {
+    const task = titleOnly('call mom Saturday')
+    mockEnrichmentQuery.mockImplementationOnce(async () => {
+      deckTasks({
+        userId: TEST_USER_ID,
+        timezone: TEST_TIMEZONE,
+        ids: [task.id],
+        day: '2026-10-21',
+      })
+      return modelAnswer({ title: 'Call mom', due_at: '2026-10-24' })
+    })
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    expect(getTaskById(task.id)!.on_deck_day).toBe('2026-10-21')
+  })
+
+  test('race: the date moves under the model (label kept) → only the date fields are dropped', async () => {
+    const task = titleOnly('call mom saturday high priority')
+    mockEnrichmentQuery.mockImplementationOnce(async () => {
+      getDb()
+        .prepare('UPDATE tasks SET due_at = ? WHERE id = ?')
+        .run('2026-10-22T20:00:00.000Z', task.id)
+      return modelAnswer({ title: 'Call mom', due_at: '2026-10-24', priority: 3 })
+    })
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    const after = getTaskById(task.id)!
+    expect(after.due_at).toBe('2026-10-22T20:00:00.000Z')
+    expect(after.on_deck_day).toBeNull()
+    expect(after.title).toBe('Call mom')
+    expect(after.priority).toBe(3)
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('a deck day that ended while the model ran is decked for today, never the past', () => {
+    const task = titleOnly('do it Tuesday')
+    const out = deckOrTarget(
+      getTaskById(task.id)!,
+      result({ on_deck_day: '2026-10-19' }),
+      { id: TEST_USER_ID, timezone: TEST_TIMEZONE },
+      TUE_2PM,
+    )
+    expect(out.on_deck_day).toBe('2026-10-20')
+    expect(out.due_at).toBeNull()
   })
 
   test('the notification body says "On deck <day>"', async () => {

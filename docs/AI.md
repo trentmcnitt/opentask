@@ -665,7 +665,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-same-day.ts`             | Same day: "tomorrow" dated today, a passed time, "now that" | 6     |
 | `enrichment-repeat-titles.ts`        | Repeat words leave the title; a repeat made after its time  | 7     |
 | `enrichment-late-today.ts`           | "Today" at 10:57 PM stays on today's local date             | 4     |
-| `enrichment-on-deck.ts`              | On deck: a day with no time decks; times, parts of day stay | 17    |
+| `enrichment-on-deck.ts`              | On deck: a day with no time decks; times, parts of day stay | 24    |
 | `task-model-review.ts`               | Deadline field in Insights and What's Next                  | 2     |
 | `process.ts`                         | Process: project recommendations and duplicates             | 4     |
 | `quick-take.ts`                      | Quick Take                                                  | 12    |
@@ -675,7 +675,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `helpers/generate-tasks.ts`          | Realistic task list generator (used by insights-large)      | —     |
 | `index.ts`                           | Barrel export                                               | —     |
 
-**Total: 257 scenarios** (203 enrichment + 11 enrichment_reminder + 13 quick_take + 16 insights + 10 whats_next + 2 process_projects + 2 process_duplicates)
+**Total: 264 scenarios** (210 enrichment + 11 enrichment_reminder + 13 quick_take + 16 insights + 10 whats_next + 2 process_projects + 2 process_duplicates)
 
 Scenarios that need a value the run date decides (a deadline "7 days from now") compute it at load time; `must_include` accepts `~date:YYYY-MM-DD` (a local datetime on that day, any time) and `~notnull`. An enrichment scenario may pin `now` (a local datetime in its timezone): the prompt, the post-processes and the time matchers then all read that minute — `~soon` ("now": 15 minutes out, rounded up to the quarter hour), `~in-hours:N` and `~hours-range:LO-HI` (a quarter hour inside the range). Process scenarios use `process_expectations` (required project per task, groups that must appear, pairs that must not be grouped).
 
