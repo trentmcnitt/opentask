@@ -12,11 +12,15 @@
  *
  * Unlike PATCH it never refuses the whole batch for one task (A11): before
  * the edit it sorts the ids —
- *  - a repeating task, a reminder, a quota, a done or trashed task is SKIPPED
- *    and counted (`skipped_*`);
+ *  - a reminder, a quota, a done or trashed task is SKIPPED and counted
+ *    (`skipped_*`; `skipped_recurring` stays in the answer, always 0 since
+ *    repeating tasks can be decked, 2026-10-20);
  *  - a deadline task whose automatic target has arrived, or a day after that
- *    target's day, is REFUSED per task (`refused[]`, A1);
- *  - the rest are decked.
+ *    target's day, is REFUSED per task (`refused[]`, A1) — a repeating one
+ *    against its deadline's own day;
+ *  - the rest are decked. A repeating task's deck is for its current
+ *    occurrence: its target goes while decked and comes back on the
+ *    occurrence when it is taken off (`collectRepeatingUndeck`).
  * An id that is not one of the caller's own tasks is a 400, as on the
  * segment endpoints.
  *

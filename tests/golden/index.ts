@@ -8,6 +8,7 @@ import { yearlyScenarios } from './yearly'
 import { moveEarlierScenarios } from './move-earlier'
 import { taskQueueScenarios } from './task-queue'
 import { onDeckScenarios } from './on-deck'
+import { onDeckRepeatingScenarios } from './on-deck-repeating'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -19,4 +20,5 @@ export const goldenScenarios = [
   ...moveEarlierScenarios,
   ...taskQueueScenarios,
   ...onDeckScenarios,
+  ...onDeckRepeatingScenarios,
 ]

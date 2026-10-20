@@ -123,6 +123,19 @@ function useHandleTargetAt(
  * the refresh puts the row back and the toast gives the server's reason
  * (`src/lib/deck-request.ts`). List mode only.
  */
+/**
+ * The row as a deck write will leave it. A REPEATING task (2026-10-20) loses
+ * its target while decked — so it leaves the over-target list at once — and
+ * gets it back on its occurrence when taken off (`collectRepeatingUndeck`).
+ */
+function optimisticDeck(t: Task, next: string | null): Task {
+  if (!t.rrule) return { ...t, on_deck_day: next }
+  if (next !== null) return { ...t, on_deck_day: next, due_at: null }
+  return t.on_deck_day && t.due_at === null
+    ? { ...t, on_deck_day: null, due_at: t.occurrence_at }
+    : { ...t, on_deck_day: null }
+}
+
 function useHandleDeck(
   configRef: MutableRefObject<UseTaskActionsConfig>,
   bumpUndoCount: () => void,
@@ -139,7 +152,7 @@ function useHandleDeck(
       if (cfg.mode !== 'list') return
       const zone = timezoneRef.current
       const next = day === undefined ? calendarToday(zone, new Date()) : day
-      cfg.setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, on_deck_day: next } : t)))
+      cfg.setTasks((prev) => prev.map((t) => (t.id === task.id ? optimisticDeck(t, next) : t)))
       try {
         const result = await sendDeck([task.id], day)
         const message = deckToastMessage(result, task.title, zone)

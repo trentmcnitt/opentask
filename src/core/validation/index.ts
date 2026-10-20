@@ -22,6 +22,7 @@ export {
   validateSegmentTarget,
   validateDeck,
   DECK_WITH_DATE_MESSAGE,
+  DECK_WITH_RULE_MESSAGE,
   validateBulkSnoozeOverdue,
   TRACKED_REMINDER_MESSAGE,
   QUOTA_DUE_DATE_MESSAGE,

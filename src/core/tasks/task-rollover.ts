@@ -345,7 +345,7 @@ export function applyRollover(
   }
 
   // 5. On deck (2026-10-20): decks whose day has ended go to the queue.
-  if (stripDecks(user, rolloverTime, m, nowStr, ctx, run, result)) run.changed = true
+  if (stripDecks(user, rolloverTime, m, nextM, nowStr, ctx, run, result)) run.changed = true
 
   // 4. Try Tomorrow's mark lasts only while the row is in "Staged".
   // Not on a manual run: its M is now, not a rollover, so every queued row
@@ -742,11 +742,14 @@ function rollRepeating(
  *
  * Its own pass: the strip pass above needs a target and no deadline
  * (`ELIGIBLE_SQL`), and a deck has no picked target, so no row meets both.
+ * A REPEATING deck (2026-10-20) is never queued as a deck: it gets its target
+ * back and the repeating rules decide (`endRepeatingDeck`).
  */
 function stripDecks(
   user: UserRow,
   rolloverTime: string,
   m: Date,
+  nextM: Date,
   nowStr: string,
   ctx: ApplyCtx,
   run: UserRun,
@@ -764,6 +767,10 @@ function stripDecks(
   const queuedAt = ctx.queuedAt ?? nowStr
   for (const row of rows) {
     const task = rowToTask(row)
+    if (task.rrule) {
+      endRepeatingDeck(row, task, user, rolloverTime, { m, nextM }, nowStr, ctx, run, result)
+      continue
+    }
     const nagging = task.due_at !== null && Date.parse(task.due_at) <= Date.parse(nowStr)
     if (nagging) {
       db.prepare(
@@ -796,6 +803,92 @@ function stripDecks(
     result.deckStripped++
   }
   return rows.length > 0
+}
+
+/**
+ * 5, REPEATING (2026-10-20; docs/TASK-MODEL.md § On deck). A repeating deck
+ * whose day has ended gives the task its target back on its occurrence
+ * (`due_at` and `original_due_at` := `occurrence_at`, the deck cleared — one
+ * write), then the repeating rules (2) apply in the same run as if it had
+ * never been decked:
+ *  - a below-High task with no deadline whose occurrence is before M ROLLS
+ *    to this day's occurrence (a skip of the missed one) or WAITS in the
+ *    queue for its next (`rollRepeating`; a wait also remembers the deck day,
+ *    `queued_from_deck_day`, and — like a one-off deck strip — no remembered
+ *    target, so the queue sorts it by that day);
+ *  - otherwise only the target comes back: High and Urgent never roll (they
+ *    nag), a deadline task is never rolled (`ELIGIBLE_SQL`; `rollRepeating`
+ *    doesn't move deadlines), and an occurrence still ahead (a deck made
+ *    before it came) is simply its target again.
+ * A from_completion rule is stepped from its occurrence, never from now
+ * (`occurrenceFrom`): no re-anchor. A future deck that passed later
+ * occurrences absorbs them: the roll logs ONE skip, of the decked occurrence.
+ */
+function endRepeatingDeck(
+  row: TaskRow,
+  task: Task,
+  user: UserRow,
+  rolloverTime: string,
+  { m, nextM }: { m: Date; nextM: Date },
+  nowStr: string,
+  ctx: ApplyCtx,
+  run: UserRun,
+  result: TaskRolloverResult,
+): void {
+  const db = getDb()
+  const restored = task.occurrence_at ?? task.due_at
+  // The target is SET now (`target_set_at`), so the attempts checkpoint a
+  // wait takes never counts the deck's days: a missed deck is never an
+  // attempt (there was no target to be over).
+  db.prepare(
+    `UPDATE tasks
+        SET on_deck_day = NULL, due_at = ?, original_due_at = COALESCE(?, original_due_at),
+            ${TARGET_SET_FIELD} = ?, rolled_over_at = ?, updated_at = ?
+      WHERE id = ?`,
+  ).run(restored, restored, nowStr, nowStr, nowStr, task.id)
+  logRollover(
+    user.id,
+    task.id,
+    task.title,
+    'deck_cleared',
+    ['on_deck_day', 'due_at', 'original_due_at', TARGET_SET_FIELD],
+    { on_deck_day: task.on_deck_day, due_at: task.due_at, original_due_at: task.original_due_at },
+    { on_deck_day: null, due_at: restored, original_due_at: restored ?? task.original_due_at },
+    ctxMeta(ctx),
+  )
+  ctx.collect?.before.set(task.id, task)
+  ctx.collect?.ids.deck_stripped.push(task.id)
+  result.deckStripped++
+  run.moved.push(task.id)
+
+  const rolls =
+    restored !== null &&
+    Date.parse(restored) < m.getTime() &&
+    task.priority < QUEUE_KEEP_PRIORITY &&
+    task.deadline_at === null
+  if (!rolls) {
+    run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: false })
+    return
+  }
+  const after = { on_deck_day: null, due_at: restored, original_due_at: restored }
+  const restoredRow: TaskRow = { ...row, ...after, [TARGET_SET_FIELD]: nowStr }
+  const restoredTask: Task = { ...task, ...after, target_set_at: nowStr }
+  const outcome = rollRepeating(
+    restoredRow,
+    restoredTask,
+    user,
+    rolloverTime,
+    m,
+    nextM,
+    nowStr,
+    ctx,
+  )
+  if (outcome === 'waiting') {
+    db.prepare(
+      'UPDATE tasks SET queued_from_deck_day = ?, queued_from_due_at = NULL WHERE id = ?',
+    ).run(task.on_deck_day, task.id)
+  }
+  run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: outcome === 'rolled-skip' })
 }
 
 /** One activity row per changed task, `source: 'rollover'`. */

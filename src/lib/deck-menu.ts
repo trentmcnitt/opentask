@@ -98,18 +98,38 @@ export function deckMenuDays(
  * picked target goes when decking; the Quick panel passes a STAGED deadline
  * here). One that has already arrived leaves no day at all (the latest day is
  * yesterday). No deadline: null.
+ *
+ * A REPEATING task (2026-10-20) has no automatic target: its deck must land
+ * before its deadline's own day, while the deadline is ahead ("deadline Tue";
+ * a passed deadline leaves no day) — `deckRefusal`'s repeating branch.
  */
 export function deckLimit(
-  task: { deadline_at: string | null; due_at: string | null; target_auto?: boolean },
+  task: {
+    deadline_at: string | null
+    due_at: string | null
+    target_auto?: boolean
+    rrule?: string | null
+  },
   timezone: string,
   now: Date = new Date(),
   ctx?: TargetContext | null,
 ): DeckLimit | null {
   if (!task.deadline_at) return null
+  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
+  if (task.rrule) {
+    const passed = Date.parse(task.deadline_at) <= now.getTime()
+    const deadlineDay = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
+      .setZone(timezone)
+      .startOf('day')
+    const limitDay = passed ? today : deadlineDay
+    return {
+      latestDay: limitDay.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
+      caption: passed ? 'deadline passed' : `deadline ${deadlineDay.toFormat('ccc')}`,
+    }
+  }
   const auto =
     task.target_auto && task.due_at ? task.due_at : autoTargetAt(task.deadline_at, ctx, now)
   const autoDay = DateTime.fromISO(auto, { zone: 'utc' }).setZone(timezone)
-  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
   const reminds = Date.parse(auto) <= now.getTime() ? today : autoDay.startOf('day')
   return {
     latestDay: reminds.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
@@ -133,10 +153,12 @@ export function deckTapDay(
 }
 
 /**
- * Whether a row offers the On deck button: an open one-off (rule 6 — no
- * repeating task, reminder or quota) with no target the user picked (rule
- * 1: a picked target and a deck never coexist — Today's hover rule,
- * `offersTargetToday`), or one already on deck. The queue switch is the
+ * Whether a row offers the On deck button: an open task that is not a
+ * reminder or quota (rule 6), and — a one-off — has no target the user picked
+ * (rule 1: a picked target and a deck never coexist — Today's hover rule,
+ * `offersTargetToday`), or one already on deck. A REPEATING task always
+ * offers it (2026-10-20): its target is its occurrence, and decking it decks
+ * that occurrence (the target goes while decked). The queue switch is the
  * caller's.
  */
 export function offersDeck(task: {
@@ -149,8 +171,8 @@ export function offersDeck(task: {
   progress_target?: number
   done?: boolean
 }): boolean {
-  if (task.done || task.rrule || task.is_reminder) return false
+  if (task.done || task.is_reminder) return false
   if (task.is_tracked || (task.progress_target ?? 1) > 1) return false
-  if (task.on_deck_day) return true
+  if (task.on_deck_day || task.rrule) return true
   return task.due_at === null || task.target_auto === true
 }

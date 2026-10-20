@@ -6,7 +6,13 @@
  * write that leaves the task with a target the user picked — `resolveTarget`
  * answered `auto === false` with a `due_at` — clears `on_deck_day` in the SAME
  * write and undo snapshot. So does a write that makes the task something that
- * can't be on deck (a repeating task, a reminder, a quota: rule 6).
+ * can't be on deck (a reminder, a quota: rule 6).
+ *
+ * A REPEATING task can be on deck (2026-10-20), so a rule on the row clears
+ * nothing by itself — any edit of a decked repeating task would otherwise
+ * take it off. Its deck goes when the write leaves a picked `due_at` (Today,
+ * any snooze, or a NEW rule, which schedules its own date). A PATCH sending a
+ * rule AND a deck day is refused outright (`prepareDeck`).
  *
  * What does NOT clear it: a deadline added or changed, or "Back to auto" — the
  * target they leave is the deadline's AUTOMATIC one, which a deck lives beside
@@ -43,7 +49,7 @@ export interface DeckClearAfter {
   dueAt: string | null
   /** That target is the deadline's automatic one (`target_auto`). */
   auto: boolean
-  /** The rule the write leaves. */
+  /** The rule the write leaves (a repeating deck is judged by its deadline's day, A1). */
   rrule: string | null
   isReminder: boolean
   isTracked: boolean
@@ -60,7 +66,7 @@ export interface DeckClearAfter {
 export function deckClearedBy(task: Pick<Task, 'on_deck_day'>, after: DeckClearAfter): boolean {
   if (!task.on_deck_day) return false
   const picked = after.dueAt !== null && !after.auto
-  if (picked || after.rrule !== null || after.isReminder || after.isTracked) return true
+  if (picked || after.isReminder || after.isTracked) return true
   return deadlineOutranksDeck(task.on_deck_day, after)
 }
 
@@ -68,7 +74,12 @@ export function deckClearedBy(task: Pick<Task, 'on_deck_day'>, after: DeckClearA
 function deadlineOutranksDeck(day: string, after: DeckClearAfter): boolean {
   const d = after.deadline
   if (!d || !d.changed || d.at === null) return false
-  const left = { due_at: after.dueAt, deadline_at: d.at, target_auto: after.auto }
+  const left = {
+    due_at: after.dueAt,
+    deadline_at: d.at,
+    target_auto: after.auto,
+    rrule: after.rrule,
+  }
   return deckRefusal(left, day, d.ctx, d.now) !== null
 }
 

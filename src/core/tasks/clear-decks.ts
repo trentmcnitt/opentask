@@ -4,9 +4,12 @@
  *
  * For one user:
  *  1. every open task ON DECK is taken off deck (`on_deck_day` → NULL).
- *     Nothing else changes: a deck never carries a picked target, so there is
- *     no target to restore, and a deadline task keeps its automatic target.
- *     It goes back to where an untargeted task sits (its horizon segment);
+ *     Nothing else changes for a one-off: a deck never carries a picked
+ *     target, so there is no target to restore, and a deadline task keeps
+ *     its automatic target. It goes back to where an untargeted task sits
+ *     (its horizon segment). A REPEATING deck (2026-10-20) gets its target
+ *     back on its occurrence (`due_at`, `original_due_at` := `occurrence_at`),
+ *     as taking it off deck does — never left target-less;
  *  2. every open task the rollover sent to the queue FROM a deck
  *     (`queued_from_deck_day` set) still queued leaves the queue
  *     (`queued_at`, `try_tomorrow` → cleared; `queued_from_deck_day` kept as
@@ -51,8 +54,15 @@ export function clearDecks(userId: number, now: Date = new Date()): DeckedRow[] 
   const nowStr = now.toISOString()
   return withTransaction((tx) => {
     const found = findDecks(userId)
+    // A repeating deck's target comes back on its occurrence (see the header).
     const undeck = tx.prepare(
-      'UPDATE tasks SET on_deck_day = NULL, updated_at = ? WHERE id = ? AND on_deck_day IS NOT NULL',
+      `UPDATE tasks
+          SET on_deck_day = NULL,
+              due_at = CASE WHEN rrule IS NOT NULL AND due_at IS NULL THEN occurrence_at ELSE due_at END,
+              original_due_at = CASE WHEN rrule IS NOT NULL AND due_at IS NULL AND occurrence_at IS NOT NULL
+                                     THEN occurrence_at ELSE original_due_at END,
+              updated_at = ?
+        WHERE id = ? AND on_deck_day IS NOT NULL`,
     )
     const unqueue = tx.prepare(
       `UPDATE tasks SET queued_at = NULL, try_tomorrow = 0, updated_at = ?

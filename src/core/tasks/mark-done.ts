@@ -325,6 +325,10 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   }
   // The occurrence it closed; a row from before the column reads the target.
   const restoredOccurrence = latest.occurrence_at_was ?? latest.due_at_was
+  // The target it closed. A DECKED occurrence (2026-10-20) had none — its
+  // `due_at_was` is NULL — so it comes back as debt on its occurrence, never
+  // as a target-less repeating row (no deck to put back: done cleared it).
+  const restoredTarget = latest.due_at_was ?? restoredOccurrence
   const previous = db
     .prepare(
       `SELECT completed_at FROM completions
@@ -342,7 +346,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const restoredAttempts = latest.attempts ?? 0
   const restoredThrough = putBackCountedThrough(
     latest.completed_at,
-    latest.due_at_was,
+    restoredTarget,
     userTimezone,
     new Date(),
     attemptsRolloverTime(task.user_id),
@@ -364,6 +368,9 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     // The task queue (2026-10-19): setting the target again clears the queue
     // state (normally already clear: done cleared it).
     ...queueClear.fields,
+    // On deck (2026-10-20): a deck put on the NEXT occurrence since goes with
+    // it (DECK_CLEAR_SQL) — undo of the put-back brings it back.
+    ...(task.on_deck_day ? ['on_deck_day'] : []),
   ]
 
   const updatedTask = withTransaction((tx) => {
@@ -375,9 +382,9 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
             ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
         WHERE id = ?`,
     ).run(
-      latest.due_at_was,
+      restoredTarget,
       restoredOccurrence,
-      latest.due_at_was,
+      restoredTarget,
       restoredDeadline,
       nowStr,
       restoredAttempts,
@@ -408,14 +415,16 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         completion_count: task.completion_count,
         first_completed_at: task.first_completed_at,
         last_completed_at: task.last_completed_at,
+        on_deck_day: task.on_deck_day,
       },
       {
         ...queueClear.after,
         id: task.id,
         title: task.title,
-        due_at: latest.due_at_was,
+        due_at: restoredTarget,
         occurrence_at: restoredOccurrence,
-        original_due_at: latest.due_at_was,
+        original_due_at: restoredTarget,
+        on_deck_day: null,
         deadline_at: restoredDeadline,
         target_set_at: nowStr,
         attempts: restoredAttempts,

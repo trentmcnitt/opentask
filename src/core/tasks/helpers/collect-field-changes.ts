@@ -14,6 +14,7 @@ import { AppError, NotFoundError, ForbiddenError, ValidationError } from '@/core
 import { DateTime } from 'luxon'
 import {
   DECK_WITH_DATE_MESSAGE,
+  DECK_WITH_RULE_MESSAGE,
   QUOTA_DUE_DATE_MESSAGE,
   QUOTA_INTERVAL_MESSAGE,
   QUOTA_PERIOD_MESSAGE,
@@ -281,6 +282,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     ctx,
     now,
   })
+  // A repeating task leaving the deck gets its target back on its occurrence.
+  collectRepeatingUndeck(data, task, input, { willBeReminder, willBeTracked, now })
 
   // Upcoming (2026-10-12): any change to the target or the deadline restarts
   // the wait its heads-ups are counted over (`src/core/tasks/target-set.ts`).
@@ -401,16 +404,21 @@ function resolveTargetInput(
  * Refused (the whole write — the deck endpoint filters first and counts
  * instead, `src/core/tasks/deck.ts`):
  *  - with the task queue off (409: decks need the rollover that clears them);
- *  - a task that can't be on deck: done, repeating, a reminder, a quota
- *    (rule 6) — asked of the RESULTING row;
+ *  - with a target or a rule in the same write (never both);
+ *  - a task that can't be on deck: done, a reminder, a quota (rule 6) —
+ *    asked of the RESULTING row;
  *  - a day that is not a date, or before the calendar today;
  *  - a deadline task whose automatic target has arrived, or a day after it
  *    (A1, `deckRefusal`).
  *
  * Rule 1, "never both": a PICKED target is dropped (`due_at: null`), which
  * `resolveTargetInput` turns into the deadline's automatic target when the
- * task has one. The time goes with it. Taking a task OFF deck (null) needs
- * no check and changes nothing else.
+ * task has one. The time goes with it. A REPEATING task's target is always
+ * a pick (it has no automatic one), so decking one sets `due_at` NULL and
+ * keeps `occurrence_at` (`collectOccurrence` copies the old target into it on
+ * a row from before the column): the deck is for its CURRENT occurrence.
+ * Taking a one-off OFF deck (null) needs no check and changes nothing else; a
+ * repeating one gets its target back (`collectRepeatingUndeck`).
  */
 function prepareDeck(
   task: Task,
@@ -430,21 +438,30 @@ function prepareDeck(
   if (input.due_at !== undefined) {
     throw new ValidationError(DECK_WITH_DATE_MESSAGE)
   }
+  // Nor a rule (2026-10-20): a new schedule sets its own date (a pick), which
+  // would take the deck straight off — and on a one-off it makes the task
+  // repeating with the deck judged against a rule it never had.
+  if (input.rrule !== undefined) {
+    throw new ValidationError(DECK_WITH_RULE_MESSAGE)
+  }
   const skip = deckSkip({
-    rrule: input.rrule !== undefined ? input.rrule : task.rrule,
     is_reminder: opts.willBeReminder,
     is_tracked: opts.willBeTracked,
     done: task.done,
     deleted_at: task.deleted_at,
   })
-  if (skip) throw new ValidationError(`Only an open one-off task can go on deck (this is ${skip})`)
+  if (skip) {
+    throw new ValidationError(
+      `Only an open task that is not a reminder or quota can go on deck (this is ${skip})`,
+    )
+  }
   const problem = deckDayProblem(day, opts.ctx.timezone, opts.now)
   if (problem) throw new ValidationError(problem)
   // A1 against the RESULTING deadline: a new one re-derives its automatic
   // target, so the stored target says nothing about it.
   const judged =
     input.deadline_at !== undefined
-      ? { deadline_at: input.deadline_at, due_at: null, target_auto: false }
+      ? { deadline_at: input.deadline_at, due_at: null, target_auto: false, rrule: task.rrule }
       : task
   const refusal = deckRefusal(judged, day, opts.ctx, opts.now)
   if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
@@ -494,6 +511,38 @@ function collectDeckChange(
       now,
     },
   })
+}
+
+/**
+ * ON DECK, REPEATING (2026-10-20): a repeating task is never left without a
+ * target off deck. Whatever takes it off — the deck write's `null`, the A1
+ * clear when a deadline outranks the deck — puts `due_at` back on its
+ * scheduled occurrence (capped at its deadline, §8.2), and `original_due_at`
+ * with it (old native builds read it). The debt returns: the occurrence may
+ * already be over target and nag at once — intended. A write that sets
+ * `due_at` itself (a pick, a new rule) or makes the task a reminder or a
+ * quota leaves it to that write.
+ */
+function collectRepeatingUndeck(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  left: { willBeReminder: boolean; willBeTracked: boolean; now: Date },
+): void {
+  if (!task.on_deck_day || data.afterState.on_deck_day !== null) return
+  const rule = input.rrule !== undefined ? input.rrule : task.rrule
+  if (!rule || left.willBeReminder || left.willBeTracked) return
+  if (data.fieldsChanged.includes('due_at') || task.due_at !== null) return
+  const occurrence =
+    data.afterState.occurrence_at !== undefined ? data.afterState.occurrence_at : task.occurrence_at
+  if (!occurrence) return
+  const deadline =
+    data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
+  const restored = capAtDeadline(occurrence, deadline, left.now)
+  trackField(data, 'due_at', task.due_at, restored)
+  if (task.original_due_at !== restored && !data.fieldsChanged.includes('original_due_at')) {
+    trackField(data, 'original_due_at', task.original_due_at, restored)
+  }
 }
 
 /** A period move's explicit reschedule of a reminder — not a snooze (see the guard above). */

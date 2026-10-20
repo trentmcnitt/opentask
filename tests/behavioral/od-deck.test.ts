@@ -389,7 +389,7 @@ describe('OD-W: deckTasks', () => {
     expect(task(later.id).on_deck_day).toBeNull()
   })
 
-  test('OD-W06: repeating, reminders, quotas, done and trashed are skipped and counted (A11)', () => {
+  test('OD-W06: reminders, quotas, done and trashed are skipped and counted (A11); repeating is decked', () => {
     const repeating = make({ rrule: 'FREQ=DAILY', due_at: at('2026-10-21T09:00') })
     const reminder = make({ is_reminder: true, rrule: null })
     const quota = make({ is_tracked: true, progress_target: 2, rrule: 'FREQ=WEEKLY' })
@@ -399,15 +399,16 @@ describe('OD-W: deckTasks', () => {
     deleteTask({ userId: TEST_USER_ID, taskId: trashed.id })
     const ok = make()
     const r = deck([repeating.id, reminder.id, quota.id, done.id, trashed.id, ok.id])
+    // Repeating tasks can be decked since 2026-10-20; `skipped_recurring` stays, always 0.
     expect(r).toMatchObject({
-      decked: 1,
-      skipped_recurring: 1,
+      decked: 2,
+      skipped_recurring: 0,
       skipped_reminder: 1,
       skipped_quota: 1,
       skipped_done: 1,
       skipped_trashed: 1,
     })
-    expect(task(repeating.id).on_deck_day).toBeNull()
+    expect(task(repeating.id)).toMatchObject({ on_deck_day: '2026-10-20', due_at: null })
   })
 })
 
@@ -468,10 +469,14 @@ describe('OD-W: refusals, un-deck, the queue, PATCH, undo', () => {
     bulkEdit({ ...u, taskIds: [a.id, b.id], changes: { on_deck_day: '2026-10-23' } })
     expect([task(a.id).on_deck_day, task(b.id).on_deck_day]).toEqual(['2026-10-23', '2026-10-23'])
 
-    const repeating = make({ rrule: 'FREQ=DAILY', due_at: at('2026-10-21T09:00') })
+    const reminder = make({
+      is_reminder: true,
+      rrule: 'FREQ=DAILY',
+      due_at: at('2026-10-21T09:00'),
+    })
     expect(() =>
-      updateTask({ ...u, taskId: repeating.id, input: { on_deck_day: '2026-10-22' } }),
-    ).toThrow(/one-off/)
+      updateTask({ ...u, taskId: reminder.id, input: { on_deck_day: '2026-10-22' } }),
+    ).toThrow(/can go on deck/)
     const near = make({ deadline_at: at('2026-10-22T23:59') })
     expect(() =>
       updateTask({ ...u, taskId: near.id, input: { on_deck_day: '2026-10-20' } }),

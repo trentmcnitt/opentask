@@ -1110,13 +1110,20 @@ paths:
         ON DECK (2026-10-20): a target's DAY without its nag — "I'd like to get to this that
         day". `day` is the caller's local CALENDAR date (yyyy-MM-dd), today or later; omitted =
         today (between midnight and the rollover that is the coming calendar day, not the
-        OpenTask day); `null` takes the tasks off deck. One-off tasks only: repeating tasks,
-        reminders, quotas, done and trashed tasks are skipped and counted, never refusing the
-        batch. A task carries a picked target or a deck, never both: decking drops a picked
-        target (time and all); a deadline task keeps its automatic target. A deadline task can
-        be decked only while its automatic target is still ahead and only on a day BEFORE that
-        target's day — otherwise it is refused per task (`deadline_nagging`,
-        `after_auto_target`). Decking takes a task out of the task queue, stamps
+        OpenTask day); `null` takes the tasks off deck. Reminders, quotas, done and trashed
+        tasks are skipped and counted, never refusing the batch (`skipped_recurring` stays in the
+        answer and is always 0: repeating tasks can be decked since 2026-10-20). A task carries
+        a picked target or a deck, never both: decking drops a picked target (time and all); a
+        deadline task keeps its automatic target. A REPEATING task's deck is for its current
+        occurrence: its target (`due_at`) is null while decked, `occurrence_at` is kept, and
+        taking it off deck puts the target back on the occurrence (which may be over target at
+        once); done or skip completes that occurrence; at the rollover an undone repeating deck
+        gets its target back and the repeating rules apply (a daily rolls to that day's
+        occurrence with a skip, a longer rule waits in the queue with `queued_from_deck_day`).
+        A deadline task can be decked only while its automatic target is still ahead and only
+        on a day BEFORE that target's day — a repeating one while its deadline is ahead and on
+        a day before the deadline's own day — otherwise it is refused per task
+        (`deadline_nagging`, `after_auto_target`). Decking takes a task out of the task queue, stamps
         `target_set_at` (the Upcoming heads-up anchor; only when the day changes),
         `last_considered_at` and `segment_targeted_at`, and cancels a pending AI enrichment. A deck never nags (no over target, no badge, no Snooze-all); a
         future deck shows in Upcoming on its heads-up days (`GET /api/reminders?deck=1`); at the
@@ -5288,8 +5295,9 @@ components:
           format: date
           description: >
             On deck (2026-10-20): the owner's local calendar date the task is on deck for — a
-            day with no nag. Never together with a picked target. Null = not on deck. Set with
-            `POST /api/tasks/deck` or PATCH `on_deck_day`.
+            day with no nag. Never together with a picked target: a decked REPEATING task has
+            `target_at` / `due_at` null (its `occurrence_at` is the occurrence on deck). Null =
+            not on deck. Set with `POST /api/tasks/deck` or PATCH `on_deck_day`.
         queued_from_deck_day:
           type: [string, 'null']
           format: date
@@ -5707,11 +5715,12 @@ components:
           description: >
             On deck (2026-10-20): put the task on deck for this local calendar date (today or
             later), or take it off (`null`) — the same rules as `POST /api/tasks/deck`, but an
-            ineligible task (repeating, a reminder, a quota, done) or a refused deadline task is
-            a 400. With `target_at` / `due_at` in the same body it is a 400 (a task is on deck or
-            has a target); a `deadline_at` may come with it — one write, one undo entry, the
-            deadline rule judged against that new deadline. A new deck day marks the task
-            considered (as the deck endpoint does); taking it off stamps nothing. Also accepted in bulk edit `changes`. 409 (putting on deck) when
+            ineligible task (a reminder, a quota, done) or a refused deadline task is a 400. With
+            `target_at` / `due_at` or `rrule` in the same body it is a 400 (a task is on deck or
+            has a target, and a new rule sets its own); a `deadline_at` may come with it — one
+            write, one undo entry, the deadline rule judged against that new deadline. A new deck
+            day marks the task considered (as the deck endpoint does); taking a one-off off deck
+            stamps nothing, taking a repeating task off puts its target back on its occurrence. Also accepted in bulk edit `changes`. 409 (putting on deck) when
             the server's task queue is off.
         allow_past_deadline:
           type: boolean

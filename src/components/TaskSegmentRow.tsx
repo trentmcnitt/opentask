@@ -497,9 +497,9 @@ function TaskSegmentRowActions({
 
 /**
  * ON DECK (D2, spec rule 8) on a segment row: between the details icon and
- * Today, with the task queue on — one-offs only (rule 6; an Upcoming
- * repeating row has none, B9), never beside a target the user picked (rule
- * 1). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
+ * Today, with the task queue on — never on a one-off beside a target the
+ * user picked (rule 1). Repeating rows (queue waiting rows, Upcoming) have it
+ * too since 2026-10-20: it decks the current occurrence (`offersDeck`). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
  * dead space belongs between Today and the done square only. While the
  * preferences load, its place is kept empty only if the switch was on last
  * time (`DeckPlaceholder`).
@@ -519,10 +519,10 @@ function SegmentDeckSlot({
 }) {
   if (queueUi === 'off') return null
   if (queueUi === 'pending') return <DeckPlaceholder panel={panel} />
-  // A row without the button (a repeating task, or a target the user picked)
-  // keeps its place empty (Trent, 2026-10-20), so the pencil and Today line
-  // up down the column, one-off or repeating.
-  if (row.recurring || !offersDeck(row.task)) return <DeckSlotSpacer panel={panel} empty />
+  // A row without the button (a one-off with a target the user picked) keeps
+  // its place empty (Trent, 2026-10-20), so the pencil and Today line up down
+  // the column.
+  if (!offersDeck(row.task)) return <DeckSlotSpacer panel={panel} empty />
   return (
     <OnDeckButton
       task={row.task}

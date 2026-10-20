@@ -402,11 +402,12 @@ function assertCreateDeck(
   if (input.due_at) {
     throw new ValidationError('A task is on deck or has a target, not both')
   }
-  const skip = deckSkip({
-    rrule: rrule ?? null,
-    is_reminder: !!input.is_reminder,
-    is_tracked: tracked,
-  })
+  // One-offs only at creation, still (2026-10-20): a repeating task is decked
+  // for its CURRENT occurrence, and a task being made has none yet — deck it
+  // once it exists.
+  const skip = rrule
+    ? 'recurring'
+    : deckSkip({ is_reminder: !!input.is_reminder, is_tracked: tracked })
   if (skip) throw new ValidationError(`Only a one-off task can go on deck (this is ${skip})`)
   const now = new Date()
   const problem = deckDayProblem(day, ctx.timezone, now)

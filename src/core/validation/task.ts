@@ -265,6 +265,18 @@ function deckAlone(data: { on_deck_day?: string | null; due_at?: string | null }
   return data.due_at === undefined
 }
 
+/**
+ * A deck and a rule never travel together either (2026-10-20, repeating
+ * decks): a new rule schedules its own date, which would take the deck
+ * straight off. The core refuses it too (`prepareDeck`).
+ */
+export const DECK_WITH_RULE_MESSAGE =
+  'Send on_deck_day without rrule: a new schedule sets its own date, which takes a task off deck'
+
+function deckWithoutRule(data: { on_deck_day?: string | null; rrule?: string | null }): boolean {
+  return typeof data.on_deck_day !== 'string' || data.rrule === undefined
+}
+
 export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
@@ -373,6 +385,7 @@ export const taskUpdateSchema = z
   // same request (is_tracked or progress_target); the schema has no task to ask.
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
   .refine(deckAlone, { message: DECK_WITH_DATE_MESSAGE, path: ['on_deck_day'] })
+  .refine(deckWithoutRule, { message: DECK_WITH_RULE_MESSAGE, path: ['on_deck_day'] })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
 
