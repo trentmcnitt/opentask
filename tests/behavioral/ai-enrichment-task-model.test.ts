@@ -521,10 +521,10 @@ describe('a time with no day (resolveBareTime)', () => {
     expect(bare('2026-10-14T08:30:00', 'Add Matthew time 8:30am', '2026-10-14T10:00:00')).toBe(
       '2026-10-15T08:30:00',
     )
-    // Forward only: a target still ahead is never pulled earlier — a day the
+    // A target further ahead than tomorrow is never pulled earlier; a day the
     // regex can't read ("tommorow") is still a day.
-    expect(bare('2026-10-15T19:00:00', 'call mom 7pm', '2026-10-14T15:00:00')).toBe(
-      '2026-10-15T19:00:00',
+    expect(bare('2026-10-16T19:00:00', 'call mom 7pm', '2026-10-14T15:00:00')).toBe(
+      '2026-10-16T19:00:00',
     )
     expect(
       bare('2026-10-15T15:00:00', 'dentist appointment tommorow at 3pm', '2026-10-14T10:00:00'),
@@ -542,6 +542,41 @@ describe('a time with no day (resolveBareTime)', () => {
     expect(bare('2026-10-13T15:00:00', 'Call the bank at 3', '2026-10-14T16:00:00')).toBe(
       '2026-10-15T15:00:00',
     )
+  })
+
+  // Prod, 2026-10-20: "at noon" said at 10:58 came back tomorrow noon while the
+  // model's own reasoning said today. Tomorrow is pulled back to today only
+  // when nothing in the words could be a day the regex can't read.
+  test('tomorrow at a time still ahead today is pulled back to today', () => {
+    const text = 'Order replacement books at noon urgent priority'
+    expect(bare('2026-10-15T12:00:00', text, '2026-10-14T10:58:00')).toBe('2026-10-14T12:00:00')
+    expect(bare('2026-10-15T12:00:00', text, '2026-10-14T12:30:00')).toBe('2026-10-15T12:00:00')
+    expect(bare('2026-10-15T19:00:00', 'call mom 7pm', '2026-10-14T15:00:00')).toBe(
+      '2026-10-14T19:00:00',
+    )
+    // "at midnight" at 10 PM: tomorrow 00:00 is the next midnight.
+    expect(bare('2026-10-15T00:00:00', 'lock up at midnight', '2026-10-14T22:00:00')).toBe(
+      '2026-10-15T00:00:00',
+    )
+  })
+
+  test("a word that could be a misspelled day keeps the model's tomorrow", () => {
+    // Wed Oct 14 at 10:58; tomorrow is Thursday Oct 15.
+    const keep = (text: string, due = '2026-10-15T12:00:00') =>
+      expect(bare(due, text, '2026-10-14T10:58:00')).toBe(due)
+    keep('Order replacement books tommorow at noon')
+    keep('Order replacement books tmorow at noon')
+    keep('Order replacement books 2moro at noon')
+    keep('Order replacement books tmr at noon')
+    keep('call the dentist thrusday at noon')
+    keep('call the dentist tusday at 3pm', '2026-10-15T15:00:00')
+    keep('call the dentist wensday at 3pm', '2026-10-15T15:00:00')
+    keep('call the dentist thurday at noon')
+    keep('call the dentist thirsday at noon')
+    keep('pay rent ocotber 15 at noon')
+    keep('pay rent on the 15 at noon')
+    keep('Halloween party at 7pm', '2026-10-15T19:00:00')
+    keep('call grandma for her birthday at noon')
   })
 
   test('words that name a day, a null target, a repeat, or no clock time are left alone', () => {

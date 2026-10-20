@@ -706,4 +706,51 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
         '"tonight" names today, and "at 9" tonight is 9 PM: due_at = today at 9:00 PM local. Title "Take out the trash".',
     },
   },
+  // Real failure (prod, 2026-10-20): said at 10:58 AM, the model's reasoning
+  // said "noon today is still ahead" but its due_at was tomorrow at noon — it
+  // wrote due_at before reasoning. Both sides of noon are pinned.
+  {
+    id: 'enrich-bt-noon-before',
+    feature: 'enrichment',
+    description: 'Real failure: "at noon" said at 10:58 AM was dated tomorrow noon',
+    input: {
+      text: 'Order replacement books at noon urgent priority',
+      timezone: TZ,
+      projects: INBOX,
+      now: `${today.toFormat('yyyy-MM-dd')}T10:58`,
+    },
+    requirements: {
+      must_include: {
+        due_at: `~datetime:${today.toFormat('yyyy-MM-dd')}T12:00`,
+        deadline_at: null,
+        horizon: null,
+        rrule: null,
+        priority: 4,
+      },
+      quality_notes:
+        'Now is 10:58 AM. "at noon" names no day and noon today is still ahead: due_at = TODAY at 12:00 PM local, never tomorrow. "urgent priority" → priority 4 and is removed from the title. Title like "Order replacement books". No deadline.',
+    },
+  },
+  {
+    id: 'enrich-bt-noon-after',
+    feature: 'enrichment',
+    description: '"at noon" said at 12:30 PM → tomorrow at noon',
+    input: {
+      text: 'Order replacement books at noon urgent priority',
+      timezone: TZ,
+      projects: INBOX,
+      now: `${today.toFormat('yyyy-MM-dd')}T12:30`,
+    },
+    requirements: {
+      must_include: {
+        due_at: `~datetime:${day(1).toFormat('yyyy-MM-dd')}T12:00`,
+        deadline_at: null,
+        horizon: null,
+        rrule: null,
+        priority: 4,
+      },
+      quality_notes:
+        'Now is 12:30 PM. "at noon" names no day and noon today has passed: due_at = TOMORROW at 12:00 PM local. "urgent priority" → priority 4 and is removed from the title. Title like "Order replacement books". No deadline.',
+    },
+  },
 ]

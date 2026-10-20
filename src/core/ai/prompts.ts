@@ -72,6 +72,10 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 ## Fields to extract
 
+Write **reasoning** FIRST, then the fields in the order below. Work each field out in the reasoning before you fill it in, and make the fields match it.
+
+0. **reasoning** — Brief: what you extracted and why, worked out before the fields. For a time with no day, say whether it is still ahead today.
+
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
    **Repeat wording never stays in the title.** Once a repeat is in rrule (or auto_snooze_minutes), every word of it leaves the title — "every other day", "twice a week", "every Monday", "daily", "every morning", "on weekdays", "every 3 months", and the time that goes with it ("at 9am"). The rule carries it; in the title it only repeats itself. Keep the rest of the title in the user's words. "Water the ferns every other day" → title "Water the ferns"; "go to the gym twice a week" → "Go to the gym". A repeat word that is part of a name stays: "weekly standup every Monday 9am" → "Weekly standup".
@@ -187,7 +191,6 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 11. **notes** — Supplementary context extracted from dictation: reference numbers, phone numbers, addresses, reasons, instructions, background info. Separate from the title. Return null if no extra context beyond what's captured in other fields.
 
-12. **reasoning** — Brief explanation of what you extracted and why.
 
 ## Examples
 
@@ -196,6 +199,7 @@ Input: "call the dentist tomorrow morning"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'tomorrow morning' says when to do it → target (due_at) at the configured task time (9:00 AM). No cutoff wording, so no deadline; a named day is not a pace, so no horizon. Title cleaned up capitalization. No explicit label request.",
   "title": "Call the dentist",
   "due_at": "2026-02-10T09:00:00",
   "deadline_at": null,
@@ -206,8 +210,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'tomorrow morning' says when to do it → target (due_at) at the configured task time (9:00 AM). No cutoff wording, so no deadline; a named day is not a pace, so no horizon. Title cleaned up capitalization. No explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -216,6 +219,7 @@ Input: "return the library books by Friday"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app sets the deadline's automatic target. No pace wording, priority, or label request.",
   "title": "Return the library books",
   "due_at": null,
   "deadline_at": "2026-02-13T23:59:00",
@@ -226,8 +230,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app sets the deadline's automatic target. No pace wording, priority, or label request."
+  "notes": null
 }
 \`\`\`
 
@@ -236,6 +239,7 @@ Input: "renew the domain before it expires on the 20th, do it Monday"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'expires on the 20th' is the cutoff → deadline_at Feb 20, end of day. 'do it Monday' is when to do it → target (due_at) next Monday at the default task time. No pace wording, so no horizon.",
   "title": "Renew the domain",
   "due_at": "2026-02-16T09:00:00",
   "deadline_at": "2026-02-20T23:59:00",
@@ -246,8 +250,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'expires on the 20th' is the cutoff → deadline_at Feb 20, end of day. 'do it Monday' is when to do it → target (due_at) next Monday at the default task time. No pace wording, so no horizon."
+  "notes": null
 }
 \`\`\`
 
@@ -256,6 +259,7 @@ Input: "sometime this month clean out the garage"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'sometime this month' is a pace, not a day or a cutoff → horizon months; due_at and deadline_at stay null. Pace phrase removed from the title.",
   "title": "Clean out the garage",
   "due_at": null,
   "deadline_at": null,
@@ -266,8 +270,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'sometime this month' is a pace, not a day or a cutoff → horizon months; due_at and deadline_at stay null. Pace phrase removed from the title."
+  "notes": null
 }
 \`\`\`
 
@@ -276,6 +279,7 @@ Input: "um I need to like take my vitamins every morning at 8 or whatever"
 Current date: Mon, Feb 9 | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. 8:00 AM local. Title preserves user's phrasing 'take my vitamins'. No explicit label request.",
   "title": "Take my vitamins",
   "due_at": "2026-02-10T08:00:00",
   "deadline_at": null,
@@ -286,8 +290,7 @@ Current date: Mon, Feb 9 | Timezone: America/Chicago
   "rrule": "FREQ=DAILY",
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. 8:00 AM local. Title preserves user's phrasing 'take my vitamins'. No explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -297,6 +300,7 @@ Current date: Tue, Feb 10 | Default task time: 9:00 AM | Timezone: America/Chica
 Available projects: Inbox, Family
 \`\`\`json
 {
+  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time, defaulting to configured task time (9:00 AM). Matched 'family' project from user's explicit instruction — 'add it to family' is a project assignment, not a label request.",
   "title": "Call mom",
   "due_at": "2026-02-17T09:00:00",
   "deadline_at": null,
@@ -307,8 +311,7 @@ Available projects: Inbox, Family
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time, defaulting to configured task time (9:00 AM). Matched 'family' project from user's explicit instruction — 'add it to family' is a project assignment, not a label request."
+  "notes": null
 }
 \`\`\`
 
@@ -318,6 +321,7 @@ Timezone: America/Chicago
 Available projects: Inbox, Work, Job Search
 \`\`\`json
 {
+  "reasoning": "'job search' is the full name of the Job Search project, used as a noun naming what the task is for → name match. Title keeps the user's words. No date, priority, or explicit label request.",
   "title": "Test task for job search",
   "due_at": null,
   "deadline_at": null,
@@ -328,8 +332,7 @@ Available projects: Inbox, Work, Job Search
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'job search' is the full name of the Job Search project, used as a noun naming what the task is for → name match. Title keeps the user's words. No date, priority, or explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -339,6 +342,7 @@ Timezone: America/Chicago
 Available projects: Inbox, Home
 \`\`\`json
 {
+  "reasoning": "Gutters are a home chore, but the word 'home' is not in the text and the user gave no assignment — topic never picks a project, so project_name is null. No date, priority, or explicit label request.",
   "title": "Clean the gutters before it rains",
   "due_at": null,
   "deadline_at": null,
@@ -349,8 +353,7 @@ Available projects: Inbox, Home
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Gutters are a home chore, but the word 'home' is not in the text and the user gave no assignment — topic never picks a project, so project_name is null. No date, priority, or explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -359,6 +362,7 @@ Input: "Fix the door hinge"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Title already clean and concise. No date, priority, or explicit label request. No pace wording, so horizon is null — a small repair is not 'eventually' unless the user says so.",
   "title": "Fix the door hinge",
   "due_at": null,
   "deadline_at": null,
@@ -369,8 +373,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Title already clean and concise. No date, priority, or explicit label request. No pace wording, so horizon is null — a small repair is not 'eventually' unless the user says so."
+  "notes": null
 }
 \`\`\`
 
@@ -379,6 +382,7 @@ Input: "I need to call my insurance company about the claim they denied for the 
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → target at the configured task time (9:00 AM). The appeal deadline has no date, so deadline_at stays null and the phrase goes to notes. 'high priority' → 3. No explicit label request.",
   "title": "Call insurance company about denied ER claim",
   "due_at": "2026-02-10T09:00:00",
   "deadline_at": null,
@@ -389,8 +393,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
-  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → target at the configured task time (9:00 AM). The appeal deadline has no date, so deadline_at stays null and the phrase goes to notes. 'high priority' → 3. No explicit label request."
+  "notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching."
 }
 \`\`\`
 
@@ -399,6 +402,7 @@ Input: "water the plants every 3 days from when I complete it, auto-snooze 2 hou
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request.",
   "title": "Water the plants",
   "due_at": null,
   "deadline_at": null,
@@ -409,8 +413,7 @@ Timezone: America/Chicago
   "rrule": "FREQ=DAILY;INTERVAL=3",
   "auto_snooze_minutes": 120,
   "recurrence_mode": "from_completion",
-  "notes": null,
-  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -419,6 +422,7 @@ Input: "weekly standup every Monday 9am no auto-snooze"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "User specified 9:00 AM. 'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned).",
   "title": "Weekly standup",
   "due_at": "2026-02-16T09:00:00",
   "deadline_at": null,
@@ -429,8 +433,7 @@ Timezone: America/Chicago
   "rrule": "FREQ=WEEKLY;BYDAY=MO",
   "auto_snooze_minutes": 0,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "User specified 9:00 AM. 'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned)."
+  "notes": null
 }
 \`\`\`
 
@@ -439,6 +442,7 @@ Input: "pick up dry cleaning and label it as errands"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence.",
   "title": "Pick up dry cleaning",
   "due_at": null,
   "deadline_at": null,
@@ -449,8 +453,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence."
+  "notes": null
 }
 \`\`\`
 
@@ -459,6 +462,7 @@ Input: "this is a matter of life and death pick up the prescription"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Extreme urgency phrase 'matter of life and death' — hyperbolic but clearly signals high stakes. Priority 4. No date, label, or recurrence.",
   "title": "Pick up the prescription",
   "due_at": null,
   "deadline_at": null,
@@ -469,8 +473,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Extreme urgency phrase 'matter of life and death' — hyperbolic but clearly signals high stakes. Priority 4. No date, label, or recurrence."
+  "notes": null
 }
 \`\`\``
 

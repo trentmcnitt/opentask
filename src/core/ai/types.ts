@@ -15,9 +15,21 @@ import { HORIZON_ORDER } from '@/lib/task-segments'
  *
  * The AI returns this shape when parsing natural language task input.
  * Fields are nullable — the AI only fills in what it can confidently extract.
- * The `reasoning` field explains what was extracted and why (for debugging).
+ * The `reasoning` field comes first: the model works the fields out there
+ * before it writes them (see the note on it below).
  */
 export const EnrichmentResultSchema = z.object({
+  // FIRST on purpose (2026-10-20): the model writes the fields in this order,
+  // and with no extended thinking a field written before the reasoning is
+  // committed before it is worked out. With `reasoning` last, "at noon" said at
+  // 10:58 AM came back as tomorrow noon while the reasoning written after it
+  // said "noon today is still ahead". The prompt's field list and examples put
+  // it first too, so the order agrees everywhere.
+  reasoning: z
+    .string()
+    .describe(
+      'Write this FIRST, briefly: work out each field here before filling it in — the day and time to do it (a time with no day: is it still ahead today?), any cutoff, pace, priority, labels, project, repeat. The fields that follow must match it',
+    ),
   title: z.string().describe('Clean, concise task title'),
   due_at: z
     .string()
@@ -71,7 +83,6 @@ export const EnrichmentResultSchema = z.object({
     .string()
     .nullable()
     .describe('Context/details extracted from dictation, separate from the title'),
-  reasoning: z.string().describe('Brief explanation of what was extracted and why'),
 })
 
 export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema>
