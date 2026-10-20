@@ -1057,6 +1057,28 @@ export interface DeckDayOptions {
   checkInDay?: CheckInDay
 }
 
+/**
+ * The day "this weekend" decks (review): with Saturday or Sunday named
+ * ("plan Sunday brunch this weekend"), that day of this weekend — even when
+ * the model picked the other; with another weekday named, none (the model's
+ * day stands); with none named, `thisWeekendDay`.
+ */
+function weekendDeckDay(
+  inputText: string,
+  today: DateTime,
+  checkInDay: CheckInDay,
+): DateTime | null {
+  const named = [6, 7].filter((d) => WEEKDAY_WORDS[d].test(inputText))
+  if (named.length === 1) {
+    const saturday = thisWeekendDay(today, 6)
+    const base = today.weekday === 7 ? today.minus({ days: 1 }) : saturday
+    const day = base.plus({ days: named[0] - 6 })
+    return day < today ? today : day
+  }
+  if (Object.values(WEEKDAY_WORDS).some((re) => re.test(inputText))) return null
+  return thisWeekendDay(today, checkInDay)
+}
+
 /** The day a bare "this weekend" decks: today on a weekend day, else the check-in day (if a weekend day) or Saturday. */
 function thisWeekendDay(today: DateTime, checkInDay: CheckInDay): DateTime {
   if (today.weekday >= 6) return today
@@ -1295,11 +1317,9 @@ function settleDeckDay(
   const early = saidTomorrowBeforeRollover(inputText, today.zoneName!, opts.rolloverTime, now)
   const tomorrowSaid = saysTomorrow(inputText)
   const saysToday = TODAY_CUE.test(inputText)
-  // Only when no weekday is named: "plan Sunday brunch this weekend" keeps Sunday.
-  const namesWeekday = Object.values(WEEKDAY_WORDS).some((re) => re.test(inputText))
   const weekendDay =
-    THIS_WEEKEND.test(inputText) && !WEEKEND_PACE.test(inputText) && !namesWeekday
-      ? thisWeekendDay(today, opts.checkInDay ?? CHECK_IN_DAY_DEFAULT)
+    THIS_WEEKEND.test(inputText) && !WEEKEND_PACE.test(inputText)
+      ? weekendDeckDay(inputText, today, opts.checkInDay ?? CHECK_IN_DAY_DEFAULT)
       : null
 
   let deck = day

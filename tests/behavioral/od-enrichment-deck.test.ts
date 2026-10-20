@@ -391,6 +391,14 @@ describe('D3 review: "this weekend" beside a named weekday keeps the weekday', (
     expect(pipe('plan Sunday brunch this weekend', { due_at: '2026-10-25' })).toEqual(
       deck('2026-10-25'),
     )
+    // The model's Saturday too: the named day wins.
+    expect(pipe('plan Sunday brunch this weekend', { due_at: '2026-10-24' })).toEqual(
+      deck('2026-10-25'),
+    )
+    // Another weekday named: the model's day stands.
+    expect(pipe('this weekend or Friday, wash the car', { due_at: '2026-10-23' })).toEqual(
+      deck('2026-10-23'),
+    )
   })
 })
 
