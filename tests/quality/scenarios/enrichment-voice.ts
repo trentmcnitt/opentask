@@ -175,6 +175,8 @@ export const enrichmentVoiceScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         labels: [],
+        due_at: '~notnull',
+        on_deck_day: null,
       },
       quality_notes:
         'Title should preserve casual voice: "Swing by the bank and deposit the check" or similar. ' +

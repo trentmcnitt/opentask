@@ -22,7 +22,7 @@ For each scenario:
 
 - Is the title clean, concise, and actionable?
 - Were dictation artifacts removed (um, like, you know, or whatever)?
-- Were temporal phrases removed ("tomorrow", "next Tuesday") since they were extracted into `due_at`?
+- Were temporal phrases removed ("tomorrow", "next Tuesday") since they were extracted into `due_at` / `on_deck_day`?
 - Were priority phrases removed ("URGENT", "high priority") since they were extracted into `priority`?
 - Was the user's voice preserved? ("grab" not changed to "buy", specific phrasing kept)
 - Was an already-clean title left unchanged?
@@ -42,11 +42,22 @@ For each scenario:
 - Is `deadline_at` set ONLY from stated cutoff wording ("by", "before", "due", "expires", "the deadline is", "closes at")? An inferred deadline — from urgency, topic (a bill, taxes) or a target date — is a **failure**: it caps the user's snoozing.
 - A cutoff day with no time → end of that day (T23:59:00 or very close). A stated time is kept.
 - A cutoff-only date leaves `due_at` null. A cutoff AND a "do it X" day sets both, unswapped.
-- "do it Saturday", "remind me Thursday at 9", "tomorrow" are targets: `deadline_at` null.
+- "do it Saturday", "remind me Thursday at 9", "tomorrow" are days to do it, not cutoffs: `deadline_at` null (a day with no time goes on deck — see 2c).
 - Is `horizon` set ONLY from explicit pace wording ("this week" → weeks, "sometime this month" → months, "in the next few days" / "today or tomorrow" → days, "eventually" / "someday" → eventually)? A horizon from topic or size ("fix the squeaky door" → eventually) is a **failure**. A named day is not a pace.
 - "by the end of the month" is a deadline, not a horizon.
 - **Soon today** (2026-10-16) — the run's "now" is `run_now_local` in metadata.json (or the scenario's pinned `now` in input.json): "now" / "right now" / "immediately" → about 15 minutes out, rounded UP to the next quarter hour (2:07 → 2:30, 2:45 → 3:00, 11:52 PM → 12:15 AM tomorrow); never the current minute. "in an hour" / "in N hours" → now + N hours, rounded up to the quarter hour. A range ("in an hour or two", "in 2 or 3 hours") → a whole hour inside it is best; another quarter hour inside it is a minor miss; outside it (e.g. 15 minutes out) is a failure. A "now" that is not a time ("now that the lease is signed", "for now") → `due_at` null. **Same day** (2026-10-16): a one-off target dated today when the words say "tomorrow", or already past today with no clock time in the words, is a failure (the code moves it to tomorrow at the same time); "tonight at 7" said at 8 PM stays today, as said.
 - Recurring tasks and reminders: `deadline_at` and `horizon` null.
+
+### 2c. On deck (2026-10-20)
+
+The output has `on_deck_day` (a local date, `YYYY-MM-DD`) beside `due_at`. **A day with no time** ("do it Saturday", "today", "tomorrow", "next Tuesday", "in 3 days", a bare "this weekend") puts the task **on deck** for that day: `on_deck_day` set and `due_at` **null** — that null is correct, not a missed target. Never both set.
+
+- A clock time ("at noon", "1 PM", "tomorrow at 9am") or a **part of day** ("tomorrow morning", "tonight", "this afternoon", "this evening", "after work", "before bed") is a **target**: `due_at` a full datetime, `on_deck_day` null. A part-of-day word decked instead is a failure.
+- A deadline plus a day to do it ("by Friday, do it Wednesday") keeps the day as a **target** (`due_at` Wednesday at the default task time, `deadline_at` Friday 23:59) — `on_deck_day` null.
+- Repeating tasks are never on deck.
+- A bare "this weekend" → on deck the coming Saturday (today on a Saturday or Sunday). "sometime this weekend" is a pace: `horizon` days, both dates null.
+- Between local midnight and the user's rollover (6:30 AM by default; the run's now is in metadata), "tomorrow" means the coming day — the CALENDAR TODAY. "tomorrow" at 00:30 on Oct 21 → `on_deck_day` 2026-10-21; at 23:30 on Oct 20 → 2026-10-21.
+- The quality-notes of older scenarios may still say "due_at should be tomorrow" for a day with no time; read that as the DAY, now carried by `on_deck_day`.
 
 ### 3. Priority Inference
 

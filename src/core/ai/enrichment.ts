@@ -55,7 +55,19 @@ import { runAsSystem } from '@/core/request-context'
 import { stampTargetSet } from '@/core/tasks/target-set'
 import { collectDeckClear } from '@/core/tasks/deck-clear'
 import { getTargetContext } from '@/core/tasks/target-context'
-import { resolveTarget } from '@/lib/task-segments'
+import {
+  CHECK_IN_DAY_DEFAULT,
+  coerceCheckInDay,
+  deckDayProblem,
+  deckDayWords,
+  deckSkip,
+  hasPickedTarget,
+  resolveTarget,
+  type CheckInDay,
+} from '@/lib/task-segments'
+import { rolloverMoment } from '@/lib/opentask-day'
+import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
@@ -448,6 +460,11 @@ function buildEnrichmentDescription(
     parts.push(formatDueTimeParts(task.due_at, userTimezone).relative)
   }
 
+  // On deck (D3): a day with no time — "On deck tomorrow", "On deck Sat Oct 24".
+  if (fieldsChanged.includes('on_deck_day') && task.on_deck_day) {
+    parts.push(`On deck ${deckDayWords(task.on_deck_day, userTimezone, new Date())}`)
+  }
+
   if (fieldsChanged.includes('deadline_at') && task.deadline_at) {
     parts.push(`Deadline ${formatDueTimeParts(task.deadline_at, userTimezone).relative}`)
   }
@@ -672,7 +689,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   // Get user's timezone, AI context, and schedule preferences
   const user = db
     .prepare(
-      'SELECT id, timezone, ai_context, morning_time, wake_time, sleep_time FROM users WHERE id = ?',
+      'SELECT id, timezone, ai_context, morning_time, wake_time, sleep_time, check_in_day FROM users WHERE id = ?',
     )
     .get(row.user_id) as
     | {
@@ -682,6 +699,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
         morning_time: string
         wake_time: string
         sleep_time: string
+        check_in_day: number
       }
     | undefined
   if (!user) {
@@ -777,6 +795,8 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
     parsed = postProcessTaskEnrichment(parsed, textToEnrich, user.timezone, {
       morningTime: user.morning_time,
       todayTarget: targetTodayTime(user.id, user.timezone),
+      rolloverTime: rolloverTimeForUser(user.id),
+      checkInDay: coerceCheckInDay(user.check_in_day),
       taskId: row.id,
       // A new task: created title-only (createTask's `isTitleOnly`), so no
       // date or rule yet. Re-enriching one that has either is an edit.
@@ -792,6 +812,10 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
 export interface PostProcessOptions {
   morningTime: string
   todayTarget: string
+  /** The user's rollover (HH:MM, `rolloverTimeForUser`) — A4 in `resolveDeckDay`. */
+  rolloverTime?: string
+  /** The user's check-in day — a bare "this weekend" in `resolveDeckDay`. */
+  checkInDay?: CheckInDay
   taskId?: number
   now?: Date
   /**
@@ -807,7 +831,8 @@ export interface PostProcessOptions {
  * Every date post-process a (non-reminder) task's enrichment goes through, in
  * order, on the model's LOCAL values. Production (SDK and API mode alike) and
  * the quality harness both call this, so the two cannot drift:
- * deadline/horizon guard → date-only "today" → bare time → soon today →
+ * deadline/horizon guard → a day with no time on deck (else the date-only
+ * target, `resolveDeckDay`) → bare time → soon today →
  * "now that" drop → "today" on today's local date → same-day past /
  * "tomorrow" → unstated past dates →
  * deadline alignment → unnamed-day pin → a repeat's passed start rolled on.
@@ -820,14 +845,7 @@ export function postProcessTaskDates(
 ): EnrichmentResult {
   const now = opts.now ?? new Date()
   let result = sanitizeTaskModelFields(parsed, inputText, opts.taskId)
-  result = resolveDateOnlyTarget(
-    result,
-    inputText,
-    timezone,
-    opts.morningTime,
-    opts.todayTarget,
-    now,
-  )
+  result = resolveDeckDay(result, inputText, timezone, opts, now)
   result = resolveBareTime(result, inputText, timezone, now)
   result = resolveSoonTarget(result, inputText, timezone, now)
   result = dropNowPhraseTarget(result, inputText, timezone, now)
@@ -992,6 +1010,217 @@ export function sanitizeTaskModelFields(
     horizon = null
   }
   return { ...enrichment, deadline_at: deadlineAt, horizon }
+}
+
+/**
+ * Words that name a PART OF A DAY, or a moment in it, without a clock time:
+ * "tomorrow morning", "tonight", "this afternoon", "after work", "before
+ * bed", "at lunch". With one, the model's time is its reading of those words
+ * — a target (A5), never a deck — even when it equals the default task time
+ * ("tomorrow morning" IS the morning time). Generous on purpose: a false hit
+ * only keeps the old behaviour (a target).
+ */
+const PART_OF_DAY =
+  /\b(morning|mornings|afternoon|evening|tonight|night|overnight|noon|midday|lunch|lunchtime|breakfast|dinner|supper|bedtime|first thing|eod|cob|sunrise|sunset|dawn|dusk)\b|\b(before|in|to) bed\b|\b(after|before) (work|school|class|church|the gym)\b|\bon (my|the) way\b|\bend of (the )?(day|business)\b/i
+
+/** "this weekend" as a day; "sometime/over/during this weekend" is a pace (A5). */
+const THIS_WEEKEND = /\bthis (coming )?weekend\b/i
+const WEEKEND_PACE =
+  /\b(some ?time|over|during|at some point|anytime|any time)\s+this (coming )?weekend\b/i
+
+/** Weekday names by Luxon weekday (1 = Monday): "do it Tuesday" said on a Tuesday names today. */
+const WEEKDAY_WORDS: Record<number, RegExp> = {
+  1: /\bmon(day)?s?\b/i,
+  2: /\btues?(day)?s?\b/i,
+  3: /\bwed(s|nesday)?s?\b/i,
+  4: /\bthu(r|rs|rsday)?s?\b/i,
+  5: /\bfri(day)?s?\b/i,
+  6: /\bsat(urday)?s?\b/i,
+  7: /\bsun(day)?s?\b/i,
+}
+
+export interface DeckDayOptions {
+  /** HH:MM, the user's default task time (`users.morning_time`). */
+  morningTime: string
+  /** UTC ISO: where "Target today" puts a task now (`targetTodayTime`) — the fallback placement. */
+  todayTarget: string
+  /**
+   * HH:MM, the user's rollover (`rolloverTimeForUser`). Between local midnight
+   * and the rollover, a bare "tomorrow" means the coming day — the calendar
+   * today (A4). Absent: no A4.
+   */
+  rolloverTime?: string
+  /** The user's check-in day (Luxon weekday): a bare "this weekend" decks it when it is a weekend day. */
+  checkInDay?: CheckInDay
+}
+
+/** The day a bare "this weekend" decks: today on a weekend day, else the check-in day (if a weekend day) or Saturday. */
+function thisWeekendDay(today: DateTime, checkInDay: CheckInDay): DateTime {
+  if (today.weekday >= 6) return today
+  const target = checkInDay >= 6 ? checkInDay : 6
+  return today.plus({ days: target - today.weekday })
+}
+
+/**
+ * The local calendar day a TIMELESS target names, or null when the target is
+ * not timeless. Timeless is:
+ * - a bare date ("2026-10-24") — what the prompt asks for a day with no time;
+ * - THE CODE FLOOR (B12): a full datetime exactly at the default task time,
+ *   when the words name a day (`DAY_NAMED` / `mayNameADay`) but no clock time,
+ *   no part of day and no soon cue — the model filled in the old default for
+ *   a day with no time, which is what the prompt used to ask. ("tomorrow
+ *   morning" has a part of day, so it stays a target at that same time.)
+ */
+function timelessDay(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  morningTime: string,
+): string | null {
+  const value = enrichment.due_at?.trim()
+  if (!value) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  if (
+    enrichment.rrule ||
+    CLOCK_TIME.test(inputText) ||
+    PART_OF_DAY.test(inputText) ||
+    [NOW_CUE, IN_HOURS_CUE, IN_HOURS_RANGE_CUE].some((re) => re.test(inputText)) ||
+    !(DAY_NAMED.test(inputText) || mayNameADay(inputText))
+  ) {
+    return null
+  }
+  const local = parseLocalDateTime(value, timezone)
+  if (!local) return null
+  const [hour, minute] = (morningTime || '09:00').split(':').map(Number)
+  if (local.hour !== hour || local.minute !== minute) return null
+  log.info('ai', 'Enrichment: a target at the default time with no time in the words — a day only')
+  return local.toFormat('yyyy-MM-dd')
+}
+
+/**
+ * ON DECK FROM ENRICHMENT (D3, 2026-10-20; spec rule 11, red team A1/A4/A5,
+ * B12; docs/TASK-MODEL.md § On deck). A day with no time — "do it Saturday",
+ * "today", "tomorrow" — puts the task ON DECK for that day: planned, with no
+ * nag. An actual time ("at noon", "1 PM", "this afternoon at 3") or a part of
+ * day ("tomorrow morning", "tonight", "this evening") is a target, as before;
+ * a deadline word is still a deadline.
+ *
+ * The model returns a bare date for a day with no time; the code floor
+ * (`timelessDay`) also catches the old default-time answer. Then:
+ * - a repeating task, or a result with a DEADLINE (A1: "by Friday, do it
+ *   Wednesday" keeps a picked Wednesday target, so a deck never meets the
+ *   deadline's nag) → the target it always was (`resolveDateOnlyTarget`);
+ * - a day already past → the same (`dropUnstatedPastDates` then judges it;
+ *   a deck can't be in the past);
+ * - no day in the words at all — a date the model invented ("check the
+ *   mail") → dropped: no deck and no target. For TODAY the words must name
+ *   today ("today", today's weekday, a bare "this weekend" on a weekend day,
+ *   or A4's "tomorrow"), since `DAY_NAMED` also fires on "this" / "next";
+ * - otherwise `on_deck_day` = that day and `due_at` null, after three fixes
+ *   of the day itself, the same ones the target rules make:
+ *   · "today" as the only day → the calendar today (the late-evening UTC-date
+ *     slip `resolveTodayLocalDate` fixes for targets);
+ *   · "tomorrow" said between local midnight and the rollover → the coming
+ *     day, the CALENDAR TODAY (A4: at 00:30 the user means "after I sleep");
+ *     said after the rollover and dated today → tomorrow (`resolveSameDayPast`).
+ *     A4 is for the deck only: a TIMED "tomorrow at 3pm" said at 00:30 keeps
+ *     the target rules' reading, unchanged;
+ *   · a bare "this weekend" (not "sometime this weekend", a pace) → today on
+ *     a weekend day, else the coming check-in day when that is a weekend day,
+ *     else Saturday.
+ *
+ * Whether the deck is WRITTEN is the apply step's call (`deckOrTarget`): the
+ * task queue switch, the row's kind and a deadline already on the task can
+ * still turn it back into the target. Runs first among the date rules (it
+ * takes `resolveDateOnlyTarget`'s place and calls it for every non-deck
+ * answer), on the model's LOCAL value. Pure apart from `now`; exported for
+ * the quality harness and tests.
+ */
+export function resolveDeckDay(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  timezone: string,
+  opts: DeckDayOptions,
+  now: Date = new Date(),
+): EnrichmentResult {
+  const asTarget = () =>
+    resolveDateOnlyTarget(enrichment, inputText, timezone, opts.morningTime, opts.todayTarget, now)
+  const stated = timelessDay(enrichment, inputText, timezone, opts.morningTime)
+  if (stated === null) return asTarget()
+  const day = DateTime.fromISO(stated, { zone: timezone })
+  if (!day.isValid) return { ...enrichment, due_at: null }
+  // A1 / repeating: the target it always was (the floor's datetime already is one).
+  if (enrichment.rrule || enrichment.deadline_at) return asTarget()
+
+  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  const { deck, todayNamed } = settleDeckDay(day.startOf('day'), inputText, today, opts, now)
+  if (deck < today) return asTarget()
+  const named = +deck === +today ? todayNamed : DAY_NAMED.test(inputText) || mayNameADay(inputText)
+  if (!named) {
+    log.info('ai', 'Enrichment: dropped a day with no time the input does not name')
+    return { ...enrichment, due_at: null }
+  }
+  const onDeck = deck.toFormat('yyyy-MM-dd')
+  if (onDeck !== stated) log.info('ai', `Enrichment: deck day ${stated} moved to ${onDeck}`)
+  return { ...enrichment, due_at: null, on_deck_day: onDeck }
+}
+
+/**
+ * The deck day after the fixes `resolveDeckDay` lists ("today" as the only
+ * day, A4's "tomorrow", the same-day "tomorrow", a bare "this weekend"), and
+ * whether the words name TODAY (which a deck today needs).
+ */
+function settleDeckDay(
+  day: DateTime,
+  inputText: string,
+  today: DateTime,
+  opts: DeckDayOptions,
+  now: Date,
+): { deck: DateTime; todayNamed: boolean } {
+  const tomorrow = today.plus({ days: 1 })
+  const rollover = opts.rolloverTime
+    ? rolloverMoment(today.toFormat('yyyy-MM-dd'), today.zoneName!, opts.rolloverTime)
+    : null
+  const beforeRollover = rollover !== null && now.getTime() < rollover.getTime()
+  const saysTomorrow = TOMORROW_WORD.test(inputText)
+  const saysToday = TODAY_CUE.test(inputText)
+  const weekendDay =
+    THIS_WEEKEND.test(inputText) && !WEEKEND_PACE.test(inputText)
+      ? thisWeekendDay(today, opts.checkInDay ?? CHECK_IN_DAY_DEFAULT)
+      : null
+
+  let deck = day
+  if (saysToday && !OTHER_DAY_WORD.test(inputText)) deck = today
+  else if (saysTomorrow && beforeRollover && +deck === +tomorrow)
+    deck = today // A4
+  else if (saysTomorrow && !beforeRollover && +deck === +today) deck = tomorrow
+  else if (weekendDay) deck = weekendDay
+
+  const todayNamed =
+    saysToday ||
+    WEEKDAY_WORDS[today.weekday].test(inputText) ||
+    (saysTomorrow && beforeRollover) ||
+    (weekendDay !== null && +weekendDay === +today)
+  return { deck, todayNamed }
+}
+
+/**
+ * The target a deck day stands for, as UTC ISO, when the deck can't be
+ * written (`deckOrTarget`): the target pre-D3 enrichment gave the same words
+ * (`resolveDateOnlyTarget`) — today → where "Target today" puts it
+ * (`todayTarget`), any other day → the default task time on it.
+ */
+export function deckDayAsTarget(
+  day: string,
+  timezone: string,
+  morningTime: string,
+  todayTarget: string,
+  now: Date = new Date(),
+): string {
+  const local = DateTime.fromISO(day, { zone: timezone })
+  if (local.hasSame(DateTime.fromJSDate(now).setZone(timezone), 'day')) return todayTarget
+  const [hour, minute] = (morningTime || '09:00').split(':').map(Number)
+  return local.set({ hour, minute, second: 0, millisecond: 0 }).toUTC().toISO()!
 }
 
 /**
@@ -2201,12 +2430,19 @@ function collectEnrichmentChanges(
   }
 
   const write = { setClauses, values, fieldsChanged }
-  collectEnrichmentTarget(task, enrichment, { tracked, proposedDue, userId: user.id }, write)
+  const decked = collectEnrichmentTarget(
+    task,
+    enrichment,
+    { tracked, proposedDue, userId: user.id },
+    write,
+  )
 
   // Upcoming (2026-10-12): a target or deadline the AI set restarts the wait
-  // its heads-ups count over, like any other target write. The snapshot is
-  // taken from the re-read row, so it carries the stamp.
-  stampTargetSet(write, task, nowUtc())
+  // its heads-ups count over, like any other target write — and so does a
+  // deck (A6: `target_set_at` is its heads-up anchor; the stamp also takes a
+  // queued task out of the queue, rule 3). The snapshot is taken from the
+  // re-read row, so it carries the stamp.
+  stampTargetSet(write, task, nowUtc(), { deck: decked })
   return write
 }
 
@@ -2224,16 +2460,18 @@ function collectEnrichmentTarget(
   enrichment: EnrichmentResult,
   opts: { tracked: boolean; proposedDue: string | undefined; userId: number },
   changes: FieldChanges,
-): void {
+): boolean {
   const rrule = changes.fieldsChanged.includes('rrule') ? enrichment.rrule : task.rrule
   const deadlineAt = changes.fieldsChanged.includes('deadline_at')
     ? (enrichment.deadline_at ?? null)
     : task.deadline_at
   const targetCtx = getTargetContext(opts.userId)
+  const deck = collectEnrichmentDeck(task, enrichment, opts.tracked, changes)
+  const dropPick = deck.dropPick
   const resolved = resolveTarget(
     {
-      dueAt: opts.proposedDue ?? task.due_at,
-      dueWritten: opts.proposedDue !== undefined,
+      dueAt: dropPick ? null : (opts.proposedDue ?? task.due_at),
+      dueWritten: dropPick || opts.proposedDue !== undefined,
       wasAuto: task.target_auto,
       deadlineAt,
       deadlineChanged: deadlineAt !== task.deadline_at,
@@ -2275,6 +2513,33 @@ function collectEnrichmentTarget(
     changes.values.push(occurrenceAt)
     changes.fieldsChanged.push('occurrence_at')
   }
+  return deck.decked
+}
+
+/**
+ * ON DECK (D3): the deck is written before the target, so the pick-only clear
+ * (`collectDeckClear`) leaves it alone; and, as on every deck write ("never
+ * both", rule 1), a target the user picked is dropped — returned true so the
+ * caller resolves the target with none. (A deadline task never gets here
+ * decked — `deckOrTarget` — so no automatic target comes back.)
+ */
+function collectEnrichmentDeck(
+  task: Task,
+  enrichment: EnrichmentResult,
+  tracked: boolean,
+  changes: FieldChanges,
+): { dropPick: boolean; decked: boolean } {
+  // `deckOrTarget` has already turned a deck that can't be written back into
+  // a target, so a day left here is written.
+  const deckDay = tracked ? null : (enrichment.on_deck_day ?? null)
+  if (deckDay === null) return { dropPick: false, decked: false }
+  const decked = deckDay !== task.on_deck_day
+  if (decked) {
+    changes.setClauses.push('on_deck_day = ?')
+    changes.values.push(deckDay)
+    changes.fieldsChanged.push('on_deck_day')
+  }
+  return { dropPick: hasPickedTarget(task), decked }
 }
 
 /**
@@ -2348,6 +2613,60 @@ function resolveProjectChange(
   return project.id
 }
 
+/**
+ * THE DECK WRITE'S CHECKS (D3), at write time, on the re-read row — the
+ * checks a deck write makes everywhere else (`prepareDeck` in
+ * collect-field-changes.ts, which throws; enrichment must not fail over
+ * them). A deck the post-process found (`resolveDeckDay`) is written unless:
+ * - the task queue switch is off (A14: decks need the rollover that clears
+ *   them; enrichment then targets as before D3);
+ * - the row can't be on deck (rule 6): repeating — the rule the enrichment
+ *   writes or the one it has — a reminder, a quota, done or trashed;
+ * - the task already has a DEADLINE (A1: "Enrichment with a deadline plus a
+ *   day keeps a picked target" — a re-enrichment of a deadline task is no
+ *   different from one that states it);
+ * - the day is not a valid day today or later (`deckDayProblem`).
+ * Then the day becomes the target the same words gave before D3
+ * (`deckDayAsTarget`, UTC — `toUtcTimes` has already run).
+ *
+ * The AI's deck does NOT stamp "considered" or the Just now card (A7 stamps
+ * them for the user's own deck tap): the user has not seen this task yet, so
+ * nothing was considered — the same reason an AI target doesn't stamp them.
+ */
+function deckOrTarget(
+  task: Task,
+  enrichment: EnrichmentResult,
+  user: { id: number; timezone: string },
+  now: Date = new Date(),
+): EnrichmentResult {
+  const day = enrichment.on_deck_day
+  if (!day) return enrichment
+  const skip = deckSkip({
+    rrule: enrichment.rrule ?? task.rrule,
+    is_reminder: task.is_reminder,
+    is_tracked: isTracked(task),
+    done: task.done,
+    deleted_at: task.deleted_at,
+  })
+  const why = !taskQueueEnabled()
+    ? 'the task queue is off'
+    : skip
+      ? `it is ${skip}`
+      : task.deadline_at
+        ? 'it has a deadline'
+        : deckDayProblem(day, user.timezone, now)
+  if (!why) return enrichment
+  log.info('ai', `Task ${task.id}: not on deck (${why}) — a target on ${day} instead`)
+  const dueAt = deckDayAsTarget(
+    day,
+    user.timezone,
+    getTargetContext(user.id).morningTime,
+    targetTodayTime(user.id, user.timezone, now),
+    now,
+  )
+  return { ...enrichment, on_deck_day: null, due_at: dueAt }
+}
+
 /** Bookkeeping columns that ride along with a change but are not news to the user. */
 const INTERNAL_FIELDS = [
   'anchor_time',
@@ -2359,8 +2678,6 @@ const INTERNAL_FIELDS = [
   'queue_mark',
   'try_tomorrow',
   'queued_at',
-  // On deck (2026-10-20): a target the AI set takes the task off deck.
-  'on_deck_day',
 ]
 
 /**
@@ -2380,7 +2697,7 @@ function applyEnrichment(
 
   const changes = collectEnrichmentChanges(
     task,
-    withEnrichmentRuleTime(task, enrichment, user),
+    withEnrichmentRuleTime(task, deckOrTarget(task, enrichment, user), user),
     user,
     inputText,
   )

@@ -483,6 +483,8 @@ async function runEnrichment(
   // regression the guard is hiding still shows up in the run output.
   const { filterProjectMatch, postProcessTaskEnrichment } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
+  const { rolloverTimeOf } = await import('@/lib/opentask-day')
+  const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -502,6 +504,11 @@ async function runEnrichment(
     morningTime: input.morningTime ?? '09:00',
     // At the scenario's own now, so a pinned 10:57 PM places "today" as production would then.
     todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone, now),
+    // On deck (D3): A4's "tomorrow" before the rollover — a default user's
+    // (the default periods' first start, 7:00), fixed so a scenario never
+    // depends on the quality DB's user having periods. The check-in day is
+    // the default Saturday (`checkInDay` left out), as for a default user.
+    rolloverTime: rolloverTimeOf(DEFAULT_TIME_SLOTS, input.morningTime ?? '09:00'),
     now,
     // Every scenario is a new task's first enrichment, as in production.
     newTask: true,
@@ -526,11 +533,35 @@ async function runEnrichment(
     console.log(`[quality] title strip changed "${parsed.title}" → "${taskModel.title}"`)
   }
 
+  logDeckFloor(parsed, taskModel, input.text)
+
   return {
-    output: { ...taskModel, project_name: guarded } as unknown as Record<string, unknown>,
+    // `on_deck_day` always present (null when not on deck), so scenarios can require it.
+    output: {
+      on_deck_day: null,
+      ...taskModel,
+      project_name: guarded,
+    } as unknown as Record<string, unknown>,
     durationMs: result.durationMs,
     now,
   }
+}
+
+/**
+ * On deck (D3): a day with no time is written as `on_deck_day` (the model's
+ * bare date, settled by `resolveDeckDay`). Logged when the model wrote a TIME
+ * the code floor turned into a day, so a prompt miss the floor hides still
+ * shows in the run output.
+ */
+function logDeckFloor(
+  parsed: { due_at: string | null },
+  taskModel: { on_deck_day?: string | null },
+  text: string,
+): void {
+  if (!taskModel.on_deck_day || /^\d{4}-\d{2}-\d{2}$/.test(parsed.due_at ?? '')) return
+  console.log(
+    `[quality] deck floor: model due_at "${parsed.due_at}" → on deck ${taskModel.on_deck_day} for: ${text}`,
+  )
 }
 
 /**
@@ -695,6 +726,7 @@ async function runQuickTake(
     project_name: t.project_name ?? null,
     due_at: t.due_at,
     deadline_at: t.deadline_at ?? null,
+    on_deck_day: t.on_deck_day ?? null,
     priority: t.priority,
     labels: t.labels,
     rrule: t.rrule ?? null,
@@ -1279,6 +1311,17 @@ function validateTaskModelFields(id: string, output: Record<string, unknown>): v
   }
 }
 
+/** On deck (D3, 2026-10-20): `on_deck_day` a local day or null, never beside a target. */
+function validateDeckField(id: string, output: Record<string, unknown>): void {
+  const deck = output.on_deck_day
+  if (deck !== null && (typeof deck !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(deck))) {
+    throw new Error(`[${id}] on_deck_day must be yyyy-MM-dd or null, got ${deck}`)
+  }
+  if (deck !== null && output.due_at !== null) {
+    throw new Error(`[${id}] on_deck_day and due_at are never both set`)
+  }
+}
+
 function validateEnrichmentSchema(id: string, output: Record<string, unknown>): void {
   if (typeof output.title !== 'string' || output.title.length === 0) {
     throw new Error(`[${id}] title must be a non-empty string`)
@@ -1296,6 +1339,7 @@ function validateEnrichmentSchema(id: string, output: Record<string, unknown>): 
     throw new Error(`[${id}] due_at is not a valid ISO 8601 date: ${output.due_at}`)
   }
   validateTaskModelFields(id, output)
+  validateDeckField(id, output)
   if (output.rrule !== null && typeof output.rrule !== 'string') {
     throw new Error(`[${id}] rrule must be a string or null`)
   }
