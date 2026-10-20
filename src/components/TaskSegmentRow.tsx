@@ -358,6 +358,16 @@ export function TaskSegmentRow({
  * line as the row corner's dot (`TaskSegmentMeta`). Switch off: the dot
  * button, as before the queue.
  */
+/**
+ * The height of the details icon's and Today's HOVER BOX (2026-10-20): the
+ * grey block a hover paints, inside the button's larger hit target. It must
+ * lie inside the row (`tq-run-now.spec.ts` checks): 32px in a page row (24px
+ * line, 10px padding); 26px in a panel row (19px line, 6px padding, the
+ * controls lifted 3px to line up with the done square), where 32 poked 2px
+ * above the row.
+ */
+const HOVER_BOX = { page: 'h-8', panel: 'h-6.5' } as const
+
 function TaskSegmentRowActions({
   row,
   actions,
@@ -394,9 +404,20 @@ function TaskSegmentRowActions({
           title="Details"
           // The inline horizon dot's box (`HorizonDotButton`): 32px with a
           // mouse, 44px with a finger, pulled back to the row's line height.
-          className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 relative -my-2 flex size-8 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors pointer-coarse:-my-3 pointer-coarse:size-11"
+          // The hover block is an inner box (`HOVER_BOX`), so a finger's
+          // taller hit target never paints outside the row.
+          className="group/details text-muted-foreground hover:text-foreground relative -my-2 flex size-8 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors pointer-coarse:-my-3 pointer-coarse:size-11"
         >
-          <Pencil className={panel ? 'size-4' : 'size-[18px]'} />
+          <span
+            data-segment-details-box
+            className={cn(
+              'group-hover/details:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+              panel ? HOVER_BOX.panel : HOVER_BOX.page,
+              panel ? 'w-6.5' : 'w-8',
+            )}
+          >
+            <Pencil className={panel ? 'size-4' : 'size-[18px]'} />
+          </span>
         </button>
       ) : queueUi === 'pending' ? (
         // Preferences still loading: the slot both controls share, empty,
@@ -430,7 +451,13 @@ function TaskSegmentRowActions({
           // the done square; the negative margin keeps the row's height. The
           // 12px `mr-3` after it is dead space, so its hit area never touches
           // the done square's (Trent mis-tapped Today for done, 2026-10-12).
-          className="-my-3 mr-3 h-11 min-w-11 sm:px-2"
+          // The grey hover block is the inner box, the details icon's
+          // (`HOVER_BOX`), so it stays inside the row: the whole 44px button
+          // used to paint it, poking out of every row (2026-10-20).
+          className="-my-3 mr-3 h-11 min-w-11"
+          boxClassName={
+            panel ? `${HOVER_BOX.panel} min-w-6.5 sm:px-1.5` : `${HOVER_BOX.page} min-w-8 sm:px-2`
+          }
           iconClassName={panel ? 'size-[19px]' : 'size-6'}
         />
       )}
