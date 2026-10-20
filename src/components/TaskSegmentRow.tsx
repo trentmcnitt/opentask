@@ -4,6 +4,7 @@ import { Check, ChevronDown, FolderOpen, Pencil } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
+import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
@@ -490,7 +491,8 @@ function TaskSegmentRowActions({
 
 /**
  * The second line, only when there is something to say: a future target date
- * ("Nov 1") or a deadline. Without either the row is one line, a reminder row's
+ * ("Nov 1") — a waiting repeating task's occurrence instead
+ * (`queuedRepeatOccurrence`) — or a deadline. Without either the row is one line, a reminder row's
  * height — the segment stays bite-size.
  *
  * With the task queue on (PR 3) the horizon is here too, as the row corner's
@@ -514,7 +516,11 @@ function TaskSegmentMeta({
   const queueOn = useQueueOn(segmentHorizon)
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
-  const target = task.due_at ? DateTime.fromISO(task.due_at).setZone(timezone) : null
+  // A repeating task waiting in the queue shows the occurrence it stands
+  // for, not its moved target (`queuedRepeatOccurrence`, 2026-10-20).
+  const queuedOccurrence = queueOn ? queuedRepeatOccurrence(task) : null
+  const shownAt = queuedOccurrence ?? task.due_at
+  const target = shownAt ? DateTime.fromISO(shownAt).setZone(timezone) : null
   const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null
   // The dashboard row's context, compactly (Trent, 10-11): the project, the
   // priority, a future target and the deadline.
@@ -535,7 +541,10 @@ function TaskSegmentMeta({
         </span>
       )}
       {target && (
-        <span data-target-chip title={`Target ${target.toFormat('ccc LLL d, h:mm a')}`}>
+        <span
+          data-target-chip
+          title={`${queuedOccurrence ? '' : 'Target '}${target.toFormat('ccc LLL d, h:mm a')}`}
+        >
           {target.toFormat('LLL d')}
           {task.rrule && (
             <span className="text-muted-foreground">

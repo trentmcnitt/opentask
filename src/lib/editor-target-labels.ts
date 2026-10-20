@@ -158,12 +158,93 @@ export function deadlineRepeatLabel(task: {
  * when the target is the occurrence (or the task is not repeating).
  */
 export function movedOccurrenceLabel(
-  task: { rrule: string | null | undefined; due_at: string | null; occurrence_at?: string | null },
+  task: {
+    rrule: string | null | undefined
+    due_at: string | null
+    occurrence_at?: string | null
+    queued_at?: string | null
+  },
   timezone: string,
 ): string | null {
   if (!task.rrule || !task.occurrence_at || !task.due_at) return null
+  if (queuedRepeatOccurrence(task)) return null
   if (Date.parse(task.occurrence_at) === Date.parse(task.due_at)) return null
   return DateTime.fromISO(task.occurrence_at, { zone: 'utc' })
     .setZone(timezone)
     .toFormat('ccc, LLL d, h:mm a')
+}
+
+/**
+ * A repeating task WAITING in the task queue (B3, task queue PR 2): the
+ * rollover moved its target (`due_at`) on to the next occurrence and kept
+ * `occurrence_at` on the one it missed, which is the one the queue row stands
+ * for. The row and its details show THAT date — "Oct 16 · every Fri at 4 PM",
+ * not the moved target "Oct 23", and no "Target … in 3 days" / "· target
+ * moved" (Trent, 2026-10-20: "What does that even mean?"). No "missed" word
+ * either (his ruling): just the occurrence's date.
+ *
+ * The occurrence (UTC ISO) for such a task, else null. Keyed on the queue
+ * state itself — `queued_at` set on a repeating task — which the rollover
+ * clears when the wait ends (`release`), and a new target clears on any
+ * write (`stampTargetSet`). A repeating task NOT in the queue whose target the
+ * user moved keeps its "Occurrence … · target moved" line
+ * (`movedOccurrenceLabel`).
+ */
+export function queuedRepeatOccurrence(task: {
+  rrule: string | null | undefined
+  occurrence_at?: string | null
+  queued_at?: string | null
+}): string | null {
+  if (!task.rrule || !task.queued_at || !task.occurrence_at) return null
+  return task.occurrence_at
+}
+
+/**
+ * Where the Quick panel's date controls (increments, delta, pickers) start
+ * for a task: its target — or, for a repeating task waiting in the task queue
+ * (`queuedRepeatOccurrence`, with the queue switch on), null, i.e. now, as
+ * for a task with no target. Its stored target is a moved one and its
+ * occurrence is past, so "+1 day" from either would stage a date nobody
+ * picked (from the missed Fri Oct 16: Sat Oct 17, already over target).
+ */
+export function pickerBaseDueAt(
+  task: {
+    rrule: string | null | undefined
+    due_at: string | null
+    occurrence_at?: string | null
+    queued_at?: string | null
+  },
+  queueEnabled: boolean,
+): string | null {
+  if (queueEnabled && queuedRepeatOccurrence(task)) return null
+  return task.due_at
+}
+
+/**
+ * The Quick panel's Repeat button (2026-10-20): whether it reads ACTIVE — a
+ * rule is set — and its label. `rule` is the staged or stored rule; pass
+ * undefined in a multi-selection with nothing staged, where every selected
+ * task must repeat. Active leads the label with the rule ("Repeats: Fridays at
+ * 4:00 PM · Edit recurrence"); the button never claims `aria-pressed`, since a
+ * tap opens the editor and never switches the rule off (see the button).
+ */
+export function repeatButtonState({
+  rule,
+  selectedTasks,
+  recurrenceText,
+  editing,
+}: {
+  rule: string | null | undefined
+  selectedTasks: { rrule: string | null }[] | undefined
+  recurrenceText: string | null
+  editing: boolean
+}): { repeatActive: boolean; repeatButtonLabel: string } {
+  const repeatActive =
+    selectedTasks && rule === undefined
+      ? selectedTasks.length > 0 && selectedTasks.every((t) => !!t.rrule)
+      : !!rule
+  if (editing) return { repeatActive, repeatButtonLabel: 'Close recurrence editor' }
+  if (!repeatActive) return { repeatActive, repeatButtonLabel: 'Edit recurrence' }
+  const what = recurrenceText && recurrenceText !== '—' ? `: ${recurrenceText}` : ''
+  return { repeatActive, repeatButtonLabel: `Repeats${what} · Edit recurrence` }
 }

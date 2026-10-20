@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { formatTime, parseRRuleParts } from '@/lib/format-rrule'
+import { formatTime, monthlyDay, parseRRuleParts } from '@/lib/format-rrule'
 import { TARGET_WORD } from '@/lib/task-model-words'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,11 +33,78 @@ const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => i)
 const PRESET_MINUTES = new Set([0, 15, 30, 45])
 
+/**
+ * A monthly rule on a weekday of the month ("the 1st Saturday": BYDAY=1SA,
+ * or BYDAY=FR;BYSETPOS=-1) — kept as it was. The picker has no control for
+ * one (its monthly choice is a day of the month), so before 2026-10-20 any
+ * edit to such a rule, even its time, quietly rewrote it to BYMONTHDAY=1.
+ * Now it is carried through untouched until a day of the month is picked.
+ */
+interface MonthlyWeekday {
+  byDay: string
+  setPos: string | null
+}
+
+/** "the 1st Sat" (`withArticle`) / "1st Sat" for the day select. */
+function monthWeekdayLabel(w: MonthlyWeekday, withArticle: boolean): string {
+  const setPos = w.setPos && /^[+-]?\d+$/.test(w.setPos) ? parseInt(w.setPos) : null
+  const text = monthlyDay(w.byDay.split(',')[0], setPos)
+  return withArticle ? text : text.replace(/^the /, '')
+}
+
+function monthlyPreview(monthDay: number | 'last', monthWeekday: MonthlyWeekday | null): string {
+  if (monthWeekday) return monthWeekdayLabel(monthWeekday, true)
+  return monthDay === 'last' ? 'the last day' : `day ${monthDay}`
+}
+
+/**
+ * The monthly "On day" select: 1–31, Last day, and — only while the rule is
+ * on a weekday of the month (`MonthlyWeekday`) — that rule's own choice
+ * ("1st Sat"), shown selected. Picking a day of the month replaces it.
+ */
+function MonthDaySelect({
+  monthDay,
+  monthWeekday,
+  onMonthDay,
+}: {
+  monthDay: number | 'last'
+  monthWeekday: MonthlyWeekday | null
+  onMonthDay: (day: number | 'last') => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground text-sm">On day</span>
+      <Select
+        value={monthWeekday ? 'weekday' : monthDay.toString()}
+        onValueChange={(v) => {
+          if (v !== 'weekday') onMonthDay(v === 'last' ? 'last' : parseInt(v))
+        }}
+      >
+        <SelectTrigger className="w-24">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+            <SelectItem key={day} value={day.toString()}>
+              {day}
+            </SelectItem>
+          ))}
+          <SelectItem value="last">Last day</SelectItem>
+          {monthWeekday && (
+            <SelectItem value="weekday">{monthWeekdayLabel(monthWeekday, false)}</SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 function useRRuleBuilder(
   frequency: Frequency,
   interval: number,
   selectedDays: string[],
   monthDay: number | 'last',
+  monthWeekday: MonthlyWeekday | null,
   endType: EndType,
   endCount: number,
   endDate: string,
@@ -58,7 +125,10 @@ function useRRuleBuilder(
     }
 
     if (frequency === 'MONTHLY') {
-      if (monthDay === 'last') {
+      if (monthWeekday) {
+        parts.push(`BYDAY=${monthWeekday.byDay}`)
+        if (monthWeekday.setPos) parts.push(`BYSETPOS=${monthWeekday.setPos}`)
+      } else if (monthDay === 'last') {
         parts.push('BYMONTHDAY=-1')
       } else {
         parts.push(`BYMONTHDAY=${monthDay}`)
@@ -76,7 +146,18 @@ function useRRuleBuilder(
     }
 
     return parts.join(';')
-  }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate, hour, minute])
+  }, [
+    frequency,
+    interval,
+    selectedDays,
+    monthDay,
+    monthWeekday,
+    endType,
+    endCount,
+    endDate,
+    hour,
+    minute,
+  ])
 
   const previewText = useMemo(() => {
     if (frequency === 'NONE') return 'No repeat'
@@ -115,11 +196,7 @@ function useRRuleBuilder(
         break
       case 'MONTHLY':
         base = interval === 1 ? 'Every month' : `Every ${interval} months`
-        if (monthDay === 'last') {
-          base += ' on the last day'
-        } else {
-          base += ` on day ${monthDay}`
-        }
+        base += ` on ${monthlyPreview(monthDay, monthWeekday)}`
         break
       case 'YEARLY':
         base = interval === 1 ? 'Every year' : `Every ${interval} years`
@@ -136,7 +213,18 @@ function useRRuleBuilder(
     }
 
     return base
-  }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate, hour, minute])
+  }, [
+    frequency,
+    interval,
+    selectedDays,
+    monthDay,
+    monthWeekday,
+    endType,
+    endCount,
+    endDate,
+    hour,
+    minute,
+  ])
 
   return { rrule, previewText }
 }
@@ -332,6 +420,7 @@ export function RecurrencePicker({
   const [interval, setInterval] = useState(initial.interval)
   const [selectedDays, setSelectedDays] = useState<string[]>(initial.selectedDays)
   const [monthDay, setMonthDay] = useState<number | 'last'>(initial.monthDay)
+  const [monthWeekday, setMonthWeekday] = useState<MonthlyWeekday | null>(initial.monthWeekday)
   const [endType, setEndType] = useState<EndType>(initial.endType)
   const [endCount, setEndCount] = useState(initial.endCount)
   const [endDate, setEndDate] = useState(initial.endDate)
@@ -349,6 +438,7 @@ export function RecurrencePicker({
     setInterval(parsed.interval)
     setSelectedDays(parsed.selectedDays)
     setMonthDay(parsed.monthDay)
+    setMonthWeekday(parsed.monthWeekday)
     setEndType(parsed.endType)
     setEndCount(parsed.endCount)
     setEndDate(parsed.endDate)
@@ -361,6 +451,7 @@ export function RecurrencePicker({
     interval,
     selectedDays,
     monthDay,
+    monthWeekday,
     endType,
     endCount,
     endDate,
@@ -474,25 +565,14 @@ export function RecurrencePicker({
       )}
 
       {frequency === 'MONTHLY' && (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm">On day</span>
-          <Select
-            value={monthDay.toString()}
-            onValueChange={(v) => setMonthDay(v === 'last' ? 'last' : parseInt(v))}
-          >
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                <SelectItem key={day} value={day.toString()}>
-                  {day}
-                </SelectItem>
-              ))}
-              <SelectItem value="last">Last day</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <MonthDaySelect
+          monthDay={monthDay}
+          monthWeekday={monthWeekday}
+          onMonthDay={(day) => {
+            setMonthWeekday(null)
+            setMonthDay(day)
+          }}
+        />
       )}
 
       {/* Time picker - shown when a frequency is selected */}
@@ -548,6 +628,7 @@ function parseInitialState(value: string | null | undefined, initialTime?: strin
     interval: 1,
     selectedDays: [] as string[],
     monthDay: 1 as number | 'last',
+    monthWeekday: null as MonthlyWeekday | null,
     endType: 'never' as EndType,
     endCount: 10,
     endDate: '',
@@ -572,12 +653,20 @@ function parseInitialState(value: string | null | undefined, initialTime?: strin
   return {
     frequency: (parts.FREQ as Frequency) || defaults.frequency,
     interval: parts.INTERVAL ? parseInt(parts.INTERVAL) : defaults.interval,
-    selectedDays: parts.BYDAY ? parts.BYDAY.split(',') : defaults.selectedDays,
+    // The weekly day toggles take plain days: a monthly "1SA" offers SA if the
+    // user switches to Weekly (an ordinal is invalid on a weekly rule).
+    selectedDays: parts.BYDAY
+      ? [...new Set(parts.BYDAY.split(',').map((d) => d.replace(/^[+-]?\d+/, '').toUpperCase()))]
+      : defaults.selectedDays,
     monthDay: parts.BYMONTHDAY
       ? parseInt(parts.BYMONTHDAY) === -1
         ? 'last'
         : parseInt(parts.BYMONTHDAY)
       : defaults.monthDay,
+    monthWeekday:
+      parts.FREQ === 'MONTHLY' && parts.BYDAY && !parts.BYMONTHDAY
+        ? { byDay: parts.BYDAY, setPos: parts.BYSETPOS ?? null }
+        : defaults.monthWeekday,
     endType: parts.COUNT ? 'count' : parts.UNTIL ? 'date' : defaults.endType,
     endCount: parts.COUNT ? parseInt(parts.COUNT) : defaults.endCount,
     endDate: parts.UNTIL

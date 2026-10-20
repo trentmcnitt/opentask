@@ -59,6 +59,7 @@ import {
   SMART_BUTTONS,
   snapToNearestFiveMinutes,
   snapToNextHour,
+  formatQuickSelectHeader,
 } from '@/lib/quick-select-dates'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { computeRecurrencePreview } from '@/lib/recurrence-preview'
@@ -68,6 +69,7 @@ import {
   useLabelConfig,
   useAutoSnoozeDefault,
   useSnoozePreferences,
+  useTaskQueue,
 } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatDateTime, formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
@@ -89,6 +91,9 @@ import {
   deadlineDayPick,
   deadlineRepeatLabel,
   movedOccurrenceLabel,
+  pickerBaseDueAt,
+  queuedRepeatOccurrence,
+  repeatButtonState,
   stagedAutoTarget,
 } from '@/lib/editor-target-labels'
 import type { Task, Project } from '@/types'
@@ -381,8 +386,17 @@ export function QuickActionPanel({
   const [pendingDeadline, setPendingDeadline] = useState<string | null | undefined>(undefined)
   const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
 
-  // Single task mode hook
-  const dueAt = effectiveTask?.due_at ?? null
+  // Single task mode hook. A repeating task waiting in the task queue
+  // (2026-10-20, `queuedRepeatOccurrence`, with the queue switch on) has no
+  // live target: its label is the occurrence it stands for, but the controls
+  // (increments, the "(+N)" delta, the pickers) start from NOW, as for a task
+  // with no target (`pickerBaseDueAt`) — never from the missed occurrence
+  // ("+1 day" would stage a past date) or the moved target. Any staged date
+  // is a picked target, which takes the task out of the queue.
+  const queueEnabled = useTaskQueue().enabled
+  const queuedOccurrence =
+    effectiveTask && !isCreateMode && queueEnabled ? queuedRepeatOccurrence(effectiveTask) : null
+  const dueAt = effectiveTask ? pickerBaseDueAt(effectiveTask, queueEnabled) : null
   const singleHook = useQuickSelectDate({ dueAt, timezone })
 
   // Bulk mode hook
@@ -993,6 +1007,16 @@ export function QuickActionPanel({
   // Determine if recurrence is "One time" for styling purposes
   const isOneTime = !isBulkMode && !isSelectionSheetMode && !displayRrule
 
+  // Whether the Repeat button reads active: the (staged) rule is set — in a
+  // multi-selection, every selected task repeats (or a rule is staged for
+  // them all). See the button for why it is a tint, not a toggle.
+  const { repeatActive, repeatButtonLabel } = repeatButtonState({
+    rule: isBulkMode && pendingRrule === undefined ? undefined : displayRrule,
+    selectedTasks: isBulkMode ? selectedTasks : undefined,
+    recurrenceText,
+    editing: editingRecurrence,
+  })
+
   // Task age — "since X" text shown on the recurrence line, for a single
   // existing task only. The anchor rules live in formatTaskSince. The text is
   // computed when the task or timezone changes, not on a clock tick.
@@ -1245,8 +1269,16 @@ export function QuickActionPanel({
               className="inline-flex cursor-pointer flex-wrap items-center gap-x-1 text-xs select-text"
             >
               <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
-              <span className="text-muted-foreground/70">{TARGET_WORD}</span>
-              {autoTarget ? (
+              {queuedOccurrence && !isDateDirty ? (
+                // A waiting repeating task: the occurrence's date alone — no
+                // "Target", no "in 3 days" (see `queuedOccurrence`).
+                <span data-queued-occurrence className="text-muted-foreground">
+                  {formatQuickSelectHeader(queuedOccurrence, timezone)}
+                </span>
+              ) : (
+                <span className="text-muted-foreground/70">{TARGET_WORD}</span>
+              )}
+              {queuedOccurrence && !isDateDirty ? null : autoTarget ? (
                 <AutoTargetText label={autoTarget} timezone={timezone} dirty={autoTargetStaged} />
               ) : showsNoTarget ? (
                 <span
@@ -1635,26 +1667,40 @@ export function QuickActionPanel({
               )}
               {/* Action icons — right-aligned */}
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {/* Recurrence button (when editable). Its ONE state is whether
-                    the editor is open, and its label says what a tap does
-                    ("Edit recurrence" / "Close recurrence editor"). It used to
-                    be painted solid blue whenever the task recurred, which read
-                    as an on/off toggle a tap would switch off (Trent,
-                    2026-10-12). Whether the task recurs is the summary line's
-                    job — see RecurrenceSummaryLine. */}
+                {/* Recurrence button (when editable). Two states:
+                    - whether a rule is set (`repeatActive`): the panel's own
+                      neutral "selected" look — the light grey fill and full
+                      foreground of the recurrence line when it is open
+                      (RecurrenceSummaryLine) — and the label leads with the
+                      rule ("Repeats: Fridays at 4:00 PM · Edit recurrence");
+                      no rule: the muted icon;
+                    - whether the editor is open: `aria-expanded`, the same
+                      fill, and the label says what a tap does ("Close
+                      recurrence editor").
+                    Rulings: SOLID blue whenever the task recurred read as an
+                    on/off toggle a tap would switch off (Trent, 2026-10-12),
+                    so it lost any rule state and then looked the same on a
+                    one-off and a repeating task (Trent, 2026-10-20). Neutral,
+                    not blue (designer, 2026-10-20): blue in this panel means
+                    "unsaved change", and Trent's one-accent-hue rule wins. No
+                    `aria-pressed`: a tap opens the editor, never switches the
+                    rule off. */}
                 {canEdit && (
                   <Button
                     variant="ghost"
                     size="icon"
+                    data-repeat-active={repeatActive ? '' : undefined}
                     className={cn(
                       'size-8',
-                      editingRecurrence && 'bg-accent text-accent-foreground',
+                      repeatActive || editingRecurrence
+                        ? 'bg-accent text-foreground dark:bg-accent'
+                        : 'text-muted-foreground',
                     )}
                     onClick={handleRecurrenceToggle}
                     aria-expanded={editingRecurrence}
                     aria-controls={RECURRENCE_EDITOR_ID}
-                    aria-label={editingRecurrence ? 'Close recurrence editor' : 'Edit recurrence'}
-                    title={editingRecurrence ? 'Close recurrence editor' : 'Edit recurrence'}
+                    aria-label={repeatButtonLabel}
+                    title={repeatButtonLabel}
                   >
                     <Repeat className="size-4" />
                   </Button>

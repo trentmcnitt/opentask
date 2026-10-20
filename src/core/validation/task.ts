@@ -4,7 +4,7 @@
 
 import { z } from 'zod'
 import { ValidationError } from '@/core/errors'
-import { isValidRRule, isPeriodRRule } from '@/core/recurrence/rrule-builder'
+import { isValidRRule, isPeriodRRule, normalizeRRule } from '@/core/recurrence/rrule-builder'
 
 /**
  * ISO 8601 datetime string validator
@@ -117,6 +117,9 @@ const rruleString = z
   .refine((val) => !val || isValidRRule(val) || isPeriodRRule(val), {
     message: 'Invalid RRULE format',
   })
+  // A WEEKLY/DAILY rule's meaningless BYDAY ordinal ("1FR") is dropped, not
+  // refused — `normalizeRRule`.
+  .overwrite((val) => (val ? normalizeRRule(val) : val))
 
 function isTrackedInput(data: { progress_target?: number; is_tracked?: boolean }): boolean {
   return data.is_tracked === true || (data.progress_target ?? 1) > 1

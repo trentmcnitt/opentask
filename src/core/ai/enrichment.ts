@@ -42,6 +42,10 @@ import {
   computeFirstOccurrence,
   deriveAnchorFields,
   parseRRule,
+  bydayDows,
+  normalizeRRule,
+  ordinalsCount,
+  computeNextOccurrence,
   getDayOfWeek,
   fillRuleTime,
   rollPassedFirstOccurrence,
@@ -847,7 +851,7 @@ export function postProcessTaskEnrichment(
   timezone: string,
   opts: PostProcessOptions,
 ): EnrichmentResult {
-  const result = postProcessTaskDates(parsed, inputText, timezone, opts)
+  const result = postProcessTaskDates(withNormalizedRule(parsed), inputText, timezone, opts)
   const title = stripRepeatPhrase(result.title, result.rrule)
   if (title === result.title) return result
   log.info('ai', 'Enrichment: removed a repeat phrase from the title that the rule already says')
@@ -1655,13 +1659,14 @@ function unnamedDayPart(parts: string[], inputText: string): 'BYDAY' | 'BYMONTHD
  * quality harness, which must judge what production stores.
  */
 export function pinUnnamedDay(
-  enrichment: EnrichmentResult,
+  input: EnrichmentResult,
   inputText: string,
   timezone: string,
   now: Date = new Date(),
 ): EnrichmentResult {
-  if (!enrichment.rrule) return enrichment
-  let parts = enrichment.rrule.split(';')
+  if (!input.rrule) return input
+  const enrichment = withNormalizedRule(input)
+  let parts = (enrichment.rrule ?? '').split(';')
   if (parts.some((p) => /^FREQ=YEARLY$/i.test(p))) {
     return pinYearlyFirstOfMonth(enrichment, parts, inputText, timezone)
   }
@@ -1813,17 +1818,48 @@ export function sanitizeReminderEnrichment(
 }
 
 /**
+ * The model's rule as it is stored (`normalizeRRule`): a WEEKLY/DAILY rule's
+ * meaningless BYDAY ordinal ("FREQ=WEEKLY;BYDAY=2TU") is dropped, never a
+ * reason to throw the whole enrichment away. First step of both post-process
+ * paths (tasks: `postProcessTaskEnrichment`; reminders: `pinUnnamedDay`).
+ */
+export function withNormalizedRule(enrichment: EnrichmentResult): EnrichmentResult {
+  if (!enrichment.rrule) return enrichment
+  const rrule = normalizeRRule(enrichment.rrule)
+  return rrule === enrichment.rrule ? enrichment : { ...enrichment, rrule }
+}
+
+/**
  * Post-parse guard: if the RRULE specifies BYDAY, ensure due_at's weekday matches.
  * Models occasionally emit a weekday adjacent to the intended one (off-by-one on
  * "next Thursday"). Snap forward to the nearest valid BYDAY, preserving the
  * hour/minute/second. Returns the original DateTime when no snap is needed.
+ *
+ * A rule whose BYDAY carries an ordinal ("monthly on the 1st Saturday",
+ * BYDAY=1SA; 2026-10-20) names particular weekdays of the month, so the
+ * weekday alone is not enough: the date becomes the rule's first occurrence
+ * on or after the model's date, from the recurrence engine, at the model's
+ * time of day. Exported for tests.
  */
-function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
+export function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
   const components = parseRRule(rrule)
-  if (!components.byday || components.byday.length === 0) return local
+  if (ordinalsCount(components)) {
+    const first = computeNextOccurrence({
+      rrule,
+      recurrenceMode: 'from_due',
+      anchorTime: local.toFormat('HH:mm'),
+      timezone: local.zoneName ?? 'UTC',
+      completedAt: local.minus({ milliseconds: 1 }).toJSDate(),
+      prevDueAt: null,
+    })
+    const snapped = DateTime.fromJSDate(first).setZone(local.zone).set({ second: local.second })
+    return snapped.toMillis() === local.toMillis() ? local : snapped
+  }
+  const days = bydayDows(components)
+  if (days.length === 0) return local
   const dow = getDayOfWeek(local)
-  if (components.byday.includes(dow)) return local
-  const forwardDistances = components.byday.map((d) => (d - dow + 7) % 7 || 7)
+  if (days.includes(dow)) return local
+  const forwardDistances = days.map((d) => (d - dow + 7) % 7 || 7)
   const minDistance = Math.min(...forwardDistances)
   return local.plus({ days: minDistance })
 }

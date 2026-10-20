@@ -25,6 +25,12 @@ export {
   parseRRule,
   isValidRRule,
   RRulePatterns,
+  bydayDows,
+  hasOrdinalByday,
+  normalizeRRule,
+  ordinalsCount,
+  plainDays,
+  type ByDay,
   type RRuleComponents,
 } from './rrule-builder'
 

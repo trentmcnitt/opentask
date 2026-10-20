@@ -22,7 +22,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const QUEUE_USER_ID = 2
@@ -205,6 +205,76 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
       'data-tasks-page',
       'tasks:queue_today',
     )
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('a waiting repeating row and its details show the occurrence, not the moved target', async ({
+  page,
+}) => {
+  // Trent, 2026-10-20: "Oct 23 · every Fri at 4 PM" and "Target Fri Oct 23 ·
+  // in 3 days / Occurrence Fri Oct 16 · target moved" — "What does that even
+  // mean?" The row stands for the occurrence it missed; it shows that date.
+  const ids: number[] = []
+  try {
+    const weekly = await create(page, {
+      title: uniqueTitle('TQ waiting'),
+      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+      due_at: daysFromNow(3),
+    })
+    ids.push(weekly)
+    // Its last occurrence was four days ago; today has none, so the rollover
+    // makes it wait: target → the next occurrence, occurrence_at kept.
+    sql(
+      'UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?',
+      daysFromNow(-4),
+      daysFromNow(-4),
+      weekly,
+    )
+    await strip(page, { today: [weekly] })
+    const state = await stateOf(page, weekly)
+    expect(state.queued_at).not.toBeNull()
+    const occurrence = DateTime.fromISO(state.occurrence_at as string).setZone(TEST_TZ)
+    const target = DateTime.fromISO(state.due_at as string).setZone(TEST_TZ)
+    expect(target > occurrence).toBe(true)
+
+    await page.goto('/reminders')
+    const r = row(panel(page, 'queue_today'), weekly)
+    const chip = r.locator('[data-target-chip]')
+    await expect(chip).toContainText(occurrence.toFormat('LLL d'))
+    await expect(chip).not.toContainText(target.toFormat('LLL d'))
+    await expect(chip).toContainText(/every/i)
+
+    await r.getByRole('button', { name: /^Details:/ }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('[data-queued-occurrence]')).toContainText(
+      occurrence.toFormat('LLL d'),
+    )
+    await expect(dialog.locator('[data-quick-panel-date]')).not.toContainText(/Target|\bin \d/)
+    await expect(dialog.locator('[data-occurrence-line]')).toHaveCount(0)
+    await expect(dialog).not.toContainText('target moved')
+    // The controls start from NOW (the task has no live target): "+1 day"
+    // stages about this time tomorrow — not the day after the missed
+    // occurrence (a past date), not the moved target plus a day.
+    await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
+    const line = dialog.locator('[data-quick-panel-date]')
+    await expect(dialog.locator('[data-queued-occurrence]')).toHaveCount(0)
+    await expect(line).toContainText('Target')
+    await expect(line).not.toContainText('ago')
+    await expect(line).not.toContainText(occurrence.plus({ days: 1 }).toFormat('LLL d'))
+    await expect(line).not.toContainText(target.plus({ days: 1 }).toFormat('LLL d'))
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toHaveCount(0)
+
+    // The dashboard row says the same (Newest: every open task, flat).
+    await withPreferences(page, { default_grouping: 'new' }, async () => {
+      await page.goto('/')
+      const dashRow = page.locator(`#task-row-${weekly}`)
+      await expect(dashRow).toContainText(occurrence.toFormat('LLL d'))
+      await expect(dashRow).not.toContainText(target.toFormat('LLL d'))
+    })
   } finally {
     await trash(page, ids)
   }
