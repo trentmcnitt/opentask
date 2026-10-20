@@ -7,12 +7,46 @@
 
 import { dowToRRuleDay } from './timezone'
 
+const DAY_CODES: Record<string, number> = { MO: 0, TU: 1, WE: 2, TH: 3, FR: 4, SA: 5, SU: 6 }
+
+/** Plain weekdays (no ordinal) as BYDAY entries: [0, 2] → MO, WE. */
+export function plainDays(days: number[]): ByDay[] {
+  return days.map((day) => ({ day }))
+}
+
+/** The rule's weekdays (0=Mon..6=Sun), ordinals dropped; [] when it names none. */
+export function bydayDows(components: RRuleComponents): number[] {
+  return (components.byday ?? []).map((d) => d.day)
+}
+
+/** Whether any BYDAY entry carries an ordinal ("1SA", "-1FR"). */
+export function hasOrdinalByday(components: RRuleComponents): boolean {
+  return (components.byday ?? []).some((d) => d.n !== undefined)
+}
+
+/**
+ * One BYDAY entry: the weekday (0=Mon..6=Sun) and, for a MONTHLY or YEARLY
+ * rule, an optional ordinal — `1SA` is { day: 5, n: 1 } ("the 1st
+ * Saturday"), `-1FR` is { day: 4, n: -1 } ("the last Friday"). A plain `SA`
+ * has no `n`: every Saturday the rule's period has.
+ *
+ * THE ORDINAL IS PART OF THE RULE (2026-10-20). Until then parseRRule dropped
+ * it (`1SA` → `SA`), so "monthly on the 1st Saturday" fired EVERY Saturday
+ * (prev Oct 3 → next Oct 10). It is kept through parse → build → the engine
+ * (`RRule.SA.nth(1)` in compute-next.ts); `bydayDows` gives the bare weekdays
+ * for code that only asks "which weekdays".
+ */
+export interface ByDay {
+  day: number
+  n?: number
+}
+
 export interface RRuleComponents {
   freq: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
   interval?: number
   byhour?: number
   byminute?: number
-  byday?: number[] // 0=Mon..6=Sun
+  byday?: ByDay[]
   bymonthday?: number | number[] // 1-31 or -1 for last day
   bysetpos?: number // For patterns like "last Friday" (-1)
   /**
@@ -36,7 +70,9 @@ export function buildRRule(components: RRuleComponents): string {
   }
 
   if (components.byday && components.byday.length > 0) {
-    const days = components.byday.map(dowToRRuleDay).join(',')
+    const days = components.byday
+      .map((d) => `${d.n !== undefined ? d.n : ''}${dowToRRuleDay(d.day)}`)
+      .join(',')
     parts.push(`BYDAY=${days}`)
   }
 
@@ -91,22 +127,17 @@ export function parseRRule(rrule: string): RRuleComponents {
         result.byminute = parseInt(value, 10)
         break
       case 'BYDAY': {
-        const dayMap: Record<string, number> = {
-          MO: 0,
-          TU: 1,
-          WE: 2,
-          TH: 3,
-          FR: 4,
-          SA: 5,
-          SU: 6,
+        // "MO,WE,FR", and the ordinal forms "1SA" (1st Saturday), "+2TU",
+        // "-1FR" (last Friday) — the ordinal is kept (see ByDay). A token
+        // that isn't a day is dropped, as before.
+        const days: ByDay[] = []
+        for (const token of value.split(',')) {
+          const m = token.trim().match(/^([+-]?\d{1,2})?([A-Za-z]{2})$/)
+          const day = m ? DAY_CODES[m[2].toUpperCase()] : undefined
+          if (!m || day === undefined) continue
+          days.push(m[1] !== undefined ? { day, n: parseInt(m[1], 10) } : { day })
         }
-        // Handle both "MO,WE,FR" and "-1FR" (last Friday) formats
-        const days = value.split(',').map((d) => {
-          // Strip any numeric prefix (like -1 for "last")
-          const dayCode = d.replace(/^-?\d*/, '').toUpperCase()
-          return dayMap[dayCode]
-        })
-        result.byday = days.filter((d) => d !== undefined)
+        result.byday = days
         break
       }
       case 'BYMONTHDAY': {
@@ -143,6 +174,21 @@ function monthFieldsValid(components: RRuleComponents): boolean {
 }
 
 /**
+ * Every BYDAY weekday is 0..6, and an ordinal ("1SA", "-1FR") only means something in a MONTHLY or
+ * YEARLY rule (RFC 5545 §3.3.10: it MUST NOT be used with WEEKLY, and a DAILY
+ * rule has no period to count in) — 1..5 / -5..-1 of a month, 1..53 / -53..-1
+ * of a year. 0 is never valid.
+ */
+function bydayValid(components: RRuleComponents): boolean {
+  if (components.byday?.some((d) => d.day < 0 || d.day > 6)) return false
+  if (!hasOrdinalByday(components)) return true
+  const max = components.freq === 'MONTHLY' ? 5 : components.freq === 'YEARLY' ? 53 : 0
+  return (components.byday ?? []).every(
+    (d) => d.n === undefined || (d.n !== 0 && Math.abs(d.n) <= max),
+  )
+}
+
+/**
  * Validate parsed RRULE components against allowed ranges and semantic rules.
  *
  * Beyond range checks, enforces:
@@ -152,6 +198,7 @@ function monthFieldsValid(components: RRuleComponents): boolean {
  *   period rule, `isPeriodRRule`)
  * - FREQ=MONTHLY requires BYMONTHDAY or BYDAY (same dtstart default)
  * - BYMONTHDAY=0 is invalid per RFC 5545 (valid range: -31..-1, 1..31)
+ * - a BYDAY ordinal only on MONTHLY/YEARLY, never 0 (`bydayValid`)
  * - BYMONTH must be 1..12
  * - INTERVAL capped at 365 to prevent effectively non-recurring tasks
  * - COUNT/UNTIL rejected (OpenTask only supports infinite recurrence)
@@ -164,7 +211,7 @@ function validateComponents(components: RRuleComponents): boolean {
     return false
   if (components.byminute !== undefined && (components.byminute < 0 || components.byminute > 59))
     return false
-  if (components.byday?.some((dow) => dow < 0 || dow > 6)) return false
+  if (!bydayValid(components)) return false
   if (!monthFieldsValid(components)) return false
 
   // FREQ=WEEKLY requires BYDAY. Without it rrule.js takes the weekday from
@@ -226,14 +273,20 @@ export const RRulePatterns = {
    * @param days Array of days (0=Mon..6=Sun)
    */
   weekly(days: number[], hour: number, minute: number = 0): string {
-    return buildRRule({ freq: 'WEEKLY', byday: days, byhour: hour, byminute: minute })
+    return buildRRule({ freq: 'WEEKLY', byday: plainDays(days), byhour: hour, byminute: minute })
   },
 
   /**
    * Every N weeks on specific days
    */
   everyNWeeks(interval: number, days: number[], hour: number, minute: number = 0): string {
-    return buildRRule({ freq: 'WEEKLY', interval, byday: days, byhour: hour, byminute: minute })
+    return buildRRule({
+      freq: 'WEEKLY',
+      interval,
+      byday: plainDays(days),
+      byhour: hour,
+      byminute: minute,
+    })
   },
 
   /**

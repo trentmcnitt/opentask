@@ -19,7 +19,7 @@
  * The rest of the title must keep at least one word, and a first letter that
  * was capital stays capital.
  */
-import { parseRRule, type RRuleComponents } from '@/core/recurrence'
+import { bydayDows, parseRRule, type RRuleComponents } from '@/core/recurrence'
 
 const WEEKDAYS: Record<string, number> = {
   monday: 0,
@@ -34,7 +34,7 @@ const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 
 const toNumber = (s: string) => NUMBER_WORDS[s.toLowerCase()] ?? Number(s)
 
 /** The rule's days, sorted; [] when it names none. */
-const daysOf = (rule: RRuleComponents) => [...(rule.byday ?? [])].sort((a, b) => a - b)
+const daysOf = (rule: RRuleComponents) => bydayDows(rule).sort((a, b) => a - b)
 const interval = (rule: RRuleComponents) => rule.interval ?? 1
 const sameDays = (a: number[], b: number[]) =>
   a.length === b.length && a.every((d, i) => d === b[i])

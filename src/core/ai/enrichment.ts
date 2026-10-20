@@ -42,6 +42,7 @@ import {
   computeFirstOccurrence,
   deriveAnchorFields,
   parseRRule,
+  bydayDows,
   getDayOfWeek,
   fillRuleTime,
   rollPassedFirstOccurrence,
@@ -1810,11 +1811,13 @@ export function sanitizeReminderEnrichment(
  * hour/minute/second. Returns the original DateTime when no snap is needed.
  */
 function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
-  const components = parseRRule(rrule)
-  if (!components.byday || components.byday.length === 0) return local
+  // Weekdays only: an ordinal rule ("1SA") is snapped to its weekday, not to
+  // the nth one of the month — the model's date already names the week.
+  const days = bydayDows(parseRRule(rrule))
+  if (days.length === 0) return local
   const dow = getDayOfWeek(local)
-  if (components.byday.includes(dow)) return local
-  const forwardDistances = components.byday.map((d) => (d - dow + 7) % 7 || 7)
+  if (days.includes(dow)) return local
+  const forwardDistances = days.map((d) => (d - dow + 7) % 7 || 7)
   const minDistance = Math.min(...forwardDistances)
   return local.plus({ days: minDistance })
 }

@@ -293,12 +293,14 @@ function computeFromDue(
     dtstart,
   }
 
-  // Add day-of-week for weekly patterns
+  // The rule's weekdays, each with its ordinal when it has one: "1SA" is
+  // RRule.SA.nth(1) (the 1st Saturday of the month), "-1FR" RRule.FR.nth(-1)
+  // (the last Friday). Until 2026-10-20 the ordinal was dropped and a
+  // "monthly on the 1st Saturday" rule ran every Saturday.
   if (components.byday && components.byday.length > 0) {
-    // Cast to any to work around rrule.js type inconsistency
-    // The Weekday type from RRule is compatible but TypeScript doesn't recognize it
-    ruleOptions.byweekday = components.byday.map(
-      (dow) => DOW_TO_RRULE_WEEKDAY[dow],
+    // rrule.js types byweekday loosely; its Weekday values are what it reads.
+    ruleOptions.byweekday = components.byday.map((d) =>
+      d.n !== undefined ? DOW_TO_RRULE_WEEKDAY[d.day].nth(d.n) : DOW_TO_RRULE_WEEKDAY[d.day],
     ) as unknown as number[]
   }
 
