@@ -16,10 +16,15 @@
  * See docs/AI.md § "Testing Philosophy" for why realism and coverage matter.
  */
 
+import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
 import { daysAgo, daysAgoAt, weeksAgo, monthsAgo, daysFromNowAt } from '../helpers/dates'
 
 const tz = 'America/Chicago'
+
+/** A local day n days from now (yyyy-MM-dd), for `on_deck_day`. */
+const deckDay = (n: number) =>
+  DateTime.now().setZone('America/Chicago').plus({ days: n }).toFormat('yyyy-MM-dd')
 
 export const insightsScenarios: AITestScenario[] = [
   {
@@ -1318,6 +1323,97 @@ export const insightsScenarios: AITestScenario[] = [
         },
         signal_checks: {
           101: { must_have: ['stale'] },
+        },
+      },
+    },
+  },
+  {
+    id: 'insights-on-deck-not-stale',
+    feature: 'insights',
+    description:
+      'On deck (2026-10-20): old tasks the user put on deck are planned, not stale — an undated one of the same age is',
+    input: {
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 600,
+          title: 'Grab winter gloves',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: monthsAgo(2),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(2),
+        },
+        {
+          id: 601,
+          title: 'Call the bank about the new card',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: monthsAgo(2),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+          on_deck_day: deckDay(0),
+        },
+        {
+          id: 602,
+          title: 'Organize the garage',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: monthsAgo(3),
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 603,
+          title: 'Buy groceries',
+          priority: 1,
+          due_at: daysFromNowAt(1, 12, 0, tz),
+          original_due_at: daysFromNowAt(1, 12, 0, tz),
+          created_at: daysAgo(1),
+          labels: ['errand'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+      ],
+    },
+    requirements: {
+      must_include: {},
+      quality_notes:
+        'IDs 600 and 601 are ON DECK (`on deck:` in the task line): the user has planned to get to them on that day ' +
+        '(600 in two days, 601 today). Despite being ~2 months old they are planned, not forgotten: LOW-MEDIUM score, ' +
+        'NO "stale" signal, and commentary must NOT say "no target", "no date" or "unplanned". ' +
+        'ID 602 (garage, ~3 months, no target and not on deck) is the control: HIGH score with "stale". ' +
+        'ID 603 (groceries, recent, target tomorrow): LOW.',
+      insights_expectations: {
+        score_ranges: {
+          600: { min: 0, max: 45 },
+          601: { min: 0, max: 45 },
+          602: { min: 60, max: 100 },
+          603: { min: 0, max: 35 },
+        },
+        signal_checks: {
+          600: { must_not_have: ['stale'] },
+          601: { must_not_have: ['stale'] },
+          602: { must_have: ['stale'] },
         },
       },
     },

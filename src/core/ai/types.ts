@@ -28,14 +28,14 @@ export const EnrichmentResultSchema = z.object({
   reasoning: z
     .string()
     .describe(
-      'Write this FIRST, briefly: work out each field here before filling it in — the day and time to do it (a time with no day: is it still ahead today?), any cutoff, pace, priority, labels, project, repeat. The fields that follow must match it',
+      'Write this FIRST, briefly: work out each field here before filling it in — the day and time to do it (a time with no day: is it still ahead today? a day with no time: the date alone), any cutoff, pace, priority, labels, project, repeat. The fields that follow must match it',
     ),
   title: z.string().describe('Clean, concise task title'),
   due_at: z
     .string()
     .nullable()
     .describe(
-      'The TARGET: when the user said to do it or be reminded. ISO 8601 local datetime (no Z, no offset); the date alone (YYYY-MM-DD) only when the user says \"today\" with no time; null when no day is mentioned',
+      'The day (and time) the user said to do it or be reminded. ISO 8601 local datetime (no Z, no offset) when a time or part of day is stated; the date alone (YYYY-MM-DD) for a day with no time (\"today\", \"tomorrow\", \"do it Saturday\") — the app puts the task on deck for that day; null when no day is mentioned',
     )
     .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
       message: 'due_at must be a valid ISO 8601 datetime',
@@ -85,7 +85,17 @@ export const EnrichmentResultSchema = z.object({
     .describe('Context/details extracted from dictation, separate from the title'),
 })
 
-export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema>
+/**
+ * The model's answer, plus what the post-process derives from it. ON DECK
+ * (2026-10-20, spec rule 11): a day with no time ("do it Saturday", "today",
+ * "tomorrow") comes back from the model as a bare date in `due_at`, and
+ * `resolveDeckDay` (enrichment.ts) moves it here — a local calendar day
+ * (yyyy-MM-dd), with `due_at` null. It is NOT in the schema the model sees:
+ * the model only ever writes a bare date, and the code decides the deck.
+ */
+export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema> & {
+  on_deck_day?: string | null
+}
 
 /**
  * What's Next recommendation schema.
@@ -144,6 +154,11 @@ export interface TaskSummary {
    * not one the user set. Printed "(from deadline)".
    */
   target_implied?: boolean
+  /**
+   * On deck (2026-10-20): the local day (yyyy-MM-dd) the user plans to get to
+   * it, with no nag — a plan, not a forgotten task. Printed "on deck:".
+   */
+  on_deck_day?: string | null
 }
 
 /**

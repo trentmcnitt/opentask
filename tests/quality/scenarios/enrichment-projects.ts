@@ -126,10 +126,12 @@ export const enrichmentProjectScenarios: AITestScenario[] = [
         project_name: null,
         labels: [],
         rrule: null,
+        due_at: null,
+        on_deck_day: '~notnull',
       },
       quality_notes:
         'project_name MUST be null — "work out" is a verb phrase (exercise), not the name of the Work project. ' +
-        'Title like "Work out at the gym". due_at tomorrow at the default task time.',
+        'Title like "Work out at the gym". "tomorrow" with no time → on_deck_day tomorrow, due_at null (on deck).',
     },
   },
   {

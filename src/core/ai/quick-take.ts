@@ -89,6 +89,11 @@ export interface QuickTakeTask {
   due_at?: string | null
   /** The real cutoff (2026-10-10); shown as `deadline:` in the compact list. */
   deadline_at?: string | null
+  /**
+   * On deck (2026-10-20): the local day (yyyy-MM-dd) it is planned for, with
+   * no target. Shown as `deck:`, and never counted as undated (B11).
+   */
+  on_deck_day?: string | null
   priority: number
   labels?: string[]
   rrule?: string | null
@@ -98,7 +103,10 @@ export interface QuickTakeTask {
 export interface TaskStats {
   dueToday: number
   dueThisWeek: number
+  /** No target and not on deck. */
   undated: number
+  /** On deck for a day, with no target (2026-10-20). Absent = 0. */
+  onDeck?: number
   recurring: number
   noProject: number
   byProject: Array<{ name: string; count: number }>
@@ -130,6 +138,10 @@ export function formatCompactTaskList(
     if (t.due_at) {
       const due = DateTime.fromISO(t.due_at, { zone: 'utc' }).setZone(timezone)
       parts.push(`due:${formatCompactDate(due, now)}`)
+    }
+    if (t.on_deck_day && !t.due_at) {
+      const deck = DateTime.fromISO(t.on_deck_day, { zone: timezone })
+      if (deck.isValid) parts.push(`deck:${formatCompactDate(deck, now)}`)
     }
     if (t.deadline_at) {
       const deadline = DateTime.fromISO(t.deadline_at, { zone: 'utc' }).setZone(timezone)
@@ -170,6 +182,8 @@ export function buildTaskStats(
   let dueToday = 0
   let dueThisWeek = 0
   let undated = 0
+  // A task on deck has a day (B11): planned, not undated (taken out below).
+  const onDeck = tasks.filter((t) => !t.due_at && t.on_deck_day).length
   let recurring = 0
   let noProject = 0
   const projectCounts = new Map<string, number>()
@@ -233,7 +247,8 @@ export function buildTaskStats(
   return {
     dueToday,
     dueThisWeek,
-    undated,
+    undated: undated - onDeck,
+    onDeck,
     recurring,
     noProject,
     byProject,
@@ -304,6 +319,7 @@ export function buildFromDb(
       project_name: projectMap.get(t.project_id) ?? null,
       due_at: t.due_at,
       deadline_at: t.deadline_at,
+      on_deck_day: t.on_deck_day ?? null,
       priority: t.priority,
       labels,
       rrule: t.rrule ?? null,
@@ -376,10 +392,16 @@ function formatSummaryBlock(count: number, stats: TaskStats): string {
   // Clarify undated count — explicitly say "all have due dates" when 0 to prevent
   // the model from confusing the new task's "no due date" with existing tasks
   if (stats.undated === 0 && count > 0) {
-    lines.push('- 0 undated (all existing tasks have due dates)')
+    lines.push(
+      stats.onDeck
+        ? '- 0 undated (all existing tasks have due dates or a day on deck)'
+        : '- 0 undated (all existing tasks have due dates)',
+    )
   } else {
     lines.push(`- ${stats.undated} undated`)
   }
+  // On deck (2026-10-20): planned for a day, with no due date — not undated.
+  if (stats.onDeck) lines.push(`- ${stats.onDeck} on deck (planned for a day, no due time)`)
 
   if (stats.byProject.length > 0) {
     lines.push('- Projects: ' + stats.byProject.map((p) => `${p.name} (${p.count})`).join(', '))

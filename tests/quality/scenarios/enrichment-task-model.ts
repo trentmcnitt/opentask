@@ -101,11 +101,13 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
       must_include: {
         deadline_at: iso(7),
         due_at: iso(4),
+        on_deck_day: null,
         horizon: null,
         labels: [],
       },
       quality_notes:
-        `deadline_at = ${monthDay(7)}, end of day. due_at (the target) = the coming ${weekday(4)} at the default task time (9:00 AM). ` +
+        `deadline_at = ${monthDay(7)}, end of day. due_at (the target) = the coming ${weekday(4)} at the default task time (9:00 AM) — ` +
+        'a deadline plus a day keeps a picked target, never on deck (on_deck_day null). ' +
         'Both must be set, and they must not be swapped. Title "Cancel M365" with both date phrases removed.',
     },
   },
@@ -187,12 +189,13 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
       must_include: {
         due_at: iso(0),
         deadline_at: iso(1),
+        on_deck_day: null,
         horizon: null,
         rrule: null,
         labels: [],
       },
       quality_notes:
-        '"today" with no time is when to do it → due_at today, placed by the app like the Target today button: the next ' +
+        '"today" with no time is when to do it; with a deadline in the words it stays a TARGET, not on deck (on_deck_day null) → due_at today, placed by the app like the Target today button: the next ' +
         'period start, or the top of the next hour — NEVER the current minute (that is instantly over target). ' +
         '(A run after ~11 PM may land on midnight — minor.) ' +
         '"latest tomorrow 10 AM" is the cutoff → deadline_at tomorrow at 10:00 AM local (T10:00:00), not end of day. ' +
@@ -210,15 +213,16 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        due_at: iso(0),
+        on_deck_day: iso(0),
+        due_at: null,
         deadline_at: null,
         horizon: null,
         labels: [],
       },
       quality_notes:
-        'due_at today, at the next period start or the top of the next hour (the app places a bare "today"), never the ' +
-        'current minute and never a time already past. deadline_at null ("do it today" is a target, not a cutoff). ' +
-        'Title "Call the pharmacy about the refill". (A run after ~11 PM may land on midnight — minor.)',
+        '"do it today" with no time puts it on deck for today (on_deck_day today, due_at null — no reminder time). ' +
+        'deadline_at null ("do it today" is a day to do it, not a cutoff). ' +
+        'Title "Call the pharmacy about the refill".',
     },
   },
   {
@@ -312,7 +316,7 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
   {
     id: 'enrich-tm-do-it-day-is-target',
     feature: 'enrichment',
-    description: '"do it Saturday" is a target — no deadline',
+    description: '"do it Saturday" is a day to do it (on deck) — no deadline',
     input: {
       text: `clean out the car, do it ${weekday(3)}`,
       timezone: TZ,
@@ -320,13 +324,14 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        due_at: iso(3),
+        on_deck_day: iso(3),
+        due_at: null,
         deadline_at: null,
         horizon: null,
         labels: [],
       },
       quality_notes:
-        `due_at = the coming ${weekday(3)} at the default task time. deadline_at MUST be null — the day says when to do it, not when it must be done by. ` +
+        `On deck for the coming ${weekday(3)} (a day with no time, 2026-10-20): on_deck_day that day, due_at null. deadline_at MUST be null — the day says when to do it, not when it must be done by. ` +
         'Title "Clean out the car".',
     },
   },

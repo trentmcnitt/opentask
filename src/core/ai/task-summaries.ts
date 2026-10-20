@@ -132,5 +132,6 @@ export function buildTaskSummaries(userId: number): TaskSummary[] {
     deadline_at: t.deadline_at,
     horizon: t.horizon,
     ...(t.target_auto ? { target_implied: true } : {}),
+    ...(t.on_deck_day ? { on_deck_day: t.on_deck_day } : {}),
   }))
 }
