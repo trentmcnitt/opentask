@@ -858,3 +858,17 @@ describe('OD-C: clear-decks (rollback)', () => {
     expect(findDecks(TEST_USER_ID)).toEqual([])
   })
 })
+
+describe('OD-W: the words', () => {
+  hooks()
+
+  test('OD-W13: the undo / History description names the deck', () => {
+    const t = make({ title: 'Gloves' })
+    const decked = updateTask({ ...u, taskId: t.id, input: { on_deck_day: '2026-10-22' } })
+    expect(decked.description).toBe('On deck for Thu Oct 22 — "Gloves"')
+    const picked = updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-23T09:00') } })
+    expect(picked.description).toContain('Taken off deck')
+    deck([t.id], '2026-10-24')
+    expect(lastUndo().description).toBe('1 task on deck for Sat Oct 24')
+  })
+})

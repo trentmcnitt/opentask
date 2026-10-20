@@ -16,6 +16,7 @@ import {
   formatDurationDelta,
 } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
+import { parseDeckDay } from '@/lib/task-segments'
 import { getPriorityOption } from '@/lib/priority'
 
 /** Maps DB column names to human-readable labels */
@@ -34,6 +35,8 @@ export const FIELD_LABELS: Record<string, string> = {
   // it is, so it belongs in the user-facing summary rather than being filtered
   // out as internal bookkeeping.
   is_reminder: 'reminder',
+  // On deck (2026-10-20): putting a task on deck, or a pick that takes it off.
+  on_deck_day: 'on deck',
 }
 
 /**
@@ -229,9 +232,22 @@ function buildFieldFragment(
       return buildAutoSnoozeFragment(beforeState, afterState)
     case 'is_reminder':
       return afterState.is_reminder ? 'Moved to Reminders' : 'Removed from Reminders'
+    case 'on_deck_day':
+      return buildDeckFragment(afterState)
     default:
       return null
   }
+}
+
+/**
+ * On deck fragment (2026-10-20): "On deck for Sat Oct 24", or "Taken off
+ * deck" (an un-deck, or a pick that cleared the deck).
+ */
+function buildDeckFragment(afterState: Partial<Record<string, unknown>>): string {
+  const day = afterState.on_deck_day
+  if (typeof day !== 'string') return 'Taken off deck'
+  const parsed = parseDeckDay(day, 'utc')
+  return `On deck for ${parsed ? parsed.toFormat('ccc LLL d') : day}`
 }
 
 /**
