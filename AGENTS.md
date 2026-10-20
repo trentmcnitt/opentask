@@ -259,6 +259,8 @@ Don't add buffers, timeouts, or tolerances to work around symptoms. If something
 
 Wrap all route handlers with `withLogging()` from `@/lib/with-logging`, which logs every request with method, path, status, duration, and auth type. Log level varies by status: 5xx → `error`, 4xx → `warn`, 2xx → `info`. Uses the `http` namespace.
 
+`withLogging()` also opens the **request context** (`src/core/request-context.ts`, an `AsyncLocalStorage`): the auth step records the auth method and token, and `logAction()` / `logActivity()` stamp each row with the client that made it (`client`, `token_name` — the `X-OpenTask-Client` header, else `inferClient()` in `src/lib/client-attribution.ts`). Outside a request (cron jobs) a write is `system`; work a request only starts and the system finishes (AI enrichment) runs under `runAsSystem()`.
+
 Preferred pattern for new route handlers:
 
 ```ts

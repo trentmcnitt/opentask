@@ -301,7 +301,9 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   token_preview TEXT,
   name          TEXT NOT NULL,
   source        TEXT NOT NULL DEFAULT 'manual',
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  -- Last successful Bearer auth, written at most once a minute (bearer.ts).
+  last_used_at  TEXT DEFAULT NULL
 );
 
 -- Undo log table
@@ -318,7 +320,12 @@ CREATE TABLE IF NOT EXISTS undo_log (
   -- time_slot_edit / time_slot_delete actions set it: changing a slot's start
   -- or removing it moves that slot's reminders, and undo must put the slot
   -- back together with them (see src/core/time-slots/edit.ts).
-  slot_state     TEXT DEFAULT NULL
+  slot_state     TEXT DEFAULT NULL,
+  -- Which client made the write ('web', 'ios', 'shortcut', 'system', ...) and,
+  -- for a Bearer token, its name. NULL on rows from before 2026-10-20.
+  -- See src/lib/client-attribution.ts.
+  client         TEXT DEFAULT NULL,
+  token_name     TEXT DEFAULT NULL
 );
 
 -- User daily stats table (aggregate stats with daily granularity)
@@ -403,7 +410,10 @@ CREATE TABLE IF NOT EXISTS activity_log (
   before      TEXT,
   after       TEXT,
   metadata    TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  -- Which client made the write, and the Bearer token's name (as undo_log).
+  client      TEXT DEFAULT NULL,
+  token_name  TEXT DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_log_user_created

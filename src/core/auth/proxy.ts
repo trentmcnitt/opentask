@@ -16,6 +16,7 @@ import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { toAuthUser } from './helpers'
 import type { AuthUser } from '@/types'
+import { recordAuth } from '@/core/request-context'
 
 /**
  * Check whether reverse proxy auth is enabled via env var.
@@ -66,5 +67,6 @@ export function getProxyAuthUser(request: NextRequest): AuthUser | null {
     return null
   }
 
+  recordAuth('proxy')
   return toAuthUser(row)
 }

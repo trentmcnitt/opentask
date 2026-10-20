@@ -258,6 +258,10 @@ export interface UndoLogEntry {
   snapshot: UndoSnapshot[] // JSON array
   created_at: string
   undone: boolean
+  /** Which client made it (`src/lib/client-attribution.ts`); null on rows before 2026-10-20. */
+  client: string | null
+  /** The Bearer token's name, or null (session, proxy, system, older rows). */
+  token_name: string | null
 }
 
 export interface DailyStat {

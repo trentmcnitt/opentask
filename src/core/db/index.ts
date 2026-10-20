@@ -416,6 +416,20 @@ function runMigrations(database: Database.Database): void {
     database.exec("UPDATE progress_events SET source = 'unknown'")
   }
 
+  // Client attribution (2026-10-20): which client made each logged write
+  // (`src/lib/client-attribution.ts`), and when each token was last used.
+  // Rows from before stay NULL: the client was never recorded.
+  for (const table of ['activity_log', 'undo_log']) {
+    for (const column of ['client', 'token_name']) {
+      if (!hasColumn(database, table, column)) {
+        database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT DEFAULT NULL`)
+      }
+    }
+  }
+  if (!hasColumn(database, 'api_tokens', 'last_used_at')) {
+    database.exec('ALTER TABLE api_tokens ADD COLUMN last_used_at TEXT DEFAULT NULL')
+  }
+
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
   // After the periods are backfilled: the rollover time is the first period.

@@ -17,6 +17,19 @@ info:
 
     Bearer tokens are created via `POST /api/tokens` or the `db:create-token` CLI command.
 
+    ## Client header
+
+    Every route accepts an optional `X-OpenTask-Client` header naming the
+    calling client: `web`, `ios`, `watch`, `mac`, `widget`, `notification`,
+    `shortcut`, `cli` or `desk`. Each write records it in the undo and activity
+    logs (`client` on `GET /api/undo/history`), so the History page can say
+    which client made a change. Any other value is recorded as `unknown`; a
+    request is never rejected over it. Without the header the server infers
+    the client from the auth method and the token (a session cookie is `web`,
+    a token named like Shortcuts is `shortcut`, the iOS app's token is `ios`).
+    Writes made by the server itself (scheduled jobs, AI enrichment) are
+    `system`.
+
     ## Response format
 
     **Success:** `{ "data": { ... } }`
@@ -42,6 +55,8 @@ paths:
       tags: [System]
       security: []
       description: Checks that the server is up and can query its database.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Server is running and the database answers
@@ -73,6 +88,8 @@ paths:
       operationId: getOpenApi
       tags: [System]
       security: []
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: OpenAPI 3.1 YAML specification
@@ -89,6 +106,7 @@ paths:
       operationId: listTasks
       tags: [Tasks]
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: done
           in: query
           schema:
@@ -183,6 +201,8 @@ paths:
         Send a raw title string for AI enrichment, or provide structured fields
         to bypass enrichment. AI enrichment triggers when only `title` is provided
         (no due_at, priority=0, no labels, no rrule).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -213,6 +233,8 @@ paths:
         `{ total, overdue, today }` over the user's active tasks — the same
         numbers the Tasks page shows in its top bar, computed with the same
         function, for pages that do not load the list.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Task counts
@@ -241,6 +263,8 @@ paths:
       summary: Get task
       operationId: getTask
       tags: [Tasks]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Task details
@@ -263,6 +287,8 @@ paths:
       operationId: updateTask
       tags: [Tasks]
       description: PATCH semantics — only fields present in the body are updated.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -299,6 +325,8 @@ paths:
       summary: Delete task (soft delete to trash)
       operationId: deleteTask
       tags: [Tasks]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Trashed task
@@ -338,6 +366,8 @@ paths:
         `progress_current` to 0; to log one, use
         `POST /api/tasks/{id}/progress`. The body is optional — a bare POST
         with no body works for everything else.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: false
         content:
@@ -391,6 +421,8 @@ paths:
         rollover's record of a met period, and putting one back deleted that
         record while the period stayed closed. Correct a count with
         `POST /api/tasks/{id}/progress` and `delta: -1` instead.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Reopened task
@@ -427,6 +459,8 @@ paths:
         after midnight counts for the new day. Progress logged today is also
         recorded in the quota's `quota_day_state` (it clears a weekly/monthly
         quota prompt for the day); undo restores both.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: false
         content:
@@ -486,6 +520,8 @@ paths:
         was logged: walking the progress events newest first, each negative
         event (a −1, an undo, a put-back) cancels the latest +1 before it.
         Null when none stands.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The quota's stats
@@ -539,6 +575,7 @@ paths:
         500); when `has_more` is true, pass the last row's `id` as `before_id`
         for the next page. Returns 400 if the task is not a quota.
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: since
           in: query
           description: Only events logged at or after this time (ISO 8601)
@@ -628,6 +665,8 @@ paths:
 
         Reminders (`is_reminder`) are refused (400): a missed one already
         rolls forward on its own, and completing one marks it considered.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Skipped task
@@ -663,6 +702,8 @@ paths:
         Swaps the `ai-proposed` provenance label for `ai-added` (REDESIGN-V03
         §7.2). Task-scoped and narrow: confirming is a statement about where a
         task came from, so nothing else is modified. Idempotent.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Confirmed task
@@ -695,6 +736,8 @@ paths:
         free-text, so a typo silently forked the taxonomy. Creating a label is
         now a discrete act: a task write carrying an unknown label is rejected
         unless it also carries `create_label`.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Registered labels
@@ -716,6 +759,8 @@ paths:
       summary: Register a label
       operationId: createLabel
       tags: [Labels]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -764,6 +809,8 @@ paths:
         Removes the label from the registry. Does NOT strip it from tasks that
         already carry it - §7.2 checks only NEWLY added labels, so those tasks
         stay editable; the label simply can't be applied to anything new.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Deleted
@@ -783,6 +830,8 @@ paths:
         An item belongs to the slot with the latest `start_time` <= its time of
         day, where time of day is `anchor_time` if set, else `due_at` read in
         the user's timezone.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Time slots, earliest first
@@ -804,6 +853,8 @@ paths:
       summary: Create a time slot
       operationId: createTimeSlot
       tags: [Time slots]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -862,6 +913,8 @@ paths:
 
         `start_time` must be unique among the user's slots. There is no
         reordering: slots are always ordered by `start_time`.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -910,6 +963,8 @@ paths:
         last remaining slot cannot be removed (400). Always an undo entry
         (`time_slot_delete`, `undo_id`): undo restores the slot under its
         original id together with its reminders and prompt placements.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The removed slot, as it was
@@ -946,6 +1001,8 @@ paths:
         their time slot until completed, and quotas (§5), which are counted
         within a period rather than due on a day. The bulk snooze sweep skips
         both instead of failing.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -996,6 +1053,8 @@ paths:
       summary: Restore task from trash
       operationId: restoreTask
       tags: [Tasks]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Restored task
@@ -1021,6 +1080,8 @@ paths:
       operationId: reprocessTask
       tags: [Tasks]
       description: Re-runs AI enrichment using the original_title.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Task queued for reprocessing
@@ -1049,6 +1110,8 @@ paths:
         Quotas in `ids` are skipped (counted in `quota_skipped`) unless
         `close_period: true` — completing a quota closes its period early and
         resets its count. A batch of nothing but quotas is a 400.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1145,6 +1208,8 @@ paths:
 
         Any other change to a task's target (a pick, an edit, Today, done or skip
         of a repeating task, an automatic target) clears its queue mark.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1227,6 +1292,8 @@ paths:
         user has turned off `sweep_feedback_notifications_enabled` or
         notifications as a whole, or when the request says `notify: false`.
         A newer result replaces the older notification.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1357,6 +1424,8 @@ paths:
       summary: Edit multiple tasks
       operationId: bulkEdit
       tags: [Bulk Operations]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1496,6 +1565,8 @@ paths:
       summary: Soft-delete multiple tasks
       operationId: bulkDelete
       tags: [Bulk Operations]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1538,6 +1609,8 @@ paths:
         square checkbox: log progress and consider it). A quota is acted on
         through its prompt, never completed by id. `ids` may be empty when
         `prompts` is not. A stale-date or foreign key refuses the whole batch.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1606,6 +1679,8 @@ paths:
         from `GET /api/reminders` `groups[].prompts[].prompt_key`; a key for
         another local day, or for a quota that is not the caller's own, refuses
         the whole request (400).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1632,6 +1707,8 @@ paths:
         other quota gets +1 unless that key was already done today. One
         transaction, one undo entry; undo restores the count and the prompt.
         Dispatches `task.progressed` for each quota whose count moved.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1664,6 +1741,8 @@ paths:
         day, or for a quota that is not the caller's own, refuse the whole
         request (400). Quotas are never put back with `/api/tasks/{id}/undone`.
         Dispatches `task.progressed` for each quota whose count moved.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1722,6 +1801,8 @@ paths:
         Order is deliberately NOT specified here. Clients sort quotas
         alphabetically so that logging progress on one never reorders the others
         under the user's finger.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The user's open quotas
@@ -1761,6 +1842,8 @@ paths:
         queue: `queued_at` set, no rrule) also leaves the queue in the same write — `queued_at` cleared,
         `try_tomorrow` too, `queued_from_due_at` kept — so it goes back to its horizon segment, considered
         there today; undo puts it back in the queue. A queued repeating task stays queued.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1803,6 +1886,7 @@ paths:
         occurrence was passed over; `source: rollover`), each payload with `manual: true` added.
         409 when the server's task queue (`OPENTASK_TASK_QUEUE`) is off.
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: dry_run
           in: query
           required: false
@@ -1844,6 +1928,8 @@ paths:
       description: >
         Defer All: stamps `segment_deferred_at`; off today's segment, back tomorrow. Not a consider. One undo entry. The caller's own open tasks only; anything else refuses the
         whole request (400).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1875,6 +1961,8 @@ paths:
       description: >
         The put-back behind "Show N considered" (2026-10-11): clears `last_considered_at` and `segment_deferred_at`, so each row waits in its segment again today and comes back daily until it is considered. One undo entry. The caller's own open tasks only; anything else refuses the
         whole request (400).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1906,6 +1994,8 @@ paths:
       description: >
         A move of the target (a target the user picked) to the Snooze-all button's time while still today — the next period or the default snooze option — else the top of the next hour; or to `at`, when given. Also marks them considered and stamps `segment_targeted_at`. One undo entry (bulk edit) puts back the target and both stamps. Like every move it stops at the task's deadline (2026-10-12, spec §8.2). The caller's own open tasks only; anything else refuses the
         whole request (400). REPEATING tasks (an `rrule`) are targeted too since 2026-10-12 (spec §6): only the target moves, the scheduled occurrence (`occurrence_at`) stays, so done that day brings the next occurrence round on schedule.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -1968,6 +2058,8 @@ paths:
           automatic.
         - `stale_targets_with_deadline`: the same for tasks with a deadline, listed apart so a client's
           nag is never stopped by default.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Process lists
@@ -2038,6 +2130,7 @@ paths:
         the unknown kinds as pages of their own. Switch off: `queue` changes
         nothing.
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: queue
           in: query
           required: false
@@ -2224,6 +2317,8 @@ paths:
       operationId: listProjects
       tags: [Projects]
       description: The user's own projects plus projects shared with them.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: List of projects with task counts
@@ -2248,6 +2343,8 @@ paths:
       summary: Create project
       operationId: createProject
       tags: [Projects]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2302,6 +2399,8 @@ paths:
         (0, 1, 2, ...). Only projects the user owns are reordered; ids of
         shared projects owned by someone else, or unknown ids, are ignored and
         the remaining owned projects keep their relative order.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2351,6 +2450,8 @@ paths:
       summary: Get project
       operationId: getProject
       tags: [Projects]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Project details
@@ -2374,6 +2475,8 @@ paths:
       tags: [Projects]
       description: |
         Owner only. The Inbox cannot be renamed (400); its other fields can change.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2426,6 +2529,8 @@ paths:
         Permanently deletes the project and moves each of its tasks to its
         owner's Inbox (in a shared project, every member's tasks go to that
         member's own Inbox). Not undoable. The Inbox itself cannot be deleted (400).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Deletion result
@@ -2462,6 +2567,8 @@ paths:
         Reverses the most recent undoable action. The body is optional; send
         `session_start_id` to have the returned counts cover only entries after
         that id (see `GET /api/undo/status`) instead of all time.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: false
         content:
@@ -2495,6 +2602,8 @@ paths:
       description: |
         Re-applies the most recently undone action. The body is optional; send
         `session_start_id` to scope the returned counts, as for `POST /api/undo`.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: false
         content:
@@ -2529,6 +2638,8 @@ paths:
         The newest undo-log id and how many entries can be undone and redone.
         A client can store `latest_id` when it starts and pass it back as
         `session_start_id` to scope undo to its own session.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Undo stack status
@@ -2557,6 +2668,7 @@ paths:
       tags: [Undo]
       description: The user's most recent undo-log entries, newest first, both undone and not.
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: limit
           in: query
           schema:
@@ -2598,6 +2710,8 @@ paths:
         Undoes entries from the top of the stack, newest first, in one
         transaction: all of them are undone or none are. Provide at least one
         of the fields; when several are given, every limit applies.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2644,6 +2758,8 @@ paths:
       description: |
         Redoes undone entries, oldest undone first, in one transaction.
         Provide at least one of the fields.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2686,6 +2802,7 @@ paths:
       operationId: listTrash
       tags: [Trash]
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: limit
           in: query
           schema:
@@ -2716,6 +2833,8 @@ paths:
       operationId: emptyTrash
       tags: [Trash]
       description: Permanently deletes all trashed tasks. Cannot be undone.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Number of tasks permanently deleted
@@ -2740,6 +2859,7 @@ paths:
       operationId: exportData
       tags: [Export]
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: format
           in: query
           schema:
@@ -2793,6 +2913,8 @@ paths:
       summary: List webhooks
       operationId: listWebhooks
       tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: User's webhooks (secrets excluded)
@@ -2818,6 +2940,8 @@ paths:
       description: |
         Creates a webhook with an auto-generated HMAC secret.
         The secret is returned in this response only — store it securely.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2850,6 +2974,8 @@ paths:
       summary: Update webhook
       operationId: updateWebhook
       tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -2877,6 +3003,8 @@ paths:
       summary: Delete webhook
       operationId: deleteWebhook
       tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Deletion confirmed
@@ -2909,6 +3037,8 @@ paths:
       operationId: listWebhookDeliveries
       tags: [Webhooks]
       description: Returns the last 50 delivery attempts for debugging.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Delivery history
@@ -2938,6 +3068,8 @@ paths:
       summary: List API tokens
       operationId: listTokens
       tags: [Tokens]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: API tokens (previews only, not full tokens), newest first
@@ -2974,6 +3106,8 @@ paths:
       description: |
         Creates a new API token. The full token is returned in this response only.
         Tokens are stored as SHA-256 hashes — the raw token cannot be retrieved later.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -3023,6 +3157,8 @@ paths:
       summary: Revoke API token
       operationId: deleteToken
       tags: [Tokens]
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Token revoked
@@ -3061,6 +3197,8 @@ paths:
 
         The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, expires in 7 days, and is named
         `__Secure-authjs.session-token` over HTTPS (`authjs.session-token` otherwise).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Session cookie issued
@@ -3088,6 +3226,8 @@ paths:
       operationId: getCurrentUser
       tags: [Auth]
       description: The authenticated user's identity and core settings. Useful to check which account a token belongs to.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The authenticated user
@@ -3132,6 +3272,7 @@ paths:
       operationId: getStats
       tags: [Stats]
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: start
           in: query
           schema:
@@ -3181,6 +3322,8 @@ paths:
         The signed-in user's settings. Only `week_start` is described field by
         field here; the response carries the rest of the Settings page's
         values (view, snooze, schedule, notification and AI settings) as well.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The user's preferences
@@ -3201,6 +3344,8 @@ paths:
         Send only the fields to change. Changing `week_start` closes, before
         the response is returned, any weekly quota period the new boundary has
         already ended (see `UserPreferences.week_start`).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -3228,6 +3373,7 @@ paths:
       operationId: listCompletions
       tags: [Stats]
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: task_id
           in: query
           schema:
@@ -3283,6 +3429,8 @@ paths:
         number with `POST /api/review/execute`. Sessions are held in server
         memory: one is discarded once executed, sessions older than an hour
         are purged when a new one starts, and all are lost on a server restart.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The review session
@@ -3346,6 +3494,8 @@ paths:
         `snooze` without `until` is a 400 before any action runs. Review
         targets are explicit picks: `snooze` moves High and Urgent targets too,
         where a sweep would hold them back. The session is discarded afterwards.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -3447,6 +3597,7 @@ paths:
         request queue (server-wide), work in progress for this user, and the
         user's recent AI activity log. The slot objects use camelCase keys.
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: limit
           in: query
           schema:
@@ -3564,6 +3715,8 @@ paths:
         Sends a minimal prompt through the provider and model configured for
         one feature, to check that it responds. A provider failure is reported
         in the 200 body (`success: false`, `error`), not as an HTTP error.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -3619,6 +3772,8 @@ paths:
       operationId: getQuickTake
       tags: [AI]
       description: A one-line AI comment on a task title, in the context of the user's task list.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -3664,6 +3819,7 @@ paths:
         never generates: when nothing was generated today (UTC) `data` is
         null. With `refresh=true` it runs the model and waits for the result.
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: refresh
           in: query
           schema:
@@ -3713,6 +3869,8 @@ paths:
         Scores all of the user's active tasks in the background and returns at
         once. Poll `GET /api/ai/insights/status` with the returned
         `session_id`, then read `GET /api/ai/insights/results`.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: |
@@ -3763,6 +3921,7 @@ paths:
       tags: [AI]
       description: Works whether or not AI is enabled (it only reads the stored session).
       parameters:
+        - $ref: '#/components/parameters/ClientHeader'
         - name: session_id
           in: query
           required: true
@@ -3820,6 +3979,8 @@ paths:
         The latest Insights scores for the user's tasks, highest score first,
         with the signal vocabulary for display. Works whether or not AI is
         enabled (it only reads stored results).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Insights results
@@ -3920,6 +4081,8 @@ paths:
         AI disabled (server-wide, or the user's Insights mode set to off)
         returns `{ recommendations: [] }` with 200, never an error. Uses the
         Insights feature's AI mode, model and timeout.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -3983,6 +4146,8 @@ paths:
 
         AI disabled (server-wide, or the user's Insights mode set to off)
         returns `{ groups: [] }` with 200, never an error.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Duplicate groups (empty when AI is off or none were found)
@@ -4035,6 +4200,8 @@ paths:
         - `delete` — move the task to the trash (a soft delete, undoable like
           any other delete; the "AI finished" notification's Delete button).
           A task already in the trash is a 400.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -4125,6 +4292,8 @@ paths:
       operationId: dismissAllNotifications
       tags: [Notifications]
       description: Clears the user's delivered notifications on every channel and device.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Dismissal sent
@@ -4153,6 +4322,8 @@ paths:
         end. `high` sends a High (P3) notification; `urgent` and `critical`
         both send an Urgent (P4) one as an Apple Critical Alert, the same as a
         real overdue P4.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -4202,6 +4373,8 @@ paths:
       operationId: getVapidKey
       tags: [Push]
       security: []
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: The server's VAPID public key
@@ -4225,6 +4398,8 @@ paths:
       operationId: sendTestPush
       tags: [Push]
       description: Sends a test notification to the user's Web Push subscriptions only.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       responses:
         '200':
           description: Whether it was sent
@@ -4253,6 +4428,8 @@ paths:
       description: |
         Registers an Apple device token for push notifications. Re-registering
         an existing token moves it to the calling user.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -4293,6 +4470,8 @@ paths:
       operationId: unregisterApnsDevice
       tags: [Push]
       description: Removes the device token, whichever user registered it.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -4331,6 +4510,8 @@ paths:
         from the app's device token) so the server can tell widgets to reload
         when the user's data changes. Re-registering a token moves it to the
         calling user.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -4376,6 +4557,8 @@ paths:
       operationId: unregisterWidgetPushToken
       tags: [Push]
       description: Removes the push token, whichever user registered it.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
       requestBody:
         required: true
         content:
@@ -4412,6 +4595,17 @@ components:
       description: API token created via POST /api/tokens or the db:create-token CLI command
 
   parameters:
+    ClientHeader:
+      name: X-OpenTask-Client
+      in: header
+      required: false
+      description: |
+        The calling client, recorded on every write it makes (see "Client
+        header" above). Unknown values are recorded as `unknown`, never rejected.
+      schema:
+        type: string
+        enum: [web, ios, watch, mac, widget, notification, shortcut, cli, desk]
+
     TaskId:
       name: id
       in: path
@@ -5754,6 +5948,17 @@ components:
               completion_id:
                 type: integer
                 description: The completion record this entry created, if any.
+        client:
+          type: [string, 'null']
+          enum:
+            [web, ios, watch, mac, widget, notification, shortcut, cli, desk, system, unknown, null]
+          description: |
+            Which client made the change: the `X-OpenTask-Client` header, else
+            inferred; `system` for the server's own jobs. `null` on entries from
+            before clients were recorded.
+        token_name:
+          type: [string, 'null']
+          description: The name of the API token the change was made with, or `null` (session, system).
 
     DailyStat:
       type: object
