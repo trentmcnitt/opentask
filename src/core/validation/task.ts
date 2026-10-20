@@ -250,22 +250,19 @@ const deckDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date (yyyy-M
 
 /**
  * A target and a deck never travel together (rule 1: a task has one or the
- * other). A deck write also refuses a deadline in the same body: the A1 rule
- * judges a deck against the deadline the task HAS, so the two are sent apart.
+ * other). A deadline may come in the same body (D2 review, 2026-10-20): the
+ * Quick panel saves a staged deadline and deck as ONE write — one undo entry —
+ * and the A1 rule judges the deck against the RESULTING deadline.
  */
 export const DECK_WITH_DATE_MESSAGE =
-  'Send on_deck_day on its own: not with target_at / due_at or deadline_at in the same request'
+  'Send on_deck_day without target_at / due_at: a task is on deck or has a target'
 
 export const CREATE_DECK_WITH_TARGET_MESSAGE =
   'Send on_deck_day or target_at / due_at, not both: a task is on deck or has a target'
 
-function deckAlone(data: {
-  on_deck_day?: string | null
-  due_at?: string | null
-  deadline_at?: string | null
-}): boolean {
+function deckAlone(data: { on_deck_day?: string | null; due_at?: string | null }): boolean {
   if (data.on_deck_day === undefined) return true
-  return data.due_at === undefined && data.deadline_at === undefined
+  return data.due_at === undefined
 }
 
 export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const

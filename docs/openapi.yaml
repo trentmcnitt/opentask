@@ -5708,8 +5708,10 @@ components:
             On deck (2026-10-20): put the task on deck for this local calendar date (today or
             later), or take it off (`null`) — the same rules as `POST /api/tasks/deck`, but an
             ineligible task (repeating, a reminder, a quota, done) or a refused deadline task is
-            a 400. Must be sent alone: with `target_at` / `due_at` or `deadline_at` in the same
-            body it is a 400. Also accepted in bulk edit `changes`. 409 (putting on deck) when
+            a 400. With `target_at` / `due_at` in the same body it is a 400 (a task is on deck or
+            has a target); a `deadline_at` may come with it — one write, one undo entry, the
+            deadline rule judged against that new deadline. A new deck day marks the task
+            considered (as the deck endpoint does); taking it off stamps nothing. Also accepted in bulk edit `changes`. 409 (putting on deck) when
             the server's task queue is off.
         allow_past_deadline:
           type: boolean

@@ -425,7 +425,9 @@ function prepareDeck(
   // Never both (rule 1), on EVERY path: a deck write carrying its own target
   // (a PATCH, a bulk edit's `changes.due_at` or `delta_minutes`) is refused,
   // not resolved — the schemas refuse it too; this is the core's guarantee.
-  if (input.due_at !== undefined || input.deadline_at !== undefined) {
+  // A deadline in the same write is fine (D2 review): A1 below judges the
+  // deck against the deadline the write LEAVES.
+  if (input.due_at !== undefined) {
     throw new ValidationError(DECK_WITH_DATE_MESSAGE)
   }
   const skip = deckSkip({
@@ -438,9 +440,25 @@ function prepareDeck(
   if (skip) throw new ValidationError(`Only an open one-off task can go on deck (this is ${skip})`)
   const problem = deckDayProblem(day, opts.ctx.timezone, opts.now)
   if (problem) throw new ValidationError(problem)
-  const refusal = deckRefusal(task, day, opts.ctx, opts.now)
+  // A1 against the RESULTING deadline: a new one re-derives its automatic
+  // target, so the stored target says nothing about it.
+  const judged =
+    input.deadline_at !== undefined
+      ? { deadline_at: input.deadline_at, due_at: null, target_auto: false }
+      : task
+  const refusal = deckRefusal(judged, day, opts.ctx, opts.now)
   if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
-  return hasPickedTarget(task) ? { ...input, due_at: null } : input
+  const out: FieldChangesInput = hasPickedTarget(task) ? { ...input, due_at: null } : { ...input }
+  // A7 on every deck write (D2 review): a new deck day marks the task
+  // considered and stamps the Just now card, as the deck endpoint does (it
+  // passes its own stamps, kept here). Re-decking for the same day stamps
+  // nothing new.
+  if (task.on_deck_day !== day) {
+    const stamp = opts.now.toISOString()
+    out.last_considered_at ??= stamp
+    out.segment_targeted_at ??= stamp
+  }
+  return out
 }
 
 /**
@@ -456,6 +474,11 @@ function collectDeckChange(
   if (input.on_deck_day !== undefined) {
     if (input.on_deck_day !== task.on_deck_day) {
       trackField(data, 'on_deck_day', task.on_deck_day, input.on_deck_day)
+      // Taking it OFF deck stamps nothing, and takes back the deck's Just
+      // now stamp — the card would otherwise call the task "Targeted".
+      if (input.on_deck_day === null && task.segment_targeted_at && !hasPickedTarget(task)) {
+        trackField(data, 'segment_targeted_at', task.segment_targeted_at, null)
+      }
     }
     return
   }

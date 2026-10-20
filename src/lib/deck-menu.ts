@@ -10,24 +10,26 @@
  *   Tomorrow
  *   Thursday, Friday, … — the next few days by name (2 to 6 days out)
  *   Saturday · check-in — the user's check-in day is marked where it falls in
- *     that list; when it is today or tomorrow, the NEXT one is its own item
- *     ("Sat Oct 31 · check-in")
+ *     that list ("Tomorrow · check-in" when it is tomorrow); when it is TODAY,
+ *     the next one, a week out, is its own item ("Sat Oct 31 · check-in")
  *   Pick a date…        — the caller's date-only picker
  *   Remove              — only when the task is on deck (A10)
  *
  * Re-deck = hold → Tomorrow (spec rule 7).
  *
- * A DEADLINE TASK (red-team A1): a deck may not land after the day its
- * automatic target starts reminding. When the client knows that day
- * (`deckLatestDay`), the later days are greyed out; otherwise the server
- * refuses the pick and the toast says why.
+ * A DEADLINE TASK (red-team A1): a deck may land only BEFORE the day its
+ * automatic target starts reminding (`deckLimit`). That day and the later ones
+ * are greyed out, with a caption saying why ("deadline reminds from Tue"); the
+ * server refuses them anyway and the toast says why.
  */
 import { DateTime } from 'luxon'
 import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
+  autoTargetAt,
   calendarToday,
   type CheckInDay,
+  type TargetContext,
 } from './task-segments'
 
 export interface DeckMenuDay {
@@ -35,8 +37,18 @@ export interface DeckMenuDay {
   label: string
   /** The local calendar date it decks for (yyyy-MM-dd). */
   day: string
-  /** After the deadline's automatic target day (A1): shown, not choosable. */
+  /** On or after the deadline's automatic target day (A1): shown, not choosable. */
   disabled: boolean
+  /** Why it is disabled: "deadline reminds from Tue". */
+  caption?: string
+}
+
+/** A deadline task's limit (A1, `deckLimit`). */
+export interface DeckLimit {
+  /** The last day a deck may land on (yyyy-MM-dd). */
+  latestDay: string
+  /** The disabled days' caption: "deadline reminds from Tue". */
+  caption: string
 }
 
 /** How many days out the named days run (Tomorrow is day 1). */
@@ -45,19 +57,21 @@ export const DECK_MENU_NAMED_DAYS = 6
 const CHECK_IN_MARK = 'check-in'
 
 /**
- * The hold menu's day items, nearest first. `latestDay` (yyyy-MM-dd) greys
- * every later day (A1); null = no limit.
+ * The hold menu's day items, nearest first. `limit` (A1) greys every day
+ * after its `latestDay`, with its caption; null = no limit.
  */
 export function deckMenuDays(
   timezone: string,
   now: Date,
   checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
-  latestDay: string | null = null,
+  limit: DeckLimit | null = null,
 ): DeckMenuDay[] {
   const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
   const item = (d: DateTime, label: string): DeckMenuDay => {
     const day = d.toFormat(DECK_DAY_FORMAT)
-    return { label, day, disabled: latestDay !== null && day > latestDay }
+    return limit && day > limit.latestDay
+      ? { label, day, disabled: true, caption: limit.caption }
+      : { label, day, disabled: false }
   }
   const items: DeckMenuDay[] = []
   let checkInListed = false
@@ -77,21 +91,30 @@ export function deckMenuDays(
 }
 
 /**
- * The last day a deck may land on for this task, when the client can tell
- * (A1): a deadline task whose target IS its automatic one — the day BEFORE
- * that target's local day (a deck on the automatic target's own day would
- * nag that day, so the server refuses it too). A task with a picked target (decking drops it, and the server
- * computes the automatic one) or no deadline: null — the server decides.
+ * A deadline task's deck limit (A1, as the server's `deckRefusal` judges it):
+ * the day BEFORE its automatic target's local day — a deck on that day would
+ * nag, so the server refuses it. The automatic target is the stored one when
+ * the target already is automatic, else the one the deadline gives now (a
+ * picked target goes when decking; the Quick panel passes a STAGED deadline
+ * here). One that has already arrived leaves no day at all (the latest day is
+ * yesterday). No deadline: null.
  */
-export function deckLatestDay(
+export function deckLimit(
   task: { deadline_at: string | null; due_at: string | null; target_auto?: boolean },
   timezone: string,
-): string | null {
-  if (!task.deadline_at || !task.target_auto || !task.due_at) return null
-  return DateTime.fromISO(task.due_at, { zone: 'utc' })
-    .setZone(timezone)
-    .minus({ days: 1 })
-    .toFormat(DECK_DAY_FORMAT)
+  now: Date = new Date(),
+  ctx?: TargetContext | null,
+): DeckLimit | null {
+  if (!task.deadline_at) return null
+  const auto =
+    task.target_auto && task.due_at ? task.due_at : autoTargetAt(task.deadline_at, ctx, now)
+  const autoDay = DateTime.fromISO(auto, { zone: 'utc' }).setZone(timezone)
+  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
+  const reminds = Date.parse(auto) <= now.getTime() ? today : autoDay.startOf('day')
+  return {
+    latestDay: reminds.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
+    caption: `deadline reminds from ${reminds.toFormat('ccc')}`,
+  }
 }
 
 /**

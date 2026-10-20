@@ -1,14 +1,15 @@
 /**
  * OD-UI: On deck's web helpers (D2, 2026-10-20; spec rules 7–9) — the hold
- * menu's days (`deckMenuDays`), the A1 latest day (`deckLatestDay`), the
+ * menu's days (`deckMenuDays`), the A1 limit (`deckLimit`), the date picker's first day, the
  * tap's toggle (`deckTapDay`, A10), which rows offer the button
  * (`offersDeck`), Now's On deck section (`withDeckSection`, A13), the toast
  * words (`deckToastMessage`), the Just now tag for a deck, and the Quick
- * panel's split save (deadline first, then the deck).
+ * panel's one-request save.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
-import { deckLatestDay, deckMenuDays, deckTapDay, offersDeck } from '@/lib/deck-menu'
+import { deckLimit, deckMenuDays, deckTapDay, offersDeck } from '@/lib/deck-menu'
+import { deckPickerDefault } from '@/components/OnDeckButton'
 import { deckToastMessage, type DeckResponse } from '@/lib/deck-request'
 import { inDeckSection } from '@/lib/now-view'
 import {
@@ -137,24 +138,46 @@ describe('OD-UI-01: the hold menu days', () => {
     expect(deckMenuDays(TZ, early, 6)[0].day).toBe('2026-01-17')
   })
 
-  test('A1: the days after the latest are greyed', () => {
-    const days = deckMenuDays(TZ, NOW, 6, '2026-01-18')
+  test('A1: the days after the latest are greyed, with the caption', () => {
+    const limit = { latestDay: '2026-01-18', caption: 'deadline reminds from Mon' }
+    const days = deckMenuDays(TZ, NOW, 6, limit)
     expect(days.filter((d) => d.disabled).map((d) => d.day)).toEqual([
       '2026-01-19',
       '2026-01-20',
       '2026-01-21',
     ])
+    expect(days.find((d) => d.day === '2026-01-19')?.caption).toBe('deadline reminds from Mon')
+    expect(days.find((d) => d.day === '2026-01-18')?.caption).toBeUndefined()
   })
 
-  test('the latest day is the day before an automatic target, else unknown', () => {
-    const deadline = local(5, 17)
+  test('the limit: the day before the automatic target, stored or from the (staged) deadline', () => {
+    const ctx = { timezone: TZ, morningTime: '08:30' }
+    // Stored automatic target Sat Jan 17 → latest Fri Jan 16.
     expect(
-      deckLatestDay({ deadline_at: deadline, due_at: local(2, 9), target_auto: true }, TZ),
-    ).toBe('2026-01-16')
+      deckLimit({ deadline_at: local(5, 17), due_at: local(2, 9), target_auto: true }, TZ, NOW),
+    ).toEqual({ latestDay: '2026-01-16', caption: 'deadline reminds from Sat' })
+    // No stored automatic target (a picked one, or a deadline only staged):
+    // the one the deadline gives (`autoTargetAt`, the server's own) — Tue Jan
+    // 27 23:00 decided Thu Jan 15 → Sat Jan 24 08:30, so the latest is Fri Jan 23.
+    const staged = { deadline_at: local(12, 23), due_at: null }
+    expect(deckLimit(staged, TZ, NOW, ctx)).toEqual({
+      latestDay: '2026-01-23',
+      caption: 'deadline reminds from Sat',
+    })
+    // Already reminding: no day left (the latest is yesterday).
     expect(
-      deckLatestDay({ deadline_at: deadline, due_at: local(2, 9), target_auto: false }, TZ),
-    ).toBeNull()
-    expect(deckLatestDay({ deadline_at: null, due_at: null }, TZ)).toBeNull()
+      deckLimit({ deadline_at: local(2, 17), due_at: local(0, 8), target_auto: true }, TZ, NOW),
+    ).toEqual({ latestDay: '2026-01-14', caption: 'deadline reminds from Thu' })
+    expect(deckLimit({ deadline_at: null, due_at: null }, TZ, NOW)).toBeNull()
+  })
+
+  test('the date picker opens on a day that can be chosen', () => {
+    expect(deckPickerDefault('2026-01-15', '2026-01-20', null)).toBe('2026-01-20')
+    expect(deckPickerDefault('2026-01-15', null, null)).toBe('2026-01-16')
+    // The deck's day is past the limit: tomorrow; tomorrow too: today.
+    expect(deckPickerDefault('2026-01-15', '2026-01-20', '2026-01-16')).toBe('2026-01-16')
+    expect(deckPickerDefault('2026-01-15', null, '2026-01-15')).toBe('2026-01-15')
+    expect(deckPickerDefault('2026-01-15', null, '2026-01-14')).toBeNull()
   })
 })
 
@@ -268,7 +291,7 @@ describe('OD-UI-04: words', () => {
 })
 
 describe('OD-UI-05: the Quick panel save', () => {
-  test('a deck alone is one PATCH; with a deadline, the deadline first, then the deck', async () => {
+  test('a deck is one PATCH, with or without a deadline (one write, one undo entry)', async () => {
     const bodies: unknown[] = []
     vi.stubGlobal(
       'fetch',
@@ -282,7 +305,7 @@ describe('OD-UI-05: the Quick panel save', () => {
     bodies.length = 0
     const deadline = local(5, 17)
     const result = await saveTaskChanges(1, { on_deck_day: '2026-01-16', deadline_at: deadline })
-    expect(bodies).toEqual([{ deadline_at: deadline }, { on_deck_day: '2026-01-16' }])
-    expect(result.description).toBe('d1, d2')
+    expect(bodies).toEqual([{ on_deck_day: '2026-01-16', deadline_at: deadline }])
+    expect(result.description).toBe('d1')
   })
 })

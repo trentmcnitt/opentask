@@ -27,6 +27,18 @@ export interface OptionMenuItem {
   icon: React.ReactNode
   /** Shown but not choosable (the On deck menu's days after a deadline's start, A1). */
   disabled?: boolean
+  /** A short note after the label — why a disabled option is ("deadline reminds from Tue"). */
+  caption?: string
+}
+
+/** An option's caption, quieter than its label. */
+function Caption({ text }: { text?: string }) {
+  if (!text) return null
+  return (
+    <span data-option-caption className="text-muted-foreground ml-auto pl-3 text-xs">
+      {text}
+    </span>
+  )
 }
 
 /**
@@ -98,6 +110,7 @@ export function OptionMenu({
                 >
                   <span className="text-muted-foreground [&_svg]:size-4">{opt.icon}</span>
                   {opt.label}
+                  <Caption text={opt.caption} />
                 </button>
               ))}
             </div>
@@ -229,6 +242,7 @@ function OptionDropdown({
         >
           {opt.icon}
           {opt.label}
+          <Caption text={opt.caption} />
         </button>
       ))}
     </div>,

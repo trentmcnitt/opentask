@@ -41,19 +41,9 @@ export async function saveTaskChanges(
   taskId: number | string,
   changes: QuickActionPanelChanges | QuotaChanges,
 ): Promise<SaveTaskResult> {
-  // ON DECK (D2): the server takes `on_deck_day` only on its own — never with
-  // a target or a deadline in the same body (the A1 rule judges a deck
-  // against the deadline the task already HAS). A deadline staged with a
-  // deck goes first, then the deck, so the deck is judged against it.
-  if ('on_deck_day' in changes && changes.on_deck_day !== undefined) {
-    const { on_deck_day, ...rest } = changes
-    if ('due_at' in rest || 'deadline_at' in rest) {
-      const first = await patchTask(taskId, rest)
-      const second = await patchTask(taskId, { on_deck_day })
-      const description = [first.description, second.description].filter(Boolean).join(', ')
-      return { task: second.task, description: description || undefined }
-    }
-  }
+  // ON DECK (D2): `on_deck_day` travels with the rest — a staged deadline
+  // and deck are ONE write and one undo entry (the server judges the deck
+  // against that deadline). Never with a target: the panel never sends both.
   return patchTask(taskId, changes)
 }
 

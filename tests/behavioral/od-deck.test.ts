@@ -1040,3 +1040,68 @@ describe('OD-C: clear-decks also takes deck strips out of the queue', () => {
     expect(findDecks(TEST_USER_ID)).toEqual([])
   })
 })
+
+describe('OD-D2: the Quick panel’s deck writes (D2 review, 10-20)', () => {
+  hooks()
+
+  test('OD-D2-01: a deadline and a deck in ONE write — one undo entry, A7 stamps', () => {
+    const t = make()
+    const before = undoCount()
+    updateTask({
+      ...u,
+      taskId: t.id,
+      input: { deadline_at: at('2026-10-30T23:59'), on_deck_day: '2026-10-22' },
+    })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      deadline_at: at('2026-10-30T23:59'),
+      target_auto: true,
+    })
+    expect(task(t.id).last_considered_at).not.toBeNull()
+    expect(task(t.id).segment_targeted_at).not.toBeNull()
+    expect(undoCount()).toBe(before + 1)
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, deadline_at: null })
+  })
+
+  test('OD-D2-02: A1 is judged against the RESULTING deadline; a refusal saves nothing', () => {
+    // Deadline Tue Oct 27 23:59 set Tue Oct 20: auto Sat Oct 24 08:30.
+    const t = make()
+    const before = undoCount()
+    expect(() =>
+      updateTask({
+        ...u,
+        taskId: t.id,
+        input: { deadline_at: at('2026-10-27T23:59'), on_deck_day: '2026-10-24', priority: 3 },
+      }),
+    ).toThrow(ValidationError)
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, deadline_at: null, priority: 0 })
+    expect(undoCount()).toBe(before)
+    // The day before the automatic target is fine.
+    updateTask({
+      ...u,
+      taskId: t.id,
+      input: { deadline_at: at('2026-10-27T23:59'), on_deck_day: '2026-10-23' },
+    })
+    expect(task(t.id).on_deck_day).toBe('2026-10-23')
+    // A target with a deck is still refused.
+    expect(() =>
+      updateTask({
+        ...u,
+        taskId: t.id,
+        input: { due_at: at('2026-10-22T09:00'), on_deck_day: '2026-10-22' },
+      }),
+    ).toThrow(ValidationError)
+  })
+
+  test('OD-D2-03: un-deck stamps nothing and takes back the Just now stamp', () => {
+    const t = make()
+    updateTask({ ...u, taskId: t.id, input: { on_deck_day: '2026-10-22' } })
+    const considered = task(t.id).last_considered_at
+    expect(task(t.id).segment_targeted_at).not.toBeNull()
+    setClock('2026-10-20T11:00')
+    updateTask({ ...u, taskId: t.id, input: { on_deck_day: null } })
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, segment_targeted_at: null })
+    expect(task(t.id).last_considered_at).toBe(considered)
+  })
+})

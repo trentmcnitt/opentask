@@ -16,7 +16,7 @@ import {
 import { OptionMenu, type OptionMenuItem } from '@/components/OptionMenu'
 import { useCheckInDay } from '@/components/PreferencesProvider'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
-import { deckLatestDay, deckMenuDays, deckTapDay } from '@/lib/deck-menu'
+import { deckLimit, deckMenuDays, deckTapDay, type DeckLimit } from '@/lib/deck-menu'
 import { DECK_DAY_FORMAT, calendarToday, deckIsToday } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
@@ -50,6 +50,7 @@ export function OnDeckButton({
   task,
   timezone,
   onDeck,
+  limit,
   className,
   iconClassName,
   boxClassName,
@@ -58,6 +59,11 @@ export function OnDeckButton({
   task: Task
   timezone: string
   onDeck: (task: Task, day: string | null | undefined) => void
+  /**
+   * The A1 limit for the hold menu (`deckLimit`). Omitted: worked out from
+   * the task. The Quick panel passes it from a STAGED deadline.
+   */
+  limit?: DeckLimit | null
   className?: string
   iconClassName?: string
   /** The inner HOVER BOX (segment rows), as on `TargetTodayButton`. */
@@ -73,6 +79,8 @@ export function OnDeckButton({
     tapOn: 'click',
   })
   const active = !!task.on_deck_day
+  // What a tap toggles: on deck for TODAY. A later deck is drawn filled (the
+  // row's only sign of it) but is not "pressed" — a tap moves it to today.
   const forToday = active && deckIsToday(task, timezone, new Date())
   const title = forToday
     ? 'On deck today · tap to take off · hold for a day'
@@ -86,6 +94,7 @@ export function OnDeckButton({
       <DeckMenu
         task={task}
         timezone={timezone}
+        limit={limit}
         open={menuOpen}
         onOpenChange={setMenuOpen}
         onPick={(day) => onDeck(task, day)}
@@ -95,7 +104,9 @@ export function OnDeckButton({
           data-on-deck
           data-on-deck-active={active ? '' : undefined}
           data-no-row-press
-          aria-pressed={active}
+          // The state is in aria-pressed; the name stays the same.
+          aria-pressed={forToday}
+          aria-label={`On deck: “${task.title}” (hold for a day)`}
           onClick={(e) => {
             e.stopPropagation()
             press.onClick()
@@ -111,11 +122,6 @@ export function OnDeckButton({
             setMenuOpen(true)
           }}
           title={title}
-          aria-label={
-            forToday
-              ? `Take "${task.title}" off deck (hold for a day)`
-              : `Put "${task.title}" on deck today (hold for a day)`
-          }
           className={cn(
             'flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
             active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
@@ -171,12 +177,14 @@ const REMOVE = 'deck-remove'
  * The On deck HOLD MENU (spec rule 7): the days from `deckMenuDays`, "Pick a
  * date…" (a date-only calendar — a deck has no time), and Remove while the
  * task is on deck. In the shared hold-menu shell (`OptionMenu`), titled "On
- * deck". A deadline task's days after its automatic target's start are
- * greyed (A1, `deckLatestDay`), and so are they in the calendar.
+ * deck". A deadline task's days from its automatic target's day on are
+ * greyed with a caption ("deadline reminds from Tue", A1, `deckLimit`), and
+ * so are they in the calendar.
  */
 export function DeckMenu({
   task,
   timezone,
+  limit,
   open,
   onOpenChange,
   onPick,
@@ -184,6 +192,8 @@ export function DeckMenu({
 }: {
   task: Pick<Task, 'on_deck_day' | 'deadline_at' | 'due_at' | 'target_auto'>
   timezone: string
+  /** Omitted: `deckLimit(task)`. */
+  limit?: DeckLimit | null
   open: boolean
   onOpenChange: (open: boolean) => void
   /** A yyyy-MM-dd day, or null for Remove. */
@@ -191,15 +201,19 @@ export function DeckMenu({
   children: React.ReactNode
 }) {
   const { checkInDay } = useCheckInDay()
+  // The picker is mounted afresh on every open (`pickerKey`), so it never
+  // keeps an old selection — whichever way it was opened.
+  const [pickerKey, setPickerKey] = useState(0)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const latest = deckLatestDay(task, timezone)
   const now = new Date()
-  const days = deckMenuDays(timezone, now, checkInDay, latest)
+  const bound = limit === undefined ? deckLimit(task, timezone, now) : limit
+  const days = deckMenuDays(timezone, now, checkInDay, bound)
   const options: OptionMenuItem[] = [
     ...days.map((d) => ({
       label: d.label,
       option: d.day,
       disabled: d.disabled,
+      caption: d.caption,
       icon: <Bookmark />,
     })),
     { label: 'Pick a date…', option: PICK_DATE, icon: <CalendarDays /> },
@@ -207,8 +221,10 @@ export function DeckMenu({
   ]
   const select = (option: string) => {
     onOpenChange(false)
-    if (option === PICK_DATE) setPickerOpen(true)
-    else onPick(option === REMOVE ? null : option)
+    if (option === PICK_DATE) {
+      setPickerKey((k) => k + 1)
+      setPickerOpen(true)
+    } else onPick(option === REMOVE ? null : option)
   }
   return (
     <OptionMenu
@@ -219,11 +235,12 @@ export function DeckMenu({
       onSelect={select}
       after={
         <DeckDatePicker
+          key={pickerKey}
           open={pickerOpen}
           onOpenChange={setPickerOpen}
           timezone={timezone}
           current={task.on_deck_day}
-          latest={latest}
+          latest={bound?.latestDay ?? null}
           onPick={(day) => {
             setPickerOpen(false)
             onPick(day)
@@ -237,9 +254,25 @@ export function DeckMenu({
 }
 
 /**
+ * The first day the picker should open on: the current deck day when it is
+ * still allowed, else tomorrow, else today — whichever is first allowed. Null
+ * when no day is (a deadline already reminding).
+ */
+export function deckPickerDefault(
+  today: string,
+  current: string | null,
+  latest: string | null,
+): string | null {
+  const allowed = (day: string) => day >= today && (latest === null || day <= latest)
+  const tomorrow = DateTime.fromISO(today).plus({ days: 1 }).toFormat(DECK_DAY_FORMAT)
+  return [current, tomorrow, today].find((d): d is string => !!d && allowed(d)) ?? null
+}
+
+/**
  * "Pick a date…": a calendar and nothing else — a deck is a day. Today (the
  * calendar day) is the earliest; a deadline task's later days are greyed
- * (A1). Opens on the current deck day, else tomorrow.
+ * (A1). Opens on a day that can be chosen (`deckPickerDefault`); "Put on
+ * deck" is off while the selection is a day that can't.
  */
 function DeckDatePicker({
   open,
@@ -265,18 +298,14 @@ function DeckDatePicker({
   const fromLocal = (d: Date) =>
     DateTime.local(d.getFullYear(), d.getMonth() + 1, d.getDate()).toFormat(DECK_DAY_FORMAT)
   const today = calendarToday(timezone, new Date())
-  const initial = current ?? DateTime.fromISO(today).plus({ days: 1 }).toFormat(DECK_DAY_FORMAT)
-  const [selected, setSelected] = useState<Date | undefined>(undefined)
-  const shown = selected ?? toLocal(initial)
+  const [selected, setSelected] = useState<string | null>(() =>
+    deckPickerDefault(today, current, latest),
+  )
+  const valid = selected !== null && selected >= today && (latest === null || selected <= latest)
   const disabled = [{ before: toLocal(today) }, ...(latest ? [{ after: toLocal(latest) }] : [])]
+  const month = toLocal(selected ?? today)
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (next) setSelected(undefined)
-        onOpenChange(next)
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm" onClick={(e) => e.stopPropagation()}>
         <DialogHeader>
           <DialogTitle>On deck for…</DialogTitle>
@@ -285,15 +314,22 @@ function DeckDatePicker({
         <div className="flex flex-col items-center">
           <Calendar
             mode="single"
-            selected={shown}
+            selected={selected ? toLocal(selected) : undefined}
             onSelect={(date) => {
-              if (date) setSelected(date)
+              if (date) setSelected(fromLocal(date))
             }}
-            defaultMonth={shown}
+            defaultMonth={month}
             disabled={disabled}
           />
         </div>
-        <Button data-deck-date-submit onClick={() => onPick(fromLocal(shown))} className="w-full">
+        <Button
+          data-deck-date-submit
+          disabled={!valid}
+          onClick={() => {
+            if (valid) onPick(selected)
+          }}
+          className="w-full"
+        >
           <Bookmark className="mr-1.5 size-4" />
           Put on deck
         </Button>

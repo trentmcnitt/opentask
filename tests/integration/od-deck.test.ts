@@ -119,7 +119,12 @@ describe('On deck over HTTP', () => {
     const both = await patch(id, { on_deck_day: day(1), target_at: daysFromNow(3) })
     expect(both.status).toBe(400)
     expect((await patch(id, { on_deck_day: day(1), due_at: daysFromNow(3) })).status).toBe(400)
-    expect((await patch(id, { on_deck_day: day(1), deadline_at: daysFromNow(9) })).status).toBe(400)
+    // A deadline may come with it (D2 review): one write, A1 against that deadline.
+    const withDeadline = await patch(id, { on_deck_day: day(1), deadline_at: daysFromNow(9) })
+    expect(withDeadline.status).toBe(200)
+    expect(withDeadline.json.data).toMatchObject({ on_deck_day: day(1) })
+    expect(withDeadline.json.data.deadline_at).not.toBeNull()
+    await patch(id, { on_deck_day: null, deadline_at: null })
     const ok = await patch(id, { on_deck_day: day(1) })
     expect(ok.status).toBe(200)
     expect(ok.json.data).toMatchObject({ on_deck_day: day(1) })
