@@ -69,6 +69,10 @@
  * a run that only released waits or cleared flags resyncs the badge on its
  * own) and emits a sync event.
  *
+ * ROLL OVER NOW (`rollover-now.ts`) runs `applyRollover` by hand with M =
+ * now — the same rules, a few boundary-only steps skipped (`ApplyCtx`) — and,
+ * being a user action, writes one undo entry.
+ *
  * It writes targets with fixed SQL and sets the queue state rather than
  * clearing it — the deliberate exception to TQ-G01 (tq-summary.test.ts).
  */
@@ -115,7 +119,7 @@ export interface TaskRolloverOptions {
   userId?: number
 }
 
-interface UserRow {
+export interface UserRow {
   id: number
   timezone: string
   morning_time: string | null
@@ -156,7 +160,7 @@ export function runTaskRollover(opts: TaskRolloverOptions = {}): TaskRolloverRes
 }
 
 /** The per-user changes a run collected, for the events after commit. */
-interface UserRun {
+export interface UserRun {
   /** Tasks whose target changed (strip, roll, wait): their notifications go. */
   moved: number[]
   /** Anything changed at all (moved, released, flags). */
@@ -195,12 +199,18 @@ function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): voi
     result.ran++
     const m = latestRollover(now, user.timezone, rolloverTime)
     const nextM = nextRollover(m, user.timezone, rolloverTime)
-    return applyRollover(user, rolloverTime, m, nextM, now, result)
+    return applyRollover(user, rolloverTime, m, nextM, now, result, CRON_CTX)
   })
   if (!run || !run.changed) return
+  afterRolloverCommit(user, run)
+}
 
-  // After commit: the changed targets' banners go (and the badge with them),
-  // open tabs and widgets refresh.
+/**
+ * After commit: the changed targets' banners go (and the badge with them),
+ * open tabs and widgets refresh, webhooks go out. Shared by the cron and the
+ * manual run (`runRolloverNow`).
+ */
+export function afterRolloverCommit(user: UserRow, run: UserRun): void {
   if (run.moved.length > 0) dismissNotificationsForTasks(user.id, run.moved)
   else syncBadgeCount(user.id)
   emitSyncEvent(user.id)
@@ -234,13 +244,41 @@ const ELIGIBLE_SQL = `
   AND priority < ${QUEUE_KEEP_PRIORITY} AND deadline_at IS NULL
   AND due_at IS NOT NULL`
 
-function applyRollover(
+/** What a run changed, by outcome (the manual run's answer). */
+export interface RolloverIds {
+  stripped: number[]
+  rolled: number[]
+  waiting: number[]
+  released: number[]
+}
+
+/**
+ * How `applyRollover` is being run. The cron passes `CRON_CTX`; the manual
+ * run (`runRolloverNow`) passes `manual: true` and a collector for its undo
+ * entry and its answer. The RULES are the same either way — only these
+ * differ (each is commented where it applies).
+ */
+export interface ApplyCtx {
+  manual: boolean
+  /** Each changed task as it was before the write, and the ids by outcome. */
+  collect?: { before: Map<number, Task>; ids: RolloverIds }
+}
+
+const CRON_CTX: ApplyCtx = { manual: false }
+
+/** The activity metadata a manual run adds to every row it writes. */
+function ctxMeta(ctx: ApplyCtx): Record<string, unknown> {
+  return ctx.manual ? { manual: true } : {}
+}
+
+export function applyRollover(
   user: UserRow,
   rolloverTime: string,
   m: Date,
   nextM: Date,
   now: Date,
   result: TaskRolloverResult,
+  ctx: ApplyCtx,
 ): UserRun {
   const db = getDb()
   const nowStr = now.toISOString()
@@ -260,7 +298,12 @@ function applyRollover(
     .all(user.id) as WaitRow[]
   for (const w of waits) {
     if (Date.parse(w.due_at) >= nextM.getTime()) continue
-    const skipped = release(w, user.id, nowStr)
+    if (ctx.collect) {
+      const pre = getTaskById(w.id)
+      if (pre) ctx.collect.before.set(w.id, pre)
+      ctx.collect.ids.released.push(w.id)
+    }
+    const skipped = release(w, user.id, nowStr, ctx)
     run.hooks.push({ id: w.id, previousDueAt: w.due_at, skipped })
     released.add(w.id)
     result.released++
@@ -275,28 +318,24 @@ function applyRollover(
   for (const row of rows) {
     if (released.has(row.id)) continue
     const task = rowToTask(row)
-    if (task.target_set_at && Date.parse(task.target_set_at) > mMs) continue
-    const due = Date.parse(task.due_at!)
-    if (!task.queue_mark && !(due < mMs)) continue
-    let skipped = false
-    if (!task.rrule) {
-      if (!task.queue_mark && earlyMorningPick(task, user.timezone, rolloverTime, m)) continue
-      strip(row, task, user, rolloverTime, m, nowStr)
-      result.stripped++
-    } else {
-      // A waiting task (queued, target ahead) is not marked and not before M.
-      const outcome = rollRepeating(row, task, user, rolloverTime, m, nextM, nowStr)
-      if (outcome === 'untouched') continue
-      if (outcome === 'waiting') result.waiting++
-      else result.rolled++
-      skipped = outcome === 'rolled-skip'
-    }
+    const outcome = handleRow(row, task, user, rolloverTime, m, nextM, nowStr, ctx)
+    if (!outcome) continue
+    if (outcome === 'stripped') result.stripped++
+    else if (outcome === 'waiting') result.waiting++
+    else result.rolled++
+    ctx.collect?.ids[outcome === 'rolled-skip' ? 'rolled' : outcome].push(task.id)
+    ctx.collect?.before.set(task.id, task)
     run.moved.push(task.id)
-    run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped })
+    run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: outcome === 'rolled-skip' })
     run.changed = true
   }
 
   // 4. Try Tomorrow's mark lasts only while the row is in "Stripped today".
+  // Not on a manual run: its M is now, not a rollover, so every queued row
+  // would count as "before M" — but the panels' today/previous split stays on
+  // the real latest rollover, so rows stripped this morning are still in
+  // "Stripped today" and keep the mark. The real rollover cleared the rest.
+  if (ctx.manual) return run
   const flagged = db
     .prepare(
       `SELECT id, title, queued_at FROM tasks
@@ -320,6 +359,40 @@ function applyRollover(
     )
   }
   return run
+}
+
+/**
+ * 1 and 2 for one eligible row: strip a one-off, roll or wait a repeating
+ * task — or null, when the row is not the rollover's (set after M, not yet
+ * over target and unmarked, a spared early-morning pick, a rule that never
+ * reaches M).
+ */
+function handleRow(
+  row: TaskRow,
+  task: Task,
+  user: UserRow,
+  rolloverTime: string,
+  m: Date,
+  nextM: Date,
+  nowStr: string,
+  ctx: ApplyCtx,
+): 'stripped' | 'rolled' | 'rolled-skip' | 'waiting' | null {
+  const mMs = m.getTime()
+  if (task.target_set_at && Date.parse(task.target_set_at) > mMs) return null
+  if (!task.queue_mark && !(Date.parse(task.due_at!) < mMs)) return null
+  if (task.rrule) {
+    // A waiting task (queued, target ahead) is not marked and not before M.
+    const outcome = rollRepeating(row, task, user, rolloverTime, m, nextM, nowStr, ctx)
+    return outcome === 'untouched' ? null : outcome
+  }
+  // The early-morning pick's spare is a rule about the rollover BOUNDARY (a
+  // pick made last night for before 6:30 belongs to the coming day). A
+  // manual run is not at a boundary: "end my day now" strips every target
+  // already passed, the pick included.
+  if (!ctx.manual && !task.queue_mark && earlyMorningPick(task, user.timezone, rolloverTime, m))
+    return null
+  strip(row, task, user, rolloverTime, m, nowStr, ctx)
+  return 'stripped'
 }
 
 /**
@@ -388,6 +461,7 @@ function strip(
   rolloverTime: string,
   m: Date,
   nowStr: string,
+  ctx: ApplyCtx,
 ): void {
   const counted = checkpoint(row, task, user, rolloverTime, m)
   const kept = keptTarget(task)
@@ -408,7 +482,7 @@ function strip(
     ['due_at', 'queued_at', 'queued_from_due_at', 'queue_mark', TARGET_SET_FIELD],
     { due_at: task.due_at },
     { due_at: null, queued_at: nowStr, queued_from_due_at: kept },
-    { marked: task.queue_mark },
+    { marked: task.queue_mark, ...ctxMeta(ctx) },
   )
 }
 
@@ -481,7 +555,7 @@ interface WaitRow {
  * target is already that occurrence (a from_completion rule's was stepped
  * from the missed one, so nothing re-anchors here either).
  */
-function release(w: WaitRow, userId: number, nowStr: string): boolean {
+function release(w: WaitRow, userId: number, nowStr: string, ctx: ApplyCtx): boolean {
   // Only a stored occurrence BEFORE the one it is released onto was passed
   // over. One still at or after it (a target the user pulled earlier and
   // missed, the occurrence itself not yet come) was never skipped: the wait
@@ -506,7 +580,7 @@ function release(w: WaitRow, userId: number, nowStr: string): boolean {
       ['occurrence_at', 'skip_count', 'queued_at', 'queued_from_due_at'],
       { occurrence_at: w.occurrence_at, skip_count: w.skip_count ?? 0 },
       { occurrence_at: w.due_at, skip_count: skipCount, queued_at: null },
-      { skipped: true },
+      { skipped: true, ...ctxMeta(ctx) },
       'skip',
     )
     return true
@@ -525,7 +599,7 @@ function release(w: WaitRow, userId: number, nowStr: string): boolean {
     ['queued_at', 'queued_from_due_at'],
     {},
     { queued_at: null },
-    { skipped: false },
+    { skipped: false, ...ctxMeta(ctx) },
   )
   return false
 }
@@ -539,6 +613,7 @@ function rollRepeating(
   m: Date,
   nextM: Date,
   nowStr: string,
+  ctx: ApplyCtx,
 ): 'rolled' | 'rolled-skip' | 'waiting' | 'untouched' {
   const db = getDb()
   const next = occurrenceFrom(task, user.timezone, m)
@@ -579,7 +654,7 @@ function rollRepeating(
       ['due_at', 'occurrence_at', 'skip_count', TARGET_SET_FIELD],
       { due_at: task.due_at, occurrence_at: task.occurrence_at, skip_count: task.skip_count },
       { due_at: next.at, occurrence_at: next.at, skip_count: skipCount },
-      { skipped: next.skipped },
+      { skipped: next.skipped, ...ctxMeta(ctx) },
       next.skipped ? 'skip' : 'edit',
     )
     return next.skipped ? 'rolled-skip' : 'rolled'
@@ -613,7 +688,7 @@ function rollRepeating(
     ['due_at', 'queued_at', 'queued_from_due_at', 'queue_mark', TARGET_SET_FIELD],
     { due_at: task.due_at },
     { due_at: target, queued_at: nowStr, queued_from_due_at: kept },
-    {},
+    ctxMeta(ctx),
   )
   return 'waiting'
 }

@@ -1784,6 +1784,54 @@ paths:
                     type: object
                     properties:
                       considered: { type: integer }
+  /api/rollover/run-now:
+    post:
+      summary: Roll over now
+      operationId: rolloverRunNow
+      tags: [Reminders]
+      description: >
+        Runs the task queue's daily rollover for the caller now, with now as the rollover moment
+        ("end my day now"): every one-off below High with no deadline whose target has passed (or
+        that a Snooze-all marked) is stripped into the queue's "Stripped today"; a repeating one
+        rolls to its occurrence before the next real rollover, or waits for the one after; a wait
+        due before the next real rollover is released. Later targets, High and Urgent, deadline
+        tasks, reminders, quotas and archived tasks are untouched. The daily rollover is not moved
+        (it runs as usual). One undo entry (`task_rollover`). 409 when the server's task queue
+        (`OPENTASK_TASK_QUEUE`) is off.
+      parameters:
+        - name: dry_run
+          in: query
+          required: false
+          description: '`1`: answer what a run would do (counts and ids), writing nothing.'
+          schema: { type: string, enum: ['1', 'true'] }
+      responses:
+        '200':
+          description: What the run did (or would do)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      stripped: { type: integer }
+                      rolled: { type: integer }
+                      waiting: { type: integer }
+                      released: { type: integer }
+                      ids:
+                        type: object
+                        properties:
+                          stripped: { type: array, items: { type: integer } }
+                          rolled: { type: array, items: { type: integer } }
+                          waiting: { type: array, items: { type: integer } }
+                          released: { type: array, items: { type: integer } }
+                      dry_run: { type: boolean }
+                      undo_id:
+                        type: [integer, 'null']
+                        description: The undo entry; null on a dry run or when nothing changed.
+        '409':
+          description: The task queue is off on this server
   /api/task-segments/defer:
     post:
       summary: Defer task-segment rows to tomorrow
@@ -5667,6 +5715,8 @@ components:
             - time_slot_edit
             - time_slot_delete
             - quota_prompt
+            - task_segment
+            - task_rollover
         description:
           type: [string, 'null']
         tasks_affected:
