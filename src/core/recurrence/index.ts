@@ -27,6 +27,8 @@ export {
   RRulePatterns,
   bydayDows,
   hasOrdinalByday,
+  normalizeRRule,
+  ordinalsCount,
   plainDays,
   type ByDay,
   type RRuleComponents,

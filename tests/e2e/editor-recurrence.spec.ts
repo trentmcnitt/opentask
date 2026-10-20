@@ -193,8 +193,9 @@ test.describe('Task editor sheet on a phone', () => {
   test('the Repeat button reads active on a repeating task, plain on a one-off', async ({
     authenticatedPage: page,
   }) => {
-    // Trent, 2026-10-20: the button looked the same either way. A rule is a
-    // blue tint (not the solid toggle fill ruled out 10-12) and leads its label.
+    // Trent, 2026-10-20: the button looked the same either way. A rule is the
+    // panel's neutral selected look — grey fill, full foreground, never blue
+    // (blue means an unsaved change; designer 10-20) — and leads its label.
     const repeating = await createTask(page, { title: uniqueTitle('Rep on'), rrule: WEEKLY })
     const oneOff = await createTask(page, {
       title: uniqueTitle('Rep off'),
@@ -206,13 +207,21 @@ test.describe('Task editor sheet on a phone', () => {
         const on = sheet.getByRole('button', { name: /^Repeats: Sundays at 9:00 AM/ })
         await expect(on).toHaveAttribute('data-repeat-active', '')
         await expect(on).not.toHaveAttribute('aria-pressed')
-        const onColor = await on.evaluate((el) => getComputedStyle(el).color)
+        const look = (el: Element) => {
+          const style = getComputedStyle(el)
+          return { color: style.color, background: style.backgroundColor }
+        }
+        const onLook = await on.evaluate(look)
+        // Neutral: no blue class on the active button.
+        await expect(on).not.toHaveClass(/blue/)
 
         sheet = await openEditor(page, oneOff)
         const off = sheet.getByRole('button', { name: 'Edit recurrence', exact: true })
         await expect(off).toBeVisible()
         await expect(off).not.toHaveAttribute('data-repeat-active')
-        expect(await off.evaluate((el) => getComputedStyle(el).color)).not.toBe(onColor)
+        const offLook = await off.evaluate(look)
+        expect(offLook.color).not.toBe(onLook.color)
+        expect(offLook.background).not.toBe(onLook.background)
       })
     } finally {
       await page.request.delete(`/api/tasks/${repeating}`)

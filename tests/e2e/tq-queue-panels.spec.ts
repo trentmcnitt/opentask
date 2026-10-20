@@ -22,7 +22,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const QUEUE_USER_ID = 2
@@ -255,8 +255,26 @@ test('a waiting repeating row and its details show the occurrence, not the moved
     await expect(dialog.locator('[data-quick-panel-date]')).not.toContainText(/Target|\bin \d/)
     await expect(dialog.locator('[data-occurrence-line]')).toHaveCount(0)
     await expect(dialog).not.toContainText('target moved')
-    await page.keyboard.press('Escape')
+    // The controls start from NOW (the task has no live target): "+1 day"
+    // stages about this time tomorrow — not the day after the missed
+    // occurrence (a past date), not the moved target plus a day.
+    await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
+    const line = dialog.locator('[data-quick-panel-date]')
+    await expect(dialog.locator('[data-queued-occurrence]')).toHaveCount(0)
+    await expect(line).toContainText('Target')
+    await expect(line).not.toContainText('ago')
+    await expect(line).not.toContainText(occurrence.plus({ days: 1 }).toFormat('LLL d'))
+    await expect(line).not.toContainText(target.plus({ days: 1 }).toFormat('LLL d'))
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
+
+    // The dashboard row says the same (Newest: every open task, flat).
+    await withPreferences(page, { default_grouping: 'new' }, async () => {
+      await page.goto('/')
+      const dashRow = page.locator(`#task-row-${weekly}`)
+      await expect(dashRow).toContainText(occurrence.toFormat('LLL d'))
+      await expect(dashRow).not.toContainText(target.toFormat('LLL d'))
+    })
   } finally {
     await trash(page, ids)
   }

@@ -518,7 +518,7 @@ function TaskSegmentMeta({
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   // A repeating task waiting in the queue shows the occurrence it stands
   // for, not its moved target (`queuedRepeatOccurrence`, 2026-10-20).
-  const queuedOccurrence = queuedRepeatOccurrence(task)
+  const queuedOccurrence = queueOn ? queuedRepeatOccurrence(task) : null
   const shownAt = queuedOccurrence ?? task.due_at
   const target = shownAt ? DateTime.fromISO(shownAt).setZone(timezone) : null
   const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null

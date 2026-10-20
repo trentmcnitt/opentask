@@ -200,6 +200,27 @@ export function queuedRepeatOccurrence(task: {
 }
 
 /**
+ * Where the Quick panel's date controls (increments, delta, pickers) start
+ * for a task: its target — or, for a repeating task waiting in the task queue
+ * (`queuedRepeatOccurrence`, with the queue switch on), null, i.e. now, as
+ * for a task with no target. Its stored target is a moved one and its
+ * occurrence is past, so "+1 day" from either would stage a date nobody
+ * picked (from the missed Fri Oct 16: Sat Oct 17, already over target).
+ */
+export function pickerBaseDueAt(
+  task: {
+    rrule: string | null | undefined
+    due_at: string | null
+    occurrence_at?: string | null
+    queued_at?: string | null
+  },
+  queueEnabled: boolean,
+): string | null {
+  if (queueEnabled && queuedRepeatOccurrence(task)) return null
+  return task.due_at
+}
+
+/**
  * The Quick panel's Repeat button (2026-10-20): whether it reads ACTIVE — a
  * rule is set — and its label. `rule` is the staged or stored rule; pass
  * undefined in a multi-selection with nothing staged, where every selected

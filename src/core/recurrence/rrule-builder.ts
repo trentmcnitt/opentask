@@ -174,18 +174,48 @@ function monthFieldsValid(components: RRuleComponents): boolean {
 }
 
 /**
- * Every BYDAY weekday is 0..6, and an ordinal ("1SA", "-1FR") only means something in a MONTHLY or
- * YEARLY rule (RFC 5545 §3.3.10: it MUST NOT be used with WEEKLY, and a DAILY
- * rule has no period to count in) — 1..5 / -5..-1 of a month, 1..53 / -53..-1
- * of a year. 0 is never valid.
+ * Every BYDAY weekday is 0..6, and an ordinal ("1SA", "-1FR") on a MONTHLY or
+ * YEARLY rule is 1..5 / -5..-1 of a month, 1..53 / -53..-1 of a year — never
+ * 0. An ordinal on a WEEKLY or DAILY rule means nothing (RFC 5545 §3.3.10
+ * forbids it; rrule.js ignores it) but is NOT refused: such rules were
+ * accepted before 2026-10-20, so an API client, a Shortcut or an old native
+ * build may echo one back. They are accepted and stored without it —
+ * `normalizeRRule`.
  */
 function bydayValid(components: RRuleComponents): boolean {
   if (components.byday?.some((d) => d.day < 0 || d.day > 6)) return false
-  if (!hasOrdinalByday(components)) return true
-  const max = components.freq === 'MONTHLY' ? 5 : components.freq === 'YEARLY' ? 53 : 0
+  if (!ordinalsCount(components)) return true
+  const max = components.freq === 'MONTHLY' ? 5 : 53
   return (components.byday ?? []).every(
     (d) => d.n === undefined || (d.n !== 0 && Math.abs(d.n) <= max),
   )
+}
+
+/** Whether the rule's BYDAY ordinals mean anything: a MONTHLY or YEARLY rule with one. */
+export function ordinalsCount(components: RRuleComponents): boolean {
+  return (
+    (components.freq === 'MONTHLY' || components.freq === 'YEARLY') && hasOrdinalByday(components)
+  )
+}
+
+/**
+ * The rule as it is stored: a WEEKLY or DAILY rule's BYDAY ordinals dropped
+ * ("FREQ=WEEKLY;BYDAY=1FR" → "FREQ=WEEKLY;BYDAY=FR" — what it always ran as).
+ * Every other rule comes back exactly as given, so a valid rule never changes
+ * shape. Applied by input validation and to AI enrichment's rule.
+ */
+export function normalizeRRule(rrule: string): string {
+  const components = parseRRule(rrule)
+  if (components.freq !== 'WEEKLY' && components.freq !== 'DAILY') return rrule
+  if (!hasOrdinalByday(components)) return rrule
+  return rrule
+    .split(';')
+    .map((part) =>
+      /^BYDAY=/i.test(part)
+        ? part.replace(/(^BYDAY=|,)[+-]?\d{1,2}(?=[A-Za-z]{2}(,|$))/gi, '$1')
+        : part,
+    )
+    .join(';')
 }
 
 /**

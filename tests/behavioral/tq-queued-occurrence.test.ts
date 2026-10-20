@@ -5,9 +5,11 @@
  * "Occurrence … · target moved" line (Trent, 2026-10-20). Everything else
  * keeps the moved-target line.
  */
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, afterEach, vi } from 'vitest'
+import { adjustDate, initWorkingDate } from '@/lib/quick-select-dates'
 import {
   movedOccurrenceLabel,
+  pickerBaseDueAt,
   queuedRepeatOccurrence,
   repeatButtonState,
 } from '@/lib/editor-target-labels'
@@ -94,5 +96,30 @@ describe('repeatButtonState (the Quick panel Repeat button)', () => {
       true,
     )
     expect(repeatButtonState({ ...base, rule: null, selectedTasks: both }).repeatActive).toBe(false)
+  })
+})
+
+describe('pickerBaseDueAt (the Quick panel date controls on a waiting repeating task)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const waiting = { rrule, due_at: next, occurrence_at: missed, queued_at: '2026-10-20T11:30:00Z' }
+
+  test('"+1 day" on a waiting Friday task at Tue 10:00 stages Wed ~10:00, never a past date', () => {
+    // Tue Oct 20 2026, 10:00 AM CDT
+    const now = new Date('2026-10-20T15:00:00Z')
+    vi.setSystemTime(now)
+    const base = pickerBaseDueAt(waiting, true)
+    expect(base).toBeNull()
+    const staged = adjustDate(initWorkingDate(base, now), { minutes: null, days: 1 }, tz)
+    // "Now" snaps to the 5-minute mark (as for a task with no target).
+    expect(staged).toBe('2026-10-21T15:05:00.000Z')
+    expect(Date.parse(staged)).toBeGreaterThan(now.getTime())
+  })
+
+  test('with the queue switch off, or not queued, the controls start from the target', () => {
+    expect(pickerBaseDueAt(waiting, false)).toBe(next)
+    expect(pickerBaseDueAt({ ...waiting, queued_at: null }, true)).toBe(next)
   })
 })

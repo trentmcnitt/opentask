@@ -15,7 +15,7 @@
 
 import { RRule, Weekday } from 'rrule'
 import { DateTime } from 'luxon'
-import { parseRRule, type RRuleComponents } from './rrule-builder'
+import { ordinalsCount, parseRRule, type RRuleComponents } from './rrule-builder'
 import { parseAnchorTime } from './timezone'
 import { toNaiveLocal, fromNaiveLocal } from './utils'
 
@@ -299,8 +299,11 @@ function computeFromDue(
   // "monthly on the 1st Saturday" rule ran every Saturday.
   if (components.byday && components.byday.length > 0) {
     // rrule.js types byweekday loosely; its Weekday values are what it reads.
+    // An ordinal counts only in a MONTHLY/YEARLY rule (`ordinalsCount`); a
+    // legacy WEEKLY "1FR" runs as plain FR, as it always did.
+    const nth = ordinalsCount(components)
     ruleOptions.byweekday = components.byday.map((d) =>
-      d.n !== undefined ? DOW_TO_RRULE_WEEKDAY[d.day].nth(d.n) : DOW_TO_RRULE_WEEKDAY[d.day],
+      nth && d.n !== undefined ? DOW_TO_RRULE_WEEKDAY[d.day].nth(d.n) : DOW_TO_RRULE_WEEKDAY[d.day],
     ) as unknown as number[]
   }
 

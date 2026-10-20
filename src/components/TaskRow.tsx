@@ -3,6 +3,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
+import { DateTime } from 'luxon'
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -40,6 +41,7 @@ import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
+import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { useTimezone } from '@/hooks/useTimezone'
 import {
   useLabelConfig,
@@ -379,9 +381,13 @@ export function TaskRow({
   const pastDeadline = !tracked && isPastDeadline(task.deadline_at, new Date())
   // §5: a quota's row states its count where a task states its due time; the
   // controls live in the Track panel on the Tasks page, not on every row.
+  // A repeating task waiting in the task queue names the occurrence it stands
+  // for, as on its queue row (`queuedRepeatOccurrence`, 2026-10-20) — only
+  // with the queue switch on.
+  const queuedOccurrence = queue.enabled ? queuedRepeatOccurrence(task) : null
   const metaSegments = tracked
     ? trackedMetaSegments(task)
-    : buildMetaSegments(task, timezone, isOverdue)
+    : buildMetaSegments(task, timezone, isOverdue, queuedOccurrence)
   // ATTEMPTS (spec §7): local days over target, read here with the same rule
   // the server uses, so the row shows "1×" the moment the target passes
   // without a refetch. At 3× the row OFFERS to drop the target (never does it
@@ -414,7 +420,7 @@ export function TaskRow({
   // The target time is a control (Remove target / Move…, `TargetTimeText`)
   // wherever the row can act on it: not in selection mode, where a press on
   // the row selects.
-  const timeControl = !isSelectionMode && !tracked && task.due_at !== null
+  const timeControl = !isSelectionMode && !tracked && task.due_at !== null && !queuedOccurrence
   const showToday = !isSelectionMode && !!onTargetAt && offersTargetToday(task)
   const cornerPresent = corner.dot || corner.attempts >= 1 || corner.priority !== null
   // Filter ai-to-process from visible label count (animation conveys that state)
@@ -943,12 +949,23 @@ function trackedMetaSegments(task: Task): MetaSegment[] {
   ]
 }
 
-function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
+function buildMetaSegments(
+  task: Task,
+  timezone: string,
+  isOverdue?: boolean,
+  queuedOccurrence?: string | null,
+): MetaSegment[] {
   const segments: MetaSegment[] = []
 
   // No "snoozed" colour or "snoozed from" note since 2026-10-12 (§6): there is
   // no snooze state — a snooze is a move of the target, nothing more.
-  if (task.due_at) {
+  if (queuedOccurrence) {
+    // A waiting repeating task: the occurrence's date, plain text (not the
+    // target control — the moved target is not what the row stands for).
+    segments.push({
+      text: DateTime.fromISO(queuedOccurrence).setZone(timezone).toFormat('ccc, LLL d, h:mm a'),
+    })
+  } else if (task.due_at) {
     const dueParts = formatDueTimeParts(task.due_at, timezone)
     segments.push({
       text: dueParts.relative,

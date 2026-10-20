@@ -125,6 +125,22 @@ export function monthlyDay(
   return `the ${ordinal(position)} ${name}`
 }
 
+/**
+ * `monthlyDay` for a rule's whole BYDAY list: Monday to Friday with a
+ * BYSETPOS is "the last weekday" / "the 1st weekday" of the month
+ * (BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1), not "the last Monday"; anything else
+ * is named by its first day, as before.
+ */
+function monthlyDays(byDay: string[], setPos: number | null, names: Record<string, string>) {
+  const days = new Set(byDay.map((d) => d.toUpperCase()))
+  const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
+  if (setPos !== null && setPos !== 0 && days.size === 5 && weekdays.every((d) => days.has(d))) {
+    if (setPos === -1) return 'the last weekday'
+    return setPos > 0 ? `the ${ordinal(setPos)} weekday` : `the ${ordinal(-setPos)}-to-last weekday`
+  }
+  return monthlyDay(byDay[0], setPos, names)
+}
+
 function formatMonthly(
   interval: number,
   byDay: string[],
@@ -138,7 +154,7 @@ function formatMonthly(
     return `${prefix} on the ${ordinals.join(', ')}${timeStr}`
   }
   if (byDay.length > 0) {
-    return `${prefix} on ${monthlyDay(byDay[0], setPos, DAY_NAMES)}${timeStr}`
+    return `${prefix} on ${monthlyDays(byDay, setPos, DAY_NAMES)}${timeStr}`
   }
   return `${prefix}${timeStr}`
 }
@@ -282,7 +298,7 @@ function formatMonthlyCompact(
     return `${prefix} on the ${byMonthDay.map(ordinal).join(', ')}${timeStr}`
   }
   if (byDay.length > 0) {
-    return `${prefix} on ${monthlyDay(byDay[0], setPos, SHORT_DAY_NAMES)}${timeStr}`
+    return `${prefix} on ${monthlyDays(byDay, setPos, SHORT_DAY_NAMES)}${timeStr}`
   }
   return `${prefix}${timeStr}`
 }
