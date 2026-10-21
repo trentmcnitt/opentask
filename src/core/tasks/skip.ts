@@ -19,7 +19,7 @@
  * that completions stay honest, NOT so anyone can infer avoidance from it.
  */
 
-import { advanceDeadline, capAtDeadline } from '@/lib/task-segments'
+import { occurrenceDates, scheduleBase } from '@/lib/task-segments'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
@@ -150,11 +150,15 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
  * `max(prevDueAt, completedAt)`). Not for a quota (no date to advance).
  */
 export function nextOccurrenceAfterSkip(
-  task: Pick<Task, 'rrule' | 'recurrence_mode' | 'anchor_time' | 'occurrence_at' | 'due_at'>,
+  task: Pick<
+    Task,
+    'rrule' | 'recurrence_mode' | 'anchor_time' | 'occurrence_at' | 'due_at' | 'repeat_anchor'
+  >,
   timezone: string,
   now: Date = new Date(),
 ): string {
-  const prevOccurrence = task.occurrence_at ?? task.due_at
+  // From the rule's own instant (`scheduleBase`; a rescheduled deadline).
+  const prevOccurrence = scheduleBase(task, timezone)
   return computeNextOccurrence({
     rrule: task.rrule!,
     recurrenceMode: task.recurrence_mode,
@@ -198,11 +202,11 @@ export function writeRecurringSkip(
 ): { after: Task; fieldsChanged: string[] } {
   const keep = keepDeck && !!task.on_deck_day
   const skipCount = (task.skip_count ?? 0) + skipsAdded
-  // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`),
-  // measured from the scheduled occurrence to the one landed on.
-  const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, timezone)
-  // The target is the occurrence, never past its deadline (§8.2).
-  const nextTarget = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
+  // The landing occurrence's dates (2026-10-21, `occurrenceDates`): its
+  // derived target and, on a deadline-anchored repeat, its deadline.
+  const next = nextOccurrenceAt ? occurrenceDates(task, nextOccurrenceAt, timezone) : null
+  const nextDeadlineAt = next ? next.deadlineAt : task.deadline_at
+  const nextTarget = next?.targetAt ?? null
   // A kept deck keeps the task without a target; `original_due_at` still gets
   // the landing occurrence's target, as taking it off deck later would give it.
   const nextDueAt = keep ? null : nextTarget

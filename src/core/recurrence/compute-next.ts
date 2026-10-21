@@ -15,6 +15,7 @@
 
 import { RRule, Weekday } from 'rrule'
 import { DateTime } from 'luxon'
+import { ValidationError } from '@/core/errors'
 import { ordinalsCount, parseRRule, type RRuleComponents } from './rrule-builder'
 import { parseAnchorTime } from './timezone'
 import { toNaiveLocal, fromNaiveLocal } from './utils'
@@ -214,6 +215,9 @@ export interface ComputeNextOptions {
   anchorAt?: Date | null
 }
 
+/** A rule with no next occurrence (`computeNextOccurrence` throws it as a 400). */
+export const NEVER_OCCURS_MESSAGE = 'This repeat never occurs again: check its days and months'
+
 /**
  * Compute the next occurrence of a recurring task.
  *
@@ -271,10 +275,13 @@ function computeFromDue(
   const nextNaive = rule.after(refNaive, false)
 
   if (!nextNaive) {
-    // Fallback: shouldn't happen for infinite rules
-    // Return tomorrow at anchor time (relative to the reference, not completion)
-    const tomorrow = refDt.plus({ days: 1 }).set({ hour, minute, second: 0, millisecond: 0 })
-    return tomorrow.toJSDate()
+    // A rule with no next occurrence (2026-10-21, the recurrence oracle: "the
+    // 31st of April" — `isValidRRule` now refuses one, but an older row may
+    // hold it). Never invent a date (this used to return "tomorrow"): a write
+    // that needs the next occurrence is refused (400), and a reader that only
+    // asks (today's occurrence, the snooze guard) already treats a throw as
+    // "no occurrence".
+    throw new ValidationError(NEVER_OCCURS_MESSAGE)
   }
 
   // Convert back to timezone-aware DateTime

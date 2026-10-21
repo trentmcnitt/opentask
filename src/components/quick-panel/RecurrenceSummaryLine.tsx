@@ -3,7 +3,6 @@
 import type { ReactNode } from 'react'
 import { Repeat } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { TARGET_WORD } from '@/lib/task-model-words'
 
 /** The id the summary line and the Repeat button point `aria-controls` at. */
 export const RECURRENCE_EDITOR_ID = 'quick-panel-recurrence-editor'
@@ -23,13 +22,16 @@ export const RECURRENCE_EDITOR_ID = 'quick-panel-recurrence-editor'
  * WHY "TARGET". On a recurring task the rule's time of day is each
  * occurrence's target (when it starts nagging); a deadline, if any, is its own
  * line and moves with the occurrence. Saying so is what tells the user where a
- * "late morning, but before bed" pair goes.
+ * "late morning, but before bed" pair goes. On a DEADLINE-ANCHORED repeat
+ * (2026-10-21) the rule's time is the deadline's, and the line says
+ * "Deadline" (`word`).
  *
  * The "since" age stays OUTSIDE the button: it has its own tap (a popover with
  * the origin reset), and a tap on it must not also open the editor.
  */
 export function RecurrenceSummaryLine({
   text,
+  word,
   isRecurring,
   isOneTime,
   dirty,
@@ -40,7 +42,9 @@ export function RecurrenceSummaryLine({
   className,
 }: {
   text: string
-  /** A single task with a rule: prefixed with the target word. */
+  /** What the rule's time is: the target word, or the deadline's (2026-10-21). */
+  word: string
+  /** A single task with a rule: prefixed with `word`. */
   isRecurring: boolean
   isOneTime: boolean
   dirty: boolean
@@ -55,7 +59,7 @@ export function RecurrenceSummaryLine({
       {!isOneTime && <Repeat className="mr-1 inline size-3 align-[-2px]" />}
       {isRecurring && (
         <>
-          <span className={cn(!dirty && 'text-muted-foreground/70')}>{TARGET_WORD}</span>{' '}
+          <span className={cn(!dirty && 'text-muted-foreground/70')}>{word}</span>{' '}
         </>
       )}
       {text}
@@ -80,7 +84,7 @@ export function RecurrenceSummaryLine({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={RECURRENCE_EDITOR_ID}
-          aria-label={`${expanded ? 'Close' : 'Edit'} recurrence: ${isRecurring ? `${TARGET_WORD} ` : ''}${text}`}
+          aria-label={`${expanded ? 'Close' : 'Edit'} recurrence: ${isRecurring ? `${word} ` : ''}${text}`}
           className={cn(
             '-mx-1.5 cursor-pointer rounded px-1.5 py-0.5 text-left transition-colors',
             expanded

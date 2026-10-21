@@ -566,6 +566,31 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(back, deadline)
     }
 
+    // MARK: Deadline-anchored repeats (2026-10-21)
+
+    /// `task-deadline-anchored.json`: a repeat whose rule walks its DEADLINE
+    /// (`repeat_anchor: deadline`) — the server's three new fields, which the
+    /// DTO doesn't decode (nothing native reads them), and the fields it does:
+    /// `due_at` is the derived target, `deadline_at` equals `occurrence_at`.
+    /// An older build decodes it like any repeating task with a deadline.
+    func testDeadlineAnchoredRepeat() throws {
+        let task = try Fixtures.decode(TaskDTO.self, "task-deadline-anchored")
+        XCTAssertEqual(task.id, Fixtures.deadlineRepeat)
+        XCTAssertEqual(task.title, "Lock the timesheet")
+        XCTAssertEqual(task.rrule, "FREQ=DAILY;INTERVAL=7;BYHOUR=17;BYMINUTE=0")
+        XCTAssertEqual(task.dueAt, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(task.deadlineAt, Fixtures.pinnedTimestamp)
+        XCTAssertEqual(task.occurrenceAt, task.deadlineAt, "the occurrence IS the deadline")
+        XCTAssertFalse(task.targetAuto, "a scheduled target, never the automatic one")
+        let raw = try Fixtures.object("task-deadline-anchored")
+        XCTAssertEqual(raw["repeat_anchor"] as? String, "deadline")
+        XCTAssertEqual(raw["target_days_before"] as? Int, 1)
+        XCTAssertEqual(raw["target_time"] as? String, "18:00")
+        XCTAssertEqual(raw["due_at"] as? String, task.dueAt)
+        XCTAssertEqual(raw["deadline_at"] as? String, task.deadlineAt)
+        XCTAssertEqual(raw["occurrence_at"] as? String, task.occurrenceAt)
+    }
+
     // MARK: Interval quotas (2026-10-16)
 
     /// `task-interval-quota.json`: an every-2-weeks quota as GET

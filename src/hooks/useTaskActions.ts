@@ -17,7 +17,7 @@ import { targetWhen } from '@/hooks/useTaskSegments'
 import { useTimezone } from '@/hooks/useTimezone'
 import { DateTime } from 'luxon'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
-import { calendarToday } from '@/lib/task-segments'
+import { calendarToday, occurrenceDates } from '@/lib/task-segments'
 
 /**
  * Shared task action handlers used by the dashboard and the task detail page.
@@ -126,13 +126,18 @@ function useHandleTargetAt(
 /**
  * The row as a deck write will leave it. A REPEATING task (2026-10-20) loses
  * its target while decked — so it leaves the over-target list at once — and
- * gets it back on its occurrence when taken off (`collectRepeatingUndeck`).
+ * gets its occurrence's own target back when taken off (`occurrenceDates`,
+ * as `collectRepeatingUndeck` does).
  */
-function optimisticDeck(t: Task, next: string | null): Task {
+function optimisticDeck(t: Task, next: string | null, timezone: string): Task {
   if (!t.rrule) return { ...t, on_deck_day: next }
   if (next !== null) return { ...t, on_deck_day: next, due_at: null }
-  return t.on_deck_day && t.due_at === null
-    ? { ...t, on_deck_day: null, due_at: t.occurrence_at }
+  return t.on_deck_day && t.due_at === null && t.occurrence_at
+    ? {
+        ...t,
+        on_deck_day: null,
+        due_at: occurrenceDates(t, t.occurrence_at, timezone).targetAt,
+      }
     : { ...t, on_deck_day: null }
 }
 
@@ -152,7 +157,9 @@ function useHandleDeck(
       if (cfg.mode !== 'list') return
       const zone = timezoneRef.current
       const next = day === undefined ? calendarToday(zone, new Date()) : day
-      cfg.setTasks((prev) => prev.map((t) => (t.id === task.id ? optimisticDeck(t, next) : t)))
+      cfg.setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? optimisticDeck(t, next, zone) : t)),
+      )
       try {
         const result = await sendDeck([task.id], day)
         const message = deckToastMessage(result, task.title, zone)

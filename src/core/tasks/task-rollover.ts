@@ -87,7 +87,7 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { DateTime } from 'luxon'
 import { isEarlyMorningPick, latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
-import { capAtDeadline, effectiveAttempts, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
+import { effectiveAttempts, occurrenceDates, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { TARGET_SET_FIELD } from './target-set'
 import { taskQueueEnabled } from './task-queue'
@@ -244,12 +244,23 @@ function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[], manual: 
   }
 }
 
+/**
+ * THE ROLLOVER'S TARGET-ANCHORED INVARIANT (2026-10-21): every roll, wait and
+ * release sets `occurrence_at` from a TARGET (`occurrence_at = due_at`, the
+ * next occurrence's target). That is only true of a target-anchored repeat —
+ * a deadline-anchored one's occurrence is its deadline (`occurrenceDates`) —
+ * so every query that leads to such a write is held to target-anchored rows,
+ * in so many words, not only through `deadline_at IS NULL` (I1 makes them the
+ * same; this keeps a row that broke I1 out of it).
+ */
+const TARGET_ANCHORED_SQL = `repeat_anchor = 'target'`
+
 /** The tasks the rollover may strip, roll or send to wait (module doc: EXCLUDED). */
 const ELIGIBLE_SQL = `
   user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
   AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1
   AND priority < ${QUEUE_KEEP_PRIORITY} AND deadline_at IS NULL
-  AND due_at IS NOT NULL`
+  AND ${TARGET_ANCHORED_SQL} AND due_at IS NOT NULL`
 
 /** What a run changed, by outcome (the manual run's answer). */
 export interface RolloverIds {
@@ -307,6 +318,7 @@ export function applyRollover(
     .prepare(
       `SELECT id, title, due_at, occurrence_at, skip_count FROM tasks
         WHERE user_id = ? AND rrule IS NOT NULL AND queued_at IS NOT NULL
+          AND ${TARGET_ANCHORED_SQL}
           AND due_at IS NOT NULL AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
     )
     .all(user.id) as WaitRow[]
@@ -828,9 +840,9 @@ function stripDecks(
 
 /**
  * 5, REPEATING (2026-10-20; docs/TASK-MODEL.md § On deck). A repeating deck
- * whose day has ended gives the task its target back on its occurrence
- * (`due_at` and `original_due_at` := `occurrence_at`, the deck cleared — one
- * write), then the repeating rules (2) apply in the same run as if it had
+ * whose day has ended gives the task its target back — its occurrence's own
+ * (`due_at` and `original_due_at` := `occurrenceDates(occurrence_at).targetAt`,
+ * the deck cleared — one write), then the repeating rules (2) apply in the same run as if it had
  * never been decked:
  *  - a below-High task with no deadline whose occurrence is before M ROLLS
  *    to this day's occurrence (a skip of the missed one) or WAITS in the
@@ -839,7 +851,9 @@ function stripDecks(
  *    target, so the queue sorts it by that day);
  *  - otherwise only the target comes back: High and Urgent never roll (they
  *    nag), a deadline task is never rolled (`ELIGIBLE_SQL`; `rollRepeating`
- *    doesn't move deadlines), and an occurrence still ahead (a deck made
+ *    doesn't move deadlines — so a DEADLINE-ANCHORED repeat, 2026-10-21, only
+ *    ever gets its derived target back, already arrived, before its deadline
+ *    day: decks never nag, and the deadline still does), and an occurrence still ahead (a deck made
  *    before it came) is simply its target again.
  * A from_completion rule is stepped from its occurrence, never from now
  * (`occurrenceFrom`): no re-anchor. A future deck that passed later
@@ -857,9 +871,10 @@ function endRepeatingDeck(
   result: TaskRolloverResult,
 ): void {
   const db = getDb()
-  // On the occurrence, never past its deadline (§8.2) — `collectRepeatingUndeck`'s rule.
+  // The occurrence's own target (`occurrenceDates`; a deadline-anchored
+  // repeat's lies before its deadline) — `collectRepeatingUndeck`'s rule.
   const occurrence = task.occurrence_at ?? task.due_at
-  const restored = occurrence ? capAtDeadline(occurrence, task.deadline_at, new Date(nowStr)) : null
+  const restored = occurrence ? occurrenceDates(task, occurrence, user.timezone).targetAt : null
   // The target is SET now (`target_set_at`), so the attempts checkpoint a
   // wait takes never counts the deck's days: a missed deck is never an
   // attempt (there was no target to be over).
@@ -888,7 +903,8 @@ function endRepeatingDeck(
     restored !== null &&
     Date.parse(restored) < m.getTime() &&
     task.priority < QUEUE_KEEP_PRIORITY &&
-    task.deadline_at === null
+    task.deadline_at === null &&
+    task.repeat_anchor === 'target' // `TARGET_ANCHORED_SQL`'s invariant
   if (!rolls) {
     run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: false })
     return

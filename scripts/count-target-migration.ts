@@ -9,6 +9,8 @@
  *   nagOffKeptTarget        one-offs with `deadline_nag_off` and a target → kept, picked; flag cleared
  *   deadlineNoTargetToAuto  one-offs with a deadline and no target → automatic target
  *   pullBackToDeadline      targets after a deadline still ahead → pulled back to it
+ *   repeatAnchor            repeats with a deadline → deadline-anchored (2026-10-21,
+ *                           `migrate-repeat-anchor.ts`): ids converted, and ids skipped with why
  *
  * Works on a database from before this build (no new columns yet) and on one
  * already migrated (all empty — the steps are idempotent). Run it against a
@@ -17,6 +19,7 @@
  */
 import Database from 'better-sqlite3'
 import { countsOf, planDeadlineTargetMigration } from '../src/core/db/migrate-deadline-targets'
+import { planRepeatAnchorMigration } from '../src/core/db/migrate-repeat-anchor'
 
 const file = process.argv[2]
 if (!file) {
@@ -26,5 +29,6 @@ if (!file) {
 
 const db = new Database(file, { readonly: true, fileMustExist: true })
 const plan = planDeadlineTargetMigration(db)
-console.log(JSON.stringify({ counts: countsOf(plan), ids: plan }, null, 2))
+const repeatAnchor = planRepeatAnchorMigration(db)
+console.log(JSON.stringify({ counts: countsOf(plan), ids: plan, repeatAnchor }, null, 2))
 db.close()

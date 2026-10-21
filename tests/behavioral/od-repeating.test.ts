@@ -87,6 +87,24 @@ function weekly(): Task {
   expect(t.due_at).toBe(at('2026-10-19T08:00'))
   return t
 }
+/**
+ * A DEADLINE-ANCHORED weekly (2026-10-21) made Tue 07:00: deadline Fridays
+ * 17:00 (Fri Oct 23), target 3 days before at 08:00 — Tue Oct 20 08:00, over
+ * target by 10:00.
+ */
+function fridayDeadline(): Task {
+  const t = repeating('FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0', '2026-10-20T07:00', {
+    deadline_at: at('2026-10-23T17:00'),
+    target_days_before: 3,
+    target_time: '08:00',
+  })
+  expect(t).toMatchObject({
+    due_at: at('2026-10-20T08:00'),
+    occurrence_at: at('2026-10-23T17:00'),
+    deadline_at: at('2026-10-23T17:00'),
+  })
+  return t
+}
 function task(id: number): Task {
   return getTaskById(id)!
 }
@@ -298,14 +316,20 @@ describe('OD-RP: the deck write', () => {
   })
 
   test('OD-RP16: A1 per task — a repeating deadline refuses days on or after its own day', () => {
-    // Daily 08:00, deadline Fri Oct 23 17:00 for the current occurrence.
-    const t = daily({ deadline_at: at('2026-10-23T17:00') })
+    // Deadline Fri Oct 23 17:00 for the current occurrence.
+    const t = fridayDeadline()
     expect(deck([t.id], '2026-10-23').refused).toEqual([{ id: t.id, reason: 'after_auto_target' }])
     expect(deck([t.id], '2026-10-22').decked).toBe(1)
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', due_at: null })
-    // A deadline moved onto the deck's day wins: the deck goes, the target comes back.
+    // A deadline moved onto the deck's day wins: the deck goes, the occurrence
+    // is rescheduled to it and its derived target comes back (Mon Oct 19 08:00).
     updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-22T17:00') } })
-    expect(task(t.id)).toMatchObject({ on_deck_day: null, due_at: at('2026-10-20T08:00') })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: null,
+      due_at: at('2026-10-19T08:00'),
+      occurrence_at: at('2026-10-22T17:00'),
+      deadline_at: at('2026-10-22T17:00'),
+    })
     expect(due()).toContain(t.id)
   })
 
@@ -404,7 +428,7 @@ describe('OD-RP: Upcoming, the rollover, the rollback', () => {
 
   test('OD-RP31: the rollover never leaves a repeating task target-less; a deadline one is only restored', () => {
     const plain = daily()
-    const deadline = daily({ deadline_at: at('2026-10-23T17:00') })
+    const deadline = fridayDeadline()
     deck([plain.id, deadline.id])
     const r = roll('2026-10-21T06:30')
     expect(r.deckStripped).toBe(2)
@@ -414,11 +438,11 @@ describe('OD-RP: Upcoming, the rollover, the rollback', () => {
       occurrence_at: at('2026-10-21T08:00'),
       skip_count: 1,
     })
-    // Deadline repeating tasks are never rolled: the target is back, it nags.
+    // Deadline repeating tasks are never rolled: the derived target is back, it nags.
     expect(task(deadline.id)).toMatchObject({
       on_deck_day: null,
       due_at: at('2026-10-20T08:00'),
-      occurrence_at: at('2026-10-20T08:00'),
+      occurrence_at: at('2026-10-23T17:00'),
       deadline_at: at('2026-10-23T17:00'),
       skip_count: 0,
       queued_at: null,
@@ -479,11 +503,16 @@ describe('OD-RP: Upcoming, the rollover, the rollback', () => {
 })
 
 describe('OD-RP: review round (2026-10-20)', () => {
-  test('OD-RP40: the target that comes back is capped at the deadline — rollover and rollback', () => {
-    // Weekly Monday: next occurrence Mon Oct 26 08:00; deadline Sun Oct 25 17:00.
+  test('OD-RP40: the target that comes back is the occurrence’s derived one — rollover and rollback', () => {
+    // Deadline Mondays 08:00 (Mon Oct 26), target the day before at 17:00
+    // (2026-10-21: deadline-anchored; the target never after the deadline).
     const decked = () => {
-      const t = repeating(MONDAY_8, '2026-10-20T07:00')
-      updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-25T17:00') } })
+      const t = repeating(MONDAY_8, '2026-10-20T07:00', {
+        deadline_at: at('2026-10-26T08:00'),
+        target_days_before: 1,
+        target_time: '17:00',
+      })
+      expect(t.due_at).toBe(at('2026-10-25T17:00'))
       deck([t.id])
       expect(task(t.id)).toMatchObject({
         on_deck_day: '2026-10-20',
@@ -551,8 +580,14 @@ describe('OD-RP: review round (2026-10-20)', () => {
     expect(deckRefusal(t, '2026-10-22', ctx, now)).toBeNull()
     expect(deckLimit(t, tz, now, null, '06:30')).toMatchObject({ latestDay: '2026-10-21' })
     expect(deckLimit(t, tz, now)).toMatchObject({ latestDay: '2026-10-22' })
-    // The server judges with the owner's rollover time (06:30 here).
-    const real = daily({ deadline_at: at('2026-10-23T02:00') })
+    // The server judges with the owner's rollover time (06:30 here). A
+    // deadline-anchored weekly (2026-10-21): deadline Fridays 02:00, target
+    // the day before at 20:00.
+    const real = repeating('FREQ=WEEKLY;BYDAY=FR;BYHOUR=2;BYMINUTE=0', '2026-10-20T07:00', {
+      deadline_at: at('2026-10-23T02:00'),
+      target_days_before: 1,
+      target_time: '20:00',
+    })
     expect(deck([real.id], '2026-10-22').refused).toEqual([
       { id: real.id, reason: 'after_auto_target' },
     ])

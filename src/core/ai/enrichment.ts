@@ -759,7 +759,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   // Parse and validate the enrichment result
   let parsed: EnrichmentResult | null = null
   if (result.structuredOutput) {
-    const validation = EnrichmentResultSchema.safeParse(result.structuredOutput)
+    const validation = parseEnrichmentAnswer(result.structuredOutput, row.id)
     if (validation.success) {
       parsed = validation.data
     } else {
@@ -775,7 +775,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
     if (fenceMatch) textToParse = fenceMatch[1]
     try {
       const json = JSON.parse(textToParse)
-      const validation = EnrichmentResultSchema.safeParse(json)
+      const validation = parseEnrichmentAnswer(json, row.id)
       if (validation.success) parsed = validation.data
     } catch {
       // Not valid JSON text
@@ -2653,8 +2653,15 @@ function collectEnrichmentTarget(
       now: new Date(),
     },
   })
-  // A repeating task's date set here is its occurrence (a schedule, not a move).
-  const occurrenceAt = rrule && !opts.tracked && opts.proposedDue ? opts.proposedDue : undefined
+  // A repeating task's date set here is its occurrence (a schedule, not a move)
+  // — on a target-anchored repeat. A DEADLINE-ANCHORED one's occurrence is its
+  // deadline (2026-10-21, `occurrenceDates`), never a target the AI read: the
+  // date is a move of its target, capped above. (Enrichment never makes one —
+  // `sanitizeTaskModelFields` drops a rule's deadline; teaching it to is PR 5.)
+  const occurrenceAt =
+    rrule && !opts.tracked && opts.proposedDue && task.repeat_anchor !== 'deadline'
+      ? opts.proposedDue
+      : undefined
   if (occurrenceAt !== undefined && occurrenceAt !== task.occurrence_at) {
     changes.setClauses.push('occurrence_at = ?')
     changes.values.push(occurrenceAt)
@@ -2869,6 +2876,44 @@ function withoutDateFields(
   }
 }
 
+/**
+ * NO RULE ONTO A DEADLINE (2026-10-21, until PR 5 teaches enrichment
+ * deadline-anchored repeats): a rule on a task with a deadline would make a
+ * target-anchored repeat WITH a deadline through raw SQL — a shape the API
+ * refuses (`planRepeatSchedule`, L9/A3) — and on a deadline-anchored one would
+ * walk a target where its rule walks the deadline. So a rule the model gives
+ * such a task (other than the one it has) is left out, logged; the rest of the
+ * answer applies.
+ */
+export function withoutRuleOnDeadline(task: Task, enrichment: EnrichmentResult): EnrichmentResult {
+  const hasDeadline = task.deadline_at !== null || task.repeat_anchor === 'deadline'
+  if (!hasDeadline || !enrichment.rrule || enrichment.rrule === task.rrule) return enrichment
+  log.warn('ai', `Enrichment: task ${task.id} has a deadline — its rule not applied (PR 5)`)
+  return { ...enrichment, rrule: null }
+}
+
+/**
+ * The model's answer, validated — with an invalid rule DROPPED rather than the
+ * whole answer lost (2026-10-21): a rule `isValidRRule` refuses (one that never
+ * occurs, like the 31st of April) fails only its own field, so the answer is
+ * parsed again without it and the drop is logged. Any other problem fails the
+ * parse as before.
+ */
+export function parseEnrichmentAnswer(
+  output: unknown,
+  taskId: number,
+): ReturnType<typeof EnrichmentResultSchema.safeParse> {
+  const first = EnrichmentResultSchema.safeParse(output)
+  if (first.success || !output || typeof output !== 'object') return first
+  const onlyRule = first.error.issues.every((issue) => issue.path[0] === 'rrule')
+  if (!onlyRule) return first
+  log.warn(
+    'ai',
+    `Enrichment[${taskId}]: invalid rule dropped: ${String((output as { rrule?: unknown }).rrule)}`,
+  )
+  return EnrichmentResultSchema.safeParse({ ...output, rrule: null, recurrence_mode: null })
+}
+
 /** Bookkeeping columns that ride along with a change but are not news to the user. */
 const INTERNAL_FIELDS = [
   'anchor_time',
@@ -2919,7 +2964,11 @@ function applyEnrichment(
 
   const changes = collectEnrichmentChanges(
     task,
-    withEnrichmentRuleTime(task, deckOrTarget(task, answer, user), user),
+    withEnrichmentRuleTime(
+      task,
+      deckOrTarget(task, withoutRuleOnDeadline(task, answer), user),
+      user,
+    ),
     user,
     inputText,
   )

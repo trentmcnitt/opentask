@@ -19,6 +19,7 @@ import {
   autoTargetAt,
   capAtDeadline,
   deadlineDayTarget,
+  deadlineLeadDays,
   leadDaysForWait,
   resolveTarget,
   targetReset,
@@ -72,6 +73,28 @@ describe("TM8: the deadline's automatic target", () => {
       expect(leadDaysForWait(2)).toBe(3)
     })
 
+    test('TM8-001b: one table for every automatic target — by the wait (2026-10-21)', () => {
+      // Now Mon Oct 12 12:00; morning 09:00. Under 2: the deadline day; 2–7:
+      // the day before; 8–15: 3 days; 16+: 4 days (`leadTargetFor`).
+      const cases: [string, string][] = [
+        ['2026-10-13T17:00', 'Tue Oct 13 09:00'], // wait 1
+        ['2026-10-15T17:00', 'Wed Oct 14 09:00'], // wait 3
+        ['2026-10-19T17:00', 'Sun Oct 18 09:00'], // wait 7
+        ['2026-10-22T17:00', 'Mon Oct 19 09:00'], // wait 10
+        ['2026-11-01T17:00', 'Wed Oct 28 09:00'], // wait 20
+      ]
+      for (const [deadline, target] of cases) {
+        expect(local(autoTargetAt(at(deadline), ctx)), deadline).toBe(target)
+      }
+      // The deadline day with the deadline before the morning: the deadline itself.
+      expect(local(autoTargetAt(at('2026-10-13T07:00'), ctx))).toBe('Tue Oct 13 07:00')
+      expect(deadlineLeadDays(1)).toBe(0)
+      expect(deadlineLeadDays(2)).toBe(1)
+      expect(deadlineLeadDays(7)).toBe(1)
+      expect(deadlineLeadDays(8)).toBe(3)
+      expect(deadlineLeadDays(16)).toBe(4)
+    })
+
     test('TM8-002: created with a deadline 11 days out → target 3 days before, at the morning', () => {
       const t = make({ deadline_at: at('2026-10-23T23:59') })
       expect(local(t.due_at)).toBe('Tue Oct 20 09:00')
@@ -98,7 +121,8 @@ describe("TM8: the deadline's automatic target", () => {
     })
 
     test('TM8-006: a lead day already past → now: over target at once (ruling Q10)', () => {
-      const t = make({ deadline_at: at('2026-10-14T18:00') })
+      // Deadline tonight (wait 0): the deadline day's morning has passed.
+      const t = make({ deadline_at: at('2026-10-12T18:00') })
       expect(t.due_at).toBe(new Date().toISOString())
       expect(t.target_auto).toBe(true)
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)

@@ -289,7 +289,9 @@ function TimePicker({
   minute,
   onHourChange,
   onMinuteChange,
+  label,
 }: {
+  label: string
   hour: number
   minute: number
   onHourChange: (h: number) => void
@@ -322,10 +324,12 @@ function TimePicker({
 
   return (
     <div className="flex items-center gap-2">
-      {/* The rule's time of day IS each occurrence's target (2026-10-12): a
-          recurring task's deadline is its own line in the editor, and moves
-          with the occurrence (advanceDeadline). */}
-      <span className="text-muted-foreground text-sm whitespace-nowrap">{TARGET_WORD}</span>
+      {/* The rule's time of day IS each occurrence's target (2026-10-12) — or,
+          on a deadline-anchored repeat (2026-10-21), its DEADLINE, the target
+          derived from it (`occurrenceDates`): the caller says which (`timeLabel`). */}
+      <span data-recurrence-time-label className="text-muted-foreground text-sm whitespace-nowrap">
+        {label}
+      </span>
       <Select value={displayHour.toString()} onValueChange={(v) => handleHourChange(parseInt(v))}>
         <SelectTrigger className="w-[72px]">
           <SelectValue />
@@ -405,6 +409,11 @@ export interface RecurrencePickerProps {
   initialTime?: string | null
   /** RRULE day abbreviation (e.g., 'WE') to auto-select when switching to Weekly with no days */
   defaultDayOfWeek?: string
+  /**
+   * What the rule's time IS (2026-10-21): the target (default) — or, on a
+   * deadline-anchored repeat, the deadline (`DEADLINE_WORD`).
+   */
+  timeLabel: string
   onChange: (rrule: string | null, recurrenceMode?: RecurrenceMode) => void
 }
 
@@ -413,6 +422,7 @@ export function RecurrencePicker({
   recurrenceMode: initialRecurrenceMode = 'from_due',
   initialTime,
   defaultDayOfWeek,
+  timeLabel,
   onChange,
 }: RecurrencePickerProps) {
   const initial = useMemo(() => parseInitialState(value, initialTime), [value, initialTime])
@@ -577,7 +587,13 @@ export function RecurrencePicker({
 
       {/* Time picker - shown when a frequency is selected */}
       {frequency !== 'NONE' && (
-        <TimePicker hour={hour} minute={minute} onHourChange={setHour} onMinuteChange={setMinute} />
+        <TimePicker
+          label={timeLabel}
+          hour={hour}
+          minute={minute}
+          onHourChange={setHour}
+          onMinuteChange={setMinute}
+        />
       )}
 
       {/* Recurrence mode selector */}

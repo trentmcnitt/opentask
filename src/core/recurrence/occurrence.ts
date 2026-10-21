@@ -65,6 +65,11 @@ export interface OccurrenceTask {
    * in the badge, never swept, never notified (docs/TASK-MODEL.md § On deck).
    */
   on_deck_day?: string | null
+  /**
+   * 2026-10-21: a DEADLINE-ANCHORED repeat's schedule walks its deadline, not
+   * its target, so the no-target fallback below must never derive one.
+   */
+  repeat_anchor?: 'target' | 'deadline' | null
 }
 
 /** The occurrence a floating rule's grid (every N, or bare) is anchored at, if the item has one. */
@@ -143,6 +148,13 @@ export function effectiveDueAt(
 
   // One-offs: due_at is the whole truth.
   if (!task.rrule) {
+    return task.due_at ? new Date(task.due_at) : null
+  }
+
+  // A deadline-anchored repeat (2026-10-21) always has a target off deck
+  // (`occurrenceDates`), and its rule walks the DEADLINE: today's occurrence
+  // of it is no target, so with none there is nothing due.
+  if (task.repeat_anchor === 'deadline') {
     return task.due_at ? new Date(task.due_at) : null
   }
 

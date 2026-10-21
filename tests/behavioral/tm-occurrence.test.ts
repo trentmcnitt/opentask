@@ -17,7 +17,7 @@ import { executeUndo } from '@/core/undo'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getTaskSegments, targetTasksToday } from '@/core/tasks/task-segments'
 import { formatTaskResponse } from '@/lib/format-task'
-import { advanceDeadline, upcomingRowActions } from '@/lib/task-segments'
+import { upcomingRowActions } from '@/lib/task-segments'
 import { movedOccurrenceLabel } from '@/lib/editor-target-labels'
 import { REMINDER_SNOOZE_MESSAGE } from '@/core/validation'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -49,11 +49,15 @@ function upcomingRows(id: number): number {
     .filter((r) => r.task.id === id).length
 }
 
-/** codes-blog: weekly on Sunday at noon, deadline Sunday 11 PM. */
+/**
+ * codes-blog: deadline Sundays at 11 PM, target the same Sunday at noon — a
+ * DEADLINE-ANCHORED repeat since 2026-10-21 (the rule walks the deadline;
+ * the target sent with it gives the offset: 0 days, 12:00).
+ */
 function codesBlog() {
   setClock('2026-10-12T12:00')
   return make({
-    rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0',
+    rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=23;BYMINUTE=0',
     due_at: at('2026-10-18T12:00'),
     deadline_at: at('2026-10-18T23:00'),
   })
@@ -70,10 +74,15 @@ describe('TM6: the occurrence apart from the target', () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  test('TM6-001: a repeating task starts with its occurrence = its target; a one-off has none', () => {
+  test('TM6-001: a repeating task starts on its occurrence; a one-off has none', () => {
+    const plain = make({ rrule: 'FREQ=WEEKLY;BYDAY=SU', due_at: at('2026-10-18T12:00') })
+    expect(plain.occurrence_at).toBe(at('2026-10-18T12:00'))
+    expect(plain.due_at).toBe(plain.occurrence_at)
+    // Deadline-anchored: the occurrence is the deadline, the target derived.
     const t = codesBlog()
-    expect(t.occurrence_at).toBe(at('2026-10-18T12:00'))
-    expect(t.due_at).toBe(t.occurrence_at)
+    expect(t.occurrence_at).toBe(at('2026-10-18T23:00'))
+    expect(t.deadline_at).toBe(t.occurrence_at)
+    expect(t.due_at).toBe(at('2026-10-18T12:00'))
     expect(make({ due_at: at('2026-10-20T09:00') }).occurrence_at).toBeNull()
   })
 
@@ -81,7 +90,7 @@ describe('TM6: the occurrence apart from the target', () => {
     const t = codesBlog()
     const r = snoozeTask({ ...u, taskId: t.id, until: at('2026-10-18T15:00') })
     expect(r.task.due_at).toBe(at('2026-10-18T15:00'))
-    expect(r.task.occurrence_at).toBe(at('2026-10-18T12:00'))
+    expect(r.task.occurrence_at).toBe(at('2026-10-18T23:00'))
     expect(r.task.original_due_at).toBe(at('2026-10-18T12:00'))
     // No snooze state anywhere (§6, ruling Q1).
     const json: object = formatTaskResponse(r.task, tz)
@@ -92,7 +101,7 @@ describe('TM6: the occurrence apart from the target', () => {
   test('TM6-003: `retarget` from an old client is a plain move (ruling Q4)', () => {
     const t = codesBlog()
     const r = patch(t.id, { due_at: at('2026-10-17T20:00'), reset_original_due_at: true })
-    expect(r.task.occurrence_at).toBe(at('2026-10-18T12:00'))
+    expect(r.task.occurrence_at).toBe(at('2026-10-18T23:00'))
     expect(r.task.original_due_at).toBe(at('2026-10-18T12:00'))
   })
 
@@ -104,11 +113,11 @@ describe('TM6: the occurrence apart from the target', () => {
       expect(r).toMatchObject({ affected: 1, skipped_recurring: [] })
       const moved = getTaskById(t.id)!
       expect(DateTime.fromISO(moved.due_at!).setZone(tz).toISODate()).toBe('2026-10-17')
-      expect(moved.occurrence_at).toBe(at('2026-10-18T12:00'))
+      expect(moved.occurrence_at).toBe(at('2026-10-18T23:00'))
       setClock('2026-10-17T21:00')
       done(t.id)
       const next = getTaskById(t.id)!
-      expect(next.occurrence_at).toBe(at('2026-10-25T12:00'))
+      expect(next.occurrence_at).toBe(at('2026-10-25T23:00'))
       expect(next.due_at).toBe(at('2026-10-25T12:00'))
       // Sunday the 18th: nothing due.
       setClock('2026-10-18T13:00')
@@ -260,16 +269,6 @@ describe('TM6: the occurrence apart from the target', () => {
       expect(moved.task.occurrence_at).toBe(at('2026-10-13T18:00'))
       expect(moved.task.original_due_at).toBe(at('2026-10-13T18:00'))
       expect(() => patch(r.id, { due_at: at('2026-10-13T20:00') })).toThrow(REMINDER_SNOOZE_MESSAGE)
-    })
-
-    test('TM6-042: advanceDeadline measures from the occurrence', () => {
-      const task = {
-        deadline_at: at('2026-10-18T23:00'),
-        due_at: at('2026-10-17T10:00'), // moved
-        original_due_at: at('2026-10-17T10:00'),
-        occurrence_at: at('2026-10-18T12:00'),
-      }
-      expect(advanceDeadline(task, at('2026-10-25T12:00'), tz)).toBe(at('2026-10-25T23:00'))
     })
   })
 })

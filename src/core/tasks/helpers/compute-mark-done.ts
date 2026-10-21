@@ -8,7 +8,7 @@
 
 import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
-import { advanceDeadline, capAtDeadline } from '@/lib/task-segments'
+import { occurrenceDates, scheduleBase } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import { TARGET_SET_FIELD, queueStateToClear } from '../target-set'
 
@@ -26,11 +26,11 @@ export interface RecurringComputation {
    */
   nextDueAt: string | null
   /**
-   * The next SCHEDULED occurrence (§6, 2026-10-12) — `nextDueAt` before the
-   * deadline cap. The new `occurrence_at`.
+   * The next SCHEDULED occurrence (§6, 2026-10-12): the new `occurrence_at`.
+   * `nextDueAt` and `nextDeadlineAt` are its dates (`occurrenceDates`).
    */
   nextOccurrenceAt: string | null
-  /** The deadline moved with the occurrence (`advanceDeadline`); unchanged when none. */
+  /** The next occurrence's deadline: itself on a deadline-anchored repeat, else null. */
   nextDeadlineAt: string | null
   prevDueAt: string | null
   /** The occurrence this completion closes (`completions.occurrence_at_was`). */
@@ -87,7 +87,9 @@ export function computeMarkDone(
     // Sunday, never tomorrow (no double fire). Done after a target moved PAST
     // the next occurrence (ruling Q3: a weekly moved +10 days) → the next
     // occurrence after now: no catch-up, no double row.
-    const prevOccurrence = task.occurrence_at ?? task.due_at
+    // From the rule's own instant for this occurrence (`scheduleBase`: a
+    // rescheduled deadline never makes a second occurrence in its period).
+    const prevOccurrence = scheduleBase(task, userTimezone)
     const nextOccurrence = isTracked(task)
       ? null
       : computeNextOccurrence({
@@ -102,11 +104,11 @@ export function computeMarkDone(
         })
 
     const nextOccurrenceAt = nextOccurrence?.toISOString() ?? null
-    const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, userTimezone)
-    // The new target is the occurrence, never past its deadline (§8.2).
-    const nextDueAt = nextOccurrenceAt
-      ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt, completedAt)
-      : null
+    // The next occurrence's dates (2026-10-21): its derived target and, on a
+    // deadline-anchored repeat, its deadline. Nothing a move did carries over.
+    const next = nextOccurrenceAt ? occurrenceDates(task, nextOccurrenceAt, userTimezone) : null
+    const nextDueAt = next?.targetAt ?? null
+    const nextDeadlineAt = next ? next.deadlineAt : task.deadline_at
     return {
       type: 'recurring',
       nextDueAt,

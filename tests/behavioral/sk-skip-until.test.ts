@@ -158,26 +158,47 @@ describe('Skip until: landing and counts', () => {
     expect(task(t.id).due_at).toBe(at('2026-01-29T09:00'))
   })
 
-  test('SKU-007: the deadline moves with the occurrence, and caps the target', () => {
-    const t = make({
-      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
-      due_at: at('2026-01-19T09:00'),
+  /** Deadline Mondays 17:00, target the Saturday before at 9:00 (2026-10-21). */
+  function mondayDeadline(): Task {
+    return make({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=17;BYMINUTE=0',
+      deadline_at: at('2026-01-19T17:00'),
+      target_days_before: 2,
+      target_time: '09:00',
     })
-    // A deadline two days after the occurrence: it moves to two days after the landing.
-    set(t.id, { deadline_at: at('2026-01-21T17:00') })
-    skipUntil({ ...u, taskIds: [t.id], until: '2026-02-03' })
-    expect(task(t.id).deadline_at).toBe(at('2026-02-11T17:00'))
+  }
 
-    // A deadline the evening BEFORE the occurrence: the target stops at it.
-    const c = make({
-      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
-      due_at: at('2026-01-19T09:00'),
+  test('SKU-007: a deadline-anchored repeat lands where its DERIVED TARGET is on or after the date', () => {
+    const t = mondayDeadline()
+    expect(task(t.id).due_at).toBe(at('2026-01-17T09:00'))
+    // Until Mon Feb 2: that Monday's deadline is on the date, but its target
+    // (Sat Jan 31) is before it — skipped too. Lands on Feb 9 (target Sat Feb 7).
+    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-02-02' })
+    expect(r.occurrencesSkipped).toBe(3)
+    expect(task(t.id).occurrence_at).toBe(at('2026-02-09T17:00'))
+    expect(task(t.id).deadline_at).toBe(at('2026-02-09T17:00'))
+    expect(task(t.id).due_at).toBe(at('2026-02-07T09:00'))
+
+    // Until Sun Jan 18: the current occurrence's deadline (Mon) is after the
+    // date but its target (Sat) is before — one skip, to Jan 26.
+    const c = mondayDeadline()
+    const one = skipUntil({ ...u, taskIds: [c.id], until: '2026-01-18' })
+    expect(one.occurrencesSkipped).toBe(1)
+    expect(task(c.id).occurrence_at).toBe(at('2026-01-26T17:00'))
+    expect(task(c.id).due_at).toBe(at('2026-01-24T09:00'))
+  })
+
+  test('SKU-007b: from_completion, deadline-anchored: the DEADLINE lands target_days_before after the date', () => {
+    const t = make({
+      rrule: 'FREQ=WEEKLY;INTERVAL=2;BYHOUR=17;BYMINUTE=0',
+      recurrence_mode: 'from_completion',
+      deadline_at: at('2026-01-19T17:00'),
+      target_days_before: 2,
+      target_time: '09:00',
     })
-    set(c.id, { deadline_at: at('2026-01-18T20:00') })
-    skipUntil({ ...u, taskIds: [c.id], until: '2026-02-03' })
-    expect(task(c.id).occurrence_at).toBe(at('2026-02-09T09:00'))
-    expect(task(c.id).deadline_at).toBe(at('2026-02-08T20:00'))
-    expect(task(c.id).due_at).toBe(at('2026-02-08T20:00'))
+    skipUntil({ ...u, taskIds: [t.id], until: '2026-02-20' })
+    expect(task(t.id).deadline_at).toBe(at('2026-02-22T17:00'))
+    expect(task(t.id).due_at).toBe(at('2026-02-20T09:00'))
   })
 })
 
@@ -376,19 +397,25 @@ describe('Skip until: targets, far dates and rule times', () => {
     expect(task(t.id).queue_mark).toBe(true)
   })
 
-  test('SKU-016b: a deadline before the date already holds the target — a re-run writes nothing', () => {
+  test('SKU-016b: a deadline-anchored target already on its derived day — a re-run writes nothing', () => {
+    // Deadline Mon Jan 19 17:00, target derived Sat Jan 17 09:00: nothing before Sat.
     const t = make({
-      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
-      due_at: at('2026-01-19T09:00'),
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=17;BYMINUTE=0',
+      deadline_at: at('2026-01-19T17:00'),
+      target_days_before: 2,
+      target_time: '09:00',
     })
-    // The occurrence Mon Jan 19; the deadline Sat Jan 17 noon caps the target there.
-    set(t.id, { due_at: at('2026-01-17T12:00'), deadline_at: at('2026-01-17T12:00') })
     const before = undoEntries().length
-    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-18' })
+    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-17' })
     expect(r.tasksAffected).toBe(0)
     expect(r.alreadyClear).toBe(1)
-    expect(task(t.id).due_at).toBe(at('2026-01-17T12:00'))
-    expect(undoEntries().length).toBe(before)
+    // Moved before the date: it goes back to its derived target, no skip.
+    set(t.id, { due_at: at('2026-01-16T12:00') })
+    const moved = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-17' })
+    expect(moved.targetsMoved).toBe(1)
+    expect(task(t.id).due_at).toBe(at('2026-01-17T09:00'))
+    expect(task(t.id).occurrence_at).toBe(at('2026-01-19T17:00'))
+    expect(undoEntries().length).toBe(before + 1)
   })
 
   test('SKU-017: a multi-BYHOUR daily rule two years out, counted in one pass', () => {

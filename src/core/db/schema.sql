@@ -143,6 +143,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   anchor_time   TEXT,
   anchor_dow    INTEGER,
   anchor_dom    INTEGER,
+  -- What the rule's instant (`occurrence_at`) IS (2026-10-21, deadline-anchored
+  -- repeats; docs/TASK-MODEL.md § Recurrence Model). Read only when rrule is set.
+  --  'target'   — the occurrence is the target; no deadline (every repeat before).
+  --  'deadline' — the occurrence is the DEADLINE (deadline_at mirrors it), and
+  --               the target is derived from it: `target_days_before` local
+  --               calendar days earlier (0 = the same day) at `target_time`
+  --               (HH:MM, local). Both are set iff the anchor is 'deadline'.
+  -- One pure function derives the dates of an occurrence (`occurrenceDates`
+  -- in src/lib/task-segments.ts). Never on a reminder or a quota.
+  repeat_anchor TEXT NOT NULL DEFAULT 'target' CHECK (repeat_anchor IN ('target', 'deadline')),
+  target_days_before INTEGER DEFAULT NULL,
+  target_time   TEXT DEFAULT NULL,
 
   -- Snooze tracking (stores the original due_at when task is first snoozed)
   original_due_at  TEXT,
@@ -229,7 +241,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   target_auto INTEGER NOT NULL DEFAULT 0,
   -- A repeating task's SCHEDULED occurrence (§6, 2026-10-12); due_at is its
   -- target, which a move changes alone. Done and skip advance from this and
-  -- set both; advanceDeadline measures from it. NULL for one-offs.
+  -- set its dates (occurrenceDates); a deadline-anchored repeat's IS its
+  -- deadline (repeat_anchor). NULL for one-offs.
   occurrence_at TEXT DEFAULT NULL,
   -- ATTEMPTS (spec §7, 2026-10-12): local days on which the task was over
   -- target. `attempts` is the count as of the checkpoint
@@ -254,10 +267,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- write), and the target it had then (kept, for a restore).
   queued_at TEXT DEFAULT NULL,
   queued_from_due_at TEXT DEFAULT NULL,
-  -- When the rollover last changed this task (task-queue PR 2: a strip, a
-  -- repeating roll or wait). The UNDO FENCE's witness: undo and redo skip a
-  -- snapshot of this task from an entry written before it
-  -- (src/core/undo/rollover-fence.ts). No target write clears it.
+  -- The last SYSTEM change this task's older undo entries must not cross: the
+  -- rollover (task-queue PR 2: a strip, a repeating roll or wait) and the
+  -- deadline-anchor migration (2026-10-21, src/core/db/migrate-repeat-anchor.ts).
+  -- The UNDO FENCE's witness: undo and redo skip a snapshot of this task from
+  -- an entry written before it (src/core/undo/rollover-fence.ts). No target
+  -- write clears it.
   rolled_over_at TEXT DEFAULT NULL,
   -- ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): the owner's local
   -- CALENDAR date (yyyy-MM-dd) the task is on deck for — "I'd like to get to
@@ -295,6 +310,9 @@ CREATE TABLE IF NOT EXISTS completions (
   -- The occurrence it completed (§6, 2026-10-12), so a put-back restores the
   -- schedule as well as the target. NULL on older rows: put-back reads due_at_was.
   occurrence_at_was TEXT,
+  -- The occurrence it advanced TO (2026-10-21): put-back checks the task is
+  -- still on it. NULL on older rows: put-back compares the target (due_at_next).
+  occurrence_at_next TEXT,
   -- The task's attempts when it was completed (§7, 2026-10-12): how many local
   -- days the occurrence was over target. Put-back restores it.
   attempts INTEGER DEFAULT NULL

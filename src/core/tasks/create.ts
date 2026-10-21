@@ -6,15 +6,19 @@ import { TARGET_SET_FIELD } from './target-set'
 import { getTargetContext } from './target-context'
 import {
   DECK_REFUSAL_MESSAGES,
+  capAtDeadline,
   deckDayProblem,
   deckRefusal,
   deckSkip,
+  occurrenceDates,
   resolveTarget,
+  type RelativeTarget,
   type TargetContext,
 } from '@/lib/task-segments'
+import { assertRuleOnDeadline, createAnchor, resolveRelativeTarget } from './repeat-schedule'
 import { taskQueueEnabled } from './task-queue'
 import { getDb, withTransaction } from '@/core/db'
-import type { Task, TaskCreateInput } from '@/types'
+import type { RepeatAnchor, Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import {
   computeFirstOccurrence,
@@ -103,12 +107,68 @@ function timedSchedule(
   tracked: boolean,
   ctx: TargetContext,
   timezone: string,
+  anchor: RepeatAnchor,
 ): string | null | undefined {
   return fillRuleTime(scheduleFor(userId, input, tracked), tracked, {
-    requestDueAt: input.due_at ?? null,
+    // A deadline-anchored rule repeats the DEADLINE (2026-10-21): its time.
+    requestDueAt: (anchor === 'deadline' ? input.deadline_at : input.due_at) ?? null,
     morningTime: ctx.morningTime,
     timezone,
   })
+}
+
+/** A new repeating task's dates and schedule (`occurrenceDates` for a deadline-anchored one). */
+interface FirstDates {
+  dueAt: string | null
+  occurrenceAt: string | null
+  deadlineAt: string | null
+  auto: boolean
+  relative: RelativeTarget | null
+}
+
+/**
+ * A NEW DEADLINE-ANCHORED REPEAT (2026-10-21, `repeat-schedule.ts`): the rule
+ * walks the deadline. Its first occurrence is the deadline sent — or, already
+ * past, the rule's next (`firstDueAt`, judged on the DEADLINE: A4) — and the
+ * target is derived from it. A target derived already past while the deadline
+ * is ahead is simply over target at birth (ruling Q10). A `target_at` sent
+ * WITH the offsets is this first occurrence's moved target (capped at the
+ * deadline); without them it gives the offsets (their inverse).
+ */
+function deadlineAnchoredDates(
+  input: TaskCreateInput,
+  rrule: string,
+  ctx: TargetContext,
+  timezone: string,
+): FirstDates {
+  const given = input.deadline_at!
+  assertRuleOnDeadline(rrule, null, given, timezone)
+  const first = firstDueAt(given, rrule, false, timezone)!
+  const sent =
+    input.target_days_before !== undefined && input.target_time !== undefined
+      ? { days_before: input.target_days_before, time: input.target_time }
+      : null
+  const relative = resolveRelativeTarget({
+    sent,
+    targetAt: sent ? null : (input.due_at ?? null),
+    givenDeadline: given,
+    rule: { rrule, recurrence_mode: input.recurrence_mode ?? 'from_due', anchor_time: null },
+    firstDeadline: first,
+    timezone,
+    morningTime: ctx.morningTime,
+  })
+  const dates = occurrenceDates(
+    {
+      rrule,
+      repeat_anchor: 'deadline',
+      target_days_before: relative.days_before,
+      target_time: relative.time,
+    },
+    first,
+    timezone,
+  )
+  const dueAt = sent && input.due_at ? capAtDeadline(input.due_at, first) : dates.targetAt
+  return { dueAt, occurrenceAt: first, deadlineAt: dates.deadlineAt, auto: false, relative }
 }
 
 /**
@@ -137,6 +197,43 @@ function firstDueAt(
   const due = new Date(given)
   const first = rollPassedFirstOccurrence(rrule, due, timezone)
   return first.getTime() === due.getTime() ? given : first.toISOString()
+}
+
+/**
+ * A new task's dates when its rule (if any) walks the TARGET: the first date
+ * (`firstDueAt`), its scheduled occurrence (§6: the first date), and — §8,
+ * 2026-10-12 — a deadline with no target gets the stored automatic one; a
+ * target is never after the deadline (`resolveTarget` decides both).
+ */
+function targetAnchoredDates(
+  input: TaskCreateInput,
+  rrule: string | null | undefined,
+  tracked: boolean,
+  ctx: TargetContext,
+  timezone: string,
+): FirstDates {
+  const dueAt = tracked
+    ? null
+    : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, timezone)
+  const deadlineAt = tracked ? null : (input.deadline_at ?? null)
+  const target = resolveTarget(
+    {
+      dueAt,
+      dueWritten: true,
+      wasAuto: false,
+      deadlineAt,
+      deadlineChanged: false,
+      autoEligible: !rrule && !tracked && !input.is_reminder,
+    },
+    ctx,
+  )
+  return {
+    dueAt: target.dueAt,
+    occurrenceAt: rrule && !tracked ? dueAt : null,
+    deadlineAt: input.deadline_at ?? null,
+    auto: target.auto,
+    relative: null,
+  }
 }
 
 /**
@@ -195,29 +292,22 @@ export function createTask(options: CreateTaskOptions): Task {
     !input.on_deck_day
 
   const targetCtx = getTargetContext(userId)
-  const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone)
+  // 2026-10-21: what the rule's instant is — the deadline when a rule comes
+  // with one (`createAnchor`, the 400s that need no dates).
+  const anchor = createAnchor(input, input.rrule, {
+    isReminder: !!input.is_reminder,
+    isTracked: tracked,
+  })
+  const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone, anchor)
   const onDeckDay = input.on_deck_day ?? null
   if (onDeckDay) assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx)
 
-  let dueAt = tracked
-    ? null
-    : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, userTimezone)
-  // §6: a repeating task's scheduled occurrence starts at its first date.
-  const occurrenceAt = rrule && !tracked ? dueAt : null
-  // §8 (2026-10-12): a deadline with no target gets the stored automatic one;
-  // a target is never after the deadline. `resolveTarget` decides both.
-  const target = resolveTarget(
-    {
-      dueAt,
-      dueWritten: true,
-      wasAuto: false,
-      deadlineAt: tracked ? null : (input.deadline_at ?? null),
-      deadlineChanged: false,
-      autoEligible: !rrule && !tracked && !input.is_reminder,
-    },
-    targetCtx,
-  )
-  dueAt = target.dueAt
+  const first =
+    anchor === 'deadline' && rrule
+      ? deadlineAnchoredDates(input, rrule, targetCtx, userTimezone)
+      : targetAnchoredDates(input, rrule, tracked, targetCtx, userTimezone)
+  const dueAt = first.dueAt
+  const relative = first.relative ?? { days_before: null, time: null }
 
   // Derive anchor fields from rrule
   let anchorTime: string | null = null
@@ -275,10 +365,10 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, short_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
+        repeat_anchor, target_days_before, target_time, auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
         target_auto, occurrence_at, progress_period_start, on_deck_day, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -295,6 +385,9 @@ export function createTask(options: CreateTaskOptions): Task {
         anchorTime,
         anchorDow,
         anchorDom,
+        anchor,
+        relative.days_before,
+        relative.time,
         input.auto_snooze_minutes ?? null,
         labelsJson,
         input.notes ?? null,
@@ -306,15 +399,15 @@ export function createTask(options: CreateTaskOptions): Task {
         // representable, so a YEARLY quota is off and a weekly one on without
         // anything being baked in at creation.
         input.quota_prompt_config ? JSON.stringify(input.quota_prompt_config) : null,
-        input.deadline_at ?? null,
+        first.deadlineAt,
         input.horizon ?? null,
         input.horizon ? now : null,
         // Upcoming (2026-10-12): a new task's target, if any, was set as it
         // was made — every task gets the stamp, so a later first target is
         // the only thing that moves it (src/core/tasks/target-set.ts).
         now,
-        target.auto ? 1 : 0,
-        occurrenceAt,
+        first.auto ? 1 : 0,
+        first.occurrenceAt,
         // Interval quotas (2026-10-16): a quota's period is anchored as it is
         // made — this unit's start, in the owner's clock — not lazily by the
         // rollover's first pass (`quotaAnchorNow`).

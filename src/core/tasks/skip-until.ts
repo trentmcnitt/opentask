@@ -27,6 +27,14 @@
  *   the after. A decked repeating task has no target (`due_at` NULL, its
  *   occurrence kept), so every rule here reads the occurrence
  *   (`occurrence_at`), never the null target.
+ * - A DEADLINE-ANCHORED repeat (2026-10-21): its occurrence is its deadline
+ *   and its target lies before it (`occurrenceDates`), so "nothing nags
+ *   before the date" is judged on the occurrence's DERIVED TARGET: the task
+ *   lands on the first occurrence whose target is on or after the date (an
+ *   occurrence whose deadline is on the date but whose target is the day
+ *   before is skipped too), and a retarget puts the derived target back. A
+ *   from_completion one lands its DEADLINE `target_days_before` days after
+ *   the date, so its target is on it.
  *   - A deck day BEFORE the date is cleared in the same write and undo
  *     snapshot, and the task gets a target at its landing occurrence (or,
  *     with its occurrence already on or after the date, back on that
@@ -36,7 +44,7 @@
  *     `on_deck_day` is unchanged — the deck now refers to the landing
  *     occurrence. With nothing to skip, the task is `already_clear`. A1
  *     (decks never nag) needs no new check: the deadline only moves forward
- *     with the occurrence (`advanceDeadline`), and the deck day already sat
+ *     with the occurrence (`occurrenceDates`), and the deck day already sat
  *     before the old deadline's day (`deckRefusal`, checked when decked).
  *   - "Skip this occurrence" (no date) always clears the deck, like
  *     `skipOccurrence`.
@@ -84,7 +92,7 @@ import { getTaskById } from './read'
 import { nextOccurrenceAfterSkip, writeRecurringSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
 import { collectDeckClear } from './deck-clear'
-import { capAtDeadline } from '@/lib/task-segments'
+import { isDeadlineAnchored, occurrenceDates, occurrenceTarget } from '@/lib/task-segments'
 
 /**
  * The guard on how many occurrences one task may pass over. A daily rule
@@ -125,6 +133,9 @@ type PlanTask = Pick<
   | 'archived_at'
   | 'on_deck_day'
   | 'deadline_at'
+  | 'repeat_anchor'
+  | 'target_days_before'
+  | 'target_time'
 >
 
 /** Why a task in the batch is not one skip-until moves, or null when it is. */
@@ -209,7 +220,13 @@ function walkFromCompletion(
     at = step(at)
   }
   const { hour, minute } = ruleTimeOfDay(task.rrule!, task.anchor_time)
-  const onTheDay = untilDay.set({ hour, minute, second: 0, millisecond: 0 }).toJSDate()
+  // A deadline-anchored repeat's occurrence is its deadline: it lands
+  // `target_days_before` days on, so its derived target is on the date.
+  const lead = isDeadlineAnchored(task) ? (task.target_days_before ?? 0) : 0
+  const onTheDay = untilDay
+    .plus({ days: lead })
+    .set({ hour, minute, second: 0, millisecond: 0 })
+    .toJSDate()
   const landing = onTheDay > plain ? onTheDay : plain
   return { landing: landing.toISOString(), skipped }
 }
@@ -246,16 +263,16 @@ export function planSkipUntil(
   // A deck on or after the date is part of the after: it stays. Both days are
   // `yyyy-MM-dd` in the user's timezone, so the string compare is the day compare.
   const keepDeck = !!task.on_deck_day && task.due_at === null && task.on_deck_day >= until
-  // A decked repeating task has `due_at` NULL: its occurrence is the truth.
+  // A decked repeating task has `due_at` NULL: its occurrence is the truth —
+  // judged by the target it derives (a deadline-anchored one's lies before it).
   const occurrence = task.occurrence_at ?? task.due_at
-  if (occurrence && Date.parse(occurrence) >= untilStart.getTime()) {
+  const derived = occurrence ? occurrenceDates(task, occurrence, timezone).targetAt : null
+  if (occurrence && derived && Date.parse(derived) >= untilStart.getTime()) {
     const targetEarly = task.due_at !== null && Date.parse(task.due_at) < untilStart.getTime()
     const deckEarly = !!task.on_deck_day && !keepDeck
-    // The target the retarget would write: the occurrence, capped at a deadline
-    // still ahead. A deadline before the date already holds the target there, so
-    // a re-run with no deck to clear would rewrite the same target — nothing to do.
-    const capped = capAtDeadline(occurrence, task.deadline_at, now)
-    const sameTarget = task.due_at !== null && Date.parse(task.due_at) === Date.parse(capped)
+    // The target the retarget would write: the occurrence's derived one. A re-run
+    // with no deck to clear would rewrite the same target — nothing to do.
+    const sameTarget = task.due_at !== null && Date.parse(task.due_at) === Date.parse(derived)
     // A deck before the date goes, and the target comes back on the occurrence.
     if (deckEarly || (targetEarly && !sameTarget)) {
       return { kind: 'retarget', landing: occurrence }
@@ -266,7 +283,33 @@ export function planSkipUntil(
     task.recurrence_mode === 'from_completion'
       ? walkFromCompletion(task, timezone, untilDay, now)
       : walkFromDue(task, timezone, untilStart, now)
-  return { kind: 'skip', ...walked, keepDeck }
+  return { kind: 'skip', ...targetOnOrAfter(task, timezone, untilStart, walked), keepDeck }
+}
+
+/**
+ * A DEADLINE-ANCHORED landing (2026-10-21): the walk found the first
+ * occurrence (its deadline) on or after the date, but its derived target may
+ * still lie before it — step on, one skip each, until the target is on or
+ * after the date. The lead is shorter than the gap between deadlines
+ * (`relativeTargetProblem`), so this is at most one more step. A target-anchored
+ * landing is its own target: unchanged.
+ */
+function targetOnOrAfter(
+  task: PlanTask,
+  timezone: string,
+  untilStart: Date,
+  walked: { landing: string; skipped: number },
+): { landing: string; skipped: number } {
+  let { landing, skipped } = walked
+  while (Date.parse(occurrenceDates(task, landing, timezone).targetAt) < untilStart.getTime()) {
+    if (++skipped > MAX_SKIPPED) throw tooManySkips()
+    landing = nextOccurrenceAfterSkip(
+      { ...task, occurrence_at: landing },
+      timezone,
+      new Date(landing),
+    )
+  }
+  return { landing, skipped }
 }
 
 /**
@@ -359,7 +402,9 @@ function summaryLead(
   const skippedTasks = r.tasksAffected - r.targetsMoved
   if (r.tasksAffected === 1) {
     const t = r.tasks[0]
-    const next = dayLabel(t.occurrence_at ?? t.due_at!, timezone)
+    // The landing occurrence's TARGET day (a deadline-anchored repeat's lies
+    // before its deadline, 2026-10-21) — when it next nags.
+    const next = dayLabel(occurrenceTarget(t, timezone)!, timezone)
     if (r.targetsMoved === 1) return [`Moved "${t.title}" to its occurrence · ${next}`]
     const lead = r.occurrencesSkipped > 1 ? `Skipped ${occ(r.occurrencesSkipped)} of` : 'Skipped'
     return [`${lead} "${t.title}" · next ${next}`]
@@ -476,8 +521,8 @@ export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
 
 /**
  * A task with nothing before the date to skip whose target was pulled before
- * it: the target goes back to the occurrence (capped at a deadline still
- * ahead, as every move) and any deck cleared. A plain move of the target — stamped, the queue state
+ * it: the target goes back to the occurrence's own (`occurrenceDates` — on a
+ * deadline-anchored repeat, its derived target) and any deck cleared. A plain move of the target — stamped, the queue state
  * cleared and the attempts checkpointed by `stampTargetSet` — not a new
  * occurrence, so attempts and `skip_count` stand.
  */
@@ -486,8 +531,9 @@ function writeRetarget(
   task: Task,
   occurrence: string,
   nowStr: string,
+  timezone: string,
 ): { after: Task; fieldsChanged: string[] } {
-  const dueAt = capAtDeadline(occurrence, task.deadline_at)
+  const dueAt = occurrenceDates(task, occurrence, timezone).targetAt
   const write: CollectedWrite = {
     setClauses: ['due_at = ?'],
     values: [dueAt],
@@ -538,7 +584,7 @@ function writeSkips(
               timezone,
               keepDeck,
             })
-          : writeRetarget(tx, task, landing, nowStr)
+          : writeRetarget(tx, task, landing, nowStr, timezone)
       snapshots.push(createTaskSnapshot(task, after, fieldsChanged))
       fields = [...new Set([...fields, ...fieldsChanged])]
       activity.push({

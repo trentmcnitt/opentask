@@ -22,9 +22,10 @@ import { isPastDeadline } from '@/lib/task-segments'
  * Staged like every other field in the panel: blue while dirty, saved with the
  * rest on Save.
  *
- * Recurring tasks (2026-10-12, Trent's morning QA): the deadline line says it
- * repeats ("· moves with each week", `repeatLabel`) — `advanceDeadline` carries
- * it to every next occurrence, the same distance after it — and the horizon is
+ * Recurring tasks (2026-10-12, Trent's morning QA): only a DEADLINE-ANCHORED
+ * repeat has a deadline (2026-10-21) — its occurrence is the deadline — and its
+ * line says where the target sits before it ("· target the day before at
+ * 6:00 PM", `repeatLabel`); and the horizon is
  * hidden (`showHorizon`), because a recurring task never enters a task segment,
  * so its horizon does nothing; "Horizon: Unset" there read as broken.
  *
@@ -49,7 +50,7 @@ export function TaskModelFields({
   deadlineDirty: boolean
   timezone: string
   onDeadline: (value: string | null) => void
-  /** "moves with each week": the deadline follows each occurrence (`deadlineRepeatLabel`). */
+  /** "target the day before at 6:00 PM": a deadline-anchored repeat's target (`deadlineRepeatLabel`). */
   repeatLabel?: string | null
   /** False on a recurring task: it never enters a segment, so a horizon means nothing. */
   showHorizon?: boolean

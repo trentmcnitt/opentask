@@ -1555,6 +1555,19 @@ paths:
                     deadline_at:
                       type: [string, 'null']
                       format: date-time
+                      description: See TaskUpdate — a refusal for any task (a target-anchored repeat gaining a deadline, a deadline-anchored one losing it) refuses the batch (400).
+                    repeat_anchor:
+                      type: string
+                      enum: [target, deadline]
+                      description: See TaskUpdate (with `rrule`).
+                    target_days_before:
+                      type: [integer, 'null']
+                      minimum: 0
+                      maximum: 366
+                      description: See TaskUpdate; validated per task, a refusal refuses the batch.
+                    target_time:
+                      type: [string, 'null']
+                      pattern: '^([01]\d|2[0-3]):[0-5]\d$'
                     horizon:
                       type: [string, 'null']
                       enum: [days, weeks, months, eventually, null]
@@ -5266,6 +5279,29 @@ components:
           type: [integer, 'null']
         anchor_dom:
           type: [integer, 'null']
+        repeat_anchor:
+          type: [string, 'null']
+          enum: [target, deadline, null]
+          description: >
+            What a repeating task's scheduled instant (`occurrence_at`, the instant its rule walks)
+            IS (2026-10-21). `target`: the occurrence is the target, and the task has no deadline.
+            `deadline`: the occurrence is the DEADLINE (`deadline_at` equals `occurrence_at`), and
+            the target is derived from it — `target_days_before` local calendar days earlier at
+            `target_time`; done and skip move both to the next occurrence. Null on a one-off.
+            Never `deadline` on a reminder or a quota.
+        target_days_before:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 366
+          description: >
+            A deadline-anchored repeat's target: local calendar days from the deadline's date back
+            to the target's date (0 = the same day). Null unless `repeat_anchor` is `deadline`.
+        target_time:
+          type: [string, 'null']
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: >
+            A deadline-anchored repeat's target time of day (HH:MM, the owner's local time). Null
+            unless `repeat_anchor` is `deadline`.
         original_due_at:
           type: [string, 'null']
           format: date-time
@@ -5290,8 +5326,10 @@ components:
             §8.2). Once it has passed, any target can be picked, and a bulk
             snooze treats the task as High. A one-off
             with a deadline always has a target — with none picked, the stored
-            automatic one (`target_auto`). On a recurring task it moves with
-            each occurrence, measured from `occurrence_at`.
+            automatic one (`target_auto`). On a repeating task it is the
+            occurrence of a DEADLINE-ANCHORED repeat (`repeat_anchor: deadline`,
+            2026-10-21): it equals `occurrence_at`, and done or skip moves it to
+            the next one. A target-anchored repeat has none.
         horizon:
           type: [string, 'null']
           enum: [days, weeks, months, eventually, null]
@@ -5332,17 +5370,20 @@ components:
           type: boolean
           description: >
             `due_at` is the deadline's AUTOMATIC target (2026-10-12, spec §8): stored by the server
-            for a one-off with a deadline and no target the user picked — the user's morning 3 days
-            before the deadline's day (4 when the deadline was set 16+ days out; now, if that moment
-            had passed). It follows the deadline when the deadline changes. Only a picked target
-            (false) makes a task quiet until its date (Upcoming). Server-set.
+            for a one-off with a deadline and no target the user picked, by the wait from when the
+            deadline was set (2026-10-21): under 2 days, the deadline day at the user's morning (or
+            the deadline's own time if earlier); 2-7 days, the day before; 8-15, 3 days before; 16
+            or more, 4 — at the morning (now, if that moment had passed). It follows the deadline
+            when the deadline changes; a stored one is not re-derived otherwise. Only a picked
+            target (false) makes a task quiet until its date (Upcoming). Server-set.
         occurrence_at:
           type: [string, 'null']
           format: date-time
           description: >
-            A repeating task's SCHEDULED occurrence (2026-10-12, spec §6); `due_at` is its target,
-            which a move changes alone. Done and skip advance from this and set both; the deadline
-            measures from it. Null for a one-off. Server-set.
+            A repeating task's SCHEDULED occurrence (2026-10-12, spec §6): the instant its rule
+            walks. `due_at` is its target, which a move changes alone. Done and skip advance from
+            this and set its dates. On a deadline-anchored repeat (`repeat_anchor: deadline`) it IS
+            the deadline, and the target is derived from it. Null for a one-off. Server-set.
         deadline_nag_off:
           type: boolean
           deprecated: true
@@ -5652,6 +5693,35 @@ components:
           type: string
           enum: [from_due, from_completion]
           default: from_due
+        repeat_anchor:
+          type: string
+          enum: [target, deadline]
+          description: >
+            What a repeating task's rule walks (2026-10-21): its target, or its DEADLINE (see the
+            Task schema). Omitted: `deadline` when `rrule` comes with a `deadline_at` on an
+            ordinary task, else `target`. A deadline-anchored rule repeats the deadline's time: a
+            rule sent without `BYHOUR` takes it, a rule at another time is a 400. 400s: `target`
+            with both `rrule` and `deadline_at` (a target-anchored repeat has no deadline);
+            `deadline` without `rrule` and `deadline_at`, or on a reminder or a quota.
+        target_days_before:
+          type: integer
+          minimum: 0
+          maximum: 366
+          description: >
+            A deadline-anchored repeat's target: local calendar days before each deadline (0 = the
+            same day), with `target_time` (both or neither; a 400 otherwise, and a 400 on a
+            target-anchored repeat). Neither sent: from a `target_at` sent with the deadline (its
+            offset), else the default — by the gap between deadlines: under 2 days the deadline
+            day at the morning time (or the deadline's own time if earlier), up to 7 the day before,
+            under 16 three days before, else four — at the user's morning time. 400 when the target
+            would be after the deadline (the same day, a later time) or on or before the previous
+            occurrence's deadline (checked over the next 60 occurrences or a year) — e.g. a DAILY
+            rule with a `deadline_at` three days out and a `target_at` today (a 3-day lead on a
+            1-day rule) is a 400: send the deadline the rule repeats (tomorrow's), or no target.
+        target_time:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: The target's local time of day (HH:MM), with `target_days_before`.
         labels:
           type: array
           items:
@@ -5808,7 +5878,9 @@ components:
             snoozed; an explicit reschedule (`reset_original_due_at: true`) is
             allowed. Sent together with `rrule`, the date is honored and the
             rule's anchors are derived from it (a re-schedule). A quota has no
-            due date.
+            due date. On a deadline-anchored repeat (2026-10-21) a move is this
+            occurrence's only (done and skip re-derive the next), and `null` is a
+            400: it always has a target.
         target_at:
           type: [string, 'null']
           format: date-time
@@ -5816,6 +5888,13 @@ components:
         deadline_at:
           type: [string, 'null']
           format: date-time
+          description: >
+            On a deadline-anchored repeat (2026-10-21) a deadline RESCHEDULES this occurrence
+            (`occurrence_at` with it; the rule is unchanged): an unmoved target re-derives, a moved
+            one is kept, capped. `null` there is a 400 — send `rrule: null`, or `repeat_anchor:
+            target` with the rule. A target-anchored repeat never gains one (400; send
+            `repeat_anchor: deadline` with the rule), nor does a one-off given a rule in the same
+            write without that anchor.
         horizon:
           type: [string, 'null']
           enum: [days, weeks, months, eventually, null]
@@ -5881,9 +5960,34 @@ components:
             Morning time. A rule identical to the stored one is no change. A
             quota's bare period rule is stored as sent - judged on the task the
             request leaves (a request that makes it a quota keeps the bare rule).
+            A deadline-anchored repeat's rule walks its deadline: a new one
+            without `BYHOUR` takes the deadline's time (2026-10-21).
         recurrence_mode:
           type: string
           enum: [from_due, from_completion]
+        repeat_anchor:
+          type: string
+          enum: [target, deadline]
+          description: >
+            Switch what a repeating task's rule walks (2026-10-21; see the Task schema). Always with
+            `rrule` in the same body (400 otherwise — the rule's time changes meaning). To
+            `deadline`: the occurrence is the `deadline_at` sent (a one-off given its rule: its own
+            deadline), else the rule's first one; a target already over target is kept (capped).
+            To `target`: the deadline and the offsets go in the same write. 400 on a reminder or a
+            quota.
+        target_days_before:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 366
+          description: >
+            A deadline-anchored repeat's relative target (with `target_time`; see TaskCreate). New
+            offsets re-derive this occurrence's target unless it was moved (a moved one is kept,
+            capped at the deadline). The same 400s as on create; `null` only on a target-anchored
+            result.
+        target_time:
+          type: [string, 'null']
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: The relative target's local time of day (HH:MM); see `target_days_before`.
         labels:
           type: array
           items:

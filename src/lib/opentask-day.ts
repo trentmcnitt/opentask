@@ -33,18 +33,21 @@ export function rolloverTimeOf(
 }
 
 /**
- * The rollover instant on a local date (yyyy-MM-dd) in `timezone`.
+ * A LOCAL WALL-CLOCK MOMENT: `time` ("HH:MM") on the local date `localDate`
+ * (yyyy-MM-dd) in `timezone`, as an instant. One rule for every derived
+ * local moment — the rollover (`rolloverMoment`) and a deadline-anchored
+ * repeat's target (`occurrenceDates` in src/lib/task-segments.ts).
  *
- * DST. A spring-forward gap can swallow the rollover time (a 02:30 first
- * period on the night clocks jump 2:00 → 3:00). Luxon would shift such a time
- * forward by the gap's length (2:30 → 3:30); the rule here is the NEXT VALID
- * MINUTE — the first local minute after the requested one that exists that
- * day (3:00). On a fall-back night the repeated hour resolves to its first
- * occurrence (Luxon's choice), which is the earlier instant.
+ * DST. A spring-forward gap can swallow the time (02:30 on the night clocks
+ * jump 2:00 → 3:00). Luxon would shift such a time forward by the gap's length
+ * (2:30 → 3:30); the rule here is the NEXT VALID MINUTE — the first local
+ * minute after the requested one that exists that day (3:00). On a fall-back
+ * night the repeated hour resolves to its first occurrence (Luxon's choice),
+ * which is the earlier instant.
  */
-export function rolloverMoment(localDate: string, timezone: string, rolloverTime: string): Date {
-  const minutes = parseHHMM(rolloverTime)
-  if (minutes === null) throw new Error(`Not an HH:MM rollover time: ${rolloverTime}`)
+export function localMoment(localDate: string, time: string, timezone: string): Date {
+  const minutes = parseHHMM(time)
+  if (minutes === null) throw new Error(`Not an HH:MM time: ${time}`)
   const day = DateTime.fromISO(localDate, { zone: timezone })
   if (!day.isValid) throw new Error(`Not a local date: ${localDate}`)
   for (let m = minutes; m < 24 * 60; m++) {
@@ -58,6 +61,11 @@ export function rolloverMoment(localDate: string, timezone: string, rolloverTime
   }
   // Unreachable in practice: no zone skips the rest of a day.
   return day.endOf('day').toJSDate()
+}
+
+/** The rollover instant on a local date (yyyy-MM-dd) in `timezone` (`localMoment`'s DST rule). */
+export function rolloverMoment(localDate: string, timezone: string, rolloverTime: string): Date {
+  return localMoment(localDate, rolloverTime, timezone)
 }
 
 /**

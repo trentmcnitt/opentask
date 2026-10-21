@@ -795,6 +795,31 @@ describe('contract fixtures (native clients)', () => {
     plainWithoutDeck = forms.plain
   })
 
+  // 17. A deadline-anchored repeat (2026-10-21), as GET /api/tasks/{id}
+  //     returns it: deadline weekly at 5 PM, three days out, the target the
+  //     day before at 6 PM — `repeat_anchor`, `target_days_before`,
+  //     `target_time`, and `deadline_at` = `occurrence_at`. Its own hook,
+  //     last, so no earlier placeholder moves.
+  beforeAll(async () => {
+    const placeholder = 101 + Object.keys(created).length
+    const deadline = DateTime.now()
+      .setZone('America/New_York')
+      .plus({ days: 3 })
+      .set({ hour: 17, minute: 0, second: 0, millisecond: 0 })
+    // Every 7 days (a bare FREQ=WEEKLY is a quota's period rule; a BYDAY
+    // would change with the day this runs): it runs on its own grid.
+    const res = (await call('/api/tasks', {
+      title: 'Lock the timesheet',
+      rrule: 'FREQ=DAILY;INTERVAL=7;BYHOUR=17;BYMINUTE=0',
+      deadline_at: deadline.toUTC().toISO(),
+      target_days_before: 1,
+      target_time: '18:00',
+    })) as { data: { id: number } }
+    created.deadlineRepeat = res.data.id
+    ids.register('task', res.data.id, placeholder)
+    captured['task-deadline-anchored'] = await call(`/api/tasks/${res.data.id}`)
+  })
+
   test('without ?deck=1 a decked task is in no segment; with it, an Upcoming row', () => {
     type Segs = {
       data: {
@@ -853,6 +878,7 @@ describe('contract fixtures (native clients)', () => {
     'reminders-interval',
     'reminders-queue',
     'reminders-deck',
+    'task-deadline-anchored',
   ]
 
   for (const name of names) {

@@ -32,6 +32,11 @@ const VALID_TASK_COLUMNS = new Set([
   'anchor_time',
   'anchor_dow',
   'anchor_dom',
+  // Deadline-anchored repeats (2026-10-21): an anchor switch, a deadline
+  // reschedule and an offset edit all put these in undo snapshots.
+  'repeat_anchor',
+  'target_days_before',
+  'target_time',
   'original_due_at',
   // Task model (2026-10-10). Must be here: this allowlist throws on an unknown
   // field, and a throw inside undoEntry wedges the stack (see is_tracked below).

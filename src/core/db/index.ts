@@ -6,6 +6,7 @@ import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
 import { log } from '@/lib/logger'
 import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
 import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
+import { migrateRepeatAnchors, type RepeatAnchorCounts } from './migrate-repeat-anchor'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -409,6 +410,24 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // Deadline-anchored repeats (2026-10-21). NOT NULL DEFAULT 'target': every
+  // existing repeat is target-anchored as it stands, so no backfill — the one
+  // data step is `migrateRepeatAnchors`, for repeats that carry a deadline.
+  if (!hasColumn(database, 'tasks', 'repeat_anchor')) {
+    database.exec(
+      `ALTER TABLE tasks ADD COLUMN repeat_anchor TEXT NOT NULL DEFAULT 'target'
+         CHECK (repeat_anchor IN ('target', 'deadline'))`,
+    )
+  }
+  if (!hasColumn(database, 'tasks', 'target_days_before')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_days_before INTEGER DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'tasks', 'target_time')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_time TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'completions', 'occurrence_at_next')) {
+    database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_next TEXT DEFAULT NULL')
+  }
   if (!hasColumn(database, 'completions', 'attempts')) {
     database.exec('ALTER TABLE completions ADD COLUMN attempts INTEGER DEFAULT NULL')
   }
@@ -448,6 +467,21 @@ function runMigrations(database: Database.Database): void {
   clearQuotaDueDates(database)
   restoreProjectGrouping(database)
   logTargetMigration(migrateDeadlineTargets(database))
+  // After the pull-back above: a converted row's moved target is already capped.
+  logRepeatAnchorMigration(migrateRepeatAnchors(database))
+}
+
+/** Log what the deadline-anchor step did (2026-10-21), only when it did something. */
+function logRepeatAnchorMigration(counts: RepeatAnchorCounts): void {
+  if (counts.converted > 0 || counts.completionsRewritten > 0) {
+    log.info(
+      'db',
+      `repeat anchor migration (2026-10-21): ${counts.converted} converted, ${counts.completionsRewritten} completions rewritten`,
+    )
+  }
+  if (counts.skipped.length > 0) {
+    log.info('db', `repeat anchor migration skipped: ${JSON.stringify(counts.skipped)}`)
+  }
 }
 
 /** Log what the target-model data steps did, only when they did something. */

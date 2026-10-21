@@ -63,6 +63,9 @@ enum Fixtures {
     /// `reminders-interval.json` (2026-10-16), created after the badge tasks
     /// (113–115).
     static let fortnightly = 116
+    /// The deadline-anchored repeat in `task-deadline-anchored.json`
+    /// (2026-10-21), created last of all.
+    static let deadlineRepeat = 123
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }

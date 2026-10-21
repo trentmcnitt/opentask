@@ -54,21 +54,34 @@ function executeRecurringMarkDone(
     computation
 
   // Create completion record. `occurrence_at_was` (§6, 2026-10-12): the
-  // occurrence it closed, so a put-back restores the schedule with the target.
+  // occurrence it closed, so a put-back restores the schedule with the target;
+  // `occurrence_at_next` (2026-10-21): the one it advanced to, so put-back can
+  // tell the schedule has not moved since — on a deadline-anchored repeat the
+  // occurrence is not the target (`due_at_next`).
   const completionResult = tx
     .prepare(
       `
-      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next, occurrence_at_was, attempts)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next,
+                               occurrence_at_was, occurrence_at_next, attempts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
-    .run(task.id, userId, nowStr, prevDueAt, nextDueAt, prevOccurrenceAt, task.attempts ?? 0)
+    .run(
+      task.id,
+      userId,
+      nowStr,
+      prevDueAt,
+      nextDueAt,
+      prevOccurrenceAt,
+      nextOccurrenceAt,
+      task.attempts ?? 0,
+    )
 
   const completionId = Number(completionResult.lastInsertRowid)
 
-  // Update task: advance the occurrence and the target together (§6: both
-  // land on the next scheduled occurrence; the target capped at the moved
-  // deadline), set original_due_at to it (the first target of the new
+  // Update task: advance the occurrence, its target and its deadline together
+  // (the next occurrence's dates, from `occurrenceDates` in computeMarkDone),
+  // set original_due_at to the target (the first target of the new
   // occurrence — old native builds read it), update completion stats
   //
   // §5: `progress_current = 0` only matters for a quota, and a quota reaches
@@ -90,7 +103,7 @@ function executeRecurringMarkDone(
     nextDueAt,
     nextOccurrenceAt, // the next scheduled occurrence (§6)
     nextDueAt, // original_due_at: the new occurrence's first target
-    nextDeadlineAt, // the deadline moves with the occurrence (advanceDeadline)
+    nextDeadlineAt, // the next occurrence's deadline (occurrenceDates), or null
     nowStr, // target_set_at: the next occurrence's wait counts from now
     stats.completionCount,
     stats.firstCompletedAt,
@@ -127,6 +140,7 @@ function executeRecurringMarkDone(
       due_at_was: prevDueAt,
       due_at_next: nextDueAt,
       occurrence_at_was: prevOccurrenceAt,
+      occurrence_at_next: nextOccurrenceAt,
       attempts: task.attempts ?? 0,
     },
   }
