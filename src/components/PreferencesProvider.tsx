@@ -24,6 +24,17 @@ import {
   type FeatureInfoMap,
   type Prefs,
 } from '@/lib/preferences-state'
+import type { TimeSetting } from '@/lib/anchor-times'
+
+/** The Prefs fields a reminder period can move (anchor times), written only by `setAnchorPrefs`. */
+type AnchorPrefKey =
+  | 'morningTime'
+  | 'morningSlotId'
+  | 'wakeTime'
+  | 'wakeSlotId'
+  | 'sleepTime'
+  | 'sleepSlotId'
+  | 'padPresets'
 
 export type { FeatureMode, FeatureInfo, FeatureInfoMap, BulkSnoozeDefault }
 
@@ -58,12 +69,17 @@ interface PreferencesContextValue {
   /** Show all's per-project cap before "Show all N" (Settings → Projects). */
   projectPreviewCount: number
   setProjectPreviewCount: (value: number) => void
+  /** Morning, Wake and Sleep, resolved by the server; see `useAnchorTimes`. */
   morningTime: string
-  setMorningTime: (time: string) => void
+  morningSlotId: number | null
   wakeTime: string
-  setWakeTime: (time: string) => void
+  wakeSlotId: number | null
   sleepTime: string
-  setSleepTime: (time: string) => void
+  sleepSlotId: number | null
+  padPresets: TimeSetting[]
+  setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) => void
+  /** Re-read the preferences from the server (a reminder period changed). */
+  reloadPreferences: () => Promise<void>
   defaultGrouping: GroupingMode
   setDefaultGrouping: (grouping: GroupingMode) => void
   /**
@@ -150,11 +166,14 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   projectPreviewCount: PROJECT_PREVIEW_DEFAULT,
   setProjectPreviewCount: () => {},
   morningTime: '09:00',
-  setMorningTime: () => {},
+  morningSlotId: null,
   wakeTime: '07:00',
-  setWakeTime: () => {},
+  wakeSlotId: null,
   sleepTime: '22:00',
-  setSleepTime: () => {},
+  sleepSlotId: null,
+  padPresets: DEFAULT_PREFS.padPresets,
+  setAnchorPrefs: () => {},
+  reloadPreferences: async () => {},
   defaultGrouping: 'project',
   setDefaultGrouping: () => {},
   preferencesLoaded: false,
@@ -295,9 +314,6 @@ function makeFieldSetters(set: FieldSet) {
     setWeekStart: field('weekStart'),
     setCheckInDay: field('checkInDay'),
     setProjectPreviewCount: field('projectPreviewCount'),
-    setMorningTime: field('morningTime'),
-    setWakeTime: field('wakeTime'),
-    setSleepTime: field('sleepTime'),
     setNotificationsEnabled: field('notificationsEnabled'),
     setEnrichmentNotificationsEnabled: field('enrichmentNotificationsEnabled'),
     setSweepFeedbackNotificationsEnabled: field('sweepFeedbackNotificationsEnabled'),
@@ -377,17 +393,23 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return () => window.removeEventListener('pagehide', onPageHide)
   }, [saver])
 
+  // One GET, merged over what the user changed meanwhile (the dirty fields).
+  // The mount load and `reloadPreferences` both go through it.
+  const [loadPreferences] = useState(() => async (): Promise<boolean> => {
+    const res = await fetch('/api/user/preferences')
+    const data = res.ok ? await res.json() : null
+    const server = parseServerPrefs(data?.data)
+    // Take (and reset) the dirty set now: a change made after this point
+    // is applied by its own state update, which React queues after this merge.
+    const changed = dirty.take()
+    setPrefs((local) => mergeLoadedPrefs(local, changed, server))
+    return data !== null
+  })
+
   useEffect(() => {
     if (status !== 'authenticated') return
-    fetch('/api/user/preferences')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const server = parseServerPrefs(data?.data)
-        // Take (and reset) the dirty set now: a change made after this point
-        // is applied by its own state update, which React queues after this merge.
-        const changed = dirty.take()
-        setPrefs((local) => mergeLoadedPrefs(local, changed, server))
-
+    loadPreferences()
+      .then(() => {
         // Register iOS device token and provision Bearer token using session cookie auth.
         // This ensures push notifications follow the web-logged-in user,
         // not the bearer token user from initial iOS setup.
@@ -400,7 +422,26 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       .finally(() => {
         setPreferencesLoaded(true)
       })
-  }, [status, dirty])
+  }, [status, loadPreferences])
+
+  // ANCHOR TIMES ARE THE SERVER'S (2026-10-21): Morning, Wake, Sleep and the
+  // pad resolve against the reminder periods, so a period edit can move them
+  // without the user touching them. They are therefore never marked dirty —
+  // Settings writes them with the server's answer (or the same resolver,
+  // optimistically) — and a reload always takes the server's values. A period
+  // edit in Settings reloads (`TimeSlotSettings`); other tabs and devices pick
+  // it up on their next load, like every other preference.
+  const [anchorActions] = useState(() => ({
+    setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) =>
+      setPrefs((prev) => ({ ...prev, ...values })),
+    reloadPreferences: async () => {
+      try {
+        await loadPreferences()
+      } catch (err: unknown) {
+        console.error('Failed to reload preferences:', err)
+      }
+    },
+  }))
 
   // Handle late APNs token arrival — iOS dispatches this CustomEvent when
   // the device token arrives after the WebView has already loaded.
@@ -432,6 +473,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       value={{
         ...prefs,
         ...plainSetters,
+        ...anchorActions,
         setDefaultGrouping: (grouping: GroupingMode) => {
           setField('defaultGrouping', grouping)
           saver.save('default_grouping', { default_grouping: grouping })
@@ -498,7 +540,6 @@ export function useSnoozePreferences() {
     bulkSnoozeDefault,
     setBulkSnoozeDefault,
     morningTime,
-    setMorningTime,
   } = useContext(PreferencesContext)
   return {
     defaultSnoozeOption,
@@ -506,7 +547,31 @@ export function useSnoozePreferences() {
     bulkSnoozeDefault,
     setBulkSnoozeDefault,
     morningTime,
-    setMorningTime,
+  }
+}
+
+/**
+ * The number pad's four preset buttons (anchor times, 2026-10-21), resolved
+ * by the server, in button order — two may read the same time.
+ */
+export function usePadPresets(): TimeSetting[] {
+  return useContext(PreferencesContext).padPresets
+}
+
+/**
+ * Settings' view of the seven anchor times: each as `{ time, slot_id }`
+ * (resolved), plus the writer Settings applies the server's answer with and
+ * the reload a reminder-period change calls.
+ */
+export function useAnchorTimes() {
+  const ctx = useContext(PreferencesContext)
+  return {
+    morning: { time: ctx.morningTime, slot_id: ctx.morningSlotId },
+    wake: { time: ctx.wakeTime, slot_id: ctx.wakeSlotId },
+    sleep: { time: ctx.sleepTime, slot_id: ctx.sleepSlotId },
+    pad: ctx.padPresets,
+    setAnchorPrefs: ctx.setAnchorPrefs,
+    reloadPreferences: ctx.reloadPreferences,
   }
 }
 
@@ -571,11 +636,6 @@ export function useTaskQueue(): {
 export function useProjectPreviewCount() {
   const { projectPreviewCount, setProjectPreviewCount } = useContext(PreferencesContext)
   return { projectPreviewCount, setProjectPreviewCount }
-}
-
-export function useSchedulePreferences() {
-  const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useContext(PreferencesContext)
-  return { wakeTime, setWakeTime, sleepTime, setSleepTime }
 }
 
 /**

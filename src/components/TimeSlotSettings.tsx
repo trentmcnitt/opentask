@@ -36,6 +36,7 @@ import { showToast } from '@/lib/toast'
 import { apiFetch, jsonInit } from '@/lib/api-client'
 import { sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { formatClockTime } from '@/lib/time-utils'
+import { useAnchorTimes } from '@/components/PreferencesProvider'
 
 /**
  * Same look as the Snooze section's wake/sleep time inputs, but sized: those
@@ -62,11 +63,37 @@ const ROW_GRID_CLASS = 'grid grid-cols-[minmax(0,1fr)_7.75rem_2.5rem] items-cent
 interface SlotChange {
   slot: TimeSlot
   reminders_moved: number
+  quotas_moved: number
+  /** Settings linked to a removed period, now custom at its start (anchor times). */
+  settings_converted: string[]
   undo_id: number | null
 }
 
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
 function remindersMoved(n: number): string {
-  return n === 0 ? '' : ` · moved ${n} reminder${n === 1 ? '' : 's'}`
+  return n === 0 ? '' : ` · moved ${plural(n, 'reminder')}`
+}
+
+/**
+ * What a removal did besides removing: the reminders and quotas it moved to
+ * the nearest period, and the settings that followed it (Morning time, a pad
+ * button…), which keep its start as their own time.
+ */
+function removalSummary(result: SlotChange): string {
+  const moved = [
+    result.reminders_moved > 0 ? plural(result.reminders_moved, 'reminder') : null,
+    result.quotas_moved > 0 ? plural(result.quotas_moved, 'quota') : null,
+  ].filter((p): p is string => p !== null)
+  const kept = result.settings_converted
+  return (
+    (moved.length > 0 ? ` · moved ${moved.join(', ')}` : '') +
+    (kept.length > 0
+      ? ` · ${kept.join(', ')} ${kept.length === 1 ? 'stays' : 'stay'} at ${formatClockTime(result.slot.start_time)}`
+      : '')
+  )
 }
 
 function errorMessage(err: unknown): string {
@@ -86,7 +113,12 @@ export function TimeSlotSettings({
   // shared with the Default period picker. Each change re-reads it, so both
   // show what the server stored.
   const slots = sortSlotsByStart(timeSlots)
-  const load = refresh
+  // A period change can move the anchor times that follow it (Morning, Wake,
+  // Sleep, pad buttons), so every re-read of the list re-reads them too.
+  const { reloadPreferences } = useAnchorTimes()
+  const load = useCallback(async () => {
+    await Promise.all([refresh(), reloadPreferences()])
+  }, [refresh, reloadPreferences])
 
   // Undo exactly this change and nothing else. `through_id` alone would also
   // undo anything done AFTER it (a reminder checked off on the phone in the
@@ -160,10 +192,7 @@ export function TimeSlotSettings({
           method: 'DELETE',
         })
         await load()
-        toastWithUndo(
-          `Removed "${slot.label}"` + remindersMoved(result.reminders_moved),
-          result.undo_id,
-        )
+        toastWithUndo(`Removed "${slot.label}"` + removalSummary(result), result.undo_id)
       } catch (err) {
         showToast({ message: errorMessage(err), type: 'error' })
       }

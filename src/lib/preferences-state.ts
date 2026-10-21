@@ -28,6 +28,7 @@ import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo, AIFeature } from '@/core/ai/models'
 import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
+import { DEFAULT_PAD_PRESETS, parsePadPresets, type TimeSetting } from '@/lib/anchor-times'
 import { CHECK_IN_DAY_DEFAULT, coerceCheckInDay, type CheckInDay } from '@/lib/task-segments'
 
 export type FeatureInfoMap = Record<AIFeature, FeatureInfo>
@@ -63,9 +64,19 @@ export interface Prefs {
   weekStart: WeekStart
   /** The horizon segments' weekday (`check_in_day`, 1 = Monday … 7 = Sunday). */
   checkInDay: CheckInDay
+  /**
+   * Morning, Wake and Sleep as RESOLVED by the server (anchor times,
+   * 2026-10-21): a linked period's start. The slot ids say which period each
+   * follows (null: a custom time); Settings reads them.
+   */
   morningTime: string
+  morningSlotId: number | null
   wakeTime: string
+  wakeSlotId: number | null
   sleepTime: string
+  sleepSlotId: number | null
+  /** The number pad's four buttons, resolved, in button order. */
+  padPresets: TimeSetting[]
   defaultGrouping: GroupingMode
   defaultSort: SortOption
   defaultSortReversed: boolean
@@ -121,8 +132,12 @@ export const DEFAULT_PREFS: Prefs = {
   weekStart: WEEK_START_DEFAULT,
   checkInDay: CHECK_IN_DAY_DEFAULT,
   morningTime: '09:00',
+  morningSlotId: null,
   wakeTime: '07:00',
+  wakeSlotId: null,
   sleepTime: '22:00',
+  sleepSlotId: null,
+  padPresets: DEFAULT_PAD_PRESETS.map((p) => ({ ...p })),
   defaultGrouping: 'project',
   defaultSort: 'horizon',
   defaultSortReversed: false,
@@ -202,6 +217,14 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'morningTime', data.morning_time, truthy)
   take(out, 'wakeTime', data.wake_time, truthy)
   take(out, 'sleepTime', data.sleep_time, truthy)
+  const slotId = (v: unknown) => v === null || typeof v === 'number'
+  take(out, 'morningSlotId', data.morning_slot_id, slotId)
+  take(out, 'wakeSlotId', data.wake_slot_id, slotId)
+  take(out, 'sleepSlotId', data.sleep_slot_id, slotId)
+  // Read as the stored form is (exactly four valid pairs, else the defaults).
+  if (Array.isArray(data.pad_presets)) {
+    out.padPresets = parsePadPresets(JSON.stringify(data.pad_presets))
+  }
   if (data.default_grouping) out.defaultGrouping = coerceGrouping(data.default_grouping)
   take(out, 'defaultSort', data.default_sort, truthy)
   take(out, 'defaultSortReversed', data.default_sort_reversed)

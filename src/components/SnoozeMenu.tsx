@@ -16,7 +16,7 @@ import { OptionMenu } from '@/components/OptionMenu'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
-import { to24Hour } from '@/lib/time-utils'
+import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
@@ -240,7 +240,8 @@ export function SnoozeMenu({
 
 /**
  * Custom date/time picker dialog for snooze. Calendar + 12-hour time inputs.
- * Defaults to tomorrow at 9:00 AM in the user's timezone.
+ * Opens on tomorrow at the user's Morning time (it was a fixed 9:00 AM until
+ * the anchor times, 2026-10-21), in the user's timezone.
  */
 function CustomSnoozePicker({
   open,
@@ -258,23 +259,25 @@ function CustomSnoozePicker({
   const [minute, setMinute] = useState(0)
   const [period, setPeriod] = useState<'AM' | 'PM'>('AM')
 
-  // Initialize to tomorrow 9 AM when opening, via the open-change handler
-  // (same pattern as DateTimePicker — avoids setState-in-effect cascade)
+  const { morningTime } = useSnoozePreferences()
+
+  // Initialize to tomorrow at the Morning time when opening, via the
+  // open-change handler (same pattern as DateTimePicker — avoids
+  // setState-in-effect cascade)
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (newOpen) {
-        const tomorrow = DateTime.now()
-          .setZone(timezone)
-          .plus({ days: 1 })
-          .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+        const tomorrow = DateTime.fromISO(computeSnoozeTime('tomorrow', timezone, morningTime), {
+          zone: 'utc',
+        }).setZone(timezone)
         setSelectedDate(tomorrow.toJSDate())
-        setHour12(9)
-        setMinute(0)
-        setPeriod('AM')
+        setHour12(to12Hour(tomorrow.hour))
+        setMinute(tomorrow.minute)
+        setPeriod(tomorrow.hour >= 12 ? 'PM' : 'AM')
       }
       onOpenChange(newOpen)
     },
-    [timezone, onOpenChange],
+    [timezone, morningTime, onOpenChange],
   )
 
   const handleSnooze = () => {

@@ -55,8 +55,8 @@ import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { useStagedEditor } from '@/hooks/useStagedEditor'
 import { formatRRuleCompact, formatBulkRecurrence } from '@/lib/format-rrule'
+import { formatClockTime } from '@/lib/time-utils'
 import {
-  PRESET_TIMES,
   INCREMENTS,
   DECREMENTS,
   SMART_BUTTONS,
@@ -72,6 +72,7 @@ import {
   useLabelConfig,
   useAutoSnoozeDefault,
   useSnoozePreferences,
+  usePadPresets,
   useTaskQueue,
 } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
@@ -366,6 +367,9 @@ export function QuickActionPanel({
   const { labelConfig } = useLabelConfig()
   const { autoSnoozeDefault } = useAutoSnoozeDefault()
   const { morningTime } = useSnoozePreferences()
+  // The pad's four preset buttons are a setting (anchor times, 2026-10-21):
+  // each a custom time or a reminder period's start, resolved by the server.
+  const padPresets = usePadPresets()
 
   // Staged changes state - all changes are staged until Save is clicked
   // undefined means "no change" for rrule (to distinguish from null = "remove recurrence")
@@ -2031,14 +2035,18 @@ export function QuickActionPanel({
 
       {/* 4x3 Date grid */}
       <div className="grid grid-cols-4 gap-1.5">
-        {/* Row 1: Preset times */}
-        {PRESET_TIMES.map((preset) => (
-          <GridButton
-            key={preset.label}
-            label={preset.label}
-            onClick={() => handlePresetClick(preset.hour, preset.minute)}
-          />
-        ))}
+        {/* Row 1: Preset times (Settings → Number pad). Keyed by position:
+            two buttons may resolve to the same time, and both still show. */}
+        {padPresets.map((preset, index) => {
+          const [hour, minute] = preset.time.split(':').map(Number)
+          return (
+            <GridButton
+              key={index}
+              label={formatClockTime(preset.time)}
+              onClick={() => handlePresetClick(hour, minute)}
+            />
+          )
+        })}
 
         {/* Row 2: Increments */}
         {INCREMENTS.map((inc) => (

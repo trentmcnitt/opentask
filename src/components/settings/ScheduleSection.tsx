@@ -2,7 +2,7 @@
 
 import { TimeSlotSettings } from '@/components/TimeSlotSettings'
 import { QuotaPromptSettings } from '@/components/QuotaPromptSettings'
-import { useTimeSlots } from '@/hooks/useTimeSlots'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SettingsSection } from './SettingsSection'
 
 /**
@@ -10,12 +10,20 @@ import { SettingsSection } from './SettingsSection'
  * (src/components/TimeSlotSettings.tsx), then the default period and the
  * quota-reminders switch (src/components/QuotaPromptSettings.tsx).
  *
- * The slot list is read once, here, and handed to both. Each used to read its
+ * The slot list is read once, by the Settings page, and handed to both (and
+ * to Snooze, whose anchor times can follow a period). Each used to read its
  * own copy, so renaming or adding a period left the Default period picker
  * showing the old list until the page was reloaded.
  */
-export function ScheduleSection() {
-  const { timeSlots, loading, refresh } = useTimeSlots()
+export function ScheduleSection({
+  timeSlots,
+  loading,
+  refresh,
+}: {
+  timeSlots: TimeSlot[]
+  loading: boolean
+  refresh: () => Promise<void>
+}) {
   return (
     <SettingsSection
       title="Reminder periods"

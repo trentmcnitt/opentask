@@ -8,6 +8,7 @@ import { ExternalLink } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
 import { useAiAvailable } from '@/components/PreferencesProvider'
 import { useRequireSession } from '@/hooks/useRequireSession'
+import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { PageLoading } from '@/components/PageLoading'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { SettingsSection } from '@/components/settings/SettingsSection'
@@ -26,12 +27,15 @@ const noopSubscribe = () => () => {}
  * Settings. Each section lives in src/components/settings/ and reads and
  * saves its own preferences (through PreferencesProvider and savePreference()).
  * The page keeps only what crosses sections or depends on the environment:
- * the session (`isDemo`), whether AI runs on this server, and whether we're
- * inside the native iOS wrapper.
+ * the session (`isDemo`), whether AI runs on this server, whether we're
+ * inside the native iOS wrapper, and the reminder periods — read once here
+ * and handed to Reminder periods (which edits them) and Snooze (whose anchor
+ * times and pad buttons can follow them), so both always show the same list.
  */
 export default function SettingsPage() {
   const { session, ready } = useRequireSession()
   const aiAvailable = useAiAvailable()
+  const { timeSlots, loading: slotsLoading, refresh: refreshSlots } = useTimeSlots()
   // Running inside the native iOS app wrapper? (WKWebView injects
   // `__OPENTASK_IOS`.) It never changes, so there's nothing to subscribe to;
   // the server snapshot is false, as before hydration.
@@ -83,8 +87,8 @@ export default function SettingsPage() {
 
         <PriorityDisplaySection />
         <NotificationsSection />
-        <SnoozeSection />
-        <ScheduleSection />
+        <SnoozeSection timeSlots={timeSlots} slotsLoaded={!slotsLoading} />
+        <ScheduleSection timeSlots={timeSlots} loading={slotsLoading} refresh={refreshSlots} />
         <LabelsSection />
         <ProjectsSection />
 
