@@ -87,7 +87,7 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { DateTime } from 'luxon'
 import { isEarlyMorningPick, latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
-import { capAtDeadline, effectiveAttempts, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
+import { effectiveAttempts, occurrenceDates, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { TARGET_SET_FIELD } from './target-set'
 import { taskQueueEnabled } from './task-queue'
@@ -828,9 +828,9 @@ function stripDecks(
 
 /**
  * 5, REPEATING (2026-10-20; docs/TASK-MODEL.md § On deck). A repeating deck
- * whose day has ended gives the task its target back on its occurrence
- * (`due_at` and `original_due_at` := `occurrence_at`, the deck cleared — one
- * write), then the repeating rules (2) apply in the same run as if it had
+ * whose day has ended gives the task its target back — its occurrence's own
+ * (`due_at` and `original_due_at` := `occurrenceDates(occurrence_at).targetAt`,
+ * the deck cleared — one write), then the repeating rules (2) apply in the same run as if it had
  * never been decked:
  *  - a below-High task with no deadline whose occurrence is before M ROLLS
  *    to this day's occurrence (a skip of the missed one) or WAITS in the
@@ -839,7 +839,9 @@ function stripDecks(
  *    target, so the queue sorts it by that day);
  *  - otherwise only the target comes back: High and Urgent never roll (they
  *    nag), a deadline task is never rolled (`ELIGIBLE_SQL`; `rollRepeating`
- *    doesn't move deadlines), and an occurrence still ahead (a deck made
+ *    doesn't move deadlines — so a DEADLINE-ANCHORED repeat, 2026-10-21, only
+ *    ever gets its derived target back, already arrived, before its deadline
+ *    day: decks never nag, and the deadline still does), and an occurrence still ahead (a deck made
  *    before it came) is simply its target again.
  * A from_completion rule is stepped from its occurrence, never from now
  * (`occurrenceFrom`): no re-anchor. A future deck that passed later
@@ -857,9 +859,10 @@ function endRepeatingDeck(
   result: TaskRolloverResult,
 ): void {
   const db = getDb()
-  // On the occurrence, never past its deadline (§8.2) — `collectRepeatingUndeck`'s rule.
+  // The occurrence's own target (`occurrenceDates`; a deadline-anchored
+  // repeat's lies before its deadline) — `collectRepeatingUndeck`'s rule.
   const occurrence = task.occurrence_at ?? task.due_at
-  const restored = occurrence ? capAtDeadline(occurrence, task.deadline_at, new Date(nowStr)) : null
+  const restored = occurrence ? occurrenceDates(task, occurrence, user.timezone).targetAt : null
   // The target is SET now (`target_set_at`), so the attempts checkpoint a
   // wait takes never counts the deck's days: a missed deck is never an
   // attempt (there was no target to be over).

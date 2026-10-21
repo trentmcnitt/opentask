@@ -2653,8 +2653,15 @@ function collectEnrichmentTarget(
       now: new Date(),
     },
   })
-  // A repeating task's date set here is its occurrence (a schedule, not a move).
-  const occurrenceAt = rrule && !opts.tracked && opts.proposedDue ? opts.proposedDue : undefined
+  // A repeating task's date set here is its occurrence (a schedule, not a move)
+  // — on a target-anchored repeat. A DEADLINE-ANCHORED one's occurrence is its
+  // deadline (2026-10-21, `occurrenceDates`), never a target the AI read: the
+  // date is a move of its target, capped above. (Enrichment never makes one —
+  // `sanitizeTaskModelFields` drops a rule's deadline; teaching it to is PR 5.)
+  const occurrenceAt =
+    rrule && !opts.tracked && opts.proposedDue && task.repeat_anchor !== 'deadline'
+      ? opts.proposedDue
+      : undefined
   if (occurrenceAt !== undefined && occurrenceAt !== task.occurrence_at) {
     changes.setClauses.push('occurrence_at = ?')
     changes.values.push(occurrenceAt)

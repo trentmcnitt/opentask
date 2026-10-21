@@ -9,6 +9,7 @@ import { moveEarlierScenarios } from './move-earlier'
 import { taskQueueScenarios } from './task-queue'
 import { onDeckScenarios } from './on-deck'
 import { onDeckRepeatingScenarios } from './on-deck-repeating'
+import { repeatAnchorScenarios } from './repeat-anchor'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -21,4 +22,5 @@ export const goldenScenarios = [
   ...taskQueueScenarios,
   ...onDeckScenarios,
   ...onDeckRepeatingScenarios,
+  ...repeatAnchorScenarios,
 ]

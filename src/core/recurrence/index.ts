@@ -38,7 +38,13 @@ export {
 export { deriveAnchorFields, extractTimeOfDay, type AnchorFields } from './anchor-derivation'
 
 // Every non-quota rule has a time of day (2026-10-12)
-export { ensureRuleTime, ruleTimeFor, fillRuleTime, type RuleTimeSources } from './rule-time'
+export {
+  ensureRuleTime,
+  ruleTimeFor,
+  fillRuleTime,
+  setRuleTime,
+  type RuleTimeSources,
+} from './rule-time'
 
 // Core computation
 export {

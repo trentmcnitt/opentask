@@ -28,7 +28,7 @@ import {
   effectiveHorizon,
   latestSegmentDay,
   autoTargetAt,
-  advanceDeadline,
+  occurrenceDates,
 } from '@/lib/task-segments'
 import { countTasks } from '@/lib/task-counts'
 import { normalizeTargetAliases } from '@/core/validation/task'
@@ -508,29 +508,32 @@ describe('Task model', () => {
       expect(autoTargetAt(at('2026-10-11T07:00'), ctx, SAT)).toBe(SAT.toISOString())
     })
 
-    test('TM-041: a recurring deadline keeps its local time across DST', () => {
-      // Sunday 08:00 occurrence, deadline that Sunday 18:00 local. Next
-      // occurrence is after the Nov 1 DST change: still 18:00 local.
-      const next = advanceDeadline(
-        {
-          deadline_at: at('2026-10-25T18:00'),
-          due_at: at('2026-10-25T08:00'),
-          original_due_at: at('2026-10-25T08:00'),
-        },
-        at('2026-11-01T08:00'),
-        tz,
-      )
-      expect(DateTime.fromISO(next!).setZone(tz).toFormat('yyyy-LL-dd HH:mm')).toBe(
-        '2026-11-01 18:00',
-      )
+    test('TM-041: a repeating deadline and its derived target keep their local times across DST', () => {
+      // Deadline Sundays 18:00, target the same day 08:00 (2026-10-21: the
+      // rule walks the deadline). The next occurrence is after the Nov 1 DST
+      // change: still 18:00 and 08:00 local.
+      const schedule = {
+        rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=18;BYMINUTE=0',
+        repeat_anchor: 'deadline' as const,
+        target_days_before: 0,
+        target_time: '08:00',
+      }
+      const next = occurrenceDates(schedule, at('2026-11-01T18:00'), tz)
+      const local = (iso: string) => DateTime.fromISO(iso).setZone(tz).toFormat('yyyy-LL-dd HH:mm')
+      expect(local(next.deadlineAt!)).toBe('2026-11-01 18:00')
+      expect(local(next.targetAt)).toBe('2026-11-01 08:00')
     })
 
-    test('TM-035: a recurring deadline moves with the occurrence on done and on skip', () => {
+    test('TM-035: a repeating deadline moves with the occurrence on done and on skip', () => {
+      // Deadline-anchored (2026-10-21): the rule walks the deadline (18:00),
+      // the target is derived the same day at 08:00.
       const t = make({
-        rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=8;BYMINUTE=0',
+        rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=18;BYMINUTE=0',
         due_at: at('2026-10-11T08:00'),
         deadline_at: at('2026-10-11T18:00'),
       })
+      expect(t.repeat_anchor).toBe('deadline')
+      expect([t.target_days_before, t.target_time]).toEqual([0, '08:00'])
       markDone({ userId: TEST_USER_ID, userTimezone: tz, taskId: t.id })
       let after = getTaskById(t.id)!
       expect(after.due_at).toBe(at('2026-10-18T08:00'))
@@ -540,20 +543,6 @@ describe('Task model', () => {
       expect(after.deadline_at).toBe(at('2026-10-25T18:00'))
       executeUndo(TEST_USER_ID)
       expect(getTaskById(t.id)!.deadline_at).toBe(at('2026-10-18T18:00'))
-    })
-
-    test('TM-036: advanceDeadline measures from the origin, so a snoozed occurrence does not shift it', () => {
-      expect(
-        advanceDeadline(
-          {
-            deadline_at: at('2026-10-11T18:00'),
-            due_at: at('2026-10-11T13:00'),
-            original_due_at: at('2026-10-11T08:00'),
-          },
-          at('2026-10-18T08:00'),
-          tz,
-        ),
-      ).toBe(at('2026-10-18T18:00'))
     })
   })
 

@@ -9,7 +9,8 @@ import type { TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoAction, UndoSnapshot } from '@/types'
-import { nowUtc, isRecurring, computeNextOccurrence } from '@/core/recurrence'
+import { nowUtc, isRecurring } from '@/core/recurrence'
+import { nextOccurrenceAfterSkip } from './skip'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
@@ -38,7 +39,7 @@ import {
   type FieldChangesInput,
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
-import { isPastDeadline } from '@/lib/task-segments'
+import { isPastDeadline, occurrenceDates } from '@/lib/task-segments'
 import type { ClientProgressSource } from '@/lib/progress-source'
 import {
   describePromptActions,
@@ -646,22 +647,15 @@ function planLanding(task: Task, landing: string, ctx: DeferContext): Landing {
 }
 
 /**
- * A repeating task's next scheduled occurrence after now — the one a skip
- * would land on (`skip.ts`): from its scheduled occurrence, never its moved
- * target (§6).
+ * The TARGET of a repeating task's next scheduled occurrence after now — the
+ * one a skip would land on (`nextOccurrenceAfterSkip`): from its scheduled
+ * occurrence, never its moved target (§6), and that occurrence's own target
+ * (`occurrenceDates`; a deadline-anchored repeat's lies before its deadline —
+ * whose cap, with the lead shorter than the gap, always binds first).
  */
 function nextOccurrenceOf(task: Task, timezone: string, now: Date): string | null {
   if (!task.rrule) return null
-  const prev = task.occurrence_at ?? task.due_at
-  return computeNextOccurrence({
-    rrule: task.rrule,
-    recurrenceMode: task.recurrence_mode,
-    anchorTime: task.anchor_time,
-    timezone,
-    completedAt: now,
-    prevDueAt: prev ? new Date(prev) : null,
-    anchorAt: prev ? new Date(prev) : null,
-  }).toISOString()
+  return occurrenceDates(task, nextOccurrenceAfterSkip(task, timezone, now), timezone).targetAt
 }
 
 /**

@@ -5,7 +5,7 @@
  */
 
 import { attemptsRolloverTime } from './rollover-time'
-import { advanceDeadline, putBackCountedThrough } from '@/lib/task-segments'
+import { occurrenceDates, putBackCountedThrough } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
@@ -292,6 +292,7 @@ interface CompletionRow {
   due_at_was: string | null
   due_at_next: string | null
   occurrence_at_was: string | null
+  occurrence_at_next: string | null
   attempts: number | null
 }
 
@@ -310,25 +311,37 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const db = getDb()
   const latest = db
     .prepare(
-      `SELECT id, completed_at, due_at_was, due_at_next, occurrence_at_was, attempts FROM completions
+      `SELECT id, completed_at, due_at_was, due_at_next, occurrence_at_was, occurrence_at_next, attempts
+         FROM completions
         WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1`,
     )
     .get(task.id, userId) as CompletionRow | undefined
   if (!latest) {
     throw new ValidationError('Nothing to put back')
   }
-  // `due_at_next` is the target the completion set: the occurrence itself,
-  // or — rarely — the occurrence capped at its deadline (then the target is
-  // still there unless moved).
-  if (task.occurrence_at !== latest.due_at_next && task.due_at !== latest.due_at_next) {
+  // The schedule must still be on the occurrence the completion advanced to
+  // (`occurrence_at_next`, 2026-10-21) — a move of the target since does not
+  // matter. A row from before that column compares `due_at_next`, the target
+  // it set (then the occurrence itself, or the occurrence capped at its
+  // deadline: still the target unless moved).
+  const changed =
+    latest.occurrence_at_next !== null
+      ? task.occurrence_at !== latest.occurrence_at_next
+      : task.occurrence_at !== latest.due_at_next && task.due_at !== latest.due_at_next
+  if (changed) {
     throw new ValidationError('Task changed since it was completed')
   }
   // The occurrence it closed; a row from before the column reads the target.
   const restoredOccurrence = latest.occurrence_at_was ?? latest.due_at_was
+  // Its dates (`occurrenceDates`): the deadline it had, and its derived target.
+  const restored = restoredOccurrence
+    ? occurrenceDates(task, restoredOccurrence, userTimezone)
+    : null
   // The target it closed. A DECKED occurrence (2026-10-20) had none — its
-  // `due_at_was` is NULL — so it comes back as debt on its occurrence, never
-  // as a target-less repeating row (no deck to put back: done cleared it).
-  const restoredTarget = latest.due_at_was ?? restoredOccurrence
+  // `due_at_was` is NULL — so it comes back as debt on its occurrence's
+  // target, never as a target-less repeating row (no deck to put back: done
+  // cleared it).
+  const restoredTarget = latest.due_at_was ?? restored?.targetAt ?? null
   const previous = db
     .prepare(
       `SELECT completed_at FROM completions
@@ -340,8 +353,9 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const restoredCount = Math.max(0, task.completion_count - 1)
   const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
   const restoredLastCompleted = previous?.completed_at ?? null
-  // The deadline goes back with the occurrence, by the same offset it moved.
-  const restoredDeadline = advanceDeadline(task, restoredOccurrence, userTimezone)
+  // The deadline goes back with the occurrence (a deadline-anchored repeat's
+  // occurrence IS its deadline; a target-anchored one has none).
+  const restoredDeadline = restored ? restored.deadlineAt : task.deadline_at
   // §7: the occurrence's attempts come back from its completion row.
   const restoredAttempts = latest.attempts ?? 0
   const restoredThrough = putBackCountedThrough(

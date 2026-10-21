@@ -31,6 +31,7 @@ interface DueCandidate {
   anchor_time: string | null
   occurrence_at: string | null
   on_deck_day: string | null
+  repeat_anchor: 'target' | 'deadline'
   timezone: string
 }
 
@@ -45,7 +46,7 @@ function fetchDueCandidates(userId: number, now: Date): DueCandidate[] {
   const rows = getDb()
     .prepare(
       `SELECT t.id, t.project_id, t.due_at, t.rrule, t.recurrence_mode, t.anchor_time,
-              t.occurrence_at, t.on_deck_day, u.timezone
+              t.occurrence_at, t.on_deck_day, t.repeat_anchor, u.timezone
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
         WHERE t.user_id = ?

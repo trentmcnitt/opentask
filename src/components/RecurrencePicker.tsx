@@ -322,9 +322,9 @@ function TimePicker({
 
   return (
     <div className="flex items-center gap-2">
-      {/* The rule's time of day IS each occurrence's target (2026-10-12): a
-          recurring task's deadline is its own line in the editor, and moves
-          with the occurrence (advanceDeadline). */}
+      {/* The rule's time of day IS each occurrence's target (2026-10-12) — on a
+          deadline-anchored repeat (2026-10-21) its deadline, the target derived
+          from it (`occurrenceDates`); the editor's wording for that is PR 4. */}
       <span className="text-muted-foreground text-sm whitespace-nowrap">{TARGET_WORD}</span>
       <Select value={displayHour.toString()} onValueChange={(v) => handleHourChange(parseInt(v))}>
         <SelectTrigger className="w-[72px]">

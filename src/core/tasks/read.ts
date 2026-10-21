@@ -418,6 +418,17 @@ function queueFields(
   }
 }
 
+/** A repeating task's anchor and relative target (2026-10-21, `Task.repeat_anchor`). */
+function repeatFields(
+  row: TaskRow,
+): Pick<Task, 'repeat_anchor' | 'target_days_before' | 'target_time'> {
+  return {
+    repeat_anchor: row.repeat_anchor === 'deadline' ? 'deadline' : 'target',
+    target_days_before: row.target_days_before ?? null,
+    target_time: row.target_time ?? null,
+  }
+}
+
 function baseTask(row: TaskRow): Task {
   return {
     id: row.id,
@@ -435,9 +446,7 @@ function baseTask(row: TaskRow): Task {
     anchor_time: row.anchor_time,
     anchor_dow: row.anchor_dow,
     anchor_dom: row.anchor_dom,
-    repeat_anchor: row.repeat_anchor === 'deadline' ? 'deadline' : 'target',
-    target_days_before: row.target_days_before ?? null,
-    target_time: row.target_time ?? null,
+    ...repeatFields(row),
     original_due_at: row.original_due_at,
     deadline_at: row.deadline_at ?? null,
     horizon: (row.horizon ?? null) as Task['horizon'],

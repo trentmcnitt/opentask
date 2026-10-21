@@ -1437,14 +1437,9 @@ export function QuickActionPanel({
               onDeadline={setPendingDeadline}
               repeatLabel={deadlineRepeatLabel({
                 rrule: displayRrule,
-                deadline_at:
-                  pendingDeadline !== undefined
-                    ? pendingDeadline
-                    : (effectiveTask?.deadline_at ?? null),
-                due_at:
-                  pendingDueAt ?? effectiveTask?.due_at ?? (displayRrule ? workingDate : null),
-                original_due_at: effectiveTask?.original_due_at ?? null,
-                occurrence_at: effectiveTask?.occurrence_at ?? null,
+                repeat_anchor: effectiveTask?.repeat_anchor ?? null,
+                target_days_before: effectiveTask?.target_days_before ?? null,
+                target_time: effectiveTask?.target_time ?? null,
               })}
               showHorizon={!displayRrule}
               // A one-off with a target the user picked is quiet until its

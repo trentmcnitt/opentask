@@ -7,14 +7,16 @@
  */
 
 import { DateTime } from 'luxon'
-import { parseRRuleParts } from '@/lib/format-rrule'
 import {
   autoTargetAt,
   deadlineDayTarget,
+  occurrenceDates,
+  targetMoved,
   type TargetContext,
   type TargetFields,
 } from '@/lib/task-segments'
 import { DEADLINE_DAY } from '@/lib/task-model-words'
+import type { RepeatAnchor } from '@/types'
 
 export interface AutoTargetLabel {
   /** The automatic target itself (UTC ISO). */
@@ -121,41 +123,34 @@ export function deadlineDayPick(
   return { label: `${DEADLINE_DAY} · ${when}`, at }
 }
 
-const FREQ_UNITS: Record<string, string> = {
-  DAILY: 'day',
-  WEEKLY: 'week',
-  MONTHLY: 'month',
-  YEARLY: 'year',
-}
-
 /**
- * "moves with each week" — said on a recurring task's deadline line, but only
- * when `advanceDeadline` really moves it: on done, skip and put-back it carries
- * the deadline to the next occurrence whenever the task has a deadline and an
- * occurrence to measure from (`occurrence_at`, else `original_due_at`, else
- * `due_at`). A recurring task always has one; the check keeps the claim honest
- * if it ever doesn't. Every-N rules and anything unusual say "each occurrence".
+ * A DEADLINE-ANCHORED repeat's target, in words, on its deadline line
+ * (2026-10-21): the deadline IS the schedule, so the line says where the
+ * target sits before it — "target the day before at 6:00 PM", "target 3 days
+ * before at 9:00 AM", "target the same day at 12:00 PM". Null for anything
+ * else: a target-anchored repeat has no deadline, a one-off no rule.
  */
 export function deadlineRepeatLabel(task: {
   rrule: string | null | undefined
-  deadline_at: string | null
-  due_at: string | null
-  original_due_at?: string | null
-  occurrence_at?: string | null
+  repeat_anchor?: RepeatAnchor | null
+  target_days_before?: number | null
+  target_time?: string | null
 }): string | null {
-  if (!task.rrule || !task.deadline_at) return null
-  if (!(task.occurrence_at ?? task.original_due_at ?? task.due_at)) return null
-  const parts = parseRRuleParts(task.rrule)
-  const unit = FREQ_UNITS[parts.FREQ ?? '']
-  const interval = parts.INTERVAL ? parseInt(parts.INTERVAL) : 1
-  return `moves with each ${unit && interval === 1 ? unit : 'occurrence'}`
+  if (!task.rrule || task.repeat_anchor !== 'deadline') return null
+  if (task.target_days_before == null || !task.target_time) return null
+  const at = DateTime.fromFormat(task.target_time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
+  const days = task.target_days_before
+  const when = days === 0 ? 'the same day' : days === 1 ? 'the day before' : `${days} days before`
+  return `target ${when} at ${at}`
 }
 
 /**
  * A repeating task whose target has been moved off its scheduled occurrence
- * (§6, 2026-10-12): the editor names the occurrence — "This week's: Sun, Oct
- * 18, 12:00 PM" — so a moved target never reads as a changed schedule. Null
- * when the target is the occurrence (or the task is not repeating).
+ * (§6, 2026-10-12; `targetMoved`): the editor names the occurrence's own
+ * target — "This week's: Sun, Oct 18, 12:00 PM" — so a moved target never
+ * reads as a changed schedule. For a deadline-anchored repeat (2026-10-21)
+ * that is the target derived from its deadline (`occurrenceDates`). Null
+ * when the target is not moved (or the task is not repeating).
  */
 export function movedOccurrenceLabel(
   task: {
@@ -163,13 +158,27 @@ export function movedOccurrenceLabel(
     due_at: string | null
     occurrence_at?: string | null
     queued_at?: string | null
+    repeat_anchor?: RepeatAnchor | null
+    target_days_before?: number | null
+    target_time?: string | null
   },
   timezone: string,
 ): string | null {
   if (!task.rrule || !task.occurrence_at || !task.due_at) return null
   if (queuedRepeatOccurrence(task)) return null
-  if (Date.parse(task.occurrence_at) === Date.parse(task.due_at)) return null
-  return DateTime.fromISO(task.occurrence_at, { zone: 'utc' })
+  const schedule = {
+    rrule: task.rrule,
+    repeat_anchor: task.repeat_anchor ?? null,
+    target_days_before: task.target_days_before ?? null,
+    target_time: task.target_time ?? null,
+  }
+  if (
+    !targetMoved({ ...schedule, due_at: task.due_at, occurrence_at: task.occurrence_at }, timezone)
+  )
+    return null
+  return DateTime.fromISO(occurrenceDates(schedule, task.occurrence_at, timezone).targetAt, {
+    zone: 'utc',
+  })
     .setZone(timezone)
     .toFormat('ccc, LLL d, h:mm a')
 }

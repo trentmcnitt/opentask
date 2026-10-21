@@ -267,20 +267,25 @@ describe('RD-GRID: the writers and readers agree on the grid', () => {
     return createTask({ ...u, input: { title: 'Task', ...input } })
   }
 
-  test('RD-GRID-030: done, done again: Nov 3 → Nov 25 → Dec 17; the deadline moves with it', () => {
+  test('RD-GRID-030: a deadline-anchored every-22-days: Nov 4 → Nov 26 → Dec 18, the target the day before', () => {
+    // 2026-10-21: the rule walks the DEADLINE (17:00); the target sent with it
+    // gives the offset (1 day before, 09:00).
     const t = make({
-      rrule: 'FREQ=DAILY;INTERVAL=22;BYHOUR=9;BYMINUTE=0',
+      rrule: 'FREQ=DAILY;INTERVAL=22;BYHOUR=17;BYMINUTE=0',
       due_at: at('2026-11-03T09:00'),
       deadline_at: at('2026-11-04T17:00'),
     })
-    expect(t.occurrence_at).toBe(at('2026-11-03T09:00'))
+    expect(t.occurrence_at).toBe(at('2026-11-04T17:00'))
+    expect(t.due_at).toBe(at('2026-11-03T09:00'))
     vi.setSystemTime(new Date(at('2026-11-03T21:00')))
     const a = markDone({ ...u, taskId: t.id }).task
-    expect(local(a.occurrence_at)).toBe('2026-11-25T09:00')
-    expect(local(a.due_at)).toBe('2026-11-25T09:00')
+    expect(local(a.occurrence_at)).toBe('2026-11-26T17:00')
     expect(local(a.deadline_at)).toBe('2026-11-26T17:00')
+    expect(local(a.due_at)).toBe('2026-11-25T09:00')
     vi.setSystemTime(new Date(at('2026-11-25T21:00')))
-    expect(local(markDone({ ...u, taskId: t.id }).task.occurrence_at)).toBe('2026-12-17T09:00')
+    const b = markDone({ ...u, taskId: t.id }).task
+    expect(local(b.occurrence_at)).toBe('2026-12-18T17:00')
+    expect(local(b.due_at)).toBe('2026-12-17T09:00')
   })
 
   test('RD-GRID-031: done early from a moved target → the grid, not the moved target, decides', () => {

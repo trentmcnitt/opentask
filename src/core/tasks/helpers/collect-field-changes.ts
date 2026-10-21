@@ -32,6 +32,7 @@ import {
   deckRefusal,
   deckSkip,
   hasPickedTarget,
+  occurrenceDates,
   resolveTarget,
   type TargetContext,
 } from '@/lib/task-segments'
@@ -284,7 +285,11 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     now,
   })
   // A repeating task leaving the deck gets its target back on its occurrence.
-  collectRepeatingUndeck(data, task, input, { willBeReminder, willBeTracked, now })
+  collectRepeatingUndeck(data, task, input, {
+    willBeReminder,
+    willBeTracked,
+    timezone: userTimezone,
+  })
 
   // Upcoming (2026-10-12): any change to the target or the deadline restarts
   // the wait its heads-ups are counted over (`src/core/tasks/target-set.ts`).
@@ -525,8 +530,8 @@ function collectDeckChange(
  * ON DECK, REPEATING (2026-10-20): a repeating task is never left without a
  * target off deck. Whatever takes it off — the deck write's `null`, the A1
  * clear when a deadline outranks the deck — puts `due_at` back on its
- * scheduled occurrence (capped at its deadline, §8.2), and `original_due_at`
- * with it (old native builds read it). The debt returns: the occurrence may
+ * scheduled occurrence's own target (`occurrenceDates`: a deadline-anchored
+ * repeat's lies before its deadline), and `original_due_at` with it (old native builds read it). The debt returns: the occurrence may
  * already be over target and nag at once — intended. A write that sets
  * `due_at` itself (a pick, a new rule) or makes the task a reminder or a
  * quota leaves it to that write.
@@ -535,7 +540,7 @@ function collectRepeatingUndeck(
   data: FieldChangeData,
   task: Task,
   input: FieldChangesInput,
-  left: { willBeReminder: boolean; willBeTracked: boolean; now: Date },
+  left: { willBeReminder: boolean; willBeTracked: boolean; timezone: string },
 ): void {
   if (!task.on_deck_day || data.afterState.on_deck_day !== null) return
   const rule = input.rrule !== undefined ? input.rrule : task.rrule
@@ -544,9 +549,7 @@ function collectRepeatingUndeck(
   const occurrence =
     data.afterState.occurrence_at !== undefined ? data.afterState.occurrence_at : task.occurrence_at
   if (!occurrence) return
-  const deadline =
-    data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
-  const restored = capAtDeadline(occurrence, deadline, left.now)
+  const restored = occurrenceDates(task, occurrence, left.timezone).targetAt
   trackField(data, 'due_at', task.due_at, restored)
   if (task.original_due_at !== restored && !data.fieldsChanged.includes('original_due_at')) {
     trackField(data, 'original_due_at', task.original_due_at, restored)

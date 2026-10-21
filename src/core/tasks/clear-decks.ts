@@ -8,8 +8,9 @@
  *     target, so there is no target to restore, and a deadline task keeps
  *     its automatic target. It goes back to where an untargeted task sits
  *     (its horizon segment). A REPEATING deck (2026-10-20) gets its target
- *     back on its occurrence (`due_at`, `original_due_at` := `occurrence_at`),
- *     as taking it off deck does — never left target-less;
+ *     back — its occurrence's own (`due_at`, `original_due_at` :=
+ *     `occurrenceDates(occurrence_at).targetAt`), as taking it off deck does —
+ *     never left target-less;
  *  2. every open task the rollover sent to the queue FROM a deck
  *     (`queued_from_deck_day` set) still queued leaves the queue
  *     (`queued_at`, `try_tomorrow` → cleared; `queued_from_deck_day` kept as
@@ -21,7 +22,7 @@
  */
 import { getDb, withTransaction } from '@/core/db'
 import { logActivity } from '@/core/activity'
-import { capAtDeadline } from '@/lib/task-segments'
+import { occurrenceDates, type RepeatSchedule } from '@/lib/task-segments'
 
 export interface DeckedRow {
   id: number
@@ -51,23 +52,23 @@ export function findDecks(userId: number): DeckedRow[] {
 }
 
 /**
- * The target a REPEATING deck gets back: its occurrence, never past its
- * deadline (§8.2, as `collectRepeatingUndeck` does) — or null (a one-off, a
- * row that still has a target, or one with no occurrence to go back to).
+ * The target a REPEATING deck gets back: its occurrence's own target
+ * (`occurrenceDates` — on a deadline-anchored repeat, before its deadline; as
+ * `collectRepeatingUndeck` does) — or null (a one-off, a row that still has a
+ * target, or one with no occurrence to go back to).
  */
-function restoredTarget(id: number, now: Date): string | null {
+function restoredTarget(id: number): string | null {
   const row = getDb()
-    .prepare('SELECT rrule, due_at, occurrence_at, deadline_at FROM tasks WHERE id = ?')
+    .prepare(
+      `SELECT t.rrule, t.repeat_anchor, t.target_days_before, t.target_time, t.due_at,
+              t.occurrence_at, u.timezone
+         FROM tasks t JOIN users u ON u.id = t.user_id WHERE t.id = ?`,
+    )
     .get(id) as
-    | {
-        rrule: string | null
-        due_at: string | null
-        occurrence_at: string | null
-        deadline_at: string | null
-      }
+    | (RepeatSchedule & { due_at: string | null; occurrence_at: string | null; timezone: string })
     | undefined
   if (!row || !row.rrule || row.due_at !== null || !row.occurrence_at) return null
-  return capAtDeadline(row.occurrence_at, row.deadline_at, now)
+  return occurrenceDates(row, row.occurrence_at, row.timezone).targetAt
 }
 
 /** Take them off deck and out of the queue. Returns what it cleared. */
@@ -75,8 +76,8 @@ export function clearDecks(userId: number, now: Date = new Date()): DeckedRow[] 
   const nowStr = now.toISOString()
   return withTransaction((tx) => {
     const found = findDecks(userId)
-    // A repeating deck's target comes back on its occurrence, capped at its
-    // deadline (see the header; `restoredTarget`). NULL leaves a one-off's alone.
+    // A repeating deck's target comes back: its occurrence's own (see the
+    // header; `restoredTarget`). NULL leaves a one-off's alone.
     const undeckStmt = tx.prepare(
       `UPDATE tasks
           SET on_deck_day = NULL, due_at = COALESCE(?, due_at),
@@ -84,7 +85,7 @@ export function clearDecks(userId: number, now: Date = new Date()): DeckedRow[] 
         WHERE id = ? AND on_deck_day IS NOT NULL`,
     )
     const undeck = (id: number) => {
-      const restored = restoredTarget(id, now)
+      const restored = restoredTarget(id)
       undeckStmt.run(restored, restored, nowStr, id)
     }
     const unqueue = tx.prepare(

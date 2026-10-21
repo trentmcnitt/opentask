@@ -66,6 +66,8 @@ interface OverdueTask {
   occurrence_at?: string | null
   /** On deck (2026-10-20): never notified (the SQL leaves decks out; `effectiveDueAt` agrees). */
   on_deck_day?: string | null
+  /** A deadline-anchored repeat is never given today's occurrence as a target (`effectiveDueAt`). */
+  repeat_anchor?: 'target' | 'deadline' | null
   timezone: string
   /**
    * The due time this task is actually being notified about, from
@@ -310,7 +312,7 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
                t.rrule, t.recurrence_mode, t.anchor_time, t.occurrence_at, t.on_deck_day,
-               u.timezone,
+               t.repeat_anchor, u.timezone,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
                u.auto_snooze_high_minutes as user_auto_snooze_high_minutes,

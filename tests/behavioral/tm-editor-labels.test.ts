@@ -1,14 +1,13 @@
 /**
  * The editor's task-model labels (2026-10-12): the auto target of a
- * deadline-only task, and the "moves with each week" note on a recurring
- * task's deadline. Both are read off the model's own rules
- * (`autoTargetAt`, `advanceDeadline`), so these tests pin that the words
- * follow the rules (§8.1, 2026-10-12: a stored automatic target, lead 3 days
+ * deadline-only task, and — 2026-10-21 — a deadline-anchored repeat's target
+ * words on its deadline line. Read off the model's own rules (`autoTargetAt`,
+ * the stored relative target), so these tests pin that the words follow the
+ * rules (§8.1, 2026-10-12: a stored automatic target, lead 3 days
  * for a wait under 16 days, else 4).
  */
 import { describe, expect, test } from 'vitest'
 import { describeAutoTarget, deadlineRepeatLabel } from '@/lib/editor-target-labels'
-import { advanceDeadline } from '@/lib/task-segments'
 
 const TZ = 'America/Chicago'
 const CTX = { timezone: TZ, morningTime: '09:00' }
@@ -83,37 +82,26 @@ describe('describeAutoTarget', () => {
 })
 
 describe('deadlineRepeatLabel', () => {
-  // Sundays at noon, deadline 11 PM the same Sunday.
+  // Deadline Sundays at 11 PM (2026-10-21: a deadline-anchored repeat).
   const task = {
-    rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0',
-    due_at: '2026-10-18T17:00:00.000Z',
-    original_due_at: '2026-10-18T17:00:00.000Z',
-    deadline_at: '2026-10-19T04:00:00.000Z',
+    rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=23;BYMINUTE=0',
+    repeat_anchor: 'deadline' as const,
+    target_days_before: 0,
+    target_time: '12:00',
   }
 
-  test('weekly: "moves with each week" — and advanceDeadline really moves it', () => {
-    expect(deadlineRepeatLabel(task)).toBe('moves with each week')
-    // The next Sunday's noon → that Sunday's 11 PM.
-    expect(advanceDeadline(task, '2026-10-25T17:00:00.000Z', TZ)).toBe('2026-10-26T04:00:00.000Z')
-  })
-
-  test('each day / month / year; every-N rules say "each occurrence"', () => {
-    expect(deadlineRepeatLabel({ ...task, rrule: 'FREQ=DAILY' })).toBe('moves with each day')
-    expect(deadlineRepeatLabel({ ...task, rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' })).toBe(
-      'moves with each month',
+  test('says where the target sits before the deadline', () => {
+    expect(deadlineRepeatLabel(task)).toBe('target the same day at 12:00 PM')
+    expect(deadlineRepeatLabel({ ...task, target_days_before: 1, target_time: '18:00' })).toBe(
+      'target the day before at 6:00 PM',
     )
-    expect(deadlineRepeatLabel({ ...task, rrule: 'FREQ=YEARLY' })).toBe('moves with each year')
-    expect(deadlineRepeatLabel({ ...task, rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=SU' })).toBe(
-      'moves with each occurrence',
+    expect(deadlineRepeatLabel({ ...task, target_days_before: 3, target_time: '09:00' })).toBe(
+      'target 3 days before at 9:00 AM',
     )
   })
 
-  test('nothing to claim without a rule, a deadline, or an occurrence to measure from', () => {
+  test('nothing for a target-anchored repeat or a one-off', () => {
+    expect(deadlineRepeatLabel({ ...task, repeat_anchor: 'target' })).toBe(null)
     expect(deadlineRepeatLabel({ ...task, rrule: null })).toBe(null)
-    expect(deadlineRepeatLabel({ ...task, deadline_at: null })).toBe(null)
-    const noOccurrence = { ...task, due_at: null, original_due_at: null }
-    expect(deadlineRepeatLabel(noOccurrence)).toBe(null)
-    // …which is exactly when advanceDeadline leaves the deadline where it is.
-    expect(advanceDeadline(noOccurrence, '2026-10-25T17:00:00.000Z', TZ)).toBe(task.deadline_at)
   })
 })

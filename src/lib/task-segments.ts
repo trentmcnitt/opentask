@@ -11,8 +11,9 @@
  * (`capAtDeadline`) and the picker's "Deadline day"; the effective horizon; the
  * check-in day and the horizon segments' days (`latestSegmentDay`); segment
  * membership and carry-over (`segmentState`); the two badges (§7: the age
- * thresholds, `ageLabel`, and attempts, `effectiveAttempts`); the recurring
- * deadline (`advanceDeadline`, from the occurrence); and UPCOMING — the wait,
+ * thresholds, `ageLabel`, and attempts, `effectiveAttempts`); a repeating
+ * task's occurrence dates (`occurrenceDates`: the target and the deadline of
+ * a deadline-anchored repeat); and UPCOMING — the wait,
  * the 3/4 lead (`leadDaysForWait`, shared with the auto target), the heads-up
  * days and their carry-over (`headsUpDays`, `upcomingState`).
  *
@@ -25,7 +26,8 @@
  * Upcoming heads-ups (2026-10-12); once the target arrives it leaves the
  * segment and is "over target" — today's overdue under a new name, nagged on
  * the dashboard, in notifications and in the badge. Never both. A repeating
- * task keeps its scheduled occurrence (`occurrence_at`) apart from its target.
+ * task keeps its scheduled occurrence (`occurrence_at`) apart from its target;
+ * a deadline-anchored one's occurrence is its deadline (`occurrenceDates`).
  *
  * ONE SEGMENT PER HORIZON, each on its own day (Trent, 10-10): days every day,
  * weeks every check-in day (`users.check_in_day`, Saturday by default — §3,
@@ -39,7 +41,9 @@
  */
 
 import { DateTime } from 'luxon'
-import { openTaskDayOf, targetOpenTaskDay } from '@/lib/opentask-day'
+import { computeNextOccurrence, ruleTimeOfDay } from '@/core/recurrence/compute-next'
+import { localMoment, openTaskDayOf, targetOpenTaskDay } from '@/lib/opentask-day'
+import type { RepeatAnchor } from '@/types'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
@@ -856,44 +860,266 @@ export function isPastDeadline(deadlineAt: string | null, now: Date): boolean {
   return deadlineAt !== null && Date.parse(deadlineAt) < now.getTime()
 }
 
+// ===========================================================================
+// REPEATING TASKS — what an occurrence's dates are (2026-10-21)
+// ===========================================================================
+
 /**
- * A recurring task's deadline for its next occurrence (2026-10-10, spec §4):
- * the same distance from the new occurrence as it was from the current one, so
- * the weekly Upwork lock moves with the week. Left alone on a stale one, a
- * deadline would cap every later move. Measured from the SCHEDULED occurrence
- * (`occurrence_at`, §6 2026-10-12), never from a moved target, so moving the
- * target never shifts it (the red team's B1 drift). A row from before the
- * column falls back to `original_due_at`, then `due_at`.
+ * DEADLINE-ANCHORED REPEATS (2026-10-21; docs/TASK-MODEL.md § Recurrence
+ * Model). A repeating task has exactly ONE scheduled instant, `occurrence_at`,
+ * the instant its rule walks. `repeat_anchor` says what that instant is:
+ *  - 'target': the occurrence is the target; no deadline (every repeat before);
+ *  - 'deadline': the occurrence is the DEADLINE (`deadline_at` mirrors it),
+ *    and the target sits a fixed local offset before it —
+ *    `target_days_before` local calendar days earlier, at `target_time`.
+ * The other dates are never stored as free values: they come from
+ * `occurrenceDates`, the one derivation. `due_at` differs from what it derives
+ * only when the user moved the target THIS occurrence (`targetMoved`); done
+ * and skip always write the next occurrence's derived dates, so nothing a
+ * move did carries over. (This replaced `advanceDeadline`, the "same distance
+ * after the new occurrence" carry of a target-walking rule.)
  */
-export function advanceDeadline(
-  task: {
-    deadline_at: string | null
-    due_at: string | null
-    original_due_at: string | null
-    occurrence_at?: string | null
-  },
-  nextDueAt: string | null,
+export interface RepeatSchedule {
+  rrule: string | null
+  repeat_anchor: RepeatAnchor | null
+  target_days_before: number | null
+  target_time: string | null
+}
+
+/** The dates of one occurrence (UTC ISO). `deadlineAt` is null on a target-anchored one. */
+export interface OccurrenceDates {
+  occurrenceAt: string
+  targetAt: string
+  deadlineAt: string | null
+}
+
+/** A deadline-anchored repeat's target, relative to its deadline. */
+export interface RelativeTarget {
+  /** Local calendar days from the deadline's date back to the target's (0 = the same day). */
+  days_before: number
+  /** The target's local time of day, HH:MM. */
+  time: string
+}
+
+/** Whether the task is a deadline-anchored repeat (a rule, and the anchor 'deadline'). */
+export function isDeadlineAnchored(task: Pick<RepeatSchedule, 'rrule' | 'repeat_anchor'>): boolean {
+  return !!task.rrule && task.repeat_anchor === 'deadline'
+}
+
+function localHHMM(at: DateTime): string {
+  return at.toFormat('HH:mm')
+}
+
+/**
+ * THE DERIVATION: the dates of one occurrence of a repeating task (pure).
+ *  - target-anchored: the occurrence is the target, and there is no deadline;
+ *  - deadline-anchored: the occurrence is the deadline; the target is
+ *    `target_time` on the deadline's local date minus `target_days_before`
+ *    (Luxon calendar days, so a DST change between them never shifts it),
+ *    through `localMoment`'s DST rule (a time the clocks skip → the next
+ *    valid minute; a repeated one → its first instant), and LAST clamped to
+ *    the deadline — the target is never after it (§8.2). Write-time validation
+ *    (`relativeTargetProblem`) refuses an offset that would put it there, so
+ *    the clamp only ever absorbs a DST hour.
+ * A deadline-anchored row missing its offsets (the server never writes one)
+ * reads as the deadline itself.
+ */
+export function occurrenceDates(
+  schedule: RepeatSchedule,
+  occurrenceAt: string,
   timezone: string,
-): string | null {
-  const origin = task.occurrence_at ?? task.original_due_at ?? task.due_at
-  if (!task.deadline_at || !nextDueAt || !origin) return task.deadline_at
-  // In LOCAL WALL-CLOCK time, so a DST change between occurrences doesn't
-  // shift it by an hour: the same number of calendar days after the
-  // occurrence, at the deadline's own local time of day.
-  const from = DateTime.fromISO(origin, { zone: 'utc' }).setZone(timezone)
-  const deadline = DateTime.fromISO(task.deadline_at, { zone: 'utc' }).setZone(timezone)
-  const days = Math.round(deadline.startOf('day').diff(from.startOf('day'), 'days').days)
-  return DateTime.fromISO(nextDueAt, { zone: 'utc' })
-    .setZone(timezone)
-    .plus({ days })
-    .set({
-      hour: deadline.hour,
-      minute: deadline.minute,
-      second: deadline.second,
-      millisecond: deadline.millisecond,
-    })
-    .toUTC()
-    .toISO()!
+): OccurrenceDates {
+  if (!isDeadlineAnchored(schedule)) {
+    return { occurrenceAt, targetAt: occurrenceAt, deadlineAt: null }
+  }
+  const deadline = DateTime.fromISO(occurrenceAt, { zone: 'utc' }).setZone(timezone)
+  const day = deadline.startOf('day').minus({ days: schedule.target_days_before ?? 0 })
+  const target = localMoment(
+    day.toISODate()!,
+    schedule.target_time ?? localHHMM(deadline),
+    timezone,
+  )
+  const targetAt = target.getTime() < deadline.toMillis() ? target.toISOString() : occurrenceAt
+  return { occurrenceAt, targetAt, deadlineAt: occurrenceAt }
+}
+
+/**
+ * The inverse (a helper, not a derivation): the offset that puts the target at
+ * `targetAt` for the deadline `deadlineAt` — for the migration, and a create
+ * that sends a first target with its deadline. Null when the target is after
+ * the deadline.
+ */
+export function relativeTargetOf(
+  targetAt: string,
+  deadlineAt: string,
+  timezone: string,
+): RelativeTarget | null {
+  if (Date.parse(targetAt) > Date.parse(deadlineAt)) return null
+  const target = DateTime.fromISO(targetAt, { zone: 'utc' }).setZone(timezone)
+  const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone)
+  return {
+    days_before: waitDays(deadline.startOf('day'), target.startOf('day')),
+    time: localHHMM(target),
+  }
+}
+
+/**
+ * Whether a repeating task's target was MOVED this occurrence: it is not what
+ * `occurrenceDates` derives for its scheduled occurrence. False with no target
+ * (on deck) or no occurrence.
+ */
+export function targetMoved(
+  task: RepeatSchedule & { due_at: string | null; occurrence_at?: string | null },
+  timezone: string,
+): boolean {
+  if (!task.rrule || !task.due_at || !task.occurrence_at) return false
+  const derived = occurrenceDates(task, task.occurrence_at, timezone).targetAt
+  return Date.parse(task.due_at) !== Date.parse(derived)
+}
+
+/** The rule fields the occurrence walk reads. */
+export interface RepeatRule {
+  rrule: string
+  recurrence_mode: 'from_due' | 'from_completion' | null | undefined
+  anchor_time: string | null
+}
+
+/**
+ * The occurrence after `from` on the task's rule, `from` being one of its own
+ * occurrences (a from_completion rule: as if done at `from`).
+ */
+function followingOccurrence(rule: RepeatRule, from: Date, timezone: string): Date {
+  return computeNextOccurrence({
+    rrule: rule.rrule,
+    recurrenceMode: rule.recurrence_mode ?? 'from_due',
+    anchorTime: rule.anchor_time,
+    timezone,
+    completedAt: from,
+    prevDueAt: from,
+    anchorAt: from,
+  })
+}
+
+/** How far the validation and the default look ahead: 60 occurrences or a year. */
+const WALK_OCCURRENCES = 60
+const WALK_YEARS = 1
+
+/** The rule's occurrences from `first` (inclusive), up to the walk's limits. */
+function walkOccurrences(rule: RepeatRule, first: string, timezone: string): Date[] {
+  const start = new Date(first)
+  const end = DateTime.fromJSDate(start).plus({ years: WALK_YEARS }).toMillis()
+  const out = [start]
+  while (out.length <= WALK_OCCURRENCES) {
+    const last = out[out.length - 1]
+    const next = followingOccurrence(rule, last, timezone)
+    if (next.getTime() <= last.getTime() || next.getTime() > end) break
+    out.push(next)
+  }
+  return out
+}
+
+export type RelativeTargetProblem = 'after_deadline' | 'overlaps_previous'
+
+/** The 400s for a relative target that can't be written (`relativeTargetProblem`). */
+export const RELATIVE_TARGET_MESSAGES: Record<RelativeTargetProblem, string> = {
+  after_deadline:
+    'The target would be after the deadline: on the deadline day (target_days_before 0) target_time must be at or before the deadline time',
+  overlaps_previous:
+    "The target would fall on or before the previous occurrence's deadline: use fewer target_days_before for this rule",
+}
+
+/**
+ * WRITE-TIME VALIDATION of a deadline-anchored repeat's relative target — the
+ * POST, PATCH, bulk edit and the migration all ask it. Refused, never
+ * clamped (a clamp would silently change a rule the user typed):
+ *  - 'after_deadline': the same day (0) at a time later than the rule's —
+ *    the deadline's — time of day;
+ *  - 'overlaps_previous': some occurrence's target on or before the previous
+ *    occurrence's deadline, walking the next 60 occurrences (or a year) from
+ *    `firstDeadline`. A from_completion rule is walked as if each occurrence
+ *    were done on its deadline, so its lead must be shorter than its interval.
+ */
+export function relativeTargetProblem(
+  offset: RelativeTarget,
+  rule: RepeatRule,
+  firstDeadline: string,
+  timezone: string,
+): RelativeTargetProblem | null {
+  const { hour, minute } = ruleTimeOfDay(rule.rrule, rule.anchor_time)
+  const ruleTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  if (offset.days_before === 0 && offset.time > ruleTime) return 'after_deadline'
+  const schedule: RepeatSchedule = {
+    rrule: rule.rrule,
+    repeat_anchor: 'deadline',
+    target_days_before: offset.days_before,
+    target_time: offset.time,
+  }
+  const deadlines = walkOccurrences(rule, firstDeadline, timezone)
+  for (let i = 1; i < deadlines.length; i++) {
+    const target = occurrenceDates(schedule, deadlines[i].toISOString(), timezone).targetAt
+    if (Date.parse(target) <= deadlines[i - 1].getTime()) return 'overlaps_previous'
+  }
+  return null
+}
+
+/**
+ * THE DEADLINE LEAD (A1, decided 2026-10-21): how many local days before a
+ * deadline its default target falls, by the WAIT — the local days from the
+ * previous deadline to this one. Upcoming's heads-up constants, no new
+ * numbers (its day-before heads-up and its 3/4 early one, `headsUpDays`):
+ *  - under HEADS_UP_DAY_BEFORE_MIN_WAIT (2): the deadline day itself (0);
+ *  - up to HEADS_UP_EARLY_AFTER_WAIT (7): the day before (1);
+ *  - over it: `leadDaysForWait` — 3 days under HEADS_UP_LONG_WAIT (16), 4 at
+ *    16 or more.
+ */
+export function deadlineLeadDays(wait: number): number {
+  if (wait < HEADS_UP_DAY_BEFORE_MIN_WAIT) return 0
+  if (wait <= HEADS_UP_EARLY_AFTER_WAIT) return 1
+  return leadDaysForWait(wait)
+}
+
+/**
+ * The default target for a deadline `wait` local days after the previous one
+ * (A1): `deadlineLeadDays(wait)` days before, at the user's morning — and on
+ * the deadline day itself, at the morning or the deadline's own time if that
+ * is earlier (the picker's "Deadline day", `deadlineDayTarget`). Pure and
+ * relative, so a one-off deadline could take the same rule (its wait counted
+ * from when the deadline is set); one-offs still use `autoTargetAt`.
+ */
+export function leadTargetFor(
+  wait: number,
+  deadlineTime: string,
+  morningTime: string,
+): RelativeTarget {
+  const days = deadlineLeadDays(wait)
+  if (days > 0) return { days_before: days, time: morningTime }
+  return { days_before: 0, time: morningTime < deadlineTime ? morningTime : deadlineTime }
+}
+
+/**
+ * The relative target a deadline-anchored repeat gets when it is written with
+ * none (A1, 2026-10-21): `leadTargetFor` at the rule's WAIT, read as the
+ * smallest local-day gap between consecutive deadlines in the walk from
+ * `firstDeadline` — so a twice-weekly rule (gaps of 3 and 4) takes the day
+ * before, a fortnightly one 3 days and a monthly one (28 to 31) 4. A rule with
+ * no second occurrence within the walk (yearly) reads as the longest wait.
+ * Stored as real values, so the API always shows what it is.
+ */
+export function defaultRelativeTarget(
+  rule: RepeatRule,
+  firstDeadline: string,
+  timezone: string,
+  morningTime: string,
+): RelativeTarget {
+  const days = walkOccurrences(rule, firstDeadline, timezone).map((d) =>
+    DateTime.fromJSDate(d).setZone(timezone),
+  )
+  let wait = Infinity
+  for (let i = 1; i < days.length; i++) {
+    wait = Math.min(wait, waitDays(days[i].startOf('day'), days[i - 1].startOf('day')))
+  }
+  if (wait === Infinity) wait = HEADS_UP_LONG_WAIT
+  return leadTargetFor(wait, localHHMM(days[0]), morningTime)
 }
 
 // ===========================================================================

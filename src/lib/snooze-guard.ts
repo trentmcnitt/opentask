@@ -30,6 +30,7 @@
  */
 
 import { computeNextOccurrence } from '@/core/recurrence/compute-next'
+import { isDeadlineAnchored, occurrenceDates } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
 export type SnoozeGuard =
@@ -42,7 +43,7 @@ export type SnoozeGuard =
 
 /** The subset of a task the guard needs. Keeps callers free of full Task objects in tests. */
 export type SnoozeGuardTask = Pick<Task, 'due_at' | 'rrule' | 'recurrence_mode' | 'anchor_time'> &
-  Partial<Pick<Task, 'occurrence_at'>>
+  Partial<Pick<Task, 'occurrence_at' | 'repeat_anchor' | 'target_days_before' | 'target_time'>>
 
 /**
  * Compute a task's next scheduled occurrence strictly after its current due_at.
@@ -66,6 +67,28 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
   if (Number.isNaN(dueAt.getTime())) return null
 
   try {
+    // A DEADLINE-ANCHORED repeat (2026-10-21): its rule walks the deadline,
+    // so the next occurrence comes after the scheduled one, and the moment
+    // that matters is that occurrence's own TARGET (`occurrenceDates`).
+    if (isDeadlineAnchored({ rrule: task.rrule, repeat_anchor: task.repeat_anchor ?? null })) {
+      const occurrence = new Date(task.occurrence_at ?? task.due_at)
+      const next = computeNextOccurrence({
+        rrule: task.rrule,
+        recurrenceMode: 'from_due',
+        anchorTime: task.anchor_time,
+        timezone,
+        completedAt: occurrence,
+        prevDueAt: occurrence,
+        anchorAt: occurrence,
+      })
+      const schedule = {
+        rrule: task.rrule,
+        repeat_anchor: task.repeat_anchor ?? null,
+        target_days_before: task.target_days_before ?? null,
+        target_time: task.target_time ?? null,
+      }
+      return new Date(occurrenceDates(schedule, next.toISOString(), timezone).targetAt)
+    }
     return computeNextOccurrence({
       rrule: task.rrule,
       recurrenceMode: 'from_due',

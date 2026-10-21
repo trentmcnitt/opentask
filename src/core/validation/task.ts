@@ -277,6 +277,18 @@ function deckWithoutRule(data: { on_deck_day?: string | null; rrule?: string | n
   return typeof data.on_deck_day !== 'string' || data.rrule === undefined
 }
 
+/**
+ * DEADLINE-ANCHORED REPEATS (2026-10-21, docs/TASK-MODEL.md § Recurrence
+ * Model): what a repeating task's occurrence is, and where its target sits
+ * before a deadline occurrence. Only the shapes here; the cross-field rules
+ * (a rule and a deadline, never a reminder or quota, the target before the
+ * deadline and after the previous one) need the row and the owner's zone —
+ * `src/core/tasks/repeat-schedule.ts`.
+ */
+const repeatAnchor = z.enum(['target', 'deadline'])
+const targetDaysBefore = z.number().int().min(0).max(366)
+const targetTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected a time (HH:MM)')
+
 export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
@@ -301,6 +313,11 @@ export const taskCreateSchema = z
     horizon: horizon.optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.default('from_due').optional(),
+    // 2026-10-21: a rule with a deadline_at is deadline-anchored unless this
+    // says otherwise; target_days_before / target_time default (`createTask`).
+    repeat_anchor: repeatAnchor.optional(),
+    target_days_before: targetDaysBefore.optional(),
+    target_time: targetTime.optional(),
     project_id: z.number().int().positive().optional(),
     priority: priority.default(0).optional(),
     labels: labels.default([]).optional(),

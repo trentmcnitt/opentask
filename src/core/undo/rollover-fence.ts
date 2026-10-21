@@ -12,6 +12,11 @@
  * undone (or redone) as usual — never a throw, which would wedge the stack.
  * The Today tap is the way back for a stripped task.
  *
+ * The same fence guards the deadline-anchor migration (2026-10-21,
+ * `migrate-repeat-anchor.ts`), which stamps `rolled_over_at` on each row it
+ * converts: an older entry holds the old meaning of `occurrence_at`. So the
+ * column reads as "the last system change older entries must not cross".
+ *
  * Compared as instants (`Date.parse`), never as strings: `created_at` is
  * written by `logAction` as an ISO string with milliseconds, but rows from
  * before that carry SQLite's second-precision default, and `…:00.123Z` sorts

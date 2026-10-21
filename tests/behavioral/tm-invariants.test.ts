@@ -27,6 +27,9 @@
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { createTask, updateTask, markDone, bulkSnooze, bulkEdit } from '@/core/tasks'
+import { skipOccurrence } from '@/core/tasks/skip'
+import { skipUntil } from '@/core/tasks/skip-until'
+import { runTaskRollover } from '@/core/tasks/task-rollover'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { getTaskById } from '@/core/tasks/read'
 import { getDb } from '@/core/db'
@@ -34,7 +37,13 @@ import { targetTasksToday } from '@/core/tasks/task-segments'
 import { deckTasks } from '@/core/tasks/deck'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
-import { segmentState, upcomingState, hasPickedTarget } from '@/lib/task-segments'
+import {
+  segmentState,
+  upcomingState,
+  hasPickedTarget,
+  occurrenceDates,
+  targetMoved,
+} from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -747,5 +756,143 @@ describe('TM-INV: on deck over a random list', () => {
     }
     expect(decked).toBeGreaterThan(10)
     expect(repeatingDecked).toBeGreaterThan(2)
+  }, 30_000)
+})
+
+describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
+  afterAll(() => teardownTestDb())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  /**
+   * TM-INV-08 (2026-10-21): random repeating tasks of BOTH anchors through
+   * random moves, done, skip, skip until, decks and rollovers. After every
+   * write:
+   *  1. I1/I2 — a deadline-anchored repeat has a deadline, and it IS its
+   *     occurrence; a target-anchored one has none;
+   *  2. off deck, `due_at` is what `occurrenceDates` derives unless the target
+   *     was moved this occurrence;
+   *  3. the target is never after a deadline still ahead;
+   *  4. after done or skip, never moved;
+   *  5. a deadline-anchored repeat is never queued.
+   */
+  test('TM-INV-08: one derivation, whatever the writes', () => {
+    const SEED8 = SEED + 8
+    const r = rng(SEED8)
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setupTestDb()
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, 'Morning', '06:30', 0)",
+    ).run(TEST_USER_ID)
+    const RULES = [
+      'FREQ=DAILY;BYHOUR=17;BYMINUTE=0',
+      'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
+      'FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=21;BYMINUTE=0',
+      'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=8;BYMINUTE=0',
+      'FREQ=WEEKLY;INTERVAL=2;BYDAY=SU;BYHOUR=23;BYMINUTE=0',
+    ]
+    let wrote = 0
+    for (let c = 0; c < 40; c++) {
+      let clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
+        minutes: Math.floor(r() * 10 * 24 * 60),
+      })
+      vi.setSystemTime(clock.toJSDate())
+      db.prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?').run(
+        clock.minus({ days: 1 }).toISODate(),
+        TEST_USER_ID,
+      )
+      const rrule = pick(RULES)
+      const deadlineAnchored = r() < 0.7
+      const first = clock.plus({ days: 1 + Math.floor(r() * 10) }).set({
+        hour: Number(/BYHOUR=(\d+)/.exec(rrule)![1]),
+        minute: 0,
+      })
+      const t = createTask({
+        ...u,
+        input: deadlineAnchored
+          ? { title: `ra ${c}`, rrule, deadline_at: first.toUTC().toISO()! }
+          : { title: `ra ${c}`, rrule, due_at: first.toUTC().toISO()! },
+      })
+      let moved = false
+      const label = (step: string) => `seed ${SEED8} case ${c} ${step}`
+      const checkTask = (step: string) => {
+        const task = getTaskById(t.id)!
+        const l = label(step)
+        if (task.repeat_anchor === 'deadline') {
+          expect(task.deadline_at, `${l}: I1`).not.toBeNull()
+          expect(task.deadline_at, `${l}: I2`).toBe(task.occurrence_at)
+          expect(task.queued_at, `${l}: queued`).toBeNull()
+        } else {
+          expect(task.deadline_at, `${l}: I1 (target-anchored)`).toBeNull()
+        }
+        if (task.on_deck_day) return
+        expect(task.due_at, `${l}: no target off deck`).not.toBeNull()
+        // A target-anchored repeat waiting in the queue holds its NEXT
+        // occurrence's target over the missed one (B3): not a move.
+        if (task.queued_at) return
+        const derived = occurrenceDates(task, task.occurrence_at!, tz).targetAt
+        if (!moved) expect(task.due_at, `${l}: not the derivation`).toBe(derived)
+        if (task.deadline_at && Date.parse(task.deadline_at) > Date.now()) {
+          expect(Date.parse(task.due_at!), `${l}: after the deadline`).toBeLessThanOrEqual(
+            Date.parse(task.deadline_at),
+          )
+        }
+      }
+      checkTask('create')
+      for (let s = 0; s < 8; s++) {
+        clock = clock.plus({ minutes: Math.floor(r() * 3 * 24 * 60) })
+        vi.setSystemTime(clock.toJSDate())
+        const op = Math.floor(r() * 6)
+        const step = `op ${s}:${op}`
+        const before = getTaskById(t.id)!
+        if (op === 0) {
+          const to = clock.plus({ minutes: Math.round((r() * 2 - 0.5) * 6 * 24 * 60) })
+          updateTask({ ...u, taskId: t.id, input: { due_at: to.toUTC().toISO()! } })
+        } else if (op === 1) {
+          markDone({ ...u, taskId: t.id })
+          expect(targetMoved(getTaskById(t.id)!, tz), label(`${step}: moved after done`)).toBe(
+            false,
+          )
+        } else if (op === 2) {
+          skipOccurrence({ ...u, taskId: t.id })
+          expect(targetMoved(getTaskById(t.id)!, tz), label(`${step}: moved after skip`)).toBe(
+            false,
+          )
+        } else if (op === 3) {
+          const until = clock.plus({ days: 1 + Math.floor(r() * 20) }).toISODate()!
+          skipUntil({ ...u, taskIds: [t.id], until })
+        } else {
+          const day = op === 4 ? clock.plus({ days: Math.floor(r() * 3) }).toISODate()! : null
+          deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day })
+        }
+        // A move leaves the target moved (or not, capped back onto the
+        // derivation); every other write lands on the derivation.
+        moved = op === 0 ? targetMoved(getTaskById(t.id)!, tz) : moved
+        const written = getTaskById(t.id)!
+        if (
+          op !== 0 &&
+          (written.occurrence_at !== before.occurrence_at || written.due_at !== before.due_at)
+        ) {
+          moved = false
+        }
+        // The rollover, as the minute cron would run it: a roll or a deck's
+        // end lands on the derivation too.
+        runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
+        const rolled = getTaskById(t.id)!
+        if (
+          rolled.occurrence_at !== written.occurrence_at ||
+          rolled.on_deck_day !== written.on_deck_day
+        ) {
+          moved = false
+        }
+        checkTask(step)
+        wrote++
+      }
+    }
+    expect(wrote).toBe(40 * 8)
   }, 30_000)
 })

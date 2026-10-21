@@ -116,7 +116,8 @@ export interface Task {
   /**
    * A repeating task's SCHEDULED occurrence (§6, 2026-10-12). `due_at` is its
    * target; a move (any snooze) changes only `due_at`. Done and skip advance
-   * from this and set both; `advanceDeadline` measures from it. Null for a
+   * from this and set its dates (`occurrenceDates`). On a deadline-anchored
+   * repeat (`repeat_anchor`) it IS the deadline. Null for a
    * one-off.
    */
   occurrence_at: string | null

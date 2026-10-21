@@ -48,6 +48,20 @@ export function ensureRuleTime(rrule: string, time: string): string {
   return parts.join(';')
 }
 
+/**
+ * The rule with its time of day SET to `time` ("HH:MM"): any BYHOUR /
+ * BYMINUTE replaced. For a rule whose instant changes meaning — the
+ * deadline-anchor migration (`migrate-repeat-anchor.ts`) rebinds a rule that
+ * walked a target to its deadline's time. Pure.
+ */
+export function setRuleTime(rrule: string, time: string): string {
+  const bare = rrule
+    .split(';')
+    .filter((p) => p !== '' && !/^BYHOUR=/i.test(p) && !/^BYMINUTE=/i.test(p))
+    .join(';')
+  return ensureRuleTime(bare, time)
+}
+
 /** What a write knows that could give a rule its time (see the module doc). */
 export interface RuleTimeSources {
   /** A date (UTC ISO) arriving in the same request as the rule. */

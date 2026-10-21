@@ -6,6 +6,7 @@ import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
 import { log } from '@/lib/logger'
 import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
 import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
+import { migrateRepeatAnchors, type RepeatAnchorCounts } from './migrate-repeat-anchor'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -466,6 +467,21 @@ function runMigrations(database: Database.Database): void {
   clearQuotaDueDates(database)
   restoreProjectGrouping(database)
   logTargetMigration(migrateDeadlineTargets(database))
+  // After the pull-back above: a converted row's moved target is already capped.
+  logRepeatAnchorMigration(migrateRepeatAnchors(database))
+}
+
+/** Log what the deadline-anchor step did (2026-10-21), only when it did something. */
+function logRepeatAnchorMigration(counts: RepeatAnchorCounts): void {
+  if (counts.converted > 0 || counts.completionsRewritten > 0) {
+    log.info(
+      'db',
+      `repeat anchor migration (2026-10-21): ${counts.converted} converted, ${counts.completionsRewritten} completions rewritten`,
+    )
+  }
+  if (counts.skipped.length > 0) {
+    log.info('db', `repeat anchor migration skipped: ${JSON.stringify(counts.skipped)}`)
+  }
 }
 
 /** Log what the target-model data steps did, only when they did something. */
