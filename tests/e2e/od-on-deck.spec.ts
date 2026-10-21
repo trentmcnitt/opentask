@@ -81,6 +81,33 @@ const toast = (page: Page, text: string | RegExp) =>
 const dashRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
 /**
+ * A row's controls in DOM order, the reserved empty places included: On deck
+ * · On deck tomorrow · Today · done since 2026-10-21 (Trent: today's deck,
+ * then the next day's, then Today).
+ */
+async function controlOrder(row: Locator): Promise<string[]> {
+  return row
+    .locator(
+      '[data-on-deck], [data-deck-slot-empty], [data-deck-tomorrow], [data-deck-tomorrow-empty], [data-target-today], [aria-label^="Done"]',
+    )
+    .evaluateAll((els) =>
+      els.map((e) =>
+        e.hasAttribute('data-on-deck')
+          ? 'deck'
+          : e.hasAttribute('data-deck-slot-empty')
+            ? 'deck-empty'
+            : e.hasAttribute('data-deck-tomorrow')
+              ? 'deck-tomorrow'
+              : e.hasAttribute('data-deck-tomorrow-empty')
+                ? 'deck-tomorrow-empty'
+                : e.hasAttribute('data-target-today')
+                  ? 'today'
+                  : 'done',
+      ),
+    )
+}
+
+/**
  * A task-segment row's details (2026-10-20, the pencil gone): right-click the
  * row's title for its peek bubble, then the bubble's Open.
  */
@@ -147,22 +174,10 @@ test('a horizon row: tap decks it for today (the row leaves), Undo puts it back'
     const button = r.locator('[data-on-deck]')
     await expect(button).toBeVisible()
     await expect(button).not.toHaveAttribute('data-on-deck-active', '')
-    // Order: On deck tomorrow · On deck · Today · done (no pencil, 2026-10-20).
+    // Order: On deck · On deck tomorrow · Today · done (no pencil, 2026-10-20;
+    // On deck first, 2026-10-21).
     await expect(r.locator('[data-segment-details]')).toHaveCount(0)
-    const order = await r
-      .locator('[data-deck-tomorrow], [data-on-deck], [data-target-today], [aria-label^="Done"]')
-      .evaluateAll((els) =>
-        els.map((e) =>
-          e.hasAttribute('data-deck-tomorrow')
-            ? 'deck-tomorrow'
-            : e.hasAttribute('data-on-deck')
-              ? 'deck'
-              : e.hasAttribute('data-target-today')
-                ? 'today'
-                : 'done',
-        ),
-      )
-    expect(order).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
+    expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
 
     await button.click()
     await expect(r).toHaveCount(0)
@@ -200,6 +215,9 @@ test("Now's On deck section: at the top of Now, sorts by priority, empties", asy
     // Priority first.
     const rows = await section.locator('[role="option"]').evaluateAll((els) => els.map((e) => e.id))
     expect(rows).toEqual([`task-row-${high}`, `task-row-${low}`])
+    // A section row has On deck and Today, in that order (no On deck
+    // tomorrow on dashboard rows).
+    expect(await controlOrder(section.locator(`#task-row-${high}`))).toEqual(['deck', 'today'])
     // At the TOP of Now (designer, 10-20): under the filter row, above the
     // task-segment panel and the project groups — desktop and phone.
     for (const size of [
@@ -291,6 +309,9 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/reminders')
     const r = segRow(segment(page, 'queue_today'), id)
+    // A queue row reads like every segment row (2026-10-21).
+    await expect(r.locator('[data-on-deck]')).toBeVisible()
+    expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
     await r.locator('[data-on-deck]').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'On deck options' })
     await expect(menu.getByRole('menuitem', { name: /check-in/ })).toHaveCount(1)
@@ -325,6 +346,25 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     const day = DateTime.fromISO(calendarDay(1)).toFormat('ccc LLL d')
     await expect(r.locator('[data-target-chip]')).toHaveText(`On deck ${day}`)
     await expect(r.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
+    // An Upcoming row reads like every segment row (2026-10-21).
+    expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    // A one-off with a picked target has no On deck: both deck places are
+    // kept empty, in the same order, so the columns line up.
+    const picked = await create(page, {
+      title: uniqueTitle('OD picked'),
+      target_at: DateTime.now()
+        .setZone(TZ)
+        .plus({ days: 1 })
+        .set({ hour: 10, minute: 0 })
+        .toUTC()
+        .toISO(),
+    })
+    ids.push(picked)
+    sql('UPDATE tasks SET target_set_at = ? WHERE id = ?', daysFromNow(-10), picked)
+    await page.reload()
+    const p = segRow(segment(page, 'upcoming'), picked)
+    await expect(p).toBeVisible()
+    expect(await controlOrder(p)).toEqual(['deck-empty', 'deck-tomorrow-empty', 'today', 'done'])
     await r.locator('[data-target-today]').click()
     await expect(toast(page, /Targeted/)).toBeVisible()
     await expect.poll(() => deckOf(page, id)).toBeNull()
@@ -454,6 +494,14 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       )
       expect(pageOverflow).toBeLessThanOrEqual(0)
+      // Today is its sun alone at phone width (2026-10-21), the word kept
+      // for screen readers; from `sm` up the word shows.
+      const today = r.locator('[data-target-today]')
+      await expect(today).toHaveAccessibleName(/today/i)
+      const word = today.getByText('Today', { exact: true })
+      const wordWidth = (await word.boundingBox())?.width ?? 0
+      if (size.width < 640) expect(wordWidth).toBeLessThanOrEqual(1)
+      else expect(wordWidth).toBeGreaterThan(20)
       await page.screenshot({ path: `.tmp/od-segment-row-${size.width}.png` })
     }
   } finally {

@@ -68,19 +68,21 @@ export const UPCOMING_LABEL = 'Upcoming'
 
 /**
  * THE TASK QUEUE (task queue PR 3, 2026-10-19; spec rule 6): the two panels'
- * words (Trent, 2026-10-20). "Staged" holds the latest rollover's strips,
- * a manual Roll over now's included (`queue_today`); "Previously staged" the
- * ones stripped before it (`queue_previous`). Display text only: the kind
- * strings the API sends do not change.
+ * words (Trent, 2026-10-21). "Today's pulls" holds the latest rollover's
+ * strips, a manual Roll over now's included (`queue_today`); "Previous pulls"
+ * the ones stripped before it (`queue_previous`). Not "Staged" (2026-10-20):
+ * "Stage is what happens before something goes live, whereas this is for
+ * things that were taken off and that potentially will stay off." Display
+ * text only: the kind strings the API sends do not change.
  */
 export const QUEUE_PANEL_TITLES = {
-  queue_today: 'Staged',
-  queue_previous: 'Previously staged',
+  queue_today: "Today's pulls",
+  queue_previous: 'Previous pulls',
 } as const
 
 /**
  * Every task-segment panel's title is "Task queue · <word>" (Trent,
- * 2026-10-20: one format everywhere) — "TASK QUEUE · STAGED", "TASK QUEUE ·
+ * 2026-10-20: one format everywhere) — "TASK QUEUE · TODAY'S PULLS", "TASK QUEUE ·
  * DAILY", "TASK QUEUE · UPCOMING" on screen, where the header's `uppercase`
  * does the capitals. A middle dot, never an em dash.
  */
@@ -88,7 +90,7 @@ export const TASK_QUEUE_PREFIX = 'Task queue'
 export function taskQueueTitle(word: string): string {
   return `${TASK_QUEUE_PREFIX} · ${word}`
 }
-/** Try Tomorrow's mark on a "Staged" row (its tooltip and accessible name). */
+/** Try Tomorrow's mark on a "Today's pulls" row (its tooltip and accessible name). */
 export const TRY_TOMORROW_MARK = 'Try tomorrow'
 
 /** The weekday names for the check-in day setting, 1 = Monday … 7 = Sunday. */

@@ -2,15 +2,16 @@
 
 import { Check, ChevronDown, FolderOpen } from 'lucide-react'
 import { DateTime } from 'luxon'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { TargetTodayButton } from '@/components/TargetMenu'
-import { OnDeckButton } from '@/components/OnDeckButton'
+import { DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
 import { deckTomorrowDay, offersDeck } from '@/lib/deck-menu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
-import { useLongPress } from '@/hooks/useLongPress'
+import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
@@ -128,8 +129,8 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
 }
 
 /**
- * A segment kind's panel title (Trent, 2026-10-20): "Task queue · Staged",
- * "… · Previously staged", "… · Upcoming", "… · Daily", "Weekly", "Monthly",
+ * A segment kind's panel title (Trent, 2026-10-20): "Task queue · Today's
+ * pulls", "… · Previous pulls" (2026-10-21), "… · Upcoming", "… · Daily", "Weekly", "Monthly",
  * "Quarterly" (`taskQueueTitle`) — one format, the whole header on both
  * surfaces (uppercased there), no hint after it.
  */
@@ -224,9 +225,9 @@ export function TaskSegmentRow({
   })
   const peekOpen = actions.peek?.id === task.id
   // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
-  // like the priority tab, on a "Staged" row only. The row is NOT
+  // like the priority tab, on a "Today's pulls" row only. The row is NOT
   // lifted to the top — it keeps its place in the priority sort. The rollover
-  // clears the flag once the row moves to "Previously staged".
+  // clears the flag once the row moves to "Previous pulls".
   const tryTomorrow = segmentHorizon === 'queue_today' && task.try_tomorrow
   return (
     <RowPeekPopover
@@ -448,9 +449,9 @@ export const ROW_PEEK_DESCRIPTION =
  *   description say so.
  *
  * A press that starts on one of the row's own controls is that control's:
- * the circle, On deck tomorrow, On deck, Today and the done square carry
- * `data-no-row-press` (On deck and Today keep their own holds and right-click
- * menus), as on the dashboard row (`TaskRow`), and so does the Upcoming
+ * the circle, On deck, On deck tomorrow, Today and the done square carry
+ * `data-no-row-press` (On deck, On deck tomorrow and Today keep their own
+ * holds and right-click menus), as on the dashboard row (`TaskRow`), and so does the Upcoming
  * target chip — and any button counts, so a control added later can't open
  * the bubble from a hold meant for it. Events from outside the row's DOM — a portalled menu or dialog one of its
  * controls opened, whose React events still bubble here — are ignored too.
@@ -511,8 +512,9 @@ function useSegmentRowPress({
 
 /**
  * The row's right side: horizon dot, "On deck", "Today", and the done square
- * — On deck tomorrow · On deck · Today · checkbox with the queue on (spec
- * rule 8; each acts in one tap, for rapid-fire passes).
+ * — On deck · On deck tomorrow · Today · checkbox with the queue on (spec
+ * rule 8; each acts in one tap, for rapid-fire passes; On deck first since
+ * Trent, 2026-10-21).
  *
  * On an UPCOMING row (2026-10-12) there is no horizon dot — a targeted task's
  * horizon decides nothing until the target is removed (spec §1).
@@ -520,7 +522,7 @@ function useSegmentRowPress({
  * THE TASK QUEUE ON (PR 3, resolution 10): the horizon dot's place on EVERY
  * task-segment row — the queue's, the horizons' and Upcoming's — went to the
  * details icon (the pencil), and since 2026-10-20 to ON DECK TOMORROW
- * (`DeckTomorrowButton`): the details are now a hold on the row away (the
+ * (`DeckTomorrowSlot`; second since 2026-10-21, after On deck): the details are now a hold on the row away (the
  * peek bubble's Open). The horizon itself is on the meta line as the row
  * corner's dot (`TaskSegmentMeta`). Switch off: the dot button, as before
  * the queue.
@@ -573,6 +575,16 @@ function TaskSegmentRowActions({
         panel ? '-my-[3px]' : 'mt-[3px]',
       )}
     >
+      {/* On deck first, then On deck tomorrow (Trent, 2026-10-21): today's
+          deck, the next day's, then Today. With the switch off On deck is
+          absent and the horizon dot stands alone. */}
+      <SegmentDeckSlot
+        row={row}
+        actions={actions}
+        timezone={timezone}
+        panel={panel}
+        queueUi={queueUi}
+      />
       {queueUi === 'on' ? (
         <DeckTomorrowSlot row={row} actions={actions} timezone={timezone} panel={panel} />
       ) : queueUi === 'pending' ? (
@@ -591,13 +603,6 @@ function TaskSegmentRowActions({
           />
         )
       )}
-      <SegmentDeckSlot
-        row={row}
-        actions={actions}
-        timezone={timezone}
-        panel={panel}
-        queueUi={queueUi}
-      />
       {showToday && (
         <TargetTodayButton
           task={task}
@@ -649,8 +654,9 @@ function TaskSegmentRowActions({
 }
 
 /**
- * ON DECK (D2, spec rule 8) on a segment row: between On deck tomorrow and
- * Today, with the task queue on — never on a one-off beside a target the
+ * ON DECK (D2, spec rule 8) on a segment row: the first of the row's
+ * controls, before On deck tomorrow and Today (2026-10-21), with the task
+ * queue on — never on a one-off beside a target the
  * user picked (rule 1). Repeating rows (queue waiting rows, Upcoming) have it
  * too since 2026-10-20: it decks the current occurrence (`offersDeck`). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
  * dead space belongs between Today and the done square only. While the
@@ -690,27 +696,36 @@ function SegmentDeckSlot({
 }
 
 /**
- * The first slot's HIT TARGET (the pencil's, which On deck tomorrow took over,
- * and the empty place while the preferences load): 32px with a mouse, 44px
- * with a finger, pulled back to the row's line height — the inline horizon
- * dot's box (`HorizonDotButton`). The hover block is an inner box
- * (`HOVER_BOX`), so a finger's taller hit target never paints outside the row.
+ * On deck tomorrow's HIT TARGET (the pencil's, which it took over, and the
+ * empty place while the preferences load): 32px with a mouse, 44px with a
+ * finger, pulled back to the row's line height — the inline horizon dot's box
+ * (`HorizonDotButton`), which has this place with the switch off. The hover
+ * block is an inner box (`HOVER_BOX`), so a finger's taller hit target never
+ * paints outside the row.
  */
 const SLOT_HIT = '-my-2 size-8 shrink-0 pointer-coarse:-my-3 pointer-coarse:size-11'
 
 /**
- * ON DECK TOMORROW (2026-10-20), in the pencil's place: one tap decks the task
- * for tomorrow — the On deck hold menu's own Tomorrow (`deckTomorrowDay` reads
- * it from `deckMenuDays`, so the two can never disagree), through the same
+ * ON DECK TOMORROW (2026-10-20), in the pencil's place — second since
+ * 2026-10-21, after On deck: one tap decks the task for tomorrow — the On
+ * deck hold menu's own Tomorrow (`deckTomorrowDay` reads it from
+ * `deckMenuDays`, so the two can never disagree), through the same
  * `actions.deck`: the same A1 refusals and toasts, the same Undo, and the row
- * leaves its panel like any action. No hold menu — On deck beside it has one.
- * Repeating rows too: it decks the current occurrence for tomorrow, as On
- * deck's Tomorrow does. A row On deck isn't offered on (a one-off with a
- * target the user picked, `offersDeck`) keeps the place empty, so the
- * controls line up down the column.
+ * leaves its panel like any action. Repeating rows too: it decks the current
+ * occurrence for tomorrow, as On deck's Tomorrow does. A row On deck isn't
+ * offered on (a one-off with a target the user picked, `offersDeck`) keeps
+ * the place empty, so the controls line up down the column.
+ *
+ * HOLD or RIGHT-CLICK (Trent, 2026-10-21): On deck's own day menu
+ * (`DeckMenu` — Tomorrow, the next days, the check-in day, Pick a date…,
+ * Remove while decked, deadline days greyed), the same gesture rule as On
+ * deck's (`OnDeckButton`): the app's 400ms hold never also taps, a finger
+ * that moves abandons it, and the tap acts on click.
  *
  * `data-no-row-press` and the stopped events: a press, hold or right-click
- * here is this button's, never the row's peek or consider.
+ * here is this button's, never the row's peek or consider. The wrapper stops
+ * clicks and keys from the portalled menu reaching the row (whose click
+ * considers); the pointerdown is not stopped (the panel pager's swipe).
  */
 function DeckTomorrowSlot({
   row,
@@ -723,45 +738,84 @@ function DeckTomorrowSlot({
   timezone: string
   panel: boolean
 }) {
-  const { task } = row
-  if (!offersDeck(task)) {
+  if (!offersDeck(row.task)) {
     return <span aria-hidden data-deck-tomorrow-empty className={SLOT_HIT} />
   }
+  return <DeckTomorrowButton task={row.task} actions={actions} timezone={timezone} panel={panel} />
+}
+
+function DeckTomorrowButton({
+  task,
+  actions,
+  timezone,
+  panel,
+}: {
+  task: Task
+  actions: TaskSegmentActions
+  timezone: string
+  panel: boolean
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const press = useSimpleLongPress({
+    onLongPress: () => setMenuOpen(true),
+    onShortPress: () => void actions.deck(task, deckTomorrowDay(timezone, new Date())),
+    // The tap takes the row off its list (see `TargetTodayButton`).
+    tapOn: 'click',
+  })
   return (
-    <button
-      type="button"
-      data-deck-tomorrow
-      data-no-row-press
-      onClick={(e) => {
-        e.stopPropagation()
-        void actions.deck(task, deckTomorrowDay(timezone, new Date()))
-      }}
+    <span
+      className="contents"
+      onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-      }}
-      aria-label={`On deck tomorrow: “${task.title}”`}
-      title="On deck tomorrow"
-      className={cn(
-        'group/deck-tomorrow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
-        SLOT_HIT,
-      )}
     >
-      <span
-        data-deck-tomorrow-box
-        className={cn(
-          'group-hover/deck-tomorrow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
-          panel ? DECK_BOX.panel : DECK_BOX.page,
-        )}
+      <DeckMenu
+        task={task}
+        timezone={timezone}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        onPick={(day) => void actions.deck(task, day)}
       >
-        <DeckTomorrowIcon
-          className={panel ? 'size-[18px]' : 'size-[22px]'}
-          // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
-          strokeWidth={1.75}
-        />
-      </span>
-    </button>
+        <button
+          type="button"
+          data-deck-tomorrow
+          data-no-row-press
+          onClick={(e) => {
+            e.stopPropagation()
+            press.onClick()
+          }}
+          onPointerDown={press.onPointerDown}
+          onPointerUp={press.onPointerUp}
+          onPointerLeave={press.onPointerLeave}
+          onPointerMove={press.onPointerMove}
+          onPointerCancel={press.onPointerCancel}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setMenuOpen(true)
+          }}
+          aria-label={`On deck tomorrow: “${task.title}” (hold for a day)`}
+          title="On deck tomorrow · hold for a day"
+          className={cn(
+            'group/deck-tomorrow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+            SLOT_HIT,
+          )}
+        >
+          <span
+            data-deck-tomorrow-box
+            className={cn(
+              'group-hover/deck-tomorrow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+              panel ? DECK_BOX.panel : DECK_BOX.page,
+            )}
+          >
+            <DeckTomorrowIcon
+              className={panel ? 'size-[18px]' : 'size-[22px]'}
+              // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
+              strokeWidth={1.75}
+            />
+          </span>
+        </button>
+      </DeckMenu>
+    </span>
   )
 }
 
