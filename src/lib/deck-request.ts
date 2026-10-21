@@ -9,7 +9,11 @@
  * already reminding you — use Today."). So the caller reads `changed`, not
  * the status: no change → put the row back and show the summary as an error.
  */
-import { deckDayWords, type DeckResultCounts } from '@/lib/task-segments'
+import {
+  REPEATING_DECK_REFUSAL_MESSAGE,
+  deckDayWords,
+  type DeckResultCounts,
+} from '@/lib/task-segments'
 
 export interface DeckResponse extends DeckResultCounts {
   summary: string
@@ -48,4 +52,20 @@ export function deckToastMessage(
   if (result.day === null) return result.undecked > 0 ? `Taken off deck: “${title}”` : null
   if (result.decked === 0) return null
   return `On deck for ${deckDayWords(result.day, timezone, now)}: “${title}”`
+}
+
+/**
+ * The error toast for a one-task deck write that changed nothing: the
+ * server's `summary` — except a repeating task refused for its deadline's day
+ * (`after_auto_target`, the enum kept), whose summary is worded for a
+ * one-off's automatic target ("…starts reminding you"): it reads
+ * `REPEATING_DECK_REFUSAL_MESSAGE` instead (2026-10-20).
+ */
+export function deckErrorMessage(
+  result: DeckResponse,
+  task: { id: number; rrule?: string | null },
+): string {
+  const refused = result.refused.find((r) => r.id === task.id)
+  if (task.rrule && refused?.reason === 'after_auto_target') return REPEATING_DECK_REFUSAL_MESSAGE
+  return result.summary
 }

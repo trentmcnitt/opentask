@@ -39,6 +39,7 @@
 import type { Task } from '@/types'
 import { deckRefusal, type TargetContext } from '@/lib/task-segments'
 import type { CollectedWrite } from './target-set'
+import { rolloverTimeForUser } from './rollover-time'
 
 /** The deck clear as a fixed SQL fragment, for the writers whose SQL is a fixed statement. */
 export const DECK_CLEAR_SQL = 'on_deck_day = NULL'
@@ -59,7 +60,14 @@ export interface DeckClearAfter {
    * new automatic target has arrived, or its day is on or before the deck's,
    * THE DEADLINE WINS and the deck goes. Decks never nag.
    */
-  deadline?: { at: string | null; changed: boolean; ctx: TargetContext; now: Date }
+  deadline?: {
+    at: string | null
+    changed: boolean
+    ctx: TargetContext
+    now: Date
+    /** The owner's rollover time, for a repeating task (`deckRolloverTime`). */
+    rolloverTime?: string | null
+  }
 }
 
 /** Whether a write leaving `after` must clear the task's deck (see the module doc). */
@@ -80,7 +88,17 @@ function deadlineOutranksDeck(day: string, after: DeckClearAfter): boolean {
     target_auto: after.auto,
     rrule: after.rrule,
   }
-  return deckRefusal(left, day, d.ctx, d.now) !== null
+  return deckRefusal(left, day, d.ctx, d.now, d.rolloverTime ?? null) !== null
+}
+
+/**
+ * The owner's rollover time a REPEATING task's deck check needs
+ * (`repeatingDeadlineDay`: a deadline before the rollover counts as the
+ * evening before), or null for a one-off (whose check reads its automatic
+ * target, not the deadline's day).
+ */
+export function deckRolloverTime(task: Pick<Task, 'rrule' | 'user_id'>): string | null {
+  return task.rrule ? rolloverTimeForUser(task.user_id) : null
 }
 
 /**

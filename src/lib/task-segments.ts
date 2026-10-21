@@ -1237,21 +1237,21 @@ export function deckSkip(task: {
  * A REPEATING task (2026-10-20) has no automatic target — its deadline is per
  * occurrence — so it is judged against the deadline itself: refused once the
  * deadline has passed (`deadline_nagging`), or for a day on or after the
- * deadline's local day (`after_auto_target`; the same two reasons, so the
- * API's enum is unchanged). `deckLimit` (the web's greyed days) matches.
+ * deadline's day (`after_auto_target`; the same two reasons, so the API's
+ * enum is unchanged). `deckLimit` (the web's greyed days) matches.
  */
 export function deckRefusal(
   task: Pick<TargetFields, 'due_at' | 'deadline_at' | 'target_auto' | 'rrule'>,
   day: string,
   ctx: TargetContext,
   now: Date,
+  /** The owner's rollover time, for a repeating task's deadline day (`repeatingDeadlineDay`). */
+  rolloverTime: string | null = null,
 ): DeckRefusal | null {
   if (!task.deadline_at) return null
   if (task.rrule) {
     if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'
-    const deadlineDay = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
-      .setZone(ctx.timezone)
-      .toFormat(DECK_DAY_FORMAT)
+    const deadlineDay = repeatingDeadlineDay(task.deadline_at, ctx.timezone, rolloverTime)
     return day >= deadlineDay ? 'after_auto_target' : null
   }
   const auto =
@@ -1263,11 +1263,36 @@ export function deckRefusal(
   return day >= autoDay ? 'after_auto_target' : null
 }
 
+/**
+ * A repeating task's deadline DAY for the deck check (review 2026-10-20): the
+ * OpenTask day it falls in — the local day of `deadline − rollover time`. A
+ * deadline between local midnight and the rollover belongs to the evening
+ * before: a deck on that calendar day would last until the rollover, so the
+ * deadline would pass while decked, silently (the rollover only gives the
+ * target back after it). The deck must come BEFORE this day. Without a
+ * rollover time (the switch off — no decks then anyway): the calendar day.
+ */
+export function repeatingDeadlineDay(
+  deadlineAt: string,
+  timezone: string,
+  rolloverTime: string | null,
+): string {
+  if (rolloverTime) return openTaskDayOf(new Date(deadlineAt), timezone, rolloverTime)
+  return DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone).toFormat(DECK_DAY_FORMAT)
+}
+
 /** The refusal's words (the API's `refused[].message`; D2's toast reads the first). */
 export const DECK_REFUSAL_MESSAGES: Record<DeckRefusal, string> = {
   deadline_nagging: 'This deadline is close and already reminding you — use Today.',
   after_auto_target: 'That day is after this deadline starts reminding you.',
 }
+
+/**
+ * A repeating task refused for its deadline's day (`after_auto_target`, the
+ * enum kept): its deadline is per occurrence and never "starts reminding", so
+ * a PATCH's 400 says this (the web's toast too, `deckErrorMessage`).
+ */
+export const REPEATING_DECK_REFUSAL_MESSAGE = "That day is after this task's deadline."
 
 /** The counts a deck write reports (`POST /api/tasks/deck`). */
 export interface DeckResultCounts {

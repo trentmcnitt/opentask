@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { OptionMenu, type OptionMenuItem } from '@/components/OptionMenu'
-import { useCheckInDay } from '@/components/PreferencesProvider'
+import { useCheckInDay, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { deckLimit, deckMenuDays, deckTapDay, type DeckLimit } from '@/lib/deck-menu'
 import { DECK_DAY_FORMAT, calendarToday, deckIsToday } from '@/lib/task-segments'
@@ -185,9 +185,9 @@ export function DeckMenu({
   onPick,
   children,
 }: {
-  task: Pick<Task, 'on_deck_day' | 'deadline_at' | 'due_at' | 'target_auto'>
+  task: Pick<Task, 'on_deck_day' | 'deadline_at' | 'due_at' | 'target_auto' | 'rrule'>
   timezone: string
-  /** Omitted: `deckLimit(task)`. */
+  /** Omitted: `deckLimit(task)` (a repeating task's from its deadline's OpenTask day). */
   limit?: DeckLimit | null
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -196,12 +196,15 @@ export function DeckMenu({
   children: React.ReactNode
 }) {
   const { checkInDay } = useCheckInDay()
+  // The rollover time (with the switch on, as decks need): a repeating
+  // deadline before the rollover counts as the evening before (`deckLimit`).
+  const { attemptsRolloverTime: rolloverTime } = useTaskQueue()
   // The picker is mounted afresh on every open (`pickerKey`), so it never
   // keeps an old selection — whichever way it was opened.
   const [pickerKey, setPickerKey] = useState(0)
   const [pickerOpen, setPickerOpen] = useState(false)
   const now = new Date()
-  const bound = limit === undefined ? deckLimit(task, timezone, now) : limit
+  const bound = limit === undefined ? deckLimit(task, timezone, now, null, rolloverTime) : limit
   const days = deckMenuDays(timezone, now, checkInDay, bound)
   const options: OptionMenuItem[] = [
     ...days.map((d) => ({

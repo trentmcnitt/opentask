@@ -16,7 +16,7 @@ import { saveTaskChanges } from '@/lib/save-task-changes'
 import { targetWhen } from '@/hooks/useTaskSegments'
 import { useTimezone } from '@/hooks/useTimezone'
 import { DateTime } from 'luxon'
-import { deckToastMessage, sendDeck } from '@/lib/deck-request'
+import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import { calendarToday } from '@/lib/task-segments'
 
 /**
@@ -157,7 +157,7 @@ function useHandleDeck(
         const result = await sendDeck([task.id], day)
         const message = deckToastMessage(result, task.title, zone)
         if (!message) {
-          showToast({ message: result.summary, type: 'error' })
+          showToast({ message: deckErrorMessage(result, task), type: 'error' })
           return
         }
         bumpUndoCount()

@@ -47,6 +47,7 @@ import { bulkEdit, cancelPendingEnrichment } from './bulk'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { getTargetContext } from './target-context'
 import { taskQueueEnabled } from './task-queue'
+import { deckRolloverTime } from './deck-clear'
 
 export interface DeckTasksOptions {
   userId: number
@@ -109,7 +110,7 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
       result[`skipped_${skip}`]++
       continue
     }
-    const refusal = day === null ? null : deckRefusal(task, day, ctx, now)
+    const refusal = day === null ? null : deckRefusal(task, day, ctx, now, deckRolloverTime(task))
     if (refusal) {
       result.refused.push({ id: task.id, reason: refusal })
       continue

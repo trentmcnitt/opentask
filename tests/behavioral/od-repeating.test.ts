@@ -39,6 +39,7 @@ import {
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
 import { executeUndo, executeRedo } from '@/core/undo'
 import { deckLimit, deckMenuDays, offersDeck } from '@/lib/deck-menu'
+import { deckErrorMessage } from '@/lib/deck-request'
 import { deckRefusal, deckSkip } from '@/lib/task-segments'
 import { validateTaskUpdate } from '@/core/validation'
 import type { Task } from '@/types'
@@ -474,5 +475,109 @@ describe('OD-RP: Upcoming, the rollover, the rollback', () => {
       original_due_at: at('2026-10-20T08:00'),
     })
     expect(task(one.id)).toMatchObject({ on_deck_day: null, due_at: null })
+  })
+})
+
+describe('OD-RP: review round (2026-10-20)', () => {
+  test('OD-RP40: the target that comes back is capped at the deadline — rollover and rollback', () => {
+    // Weekly Monday: next occurrence Mon Oct 26 08:00; deadline Sun Oct 25 17:00.
+    const decked = () => {
+      const t = repeating(MONDAY_8, '2026-10-20T07:00')
+      updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-25T17:00') } })
+      deck([t.id])
+      expect(task(t.id)).toMatchObject({
+        on_deck_day: '2026-10-20',
+        due_at: null,
+        occurrence_at: at('2026-10-26T08:00'),
+      })
+      return t
+    }
+    const cleared = decked()
+    clearDecks(TEST_USER_ID)
+    expect(task(cleared.id)).toMatchObject({
+      on_deck_day: null,
+      due_at: at('2026-10-25T17:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+    })
+    const rolled = decked()
+    roll('2026-10-21T06:30')
+    expect(task(rolled.id)).toMatchObject({
+      on_deck_day: null,
+      due_at: at('2026-10-25T17:00'),
+      original_due_at: at('2026-10-25T17:00'),
+      occurrence_at: at('2026-10-26T08:00'),
+    })
+  })
+
+  test('OD-RP41: a deck that rolls or waits counts as rolled / waiting too; the wait’s activity row names its deck day', () => {
+    const d = daily()
+    const w = weekly()
+    deck([d.id, w.id])
+    setClock('2026-10-20T20:00')
+    const r = runRolloverNow({ userId: TEST_USER_ID, now: new Date(at('2026-10-20T20:00')) })
+    expect([...r.ids.deck_stripped].sort()).toEqual([d.id, w.id].sort())
+    // Both wait for their next occurrence (Roll over now's M is now; the
+    // daily's next, Wed 08:00, is after the next real rollover).
+    expect([...r.ids.waiting].sort()).toEqual([d.id, w.id].sort())
+    expect(r).toMatchObject({ deck_stripped: 2, waiting: 2, rolled: 0 })
+    const row = getDb()
+      .prepare(
+        `SELECT fields, after FROM activity_log
+          WHERE task_id = ? AND json_extract(metadata, '$.rollover') = 'waiting'
+          ORDER BY id DESC LIMIT 1`,
+      )
+      .get(w.id) as { fields: string; after: string }
+    expect(JSON.parse(row.fields)).toContain('queued_from_deck_day')
+    expect(JSON.parse(row.after)).toMatchObject({
+      queued_from_deck_day: '2026-10-20',
+      queued_from_due_at: null,
+    })
+  })
+
+  test('OD-RP42: the cron counts a deck that rolls as rolled', () => {
+    const d = daily()
+    deck([d.id])
+    const c = roll('2026-10-21T06:30')
+    expect(c).toMatchObject({ deckStripped: 1, rolled: 1, waiting: 0 })
+  })
+
+  test('OD-RP43: a repeating deadline before the rollover counts as the evening before (A1)', () => {
+    const now = new Date(at('2026-10-20T10:00'))
+    // Deadline Fri Oct 23 02:00 — before the 06:30 rollover: Thursday's OpenTask day.
+    const t = { due_at: null, deadline_at: at('2026-10-23T02:00'), rrule: DAILY_8 }
+    expect(deckRefusal(t, '2026-10-22', ctx, now, '06:30')).toBe('after_auto_target')
+    expect(deckRefusal(t, '2026-10-21', ctx, now, '06:30')).toBeNull()
+    // Without a rollover time, the calendar day (Fri): Thu allowed.
+    expect(deckRefusal(t, '2026-10-22', ctx, now)).toBeNull()
+    expect(deckLimit(t, tz, now, null, '06:30')).toMatchObject({ latestDay: '2026-10-21' })
+    expect(deckLimit(t, tz, now)).toMatchObject({ latestDay: '2026-10-22' })
+    // The server judges with the owner's rollover time (06:30 here).
+    const real = daily({ deadline_at: at('2026-10-23T02:00') })
+    expect(deck([real.id], '2026-10-22').refused).toEqual([
+      { id: real.id, reason: 'after_auto_target' },
+    ])
+    expect(() =>
+      updateTask({ ...u, taskId: real.id, input: { on_deck_day: '2026-10-22' } }),
+    ).toThrow("That day is after this task's deadline.")
+    expect(deck([real.id], '2026-10-21').decked).toBe(1)
+  })
+
+  test('OD-RP44: the web words a repeating deadline refusal as the deadline, not a reminder', () => {
+    const refused = {
+      day: '2026-10-23',
+      decked: 0,
+      undecked: 0,
+      skipped_recurring: 0,
+      skipped_reminder: 0,
+      skipped_quota: 0,
+      skipped_done: 0,
+      skipped_trashed: 0,
+      refused: [{ id: 7, reason: 'after_auto_target' as const }],
+      summary: 'That day is after this deadline starts reminding you.',
+    }
+    expect(deckErrorMessage(refused, { id: 7, rrule: DAILY_8 })).toBe(
+      "That day is after this task's deadline.",
+    )
+    expect(deckErrorMessage(refused, { id: 7, rrule: null })).toBe(refused.summary)
   })
 })

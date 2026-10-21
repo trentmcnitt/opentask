@@ -400,7 +400,7 @@ export function QuickActionPanel({
   // with no target (`pickerBaseDueAt`) — never from the missed occurrence
   // ("+1 day" would stage a past date) or the moved target. Any staged date
   // is a picked target, which takes the task out of the queue.
-  const queueEnabled = useTaskQueue().enabled
+  const { enabled: queueEnabled, attemptsRolloverTime: rolloverTime } = useTaskQueue()
   const queuedOccurrence =
     effectiveTask && !isCreateMode && queueEnabled ? queuedRepeatOccurrence(effectiveTask) : null
   const dueAt = effectiveTask ? pickerBaseDueAt(effectiveTask, queueEnabled) : null
@@ -703,6 +703,9 @@ export function QuickActionPanel({
       ? deckLimit(
           { deadline_at: pendingDeadline, due_at: null, rrule: effectiveTask.rrule },
           timezone,
+          new Date(),
+          null,
+          rolloverTime,
         )
       : undefined
 

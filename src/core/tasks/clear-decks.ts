@@ -21,6 +21,7 @@
  */
 import { getDb, withTransaction } from '@/core/db'
 import { logActivity } from '@/core/activity'
+import { capAtDeadline } from '@/lib/task-segments'
 
 export interface DeckedRow {
   id: number
@@ -49,28 +50,51 @@ export function findDecks(userId: number): DeckedRow[] {
     .all(userId) as DeckedRow[]
 }
 
+/**
+ * The target a REPEATING deck gets back: its occurrence, never past its
+ * deadline (§8.2, as `collectRepeatingUndeck` does) — or null (a one-off, a
+ * row that still has a target, or one with no occurrence to go back to).
+ */
+function restoredTarget(id: number, now: Date): string | null {
+  const row = getDb()
+    .prepare('SELECT rrule, due_at, occurrence_at, deadline_at FROM tasks WHERE id = ?')
+    .get(id) as
+    | {
+        rrule: string | null
+        due_at: string | null
+        occurrence_at: string | null
+        deadline_at: string | null
+      }
+    | undefined
+  if (!row || !row.rrule || row.due_at !== null || !row.occurrence_at) return null
+  return capAtDeadline(row.occurrence_at, row.deadline_at, now)
+}
+
 /** Take them off deck and out of the queue. Returns what it cleared. */
 export function clearDecks(userId: number, now: Date = new Date()): DeckedRow[] {
   const nowStr = now.toISOString()
   return withTransaction((tx) => {
     const found = findDecks(userId)
-    // A repeating deck's target comes back on its occurrence (see the header).
-    const undeck = tx.prepare(
+    // A repeating deck's target comes back on its occurrence, capped at its
+    // deadline (see the header; `restoredTarget`). NULL leaves a one-off's alone.
+    const undeckStmt = tx.prepare(
       `UPDATE tasks
-          SET on_deck_day = NULL,
-              due_at = CASE WHEN rrule IS NOT NULL AND due_at IS NULL THEN occurrence_at ELSE due_at END,
-              original_due_at = CASE WHEN rrule IS NOT NULL AND due_at IS NULL AND occurrence_at IS NOT NULL
-                                     THEN occurrence_at ELSE original_due_at END,
-              updated_at = ?
+          SET on_deck_day = NULL, due_at = COALESCE(?, due_at),
+              original_due_at = COALESCE(?, original_due_at), updated_at = ?
         WHERE id = ? AND on_deck_day IS NOT NULL`,
     )
+    const undeck = (id: number) => {
+      const restored = restoredTarget(id, now)
+      undeckStmt.run(restored, restored, nowStr, id)
+    }
     const unqueue = tx.prepare(
       `UPDATE tasks SET queued_at = NULL, try_tomorrow = 0, updated_at = ?
         WHERE id = ? AND queued_from_deck_day IS NOT NULL`,
     )
     for (const t of found) {
       const decked = t.on_deck_day !== null
-      ;(decked ? undeck : unqueue).run(nowStr, t.id)
+      if (decked) undeck(t.id)
+      else unqueue.run(nowStr, t.id)
       logActivity({
         userId,
         taskId: t.id,

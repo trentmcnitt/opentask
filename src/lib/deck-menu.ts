@@ -28,6 +28,7 @@ import {
   DECK_DAY_FORMAT,
   autoTargetAt,
   calendarToday,
+  repeatingDeadlineDay,
   type CheckInDay,
   type TargetContext,
 } from './task-segments'
@@ -100,8 +101,10 @@ export function deckMenuDays(
  * yesterday). No deadline: null.
  *
  * A REPEATING task (2026-10-20) has no automatic target: its deck must land
- * before its deadline's own day, while the deadline is ahead ("deadline Tue";
- * a passed deadline leaves no day) — `deckRefusal`'s repeating branch.
+ * before its deadline's own day — its OpenTask day, so a deadline before the
+ * rollover counts as the evening before (`repeatingDeadlineDay`) — while the
+ * deadline is ahead ("deadline Tue"; a passed deadline leaves no day) —
+ * `deckRefusal`'s repeating branch.
  */
 export function deckLimit(
   task: {
@@ -113,14 +116,17 @@ export function deckLimit(
   timezone: string,
   now: Date = new Date(),
   ctx?: TargetContext | null,
+  /** The user's rollover time: a repeating deadline's day is its OpenTask day (`repeatingDeadlineDay`). */
+  rolloverTime: string | null = null,
 ): DeckLimit | null {
   if (!task.deadline_at) return null
   const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
   if (task.rrule) {
     const passed = Date.parse(task.deadline_at) <= now.getTime()
-    const deadlineDay = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
-      .setZone(timezone)
-      .startOf('day')
+    const deadlineDay = DateTime.fromISO(
+      repeatingDeadlineDay(task.deadline_at, timezone, rolloverTime),
+      { zone: timezone },
+    )
     const limitDay = passed ? today : deadlineDay
     return {
       latestDay: limitDay.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),

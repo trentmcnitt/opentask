@@ -26,6 +26,7 @@ import { loggedSince, quotaAnchorNow, rolloverQuotaNow } from '../period-rollove
 import { getTaskById } from '../read'
 import {
   DECK_REFUSAL_MESSAGES,
+  REPEATING_DECK_REFUSAL_MESSAGE,
   capAtDeadline,
   deckDayProblem,
   deckRefusal,
@@ -37,7 +38,7 @@ import {
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
-import { collectDeckClear } from '../deck-clear'
+import { collectDeckClear, deckRolloverTime } from '../deck-clear'
 import { taskQueueEnabled } from '../task-queue'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
@@ -463,8 +464,14 @@ function prepareDeck(
     input.deadline_at !== undefined
       ? { deadline_at: input.deadline_at, due_at: null, target_auto: false, rrule: task.rrule }
       : task
-  const refusal = deckRefusal(judged, day, opts.ctx, opts.now)
-  if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
+  const refusal = deckRefusal(judged, day, opts.ctx, opts.now, deckRolloverTime(task))
+  if (refusal) {
+    throw new ValidationError(
+      task.rrule && refusal === 'after_auto_target'
+        ? REPEATING_DECK_REFUSAL_MESSAGE
+        : DECK_REFUSAL_MESSAGES[refusal],
+    )
+  }
   const out: FieldChangesInput = hasPickedTarget(task) ? { ...input, due_at: null } : { ...input }
   // A7 on every deck write (D2 review): a new deck day marks the task
   // considered and stamps the Just now card, as the deck endpoint does (it
@@ -509,6 +516,7 @@ function collectDeckChange(
       changed: data.fieldsChanged.includes('deadline_at'),
       ctx,
       now,
+      rolloverTime: task.on_deck_day ? deckRolloverTime(task) : null,
     },
   })
 }
