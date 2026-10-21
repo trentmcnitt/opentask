@@ -30,7 +30,7 @@
  */
 
 import { computeNextOccurrence } from '@/core/recurrence/compute-next'
-import { isDeadlineAnchored, occurrenceDates } from '@/lib/task-segments'
+import { isDeadlineAnchored, occurrenceDates, scheduleBase } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
 export type SnoozeGuard =
@@ -71,7 +71,19 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
     // so the next occurrence comes after the scheduled one, and the moment
     // that matters is that occurrence's own TARGET (`occurrenceDates`).
     if (isDeadlineAnchored({ rrule: task.rrule, repeat_anchor: task.repeat_anchor ?? null })) {
-      const occurrence = new Date(task.occurrence_at ?? task.due_at)
+      const occurrence = new Date(
+        scheduleBase(
+          {
+            rrule: task.rrule,
+            repeat_anchor: task.repeat_anchor ?? null,
+            recurrence_mode: task.recurrence_mode,
+            anchor_time: task.anchor_time,
+            occurrence_at: task.occurrence_at,
+            due_at: task.due_at,
+          },
+          timezone,
+        )!,
+      )
       const next = computeNextOccurrence({
         rrule: task.rrule,
         recurrenceMode: 'from_due',

@@ -92,7 +92,7 @@ import { getTaskById } from './read'
 import { nextOccurrenceAfterSkip, writeRecurringSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
 import { collectDeckClear } from './deck-clear'
-import { isDeadlineAnchored, occurrenceDates } from '@/lib/task-segments'
+import { isDeadlineAnchored, occurrenceDates, occurrenceTarget } from '@/lib/task-segments'
 
 /**
  * The guard on how many occurrences one task may pass over. A daily rule
@@ -402,7 +402,9 @@ function summaryLead(
   const skippedTasks = r.tasksAffected - r.targetsMoved
   if (r.tasksAffected === 1) {
     const t = r.tasks[0]
-    const next = dayLabel(t.occurrence_at ?? t.due_at!, timezone)
+    // The landing occurrence's TARGET day (a deadline-anchored repeat's lies
+    // before its deadline, 2026-10-21) — when it next nags.
+    const next = dayLabel(occurrenceTarget(t, timezone)!, timezone)
     if (r.targetsMoved === 1) return [`Moved "${t.title}" to its occurrence · ${next}`]
     const lead = r.occurrencesSkipped > 1 ? `Skipped ${occ(r.occurrencesSkipped)} of` : 'Skipped'
     return [`${lead} "${t.title}" · next ${next}`]

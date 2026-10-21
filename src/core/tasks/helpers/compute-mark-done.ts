@@ -8,7 +8,7 @@
 
 import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
-import { occurrenceDates } from '@/lib/task-segments'
+import { occurrenceDates, scheduleBase } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import { TARGET_SET_FIELD, queueStateToClear } from '../target-set'
 
@@ -87,7 +87,9 @@ export function computeMarkDone(
     // Sunday, never tomorrow (no double fire). Done after a target moved PAST
     // the next occurrence (ruling Q3: a weekly moved +10 days) → the next
     // occurrence after now: no catch-up, no double row.
-    const prevOccurrence = task.occurrence_at ?? task.due_at
+    // From the rule's own instant for this occurrence (`scheduleBase`: a
+    // rescheduled deadline never makes a second occurrence in its period).
+    const prevOccurrence = scheduleBase(task, userTimezone)
     const nextOccurrence = isTracked(task)
       ? null
       : computeNextOccurrence({

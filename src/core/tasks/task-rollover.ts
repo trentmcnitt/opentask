@@ -244,12 +244,23 @@ function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[], manual: 
   }
 }
 
+/**
+ * THE ROLLOVER'S TARGET-ANCHORED INVARIANT (2026-10-21): every roll, wait and
+ * release sets `occurrence_at` from a TARGET (`occurrence_at = due_at`, the
+ * next occurrence's target). That is only true of a target-anchored repeat —
+ * a deadline-anchored one's occurrence is its deadline (`occurrenceDates`) —
+ * so every query that leads to such a write is held to target-anchored rows,
+ * in so many words, not only through `deadline_at IS NULL` (I1 makes them the
+ * same; this keeps a row that broke I1 out of it).
+ */
+const TARGET_ANCHORED_SQL = `repeat_anchor = 'target'`
+
 /** The tasks the rollover may strip, roll or send to wait (module doc: EXCLUDED). */
 const ELIGIBLE_SQL = `
   user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
   AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1
   AND priority < ${QUEUE_KEEP_PRIORITY} AND deadline_at IS NULL
-  AND due_at IS NOT NULL`
+  AND ${TARGET_ANCHORED_SQL} AND due_at IS NOT NULL`
 
 /** What a run changed, by outcome (the manual run's answer). */
 export interface RolloverIds {
@@ -307,6 +318,7 @@ export function applyRollover(
     .prepare(
       `SELECT id, title, due_at, occurrence_at, skip_count FROM tasks
         WHERE user_id = ? AND rrule IS NOT NULL AND queued_at IS NOT NULL
+          AND ${TARGET_ANCHORED_SQL}
           AND due_at IS NOT NULL AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
     )
     .all(user.id) as WaitRow[]
@@ -891,7 +903,8 @@ function endRepeatingDeck(
     restored !== null &&
     Date.parse(restored) < m.getTime() &&
     task.priority < QUEUE_KEEP_PRIORITY &&
-    task.deadline_at === null
+    task.deadline_at === null &&
+    task.repeat_anchor === 'target' // `TARGET_ANCHORED_SQL`'s invariant
   if (!rolls) {
     run.hooks.push({ id: task.id, previousDueAt: task.due_at, skipped: false })
     return

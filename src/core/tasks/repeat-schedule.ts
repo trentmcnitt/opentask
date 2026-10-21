@@ -26,7 +26,9 @@
  * in helpers/collect-field-changes.ts writes what it decides.
  */
 
+import { DateTime } from 'luxon'
 import { ValidationError } from '@/core/errors'
+import { localMoment } from '@/lib/opentask-day'
 import {
   computeFirstOccurrence,
   ensureRuleTime,
@@ -37,6 +39,7 @@ import { formatAnchorTime, utcToLocal } from '@/core/recurrence/timezone'
 import {
   RELATIVE_TARGET_MESSAGES,
   capAtDeadline,
+  deadlineWalk,
   defaultRelativeTarget,
   occurrenceDates,
   relativeTargetOf,
@@ -151,8 +154,10 @@ export function resolveRelativeTarget(opts: {
     offset = relativeTargetOf(opts.targetAt, opts.givenDeadline, timezone)
     if (!offset) throw new ValidationError(TARGET_AFTER_DEADLINE_MESSAGE)
   }
-  offset ??= defaultRelativeTarget(rule, firstDeadline, timezone, opts.morningTime)
-  const problem = relativeTargetProblem(offset, rule, firstDeadline, timezone)
+  // One walk of the rule for both the default and the validation.
+  const walk = deadlineWalk(rule, firstDeadline, timezone)
+  offset ??= defaultRelativeTarget(rule, firstDeadline, timezone, opts.morningTime, walk)
+  const problem = relativeTargetProblem(offset, rule, firstDeadline, timezone, walk)
   if (problem) throw new ValidationError(RELATIVE_TARGET_MESSAGES[problem])
   return offset
 }
@@ -400,8 +405,9 @@ function overTarget(task: PlanTask, now: Date): boolean {
  * THE OCCURRENCE (= the deadline): a deadline sent reschedules THIS
  * occurrence (and starts a new schedule); with the schedule unchanged it
  * stays; a new rule on a repeat already over target whose anchor stays keeps
- * its occurrence (the debt — the next done walks the new rule); else the
- * rule's first occurrence from now.
+ * its occurrence's DAY (the debt — the next done walks the new rule), at the
+ * new rule's time, so the deadline is never left at a time the rule no longer
+ * has; else the rule's first occurrence from now.
  */
 function occurrenceFor(
   { task, ctx }: Request,
@@ -411,9 +417,12 @@ function occurrenceFor(
   if (schedule.first) return schedule.first
   const current = task.occurrence_at ?? task.deadline_at
   if (!schedule.scheduleChanged && current) return current
-  if (!becoming && overTarget(task, ctx.now) && task.occurrence_at) return task.occurrence_at
   const { rrule, anchor_time } = schedule.ruleFields
   const { hour, minute } = ruleTimeOfDay(rrule, anchor_time)
+  if (!becoming && overTarget(task, ctx.now) && task.occurrence_at) {
+    const day = DateTime.fromISO(task.occurrence_at, { zone: 'utc' }).setZone(ctx.timezone)
+    return localMoment(day.toISODate()!, formatAnchorTime(hour, minute), ctx.timezone).toISOString()
+  }
   return computeFirstOccurrence(
     rrule,
     formatAnchorTime(hour, minute),

@@ -19,7 +19,7 @@
  * that completions stay honest, NOT so anyone can infer avoidance from it.
  */
 
-import { occurrenceDates } from '@/lib/task-segments'
+import { occurrenceDates, scheduleBase } from '@/lib/task-segments'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
@@ -150,11 +150,15 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
  * `max(prevDueAt, completedAt)`). Not for a quota (no date to advance).
  */
 export function nextOccurrenceAfterSkip(
-  task: Pick<Task, 'rrule' | 'recurrence_mode' | 'anchor_time' | 'occurrence_at' | 'due_at'>,
+  task: Pick<
+    Task,
+    'rrule' | 'recurrence_mode' | 'anchor_time' | 'occurrence_at' | 'due_at' | 'repeat_anchor'
+  >,
   timezone: string,
   now: Date = new Date(),
 ): string {
-  const prevOccurrence = task.occurrence_at ?? task.due_at
+  // From the rule's own instant (`scheduleBase`; a rescheduled deadline).
+  const prevOccurrence = scheduleBase(task, timezone)
   return computeNextOccurrence({
     rrule: task.rrule!,
     recurrenceMode: task.recurrence_mode,

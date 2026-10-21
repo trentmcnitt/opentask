@@ -16,6 +16,7 @@ import { getDb } from '@/core/db'
 import { bulkEdit, createTask, markDone, markUndone, updateTask } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { skipOccurrence } from '@/core/tasks/skip'
+import { skipUntil } from '@/core/tasks/skip-until'
 import { getTaskById } from '@/core/tasks/read'
 import { executeUndo } from '@/core/undo'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
@@ -389,6 +390,53 @@ describe('TM-RA: the advancing writers and the readers', () => {
       })
     })
 
+    test('TM-RA45: a deadline pulled earlier never makes a second occurrence in its period', () => {
+      // Fri Oct 23's deadline pulled to Thu Oct 22: done Thu → the NEXT Friday.
+      const t = friday()
+      updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-22T17:00') } })
+      setClock('2026-10-22T15:00')
+      expect(markDone({ ...u, taskId: t.id }).task).toMatchObject({
+        deadline_at: at('2026-10-30T17:00'),
+        due_at: at('2026-10-29T18:00'),
+      })
+      // Skip and skip until advance from the same base.
+      const s = friday()
+      updateTask({ ...u, taskId: s.id, input: { deadline_at: at('2026-10-22T17:00') } })
+      expect(skipOccurrence({ ...u, taskId: s.id }).task.deadline_at).toBe(at('2026-10-30T17:00'))
+      const k = friday()
+      updateTask({ ...u, taskId: k.id, input: { deadline_at: at('2026-10-22T17:00') } })
+      skipUntil({ ...u, taskIds: [k.id], until: '2026-10-24' })
+      expect(getTaskById(k.id)!.deadline_at).toBe(at('2026-10-30T17:00'))
+    })
+
+    test('TM-RA46: a deadline pushed past the next rule occurrence covers it', () => {
+      // Fri Oct 23 pushed to Mon Oct 26: it stands for Fri Oct 30 too, so done
+      // → Fri Nov 6.
+      const t = friday()
+      updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-26T17:00') } })
+      setClock('2026-10-26T12:00')
+      expect(markDone({ ...u, taskId: t.id }).task.deadline_at).toBe(at('2026-11-06T17:00'))
+      // On its rule, nothing changes: done → the next Friday.
+      setClock('2026-10-20T10:00')
+      const on = friday()
+      expect(markDone({ ...u, taskId: on.id }).task.deadline_at).toBe(at('2026-10-30T17:00'))
+    })
+
+    test("TM-RA47: a rule edit over target keeps the occurrence's day, at the new rule's time", () => {
+      const t = friday({ target_days_before: 0, target_time: '09:00' })
+      setClock('2026-10-23T10:00') // over target since 09:00
+      const r = updateTask({
+        ...u,
+        taskId: t.id,
+        input: { rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=20;BYMINUTE=0' },
+      })
+      expect(r.task).toMatchObject({
+        occurrence_at: at('2026-10-23T20:00'),
+        deadline_at: at('2026-10-23T20:00'),
+        due_at: at('2026-10-23T09:00'),
+      })
+    })
+
     test('TM-RA44: a move is capped at the deadline while it is ahead', () => {
       const t = friday()
       const r = updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-24T09:00') } })
@@ -647,6 +695,19 @@ describe('TM-G01: every SQL writer of occurrence_at / deadline_at derives throug
       .filter((f) => !EXEMPT[f])
       .filter((f) => writer.test(read(f)))
       .filter((f) => !derives.test(read(f)))
+    expect(offenders).toEqual([])
+  })
+
+  test('TM-G03: a write of occurrence_at FROM a target is held to target-anchored rows', () => {
+    // `occurrence_at = due_at` (or the target an advance lands on) is only
+    // true of a target-anchored repeat; a file that writes it says so in SQL.
+    const root = process.cwd()
+    const fromTarget = /\boccurrence_at\s*=\s*due_at\b/
+    const offenders = files(path.join(root, 'src'))
+      .map((f) => path.relative(root, f))
+      .filter((f) => !EXEMPT[f])
+      .filter((f) => fromTarget.test(read(f)))
+      .filter((f) => !/repeat_anchor = 'target'/.test(read(f)))
     expect(offenders).toEqual([])
   })
 

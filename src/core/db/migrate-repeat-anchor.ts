@@ -16,8 +16,11 @@
  *  1. its occurrence: `occurrence_at`, else `original_due_at`, else `due_at`;
  *  2. the offset: local days from the occurrence's date to the deadline's,
  *     and the occurrence's local time (`relativeTargetOf`);
- *  3. the rule's BYHOUR/BYMINUTE := the deadline's local time
- *     (`setRuleTime`), its anchors re-derived (`deriveAnchorFields`);
+ *  3. the rule's DAYS moved by the offset (`shiftRuleDays`: BYDAY weekdays,
+ *     BYMONTHDAY) and its BYHOUR/BYMINUTE := the deadline's local time
+ *     (`setRuleTime`), its anchors re-derived (`deriveAnchorFields`) — then
+ *     PROVED by walking both rules (`walksShifted`): every new occurrence is
+ *     the old one plus the offset's days, at the deadline's time;
  *  4. `repeat_anchor` 'deadline', the offset, `occurrence_at` := `deadline_at`;
  *  5. `due_at` is left as stored: on schedule it IS the new derivation; moved,
  *     it is this occurrence's moved target (`migrateDeadlineTargets`' pull-back
@@ -34,7 +37,10 @@
  *
  * SKIPPED, never guessed (logged on every start while one remains): no
  * occurrence to read; a deadline BEFORE its occurrence (a negative offset); a
- * from_completion rule; an offset `relativeTargetProblem` refuses. Such a row
+ * from_completion rule; a rule whose day shift can't be expressed or doesn't
+ * walk the same (`rule_day_shift`: a BYSETPOS, a month day past the 28th, an
+ * ordinal weekday that crosses into another week); an offset
+ * `relativeTargetProblem` refuses. Such a row
  * stays target-anchored WITH a deadline: the writers now trust
  * `occurrenceDates`, which gives a target-anchored occurrence no deadline, so
  * its next done or skip drops the deadline (tm-migration pins it). Prod had
@@ -48,18 +54,30 @@ import type Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
 import { deriveAnchorFields, setRuleTime } from '@/core/recurrence'
 import { localMoment } from '@/lib/opentask-day'
-import { relativeTargetOf, relativeTargetProblem, type RelativeTarget } from '@/lib/task-segments'
+import {
+  deadlineWalk,
+  relativeTargetOf,
+  relativeTargetProblem,
+  type RelativeTarget,
+  type RepeatRule,
+} from '@/lib/task-segments'
 
 /** Repeats with a deadline, still walking their target (columns qualified by `t.`). */
 const REPEAT_WITH_DEADLINE = `t.rrule IS NOT NULL AND t.deadline_at IS NOT NULL
   AND t.is_reminder = 0 AND t.is_tracked = 0 AND t.progress_target <= 1`
 const CONVERT_WHERE = `${REPEAT_WITH_DEADLINE} AND t.repeat_anchor = 'target'`
 
-export type RepeatAnchorSkip = 'no_occurrence' | 'negative_offset' | 'from_completion' | 'problem'
+export type RepeatAnchorSkip =
+  | 'no_occurrence'
+  | 'negative_offset'
+  | 'from_completion'
+  | 'rule_day_shift'
+  | 'problem'
 
 interface Row {
   id: number
   rrule: string
+  anchor_time: string | null
   recurrence_mode: string | null
   deadline_at: string
   occurrence_at: string | null
@@ -88,19 +106,89 @@ function convert(row: Row, tz: string): Conversion {
   const deadlineTime = DateTime.fromISO(row.deadline_at, { zone: 'utc' })
     .setZone(tz)
     .toFormat('HH:mm')
-  const rrule = setRuleTime(row.rrule, deadlineTime)
+  const shifted = shiftRuleDays(row.rrule, offset.days_before)
+  if (!shifted) return { kind: 'skip', reason: 'rule_day_shift' }
+  const rrule = setRuleTime(shifted, deadlineTime)
   const anchors = deriveAnchorFields(rrule, row.deadline_at, tz)
   const rule = { rrule, recurrence_mode: 'from_due' as const, anchor_time: anchors.anchor_time }
+  const old = {
+    rrule: row.rrule,
+    recurrence_mode: 'from_due' as const,
+    anchor_time: row.anchor_time,
+  }
+  if (!walksShifted(old, occurrence, rule, row.deadline_at, offset.days_before, tz)) {
+    return { kind: 'skip', reason: 'rule_day_shift' }
+  }
   if (relativeTargetProblem(offset, rule, row.deadline_at, tz)) {
     return { kind: 'skip', reason: 'problem' }
   }
   return { kind: 'convert', rrule, anchors, offset, deadlineTime }
 }
 
+const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+/** Parts a day shift can't be expressed through: refused, never guessed. */
+const UNSHIFTABLE = /^(BYSETPOS|BYYEARDAY|BYWEEKNO)=/i
+
+/**
+ * The rule's DAYS moved `days` local days later, as the deadline is from the
+ * target the rule walked: each BYDAY weekday (its ordinal kept — "1SA" + 1 is
+ * "1SU", which `walksShifted` then checks), each BYMONTHDAY (only while it
+ * stays within 1–28, every month's days). Null when the shift can't be
+ * expressed: a BYSETPOS / BYYEARDAY / BYWEEKNO, a negative or late month day.
+ */
+export function shiftRuleDays(rrule: string, days: number): string | null {
+  if (days === 0) return rrule
+  const parts = rrule.split(';').filter((p) => p !== '')
+  if (parts.some((p) => UNSHIFTABLE.test(p))) return null
+  const out: string[] = []
+  for (const part of parts) {
+    const [key, value] = part.split('=')
+    if (/^BYDAY$/i.test(key)) {
+      const shifted = value.split(',').map((d) => {
+        const m = /^([+-]?\d*)([A-Z]{2})$/i.exec(d)
+        const i = m ? WEEKDAYS.indexOf(m[2].toUpperCase()) : -1
+        return m && i >= 0 ? `${m[1]}${WEEKDAYS[(i + days) % 7]}` : null
+      })
+      if (shifted.includes(null)) return null
+      out.push(`BYDAY=${shifted.join(',')}`)
+    } else if (/^BYMONTHDAY$/i.test(key)) {
+      const shifted = value.split(',').map((n) => Number(n) + days)
+      if (shifted.some((n) => !Number.isInteger(n) || n - days < 1 || n > 28)) return null
+      out.push(`BYMONTHDAY=${shifted.join(',')}`)
+    } else out.push(part)
+  }
+  return out.join(';')
+}
+
+/**
+ * The proof a shifted rule is the old one moved: walking the OLD rule from
+ * the target occurrence and the NEW rule from the deadline, every step must
+ * land `days` local days later, at the deadline's time — over the shared
+ * walk (60 occurrences or a year).
+ */
+function walksShifted(
+  old: RepeatRule,
+  occurrence: string,
+  rule: RepeatRule,
+  deadline: string,
+  days: number,
+  tz: string,
+): boolean {
+  const before = deadlineWalk(old, occurrence, tz)
+  const after = deadlineWalk(rule, deadline, tz)
+  if (before.length !== after.length) return false
+  const time = DateTime.fromISO(deadline, { zone: 'utc' }).setZone(tz).toFormat('HH:mm')
+  return before.every((b, i) => {
+    const a = DateTime.fromJSDate(after[i]).setZone(tz)
+    const expected = DateTime.fromJSDate(b).setZone(tz).plus({ days }).toISODate()
+    return a.toISODate() === expected && a.toFormat('HH:mm') === time
+  })
+}
+
 function rows(db: Database.Database, where: string): Row[] {
   return db
     .prepare(
-      `SELECT t.id, t.rrule, t.recurrence_mode, t.deadline_at, t.occurrence_at,
+      `SELECT t.id, t.rrule, t.anchor_time, t.recurrence_mode, t.deadline_at, t.occurrence_at,
               t.original_due_at, t.due_at, u.timezone
          FROM tasks t JOIN users u ON u.id = t.user_id
         WHERE ${where} ORDER BY t.id`,

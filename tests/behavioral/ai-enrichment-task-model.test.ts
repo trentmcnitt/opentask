@@ -100,6 +100,23 @@ afterEach(() => {
 })
 
 describe('deadline and target', () => {
+  test('a rule is never written onto a task with a deadline (until PR 5, 2026-10-21)', async () => {
+    const task = titleOnly('pay the invoice every friday')
+    getDb()
+      .prepare('UPDATE tasks SET deadline_at = ? WHERE id = ?')
+      .run('2026-10-16T22:00:00.000Z', task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({ title: 'Pay the invoice', rrule: 'FREQ=WEEKLY;BYDAY=FR' }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    const after = getTaskById(task.id)!
+    expect(after.title).toBe('Pay the invoice')
+    expect(after.rrule).toBeNull()
+    expect(after.deadline_at).toBe('2026-10-16T22:00:00.000Z')
+  })
+
   test('quick capture: "Cancel M365 by Oct 17, do it Wednesday" stores both, in UTC', async () => {
     const task = titleOnly('Cancel M365 by Oct 17, do it Wednesday')
     mockEnrichmentQuery.mockResolvedValueOnce(

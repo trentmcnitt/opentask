@@ -5715,7 +5715,9 @@ components:
             day at the morning time (or the deadline's own time if earlier), up to 7 the day before,
             under 16 three days before, else four — at the user's morning time. 400 when the target
             would be after the deadline (the same day, a later time) or on or before the previous
-            occurrence's deadline (checked over the next 60 occurrences or a year).
+            occurrence's deadline (checked over the next 60 occurrences or a year) — e.g. a DAILY
+            rule with a `deadline_at` three days out and a `target_at` today (a 3-day lead on a
+            1-day rule) is a 400: send the deadline the rule repeats (tomorrow's), or no target.
         target_time:
           type: string
           pattern: '^([01]\d|2[0-3]):[0-5]\d$'

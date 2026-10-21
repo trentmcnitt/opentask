@@ -2876,6 +2876,22 @@ function withoutDateFields(
   }
 }
 
+/**
+ * NO RULE ONTO A DEADLINE (2026-10-21, until PR 5 teaches enrichment
+ * deadline-anchored repeats): a rule on a task with a deadline would make a
+ * target-anchored repeat WITH a deadline through raw SQL — a shape the API
+ * refuses (`planRepeatSchedule`, L9/A3) — and on a deadline-anchored one would
+ * walk a target where its rule walks the deadline. So a rule the model gives
+ * such a task (other than the one it has) is left out, logged; the rest of the
+ * answer applies.
+ */
+export function withoutRuleOnDeadline(task: Task, enrichment: EnrichmentResult): EnrichmentResult {
+  const hasDeadline = task.deadline_at !== null || task.repeat_anchor === 'deadline'
+  if (!hasDeadline || !enrichment.rrule || enrichment.rrule === task.rrule) return enrichment
+  log.warn('ai', `Enrichment: task ${task.id} has a deadline — its rule not applied (PR 5)`)
+  return { ...enrichment, rrule: null }
+}
+
 /** Bookkeeping columns that ride along with a change but are not news to the user. */
 const INTERNAL_FIELDS = [
   'anchor_time',
@@ -2926,7 +2942,11 @@ function applyEnrichment(
 
   const changes = collectEnrichmentChanges(
     task,
-    withEnrichmentRuleTime(task, deckOrTarget(task, answer, user), user),
+    withEnrichmentRuleTime(
+      task,
+      deckOrTarget(task, withoutRuleOnDeadline(task, answer), user),
+      user,
+    ),
     user,
     inputText,
   )

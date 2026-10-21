@@ -988,6 +988,68 @@ export function targetMoved(
   return Date.parse(task.due_at) !== Date.parse(derived)
 }
 
+/**
+ * The TARGET of a repeating task's current occurrence, as scheduled
+ * (`occurrenceDates`; a deadline-anchored repeat's lies before its deadline),
+ * for words that name when it nags — skip until's dialog and summary. Falls
+ * back to `due_at` with no occurrence.
+ */
+export function occurrenceTarget(
+  task: RepeatSchedule & { occurrence_at?: string | null; due_at: string | null },
+  timezone: string,
+): string | null {
+  if (!task.occurrence_at) return task.due_at
+  return occurrenceDates(task, task.occurrence_at, timezone).targetAt
+}
+
+/**
+ * WHERE AN ADVANCE STARTS (2026-10-21): the occurrence done, skip and skip
+ * until advance FROM — the rule's own instant this occurrence stands for.
+ *
+ * A deadline-anchored repeat's deadline can be RESCHEDULED for one occurrence
+ * (a PATCH of `deadline_at`), off its rule. Walking on from the rescheduled
+ * date would make a second occurrence in the same period: a Friday deadline
+ * pulled to Thursday, done Thursday, would come back that Friday. So the base
+ * is the first rule occurrence ON OR AFTER `occurrence_at`, and the advance is
+ * the first rule occurrence strictly after max(base, now):
+ *  - an occurrence on its rule is its own base — nothing changes;
+ *  - pulled earlier (Fri → Thu): the base is that Friday, the next is the
+ *    following Friday;
+ *  - pushed past the next rule occurrence (Fri → next Mon): the base is the
+ *    Friday after, which the pushed one covers, so the next is the one after.
+ * A floating rule (every N, bare) runs on a grid anchored at its own
+ * occurrence, so its base is the occurrence. from_completion has no schedule
+ * to walk and target-anchored repeats are never rescheduled this way: both
+ * read `occurrence_at` as before. EVERY advance asks this: `computeMarkDone`,
+ * `nextOccurrenceAfterSkip` (skip, skip until, the bulk defer cap) and the
+ * snooze guard.
+ */
+export function scheduleBase(
+  task: Pick<RepeatSchedule, 'rrule' | 'repeat_anchor'> & {
+    recurrence_mode: 'from_due' | 'from_completion' | null | undefined
+    anchor_time: string | null
+    occurrence_at?: string | null
+    due_at: string | null
+  },
+  timezone: string,
+): string | null {
+  const occurrence = task.occurrence_at ?? task.due_at
+  if (!occurrence || !isDeadlineAnchored(task) || task.recurrence_mode === 'from_completion') {
+    return occurrence
+  }
+  const at = new Date(occurrence)
+  const justBefore = new Date(at.getTime() - 1)
+  return computeNextOccurrence({
+    rrule: task.rrule!,
+    recurrenceMode: 'from_due',
+    anchorTime: task.anchor_time,
+    timezone,
+    completedAt: justBefore,
+    prevDueAt: justBefore,
+    anchorAt: at,
+  }).toISOString()
+}
+
 /** The rule fields the occurrence walk reads. */
 export interface RepeatRule {
   rrule: string
@@ -1015,8 +1077,12 @@ function followingOccurrence(rule: RepeatRule, from: Date, timezone: string): Da
 const WALK_OCCURRENCES = 60
 const WALK_YEARS = 1
 
-/** The rule's occurrences from `first` (inclusive), up to the walk's limits. */
-function walkOccurrences(rule: RepeatRule, first: string, timezone: string): Date[] {
+/**
+ * The rule's occurrences from `first` (inclusive), up to the walk's limits —
+ * ONE walk the default target and the validation share (a write that needs
+ * both walks once: `resolveRelativeTarget`).
+ */
+export function deadlineWalk(rule: RepeatRule, first: string, timezone: string): Date[] {
   const start = new Date(first)
   const end = DateTime.fromJSDate(start).plus({ years: WALK_YEARS }).toMillis()
   const out = [start]
@@ -1055,6 +1121,7 @@ export function relativeTargetProblem(
   rule: RepeatRule,
   firstDeadline: string,
   timezone: string,
+  walk: Date[] = deadlineWalk(rule, firstDeadline, timezone),
 ): RelativeTargetProblem | null {
   const { hour, minute } = ruleTimeOfDay(rule.rrule, rule.anchor_time)
   const ruleTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
@@ -1065,7 +1132,7 @@ export function relativeTargetProblem(
     target_days_before: offset.days_before,
     target_time: offset.time,
   }
-  const deadlines = walkOccurrences(rule, firstDeadline, timezone)
+  const deadlines = walk
   for (let i = 1; i < deadlines.length; i++) {
     const target = occurrenceDates(schedule, deadlines[i].toISOString(), timezone).targetAt
     if (Date.parse(target) <= deadlines[i - 1].getTime()) return 'overlaps_previous'
@@ -1123,10 +1190,9 @@ export function defaultRelativeTarget(
   firstDeadline: string,
   timezone: string,
   morningTime: string,
+  walk: Date[] = deadlineWalk(rule, firstDeadline, timezone),
 ): RelativeTarget {
-  const days = walkOccurrences(rule, firstDeadline, timezone).map((d) =>
-    DateTime.fromJSDate(d).setZone(timezone),
-  )
+  const days = walk.map((d) => DateTime.fromJSDate(d).setZone(timezone))
   let wait = Infinity
   for (let i = 1; i < days.length; i++) {
     wait = Math.min(wait, waitDays(days[i].startOf('day'), days[i - 1].startOf('day')))

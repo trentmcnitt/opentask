@@ -386,3 +386,83 @@ describe('TM8-R: the deadline-anchor migration', () => {
     })
   })
 })
+
+/** TM8-R, the rule's days (fresh-eyes review, 2026-10-21): a target's weekday is not its deadline's. */
+describe("TM8-R: the migration moves the rule's days with the deadline", () => {
+  beforeAll(() => setupTestDb())
+  afterAll(() => teardownTestDb())
+  afterEach(() => vi.useRealTimers())
+
+  test("TM8-R05: the rule's DAYS move with the deadline — a Wednesday target, a Friday deadline", () => {
+    getDb().prepare('DELETE FROM completions').run()
+    getDb().prepare('DELETE FROM tasks').run()
+    const id = row({
+      rrule: 'FREQ=WEEKLY;BYDAY=WE;BYHOUR=9;BYMINUTE=0',
+      anchor_time: '09:00',
+      anchor_dow: 2,
+      due_at: at('2026-10-21T09:00'),
+      occurrence_at: at('2026-10-21T09:00'),
+      deadline_at: at('2026-10-23T17:00'),
+    })
+    expect(migrateRepeatAnchors(getDb(), NOW).converted).toBe(1)
+    expect(getTaskById(id)).toMatchObject({
+      rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0',
+      anchor_dow: 4,
+      target_days_before: 2,
+      target_time: '09:00',
+      occurrence_at: at('2026-10-23T17:00'),
+    })
+    // Done: the next Friday's deadline, its Wednesday target — never a Wednesday deadline.
+    vi.setSystemTime(new Date(at('2026-10-21T12:00')))
+    markDone({ userId: TEST_USER_ID, userTimezone: tz, taskId: id })
+    expect(getTaskById(id)).toMatchObject({
+      deadline_at: at('2026-10-30T17:00'),
+      due_at: at('2026-10-28T09:00'),
+    })
+  })
+
+  test("TM8-R06: a monthly day moves too — the 1st's target, the 3rd's deadline", () => {
+    getDb().prepare('DELETE FROM completions').run()
+    getDb().prepare('DELETE FROM tasks').run()
+    const id = row({
+      rrule: 'FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0',
+      anchor_time: '09:00',
+      anchor_dom: 1,
+      due_at: at('2026-11-01T09:00'),
+      occurrence_at: at('2026-11-01T09:00'),
+      deadline_at: at('2026-11-03T17:00'),
+    })
+    expect(migrateRepeatAnchors(getDb(), NOW).converted).toBe(1)
+    expect(getTaskById(id)).toMatchObject({
+      rrule: 'FREQ=MONTHLY;BYMONTHDAY=3;BYHOUR=17;BYMINUTE=0',
+      anchor_dom: 3,
+      target_days_before: 2,
+    })
+  })
+
+  test("TM8-R07: a day shift that can't be said, or doesn't walk the same, is skipped (rule_day_shift)", () => {
+    getDb().prepare('DELETE FROM completions').run()
+    getDb().prepare('DELETE FROM tasks').run()
+    // The 1st Saturday + 1 day is not the 1st Sunday (Nov 7 → Nov 8 is the 2nd).
+    const ordinal = row({
+      rrule: 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=9;BYMINUTE=0',
+      anchor_time: '09:00',
+      due_at: at('2026-11-07T09:00'),
+      occurrence_at: at('2026-11-07T09:00'),
+      deadline_at: at('2026-11-08T17:00'),
+    })
+    // The 28th + 3 days runs past short months.
+    const late = row({
+      rrule: 'FREQ=MONTHLY;BYMONTHDAY=28;BYHOUR=9;BYMINUTE=0',
+      anchor_time: '09:00',
+      due_at: at('2026-10-28T09:00'),
+      occurrence_at: at('2026-10-28T09:00'),
+      deadline_at: at('2026-10-31T17:00'),
+    })
+    expect(migrateRepeatAnchors(getDb(), NOW).skipped).toEqual([
+      { id: ordinal, reason: 'rule_day_shift' },
+      { id: late, reason: 'rule_day_shift' },
+    ])
+    expect(getTaskById(ordinal)!.repeat_anchor).toBe('target')
+  })
+})
