@@ -147,6 +147,8 @@ export interface InsightsSession {
   started_at: string
   finished_at: string | null
   error: string | null
+  /** Set at start and after every chunk; staleness is judged from it */
+  heartbeat_at: string | null
 }
 
 export interface InsightsResult {
@@ -390,9 +392,9 @@ export async function generateInsightsForUser(
   const db = getDb()
 
   db.prepare(
-    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at)
-     VALUES (?, ?, 'running', ?, 0, ?)`,
-  ).run(sessionId, userId, tasks.length, now)
+    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at, heartbeat_at)
+     VALUES (?, ?, 'running', ?, 0, ?, ?)`,
+  ).run(sessionId, userId, tasks.length, now, now)
 
   try {
     await processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, aiConfig)
@@ -435,9 +437,9 @@ export function startInsightsGeneration(
 
   // Create session
   db.prepare(
-    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at)
-     VALUES (?, ?, 'running', ?, 0, ?)`,
-  ).run(sessionId, userId, tasks.length, now)
+    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at, heartbeat_at)
+     VALUES (?, ?, 'running', ?, 0, ?, ?)`,
+  ).run(sessionId, userId, tasks.length, now, now)
 
   // Start processing in background (fire-and-forget)
   processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, aiConfig).catch(
@@ -665,8 +667,13 @@ async function processInsightsChunks(
   let scored = 0
   for (let ci = 0; ci < chunks.length; ci++) {
     scored += await runInsightsChunk(ctx, chunks[ci], `chunk ${ci + 1}/${chunks.length}`)
-    // Progress counts tasks actually scored, never ones that failed
-    db.prepare('UPDATE ai_insights_sessions SET completed = ? WHERE id = ?').run(scored, sessionId)
+    // Progress counts tasks actually scored, never ones that failed. The
+    // heartbeat tells getActiveInsightsSession this run is still alive.
+    db.prepare('UPDATE ai_insights_sessions SET completed = ?, heartbeat_at = ? WHERE id = ?').run(
+      scored,
+      nowUtc(),
+      sessionId,
+    )
   }
 
   finishInsightsSession(sessionId, userId, tasks, scored)
@@ -825,18 +832,26 @@ export function hasInsightsResults(userId: number): boolean {
   return row.count > 0
 }
 
-/** Sessions running longer than this are considered crashed (e.g. server restart) and auto-failed. */
+/**
+ * A running session with no heartbeat for this long is considered crashed
+ * (e.g. a server restart) and auto-failed. The heartbeat moves after every
+ * chunk, so a long chunked run (25+ calls of 20 tasks on an 8192-cap model)
+ * stays alive as long as it progresses. The bound has to outlast one chunk:
+ * a call up to its timeout (300s on the SDK, 180s on the API) plus, when it
+ * is cut off, its two halves — 15 minutes at worst — so 20 minutes holds.
+ */
 const SESSION_STALE_TIMEOUT_MS = 20 * 60 * 1000
 
 /**
- * Get the duration in milliseconds of the most recent completed insights session.
+ * Get the duration in milliseconds of the most recent finished insights session
+ * (complete or failed), so a failed run is not masked by an older good one.
  */
 export function getLastInsightsDurationMs(userId: number): number | null {
   const db = getDb()
   const row = db
     .prepare(
       `SELECT started_at, finished_at FROM ai_insights_sessions
-       WHERE user_id = ? AND status = 'complete' AND finished_at IS NOT NULL
+       WHERE user_id = ? AND status IN ('complete', 'failed') AND finished_at IS NOT NULL
        ORDER BY finished_at DESC LIMIT 1`,
     )
     .get(userId) as { started_at: string; finished_at: string } | undefined
@@ -845,9 +860,29 @@ export function getLastInsightsDurationMs(userId: number): number | null {
 }
 
 /**
+ * How many tasks the most recent finished Insights run (complete or failed)
+ * could not score — 0 when it scored them all, or there is none. A run that
+ * scored only some tasks finishes `complete` with `completed` counting the
+ * scored ones; a failed run scored none. The panel shows it as a quiet line
+ * ("N tasks couldn't be scored"), and a newer failure is not masked by an
+ * older good run.
+ */
+export function getLastInsightsUnscoredCount(userId: number): number {
+  const db = getDb()
+  const row = db
+    .prepare(
+      `SELECT total_tasks, completed FROM ai_insights_sessions
+       WHERE user_id = ? AND status IN ('complete', 'failed') AND finished_at IS NOT NULL
+       ORDER BY finished_at DESC LIMIT 1`,
+    )
+    .get(userId) as { total_tasks: number; completed: number } | undefined
+  return row ? Math.max(0, row.total_tasks - row.completed) : 0
+}
+
+/**
  * Get the most recent active session for a user (if any is still running).
- * Auto-fails sessions older than SESSION_STALE_TIMEOUT_MS to prevent permanent 409s
- * after server restarts kill background generation.
+ * Auto-fails sessions with no heartbeat for SESSION_STALE_TIMEOUT_MS to prevent
+ * permanent 409s after server restarts kill background generation.
  */
 export function getActiveInsightsSession(userId: number): InsightsSession | null {
   const db = getDb()
@@ -860,8 +895,10 @@ export function getActiveInsightsSession(userId: number): InsightsSession | null
     .get(userId) as InsightsSession | undefined
   if (!row) return null
 
-  const ageMs = Date.now() - new Date(row.started_at).getTime()
-  if (ageMs > SESSION_STALE_TIMEOUT_MS) {
+  // Sessions from before the heartbeat column have none: judge them from their start
+  const lastSignOfLife = row.heartbeat_at ?? row.started_at
+  const silentMs = Date.now() - new Date(lastSignOfLife).getTime()
+  if (silentMs > SESSION_STALE_TIMEOUT_MS) {
     db.prepare(
       `UPDATE ai_insights_sessions SET status = 'failed', error = 'Generation timed out', finished_at = ?
        WHERE id = ? AND status = 'running'`,

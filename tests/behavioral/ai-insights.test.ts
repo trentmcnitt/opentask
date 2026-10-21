@@ -28,6 +28,8 @@ import {
   hasInsightsResults,
   getActiveInsightsSession,
   insightsTasksPerCall,
+  getLastInsightsUnscoredCount,
+  getLastInsightsDurationMs,
   splitIntoChunks,
   INSIGHTS_SIGNALS,
   SIGNAL_MAP,
@@ -35,6 +37,7 @@ import {
 import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
 import { INSIGHTS_SIGNAL_KEYS } from '@/core/ai/types'
+import { unscoredTasksText } from '@/lib/insights-text'
 
 const mockAiQuery = vi.mocked(aiQuery)
 
@@ -527,6 +530,106 @@ describe('Session status is truthful', () => {
     expect(getInsightsResults(TEST_USER_ID).results.map((r) => r.commentary)).toEqual([
       'Earlier result',
     ])
+  })
+})
+
+describe('Partial run note', () => {
+  test('the line reads "N tasks couldn\'t be scored", and nothing when all were', () => {
+    expect(unscoredTasksText(0)).toBeNull()
+    expect(unscoredTasksText(1)).toBe("1 task couldn't be scored")
+    expect(unscoredTasksText(20)).toBe("20 tasks couldn't be scored")
+  })
+
+  test('the count and duration come from the last finished run, complete or failed', async () => {
+    expect(getLastInsightsUnscoredCount(TEST_USER_ID)).toBe(0)
+    expect(getLastInsightsDurationMs(TEST_USER_ID)).toBeNull()
+
+    // Partial: 60 tasks in 3 calls of 20, the second errors
+    const allIds = Array.from({ length: 60 }, (_, i) => i + 1)
+    mockAiQuery
+      .mockResolvedValueOnce(makeInsightsResponse(allIds))
+      .mockRejectedValueOnce(new Error('AI service unavailable'))
+      .mockResolvedValueOnce(makeInsightsResponse(allIds))
+    const tasks = makeTasks(60)
+    const partial = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    await waitForFinish(partial.sessionId)
+    expect(getLastInsightsUnscoredCount(TEST_USER_ID)).toBe(20)
+    expect(getLastInsightsDurationMs(TEST_USER_ID)).not.toBeNull()
+
+    // A failed run after it is not masked by the earlier partial one
+    mockAiQuery.mockReset()
+    mockAiQuery.mockRejectedValue(new Error('AI service unavailable'))
+    const failed = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    expect((await waitForFinish(failed.sessionId)).status).toBe('failed')
+    expect(getLastInsightsUnscoredCount(TEST_USER_ID)).toBe(60)
+
+    // A full run clears it
+    mockAiQuery.mockReset()
+    mockAiQuery.mockResolvedValue(makeInsightsResponse(allIds))
+    const full = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    await waitForFinish(full.sessionId)
+    expect(getLastInsightsUnscoredCount(TEST_USER_ID)).toBe(0)
+  })
+})
+
+describe('Stale sessions are judged by their heartbeat', () => {
+  const MIN = 60 * 1000
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+
+  function insertRunning(id: string, startedAgoMs: number, heartbeatAgoMs: number | null) {
+    getDb()
+      .prepare(
+        `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at, heartbeat_at)
+         VALUES (?, ?, 'running', 400, 200, ?, ?)`,
+      )
+      .run(
+        id,
+        TEST_USER_ID,
+        ago(startedAgoMs),
+        heartbeatAgoMs === null ? null : ago(heartbeatAgoMs),
+      )
+  }
+
+  test('a long run that is still progressing is not marked stale', () => {
+    // Started 45 minutes ago (25 chunks), last chunk finished a minute ago
+    insertRunning('long-run', 45 * MIN, 1 * MIN)
+    const active = getActiveInsightsSession(TEST_USER_ID)
+    expect(active?.id).toBe('long-run')
+    expect(getInsightsSessionStatus('long-run', TEST_USER_ID)!.status).toBe('running')
+  })
+
+  test('a run with no heartbeat for 20+ minutes is dead and marked failed', () => {
+    insertRunning('dead-run', 45 * MIN, 25 * MIN)
+    expect(getActiveInsightsSession(TEST_USER_ID)).toBeNull()
+    const session = getInsightsSessionStatus('dead-run', TEST_USER_ID)!
+    expect(session.status).toBe('failed')
+    expect(session.error).toBe('Generation timed out')
+  })
+
+  test('a run with no heartbeat yet is judged from its start', () => {
+    insertRunning('no-beat', 25 * MIN, null)
+    expect(getActiveInsightsSession(TEST_USER_ID)).toBeNull()
+  })
+
+  test('each finished chunk moves the heartbeat', async () => {
+    const allIds = Array.from({ length: 60 }, (_, i) => i + 1)
+    const beats: (string | null)[] = []
+    // The first call starts before startInsightsGeneration returns the id, so
+    // read the (only) running session instead
+    mockAiQuery.mockImplementation(async () => {
+      const row = getDb()
+        .prepare(`SELECT heartbeat_at FROM ai_insights_sessions WHERE status = 'running'`)
+        .get() as { heartbeat_at: string | null }
+      beats.push(row.heartbeat_at)
+      return makeInsightsResponse(allIds)
+    })
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(60))
+    await waitForFinish(sessionId)
+    // Set at the start, then refreshed after chunks 1 and 2 (seen by calls 2 and 3)
+    expect(beats).toHaveLength(3)
+    expect(beats.every((b) => b !== null)).toBe(true)
+    expect(beats[1]! >= beats[0]!).toBe(true)
+    expect(beats[2]! >= beats[1]!).toBe(true)
   })
 })
 

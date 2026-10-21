@@ -4247,7 +4247,15 @@ paths:
                         description: There are results, but not from today (UTC).
                       duration_ms:
                         type: [integer, 'null']
-                        description: How long the last completed generation took.
+                        description: How long the last finished generation (complete or failed) took.
+                      unscored_tasks:
+                        type: integer
+                        minimum: 0
+                        description: |
+                          How many tasks the last finished generation (complete or failed)
+                          could not score (0 when it scored them all). A run that scored
+                          only some still finishes `complete`, with `completed` counting
+                          the scored tasks; a failed run scored none.
                       signal_counts:
                         type: object
                         description: Number of results carrying each signal.

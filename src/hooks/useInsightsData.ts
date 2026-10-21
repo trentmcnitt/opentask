@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { showToast, showAiSuccessToast, showErrorToast } from '@/lib/toast'
+import { unscoredTasksText } from '@/lib/insights-text'
 import type { Task } from '@/types'
 
 export interface InsightsResultItem {
@@ -46,6 +47,8 @@ export interface UseInsightsDataReturn {
   error: string | null
   /** Duration in ms of the last completed generation */
   durationMs: number | null
+  /** Tasks the last completed run could not score (0 = all scored) — shown as a quiet line */
+  unscoredTasks: number
   /** ISO timestamp of when the current generation started (for elapsed timer continuity across refreshes) */
   generationStartedAt: string | null
   /** Start or refresh insights generation */
@@ -72,6 +75,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
   const [singleCall, setSingleCall] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
+  const [unscoredTasks, setUnscoredTasks] = useState(0)
   const [generationStartedAt, setGenerationStartedAt] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
 
@@ -89,6 +93,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
         setSignalCounts(json.data.signal_counts || {})
         setGeneratedAt(json.data.generated_at)
         setDurationMs(json.data.duration_ms ?? null)
+        setUnscoredTasks(json.data.unscored_tasks ?? 0)
       }
     } catch {
       // Silently fail
@@ -120,7 +125,10 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
               setError(msg)
               showErrorToast(msg)
             } else {
-              showAiSuccessToast('Insights updated')
+              // A run that scored only some tasks finishes complete with an error;
+              // say how many quietly under the toast, not as an error
+              const unscored = data.error ? data.total_tasks - data.completed : 0
+              showAiSuccessToast('Insights updated', unscoredTasksText(unscored) ?? undefined)
             }
             await fetchResults()
           }
@@ -250,6 +258,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
         setSignalCounts(json.data.signal_counts || {})
         setGeneratedAt(json.data.generated_at)
         setDurationMs(json.data.duration_ms ?? null)
+        setUnscoredTasks(json.data.unscored_tasks ?? 0)
         setStale(!!json.data.stale)
 
         // Resume polling if a session is actively running (e.g. page was refreshed mid-generation)
@@ -285,6 +294,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
     completedTasks,
     singleCall,
     durationMs,
+    unscoredTasks,
     generationStartedAt,
     annotationMap,
     insightsScoreMap,

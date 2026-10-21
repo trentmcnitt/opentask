@@ -36,6 +36,7 @@ export {
   hasInsightsResults,
   getActiveInsightsSession,
   getLastInsightsDurationMs,
+  getLastInsightsUnscoredCount,
 } from './insights'
 export { buildTaskSummaries } from './task-summaries'
 export {

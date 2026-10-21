@@ -799,6 +799,18 @@ async function runInsights(
   // Match production (buildTaskSummaries): a deadline-only task shows its implied target.
   const { withEffectiveSummaryTarget } = await import('@/core/ai/task-summaries')
   const ctx = { timezone: input.timezone, morningTime: '09:00' }
+
+  // A list production would split (more tasks than one call's output budget
+  // holds for this provider and model) runs through the production chunking
+  // path, so the test sees the calls production makes. Smaller lists are one
+  // call either way and stay on this direct path.
+  const { insightsTasksPerCall } = await import('@/core/ai/insights')
+  if (input.tasks.length > insightsTasksPerCall(await insightsTestConfig())) {
+    return runInsightsViaProduction({
+      ...input,
+      tasks: input.tasks.map((t) => withEffectiveSummaryTarget(t, ctx)),
+    })
+  }
   const taskLines = input.tasks
     .map((t) => formatTaskLine(withEffectiveSummaryTarget(t, ctx), input.timezone, now))
     .join('\n')
@@ -942,6 +954,14 @@ async function runProcessDuplicates(
   return { output: { groups }, durationMs }
 }
 
+/** The Insights config production would pass for the test run's provider and model. */
+async function insightsTestConfig(): Promise<import('@/core/ai/models').FeatureAIConfig> {
+  const { resolveFeatureAIConfig } = await import('@/core/ai/models')
+  return getTestProvider() === 'sdk'
+    ? { provider: 'sdk', model: getModelForFeature('insights') }
+    : resolveFeatureAIConfig('insights', 'api')
+}
+
 /**
  * Run insights via the production processInsightsChunks code path.
  *
@@ -970,12 +990,7 @@ async function runInsightsViaProduction(
   // The test run's provider and model, as production passes the user's
   // resolved config — without it the run falls back to the API config and
   // would plan its chunks for the wrong output cap (or fail in SDK mode).
-  const { resolveFeatureAIConfig } = await import('@/core/ai/models')
-  const provider = getTestProvider()
-  const aiConfig =
-    provider === 'sdk'
-      ? { provider: 'sdk' as const, model: getModelForFeature('insights') }
-      : resolveFeatureAIConfig('insights', 'api')
+  const aiConfig = await insightsTestConfig()
 
   const startMs = Date.now()
   const { sessionId } = startInsightsGeneration(

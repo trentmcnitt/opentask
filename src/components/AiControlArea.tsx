@@ -22,6 +22,7 @@ import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
 import type { AiMode } from '@/hooks/useAiMode'
 import { useAiSlotState } from '@/hooks/useAiSlotState'
+import { unscoredTasksText } from '@/lib/insights-text'
 
 interface AiControlAreaProps {
   mode: AiMode
@@ -53,6 +54,8 @@ interface AiControlAreaProps {
   insightsSingleCall: boolean
   insightsGenerationStartedAt: string | null
   insightsError: string | null
+  /** Tasks the last completed run could not score (0 = all scored) */
+  insightsUnscoredTasks: number
   onRefreshInsights: () => void
   // Enrichment status
   enrichmentActive?: boolean
@@ -98,6 +101,7 @@ export function AiControlArea({
   insightsSingleCall,
   insightsGenerationStartedAt,
   insightsError,
+  insightsUnscoredTasks,
   onRefreshInsights,
   enrichmentActive,
   timezone,
@@ -265,8 +269,8 @@ export function AiControlArea({
               </div>
             )}
 
-            {isActive && insightsError && !insightsGenerating && (
-              <p className="mt-1.5 text-[11px] text-red-500">{insightsError}</p>
+            {isActive && !insightsGenerating && (
+              <InsightsRunNote error={insightsError} unscoredTasks={insightsUnscoredTasks} />
             )}
 
             {/* Progress bar — visible during generation */}
@@ -518,4 +522,23 @@ function ElapsedTimer({ startedAt }: { startedAt?: string | null }) {
       {mins}m {secs.toString().padStart(2, '0')}s
     </span>
   )
+}
+
+/**
+ * How the last Insights run ended, under the section's settings: a failed run
+ * gets the red error line; a run that scored only some tasks gets a quiet
+ * muted line ("N tasks couldn't be scored") — it finished and its scores are
+ * in, so it is a note, not an alarm. A full run shows nothing.
+ */
+function InsightsRunNote({
+  error,
+  unscoredTasks,
+}: {
+  error: string | null
+  unscoredTasks: number
+}) {
+  if (error) return <p className="mt-1.5 text-[11px] text-red-500">{error}</p>
+  const text = unscoredTasksText(unscoredTasks)
+  if (!text) return null
+  return <p className="text-muted-foreground mt-1.5 text-[11px]">{text}</p>
 }
