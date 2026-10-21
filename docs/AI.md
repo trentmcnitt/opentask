@@ -300,7 +300,8 @@ Quick Take uses its own system prompt (`QUICK_TAKE_SYSTEM_PROMPT`) defined in `q
 - `sanitizeSignals()` — defense-in-depth enforcement of signal rules (P4 score ceiling, `actSoonAllowed()` for act_soon, stale requires 21+ days old)
 - `actSoonAllowed()` — a stored `deadline_at` within 7 days (or passed) allows act_soon at any priority, and one further out forbids it at any priority; a task with no deadline falls back to P3+ (deadlines written in notes)
 - `INSIGHTS_SIGNALS` / `SIGNAL_MAP` — signal vocabulary with display properties (label, color, icon)
-- Chunking: single call for ≤500 tasks, shuffled equal chunks for larger lists with calibration summary
+- Chunking by output budget (`insightsTasksPerCall()`): tasks per call = the call's output cap (`output-limits.ts`, thinking budget deducted) × 0.6 ÷ the measured cost of a task (60 tokens with an explicit thinking budget, 240 for a model that may think unasked, like Haiku 5.5), between 10 and 500 — 20 a call on an 8192-cap API model, 220 for Opus on the SDK. A list that fits goes in one call; a larger one is shuffled into equal chunks, each with a calibration summary. A chunk cut off at the output cap (`truncated`) or that does not parse is retried once as two halves
+- Session status: `completed` counts the tasks actually scored; none scored → `failed` with an `error` (earlier results kept); some → `complete` with an `error` naming how many were not
 
 ### `message-channel.ts`
 
@@ -448,7 +449,7 @@ Batch-processes the user's entire task list, scoring each task 0-100 based on ho
 | `vague`          | Unclear what this requires               |
 | `misprioritized` | Priority seems off for what this is      |
 
-Code-enforced signal rules (defense-in-depth): P4 scores capped at 25; `act_soon` needs a real cutoff within 7 days — a stored `deadline_at` within 7 days or passed (any priority; a stored deadline further out forbids it at any priority), or, with no stored deadline, P3+ (a deadline in the notes); `stale` requires 21+ days old. Lists over 500 tasks are shuffled and split into equal chunks, each with a calibration summary of the full list. Extended thinking enabled for Opus models.
+Code-enforced signal rules (defense-in-depth): P4 scores capped at 25; `act_soon` needs a real cutoff within 7 days — a stored `deadline_at` within 7 days or passed (any priority; a stored deadline further out forbids it at any priority), or, with no stored deadline, P3+ (a deadline in the notes); `stale` requires 21+ days old. Lists larger than one call's output budget (20 tasks on an 8192-cap API model) are shuffled and split into equal chunks, each with a calibration summary of the full list. Extended thinking enabled for Opus models.
 
 ### Process
 
