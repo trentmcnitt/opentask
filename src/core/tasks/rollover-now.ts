@@ -25,10 +25,10 @@
  * OpenTask day, so a strip or a wait stamps `queued_at` = the NEXT real
  * rollover moment, not now (a FUTURE instant). The panels split on
  * `queued_at >= latestRollover` (`queueKind`), so the rows show in
- * "Staged" at once AND are still there after the next rollover,
+ * "Today's pulls" at once AND are still there after the next rollover,
  * which neither counts them "before M" nor clears their Try Tomorrow flag;
- * they move to "Previously staged" the rollover after. With `queued_at` =
- * now, a 21:00 run's rows would land in "Previously staged" at 6:30 and
+ * they move to "Previous pulls" the rollover after. With `queued_at` =
+ * now, a 21:00 run's rows would land in "Previous pulls" at 6:30 and
  * lose the flag. Every other reader only asks whether `queued_at` is set
  * (`restore-stripped.ts`, the day simulator, `stampTargetSet`); the queue
  * sorts by `queued_from_due_at`, never `queued_at`; nothing displays it.

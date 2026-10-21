@@ -191,7 +191,7 @@ test.describe('desktop', () => {
     }
   })
 
-  test('holding On deck or Today opens THEIR menu, not the bubble; right-click on On deck tomorrow does nothing; order and the dashboard panel', async ({
+  test('holding On deck, On deck tomorrow or Today opens THEIR menu, not the bubble; order and the dashboard panel', async ({
     page,
   }) => {
     const ids: number[] = []
@@ -216,8 +216,12 @@ test.describe('desktop', () => {
                   : 'done',
           ),
         )
-      expect(order).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
-      await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute('title', 'On deck tomorrow')
+      // On deck first (2026-10-21).
+      expect(order).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+      await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute(
+        'title',
+        'On deck tomorrow · hold for a day',
+      )
 
       const deckMenu = page.getByRole('menu', { name: 'On deck options' })
       await holdUntil(r.locator('[data-on-deck]'), () => expect(deckMenu).toBeVisible())
@@ -231,8 +235,19 @@ test.describe('desktop', () => {
       await page.keyboard.press('Escape')
       await expect(targetMenu).toHaveCount(0)
 
-      await r.locator('[data-deck-tomorrow]').click({ button: 'right' })
+      // On deck tomorrow's hold and right-click (2026-10-21): On deck's own
+      // day menu, never the bubble, and nothing decked until a day is picked.
+      await holdUntil(r.locator('[data-deck-tomorrow]'), () => expect(deckMenu).toBeVisible())
       await expect(bubble(page, id)).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(deckMenu).toHaveCount(0)
+      await r.locator('[data-deck-tomorrow]').click({ button: 'right' })
+      await expect(deckMenu).toBeVisible()
+      await expect(deckMenu.getByRole('menuitem', { name: /^Tomorrow/ })).toHaveCount(1)
+      await expect(deckMenu.getByRole('menuitem', { name: 'Pick a date…' })).toHaveCount(1)
+      await expect(bubble(page, id)).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(deckMenu).toHaveCount(0)
       await expect(r).toHaveAttribute('data-segment-state', 'waiting')
       expect(await deckOf(page, id)).toBeNull()
 
@@ -306,6 +321,34 @@ test.describe('desktop', () => {
       await t.getByRole('button', { name: 'Undo' }).click()
       await expect.poll(() => deckOf(page, id)).toBeNull()
       await expect(segRow(segment(page, 'days'), id)).toBeVisible()
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
+  test('On deck tomorrow held: picking a day in its menu decks for that day, never considers', async ({
+    page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const title = uniqueTitle('RP tomorrow held')
+      const id = await daysTask(page, title)
+      ids.push(id)
+      const considers = countConsiders(page)
+      await page.goto('/reminders')
+      const r = segRow(segment(page, 'days'), id)
+      const deckMenu = page.getByRole('menu', { name: 'On deck options' })
+      await holdUntil(r.locator('[data-deck-tomorrow]'), () => expect(deckMenu).toBeVisible())
+      // The release decks nothing: the hold never also taps.
+      await expect(deckMenu).toBeVisible()
+      expect(await deckOf(page, id)).toBeNull()
+      // The day after tomorrow, by its weekday name (maybe the check-in day).
+      const name = DateTime.now().setZone(TZ).plus({ days: 2 }).toFormat('cccc')
+      await deckMenu.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()
+      await expect.poll(() => deckOf(page, id)).toBe(calendarDay(2))
+      await expect(r).toHaveCount(0)
+      await expect(bubble(page, id)).toHaveCount(0)
+      expect(considers()).toBe(0)
     } finally {
       await trash(page, ids)
     }

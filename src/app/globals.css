@@ -46,7 +46,7 @@
   /* The task queue's two panels (2026-10-19, provisional): a deeper, greyer
      cyan-teal than the horizons — the same family (they are task rows), a
      step apart so the first bars in the strip read as their own thing.
-     "Staged" is the strong one, "Previously staged" the muted. */
+     "Today's pulls" is the strong one, "Previous pulls" the muted. */
   --segment-queue_today: #0d7f8c;
   --segment-queue_previous: #5c9ba3;
   /* Titles: one darker teal in light mode, so the small uppercase label

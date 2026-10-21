@@ -48,8 +48,8 @@ export type HorizonValue = (typeof HORIZON_ORDER)[number]
  * The task queue's two panels (task queue PR 3, 2026-10-19; design rules 6-8,
  * docs/TASK-MODEL.md § The task queue). Code words only — the titles on screen
  * are `QUEUE_PANEL_TITLES` in task-model-words.ts:
- * - `queue_today`: queued at or after the latest rollover ("Staged");
- * - `queue_previous`: queued before it ("Previously staged").
+ * - `queue_today`: queued at or after the latest rollover ("Today's pulls");
+ * - `queue_previous`: queued before it ("Previous pulls").
  * Only with the server switch on (`OPENTASK_TASK_QUEUE`); `queueKind`, below.
  */
 export const QUEUE_KINDS = ['queue_today', 'queue_previous'] as const
@@ -795,8 +795,8 @@ export function queueKind(
  *
  * "Today" is the OPENTASK day (`openTaskDayOf` with the user's rollover
  * time), the day the panels split on — so a repeating row considered at 23:30
- * stays considered at 00:30, inside the same "Staged" panel, until the
- * rollover moves it to "Previously staged", waiting again. Queue panels
+ * stays considered at 00:30, inside the same "Today's pulls" panel, until the
+ * rollover moves it to "Previous pulls", waiting again. Queue panels
  * only: horizon segments and Upcoming stay on midnight (resolution 4).
  */
 export function queueRowState(
