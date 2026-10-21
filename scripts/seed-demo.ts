@@ -79,7 +79,7 @@ function getDemoTasks(): DemoTaskDef[] {
       createdDaysAgo: 0,
     },
     {
-      title: 'Swipe left to snooze this task',
+      title: 'Swipe left to defer this task',
       project: 'Try It',
       dueOffset: 0,
       hour: 8,
