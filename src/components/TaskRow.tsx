@@ -118,7 +118,7 @@ interface TaskRowProps {
   onDeck?: (task: Task, day: string | null | undefined) => void
   /**
    * A row of Now's On deck section (D2 review, phone-first): its On deck
-   * (active chip) and Today are always shown, on touch too — not hover-only — so a
+   * (filled icon) and Today are always shown, on touch too — not hover-only — so a
    * deck can be taken off, or targeted, from a phone. Other rows keep the
    * mouse-only hover controls.
    */
@@ -780,7 +780,7 @@ export function TaskRow({
               onDeck={(t, day) => onDeck?.(t, day)}
               className={dayControlClasses(
                 dayControlsOnTouch,
-                // A deck stays visible while it is set: the active chip is
+                // A deck stays visible while it is set: the filled icon is
                 // the row's only sign of it.
                 !!task.on_deck_day,
               )}
