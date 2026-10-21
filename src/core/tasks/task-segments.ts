@@ -98,14 +98,16 @@ export function eligibleTasks(userId: number): Task[] {
 /**
  * The user's REPEATING tasks for Upcoming (2026-10-12, ruling Q2): own, open,
  * recurring, with a next occurrence — never a reminder (`is_reminder`) or a
- * quota (`isTracked`), which have their own rows on the same screen.
+ * quota (`isTracked`), which have their own rows on the same screen. A
+ * decked one (2026-10-20) has no target while decked, so it is read by its
+ * deck instead.
  */
 function repeatingTasks(userId: number): Task[] {
   const rows = getDb()
     .prepare(
       `SELECT ${taskColumns()} FROM tasks
        WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
-         AND rrule IS NOT NULL AND due_at IS NOT NULL
+         AND rrule IS NOT NULL AND (due_at IS NOT NULL OR on_deck_day IS NOT NULL)
          AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1`,
     )
     .all(userId) as TaskRow[]
@@ -217,8 +219,17 @@ export function getTaskSegments(
   for (const task of repeatingTasks(userId)) {
     const queued = place(task)
     if (queued === 'hidden') continue
-    if (queued) add(queued.kind, queued.entry)
-    else addUpcoming(task)
+    if (queued) {
+      add(queued.kind, queued.entry)
+      continue
+    }
+    // A decked repeating task (2026-10-20), as a one-off's deck above: a
+    // future deck's Upcoming row only for a caller that draws deck rows.
+    if (task.on_deck_day) {
+      if (deckRows) addUpcoming(task)
+      continue
+    }
+    addUpcoming(task)
   }
   if (upcoming.length > 0) {
     upcoming.sort((a, b) => Date.parse(a.target) - Date.parse(b.target) || a.task.id - b.task.id)

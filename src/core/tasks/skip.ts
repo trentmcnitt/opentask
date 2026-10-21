@@ -145,6 +145,8 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         attempts_counted_through: null,
         // The task queue (2026-10-19): the new target clears the queue state.
         ...queueStateToClear(task).after,
+        // On deck (2026-10-20): skipping the decked occurrence takes it off deck.
+        on_deck_day: null,
       }
       fieldsChanged = [
         'due_at',
@@ -157,6 +159,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
         'attempts',
         'attempts_counted_through',
         ...queueStateToClear(task).fields,
+        ...(task.on_deck_day ? ['on_deck_day'] : []),
       ]
     } else {
       // Archived, never completed. done stays 0 — that is the entire point.

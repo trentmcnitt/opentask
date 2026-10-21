@@ -119,6 +119,8 @@ function executeRecurringMarkDone(
     // §7: a new occurrence starts its attempts afresh.
     attempts: 0,
     attempts_counted_through: null,
+    // On deck (2026-10-20): the decked occurrence is done; the next is not on deck.
+    ...(task.on_deck_day ? { on_deck_day: null } : {}),
     _completion: {
       user_id: userId,
       completed_at: nowStr,
@@ -146,6 +148,7 @@ function executeRecurringMarkDone(
       last_completed_at: task.last_completed_at,
       attempts: task.attempts,
       attempts_counted_through: task.attempts_counted_through,
+      ...(task.on_deck_day ? { on_deck_day: task.on_deck_day } : {}),
     },
     after_state: afterState,
     completion_id: completionId,

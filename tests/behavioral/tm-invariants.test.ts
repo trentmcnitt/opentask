@@ -32,6 +32,7 @@ import { getTaskById } from '@/core/tasks/read'
 import { getDb } from '@/core/db'
 import { targetTasksToday } from '@/core/tasks/task-segments'
 import { deckTasks } from '@/core/tasks/deck'
+import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
 import { segmentState, upcomingState, hasPickedTarget } from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
@@ -278,6 +279,21 @@ describe('TM-INV: the bulk tier (seeded random)', () => {
  * TM-INV-05 adds random moves (any day, any direction): attempts still rise
  * by at most 1 per local day and only once a target has arrived.
  */
+
+/**
+ * TM-INV-07's repeating rules (2026-10-20): a decked repeating task holds no
+ * target and is never currently due; off deck, a repeating task is never
+ * left target-less (no stuck rows).
+ */
+function expectRepeatingDeckRules(task: Task, dueNow: Set<number>, l: string) {
+  if (!task.rrule || task.done) return
+  if (!task.on_deck_day) {
+    expect(task.due_at, `${l}: a repeating task left target-less off deck`).not.toBeNull()
+    return
+  }
+  expect(task.due_at, `${l}: a repeating deck holds a target`).toBeNull()
+  expect(dueNow.has(task.id), `${l}: a repeating deck is currently due`).toBe(false)
+}
 
 function randomList(seed: number, start: DateTime) {
   const r = rng(seed)
@@ -583,6 +599,10 @@ describe('TM-INV: on deck over a random list', () => {
     vi.useRealTimers()
   })
 
+  // Repeating tasks are in the list and can be decked (2026-10-20): a decked
+  // repeating task has NO target (never a held value), is never queued and
+  // never currently due; and no repeating task is ever left target-less off
+  // deck (no stuck rows) — by a deck, an un-deck, a pick or a rollover.
   test('TM-INV-07: a deck and a picked target never coexist; a deck never nags', () => {
     const SEED7 = SEED + 7
     const DAYS = 21
@@ -597,14 +617,16 @@ describe('TM-INV: on deck over a random list', () => {
     const { events, r } = randomList(SEED7, start)
     let ids: Record<string, number> = {}
     let decked = 0
+    let repeatingDecked = 0
     const check = (label: string) => {
+      const dueNow = new Set(getCurrentlyDueTaskIds(TEST_USER_ID))
       for (const id of Object.values(ids)) {
         const task = getTaskById(id)!
-        if (!task.on_deck_day) continue
         const l = `seed ${SEED7} ${label} task ${id}`
+        expectRepeatingDeckRules(task, dueNow, l)
+        if (!task.on_deck_day) continue
         expect(hasPickedTarget(task), `${l}: deck + picked target`).toBe(false)
         expect(task.queued_at, `${l}: deck + queued`).toBeNull()
-        expect(task.rrule, `${l}: repeating deck`).toBeNull()
         expect(segmentState(task, tz, new Date()), `${l}: deck in a segment`).toBeNull()
         if (!task.done) {
           const arrived = task.due_at !== null && Date.parse(task.due_at) <= Date.now()
@@ -616,8 +638,9 @@ describe('TM-INV: on deck over a random list', () => {
       (id, at) => {
         const day = at.plus({ days: Math.floor(r() * 6) }).toISODate()!
         try {
-          deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day })
+          const res = deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day })
           decked++
+          if (res.decked > 0 && getTaskById(id)!.rrule) repeatingDecked++
         } catch {
           // A deck refused whole (a past day can't happen; nothing else throws per task).
         }
@@ -645,7 +668,11 @@ describe('TM-INV: on deck over a random list', () => {
               .toISO()!,
           },
         }),
-      (id) => updateTask({ ...u, taskId: id, input: { due_at: null } }),
+      // Clearing a target: a one-off's only. On a repeating task it is not a
+      // deck path (the editor clears the rule with it), so it is left out.
+      (id) => {
+        if (!getTaskById(id)!.rrule) updateTask({ ...u, taskId: id, input: { due_at: null } })
+      },
       (id, at) =>
         bulkSnooze({
           ...u,
@@ -664,7 +691,7 @@ describe('TM-INV: on deck over a random list', () => {
         run: (ctx) => {
           const id = ctx.ids[`t${which}`]
           const task = id ? getTaskById(id) : null
-          if (!task || task.done || task.rrule) return
+          if (!task || task.done) return
           write(id, at)
           check(at.toISO()!)
         },
@@ -684,6 +711,7 @@ describe('TM-INV: on deck over a random list', () => {
               )
             }
           }
+          check(`${day.toISODate()} after the rollover`)
         },
       })
     }
@@ -716,5 +744,6 @@ describe('TM-INV: on deck over a random list', () => {
       }
     }
     expect(decked).toBeGreaterThan(10)
+    expect(repeatingDecked).toBeGreaterThan(2)
   }, 30_000)
 })

@@ -2767,8 +2767,13 @@ function resolveProjectChange(
  * them). A deck the post-process found (`resolveDeckDay`) is written unless:
  * - the task queue switch is off (A14: decks need the rollover that clears
  *   them; enrichment then targets as before D3);
- * - the row can't be on deck (rule 6): repeating — the rule the enrichment
- *   writes or the one it has — a reminder, a quota, done or trashed;
+ * - the row REPEATS — the rule the enrichment writes or the one it has. A
+ *   repeating task can be decked by the user since 2026-10-20 (`deckSkip` no
+ *   longer refuses it), but never by the AI: the rule's first occurrence
+ *   would land in `due_at` beside the deck — a deck plus a picked target, the
+ *   combination PATCH refuses (`DECK_WITH_RULE_MESSAGE`) — so the day is a
+ *   target, as before D3;
+ * - the row can't be on deck (rule 6): a reminder, a quota, done or trashed;
  * - the task already has a DEADLINE (A1: "Enrichment with a deadline plus a
  *   day keeps a picked target" — a re-enrichment of a deadline task is no
  *   different from one that states it);
@@ -2793,8 +2798,8 @@ export function deckOrTarget(
   const today = calendarToday(user.timezone, now)
   const day = stated < today ? today : stated
   if (day !== stated) enrichment = { ...enrichment, on_deck_day: day }
+  const repeats = !!(enrichment.rrule ?? task.rrule)
   const skip = deckSkip({
-    rrule: enrichment.rrule ?? task.rrule,
     is_reminder: task.is_reminder,
     is_tracked: isTracked(task),
     done: task.done,
@@ -2802,11 +2807,13 @@ export function deckOrTarget(
   })
   const why = !taskQueueEnabled()
     ? 'the task queue is off'
-    : skip
-      ? `it is ${skip}`
-      : task.deadline_at
-        ? 'it has a deadline'
-        : deckDayProblem(day, user.timezone, now)
+    : repeats
+      ? 'it repeats'
+      : skip
+        ? `it is ${skip}`
+        : task.deadline_at
+          ? 'it has a deadline'
+          : deckDayProblem(day, user.timezone, now)
   if (!why) return enrichment
   log.info('ai', `Task ${task.id}: not on deck (${why}) — a target on ${day} instead`)
   const dueAt = deckDayAsTarget(
@@ -2841,9 +2848,15 @@ function racedByUser(row: PendingTaskRow, task: Task): 'edited' | 'dated' | null
   return null
 }
 
-/** The answer with every date-shaped field left out (`racedByUser`'s `dated`). */
-function withoutDateFields(enrichment: EnrichmentResult): EnrichmentResult {
-  log.info('ai', 'Enrichment: the date moved while the model ran — its date fields not applied')
+/**
+ * The answer with every date-shaped field left out (`racedByUser`'s `dated`,
+ * and a repeating task on deck — `applyEnrichment`).
+ */
+function withoutDateFields(
+  enrichment: EnrichmentResult,
+  why = 'the date moved while the model ran',
+): EnrichmentResult {
+  log.info('ai', `Enrichment: ${why} — its date fields not applied`)
   return {
     ...enrichment,
     due_at: null,
@@ -2892,7 +2905,17 @@ function applyEnrichment(
     )
     return []
   }
-  const answer = raced === 'dated' ? withoutDateFields(enrichment) : enrichment
+  // A REPEATING task on deck (2026-10-20): its deck is for its CURRENT
+  // occurrence, with no target while decked. Re-enriching it must not compute
+  // a fresh first occurrence (it has no `due_at`, so the rule branch would),
+  // overwrite `occurrence_at`, or land a target beside the deck: the deck and
+  // the occurrence are left alone, and so is every other date field.
+  const answer =
+    raced === 'dated'
+      ? withoutDateFields(enrichment)
+      : task.rrule && task.on_deck_day
+        ? withoutDateFields(enrichment, 'a repeating task is on deck')
+        : enrichment
 
   const changes = collectEnrichmentChanges(
     task,

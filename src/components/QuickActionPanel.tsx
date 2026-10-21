@@ -400,7 +400,7 @@ export function QuickActionPanel({
   // with no target (`pickerBaseDueAt`) — never from the missed occurrence
   // ("+1 day" would stage a past date) or the moved target. Any staged date
   // is a picked target, which takes the task out of the queue.
-  const queueEnabled = useTaskQueue().enabled
+  const { enabled: queueEnabled, attemptsRolloverTime: rolloverTime } = useTaskQueue()
   const queuedOccurrence =
     effectiveTask && !isCreateMode && queueEnabled ? queuedRepeatOccurrence(effectiveTask) : null
   const dueAt = effectiveTask ? pickerBaseDueAt(effectiveTask, queueEnabled) : null
@@ -665,18 +665,22 @@ export function QuickActionPanel({
   const workingDate = singleHook.workingDate
 
   // ON DECK (D2): staging a deck drops a staged target (rule 1 — a task has
-  // one or the other); a target staged after it wins (`deckShadowed`).
+  // one or the other); a target staged after it wins (`deckShadowed`). A
+  // repeating task shows the line too (2026-10-20: the deck is for its current
+  // occurrence) — but never while a recurrence change is staged: a new rule
+  // schedules its own date, and the server refuses a rule with a deck.
   const showDeckLine =
     queueEnabled &&
     !isBulkMode &&
     !isCreateMode &&
     !isReminderLike &&
-    !displayRrule &&
+    !isRruleDirty &&
     !!effectiveTask &&
     !effectiveTask.done
   // A deck staged while the line is shown, then hidden (a recurrence or the
   // Reminder toggle staged after it): the deck goes too — never sent for a
-  // task that can't be on deck (adjusted during render, not in an effect).
+  // task that can't be on deck, nor with a rule (adjusted during render, not
+  // in an effect).
   if (!showDeckLine && pendingDeck !== undefined) setPendingDeck(undefined)
   // `clearTarget`: the deck wins over a staged target (a tap on the line, or
   // the hold menu's stored day, after a target was staged — review #3).
@@ -696,7 +700,13 @@ export function QuickActionPanel({
   // staged, the button works it out from the task.
   const stagedDeckLimit =
     pendingDeadline !== undefined && effectiveTask
-      ? deckLimit({ deadline_at: pendingDeadline, due_at: null }, timezone)
+      ? deckLimit(
+          { deadline_at: pendingDeadline, due_at: null, rrule: effectiveTask.rrule },
+          timezone,
+          new Date(),
+          null,
+          rolloverTime,
+        )
       : undefined
 
   // Handler for smart buttons (Now, Next Hour)
@@ -1444,8 +1454,9 @@ export function QuickActionPanel({
               }
             />
           )}
-          {/* ON DECK (D2, spec rule 8): one-offs only (rule 6), one task at a
-              time, with the task queue on. */}
+          {/* ON DECK (D2, spec rule 8): not a reminder or quota (rule 6), one
+              task at a time, with the task queue on, no recurrence change
+              staged. */}
           {showDeckLine && effectiveTask && (
             <OnDeckLine
               task={effectiveTask}

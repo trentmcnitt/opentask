@@ -11,7 +11,7 @@ import {
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
-import { deckToastMessage, sendDeck } from '@/lib/deck-request'
+import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import type { Task } from '@/types'
 
 /**
@@ -348,7 +348,7 @@ function useDeck(
           onCompleted?.()
         } else {
           putBack()
-          showToast({ message: result.summary, type: 'error' })
+          showToast({ message: deckErrorMessage(result, task), type: 'error' })
         }
       } catch (err) {
         putBack()

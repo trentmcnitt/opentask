@@ -189,11 +189,12 @@ describe('OD-UI-02: the tap and the rows that offer it', () => {
     expect(deckTapDay({ on_deck_day: null }, TZ, NOW)).toBeUndefined()
   })
 
-  test('one-offs with no picked target, or already on deck', () => {
+  test('one-offs with no picked target, repeating tasks, or already on deck', () => {
     expect(offersDeck(makeTask())).toBe(true)
     expect(offersDeck(makeTask({ due_at: local(1, 9), target_auto: true }))).toBe(true)
     expect(offersDeck(makeTask({ due_at: local(1, 9) }))).toBe(false)
-    expect(offersDeck(makeTask({ rrule: 'FREQ=DAILY' }))).toBe(false)
+    // A repeating task always offers it (2026-10-20): it decks the occurrence.
+    expect(offersDeck(makeTask({ rrule: 'FREQ=DAILY', due_at: local(1, 9) }))).toBe(true)
     expect(offersDeck(makeTask({ is_reminder: true }))).toBe(false)
     expect(offersDeck(makeTask({ progress_target: 3 }))).toBe(false)
     expect(offersDeck(makeTask({ done: true }))).toBe(false)

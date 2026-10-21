@@ -603,6 +603,56 @@ describe('the enrichment write', () => {
     expect(after.due_at).not.toBeNull()
   })
 
+  test('a repeating TASK re-enriched with a day is never decked by the AI (a target, as before D3)', async () => {
+    // Repeating tasks can be decked by the user (2026-10-20), never by the AI:
+    // a deck beside the rule's date would be a deck plus a picked target.
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'mow the lawn', rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=9;BYMINUTE=0' },
+    })
+    getDb()
+      .prepare(`UPDATE tasks SET labels = '["ai-to-process"]', original_title = ? WHERE id = ?`)
+      .run('mow the lawn, do it Saturday', task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({ title: 'Mow the lawn', due_at: '2026-10-24' }),
+    )
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    const after = getTaskById(task.id)!
+    expect(after.on_deck_day).toBeNull()
+    expect(after.due_at).not.toBeNull()
+  })
+
+  test('re-enriching a repeating task ON DECK leaves the deck, the occurrence and every date alone', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'water the ferns', rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' },
+    })
+    deckTasks({ userId: TEST_USER_ID, timezone: TEST_TIMEZONE, ids: [task.id], day: '2026-10-21' })
+    const decked = getTaskById(task.id)!
+    expect(decked).toMatchObject({ on_deck_day: '2026-10-21', due_at: null })
+    getDb()
+      .prepare(`UPDATE tasks SET labels = '["ai-to-process"]', original_title = ? WHERE id = ?`)
+      .run('water the ferns every Friday, Saturday', task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Water the ferns',
+        due_at: '2026-10-24',
+        rrule: 'FREQ=WEEKLY;BYDAY=FR',
+      }),
+    )
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    const after = getTaskById(task.id)!
+    expect(after.title).toBe('Water the ferns')
+    expect(after).toMatchObject({
+      on_deck_day: '2026-10-21',
+      due_at: null,
+      occurrence_at: decked.occurrence_at,
+      rrule: decked.rrule,
+    })
+  })
+
   test('race: the user decks while the model answers a timed target → the user wins', async () => {
     const task = titleOnly('call mom tomorrow at 3pm')
     mockEnrichmentQuery.mockImplementationOnce(async () => {
