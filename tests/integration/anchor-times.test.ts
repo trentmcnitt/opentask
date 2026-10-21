@@ -113,6 +113,12 @@ describe('anchor times in /api/user/preferences', () => {
     const agree = await patch({ morning_slot_id: midday.id, morning_time: midday.start_time })
     expect(agree.status).toBe(200)
   })
+})
+
+describe('the number pad in /api/user/preferences', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
 
   test('pad_presets: four custom or linked buttons, in order; null puts back the defaults', async () => {
     const evening = await slotByLabel('Evening')
@@ -138,6 +144,40 @@ describe('anchor times in /api/user/preferences', () => {
 
     const reset = await patch({ pad_presets: null })
     expect((await reset.json()).data.pad_presets).toEqual(DEFAULT_PAD)
+  })
+
+  test('pad_preset sets one button and keeps the other three as stored', async () => {
+    const evening = await slotByLabel('Evening')
+    await patch({
+      pad_presets: [
+        { slot_id: evening.id },
+        { time: '12:00' },
+        { time: '16:00' },
+        { time: '20:30' },
+      ],
+    })
+
+    const res = await patch({ pad_preset: { index: 3, time: '07:15' } })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.pad_presets).toEqual([
+      { slot_id: evening.id, time: evening.start_time },
+      { slot_id: null, time: '12:00' },
+      { slot_id: null, time: '16:00' },
+      { slot_id: null, time: '07:15' },
+    ])
+
+    const linked = await patch({ pad_preset: { index: 1, slot_id: evening.id } })
+    expect((await linked.json()).data.pad_presets[1]).toEqual({
+      slot_id: evening.id,
+      time: evening.start_time,
+    })
+
+    const badIndex = await patch({ pad_preset: { index: 4, time: '07:00' } })
+    expect(badIndex.status).toBe(400)
+    expect((await badIndex.json()).error).toBe('pad_preset.index must be an integer from 0 to 3')
+
+    const both = await patch({ pad_preset: { index: 0, time: '07:00' }, pad_presets: null })
+    expect(both.status).toBe(400)
   })
 
   test('pad_presets validation', async () => {
@@ -166,6 +206,12 @@ describe('anchor times in /api/user/preferences', () => {
     expect((await foreign.json()).error).toBe(
       'pad_presets[1].slot_id must be one of your reminder periods',
     )
+  })
+})
+
+describe('deleting a linked period', () => {
+  beforeEach(async () => {
+    await resetTestData()
   })
 
   test('deleting a linked period keeps its time as custom and says so; undo puts the link back', async () => {

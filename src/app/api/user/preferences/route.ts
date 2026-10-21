@@ -37,10 +37,11 @@ import {
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
-import { getAnchorTimes, resolveUserAnchorTimes } from '@/core/users/anchor-times'
+import { getAnchorTimes, readAnchorRow, resolveUserAnchorTimes } from '@/core/users/anchor-times'
 import {
   ANCHOR_KEYS,
   PAD_PRESET_COUNT,
+  parsePadPresets,
   serializePadPresets,
   type AnchorTimes,
   type TimeSetting,
@@ -393,7 +394,8 @@ function timeSettingFrom(
  * - `morning_slot_id: null` unlinks: at `morning_time` if sent, else at the
  *   time it reads now, so nothing jumps.
  * - `pad_presets`: exactly four `{ time }` or `{ slot_id }` entries, in
- *   button order; `null` puts back the four defaults.
+ *   button order; `null` puts back the four defaults. `pad_preset:
+ *   { index, time | slot_id }` sets one button and keeps the others as stored.
  * Wake and Sleep work as Morning does.
  */
 function validateAnchorFields(
@@ -417,26 +419,66 @@ function validateAnchorFields(
     changes[fields.slot] = setting.slot_id
   }
 
-  if (body.pad_presets !== undefined) {
-    const pad = body.pad_presets
-    if (pad === null) {
-      changes.pad_presets = null
-      return null
-    }
-    if (!Array.isArray(pad) || pad.length !== PAD_PRESET_COUNT)
-      return `pad_presets must be an array of ${PAD_PRESET_COUNT} or null`
-    const settings: TimeSetting[] = []
-    for (const [i, entry] of pad.entries()) {
-      if (!entry || typeof entry !== 'object')
-        return `pad_presets[${i}] must be { time } or { slot_id }`
-      const { time, slot_id } = entry as Record<string, unknown>
-      const fields = { time: `pad_presets[${i}].time`, slot: `pad_presets[${i}].slot_id` }
-      const setting = timeSettingFrom(time, slot_id, fields, userId)
-      if (typeof setting === 'string') return setting
-      settings.push(setting)
-    }
-    changes.pad_presets = serializePadPresets(settings)
+  if (body.pad_presets !== undefined && body.pad_preset !== undefined)
+    return 'pad_presets and pad_preset both set the number pad — send one'
+  if (body.pad_presets !== undefined) return validatePadPresets(body.pad_presets, userId, changes)
+  if (body.pad_preset !== undefined) return validatePadPreset(body.pad_preset, userId, changes)
+  return null
+}
+
+/** `pad_presets`: all four buttons at once, or `null` for the defaults. */
+function validatePadPresets(
+  pad: unknown,
+  userId: number,
+  changes: PreferenceChanges,
+): string | null {
+  if (pad === null) {
+    changes.pad_presets = null
+    return null
   }
+  if (!Array.isArray(pad) || pad.length !== PAD_PRESET_COUNT)
+    return `pad_presets must be an array of ${PAD_PRESET_COUNT} or null`
+  const settings: TimeSetting[] = []
+  for (const [i, entry] of pad.entries()) {
+    if (!entry || typeof entry !== 'object')
+      return `pad_presets[${i}] must be { time } or { slot_id }`
+    const { time, slot_id } = entry as Record<string, unknown>
+    const fields = { time: `pad_presets[${i}].time`, slot: `pad_presets[${i}].slot_id` }
+    const setting = timeSettingFrom(time, slot_id, fields, userId)
+    if (typeof setting === 'string') return setting
+    settings.push(setting)
+  }
+  changes.pad_presets = serializePadPresets(settings)
+  return null
+}
+
+/**
+ * `pad_preset: { index, time | slot_id }`: ONE button (0-based index), the
+ * other three kept exactly as stored — what Settings sends, so a page whose
+ * copy of the pad is stale (an undo, another tab) can't overwrite a link it
+ * never saw. Read and written in the same synchronous request, so two
+ * single-button PATCHes can't lose each other's button.
+ */
+function validatePadPreset(
+  entry: unknown,
+  userId: number,
+  changes: PreferenceChanges,
+): string | null {
+  if (!entry || typeof entry !== 'object') return 'pad_preset must be { index, time | slot_id }'
+  const { index, time, slot_id } = entry as Record<string, unknown>
+  if (
+    typeof index !== 'number' ||
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= PAD_PRESET_COUNT
+  )
+    return `pad_preset.index must be an integer from 0 to ${PAD_PRESET_COUNT - 1}`
+  const fields = { time: 'pad_preset.time', slot: 'pad_preset.slot_id' }
+  const setting = timeSettingFrom(time, slot_id, fields, userId)
+  if (typeof setting === 'string') return setting
+  const pad = parsePadPresets(readAnchorRow(userId).pad_presets)
+  pad[index] = setting
+  changes.pad_presets = serializePadPresets(pad)
   return null
 }
 

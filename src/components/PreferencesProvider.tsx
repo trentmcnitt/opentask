@@ -25,16 +25,8 @@ import {
   type Prefs,
 } from '@/lib/preferences-state'
 import type { TimeSetting } from '@/lib/anchor-times'
-
-/** The Prefs fields a reminder period can move (anchor times), written only by `setAnchorPrefs`. */
-type AnchorPrefKey =
-  | 'morningTime'
-  | 'morningSlotId'
-  | 'wakeTime'
-  | 'wakeSlotId'
-  | 'sleepTime'
-  | 'sleepSlotId'
-  | 'padPresets'
+import { anchorPrefsOf, type AnchorPrefKey } from '@/lib/preferences-state'
+import { useSyncStream } from '@/hooks/useSyncStream'
 
 export type { FeatureMode, FeatureInfo, FeatureInfoMap, BulkSnoozeDefault }
 
@@ -78,8 +70,11 @@ interface PreferencesContextValue {
   sleepSlotId: number | null
   padPresets: TimeSetting[]
   setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) => void
-  /** Re-read the preferences from the server (a reminder period changed). */
-  reloadPreferences: () => Promise<void>
+  /**
+   * Re-read the anchor times from the server (a reminder period changed, an
+   * undo, another tab). Only those seven fields; true when the read succeeded.
+   */
+  reloadPreferences: () => Promise<boolean>
   defaultGrouping: GroupingMode
   setDefaultGrouping: (grouping: GroupingMode) => void
   /**
@@ -173,7 +168,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   sleepSlotId: null,
   padPresets: DEFAULT_PREFS.padPresets,
   setAnchorPrefs: () => {},
-  reloadPreferences: async () => {},
+  reloadPreferences: async () => false,
   defaultGrouping: 'project',
   setDefaultGrouping: () => {},
   preferencesLoaded: false,
@@ -393,9 +388,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return () => window.removeEventListener('pagehide', onPageHide)
   }, [saver])
 
-  // One GET, merged over what the user changed meanwhile (the dirty fields).
-  // The mount load and `reloadPreferences` both go through it.
-  const [loadPreferences] = useState(() => async (): Promise<boolean> => {
+  // The mount load: one GET, merged over what the user changed meanwhile
+  // (the dirty fields).
+  const [loadPreferences] = useState(() => async (): Promise<void> => {
     const res = await fetch('/api/user/preferences')
     const data = res.ok ? await res.json() : null
     const server = parseServerPrefs(data?.data)
@@ -403,7 +398,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     // is applied by its own state update, which React queues after this merge.
     const changed = dirty.take()
     setPrefs((local) => mergeLoadedPrefs(local, changed, server))
-    return data !== null
   })
 
   useEffect(() => {
@@ -428,17 +422,24 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // pad resolve against the reminder periods, so a period edit can move them
   // without the user touching them. They are therefore never marked dirty —
   // Settings writes them with the server's answer (or the same resolver,
-  // optimistically) — and a reload always takes the server's values. A period
-  // edit in Settings reloads (`TimeSlotSettings`); other tabs and devices pick
-  // it up on their next load, like every other preference.
+  // optimistically) — and a reload takes the server's values for those seven
+  // fields only, leaving every other field and the dirty set alone. Reloaded
+  // after a period edit or undo in Settings (`TimeSlotSettings`), when Settings
+  // opens, and on every sync event (`AnchorSync` below): a period moved, a
+  // delete undone or a setting changed in another tab or device moves them.
   const [anchorActions] = useState(() => ({
     setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) =>
       setPrefs((prev) => ({ ...prev, ...values })),
-    reloadPreferences: async () => {
+    reloadPreferences: async (): Promise<boolean> => {
       try {
-        await loadPreferences()
+        const res = await fetch('/api/user/preferences')
+        if (!res.ok) return false
+        const anchors = anchorPrefsOf(parseServerPrefs((await res.json())?.data))
+        setPrefs((prev) => ({ ...prev, ...anchors }))
+        return true
       } catch (err: unknown) {
         console.error('Failed to reload preferences:', err)
+        return false
       }
     },
   }))
@@ -491,9 +492,20 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         },
       }}
     >
+      {status === 'authenticated' && <AnchorSync reload={anchorActions.reloadPreferences} />}
       {children}
     </PreferencesContext.Provider>
   )
+}
+
+/**
+ * Keeps the anchor times current while the app stays open: every sync event
+ * (any change by this user, from any client) re-reads them. Rendered only
+ * once signed in, so the login page never opens the stream.
+ */
+function AnchorSync({ reload }: { reload: () => Promise<boolean> }) {
+  useSyncStream({ onSync: () => void reload() })
+  return null
 }
 
 export function useLabelConfig() {
@@ -572,8 +584,6 @@ export function useAnchorTimes() {
     pad: ctx.padPresets,
     setAnchorPrefs: ctx.setAnchorPrefs,
     reloadPreferences: ctx.reloadPreferences,
-    /** The preferences GET has settled; until then the values are the defaults. */
-    loaded: ctx.preferencesLoaded,
   }
 }
 

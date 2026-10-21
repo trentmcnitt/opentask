@@ -35,7 +35,12 @@ const noopSubscribe = () => () => {}
 export default function SettingsPage() {
   const { session, ready } = useRequireSession()
   const aiAvailable = useAiAvailable()
-  const { timeSlots, loading: slotsLoading, refresh: refreshSlots } = useTimeSlots()
+  const {
+    timeSlots,
+    loading: slotsLoading,
+    loaded: slotsLoaded,
+    refresh: refreshSlots,
+  } = useTimeSlots()
   // Running inside the native iOS app wrapper? (WKWebView injects
   // `__OPENTASK_IOS`.) It never changes, so there's nothing to subscribe to;
   // the server snapshot is false, as before hydration.
@@ -87,7 +92,7 @@ export default function SettingsPage() {
 
         <PriorityDisplaySection />
         <NotificationsSection />
-        <SnoozeSection timeSlots={timeSlots} slotsLoaded={!slotsLoading} />
+        <SnoozeSection timeSlots={timeSlots} slotsLoaded={slotsLoaded} />
         <ScheduleSection timeSlots={timeSlots} loading={slotsLoading} refresh={refreshSlots} />
         <LabelsSection />
         <ProjectsSection />

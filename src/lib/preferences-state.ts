@@ -117,6 +117,34 @@ export interface Prefs {
   rolloverTime: string | null
 }
 
+/**
+ * The Prefs fields a reminder period can move (anchor times, 2026-10-21):
+ * the server resolves them, so they are only ever written from its answer
+ * (`PreferencesProvider`'s `setAnchorPrefs` / `reloadPreferences`), never
+ * marked dirty.
+ */
+export const ANCHOR_PREF_KEYS = [
+  'morningTime',
+  'morningSlotId',
+  'wakeTime',
+  'wakeSlotId',
+  'sleepTime',
+  'sleepSlotId',
+  'padPresets',
+] as const satisfies readonly (keyof Prefs)[]
+
+export type AnchorPrefKey = (typeof ANCHOR_PREF_KEYS)[number]
+export type AnchorPrefs = Pick<Prefs, AnchorPrefKey>
+
+/** Only the anchor fields of a parsed server response. */
+export function anchorPrefsOf(server: Partial<Prefs>): Partial<AnchorPrefs> {
+  const out: Partial<AnchorPrefs> = {}
+  for (const key of ANCHOR_PREF_KEYS) {
+    if (server[key] !== undefined) (out as Record<string, unknown>)[key] = server[key]
+  }
+  return out
+}
+
 /** What the UI shows until the preferences fetch lands. */
 export const DEFAULT_PREFS: Prefs = {
   aiAvailable: false,

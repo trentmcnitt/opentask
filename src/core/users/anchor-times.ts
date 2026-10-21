@@ -5,10 +5,11 @@
  *
  * Every server reader of those times calls `getAnchorTimes` (or
  * `getTargetContext`, which calls it): never `SELECT morning_time` and use the
- * column, which would miss a link. The only readers that still touch the raw
- * `morning_time` column are the no-periods rollover fallbacks (`read.ts`,
- * `task-rollover.ts`, `rollover-now.ts`, `stampRolloverDates`): with no
- * periods there can be no link, so there the column IS the resolved time.
+ * column, which would miss a link. The readers that still touch the raw
+ * `morning_time` column: the no-periods rollover fallbacks (`read.ts`'s SQL,
+ * `stampRolloverDates`) — with no periods there can be no link, so there the
+ * column IS the resolved time — and `migrate-deadline-targets.ts`, a one-shot
+ * migration that ran before links existed.
  */
 
 import { getDb } from '@/core/db'

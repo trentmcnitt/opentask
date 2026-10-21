@@ -17,7 +17,7 @@
  */
 
 import { useAnchorTimes } from '@/components/PreferencesProvider'
-import { parseServerPrefs, type Prefs } from '@/lib/preferences-state'
+import { anchorPrefsOf, parseServerPrefs, type AnchorPrefs } from '@/lib/preferences-state'
 import { savePreference } from '@/lib/save-preference'
 import { anchorLabel, resolveTime, type AnchorKey, type TimeSetting } from '@/lib/anchor-times'
 import { sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
@@ -28,17 +28,6 @@ const SELECT_CLASS =
 
 /** Which setting a row edits: an anchor by key, a pad button by its 0-based index. */
 export type AnchorTarget = AnchorKey | number
-
-type AnchorPrefs = Pick<
-  Prefs,
-  | 'morningTime'
-  | 'morningSlotId'
-  | 'wakeTime'
-  | 'wakeSlotId'
-  | 'sleepTime'
-  | 'sleepSlotId'
-  | 'padPresets'
->
 
 /** The wire form of one setting: a link sends only its period, a custom time only its time. */
 function toWire(s: TimeSetting): { slot_id: number } | { time: string } {
@@ -58,20 +47,6 @@ function prefsFor(
   values[`${target}Time`] = value.time
   values[`${target}SlotId`] = value.slot_id
   return values
-}
-
-/** Only the anchor fields of a parsed server response. */
-function anchorPrefsOf(server: Partial<Prefs>): Partial<AnchorPrefs> {
-  const keys: (keyof AnchorPrefs)[] = [
-    'morningTime',
-    'morningSlotId',
-    'wakeTime',
-    'wakeSlotId',
-    'sleepTime',
-    'sleepSlotId',
-    'padPresets',
-  ]
-  return Object.fromEntries(keys.filter((k) => k in server).map((k) => [k, server[k]]))
 }
 
 export function AnchorTimeRow({
@@ -96,7 +71,9 @@ export function AnchorTimeRow({
   const save = (next: TimeSetting) => {
     const body =
       typeof target === 'number'
-        ? { pad_presets: anchors.pad.map((p, i) => toWire(i === target ? next : p)) }
+        ? // One button per PATCH: the other three are left as the SERVER has
+          // them, never echoed from this page's copy, which can be stale.
+          { pad_preset: { index: target, ...toWire(next) } }
         : next.slot_id !== null
           ? { [`${target}_slot_id`]: next.slot_id }
           : { [`${target}_time`]: next.time }

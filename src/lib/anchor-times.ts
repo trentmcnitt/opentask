@@ -180,9 +180,12 @@ export function resolveAnchorTimes(row: AnchorRow, slots: readonly TimeSlot[]): 
   }
 }
 
-/** What the user calls pad button `index` (0-based). */
+/**
+ * What the user calls pad button `index` (0-based) — one name everywhere:
+ * Settings' rows, the removal toast, the undo description.
+ */
 export function padButtonName(index: number): string {
-  return `Pad button ${index + 1}`
+  return `Number pad button ${index + 1}`
 }
 
 /**
@@ -196,7 +199,7 @@ export interface SettingChange {
   after: TimeSetting
 }
 
-/** What the user calls a setting ("Morning time", "Pad button 2"). */
+/** What the user calls a setting ("Morning time", "Number pad button 2"). */
 export function settingName(setting: AnchorKey | number): string {
   return typeof setting === 'number' ? padButtonName(setting) : ANCHOR_NAMES[setting]
 }

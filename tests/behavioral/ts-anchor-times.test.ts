@@ -325,7 +325,7 @@ describe('deleting a period something links to', () => {
       userTimezone: TEST_TIMEZONE,
       slotId: midday.id,
     })
-    expect(result.settings_converted).toEqual(['Morning time', 'Pad button 2'])
+    expect(result.settings_converted).toEqual(['Morning time', 'Number pad button 2'])
 
     const row = readAnchorRow(TEST_USER_ID)
     expect([row.morning_time, row.morning_slot_id]).toEqual(['12:00', null])
@@ -335,7 +335,9 @@ describe('deleting a period something links to', () => {
     const entry = getDb()
       .prepare('SELECT description FROM undo_log WHERE id = ?')
       .get(result.undo_id) as { description: string }
-    expect(entry.description).toBe('Removed "Midday"; kept Morning time, Pad button 2 at 12:00 PM')
+    expect(entry.description).toBe(
+      'Removed "Midday"; kept Morning time, Number pad button 2 at 12:00 PM',
+    )
   })
 
   test('TAT-031: undo restores the period under its id AND the links; redo converts again', () => {
@@ -380,6 +382,30 @@ describe('deleting a period something links to', () => {
       .prepare('SELECT slot_state FROM undo_log WHERE id = ?')
       .get(result.undo_id) as { slot_state: string }
     expect(JSON.parse(entry.slot_state).user_settings).toBeUndefined()
+  })
+
+  test('TAT-035: redo unlinks what links to the period NOW, and a later undo restores exactly that', () => {
+    const midday = slotByLabel('Midday')
+    linkMorningAndPad2(midday)
+    deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, slotId: midday.id })
+    executeUndo(TEST_USER_ID)
+
+    // Between the undo and the redo: Wake linked to the restored period, and
+    // Morning made custom.
+    setRow({ wake_slot_id: midday.id, wake_time: midday.start_time })
+    setRow({ morning_time: '06:45', morning_slot_id: null })
+
+    executeRedo(TEST_USER_ID)
+    let times = getAnchorTimes(TEST_USER_ID)
+    expect(times.wake).toEqual({ time: '12:00', slot_id: null, slot_label: null })
+    expect(times.pad[1]).toEqual({ time: '12:00', slot_id: null, slot_label: null })
+    expect(times.morning).toEqual({ time: '06:45', slot_id: null, slot_label: null })
+
+    executeUndo(TEST_USER_ID)
+    times = getAnchorTimes(TEST_USER_ID)
+    expect(times.wake.slot_id).toBe(midday.id)
+    expect(times.pad[1].slot_id).toBe(midday.id)
+    expect(times.morning).toEqual({ time: '06:45', slot_id: null, slot_label: null })
   })
 
   test('TAT-034: invariant — no link outlives its period, so with no periods none can exist', () => {

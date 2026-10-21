@@ -29,7 +29,7 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   if (entry.slotState) {
     applySlotRow(tx, entry.slotState.after, entry.slotState.before)
     applyPromptDefault(tx, entry.slotState, 'before')
-    applyUserSettings(tx, entry.slotState, 'before')
+    applyUserSettings(tx, entry.slotState, 'before', entry.id)
   }
 
   // Handle special case: undoing a 'create' means soft-deleting the task

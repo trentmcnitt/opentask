@@ -107,9 +107,13 @@ test.describe('Anchor times', () => {
     try {
       await page.goto('/settings')
       const button1 = anchorRow(page, '0')
-      await expect(button1.locator('[data-anchor-summary]')).toHaveText('Button 1 · 9:00 AM')
-      await button1.getByLabel('Button 1', { exact: true }).fill('07:15')
-      await expect(button1.locator('[data-anchor-summary]')).toHaveText('Button 1 · 7:15 AM')
+      await expect(button1.locator('[data-anchor-summary]')).toHaveText(
+        'Number pad button 1 · 9:00 AM',
+      )
+      await button1.getByLabel('Number pad button 1', { exact: true }).fill('07:15')
+      await expect(button1.locator('[data-anchor-summary]')).toHaveText(
+        'Number pad button 1 · 7:15 AM',
+      )
       await expect
         .poll(async () => {
           const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -140,7 +144,9 @@ test.describe('Anchor times', () => {
       await page.request.delete(`/api/tasks/${id}`)
     }
   })
+})
 
+test.describe('Anchor times: Settings loads the server’s values', () => {
   /**
    * The rows must show what the SERVER holds on first load, not the
    * provider's defaults: links saved through the API, then Settings opened
@@ -181,14 +187,14 @@ test.describe('Anchor times', () => {
       )
       await expect(morning.getByLabel('Morning time: follows')).toHaveValue(String(early.id))
       await expect(anchorRow(settings, '0').locator('[data-anchor-summary]')).toHaveText(
-        'Button 1 · 8:30 PM (Evening period)',
+        'Number pad button 1 · 8:30 PM (Evening period)',
       )
       await expect(anchorRow(settings, '3').locator('[data-anchor-summary]')).toHaveText(
-        'Button 4 · 7:15 AM',
+        'Number pad button 4 · 7:15 AM',
       )
-      await expect(anchorRow(settings, '3').getByLabel('Button 4', { exact: true })).toHaveValue(
-        '07:15',
-      )
+      await expect(
+        anchorRow(settings, '3').getByLabel('Number pad button 4', { exact: true }),
+      ).toHaveValue('07:15')
     }
     const fresh = await browser.newContext({ baseURL })
     try {

@@ -1,7 +1,7 @@
 'use client'
 
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,7 +20,7 @@ import { SettingsSection } from './SettingsSection'
 import { SettingRow } from './SettingRow'
 import { RolloverNowRow } from './RolloverNowRow'
 import { AnchorTimeRow } from './AnchorTimeRow'
-import { PAD_PRESET_COUNT, resolveTime } from '@/lib/anchor-times'
+import { PAD_PRESET_COUNT, padButtonName, resolveTime } from '@/lib/anchor-times'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
 const SELECT_CLASS =
@@ -33,11 +33,12 @@ const SELECT_CLASS =
  *
  * `timeSlots` is the page's one period list (src/app/settings/page.tsx),
  * shared with Reminder periods, so a period added, renamed or moved there
- * shows in these pickers at once. The anchor rows wait for it (`slotsLoaded`)
- * AND for the preferences load (`anchors.loaded`): before it, the provider
- * holds the defaults, and a row drawn then showed "Morning · 9:00 AM, Custom
- * time" for a linked Morning until the GET landed (seen on dev, 2026-10-21) —
- * and a pick made in that moment would have saved from the wrong value.
+ * shows in these pickers at once. The anchor rows wait for a SUCCESSFUL read
+ * of it (`slotsLoaded`) AND for their own fresh read of the anchor times on
+ * opening (`anchorsFresh`): before that the provider may hold its defaults or
+ * a value another tab has since changed, and a row drawn then showed
+ * "Morning · 9:00 AM, Custom time" for a linked Morning (seen on dev,
+ * 2026-10-21) — and a pick made in that moment would have saved from it.
  */
 export function SnoozeSection({
   timeSlots,
@@ -48,7 +49,18 @@ export function SnoozeSection({
 }) {
   const { bulkSnoozeDefault, setBulkSnoozeDefault } = useSnoozePreferences()
   const anchors = useAnchorTimes()
-  const rowsReady = slotsLoaded && anchors.loaded
+  const { reloadPreferences } = anchors
+  const [anchorsFresh, setAnchorsFresh] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void reloadPreferences().then((ok) => {
+      if (!cancelled && ok) setAnchorsFresh(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadPreferences])
+  const rowsReady = slotsLoaded && anchorsFresh
   // Wake = Sleep reads as awake all day (no quiet hours, nags all day) —
   // allowed, as it always was with custom times, but said.
   const sameWakeSleep =
@@ -194,8 +206,8 @@ function NumberPadRows({ timeSlots }: { timeSlots: TimeSlot[] }) {
       {Array.from({ length: PAD_PRESET_COUNT }, (_, i) => (
         <AnchorTimeRow
           key={i}
-          label={`Button ${i + 1}`}
-          name={`Button ${i + 1}`}
+          label={padButtonName(i)}
+          name={padButtonName(i)}
           target={i}
           timeSlots={timeSlots}
         />

@@ -5129,7 +5129,10 @@ components:
             resolved (a linked period's start). PATCH exactly four entries,
             each `{ time }` (custom) or `{ slot_id }` (one of the user's
             periods; with a `time` too it must be the period's start) — GET's
-            own array round-trips — or `null` to put back the defaults.
+            own array round-trips — or `null` to put back the defaults. To set
+            ONE button and keep the other three as stored, PATCH
+            `pad_preset: { index, time | slot_id }` instead (`index` 0–3;
+            write-only; not with `pad_presets`).
           items:
             type: object
             properties:
@@ -5903,7 +5906,7 @@ components:
           type: array
           items:
             type: string
-          example: ['Morning time', 'Pad button 2']
+          example: ['Morning time', 'Number pad button 2']
           description: >
             The user's settings that were linked to a deleted slot and now keep
             its start as a custom time (DELETE only; always empty for PATCH — a
