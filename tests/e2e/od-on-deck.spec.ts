@@ -310,6 +310,7 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
     await page.goto('/reminders')
     const r = segRow(segment(page, 'queue_today'), id)
     // A queue row reads like every segment row (2026-10-21).
+    await expect(r.locator('[data-on-deck]')).toBeVisible()
     expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
     await r.locator('[data-on-deck]').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'On deck options' })

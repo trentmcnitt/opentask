@@ -455,6 +455,40 @@ test.describe('touch', () => {
     }
   })
 
+  test('a finger hold on On deck tomorrow opens the day sheet, not the bubble; a day decks it', async ({
+    page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const title = uniqueTitle('RP touch tomorrow')
+      const id = await daysTask(page, title)
+      ids.push(id)
+      const considers = countConsiders(page)
+      await page.goto('/reminders')
+      const r = segRow(segment(page, 'days'), id)
+      const button = r.locator('[data-deck-tomorrow]')
+      await expect(button).toBeVisible()
+
+      const cdp = await page.context().newCDPSession(page)
+      const box = (await button.boundingBox())!
+      const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+      await touch(cdp, 'touchStart', [at])
+      // On a phone the hold menu is a sheet titled "On deck".
+      const sheet = page.getByRole('dialog', { name: 'On deck' })
+      await expect(sheet).toBeVisible()
+      await touch(cdp, 'touchEnd', [])
+      await expect(sheet).toBeVisible()
+      await expect(bubble(page, id)).toHaveCount(0)
+      expect(await deckOf(page, id)).toBeNull()
+      const name = DateTime.now().setZone(TZ).plus({ days: 2 }).toFormat('cccc')
+      await sheet.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+      await expect.poll(() => deckOf(page, id)).toBe(calendarDay(2))
+      expect(considers()).toBe(0)
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
   test('a drag that starts on a row (a scroll) opens nothing, even held still afterwards', async ({
     page,
   }) => {
