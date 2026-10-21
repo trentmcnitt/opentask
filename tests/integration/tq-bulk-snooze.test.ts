@@ -98,7 +98,7 @@ describe('Task queue: bulk snooze routes (switch on)', () => {
     const id = await make({ title: 'Water the plants', due_at: daysFromNow(-2) })
     const until = daysFromNow(3)
     const r = await post('/api/tasks/bulk/snooze', { ids: [id], until, include_task_ids: [id] })
-    expect(r.json.data).toMatchObject({ queued: 0, summary: 'Snoozed "Water the plants"' })
+    expect(r.json.data).toMatchObject({ queued: 0, summary: 'Deferred "Water the plants"' })
     expect((await getTask(id)).due_at).toBe(until)
   })
 
@@ -138,7 +138,7 @@ describe('Task queue: bulk snooze routes (switch on)', () => {
       snoozed_high: 1,
       skipped_high: 1,
       snoozed_high_name: 'Older High',
-      summary: 'Snoozed high-priority "Older High" (1 high skipped)',
+      summary: 'Deferred high-priority "Older High" (1 high skipped)',
     })
     const second = await post('/api/tasks/bulk/snooze-overdue', { until: daysFromNow(3) })
     expect(second.json.data).toMatchObject({ snoozed_high_name: 'Newer High', skipped_high: 0 })
@@ -163,8 +163,8 @@ describe('Task queue: bulk snooze routes (switch off)', () => {
       capped_occurrence: 0,
       snoozed_high_name: null,
       queued_until: null,
-      summary: 'Snoozed 1 task',
-      message: 'Snoozed 1 task',
+      summary: 'Deferred 1 task',
+      message: 'Deferred 1 task',
     })
     expect(await getTask(a)).toMatchObject({ due_at: until, queue_mark: false })
   })
@@ -173,7 +173,7 @@ describe('Task queue: bulk snooze routes (switch off)', () => {
     const a = await make({ title: 'A', due_at: daysFromNow(-2) })
     const until = daysFromNow(3)
     const r = await post('/api/tasks/bulk/snooze', { ids: [a], until, source: 'sweep' })
-    expect(r.json.data).toMatchObject({ tasks_affected: 1, queued: 0, summary: 'Snoozed 1 task' })
+    expect(r.json.data).toMatchObject({ tasks_affected: 1, queued: 0, summary: 'Deferred 1 task' })
     expect(await getTask(a)).toMatchObject({ due_at: until, queue_mark: false })
   })
 })

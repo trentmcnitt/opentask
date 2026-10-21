@@ -43,13 +43,13 @@ Task becomes overdue
 
 ### Notification dismissal
 
-When a task is snoozed, completed, skipped, deleted or has its date moved, from any device, the web UI or the API, `dismissNotificationsForTasks()` sends dismiss signals to both Web Push and APNs. The core mutation makes the call (`markDone`, `updateTask`, `bulkSnooze`, …), not the route, so every caller gets it; the header of `src/core/notifications/dismiss.ts` lists them. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
+When a task is deferred, completed, skipped, deleted or has its date moved, from any device, the web UI or the API, `dismissNotificationsForTasks()` sends dismiss signals to both Web Push and APNs. The core mutation makes the call (`markDone`, `updateTask`, `bulkSnooze`, …), not the route, so every caller gets it; the header of `src/core/notifications/dismiss.ts` lists them. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
 
 ### Notification coalescing
 
 APNs notifications include `collapseId: "task-{id}"`. iOS replaces (not stacks) notifications for the same task across cooldown cycles.
 
-### Repeat intervals (auto-snooze)
+### Repeat intervals (nag)
 
 | Priority    | Default interval | User-configurable            |
 | ----------- | ---------------- | ---------------------------- |
@@ -80,8 +80,8 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 | `src/core/notifications/slot-nags.ts`                | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                                               |
 | `src/core/notifications/enrichment-notify.ts`        | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                                      |
 | `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)                       |
-| `src/core/notifications/sweep-feedback.ts`           | Quiet bulk snooze feedback push (`planSweepFeedback`, `sendSweepFeedback`)                                       |
-| `src/core/notifications/deadline-cap-feedback.ts`    | Quiet "Snoozed to deadline 6:00 PM" push when a notification button's snooze stopped at the deadline (ruling A3) |
+| `src/core/notifications/sweep-feedback.ts`           | Quiet bulk defer feedback push (`planSweepFeedback`, `sendSweepFeedback`)                                        |
+| `src/core/notifications/deadline-cap-feedback.ts`    | Quiet "Deferred to deadline 6:00 PM" push when a notification button's defer stopped at the deadline (ruling A3) |
 | `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                                    |
 | `src/app/api/push/subscribe/route.ts`                | Push subscription storage endpoint                                                                               |
 | `src/app/api/push/test/route.ts`                     | Quick push test (sends to current user)                                                                          |
@@ -289,9 +289,9 @@ Added 2026-10-05. Until then a failed enrichment was silent: the task kept the r
 
 **Outages.** When the model is unreachable (the warm slot `dead` and in its re-init backoff, or the API failing), every pending task reaches `ai-failed` within two attempts, so each one gets its own alert — one per task, never more. The enrichment circuit breaker (5 failures in a minute pauses the queue 5 minutes) spaces them out.
 
-## Bulk snooze feedback ("what was left overdue")
+## Bulk defer feedback ("what was left overdue")
 
-`src/core/notifications/sweep-feedback.ts`, added 2026-10-04. "Snooze all overdue" (`POST /api/tasks/bulk/snooze-overdue`) leaves tasks behind on purpose: P0–P2 always move, P3 (High) only once nothing lower is left in the batch (so a second press takes them), P4 (Urgent) never. The web app's toast says what stayed. Sweeps run from outside the app (the "All +1hr" / "All → <period>" notification buttons on the phone, watch and Mac, the widgets, the watch, the Mac menus, Apple Shortcuts) gave no word about it. This push is that word.
+`src/core/notifications/sweep-feedback.ts`, added 2026-10-04. "Defer all overdue" (`POST /api/tasks/bulk/snooze-overdue`) leaves tasks behind on purpose: P0–P2 always move, P3 (High) only once nothing lower is left in the batch (so a second press takes them), P4 (Urgent) never. The web app's toast says what stayed. Sweeps run from outside the app (the "All +1hr" / "All → <period>" notification buttons on the phone, watch and Mac, the widgets, the watch, the Mac menus, Apple Shortcuts) gave no word about it. This push is that word.
 
 **When.** All of these must hold:
 
@@ -304,17 +304,17 @@ The route decides after the sweep commits (`planSweepFeedback`) and sends withou
 
 **What it says.** Counts only, never titles (Trent asked for no Urgent titles on the lock screen). The title follows `bulkSnoozeMessage`, the web toast's wording; the body uses the watch and Mac wording for what stayed (`SweepLine`, `ios/Shared/SweepSummary.swift`); `until` is in the user's timezone (`formatSnoozeTarget`). Tasks held back because their deadline has passed (the High tier, 2026-10-12) are named like High — "1 past deadline still over target. Snooze again to move it" — and counted in the response's `skipped_deadline`:
 
-| Left behind                      | Title                                                | Body                                                                      |
-| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
-| High (first press)               | Snoozed 8 tasks until 3:00 PM                        | 2 High still over target. Snooze again to move the High ones              |
-| High and Urgent                  | Snoozed 8 tasks until 3:00 PM                        | 2 High and 1 Urgent still over target. Snooze again to move the High ones |
-| Urgent (something moved)         | Snoozed 4 tasks until 3:00 PM                        | 1 Urgent still over target. Urgent can't be bulk snoozed                  |
-| Urgent (second press moved High) | Snoozed 2 high-priority tasks until tomorrow 9:00 AM | 1 Urgent still over target. Urgent can't be bulk snoozed                  |
-| Urgent only, nothing snoozable   | Nothing snoozed                                      | 3 Urgent can't be bulk snoozed                                            |
-| High and Urgent, nothing moved   | Nothing snoozed                                      | 2 High and 1 Urgent still over target                                     |
-| Nothing High or Urgent           | (not sent)                                           |                                                                           |
+| Left behind                      | Title                                                 | Body                                                                     |
+| -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| High (first press)               | Deferred 8 tasks until 3:00 PM                        | 2 High still over target. Defer again to move the High ones              |
+| High and Urgent                  | Deferred 8 tasks until 3:00 PM                        | 2 High and 1 Urgent still over target. Defer again to move the High ones |
+| Urgent (something moved)         | Deferred 4 tasks until 3:00 PM                        | 1 Urgent still over target. Urgent can't be bulk deferred                |
+| Urgent (second press moved High) | Deferred 2 high-priority tasks until tomorrow 9:00 AM | 1 Urgent still over target. Urgent can't be bulk deferred                |
+| Urgent only, nothing deferrable  | Nothing deferred                                      | 3 Urgent can't be bulk deferred                                          |
+| High and Urgent, nothing moved   | Nothing deferred                                      | 2 High and 1 Urgent still over target                                    |
+| Nothing High or Urgent           | (not sent)                                            |                                                                          |
 
-The last "Nothing snoozed" row has no "snooze again" hint because another press would do the same (it happens only in relative mode, when the lower tasks left have no due date).
+The last "Nothing deferred" row has no "defer again" hint because another press would do the same (it happens only in relative mode, when the lower tasks left have no due date).
 
 **How it is delivered.** A banner without sound, like the "AI finished" push: APNs `interruption-level: active`, no `sound`, priority 10, no `badge` (the sweep already re-synced the badge); Web Push `urgency: normal`, `silent: true`, tag `sweep-result`, tap opens the dashboard. APNs category `TASK_SUMMARY` on thread `ot-tasks`, so it carries the "All +1hr" and period buttons, and long-press opens the content extension's bulk snooze grid (header "N overdue tasks" from `totalOverdueCount`; `overflowCount` carries the same number). Collapse id `sweep-result`: a newer result **replaces** the older one instead of stacking. APNs payload:
 
@@ -322,8 +322,8 @@ The last "Nothing snoozed" row has no "snooze again" hint because another press 
 {
   "aps": {
     "alert": {
-      "title": "Snoozed 8 tasks until 3:00 PM",
-      "body": "2 High still over target. Snooze again to move the High ones"
+      "title": "Deferred 8 tasks until 3:00 PM",
+      "body": "2 High still over target. Defer again to move the High ones"
     },
     "category": "TASK_SUMMARY",
     "thread-id": "ot-tasks",
@@ -344,9 +344,9 @@ The last "Nothing snoozed" row has no "snooze again" hint because another press 
 
 When the user later clears every overdue task some other way (one at a time, in the app), a lingering result banner is not dismissed by the server. That is deliberate and consistent with the overdue summary push: opening the app sends `dismiss-all`, which clears it on every device.
 
-**Setting.** Settings → Notifications → "Bulk snooze results" (`users.sweep_feedback_notifications_enabled`, default on; `sweep_feedback_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Always shown (it doesn't depend on AI), greyed out while notifications are off. One call can opt out with `notify: false` (documented in `docs/openapi.yaml`).
+**Setting.** Settings → Notifications → "Bulk defer results" (`users.sweep_feedback_notifications_enabled`, default on; `sweep_feedback_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Always shown (it doesn't depend on AI), greyed out while notifications are off. One call can opt out with `notify: false` (documented in `docs/openapi.yaml`).
 
-**Deadline cap (2026-10-11, `deadline-cap-feedback.ts`).** A quick snooze from a notification button (or the content extension's custom time) never carries a task past a deadline still ahead: it stops AT the deadline (ruling A3, docs/TASK-MODEL.md § Deadline). The button runs in the background, so a capped one sends a quiet banner, "Snoozed to deadline 6:00 PM" / "A quick snooze stops at the deadline", under the same "Bulk snooze results" switch and demo/notifications gates. Collapse id `deadline-cap` (a newer one replaces the older), no category, and deliberately no `taskId`: the capped snooze sends that task's `dismiss` push itself, which would clear a banner carrying its id.
+**Deadline cap (2026-10-11, `deadline-cap-feedback.ts`).** A quick defer from a notification button (or the content extension's custom time) never carries a task past a deadline still ahead: it stops AT the deadline (ruling A3, docs/TASK-MODEL.md § Deadline). The button runs in the background, so a capped one sends a quiet banner, "Snoozed to deadline 6:00 PM" / "A quick snooze stops at the deadline", under the same "Bulk snooze results" switch and demo/notifications gates. Collapse id `deadline-cap` (a newer one replaces the older), no category, and deliberately no `taskId`: the capped snooze sends that task's `dismiss` push itself, which would clear a banner carrying its id.
 
 ## iOS platform constraints
 
@@ -373,7 +373,7 @@ Users can configure per-app in Settings > Notifications > [App] > Notification G
 
 ### Cross-device notification dismissal
 
-Native apps remove delivered notifications via `removeDeliveredNotifications(withIdentifiers:)`, triggered by a silent push. This is how OpenTask clears notifications when a task is snoozed/completed from the web UI.
+Native apps remove delivered notifications via `removeDeliveredNotifications(withIdentifiers:)`, triggered by a silent push. This is how OpenTask clears notifications when a task is deferred/completed from the web UI.
 
 Requires the `remote-notification` background mode in the app's entitlements.
 
@@ -446,6 +446,6 @@ Configured in Settings > Notifications:
 
 - Browser Push toggle (subscribe/unsubscribe per device)
 - Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available). The "AI couldn't process" push for a failed enrichment has no switch of its own: it follows only the master switch
-- Bulk snooze results (the quiet push after a sweep from outside the app left High or Urgent overdue)
-- Auto-snooze intervals (tiered by priority)
+- Bulk defer results (the quiet push after a sweep from outside the app left High or Urgent overdue)
+- Nag intervals (tiered by priority)
 - Test notification buttons (individual, high, bulk, critical)

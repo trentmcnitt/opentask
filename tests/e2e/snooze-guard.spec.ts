@@ -100,7 +100,7 @@ async function inOwnProject(
  * so its item showing means the list has reached its final shape.
  */
 async function openedMenu(page: Page) {
-  const menu = page.getByRole('menu', { name: 'Snooze options' })
+  const menu = page.getByRole('menu', { name: 'Defer options' })
   await expect(menu).toBeVisible()
   await expect(menu.getByRole('menuitem', { name: /Early morning/ })).toBeVisible()
   return menu
@@ -122,7 +122,7 @@ test.describe('Snooze guards', () => {
       // Not overdue (no due date at all), so the snooze button opens the menu
       // rather than instant-snoozing.
       await row
-        .getByRole('button', { name: new RegExp(`snooze "${title}"`, 'i') })
+        .getByRole('button', { name: new RegExp(`defer "${title}"`, 'i') })
         .click({ force: true })
 
       const menu = await openedMenu(page)
@@ -198,10 +198,10 @@ test.describe('Snooze guards', () => {
       // Long-press to reach the menu: a quick tap on an overdue row would
       // instant-snooze by the default option instead. The button only shows
       // while its row is hovered.
-      const snoozeBtn = row.getByRole('button', { name: new RegExp(`snooze "${title}"`, 'i') })
+      const snoozeBtn = row.getByRole('button', { name: new RegExp(`defer "${title}"`, 'i') })
       await row.hover()
       await expect(snoozeBtn).toBeVisible()
-      const menuShown = page.getByRole('menu', { name: 'Snooze options' })
+      const menuShown = page.getByRole('menu', { name: 'Defer options' })
       await holdUntil(snoozeBtn, () => expect(menuShown).toBeVisible())
 
       const menu = await openedMenu(page)
@@ -211,17 +211,17 @@ test.describe('Snooze guards', () => {
 
       const dialog = page.getByRole('alertdialog')
       await expect(dialog).toBeVisible()
-      await expect(dialog.getByText('Snooze past the next occurrence?')).toBeVisible()
+      await expect(dialog.getByText('Defer past the next occurrence?')).toBeVisible()
 
       // All three choices present — the app warns, it does not overrule.
-      await expect(dialog.getByRole('button', { name: 'Snooze anyway' })).toBeVisible()
-      await expect(dialog.getByRole('button', { name: 'Snooze to next occurrence' })).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Defer anyway' })).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Defer to next occurrence' })).toBeVisible()
       await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeVisible()
 
       // Proceeding as asked works: the toast (not the top bar) offers its Undo,
       // and the server holds 9:00 in the user's own zone, past the next
       // occurrence (dueAt + 1 day) — which is what "anyway" agreed to.
-      await dialog.getByRole('button', { name: 'Snooze anyway' }).click()
+      await dialog.getByRole('button', { name: 'Defer anyway' }).click()
       await expect(dialog).toBeHidden()
       await expect(
         page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }),
@@ -262,13 +262,13 @@ test.describe('Snooze guards', () => {
       await expect(row).toBeVisible({ timeout: 10_000 })
 
       await row
-        .getByRole('button', { name: new RegExp(`snooze "${title}"`, 'i') })
+        .getByRole('button', { name: new RegExp(`defer "${title}"`, 'i') })
         .click({ force: true })
 
       // The toast truncates titles to 20 characters, so match the base only;
       // the server check below is what ties the snooze to this task.
       await expect(
-        page.locator('[data-sonner-toast]', { hasText: /Snoozed to .+ — "Plain snooze/ }),
+        page.locator('[data-sonner-toast]', { hasText: /Deferred to .+ — "Plain snooze/ }),
       ).toBeVisible()
       await expect(page.getByRole('alertdialog')).toBeHidden()
       // It really moved: no longer overdue on the server.

@@ -76,8 +76,8 @@ export function SnoozeOverdueTrigger({
   }
   const ariaLabel =
     overdueCount > 0
-      ? `Snooze ${overdueCount} ${OVER_TARGET_LOWER} tasks (hold for options)`
-      : `Snooze ${OVER_TARGET_LOWER} tasks (hold for options)`
+      ? `Defer ${overdueCount} ${OVER_TARGET_LOWER} tasks (hold for options)`
+      : `Defer ${OVER_TARGET_LOWER} tasks (hold for options)`
   const countText = overdueCount > 999 ? '999+' : overdueCount
 
   return (

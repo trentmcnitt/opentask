@@ -534,7 +534,7 @@ export function SelectionActionSheet({
                   const autoCount = isAbsoluteSnooze
                     ? snoozeCategories.overdue.length + snoozeCategories.dueBeforeTarget.length
                     : snoozeCategories.overdue.length
-                  return `${autoCount} ${taskWord(autoCount)} will be snoozed.`
+                  return `${autoCount} ${taskWord(autoCount)} will be deferred.`
                 })()}
             </AlertDialogDescription>
           </AlertDialogHeader>

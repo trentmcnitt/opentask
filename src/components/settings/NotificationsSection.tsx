@@ -119,16 +119,16 @@ export function NotificationsSection() {
           always shown; greyed out while notifications as a whole are off. */}
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <div className="text-sm">Bulk snooze results</div>
+          <div className="text-sm">Bulk defer results</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            {`When a snooze from a notification, the iPhone widget, the Mac menu or a Shortcut leaves High or Urgent tasks ${OVER_TARGET_LOWER}`}
+            {`When a defer from a notification, the iPhone widget, the Mac menu or a Shortcut leaves High or Urgent tasks ${OVER_TARGET_LOWER}`}
           </div>
         </div>
         <Switch
           checked={sweepFeedbackNotificationsEnabled}
           disabled={!notificationsEnabled}
           onCheckedChange={(checked) => void handleSweepFeedbackChange(checked)}
-          aria-label="Bulk snooze results"
+          aria-label="Bulk defer results"
         />
       </div>
       <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
@@ -188,7 +188,7 @@ function AutoSnoozeRows() {
     <div className="space-y-3">
       {/* Default auto-snooze */}
       <AutoSnoozeRow
-        label="Default auto-snooze"
+        label="Default nag"
         description={`Repeat interval for unset-priority (P0) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeDefault}
         onChange={(v) =>
@@ -197,7 +197,7 @@ function AutoSnoozeRows() {
       />
       {/* §4.1: Low is rare but never silent */}
       <AutoSnoozeRow
-        label="Low auto-snooze"
+        label="Low nag"
         description={`Repeat interval for low (P1) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeLow}
         onChange={(v) =>
@@ -206,7 +206,7 @@ function AutoSnoozeRows() {
       />
       {/* §4.1: Medium is NOT notify-once — one missed glance would lose it */}
       <AutoSnoozeRow
-        label="Medium auto-snooze"
+        label="Medium nag"
         description={`Repeat interval for medium (P2) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeMedium}
         onChange={(v) =>
@@ -222,7 +222,7 @@ function AutoSnoozeRows() {
       />
       {/* High auto-snooze */}
       <AutoSnoozeRow
-        label="High auto-snooze"
+        label="High nag"
         description={`Repeat interval for high (P3) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeHigh}
         onChange={(v) =>
@@ -232,7 +232,7 @@ function AutoSnoozeRows() {
       />
       {/* Urgent auto-snooze */}
       <AutoSnoozeRow
-        label="Urgent auto-snooze"
+        label="Urgent nag"
         description={`Repeat interval for urgent (P4) ${OVER_TARGET_LOWER} tasks`}
         value={autoSnoozeUrgent}
         onChange={(v) =>

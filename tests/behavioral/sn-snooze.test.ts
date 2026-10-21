@@ -256,7 +256,7 @@ describe('Snooze Validation Tests', () => {
    * Cannot snooze done or trashed tasks. Returns 400 error.
    */
   describe('SN-005: Only active tasks can be snoozed', () => {
-    test('Cannot snooze done task', () => {
+    test('Cannot defer done task', () => {
       // Create and complete a one-off task
       const task = createTask({
         userId: TEST_USER_ID,
@@ -286,10 +286,10 @@ describe('Snooze Validation Tests', () => {
           taskId: task.id,
           until: futureTime(3),
         }),
-      ).toThrow('Cannot snooze done task')
+      ).toThrow('Cannot defer done task')
     })
 
-    test('Cannot snooze trashed task', () => {
+    test('Cannot defer trashed task', () => {
       // Create task
       const task = createTask({
         userId: TEST_USER_ID,
@@ -317,7 +317,7 @@ describe('Snooze Validation Tests', () => {
           taskId: task.id,
           until: futureTime(3),
         }),
-      ).toThrow('Cannot snooze trashed task')
+      ).toThrow('Cannot defer trashed task')
     })
   })
 
@@ -386,7 +386,7 @@ describe('Snooze Validation Tests', () => {
 
     // A move: original_due_at preserved from creation, worded as a snooze
     expect(updatedTask.original_due_at).toBe(originalDueAt)
-    expect(description).toMatch(/^Snoozed to/)
+    expect(description).toMatch(/^Deferred to/)
   })
 
   /**
@@ -487,7 +487,7 @@ describe('Snooze Validation Tests', () => {
     // and the description does not call it a snooze.
     expect(updatedTask.due_at).toBe(when)
     expect(updatedTask.original_due_at).toBeNull()
-    expect(description).not.toMatch(/snooz/i)
+    expect(description).not.toMatch(/defer/i)
   })
 
   /**
@@ -635,7 +635,7 @@ describe('Snooze Validation Tests', () => {
     })
 
     expect(updated.due_at).toBeNull()
-    expect(description).not.toMatch(/snooz/i)
+    expect(description).not.toMatch(/defer/i)
     expect(updated.original_due_at).toBeNull()
   })
 

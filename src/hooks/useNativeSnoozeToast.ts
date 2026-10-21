@@ -56,7 +56,7 @@ export function useNativeSnoozeToast() {
       if (!result) return
       delete window.__opentaskNativeSnooze
       if (result.error) {
-        showToast({ message: 'Snooze failed', type: 'error' })
+        showToast({ message: 'Defer failed', type: 'error' })
         return
       }
       // Pages refresh on the sync stream anyway; this makes it immediate.

@@ -31,7 +31,7 @@ export const FIELD_LABELS: Record<string, string> = {
   due_at: 'due date',
   notes: 'notes',
   recurrence_mode: 'recurrence mode',
-  auto_snooze_minutes: 'auto-snooze',
+  auto_snooze_minutes: 'nag',
   // §6: moving an item on/off the Reminders surface changes what KIND of thing
   // it is, so it belongs in the user-facing summary rather than being filtered
   // out as internal bookkeeping.
@@ -306,10 +306,10 @@ function buildSnoozeFragment(
 
   if (typeof oldDueAt === 'string') {
     const delta = formatDurationDelta(new Date(oldDueAt).getTime(), new Date(newDueAt).getTime())
-    return `Snoozed to ${target} (${delta})`
+    return `Deferred to ${target} (${delta})`
   }
 
-  return `Snoozed to ${target}`
+  return `Deferred to ${target}`
 }
 
 /**
@@ -372,11 +372,11 @@ function buildAutoSnoozeFragment(
   afterState: Partial<Record<string, unknown>>,
 ): string {
   const after = afterState.auto_snooze_minutes
-  if (after === null || after === undefined) return 'Auto-snooze set to default'
-  if (after === 0) return 'Auto-snooze turned off'
+  if (after === null || after === undefined) return 'Nag set to default'
+  if (after === 0) return 'Nag turned off'
   if (typeof after === 'number') {
     const label = after >= 60 ? `${after / 60}h` : `${after}m`
-    return `Auto-snooze set to ${label}`
+    return `Nag set to every ${label}`
   }
-  return 'Auto-snooze updated'
+  return 'Nag updated'
 }

@@ -53,7 +53,7 @@ async function tapClock(page: Page) {
     .getByRole('button', { name: /hold for options/ })
     .click()
   expect((await done).ok()).toBeTruthy()
-  return page.locator('[data-sonner-toast]').filter({ hasText: /^Snoozed \d+ / })
+  return page.locator('[data-sonner-toast]').filter({ hasText: /^Deferred \d+ / })
 }
 
 test.describe('Snooze-all clock', () => {
@@ -106,7 +106,7 @@ test.describe('Snooze-all clock', () => {
     authenticatedPage: page,
   }) => {
     const fab = page.locator('[data-snooze-all-fab]')
-    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    const menu = page.getByRole('menu', { name: 'Defer options' })
     // Opening the menu must never snooze anything, release included.
     const snoozes: string[] = []
     page.on('request', (r) => {
@@ -146,7 +146,7 @@ test.describe('Snooze-all clock', () => {
   }) => {
     const clock = page.locator('header').getByRole('button', { name: /hold for options/ })
     const badge = clock.locator('[data-snooze-default-label]')
-    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    const menu = page.getByRole('menu', { name: 'Defer options' })
     const snoozes: string[] = []
     page.on('request', (r) => {
       if (r.method() === 'POST' && r.url().includes('/api/tasks/bulk/')) snoozes.push(r.url())

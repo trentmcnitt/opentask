@@ -647,16 +647,13 @@ export function TaskRow({
             )}
 
             {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
-              <span
-                className="text-muted-foreground inline-flex items-center"
-                title="Auto-snooze off"
-              >
+              <span className="text-muted-foreground inline-flex items-center" title="Nag off">
                 <TimerOff className="size-3" />
               </span>
             ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
               <span
                 className="text-muted-foreground inline-flex items-center gap-0.5"
-                title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
+                title={`Nag every ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
               >
                 <Timer className="size-3" />
                 <span className="text-[11px]">
@@ -823,9 +820,9 @@ export function TaskRow({
                 snoozePress.onPointerUp(e)
               }}
               onPointerLeave={snoozePress.onPointerLeave}
-              aria-label={`Snooze "${task.title}"`}
+              aria-label={`Defer "${task.title}"`}
               className="hidden flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 md:flex"
-              title="Snooze (hold for options)"
+              title="Defer (hold for options)"
             >
               <Clock className="size-4" />
             </Button>

@@ -10,7 +10,7 @@
 import { test, expect, waitForPreferenceSave } from './fixtures'
 import type { Page } from '@playwright/test'
 
-const SWITCH = 'Bulk snooze results'
+const SWITCH = 'Bulk defer results'
 
 async function pref(page: Page, field: string): Promise<unknown> {
   return (await (await page.request.get('/api/user/preferences')).json()).data[field]

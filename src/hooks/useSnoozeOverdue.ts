@@ -94,7 +94,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
             source: 'sweep',
           }),
         })
-        if (!res.ok) throw new Error('Snooze failed')
+        if (!res.ok) throw new Error('Defer failed')
         const responseData = await res.json()
         const tasksAffected = responseData.data?.tasks_affected ?? 0
         if (tasksAffected > 0) onUndoCountBump?.()
@@ -108,7 +108,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
           action: tasksAffected > 0 ? { label: 'Undo', onClick: handleUndo } : undefined,
         })
       } catch {
-        showToast({ message: 'Snooze failed', type: 'error' })
+        showToast({ message: 'Defer failed', type: 'error' })
       }
     },
     [

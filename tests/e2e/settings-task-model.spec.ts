@@ -56,7 +56,7 @@ test('Default snooze "Next period": saved, read back, and used by a row tap', as
 
   try {
     await page.goto('/settings')
-    const select = page.getByRole('combobox', { name: 'Default snooze' })
+    const select = page.getByRole('combobox', { name: 'Default defer' })
     await expect(select).toHaveValue(prefs.default_snooze_option)
     await expect(select.locator('option', { hasText: 'Next period' })).toHaveCount(1)
 
@@ -77,7 +77,7 @@ test('Default snooze "Next period": saved, read back, and used by a row tap', as
     const sent = page.waitForRequest(
       (r) => r.method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/snooze`),
     )
-    await row.getByRole('button', { name: `Snooze "${title}"` }).click()
+    await row.getByRole('button', { name: `Defer "${title}"` }).click()
     const until = (JSON.parse((await sent).postData() ?? '{}') as { until: string }).until
     const after = nextPeriodStart(
       slots.map((s) => s.start_time),

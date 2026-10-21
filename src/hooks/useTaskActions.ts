@@ -263,12 +263,12 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         // A snooze past the deadline stops AT it (§8.2, 2026-10-12): the
         // server's description says so ("Snoozed to deadline …"), and the
         // toast below shows it. There is no "Snooze anyway".
-        if (!res.ok) throw new Error('Failed to snooze')
+        if (!res.ok) throw new Error('Failed to defer')
         const data = await res.json()
         cfg.onRefresh()
         bumpUndoCount()
         showToast({
-          message: data.data?.description || 'Task snoozed',
+          message: data.data?.description || 'Task deferred',
           type: 'success',
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })

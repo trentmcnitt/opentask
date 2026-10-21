@@ -552,7 +552,7 @@ function validateSnoozeMode(
   }
   // A past `until` is allowed: the tasks just show as over target at once.
   if (until !== undefined && isNaN(new Date(until).getTime())) {
-    throw new ValidationError('Invalid snooze target datetime')
+    throw new ValidationError('Invalid defer target datetime')
   }
 }
 
@@ -998,15 +998,15 @@ function bulkSnoozeDescription(
     const at = formatTimeInTimezone(ctx.rollover.toISOString(), userTimezone)
     return queued === count
       ? `Sent ${count} ${taskWord(count)} to the queue at ${at}`
-      : `Snoozed ${count} tasks (${queued} to the queue at ${at})`
+      : `Deferred ${count} tasks (${queued} to the queue at ${at})`
   }
   if (ctx.source === 'try_tomorrow' && ctx.rollover) {
-    return `Snoozed ${count} tasks to ${formatSnoozeTarget(ctx.rollover.toISOString(), userTimezone)}`
+    return `Deferred ${count} tasks to ${formatSnoozeTarget(ctx.rollover.toISOString(), userTimezone)}`
   }
   if (until !== undefined) {
-    return `Snoozed ${count} tasks to ${formatSnoozeTarget(until, userTimezone)}`
+    return `Deferred ${count} tasks to ${formatSnoozeTarget(until, userTimezone)}`
   }
-  return `Snoozed ${count} tasks (${formatDurationDelta(0, deltaMinutes! * 60 * 1000)})`
+  return `Deferred ${count} tasks (${formatDurationDelta(0, deltaMinutes! * 60 * 1000)})`
 }
 
 /**

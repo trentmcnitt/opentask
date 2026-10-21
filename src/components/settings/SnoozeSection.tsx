@@ -77,8 +77,8 @@ export function SnoozeSection({
 
   return (
     <SettingsSection
-      title="Snooze"
-      description="Configure the default snooze duration and morning start time."
+      title="Defer"
+      description="Configure the default defer duration and morning start time."
     >
       <div className="space-y-4">
         <DefaultSnoozeRow />
@@ -86,11 +86,11 @@ export function SnoozeSection({
         {/* Trent, 2026-09-22: the clock press defaults to the next
             period, with this to flip back while he decides. */}
         <SettingRow
-          label="Snooze-all button"
+          label="Defer all button"
           description={`Where a tap of the clock sends every ${OVER_TARGET_LOWER} task`}
         >
           <select
-            aria-label="Snooze-all button"
+            aria-label="Defer all button"
             value={bulkSnoozeDefault}
             onChange={(e) =>
               void savePreferenceField(
@@ -103,14 +103,14 @@ export function SnoozeSection({
             className={SELECT_CLASS}
           >
             <option value="next_period">Next period</option>
-            <option value="default_option">Default snooze</option>
+            <option value="default_option">Default defer</option>
           </select>
         </SettingRow>
         {rowsReady && (
           <>
             <AnchorTimeRow
               label="Morning time"
-              description="Default task time for snooze and AI enrichment, and a deadline's automatic target. Targets already set keep their time."
+              description="Default task time for defer and AI enrichment, and a deadline's automatic target. Targets already set keep their time."
               target="morning"
               timeSlots={timeSlots}
             />
@@ -244,8 +244,8 @@ function DefaultSnoozeRow() {
 
   return (
     <SettingRow
-      label="Default snooze"
-      description={`Where a single tap or swipe snoozes an ${OVER_TARGET_LOWER} task`}
+      label="Default defer"
+      description={`Where a single tap or swipe defers an ${OVER_TARGET_LOWER} task`}
     >
       {showCustom ? (
         <div className="flex items-center gap-2">
@@ -272,7 +272,7 @@ function DefaultSnoozeRow() {
         </div>
       ) : (
         <select
-          aria-label="Default snooze"
+          aria-label="Default defer"
           value={isPreset ? defaultSnoozeOption : 'custom'}
           onChange={(e) => {
             const val = e.target.value

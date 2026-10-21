@@ -48,7 +48,7 @@ test.describe('Settings sections', () => {
       'Help',
       'Priority Display',
       'Notifications',
-      'Snooze',
+      'Defer',
       'Reminder periods',
       'Labels',
       'Projects',
@@ -63,7 +63,7 @@ test.describe('Settings sections', () => {
   }) => {
     // Read from the page: the preferences GET doesn't return this field.
     await page.goto('/settings')
-    const low = autoSnoozeRow(page, 'Low auto-snooze')
+    const low = autoSnoozeRow(page, 'Low nag')
     const before = Number(await low.locator('select').inputValue())
     try {
       await low.locator('select').selectOption('custom')
@@ -72,7 +72,7 @@ test.describe('Settings sections', () => {
       await expect(page.getByPlaceholder('min')).toHaveCount(1)
       await expect(low.getByPlaceholder('min')).toBeVisible()
       for (const other of ['Default', 'Medium', 'High', 'Urgent']) {
-        await expect(autoSnoozeRow(page, `${other} auto-snooze`).locator('select')).toBeVisible()
+        await expect(autoSnoozeRow(page, `${other} nag`).locator('select')).toBeVisible()
       }
 
       await low.getByPlaceholder('min').fill('7')

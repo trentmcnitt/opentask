@@ -143,7 +143,7 @@ function periodRuleOnlyWhenTracked<
  * cannot drift into saying different things.
  */
 export const REMINDER_SNOOZE_MESSAGE =
-  'Reminders cannot be snoozed — they stay in their time slot until completed'
+  'Reminders cannot be deferred — they stay in their time slot until completed'
 
 /**
  * §5: `done` on a quota closes its period early and zeroes the count. Nothing
@@ -455,7 +455,7 @@ export const bulkSnoozeSchema = z
       .number()
       .int()
       .min(-1440, 'Cannot go back more than 24 hours')
-      .max(525600, 'Cannot snooze more than 1 year')
+      .max(525600, 'Cannot defer more than 1 year')
       .optional(),
     include_task_ids: z.array(z.number().int().positive()).max(500).optional(),
     // Accepted from old clients and ignored (2026-10-12): every move is
@@ -523,7 +523,7 @@ export const bulkEditSchema = z
       .number()
       .int()
       .min(-1440, 'Cannot go back more than 24 hours')
-      .max(525600, 'Cannot snooze more than 1 year')
+      .max(525600, 'Cannot defer more than 1 year')
       .optional(),
     date_task_ids: z.array(z.number().int().positive()).max(500).optional(),
     allow_past_deadline_ids: z.array(z.number().int().positive()).max(500).optional(),
@@ -687,7 +687,7 @@ export const bulkSnoozeOverdueSchema = z
       .number()
       .int()
       .min(1, 'delta_minutes must be positive')
-      .max(525600, 'Cannot snooze more than 1 year')
+      .max(525600, 'Cannot defer more than 1 year')
       .optional(),
     until: dateTimeString.optional(),
     slot: z

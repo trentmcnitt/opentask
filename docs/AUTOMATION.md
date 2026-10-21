@@ -33,7 +33,7 @@ curl -X POST https://tasks.example.com/api/tasks \
   -d '{"title": "call the dentist tomorrow morning high priority"}'
 ```
 
-The AI extracts: clean title, due date, priority, labels, recurrence, project, auto-snooze, and context notes. The raw input is preserved in `original_title` for retry if enrichment fails.
+The AI extracts: clean title, due date, priority, labels, recurrence, project, nag interval, and context notes. The raw input is preserved in `original_title` for retry if enrichment fails.
 
 ### What enrichment extracts
 
@@ -45,7 +45,7 @@ The AI extracts: clean title, due date, priority, labels, recurrence, project, a
 | labels              | "call the dentist, label it medical"        | ["medical"]                                           |
 | rrule               | "every Monday", "daily"                     | RFC 5545 RRULE string                                 |
 | project_name        | "add to family", "test task for job search" | Existing project named explicitly or by its full name |
-| auto_snooze_minutes | "auto-snooze 30 minutes"                    | Integer (0-1440)                                      |
+| auto_snooze_minutes | "nag every 30 minutes"                      | Integer (0-1440)                                      |
 | recurrence_mode     | "repeat from completion"                    | "from_completion"                                     |
 | notes               | "claim number 847293, call 1-800-555-0123"  | Supplementary context                                 |
 

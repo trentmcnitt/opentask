@@ -50,7 +50,7 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   // Validate snooze target is a valid datetime
   const snoozeTarget = new Date(until)
   if (isNaN(snoozeTarget.getTime())) {
-    throw new ValidationError('Invalid snooze target datetime')
+    throw new ValidationError('Invalid defer target datetime')
   }
   // Note: We allow snoozing to past times - the task will just appear overdue immediately.
   // This lets users adjust due dates freely using the increment/decrement controls.
@@ -72,16 +72,16 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   // than failing the sweep (see `bulkSnooze`).
   if (isTracked(task)) {
     throw new ValidationError(
-      'Quotas cannot be snoozed — a quota is counted within its period, not due on a day',
+      'Quotas cannot be deferred — a quota is counted within its period, not due on a day',
     )
   }
 
   // Only active tasks can be snoozed (SN-005)
   if (task.done) {
-    throw new ValidationError('Cannot snooze done task')
+    throw new ValidationError('Cannot defer done task')
   }
   if (task.deleted_at) {
-    throw new ValidationError('Cannot snooze trashed task')
+    throw new ValidationError('Cannot defer trashed task')
   }
 
   const previousDueAt = task.due_at

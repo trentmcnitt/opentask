@@ -88,7 +88,7 @@ export function AttributeFilterBar({
           onToggle={onToggleAttribute}
           onExclusive={onExclusiveAttribute}
           onExclude={onExcludeAttribute}
-          title="Custom auto-snooze"
+          title="Custom nag"
         />
       )}
     </>

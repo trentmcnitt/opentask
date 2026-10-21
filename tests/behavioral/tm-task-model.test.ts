@@ -340,7 +340,7 @@ describe('Task model', () => {
       const r = snooze()
       expect(r.task.due_at).toBe(at('2026-10-10T18:00'))
       expect(r.cappedAtDeadline).toBe(true)
-      expect(r.description).toMatch(/^Snoozed to deadline/)
+      expect(r.description).toMatch(/^Deferred to deadline/)
       // `allow_past_deadline` is accepted from old clients and ignored.
       expect(snooze(true).task.due_at).toBe(at('2026-10-10T18:00'))
       expect(getTaskById(t.id)!.deadline_at).toBe(at('2026-10-10T18:00'))
@@ -356,7 +356,7 @@ describe('Task model', () => {
       })
       expect(r.task.due_at).toBe(at('2026-10-11T09:00'))
       expect(r.cappedAtDeadline).toBe(false)
-      expect(r.description).toMatch(/^Snoozed/)
+      expect(r.description).toMatch(/^Deferred/)
       expect(r.task.deadline_at).toBe(at('2026-10-09T18:00'))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
     })
@@ -760,7 +760,7 @@ describe('Task model', () => {
       const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
       const r = updateTask({ ...u, input: { due_at: at('2026-10-14T09:00') } })
       expect(r.task.due_at).toBe(at('2026-10-13T18:00'))
-      expect(r.description).toMatch(/^Snoozed to deadline/)
+      expect(r.description).toMatch(/^Deferred to deadline/)
       // The deadline passes: the cap no longer applies, the snooze moves it.
       vi.setSystemTime(new Date(at('2026-10-13T19:00')))
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)

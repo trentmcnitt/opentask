@@ -298,7 +298,7 @@ describe('TQ-M: a mixed press', () => {
       cappedOccurrence: 0,
     })
     expect(r.summary).toBe(
-      '3 will move to the Tasks queue at 6:30 AM · Snoozed 1 task (1 high, 1 past deadline, 1 urgent skipped)',
+      '3 will move to the Tasks queue at 6:30 AM · Deferred 1 task (1 high, 1 past deadline, 1 urgent skipped)',
     )
   })
 
@@ -311,7 +311,7 @@ describe('TQ-M: a mixed press', () => {
     expect(task(a.id).due_at).toBe(at('2026-10-20T15:00'))
     expect(r).toMatchObject({ tasksAffected: 1, highSnoozed: 1, highSkipped: 1, urgentSkipped: 1 })
     expect(r.snoozedHighName).toBe('High B')
-    expect(r.summary).toBe('Snoozed high-priority "High B" (1 high skipped)')
+    expect(r.summary).toBe('Deferred high-priority "High B" (1 high skipped)')
   })
 })
 
@@ -348,12 +348,12 @@ describe('TQ-H: one High per press (B8, resolution 8)', () => {
       highSnoozed: 0, // C is P1 by priority
     })
     // C is in the tier by its passed deadline, and named so.
-    expect(presses[0].summary).toBe('Snoozed past-deadline "C" (3 high, 1 urgent skipped)')
+    expect(presses[0].summary).toBe('Deferred past-deadline "C" (3 high, 1 urgent skipped)')
     expect(presses[1]).toMatchObject({ tasksAffected: 1, urgentSkipped: 3, highSkipped: 2 })
-    expect(presses[1].summary).toBe('Snoozed high-priority "B" (2 high, 1 urgent skipped)')
+    expect(presses[1].summary).toBe('Deferred high-priority "B" (2 high, 1 urgent skipped)')
     expect(presses[4]).toMatchObject({ tasksAffected: 0, urgentSkipped: 1, highSkipped: 0 })
     expect(presses[4].summary).toBe(
-      'No snoozable tasks (1 urgent task must be snoozed individually)',
+      'No deferrable tasks (1 urgent task must be deferred individually)',
     )
     expect(task(urgent.id).due_at).toBe(at('2026-10-17T10:00'))
   })
@@ -389,7 +389,7 @@ describe('TQ-H: one High per press (B8, resolution 8)', () => {
     const b = make({ title: 'B', priority: 3, due_at: at('2026-10-17T10:00') })
     const r = sweep([a.id, b.id], { until: at('2026-10-21T08:30') })
     expect(r).toMatchObject({ tasksAffected: 2, highSnoozed: 2, snoozedHighName: null })
-    expect(r.summary).toBe('Snoozed 2 high-priority tasks')
+    expect(r.summary).toBe('Deferred 2 high-priority tasks')
   })
 })
 
@@ -572,7 +572,7 @@ describe('TQ-R: repeating tasks — a defer is capped at the next occurrence (B2
     expect(task(t.id).due_at).toBe(at('2026-10-20T20:00'))
     expect(task(t.id).queue_mark).toBe(false)
     expect(r.cappedOccurrence).toBe(1)
-    expect(r.summary).toBe('Snoozed "Task" · 1 stopped at its next occurrence')
+    expect(r.summary).toBe('Deferred "Task" · 1 stopped at its next occurrence')
   })
 
   test('TQ-R02: a manual snooze may pass it', () => {
@@ -651,13 +651,13 @@ describe('TQ-W: the undo / History description says what happened', () => {
     const a = make({ due_at: at('2026-10-20T15:00') })
     const d = make({ due_at: at('2026-10-20T15:00'), deadline_at: at('2026-10-25T17:00') })
     sweep([a.id, d.id], { until: at('2026-10-21T08:30') })
-    expect(lastUndoDescription()).toBe('Snoozed 2 tasks (1 to the queue at 6:30 AM)')
+    expect(lastUndoDescription()).toBe('Deferred 2 tasks (1 to the queue at 6:30 AM)')
   })
 
   test('TQ-W03: nothing marked → the old wording', () => {
     const a = make({ due_at: at('2026-10-20T15:00') })
     sweep([a.id], { until: at('2026-10-20T22:00') })
-    expect(lastUndoDescription()).toBe('Snoozed 1 tasks to 10:00 PM')
+    expect(lastUndoDescription()).toBe('Deferred 1 tasks to 10:00 PM')
   })
 })
 
@@ -721,7 +721,7 @@ describe('TQ-T: Try Tomorrow', () => {
       try_tomorrow: false,
     })
     expect(r.queued).toBe(0)
-    expect(r.summary).toBe('Snoozed "Task"')
+    expect(r.summary).toBe('Deferred "Task"')
   })
 
   test('TQ-T03: on an Urgent task too (it is one the user pointed at)', () => {
@@ -779,12 +779,12 @@ describe('TQ-O: switch off — a sweep is exactly today’s', () => {
       cappedOccurrence: 0,
       snoozedHighName: null,
       queuedUntil: null,
-      summary: 'Snoozed 3 tasks (1 high skipped) · 1 stopped at its deadline',
+      summary: 'Deferred 3 tasks (1 high skipped) · 1 stopped at its deadline',
     })
   })
 
   test('TQ-O02: one task is not named', () => {
     const a = make({ title: 'A', due_at: at('2026-10-20T15:00') })
-    expect(sweep([a.id], { until: at('2026-10-21T08:30') }).summary).toBe('Snoozed 1 task')
+    expect(sweep([a.id], { until: at('2026-10-21T08:30') }).summary).toBe('Deferred 1 task')
   })
 })

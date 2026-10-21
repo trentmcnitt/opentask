@@ -15,8 +15,8 @@ const isPrefsPatch = (res: { url(): string; request(): { method(): string } }) =
 test('Low and Medium auto-snooze read back after a reload', async ({ authenticatedPage: page }) => {
   try {
     await page.goto('/settings')
-    const low = page.getByRole('combobox', { name: 'Low auto-snooze' })
-    const medium = page.getByRole('combobox', { name: 'Medium auto-snooze' })
+    const low = page.getByRole('combobox', { name: 'Low nag' })
+    const medium = page.getByRole('combobox', { name: 'Medium nag' })
     // The seeded user starts on the defaults. (A choice made before the GET
     // lands still wins: PreferencesProvider merges its dirty fields over it.)
     await expect(low).toHaveValue('240')

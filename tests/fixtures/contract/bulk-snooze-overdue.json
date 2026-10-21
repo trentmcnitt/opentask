@@ -9,13 +9,13 @@
     "skipped_deadline": 0,
     "capped_deadline": 0,
     "until": "2026-01-15T16:00:00.000Z",
-    "message": "\"Oil the hinges\" will move to the Tasks queue at 7:00 AM · Snoozed 1 task (1 urgent skipped)",
+    "message": "\"Oil the hinges\" will move to the Tasks queue at 7:00 AM · Deferred 1 task (1 urgent skipped)",
     "queued": 1,
     "queued_name": "Oil the hinges",
     "capped_occurrence": 0,
     "snoozed_high_name": null,
     "queued_until": "2026-01-15T16:00:00.000Z",
-    "summary": "\"Oil the hinges\" will move to the Tasks queue at 7:00 AM · Snoozed 1 task (1 urgent skipped)",
+    "summary": "\"Oil the hinges\" will move to the Tasks queue at 7:00 AM · Deferred 1 task (1 urgent skipped)",
     "feedback_notification": false
   }
 }

@@ -7,7 +7,7 @@
  * server moves the target to the deadline instead (`cap_at_deadline`,
  * `capSnoozeAtDeadline` in collect-field-changes.ts). Every surface that shows
  * the result says so itself: the web toast reads the change description
- * ("Snoozed to deadline 6:00 PM"), and the native apps' rows show the new
+ * ("Deferred to deadline 6:00 PM"), and the native apps' rows show the new
  * time. A notification button runs in the background and shows nothing, so
  * this push is its word.
  *
@@ -16,7 +16,7 @@
  * snooze results" — the same "tell me what a snooze from outside did"
  * switch); and is not the demo user.
  *
- * WHAT. "Snoozed to deadline 6:00 PM" / "A quick snooze stops at the deadline".
+ * WHAT. "Deferred to deadline 6:00 PM" / "A quick defer stops at the deadline".
  * No title of the task, like the sweep feedback (Trent: no titles on the lock
  * screen for these); the banner it answers already named it.
  */
@@ -40,8 +40,8 @@ export interface DeadlineCapContent {
 /** Title and body for a capped snooze. Pure. */
 export function deadlineCapContent(deadlineAt: string, timezone: string): DeadlineCapContent {
   return {
-    title: `Snoozed to deadline ${formatSnoozeTarget(deadlineAt, timezone)}`,
-    body: 'A quick snooze stops at the deadline',
+    title: `Deferred to deadline ${formatSnoozeTarget(deadlineAt, timezone)}`,
+    body: 'A quick defer stops at the deadline',
   }
 }
 

@@ -80,7 +80,7 @@ describe('Explicit reschedule vs snooze', () => {
     expect(task.due_at).toBe(picked)
     // The flag is ignored on a task: the first-target date stays.
     expect(task.original_due_at).toBe(at(9, 1))
-    expect(description).toMatch(/^Snoozed to/)
+    expect(description).toMatch(/^Deferred to/)
   })
 
   test('SN-102: undo of a picked date restores the target; redo re-applies it', () => {
@@ -116,7 +116,7 @@ describe('Explicit reschedule vs snooze', () => {
 
     expect(task.due_at).toBe(at(16, 1))
     expect(task.original_due_at).toBe(at(9, 1))
-    expect(description).toMatch(/snooz/i)
+    expect(description).toMatch(/defer/i)
   })
 
   test('SN-104: the snooze endpoint and bulk snooze keep the origin', () => {

@@ -46,7 +46,7 @@ test.describe('Native quick-action snooze toast', () => {
 
       const toast = page
         .locator('[data-sonner-toast]')
-        .filter({ hasText: `Snoozed ${result.tasks_affected} ` })
+        .filter({ hasText: `Deferred ${result.tasks_affected} ` })
       await expect(toast).toBeVisible()
       await toast.getByRole('button', { name: 'Undo' }).click()
       await expect(
@@ -64,7 +64,7 @@ test.describe('Native quick-action snooze toast', () => {
       window.dispatchEvent(new CustomEvent('opentask-native-snoozed'))
     })
     await expect(
-      page.locator('[data-sonner-toast]').filter({ hasText: 'Snooze failed' }),
+      page.locator('[data-sonner-toast]').filter({ hasText: 'Defer failed' }),
     ).toBeVisible()
   })
 
@@ -82,7 +82,7 @@ test.describe('Native quick-action snooze toast', () => {
     })
     await page.goto('/')
     await expect(
-      page.locator('[data-sonner-toast]').filter({ hasText: 'No snoozable tasks' }),
+      page.locator('[data-sonner-toast]').filter({ hasText: 'No deferrable tasks' }),
     ).toBeVisible()
     // Read once: it is gone after the toast.
     expect(await page.evaluate(() => window.__opentaskNativeSnooze)).toBeUndefined()
