@@ -72,6 +72,7 @@
 
 import { DateTime, IANAZone } from 'luxon'
 import { getDb } from '@/core/db'
+import { getAnchorTimes } from '@/core/users/anchor-times'
 import { log } from '@/lib/logger'
 import { onSyncEvent, offSyncEvent, type SyncEventInfo, type SyncListener } from '@/lib/sync-events'
 import { parseHHMM } from '@/lib/time-slot-assign'
@@ -273,11 +274,13 @@ const MIN_INTERVAL_MS =
 const QUIET_HOURS_ENABLED = parseQuietHoursEnabled(process.env.OPENTASK_WIDGET_PUSH_QUIET_HOURS)
 
 function userQuietHoursEnd(userId: number, now: number): number | null {
-  const user = getDb()
-    .prepare('SELECT timezone, wake_time, sleep_time FROM users WHERE id = ?')
-    .get(userId) as { timezone: string; wake_time: string; sleep_time: string } | undefined
+  const user = getDb().prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
+    | { timezone: string }
+    | undefined
   if (!user) return null
-  return quietHoursEnd(new Date(now), user.timezone, user.wake_time, user.sleep_time)
+  // Resolved: a Wake or Sleep linked to a period moves quiet hours with it.
+  const { wake, sleep } = getAnchorTimes(userId)
+  return quietHoursEnd(new Date(now), user.timezone, wake.time, sleep.time)
 }
 
 export interface WidgetPushSyncOptions {

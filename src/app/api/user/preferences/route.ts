@@ -28,7 +28,7 @@ import {
 import {
   DEFAULT_PRIORITY_DISPLAY,
   getPreferences,
-  ownsTimeSlot,
+  ownedTimeSlot,
   updatePreferences,
   type PreferenceChanges,
   type PreferenceColumn,
@@ -37,6 +37,14 @@ import {
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
+import { getAnchorTimes, resolveUserAnchorTimes } from '@/core/users/anchor-times'
+import {
+  ANCHOR_KEYS,
+  PAD_PRESET_COUNT,
+  serializePadPresets,
+  type AnchorTimes,
+  type TimeSetting,
+} from '@/lib/anchor-times'
 
 // `default_grouping` accepts the live groupings (`GROUPINGS`: project, new,
 // unified) plus the retired 'slot' (Today, dropped 2026-10-14) and 'time' (the
@@ -337,24 +345,98 @@ function validateGeneralFields(
     changes.bulk_snooze_default = val
   }
 
-  if (body.morning_time !== undefined) {
-    const err = hhmm(body.morning_time, 'morning_time')
+  return null
+}
+
+/** A slot id field's value: a positive integer, else the error. */
+function slotIdError(val: unknown, field: string): string | null {
+  if (typeof val !== 'number' || !Number.isInteger(val) || val <= 0)
+    return `${field} must be a reminder period id or null`
+  return null
+}
+
+/**
+ * One time setting as sent — `{ time }` (custom) or `{ slot_id }` (linked to
+ * a period, which must be the user's own) — as stored: a link also stores the
+ * period's current start as its time (the snapshot `src/lib/anchor-times.ts`
+ * falls back to). A link sent with a time that isn't the period's start is
+ * refused rather than guessed at. Echoing GET's `{ slot_id, time }` back works.
+ */
+function timeSettingFrom(
+  time: unknown,
+  slotId: unknown,
+  fields: { time: string; slot: string },
+  userId: number,
+): TimeSetting | string {
+  if (slotId !== undefined && slotId !== null) {
+    const err = slotIdError(slotId, fields.slot)
     if (err) return err
-    changes.morning_time = body.morning_time
+    const slot = ownedTimeSlot(userId, slotId as number)
+    if (!slot) return `${fields.slot} must be one of your reminder periods`
+    if (time !== undefined && time !== slot.start_time)
+      return `${fields.slot} links to a period starting at ${slot.start_time} — ${fields.time} can't also be ${String(time)}`
+    return { time: slot.start_time, slot_id: slot.id }
+  }
+  const err = hhmm(time, fields.time)
+  if (err) return err
+  return { time: time as string, slot_id: null }
+}
+
+/**
+ * MORNING, WAKE, SLEEP AND THE NUMBER PAD (anchor times, 2026-10-21): each a
+ * custom time or a link to a reminder period (`src/lib/anchor-times.ts`).
+ *
+ * - `morning_time: "HH:MM"` alone sets a custom time — and unlinks, so an
+ *   older client that only knows the time keeps working.
+ * - `morning_slot_id: <id>` links (and stores the period's start as the
+ *   snapshot); with a `morning_time` too, the two must agree.
+ * - `morning_slot_id: null` unlinks: at `morning_time` if sent, else at the
+ *   time it reads now, so nothing jumps.
+ * - `pad_presets`: exactly four `{ time }` or `{ slot_id }` entries, in
+ *   button order; `null` puts back the four defaults.
+ * Wake and Sleep work as Morning does.
+ */
+function validateAnchorFields(
+  body: Record<string, unknown>,
+  userId: number,
+  changes: PreferenceChanges,
+): string | null {
+  let current: AnchorTimes | null = null
+  for (const key of ANCHOR_KEYS) {
+    const fields = { time: `${key}_time`, slot: `${key}_slot_id` } as const
+    let time = body[fields.time]
+    const slotId = body[fields.slot]
+    if (time === undefined && slotId === undefined) continue
+    if (slotId === null && time === undefined) {
+      current ??= getAnchorTimes(userId)
+      time = current[key].time
+    }
+    const setting = timeSettingFrom(time, slotId, fields, userId)
+    if (typeof setting === 'string') return setting
+    changes[fields.time] = setting.time
+    changes[fields.slot] = setting.slot_id
   }
 
-  if (body.wake_time !== undefined) {
-    const err = hhmm(body.wake_time, 'wake_time')
-    if (err) return err
-    changes.wake_time = body.wake_time
+  if (body.pad_presets !== undefined) {
+    const pad = body.pad_presets
+    if (pad === null) {
+      changes.pad_presets = null
+      return null
+    }
+    if (!Array.isArray(pad) || pad.length !== PAD_PRESET_COUNT)
+      return `pad_presets must be an array of ${PAD_PRESET_COUNT} or null`
+    const settings: TimeSetting[] = []
+    for (const [i, entry] of pad.entries()) {
+      if (!entry || typeof entry !== 'object')
+        return `pad_presets[${i}] must be { time } or { slot_id }`
+      const { time, slot_id } = entry as Record<string, unknown>
+      const fields = { time: `pad_presets[${i}].time`, slot: `pad_presets[${i}].slot_id` }
+      const setting = timeSettingFrom(time, slot_id, fields, userId)
+      if (typeof setting === 'string') return setting
+      settings.push(setting)
+    }
+    changes.pad_presets = serializePadPresets(settings)
   }
-
-  if (body.sleep_time !== undefined) {
-    const err = hhmm(body.sleep_time, 'sleep_time')
-    if (err) return err
-    changes.sleep_time = body.sleep_time
-  }
-
   return null
 }
 
@@ -506,7 +588,7 @@ function validateQuotaPromptFields(
     if (val !== null) {
       if (typeof val !== 'number' || !Number.isInteger(val) || val <= 0)
         return `${slotField} must be a time slot id or null`
-      if (!ownsTimeSlot(userId, val)) return `${slotField} must be one of your reminder periods`
+      if (!ownedTimeSlot(userId, val)) return `${slotField} must be one of your reminder periods`
     }
     changes.quota_prompt_slot_id = val
   }
@@ -548,6 +630,9 @@ function validatePatchFields(
   const quotaErr = validateQuotaPromptFields(body, userId, changes)
   if (quotaErr) return quotaErr
 
+  const anchorErr = validateAnchorFields(body, userId, changes)
+  if (anchorErr) return anchorErr
+
   const aiErr = validateAiFields(body, changes)
   if (aiErr) return aiErr
 
@@ -558,6 +643,7 @@ function validatePatchFields(
 
 function formatPreferencesResponse(row: PreferencesRow, userId: number) {
   const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
+  const anchors = resolveUserAnchorTimes(userId, row)
   return {
     // The task queue (task-queue PR 3, read-only): the server's switch
     // (`OPENTASK_TASK_QUEUE`, which gates the queue UI) and the user's
@@ -593,9 +679,17 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
     // Alias: the same column, under the name it has meant since 2026-09-28.
     default_reminder_slot_id: row.quota_prompt_slot_id,
     quota_prompts_enabled: row.quota_prompts_enabled !== 0,
-    morning_time: row.morning_time,
-    wake_time: row.wake_time,
-    sleep_time: row.sleep_time,
+    // ANCHOR TIMES (2026-10-21): each time is the RESOLVED one — a linked
+    // period's start — so a client reads it as it always has; the slot id
+    // says which period it follows (null: a custom time). `pad_presets` is
+    // the number pad's four buttons, resolved the same way.
+    morning_time: anchors.morning.time,
+    morning_slot_id: anchors.morning.slot_id,
+    wake_time: anchors.wake.time,
+    wake_slot_id: anchors.wake.slot_id,
+    sleep_time: anchors.sleep.time,
+    sleep_slot_id: anchors.sleep.slot_id,
+    pad_presets: anchors.pad.map((p) => ({ slot_id: p.slot_id, time: p.time })),
     notifications_enabled: row.notifications_enabled !== 0,
     enrichment_notifications_enabled: row.enrichment_notifications_enabled !== 0,
     sweep_feedback_notifications_enabled: row.sweep_feedback_notifications_enabled !== 0,

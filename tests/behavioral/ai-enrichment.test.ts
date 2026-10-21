@@ -1491,6 +1491,52 @@ describe('every rule has a time; a repeat with no day starts today (2026-10-12)'
     }
   })
 
+  test("a Morning linked to a period is the period's start, in the prompt and the rule (anchor times, 2026-10-21)", async () => {
+    vi.setSystemTime(new Date('2026-10-12T12:00:00Z'))
+    const db = getDb()
+    const slot = db
+      .prepare("SELECT id FROM time_slots WHERE user_id = ? AND label = 'Morning'")
+      .get(TEST_USER_ID) as { id: number }
+    const before = db.prepare('SELECT start_time FROM time_slots WHERE id = ?').get(slot.id) as {
+      start_time: string
+    }
+    // Linked, with a stale 09:00 snapshot: the period's 08:45 must win.
+    db.prepare("UPDATE time_slots SET start_time = '08:45' WHERE id = ?").run(slot.id)
+    db.prepare("UPDATE users SET morning_slot_id = ?, morning_time = '09:00' WHERE id = ?").run(
+      slot.id,
+      TEST_USER_ID,
+    )
+    try {
+      const task = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'water plants every day' },
+      })
+      mockEnrichmentQuery.mockClear()
+      mockEnrichmentQuery.mockResolvedValueOnce(
+        mockResult({
+          title: 'Water plants',
+          priority: 0,
+          due_at: null,
+          labels: [],
+          rrule: 'FREQ=DAILY',
+        }),
+      )
+
+      await processEnrichmentQueue()
+
+      const [prompt] = mockEnrichmentQuery.mock.calls[0]
+      expect(prompt).toContain('8:45 AM')
+      expect(getTaskById(task.id)!.rrule).toBe('FREQ=DAILY;BYHOUR=8;BYMINUTE=45')
+    } finally {
+      db.prepare('UPDATE users SET morning_slot_id = NULL WHERE id = ?').run(TEST_USER_ID)
+      db.prepare('UPDATE time_slots SET start_time = ? WHERE id = ?').run(
+        before.start_time,
+        slot.id,
+      )
+    }
+  })
+
   test('a quota re-enriched with a bare period rule keeps it bare', async () => {
     const task = createTask({
       userId: TEST_USER_ID,

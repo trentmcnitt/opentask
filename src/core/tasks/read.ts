@@ -98,7 +98,10 @@ export function taskColumns(alias?: string): string {
   // period's start, else morning_time — `rolloverTimeOf` in SQL (start_time
   // is validated zero-padded HH:MM, so MIN sorts as time; the index on
   // (user_id, start_time) answers it). Read only with the switch on, when
-  // attempts count OpenTask days (`effectiveAttempts`).
+  // attempts count OpenTask days (`effectiveAttempts`). The raw morning_time
+  // column is safe here though Morning may link to a period (anchor times,
+  // 2026-10-21): it is read only when the owner has NO periods, and then
+  // nothing can link to one, so the column is the resolved Morning.
   const ownerRollover = `COALESCE((SELECT MIN(start_time) FROM time_slots WHERE time_slots.user_id = ${table}.user_id),(SELECT morning_time FROM users WHERE users.id = ${table}.user_id)) AS owner_rollover_time`
   return [
     ...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)),

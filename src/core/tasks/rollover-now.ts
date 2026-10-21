@@ -111,7 +111,7 @@ export function runRolloverNow(opts: {
   }
   const now = opts.now ?? new Date()
   const user = getDb()
-    .prepare('SELECT id, timezone, morning_time, last_rollover_date FROM users WHERE id = ?')
+    .prepare('SELECT id, timezone, last_rollover_date FROM users WHERE id = ?')
     .get(opts.userId) as UserRow | undefined
   if (!user) throw new NotFoundError('User not found')
 

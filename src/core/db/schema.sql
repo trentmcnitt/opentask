@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS users (
   last_rollover_date TEXT DEFAULT NULL,
   wake_time     TEXT NOT NULL DEFAULT '07:00',
   sleep_time    TEXT NOT NULL DEFAULT '22:00',
+  -- Anchor times (2026-10-21, src/lib/anchor-times.ts): Morning, Wake and
+  -- Sleep each either a custom time (slot id NULL) or linked to a reminder
+  -- period (a time_slots id, no foreign key — like quota_prompt_slot_id), in
+  -- which case they follow its start and *_time holds the start as of the
+  -- link. pad_presets: the number pad's four buttons, a JSON array of 4
+  -- {"time":"HH:MM","slot_id":id|null}; NULL = 09:00, 12:00, 16:00, 20:30.
+  morning_slot_id INTEGER DEFAULT NULL,
+  wake_slot_id    INTEGER DEFAULT NULL,
+  sleep_slot_id   INTEGER DEFAULT NULL,
+  pad_presets     TEXT DEFAULT NULL,
   ai_context    TEXT,
   -- When ai_context last changed (2026-10-10): the staleness warning reads it.
   ai_context_updated_at TEXT,

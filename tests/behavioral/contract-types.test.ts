@@ -363,6 +363,25 @@ describe('contract fixtures match the TS types', () => {
     expect(data('user-preferences').check_in_day).toBe(6)
   })
 
+  test('user preferences carry the resolved anchor times, their links and the pad (2026-10-21)', () => {
+    // Every time is resolved (a linked period's start); the slot id says which
+    // period it follows. The scenario links nothing, so the defaults show.
+    const prefs = data('user-preferences')
+    expect([prefs.morning_time, prefs.wake_time, prefs.sleep_time]).toEqual([
+      '09:00',
+      '07:00',
+      '22:00',
+    ])
+    expect([prefs.morning_slot_id, prefs.wake_slot_id, prefs.sleep_slot_id]).toEqual([
+      null,
+      null,
+      null,
+    ])
+    const pad = prefs.pad_presets as Obj[]
+    for (const p of pad) expect(Object.keys(p).sort()).toEqual(['slot_id', 'time'])
+    expect(pad.map((p) => p.time)).toEqual(['09:00', '12:00', '16:00', '20:30'])
+  })
+
   test('the progress response is a FormattedTask plus met/description', () => {
     const d = data('task-progress')
     expect(typeof d.met).toBe('boolean')

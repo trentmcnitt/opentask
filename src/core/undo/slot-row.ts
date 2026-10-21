@@ -18,6 +18,7 @@
 import Database from 'better-sqlite3'
 import type { SlotRow, SlotUndoState } from '@/types'
 import { ValidationError } from '@/core/errors'
+import { applySettingChanges } from '@/core/users/anchor-times'
 
 /**
  * Write the user's default quota prompt period back to one side of a slot
@@ -35,6 +36,24 @@ export function applyPromptDefault(
   const userId = state.before?.user_id ?? state.after?.user_id
   if (!change || userId === undefined) return
   tx.prepare('UPDATE users SET quota_prompt_slot_id = ? WHERE id = ?').run(change[side], userId)
+}
+
+/**
+ * Write the user's settings a slot delete converted (Morning, Wake, Sleep,
+ * pad buttons linked to the removed period — `SlotUndoState.user_settings`)
+ * back to one side: `before` (the links) on undo, `after` (custom at the
+ * period's start) on redo. Compare-and-set per setting: one the user has
+ * changed since keeps the newer value (`settingWrites`). Called after
+ * `applySlotRow`, so an undone link points at the restored period.
+ */
+export function applyUserSettings(
+  tx: Database.Database,
+  state: SlotUndoState,
+  side: 'before' | 'after',
+): void {
+  const userId = state.before?.user_id ?? state.after?.user_id
+  if (!state.user_settings || userId === undefined) return
+  applySettingChanges(tx, userId, state.user_settings, side)
 }
 
 export function parseSlotState(raw: string | null | undefined): SlotUndoState | null {

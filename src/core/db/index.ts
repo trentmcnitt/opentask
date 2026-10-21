@@ -82,6 +82,23 @@ function migrateEnrichmentNotifications(database: Database.Database): void {
   }
 }
 
+/**
+ * Anchor times (2026-10-21, `src/lib/anchor-times.ts`): Morning, Wake and
+ * Sleep may each link to a reminder period (`*_slot_id`, NULL = custom), and
+ * the number pad's four buttons are a setting (`pad_presets`, NULL = the four
+ * it always had). No backfill: NULL everywhere reads exactly as before.
+ */
+function migrateAnchorTimes(database: Database.Database): void {
+  for (const column of ['morning_slot_id', 'wake_slot_id', 'sleep_slot_id']) {
+    if (!hasColumn(database, 'users', column)) {
+      database.exec(`ALTER TABLE users ADD COLUMN ${column} INTEGER DEFAULT NULL`)
+    }
+  }
+  if (!hasColumn(database, 'users', 'pad_presets')) {
+    database.exec('ALTER TABLE users ADD COLUMN pad_presets TEXT DEFAULT NULL')
+  }
+}
+
 function hasColumn(database: Database.Database, table: string, column: string): boolean {
   const cols = database.pragma(`table_info(${table})`) as { name: string }[]
   return cols.some((c) => c.name === column)
@@ -136,6 +153,7 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE users ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 1')
   }
   migrateEnrichmentNotifications(database)
+  migrateAnchorTimes(database)
   // Project colors (2026-02)
   if (!hasColumn(database, 'projects', 'color')) {
     database.exec('ALTER TABLE projects ADD COLUMN color TEXT')
@@ -500,6 +518,9 @@ function logTargetMigration(counts: TargetMigrationCounts): void {
  * (a user created after this ran), so NULL never means "never ran".
  */
 export function stampRolloverDates(database: Database.Database, now: Date = new Date()): number {
+  // The raw morning_time is the no-periods fallback only, where nothing can
+  // link to a period (anchor times, 2026-10-21), so it needs no resolving —
+  // and this runs at startup, below the layer `getAnchorTimes` lives in.
   const users = database
     .prepare('SELECT id, timezone, morning_time FROM users WHERE last_rollover_date IS NULL')
     .all() as { id: number; timezone: string; morning_time: string | null }[]

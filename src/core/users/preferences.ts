@@ -48,6 +48,12 @@ export interface PreferencesRow {
   morning_time: string
   wake_time: string
   sleep_time: string
+  /** Anchor-time links (`src/lib/anchor-times.ts`): a time_slots id, or null for custom. */
+  morning_slot_id: number | null
+  wake_slot_id: number | null
+  sleep_slot_id: number | null
+  /** The number pad's four buttons as stored JSON, or null for the defaults. */
+  pad_presets: string | null
   notifications_enabled: number
   enrichment_notifications_enabled: number
   sweep_feedback_notifications_enabled: number
@@ -110,6 +116,10 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   morning_time: '09:00',
   wake_time: '07:00',
   sleep_time: '22:00',
+  morning_slot_id: null,
+  wake_slot_id: null,
+  sleep_slot_id: null,
+  pad_presets: null,
   notifications_enabled: 1,
   enrichment_notifications_enabled: 1,
   sweep_feedback_notifications_enabled: 1,
@@ -236,9 +246,14 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
   return readPreferencesRow(userId) as PreferencesRow
 }
 
-/** Whether `slotId` is one of the user's own time slots (reminder periods). */
-export function ownsTimeSlot(userId: number, slotId: number): boolean {
-  return !!getDb()
-    .prepare('SELECT 1 FROM time_slots WHERE id = ? AND user_id = ?')
-    .get(slotId, userId)
+/** `slotId` if it is one of the user's own time slots (reminder periods), else null. */
+export function ownedTimeSlot(
+  userId: number,
+  slotId: number,
+): { id: number; start_time: string } | null {
+  return (
+    (getDb()
+      .prepare('SELECT id, start_time FROM time_slots WHERE id = ? AND user_id = ?')
+      .get(slotId, userId) as { id: number; start_time: string } | undefined) ?? null
+  )
 }

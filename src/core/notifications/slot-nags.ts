@@ -45,6 +45,7 @@
 
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
+import { getAnchorTimes } from '@/core/users/anchor-times'
 import { log } from '@/lib/logger'
 import { isApnsConfigured, sendApnsSlotReminder, slotWaitingBody } from '@/core/notifications/apns'
 import { pendingSlotNotifications, waitingBySlot } from '@/core/notifications/slot-reminders'
@@ -261,22 +262,26 @@ export interface PendingSlotNag {
  */
 export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
   const users = getDb()
-    .prepare(
-      'SELECT id, timezone, wake_time, sleep_time FROM users WHERE notifications_enabled = 1',
-    )
-    .all() as NaggableUser[]
+    .prepare('SELECT id, timezone FROM users WHERE notifications_enabled = 1')
+    .all() as { id: number; timezone: string }[]
 
   const pending: PendingSlotNag[] = []
   // Computed once rather than per user: it answers for every user at once, and
   // asking it inside the loop would re-scan every user's slots N times.
   const alreadyNotified = usersNotifiedThisMinute(now)
 
-  for (const user of users) {
-    const local = DateTime.fromJSDate(now).setZone(user.timezone)
+  for (const row of users) {
+    const local = DateTime.fromJSDate(now).setZone(row.timezone)
     if (!local.isValid) continue
 
     // Top of the hour only.
     if (local.minute !== 0) continue
+
+    // Wake and Sleep resolved (a linked period's start, 2026-10-21) — only
+    // for the users at the top of their hour, not every user every minute.
+    const slots = listTimeSlots(row.id)
+    const { wake, sleep } = getAnchorTimes(row.id, slots)
+    const user: NaggableUser = { ...row, wake_time: wake.time, sleep_time: sleep.time }
 
     const minuteOfDay = local.hour * 60 + local.minute
     if (!isAwake(minuteOfDay, user.wake_time, user.sleep_time)) continue
@@ -284,8 +289,6 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
     // A slot that is notifying on this exact minute already puts a banner up.
     // Two in one minute is precisely the thing this feature must not cause.
     if (alreadyNotified.has(user.id)) continue
-
-    const slots = listTimeSlots(user.id)
 
     // Three independent gates, ALL of which must pass. The cap bounds how many
     // nags a day holds; the gap bounds how fast they are spent; the reserve

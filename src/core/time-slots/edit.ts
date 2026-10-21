@@ -87,6 +87,8 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { buildSchedule, parseCadence } from '@/lib/reminder-rule'
 import { formatClockTime } from '@/lib/time-utils'
+import { settingName, unlinkSlot } from '@/lib/anchor-times'
+import { applySettingChanges, readAnchorRow } from '@/core/users/anchor-times'
 import {
   assignSlot,
   itemTimeOfDayMinutes,
@@ -346,6 +348,12 @@ export interface TimeSlotChangeResult {
    * retime keeps the slot's id, so its prompts follow it untouched.
    */
   quotas_moved: number
+  /**
+   * The user's settings that linked to a deleted period and now keep its
+   * start as a custom time ("Morning time", "Pad button 2") — a delete only;
+   * a retime keeps the period, and linked settings follow it on their own.
+   */
+  settings_converted: string[]
   /** The undo_log entry for this change, or null when nothing undoable happened (a rename). */
   undo_id: number | null
 }
@@ -371,7 +379,13 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
 
   const after: TimeSlot = { ...before, label, start_time: startTime }
   if (!retimed && label === before.label) {
-    return { slot: before, reminders_moved: 0, quotas_moved: 0, undo_id: null }
+    return {
+      slot: before,
+      reminders_moved: 0,
+      quotas_moved: 0,
+      settings_converted: [],
+      undo_id: null,
+    }
   }
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
@@ -406,6 +420,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     slot: after,
     reminders_moved: outcome.snapshots.length,
     quotas_moved: 0,
+    settings_converted: [],
     undo_id: undoId,
   }
 }
@@ -437,12 +452,28 @@ function readPromptDefault(userId: number): number | null {
   return row?.quota_prompt_slot_id ?? null
 }
 
-function deleteDescription(label: string, reminders: number, quotas: number): string {
+/**
+ * `Removed "Morning" (moved 2 reminders); kept Morning time, Pad button 1 at
+ * 9:00 AM` — the undo entry's description; the settings part names what was
+ * linked to the period and now keeps its start as a custom time.
+ */
+export function deleteDescription(
+  slot: Pick<TimeSlot, 'label' | 'start_time'>,
+  reminders: number,
+  quotas: number,
+  settings: readonly string[] = [],
+): string {
   const parts = [
     reminders > 0 ? reminderCount(reminders) : null,
     quotas > 0 ? `${quotas} quota${quotas === 1 ? '' : 's'}` : null,
   ].filter((p): p is string => p !== null)
-  return `Removed "${label}"` + (parts.length > 0 ? ` (moved ${parts.join(', ')})` : '')
+  return (
+    `Removed "${slot.label}"` +
+    (parts.length > 0 ? ` (moved ${parts.join(', ')})` : '') +
+    (settings.length > 0
+      ? `; kept ${settings.join(', ')} at ${formatClockTime(slot.start_time)}`
+      : '')
+  )
 }
 
 /** Remove a slot, moving its reminders and quota prompts to the nearest remaining slot. */
@@ -452,6 +483,7 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
   let remindersMoved = 0
+  let converted: string[] = []
   const undoId = withTransaction((tx) => {
     const oldSlots = listTimeSlots(userId)
     if (oldSlots.length <= 1) {
@@ -481,10 +513,22 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
       slotState.prompt_default = { before: slotId, after: promptTarget.id }
     }
 
+    // Settings linked to the period (Morning, Wake, Sleep, pad buttons) keep
+    // its start as a custom time — not the nearest period, unlike the
+    // reminders. The entry carries them so undo puts the links back with the
+    // period (`applyUserSettings`).
+    const settingChanges = unlinkSlot(readAnchorRow(userId, tx), before)
+    if (settingChanges.length > 0) {
+      applySettingChanges(tx, userId, settingChanges, 'after')
+      slotState.user_settings = settingChanges
+      converted = settingChanges.map((c) => settingName(c.setting))
+    }
+
     const description = deleteDescription(
-      before.label,
+      before,
       remindersMoved,
       outcome.snapshots.length - remindersMoved,
+      converted,
     )
     return logAction(
       userId,
@@ -501,6 +545,7 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
     slot: before,
     reminders_moved: remindersMoved,
     quotas_moved: outcome.snapshots.length - remindersMoved,
+    settings_converted: converted,
     undo_id: undoId,
   }
 }

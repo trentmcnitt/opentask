@@ -32,6 +32,7 @@ import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
 import { nextPeriodStart, nextSlotStart } from '@/lib/time-slot-assign'
 import { listTimeSlots } from '@/core/time-slots'
+import { getAnchorTimes } from '@/core/users/anchor-times'
 import { ValidationError } from '@/core/errors'
 import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
@@ -66,10 +67,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until = input.until
     } else {
       // `tomorrow`, else delta_minutes, else the user's default_snooze_option
-      const db = getDb()
-      const prefs = db
-        .prepare('SELECT default_snooze_option, morning_time FROM users WHERE id = ?')
-        .get(user.id) as { default_snooze_option: string; morning_time: string }
+      const prefs = getDb()
+        .prepare('SELECT default_snooze_option FROM users WHERE id = ?')
+        .get(user.id) as { default_snooze_option: string }
 
       const option = input.tomorrow
         ? 'tomorrow'
@@ -77,7 +77,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           ? String(input.delta_minutes)
           : prefs.default_snooze_option
 
-      until = computeSnoozeTime(option, user.timezone, prefs.morning_time, listTimeSlots(user.id))
+      const slots = listTimeSlots(user.id)
+      const morning = getAnchorTimes(user.id, slots).morning.time
+      until = computeSnoozeTime(option, user.timezone, morning, slots)
     }
 
     // Which tasks are actually due now (§4.6). A recurring task's due_at
