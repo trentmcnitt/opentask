@@ -43,8 +43,13 @@ import type { Task } from '@/types'
  *   in that segment considered in ONE call to /api/task-segments/consider —
  *   one undo entry, Undo on the toast. A queued one-off leaves the queue for
  *   its horizon segment (ticked there today); a waiting repeating task stays
- * - the details icon (resolution 10) → `openDetails`: the Quick panel for
- *   that task (`SegmentDetailsModal`, which each surface renders)
+ * - a HOLD on the row (or right-click, or Cmd/Ctrl+Enter; 2026-10-20 — it
+ *   replaced the pencil) → `openPeek`: the row's read-only bubble
+ *   (`RowPeekPopover`, the reminder rows' own). Its Open → `openDetails`: the
+ *   Quick panel for that task (`SegmentDetailsModal`, which each surface
+ *   renders); its trash can → `remove`: a soft delete, Undo on the toast
+ * - On deck tomorrow (2026-10-20) → `deck(task, deckTomorrowDay(...))`: one
+ *   tap, the hold menu's Tomorrow
  * - On deck (D2, 2026-10-20) → `POST /api/tasks/deck`: a tap decks it for
  *   today, or takes a today's deck off (A10); a hold picks the day. The row
  *   leaves at once, like Today: today's deck is in the dashboard's On deck
@@ -226,8 +231,11 @@ export function useTaskSegments({
   )
 
   const considerAll = useConsiderAll(run)
-  // The details icon's Quick panel: which task is open (`SegmentDetailsModal`).
+  // The peek bubble's Open: the Quick panel, which task is open
+  // (`SegmentDetailsModal`).
   const [detailsTask, setDetailsTask] = useState<Task | null>(null)
+  const peek = useRowPeek()
+  const remove = useRemoveTask(run)
 
   const removeTarget = useRemoveTarget(run)
   const deck = useDeck(setOverlay, inFlight, timezone, onUndo, refresh, onCompleted)
@@ -241,6 +249,7 @@ export function useTaskSegments({
     setHorizon,
     restore,
     removeTarget,
+    remove,
   }
   return {
     segments: view,
@@ -249,8 +258,41 @@ export function useTaskSegments({
     detailsTask,
     openDetails: setDetailsTask as (task: Task) => void,
     closeDetails: () => setDetailsTask(null),
+    ...peek,
     refresh,
   }
+}
+
+/**
+ * Which row's PEEK BUBBLE is open, if any (2026-10-20) — one id rather than a
+ * flag per row: only ever one bubble at a time (the reminder panel's
+ * `peekId`). `viaKeyboard`: opened with Cmd/Ctrl+Enter, so focus moves in.
+ */
+function useRowPeek() {
+  const [peek, setPeek] = useState<{ id: number; viaKeyboard: boolean } | null>(null)
+  const openPeek = useCallback(
+    (task: Task, viaKeyboard = false) => setPeek({ id: task.id, viaKeyboard }),
+    [],
+  )
+  const closePeek = useCallback(() => setPeek(null), [])
+  return { peek, openPeek, closePeek }
+}
+
+/**
+ * The peek bubble's trash can: the reminder bubble's own delete (bulk delete,
+ * soft), optimistic — the row leaves — with Undo on the toast.
+ */
+function useRemoveTask(run: RunSegmentAction) {
+  return useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        'gone',
+        () => post('/api/tasks/bulk/delete', { ids: [task.id] }),
+        `Moved “${task.title}” to Trash`,
+      ),
+    [run],
+  )
 }
 
 /**

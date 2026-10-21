@@ -234,7 +234,7 @@ export function DashboardRemindersPanel({
   const tasksCard = (
     <>
       <DashboardTasksPanel actions={segments} timezone={timezone} />
-      {/* A task-segment row's details icon (task queue PR 3). */}
+      {/* A task-segment row's editor: its peek bubble's Open (task queue PR 3). */}
       <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
     </>
   )

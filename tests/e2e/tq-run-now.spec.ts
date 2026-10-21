@@ -162,11 +162,7 @@ test('Roll over now with nothing to move says so, without a dialog', async ({ pa
 /** The hover box of each control lies inside its row, hovered. */
 async function expectBoxesInside(page: Page, row: Locator) {
   await expect(row).toBeVisible()
-  for (const sel of [
-    '[data-target-today-box]',
-    '[data-segment-details-box]',
-    '[data-on-deck-box]',
-  ]) {
+  for (const sel of ['[data-target-today-box]', '[data-deck-tomorrow-box]', '[data-on-deck-box]']) {
     const box = row.locator(sel)
     if ((await box.count()) === 0) continue
     await box.hover()
@@ -180,9 +176,7 @@ async function expectBoxesInside(page: Page, row: Locator) {
   }
 }
 
-test('task-segment rows: the Today and details hover boxes stay inside the row', async ({
-  page,
-}) => {
+test("task-segment rows: the row buttons' hover boxes stay inside the row", async ({ page }) => {
   const ids: number[] = []
   try {
     const queued = await create(page, { title: uniqueTitle('RN q'), due_at: daysFromNow(-2) })

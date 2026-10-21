@@ -58,6 +58,18 @@ export const DECK_MENU_NAMED_DAYS = 6
 const CHECK_IN_MARK = 'check-in'
 
 /**
+ * "Tomorrow" as a deck day (yyyy-MM-dd) for the task-segment row's one-tap
+ * "On deck tomorrow" button (2026-10-20): the hold menu's own Tomorrow item
+ * (`deckMenuDays`' first day), read from it so the two can never disagree —
+ * the calendar day after today (A2: between midnight and the rollover, the
+ * day after the coming one). No limit here: a deadline task the server
+ * refuses (A1) comes back with its reason, as from the menu.
+ */
+export function deckTomorrowDay(timezone: string, now: Date): string {
+  return deckMenuDays(timezone, now)[0].day
+}
+
+/**
  * The hold menu's day items, nearest first. `limit` (A1) greys every day
  * after its `latestDay`, with its caption; null = no limit.
  */

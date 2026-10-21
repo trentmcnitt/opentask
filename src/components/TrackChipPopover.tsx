@@ -1,7 +1,7 @@
 'use client'
 
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { PopoverFooter } from '@/components/ReminderRowPopover'
+import { PopoverFooter } from '@/components/RowPeekPopover'
 import { taskPeriodLabel, type TrackState } from '@/lib/track'
 import { formatRRule } from '@/lib/format-rrule'
 import { cn } from '@/lib/utils'

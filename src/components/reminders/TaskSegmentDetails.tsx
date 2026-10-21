@@ -10,14 +10,15 @@ import { showToast } from '@/lib/toast'
 import type { TaskSegmentActions } from '@/hooks/useTaskSegments'
 
 // The dashboard loads its popover the same way (`DashboardClient`): the panel
-// is large and only needed once a row's details icon is pressed.
+// is large and only needed once a row's peek bubble's Open is pressed.
 const QuickActionPopover = dynamic(() =>
   import('@/components/QuickActionPopover').then((mod) => ({ default: mod.QuickActionPopover })),
 )
 
 /**
- * THE DETAILS ICON's editor on a task-segment row (task queue PR 3,
- * resolution 10): the dashboard's own Quick panel (`QuickActionPopover` —
+ * A task-segment row's editor (task queue PR 3, resolution 10), reached since
+ * 2026-10-20 from the row's peek bubble's Open (it was the details icon's):
+ * the dashboard's own Quick panel (`QuickActionPopover` —
  * a dialog on a wide screen, a sheet on a phone) for one task, with
  * priority, target, horizon and the rest. Copied from the dashboard's wiring,
  * not reinvented: the save is the shared `saveTaskChanges` PATCH with the

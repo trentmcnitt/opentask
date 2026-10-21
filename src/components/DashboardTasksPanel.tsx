@@ -81,6 +81,12 @@ export function DashboardTasksPanel({
   }
   const { page, index, expanded, setExpanded, showConsidered } = pager
   const { segment } = page
+  // A page flip closes a row's peek bubble (the reminder panel's `onJump`):
+  // left open, it would come back with its row on the way back.
+  const goTo = (next: number) => {
+    actions.closePeek()
+    pager.goTo(next)
+  }
   // A queue panel is only ever sent with the switch on (`useQueueOn`).
   // Before the preferences load (`queue.loaded`) a non-queue page draws no
   // "Considered all" yet, so nothing appears or vanishes when they land.
@@ -102,8 +108,8 @@ export function DashboardTasksPanel({
         expanded={expanded}
         canGoPrev={index > 0}
         canGoNext={index < pages.length - 1}
-        onPrev={() => pager.goTo(index - 1)}
-        onNext={() => pager.goTo(index + 1)}
+        onPrev={() => goTo(index - 1)}
+        onNext={() => goTo(index + 1)}
         prevLabel="Previous task segment"
         nextLabel="Next task segment"
         sweep={
@@ -136,7 +142,7 @@ export function DashboardTasksPanel({
       <ReminderSlotBar
         items={pages}
         currentIndex={index}
-        onJump={pager.goTo}
+        onJump={goTo}
         ariaLabel="Today's task segments"
       />
       <TaskPageBody

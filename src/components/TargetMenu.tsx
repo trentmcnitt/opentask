@@ -132,7 +132,7 @@ export function TargetTodayButton({
    * The HOVER BOX (segment rows): the hover background goes on an inner box
    * of these classes instead of the whole button, so a hit target taller
    * than its row (44px on a 33px panel row) keeps its size while the grey
-   * block stays inside the row — the details icon's 32px box (2026-10-20).
+   * block stays inside the row — the row buttons' 32px box (2026-10-20).
    */
   boxClassName?: string
   /** Show the word "Today" from `sm` up (segment rows); icon-only otherwise. */

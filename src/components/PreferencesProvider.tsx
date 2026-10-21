@@ -534,7 +534,7 @@ export function useCheckInDay() {
  * THE TASK QUEUE, as the browser sees it (task queue PR 3): `enabled` is the
  * server's switch (`OPENTASK_TASK_QUEUE`, from GET /api/user/preferences) —
  * it gates the queue UI: the queue panels themselves come from the server
- * only when it is on, and the segment rows' details icon, the horizon dot on
+ * only when it is on, and the segment rows' On deck buttons, the horizon dot on
  * their meta line and "Considered all" on the task panels show only with it.
  * `attemptsRolloverTime` is what the attempts read (`effectiveAttempts`) and
  * the 3× offer take: the user's rollover time with the switch on (OpenTask
