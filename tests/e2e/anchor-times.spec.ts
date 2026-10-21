@@ -60,32 +60,32 @@ test.describe('Anchor times', () => {
       await page.goto('/settings')
       const morning = anchorRow(page, 'morning')
       const summary = morning.locator('[data-anchor-summary]')
-      await expect(summary).toHaveText('Morning · 9:00 AM')
+      await expect(summary).toHaveText('9:00 AM')
 
       // Link it: the time field goes, the summary names the period.
       await morning
         .getByLabel('Morning time: follows')
         .selectOption({ label: 'Afternoon (4:00 PM)' })
-      await expect(summary).toHaveText('Morning · 4:00 PM (Afternoon period)')
+      await expect(summary).toHaveText('4:00 PM · Afternoon period')
       await expect(morning.getByLabel('Morning time', { exact: true })).toHaveCount(0)
 
       // Move the period: Morning follows it.
       const start = periods(page).getByLabel('Start time of Afternoon')
       await start.fill('16:30')
       await start.press('Enter')
-      await expect(summary).toHaveText('Morning · 4:30 PM (Afternoon period)')
+      await expect(summary).toHaveText('4:30 PM · Afternoon period')
 
       // Remove it: Morning keeps 4:30 PM as its own time, and the toast says so.
       await periods(page).getByRole('button', { name: 'Remove Afternoon' }).click()
       await expect(
         page.getByText(/Removed "Afternoon".* · Morning time stays at 4:30 PM/),
       ).toBeVisible()
-      await expect(summary).toHaveText('Morning · 4:30 PM')
+      await expect(summary).toHaveText('4:30 PM')
       await expect(morning.getByLabel('Morning time', { exact: true })).toHaveValue('16:30')
 
       // Undo brings the period back, and Morning follows it again.
       await toastUndo(page, 'Removed "Afternoon"').click()
-      await expect(summary).toHaveText('Morning · 4:30 PM (Afternoon period)')
+      await expect(summary).toHaveText('4:30 PM · Afternoon period')
     } finally {
       await resetAnchors(page)
       const back = await slotNamed(page, 'Afternoon').catch(() => null)
@@ -107,13 +107,9 @@ test.describe('Anchor times', () => {
     try {
       await page.goto('/settings')
       const button1 = anchorRow(page, '0')
-      await expect(button1.locator('[data-anchor-summary]')).toHaveText(
-        'Number pad button 1 · 9:00 AM',
-      )
+      await expect(button1.locator('[data-anchor-summary]')).toHaveText('9:00 AM')
       await button1.getByLabel('Number pad button 1', { exact: true }).fill('07:15')
-      await expect(button1.locator('[data-anchor-summary]')).toHaveText(
-        'Number pad button 1 · 7:15 AM',
-      )
+      await expect(button1.locator('[data-anchor-summary]')).toHaveText('7:15 AM')
       await expect
         .poll(async () => {
           const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -183,15 +179,13 @@ test.describe('Anchor times: Settings loads the server’s values', () => {
       const morning = anchorRow(settings, 'morning')
       await morning.waitFor()
       expect(await morning.locator('[data-anchor-summary]').textContent()).toBe(
-        'Morning · 7:00 AM (Early morning period)',
+        '7:00 AM · Early morning period',
       )
       await expect(morning.getByLabel('Morning time: follows')).toHaveValue(String(early.id))
       await expect(anchorRow(settings, '0').locator('[data-anchor-summary]')).toHaveText(
-        'Number pad button 1 · 8:30 PM (Evening period)',
+        '8:30 PM · Evening period',
       )
-      await expect(anchorRow(settings, '3').locator('[data-anchor-summary]')).toHaveText(
-        'Number pad button 4 · 7:15 AM',
-      )
+      await expect(anchorRow(settings, '3').locator('[data-anchor-summary]')).toHaveText('7:15 AM')
       await expect(
         anchorRow(settings, '3').getByLabel('Number pad button 4', { exact: true }),
       ).toHaveValue('07:15')

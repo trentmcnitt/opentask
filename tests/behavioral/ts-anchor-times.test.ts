@@ -115,12 +115,10 @@ describe('the resolver (pure)', () => {
   })
 
   test("TAT-006: Settings' summary line names the period it follows", () => {
-    expect(anchorLabel('Morning', { time: '08:30', slot_id: 5, slot_label: 'Morning' })).toBe(
-      'Morning · 8:30 AM (Morning period)',
+    expect(anchorLabel({ time: '08:30', slot_id: 5, slot_label: 'Morning' })).toBe(
+      '8:30 AM · Morning period',
     )
-    expect(anchorLabel('Sleep', { time: '22:00', slot_id: null, slot_label: null })).toBe(
-      'Sleep · 10:00 PM',
-    )
+    expect(anchorLabel({ time: '22:00', slot_id: null, slot_label: null })).toBe('10:00 PM')
   })
 
   test('TAT-007: compare-and-set is per setting — a newer custom time is never re-linked', () => {

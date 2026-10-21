@@ -271,10 +271,12 @@ export function settingWrites(
   return writes
 }
 
-/** Settings' summary line: "Morning · 8:30 AM (Morning period)". */
-export function anchorLabel(name: string, resolved: ResolvedTime): string {
+/**
+ * Settings' summary line under the row's own label: "8:30 PM · Evening
+ * period" when linked, "9:00 AM" when custom. The row's label already names
+ * the setting, so the line doesn't repeat it.
+ */
+export function anchorLabel(resolved: ResolvedTime): string {
   const time = formatClockTime(resolved.time)
-  return resolved.slot_label
-    ? `${name} · ${time} (${resolved.slot_label} period)`
-    : `${name} · ${time}`
+  return resolved.slot_label ? `${time} · ${resolved.slot_label} period` : time
 }
