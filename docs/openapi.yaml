@@ -1684,6 +1684,121 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/tasks/bulk/skip-until:
+    post:
+      summary: Skip repeating tasks past this occurrence, or to a date
+      operationId: bulkSkipUntil
+      tags: [Bulk Operations]
+      description: |
+        Skip until (spec rule 10): built for many tasks at once, mostly sent by
+        an AI. Without `until` each repeating task skips this occurrence,
+        exactly as `POST /api/tasks/{id}/skip-occurrence`. With `until` (a day
+        in the user's timezone) a date skips every occurrence before it: the
+        task lands on its first occurrence on or after the start of that day,
+        and its occurrence and target go there. Every occurrence passed over is
+        a skip (`skip_count`) — the current one (one however long it has been
+        over target), then each later one before the date.
+
+        Nothing nags before the date: a task whose occurrence is already on or
+        after it has nothing to skip, but if its target was pulled before the
+        date the target goes back to the occurrence (a target move, no skip;
+        counted in `tasks_affected` and `targets_moved`). Only a task whose
+        target and occurrence are both on or after the date is left as it is
+        (`already_clear`).
+
+        On deck: a decked repeating task (no target, its occurrence kept) is
+        counted from its occurrence. A deck day BEFORE `until` is cleared in
+        the same write and the task gets a target at its landing occurrence
+        (or, with its occurrence already on or after the date, back on that
+        occurrence: `targets_moved`). A deck day ON or AFTER `until` is kept:
+        the occurrence still moves with the same skip count, the target stays
+        null and `on_deck_day` is unchanged (nothing to skip: `already_clear`).
+        Without `until` the deck is always cleared. Undo restores the deck.
+
+        A `from_completion` rule has no schedule to walk: it lands on the date
+        itself at the rule's time of day, and its interval restarts from there
+        — but never earlier than skipping this occurrence would land it (one
+        interval on from the current occurrence).
+
+        As for any skip: never a completion (`completion_count` untouched,
+        `task.skipped` webhooks), the deadline moves with the occurrence and
+        caps the target, attempts start afresh, and the task leaves the task
+        queue. Only repeating tasks move — one-offs, reminders, quotas and done,
+        archived or trashed tasks are left alone and counted, never a refusal of
+        the batch. An id that does not exist or is not yours is a 400, as on
+        every bulk route. One undo entry (`bulk_skip`) for the batch; a batch
+        that skips nothing writes none.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: integer
+                until:
+                  type: [string, 'null']
+                  format: date
+                  description: |
+                    `yyyy-MM-dd`, the user's local day: tomorrow or later (today
+                    is a 400), at most 10 years ahead. Omitted or null: skip this
+                    occurrence.
+                  example: '2026-11-02'
+      responses:
+        '200':
+          description: What was skipped and what was left alone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tasks_affected:
+                        type: integer
+                        description: Repeating tasks skipped
+                      occurrences_skipped:
+                        type: integer
+                        description: Occurrences passed over, summed across the tasks
+                      skipped_not_repeating:
+                        type: integer
+                        description: One-off tasks, left alone
+                      skipped_reminders:
+                        type: integer
+                      skipped_quotas:
+                        type: integer
+                      skipped_inactive:
+                        type: integer
+                        description: Done, archived or trashed tasks
+                      targets_moved:
+                        type: integer
+                        description: |
+                          Nothing to skip, but the target was before `until`: moved
+                          to the occurrence (included in `tasks_affected`)
+                      already_clear:
+                        type: integer
+                        description: Target and occurrence already on or after `until`
+                      task_ids:
+                        type: array
+                        items:
+                          type: integer
+                        description: The tasks skipped
+                      summary:
+                        type: string
+                        description: One line for a toast
+                        example: 'Skipped 3 tasks until Mon, Nov 2 (14 occurrences) · 1 not repeating'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/tasks/bulk/complete:
     post:
       summary: Complete multiple tasks in one request

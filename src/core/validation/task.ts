@@ -551,6 +551,25 @@ export function validateSegmentTarget(input: unknown): { ids: number[]; at?: str
 }
 
 /**
+ * Skip until (task queue PR 4): the ids, and optionally `until` — a local day
+ * (`yyyy-MM-dd`). Omitted or null: skip this occurrence. Whether the day is
+ * real, not in the past and not too far is checked in `skipUntil`, which knows
+ * the user's timezone.
+ */
+export const bulkSkipUntilSchema = z.object({
+  ids: bulkIds,
+  until: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'until must be a date (yyyy-MM-dd)')
+    .nullable()
+    .optional(),
+})
+
+export function validateBulkSkipUntil(input: unknown): z.infer<typeof bulkSkipUntilSchema> {
+  return bulkSkipUntilSchema.parse(input)
+}
+
+/**
  * Bulk delete input schema
  */
 export const bulkDeleteSchema = z.object({

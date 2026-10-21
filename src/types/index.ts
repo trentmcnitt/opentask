@@ -318,6 +318,9 @@ export type UndoAction =
   | 'progress'
   // §7.5: declining an occurrence without recording a completion.
   | 'skip'
+  // Skip until (task queue PR 4): one entry for a batch of repeating tasks
+  // skipped past this occurrence or to a date — each task's skip snapshot.
+  | 'bulk_skip'
   // Editable time slots: a slot's start moved / a slot removed, with the
   // reminders that moved to stay in (or find) a slot. The entry also carries
   // the slot row (`undo_log.slot_state`) so undo restores both together.

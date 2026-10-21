@@ -78,6 +78,7 @@ import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveQuickPanelChanges } from '@/lib/save-quick-panel-changes'
+import { runSkipUntil } from '@/lib/skip-until'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
@@ -329,7 +330,22 @@ function useBulkActions(
     }
   }
 
-  return { completeMany, bulkDone, bulkSaveAll, bulkDelete, handleSearch }
+  /**
+   * Skip until (task queue PR 4) — the selection sheet's button and the quick
+   * popover's More menu. The server skips the repeating tasks and counts the
+   * rest; the toast says both, with Undo when anything moved.
+   */
+  const skipUntil = async (ids: number[], until: string | null) => {
+    await runSkipUntil(ids, until, {
+      onUndo: handleUndo,
+      afterSkip: (result) => {
+        if (result.tasks_affected > 0) bumpUndoCount()
+        fetchTasks()
+      },
+    })
+  }
+
+  return { completeMany, bulkDone, bulkSaveAll, bulkDelete, skipUntil, handleSearch }
 }
 
 /**
@@ -1567,6 +1583,7 @@ function HomeContent({
         onBulkDone={bulk.bulkDone}
         onBulkSaveAll={bulk.bulkSaveAll}
         onBulkDelete={bulk.bulkDelete}
+        onSkipUntil={bulk.skipUntil}
         onSnoozeOverdue={handleSnoozeAllOverdue}
         focusedTask={focusedTask}
         quickActionOpen={quickActionOpen}
@@ -1918,6 +1935,7 @@ function DashboardView({
   onBulkDone,
   onBulkSaveAll,
   onBulkDelete,
+  onSkipUntil,
   onSnoozeOverdue,
   focusedTask,
   quickActionOpen,
@@ -2064,6 +2082,8 @@ function DashboardView({
   onBulkDone: () => Promise<void>
   onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
   onBulkDelete: () => Promise<void>
+  /** Skip until (PR 4): the selection sheet and the quick popover. */
+  onSkipUntil: (ids: number[], until: string | null) => Promise<void>
   onSnoozeOverdue: (until?: string) => void
   focusedTask: Task | null
   quickActionOpen: boolean
@@ -2554,6 +2574,7 @@ function DashboardView({
         onDone={onBulkDone}
         onSaveAll={onBulkSaveAll}
         onDelete={onBulkDelete}
+        onSkipUntil={onSkipUntil}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
         projects={projects}
@@ -2607,6 +2628,7 @@ function DashboardView({
         onSaveAll={onQuickActionSaveAll}
         onDelete={onQuickActionDelete}
         onMarkDone={onQuickActionDone}
+        onSkipUntil={(taskId, until) => onSkipUntil([taskId], until)}
         onNavigateToDetail={onNavigateToDetail}
         projects={projects}
         annotation={focusedTask ? effectiveAnnotationMap.get(focusedTask.id) : undefined}

@@ -43,6 +43,8 @@ export { ensureRuleTime, ruleTimeFor, fillRuleTime, type RuleTimeSources } from 
 // Core computation
 export {
   computeNextOccurrence,
+  occurrencesFromDue,
+  ruleTimeOfDay,
   computeFirstOccurrence,
   rollPassedFirstOccurrence,
   isRecurring,

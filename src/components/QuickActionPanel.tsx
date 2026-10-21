@@ -24,6 +24,7 @@ import {
   CalendarDays,
   Mic,
   Lightbulb,
+  SkipForward,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -89,6 +90,8 @@ import {
   RECURRENCE_EDITOR_ID,
 } from '@/components/quick-panel/RecurrenceSummaryLine'
 import { AutoTargetText } from '@/components/quick-panel/AutoTargetText'
+import { SkipUntilDialog } from '@/components/SkipUntilDialog'
+import { canSkipUntil } from '@/lib/skip-until'
 import {
   deadlineDayPick,
   deadlineRepeatLabel,
@@ -176,6 +179,13 @@ export interface QuickActionPanelProps {
   showCompletedBadge?: boolean
   /** Called when user marks task as done (single task only, popover mode) */
   onMarkDone?: () => void
+  /**
+   * Skip until (task queue PR 4): skip this occurrence (`until` null) or every
+   * one before a day. Single repeating task only; offered in the More menu
+   * when provided. An action, like Done — not a staged field. Rejects on a
+   * failure (already toasted), which keeps the picker open.
+   */
+  onSkipUntil?: (until: string | null) => Promise<void>
   /** Project name to display as badge next to title */
   projectName?: string
   /** Called when dirty state changes (for navigation protection in parent) */
@@ -262,6 +272,7 @@ export function QuickActionPanel({
   titleVariant = 'compact',
   showCompletedBadge = false,
   onMarkDone,
+  onSkipUntil,
   projectName,
   onDirtyChange,
   saveRef,
@@ -804,6 +815,11 @@ export function QuickActionPanel({
   // Details (single only). The menu renders only when at least one applies.
   const showBulkClearItem = canBulkClearDueDate && !pendingDueAtCleared
   const hasMoreMenuItems = isSingleTask || showBulkClearItem
+
+  // Skip until (task queue PR 4): a single repeating task, when the host offers it.
+  const [skipUntilOpen, setSkipUntilOpen] = useState(false)
+  const showSkipUntil =
+    !isCreateMode && !!onSkipUntil && !!effectiveTask && canSkipUntil(effectiveTask)
 
   const handleBulkClearDueDate = useCallback(() => {
     bulkHook.reset()
@@ -1919,6 +1935,22 @@ export function QuickActionPanel({
                             : `Remove target${effectiveTask?.rrule ? ' & recurrence' : ''}`}
                         </DropdownMenuItem>
                       )}
+                      {/* Skip until (task queue PR 4; spec rule 10). An
+                          action, not a staged edit, so it waits for unsaved
+                          edits to be saved or reset rather than dropping them
+                          (the selection sheet's Remove target does the same). */}
+                      {showSkipUntil && (
+                        <DropdownMenuItem
+                          inset
+                          disabled={isDirty}
+                          title={isDirty ? 'Save or reset your changes first' : undefined}
+                          onClick={() => setSkipUntilOpen(true)}
+                          data-skip-until-item
+                        >
+                          <SkipForward className="mr-2 size-4" />
+                          Skip until…
+                        </DropdownMenuItem>
+                      )}
                       {/* Clear due date - multi-task: applies to every selected task on Save */}
                       {showBulkClearItem && (
                         <DropdownMenuItem inset onClick={handleBulkClearDueDate}>
@@ -2106,6 +2138,16 @@ export function QuickActionPanel({
           onExpand={() => setNotesExpanded(true)}
           onCollapse={() => setNotesExpanded(false)}
           onChange={setPendingNotes}
+        />
+      )}
+
+      {showSkipUntil && effectiveTask && onSkipUntil && (
+        <SkipUntilDialog
+          open={skipUntilOpen}
+          onOpenChange={setSkipUntilOpen}
+          tasks={[effectiveTask]}
+          timezone={timezone}
+          onSkip={onSkipUntil}
         />
       )}
 
