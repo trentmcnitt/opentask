@@ -967,12 +967,24 @@ async function runInsightsViaProduction(
     insertTask.run(t.id, QUALITY_TEST_USER_ID, t.title, t.priority, t.created_at)
   }
 
+  // The test run's provider and model, as production passes the user's
+  // resolved config — without it the run falls back to the API config and
+  // would plan its chunks for the wrong output cap (or fail in SDK mode).
+  const { resolveFeatureAIConfig } = await import('@/core/ai/models')
+  const provider = getTestProvider()
+  const aiConfig =
+    provider === 'sdk'
+      ? { provider: 'sdk' as const, model: getModelForFeature('insights') }
+      : resolveFeatureAIConfig('insights', 'api')
+
   const startMs = Date.now()
   const { sessionId } = startInsightsGeneration(
     QUALITY_TEST_USER_ID,
     input.timezone,
     input.tasks,
     input.userContext,
+    'on-demand',
+    aiConfig,
   )
 
   // Poll for completion (max 10 minutes for large lists)
@@ -984,8 +996,12 @@ async function runInsightsViaProduction(
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
     const session = getInsightsSessionStatus(sessionId, QUALITY_TEST_USER_ID)
     if (!session) throw new Error('Insights session not found')
-    if (session.status === 'complete') break
     if (session.status === 'failed') throw new Error(`Insights failed: ${session.error}`)
+    // A complete session with an error scored only some tasks — a structural failure here
+    if (session.status === 'complete' && session.error) {
+      throw new Error(`Insights incomplete: ${session.error}`)
+    }
+    if (session.status === 'complete') break
   }
 
   const { results } = getInsightsResults(QUALITY_TEST_USER_ID)

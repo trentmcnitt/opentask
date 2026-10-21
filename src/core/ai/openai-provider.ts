@@ -46,6 +46,25 @@ const SCHEMA_NAMES: Record<string, string> = {
 }
 
 /**
+ * Did the model stop at its output cap (finish_reason 'length')? Then the
+ * answer is cut off, and a cut-off JSON answer does not parse. Logged when it happens.
+ */
+function detectTruncation(
+  response: OpenAI.ChatCompletion,
+  action: string,
+): { outputTokens: number | undefined; truncated: boolean } {
+  const truncated = response.choices[0]?.finish_reason === 'length'
+  const outputTokens = response.usage?.completion_tokens
+  if (truncated) {
+    log.warn(
+      'ai',
+      `[openai] ${action} output truncated: hit the output cap (out ${outputTokens ?? '?'})`,
+    )
+  }
+  return { outputTokens, truncated }
+}
+
+/**
  * Execute an AI query via an OpenAI-compatible API.
  *
  * Mirrors the interface of apiQuery() from api-provider.ts — same input options,
@@ -157,6 +176,8 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
     const durationMs = Date.now() - startTime
     const hasOutput = !!(structuredOutput || textResult)
 
+    const { outputTokens, truncated } = detectTruncation(response, action)
+
     if (!hasOutput) {
       log.warn('ai', `[openai] ${action} completed but returned no output (${durationMs}ms)`)
     }
@@ -182,6 +203,8 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
       durationMs,
       success: hasOutput,
       error: hasOutput ? null : 'No output',
+      outputTokens,
+      truncated,
     }
   } catch (err) {
     return handleQueryError(err, startTime, timedOut, {

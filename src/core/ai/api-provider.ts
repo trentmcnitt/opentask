@@ -17,6 +17,7 @@ import { log } from '@/lib/logger'
 import { logAIActivity } from './activity'
 import { resolveModelId } from './provider'
 import { handleQueryError, resolveQueryTimeout } from './sdk'
+import { anthropicMaxTokens } from './output-limits'
 import type { AIQueryOptions, AIQueryResult } from './sdk'
 
 /** Cache of Anthropic clients keyed by API key. */
@@ -41,6 +42,27 @@ function usageText(usage: Anthropic.Usage): string {
   const read = usage.cache_read_input_tokens ?? 0
   const write = usage.cache_creation_input_tokens ?? 0
   return `tokens in ${usage.input_tokens}, cache read ${read}, cache write ${write}, out ${usage.output_tokens}`
+}
+
+/**
+ * Did the response stop at the output cap? Then it is cut off mid-answer, and
+ * a cut-off JSON answer does not parse. `stop_reason` says so directly; output
+ * tokens reaching `max_tokens` is the same fact, counted. Logged when it happens.
+ */
+function detectTruncation(
+  response: Anthropic.Message,
+  maxTokens: number,
+  action: string,
+): { outputTokens: number; truncated: boolean } {
+  const outputTokens = response.usage.output_tokens
+  const truncated = response.stop_reason === 'max_tokens' || outputTokens >= maxTokens
+  if (truncated) {
+    log.warn(
+      'ai',
+      `[api] ${action} output truncated: hit the output cap (out ${outputTokens}, max_tokens ${maxTokens})`,
+    )
+  }
+  return { outputTokens, truncated }
 }
 
 /**
@@ -73,9 +95,10 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
     const anthropic = getClient(providerConfig?.apiKey)
 
     // Build the create params
+    const maxTokens = anthropicMaxTokens(maxThinkingTokens)
     const createParams: Anthropic.MessageCreateParamsNonStreaming = {
       model: resolvedModel,
-      max_tokens: maxThinkingTokens ? 16384 : 8192,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
     }
 
@@ -150,6 +173,8 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
     const durationMs = Date.now() - startTime
     const hasOutput = !!(structuredOutput || textResult)
 
+    const { outputTokens, truncated } = detectTruncation(response, maxTokens, action)
+
     if (!hasOutput) {
       log.warn('ai', `[api] ${action} completed but returned no output (${durationMs}ms)`)
     }
@@ -178,6 +203,8 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
       durationMs,
       success: hasOutput,
       error: hasOutput ? null : 'No output',
+      outputTokens,
+      truncated,
     }
   } catch (err) {
     return handleQueryError(err, startTime, timedOut, {

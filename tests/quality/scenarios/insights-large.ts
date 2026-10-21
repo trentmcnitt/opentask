@@ -288,6 +288,62 @@ export const insightsLargeScenarios: AITestScenario[] = [
     },
   },
   {
+    id: 'insights-chunked-200',
+    feature: 'insights',
+    description:
+      'Production code path at the size that overflowed in production (~200 tasks, 2026-10-21). ' +
+      'On an 8192-cap API model (claude-haiku-5-5) this must split into calls of at most 27 ' +
+      'tasks; on the SDK it runs as one or two calls. Every task must come back scored.',
+    input: {
+      timezone: TIMEZONE,
+      useProductionCodePath: true,
+      tasks: generateRealisticTaskList(
+        {
+          count: 186,
+          wellOrganized: 60,
+          stale: 12,
+          borderline: 10,
+          recurringOverdue: 5,
+          highPriority: 4,
+          quickWin: 3,
+          vague: 2,
+          misprioritized: 2,
+        },
+        TIMEZONE,
+        ALL_ANCHORS,
+      ),
+    },
+    requirements: {
+      quality_notes:
+        'Production code path at ~200 tasks (186 generated + 11 anchors), the size of the ' +
+        'production run that was cut off at the 8192-token output cap. Layer 1 fails if any ' +
+        'task is left unscored (the session error). On the API path the list is shuffled into ' +
+        'chunks with a calibration summary, so check cross-chunk consistency: anchor scores and ' +
+        'signals should match insights-large-realistic, P4 anchors 0-20 with no signals, stale ' +
+        'anchors high with "stale", signal restraint at 50%+ zero signals, a wide score spread.',
+      insights_expectations: {
+        score_ranges: {
+          9001: { min: 60, max: 100 },
+          9002: { min: 60, max: 100 },
+          9003: { min: 60, max: 100 },
+          9010: { min: 0, max: 20 },
+          9011: { min: 0, max: 20 },
+          9030: { min: 0, max: 35 },
+          9031: { min: 0, max: 35 },
+        },
+        signal_checks: {
+          9010: {
+            must_not_have: ['stale', 'act_soon', 'quick_win', 'vague', 'misprioritized', 'review'],
+          },
+          9011: {
+            must_not_have: ['stale', 'act_soon', 'quick_win', 'vague', 'misprioritized', 'review'],
+          },
+        },
+        min_zero_signal_pct: 50,
+      },
+    },
+  },
+  {
     id: 'insights-large-chunked',
     feature: 'insights',
     description:

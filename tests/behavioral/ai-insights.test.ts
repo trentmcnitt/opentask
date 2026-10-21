@@ -27,6 +27,8 @@ import {
   getInsightsResults,
   hasInsightsResults,
   getActiveInsightsSession,
+  insightsTasksPerCall,
+  splitIntoChunks,
   INSIGHTS_SIGNALS,
   SIGNAL_MAP,
 } from '@/core/ai/insights'
@@ -337,71 +339,270 @@ describe('Session tracking', () => {
   })
 })
 
+// The env above (provider anthropic, model 'test-model') plans like the
+// production API path: 8192-token cap, no explicit thinking budget → 27 a call.
+const API_TASKS_PER_CALL = 27
+
+/** Wait until the session has left 'running', then return it. */
+async function waitForFinish(sessionId: string) {
+  await vi.waitFor(() => {
+    expect(getInsightsSessionStatus(sessionId, TEST_USER_ID)!.status).not.toBe('running')
+  })
+  return getInsightsSessionStatus(sessionId, TEST_USER_ID)!
+}
+
+/** A response cut off at the output cap: half a JSON document, flagged truncated. */
+function truncatedResponse() {
+  return {
+    structuredOutput: null,
+    textResult: '{"tasks":[{"task_id":1,"score":40,"commentary":"Cut of',
+    durationMs: 500,
+    success: true,
+    error: null,
+    outputTokens: 8192,
+    truncated: true,
+  }
+}
+
+describe('Chunk sizing by output cap', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  test('an 8192-cap API model gets small chunks', () => {
+    expect(insightsTasksPerCall({ provider: 'anthropic', model: 'claude-haiku-5-5' })).toBe(
+      API_TASKS_PER_CALL,
+    )
+    // OpenAI sends no max_tokens; it plans against the same conservative 8192
+    expect(insightsTasksPerCall({ provider: 'openai', model: 'gpt-5' })).toBe(API_TASKS_PER_CALL)
+  })
+
+  test('an explicit thinking budget comes off the cap, and tasks then cost only their JSON', () => {
+    // anthropic Opus: (16384 − 10000) × 0.6 / 60
+    expect(insightsTasksPerCall({ provider: 'anthropic', model: 'claude-opus-5-5' })).toBe(63)
+    // SDK Opus: (32000 − 10000) × 0.6 / 60
+    expect(insightsTasksPerCall({ provider: 'sdk', model: 'opus' })).toBe(220)
+  })
+
+  test('the SDK cap follows CLAUDE_CODE_MAX_OUTPUT_TOKENS', () => {
+    expect(insightsTasksPerCall({ provider: 'sdk', model: 'sonnet' })).toBe(106)
+    vi.stubEnv('CLAUDE_CODE_MAX_OUTPUT_TOKENS', '64000')
+    expect(insightsTasksPerCall({ provider: 'sdk', model: 'sonnet' })).toBe(213)
+    vi.stubEnv('CLAUDE_CODE_MAX_OUTPUT_TOKENS', '1000000')
+    expect(insightsTasksPerCall({ provider: 'sdk', model: 'opus' })).toBe(500)
+  })
+
+  test('splitIntoChunks makes the fewest near-equal chunks within the limit', () => {
+    const items = Array.from({ length: 197 }, (_, i) => i)
+    const chunks = splitIntoChunks(items, API_TASKS_PER_CALL)
+    expect(chunks).toHaveLength(8)
+    expect(chunks.every((c) => c.length <= API_TASKS_PER_CALL)).toBe(true)
+    expect(chunks.flat()).toEqual(items)
+    expect(splitIntoChunks(items, 500)).toEqual([items])
+  })
+})
+
 describe('Chunk splitting', () => {
-  test('processes tasks under threshold in a single AI call', async () => {
+  test('a list that fits one call is sent in one call', async () => {
     mockAiQuery.mockResolvedValue(makeInsightsResponse([1, 2, 3]))
 
     const tasks = makeTasks(3)
-    const { singleCall } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
-
+    const { sessionId, singleCall } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(singleCall).toBe(true)
 
-    await vi.waitFor(() => {
-      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
-    })
-
+    await waitForFinish(sessionId)
     expect(mockAiQuery).toHaveBeenCalledOnce()
   })
 
-  test('splits tasks over 500 into multiple chunks', async () => {
-    const taskCount = 600
+  test('~200 tasks on an 8192-cap model are split into calls of at most 27', async () => {
+    const taskCount = 197
     const allIds = Array.from({ length: taskCount }, (_, i) => i + 1)
-
-    // Return all task IDs on every call — the code filters by chunk membership.
-    // After shuffle + split, each chunk gets ~300 tasks. The filter keeps only
-    // the IDs that appear in that chunk, so all 600 end up stored across 2 calls.
+    // Return every id on every call — the code keeps only the chunk's own ids
     mockAiQuery.mockResolvedValue(makeInsightsResponse(allIds))
 
     const tasks = makeTasks(taskCount)
-    const { singleCall } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
-
+    const { sessionId, singleCall } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(singleCall).toBe(false)
 
-    await vi.waitFor(() => {
-      const { results } = getInsightsResults(TEST_USER_ID)
-      expect(results.length).toBe(taskCount)
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledTimes(8)
+    for (const [call] of mockAiQuery.mock.calls) {
+      const lines = call.prompt.split('<tasks>')[1].split('</tasks>')[0].trim().split('\n')
+      expect(lines.length).toBeLessThanOrEqual(API_TASKS_PER_CALL)
+      // Each subset carries the calibration summary of the whole list
+      expect(call.prompt).toContain('Full task list summary')
+      expect(call.prompt).toContain(`Total tasks in full list: ${taskCount}`)
+    }
+    expect(session.status).toBe('complete')
+    expect(session.completed).toBe(taskCount)
+    expect(session.error).toBeNull()
+    expect(getInsightsResults(TEST_USER_ID).results).toHaveLength(taskCount)
+  })
+
+  test('~200 tasks on a large-cap provider go in one call', async () => {
+    const taskCount = 197
+    mockAiQuery.mockResolvedValue(
+      makeInsightsResponse(Array.from({ length: taskCount }, (_, i) => i + 1)),
+    )
+
+    const tasks = makeTasks(taskCount)
+    const { sessionId, singleCall } = startInsightsGeneration(
+      TEST_USER_ID,
+      TEST_TIMEZONE,
+      tasks,
+      null,
+      'on-demand',
+      { provider: 'sdk', model: 'opus' },
+    )
+    expect(singleCall).toBe(true)
+
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledOnce()
+    expect(mockAiQuery.mock.calls[0][0].prompt).not.toContain('Full task list summary')
+    expect(session.completed).toBe(taskCount)
+  })
+})
+
+describe('Session status is truthful', () => {
+  test('every task scored → complete, completed = total, no error', async () => {
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1, 2, 3]))
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3))
+
+    const session = await waitForFinish(sessionId)
+    expect(session.status).toBe('complete')
+    expect(session.completed).toBe(3)
+    expect(session.error).toBeNull()
+  })
+
+  test('some chunks fail → complete, completed = tasks scored, error says how many were not', async () => {
+    // 60 tasks → 3 calls of 20; the second one errors
+    const allIds = Array.from({ length: 60 }, (_, i) => i + 1)
+    mockAiQuery
+      .mockResolvedValueOnce(makeInsightsResponse(allIds))
+      .mockRejectedValueOnce(new Error('AI service unavailable'))
+      .mockResolvedValueOnce(makeInsightsResponse(allIds))
+
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(60))
+
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledTimes(3) // an error is not retried as halves
+    expect(session.status).toBe('complete')
+    expect(session.completed).toBe(40)
+    expect(session.error).toBe('20 of 60 tasks could not be scored')
+    expect(getInsightsResults(TEST_USER_ID).results).toHaveLength(40)
+  })
+
+  test('tasks the AI leaves out count as not scored', async () => {
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1, 2]))
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3))
+
+    const session = await waitForFinish(sessionId)
+    expect(session.status).toBe('complete')
+    expect(session.completed).toBe(2)
+    expect(session.error).toBe('1 of 3 tasks could not be scored')
+  })
+
+  test('every chunk fails → failed with an error, completed 0, earlier results kept', async () => {
+    const db = getDb()
+    const tasks = makeTasks(3)
+    db.prepare(
+      `INSERT INTO ai_insights_results (user_id, task_id, score, commentary, signals, generated_at)
+       VALUES (?, 1, 50, 'Earlier result', NULL, '2026-01-01T00:00:00Z')`,
+    ).run(TEST_USER_ID)
+    mockAiQuery.mockResolvedValue({
+      structuredOutput: null,
+      textResult: null,
+      durationMs: 500,
+      success: false,
+      error: 'Request failed: 529 overloaded',
     })
 
-    // 600 tasks / 500 threshold = 2 chunks
-    expect(mockAiQuery).toHaveBeenCalledTimes(2)
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+
+    const session = await waitForFinish(sessionId)
+    expect(session.status).toBe('failed')
+    expect(session.completed).toBe(0)
+    expect(session.error).toBe('None of the 3 tasks could be scored')
+    expect(session.finished_at).toBeTruthy()
+    expect(getInsightsResults(TEST_USER_ID).results.map((r) => r.commentary)).toEqual([
+      'Earlier result',
+    ])
+  })
+})
+
+describe('Split retry of a truncated chunk', () => {
+  test('a truncated call is retried once as two halves, and loses no tasks', async () => {
+    const allIds = Array.from({ length: 20 }, (_, i) => i + 1)
+    mockAiQuery
+      .mockResolvedValueOnce(truncatedResponse())
+      .mockResolvedValue(makeInsightsResponse(allIds))
+
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(20))
+
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledTimes(3)
+    const halfPrompts = mockAiQuery.mock.calls.slice(1).map(([call]) => call.prompt)
+    for (const prompt of halfPrompts) {
+      expect(prompt).toContain('Tasks in this subset: 10')
+      expect(prompt).toContain('Full task list summary')
+    }
+    expect(session.status).toBe('complete')
+    expect(session.completed).toBe(20)
+    expect(session.error).toBeNull()
+  })
+
+  test('an unparsable response is retried as halves too', async () => {
+    mockAiQuery
+      .mockResolvedValueOnce({
+        structuredOutput: null,
+        textResult: 'not json at all',
+        durationMs: 500,
+        success: true,
+        error: null,
+      })
+      .mockResolvedValue(makeInsightsResponse([1, 2, 3, 4]))
+
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(4))
+
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledTimes(3)
+    expect(session.completed).toBe(4)
+  })
+
+  test('the retry is one level only: a half that is cut off again is skipped', async () => {
+    const allIds = Array.from({ length: 20 }, (_, i) => i + 1)
+    mockAiQuery
+      .mockResolvedValueOnce(truncatedResponse())
+      .mockResolvedValueOnce(truncatedResponse())
+      .mockResolvedValueOnce(makeInsightsResponse(allIds))
+
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(20))
+
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledTimes(3)
+    expect(session.status).toBe('complete')
+    expect(session.completed).toBe(10)
+    expect(session.error).toBe('10 of 20 tasks could not be scored')
+  })
+
+  test('a call that errors is not split', async () => {
+    mockAiQuery.mockResolvedValue({
+      structuredOutput: null,
+      textResult: null,
+      durationMs: 500,
+      success: false,
+      error: 'anthropic query timed out after 180000ms',
+    })
+
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, makeTasks(20))
+
+    const session = await waitForFinish(sessionId)
+    expect(mockAiQuery).toHaveBeenCalledOnce()
+    expect(session.status).toBe('failed')
   })
 })
 
 describe('Error handling', () => {
-  test('continues on chunk error — partial results are stored', async () => {
-    // Use >500 tasks to trigger multi-chunk processing.
-    // First chunk succeeds, second chunk fails.
-    const taskCount = 600
-    const allIds = Array.from({ length: taskCount }, (_, i) => i + 1)
-
-    mockAiQuery
-      .mockResolvedValueOnce(makeInsightsResponse(allIds))
-      .mockRejectedValueOnce(new Error('AI service unavailable'))
-
-    const tasks = makeTasks(taskCount)
-    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
-
-    await vi.waitFor(() => {
-      const session = getActiveInsightsSession(TEST_USER_ID)
-      expect(session).toBeNull() // No longer active = completed
-    })
-
-    // First chunk's results should be stored, second chunk failed
-    const { results } = getInsightsResults(TEST_USER_ID)
-    expect(results.length).toBeGreaterThan(0)
-    expect(results.length).toBeLessThan(taskCount)
-  })
-
   test('filters out task IDs not in the input batch', async () => {
     // AI returns a hallucinated task_id
     mockAiQuery.mockResolvedValueOnce({
