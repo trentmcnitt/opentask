@@ -259,6 +259,34 @@ test.describe('desktop', () => {
     }
   })
 
+  test('a hold or right-click on the done square is never the bubble', async ({ page }) => {
+    const ids: number[] = []
+    try {
+      const title = uniqueTitle('RP done')
+      const id = await daysTask(page, title)
+      ids.push(id)
+      await page.clock.install()
+      await page.goto('/reminders')
+      const r = segRow(segment(page, 'days'), id)
+      const done = r.getByRole('button', { name: /^Done: / })
+      await expect(done).toBeVisible()
+      await done.click({ button: 'right' })
+      await expect(bubble(page, id)).toHaveCount(0)
+      // Held well past the 400ms with the button down: no bubble mid-hold.
+      const box = (await done.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      await page.clock.runFor(1500)
+      await expect(bubble(page, id)).toHaveCount(0)
+      await page.mouse.up()
+      // The release is the button's own click: done.
+      await expect(r).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, id)).done).toBe(true)
+    } finally {
+      await trash(page, ids)
+    }
+  })
+
   test('On deck tomorrow: one tap decks a one-off for tomorrow, the row leaves, Undo puts it back', async ({
     page,
   }) => {
@@ -312,6 +340,15 @@ test.describe('desktop', () => {
       await page.goto('/reminders')
       const r = segRow(segment(page, 'queue_today'), id)
       await expect(r.locator('[data-segment-details]')).toHaveCount(0)
+      // Its bubble's meta is the row's: the missed occurrence's date, not the
+      // moved target.
+      const occurrence = DateTime.fromISO(waiting.occurrence_at as string).setZone(TZ)
+      await r.locator('p').first().click({ button: 'right' })
+      await expect(bubble(page, id).locator('[data-target-chip]')).toContainText(
+        occurrence.toFormat('LLL d'),
+      )
+      await page.keyboard.press('Escape')
+      await expect(bubble(page, id)).toHaveCount(0)
       await r.locator('[data-deck-tomorrow]').click()
       await expect(r).toHaveCount(0)
       await expect(toast(page, `On deck for tomorrow: “${title}”`)).toBeVisible()

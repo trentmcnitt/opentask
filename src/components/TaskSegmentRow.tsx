@@ -450,8 +450,9 @@ export const ROW_PEEK_DESCRIPTION =
  * A press that starts on one of the row's own controls is that control's:
  * the circle, On deck tomorrow, On deck, Today and the done square carry
  * `data-no-row-press` (On deck and Today keep their own holds and right-click
- * menus), as on the dashboard row (`TaskRow`). So do the meta line's chips.
- * Events from outside the row's DOM — a portalled menu or dialog one of its
+ * menus), as on the dashboard row (`TaskRow`), and so does the Upcoming
+ * target chip — and any button counts, so a control added later can't open
+ * the bubble from a hold meant for it. Events from outside the row's DOM — a portalled menu or dialog one of its
  * controls opened, whose React events still bubble here — are ignored too.
  */
 function useSegmentRowPress({
@@ -466,7 +467,7 @@ function useSegmentRowPress({
   const press = useLongPress({ onLongPress: enabled ? () => onPeek(false) : undefined })
   const isOwn = (e: React.SyntheticEvent<HTMLElement>) => {
     const target = e.target as Element
-    return e.currentTarget.contains(target) && !target.closest('[data-no-row-press]')
+    return e.currentTarget.contains(target) && !target.closest('[data-no-row-press], button')
   }
   return {
     'aria-keyshortcuts': enabled ? 'Meta+Enter Control+Enter' : undefined,
@@ -622,6 +623,8 @@ function TaskSegmentRowActions({
           stock checkbox: same size, radius, border and no shadow. */}
       <button
         type="button"
+        // A hold or right-click here is never the row's peek.
+        data-no-row-press
         onClick={(e) => {
           e.stopPropagation()
           void actions.done(task)
