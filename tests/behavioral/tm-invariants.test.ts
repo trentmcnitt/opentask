@@ -202,6 +202,8 @@ describe('TM-INV: the bulk tier (seeded random)', () => {
   afterEach(() => vi.useRealTimers())
 
   test('TM-INV-03: bulk snooze — a passed deadline is the High tier; P4 never moves', () => {
+    // A seeded random sweep over the bulk tier; on a slow CI runner it has
+    // run past vitest's 5 s default, like TM-INV-06/07, so it gets its own.
     const r = rng(SEED + 2)
     const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
     for (let c = 0; c < 80; c++) {
@@ -258,7 +260,7 @@ describe('TM-INV: the bulk tier (seeded random)', () => {
         checkStored(after, `${label} task ${t.id}`)
       }
     }
-  })
+  }, 30_000)
 })
 
 /**
