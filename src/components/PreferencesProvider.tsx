@@ -572,6 +572,8 @@ export function useAnchorTimes() {
     pad: ctx.padPresets,
     setAnchorPrefs: ctx.setAnchorPrefs,
     reloadPreferences: ctx.reloadPreferences,
+    /** The preferences GET has settled; until then the values are the defaults. */
+    loaded: ctx.preferencesLoaded,
   }
 }
 

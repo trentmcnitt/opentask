@@ -14,6 +14,7 @@ import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
+const E2E_TOKEN = 'a'.repeat(64) // the E2E Token, seeded in globalSetup.ts
 
 interface Slot {
   id: number
@@ -137,6 +138,83 @@ test.describe('Anchor times', () => {
     } finally {
       await resetAnchors(page)
       await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
+  /**
+   * The rows must show what the SERVER holds on first load, not the
+   * provider's defaults: links saved through the API, then Settings opened
+   * cold — once in the logged-in page, once in a fresh browser whose session
+   * was minted from an API token (the native apps' path, and how dev was
+   * checked when this broke, 2026-10-21).
+   */
+  test('links saved elsewhere (the API) show when Settings loads', async ({
+    authenticatedPage: page,
+    browser,
+    baseURL,
+  }) => {
+    const early = await slotNamed(page, 'Early morning')
+    const evening = await slotNamed(page, 'Evening')
+    const expectLinkedRows = async (settings: Page) => {
+      // Hold the preferences GET until the period list has landed — the
+      // order a slow network gave dev — so the rows' first paint is checked
+      // deterministically: none may draw before the preferences are in (they
+      // would draw the provider's defaults), and the first one drawn after
+      // must already read the server's link.
+      let release!: () => void
+      const held = new Promise<void>((resolve) => (release = resolve))
+      await settings.route('**/api/user/preferences', async (route) => {
+        if (route.request().method() === 'GET') await held
+        await route.continue()
+      })
+      const slotsLanded = settings.waitForResponse((r) => r.url().endsWith('/api/time-slots'))
+      await settings.goto('/settings')
+      await slotsLanded
+      await expect(settings.getByTestId('reminder-periods')).toBeVisible()
+      await expect(settings.locator('[data-anchor-row]')).toHaveCount(0)
+      release()
+
+      const morning = anchorRow(settings, 'morning')
+      await morning.waitFor()
+      expect(await morning.locator('[data-anchor-summary]').textContent()).toBe(
+        'Morning · 7:00 AM (Early morning period)',
+      )
+      await expect(morning.getByLabel('Morning time: follows')).toHaveValue(String(early.id))
+      await expect(anchorRow(settings, '0').locator('[data-anchor-summary]')).toHaveText(
+        'Button 1 · 8:30 PM (Evening period)',
+      )
+      await expect(anchorRow(settings, '3').locator('[data-anchor-summary]')).toHaveText(
+        'Button 4 · 7:15 AM',
+      )
+      await expect(anchorRow(settings, '3').getByLabel('Button 4', { exact: true })).toHaveValue(
+        '07:15',
+      )
+    }
+    const fresh = await browser.newContext({ baseURL })
+    try {
+      const res = await page.request.patch('/api/user/preferences', {
+        data: {
+          morning_slot_id: early.id,
+          pad_presets: [
+            { slot_id: evening.id },
+            { time: '12:00' },
+            { time: '16:00' },
+            { time: '07:15' },
+          ],
+        },
+      })
+      expect(res.ok()).toBeTruthy()
+
+      await expectLinkedRows(page)
+
+      const minted = await fresh.request.post('/api/auth/session-from-token', {
+        headers: { Authorization: `Bearer ${E2E_TOKEN}` },
+      })
+      expect(minted.ok()).toBeTruthy()
+      await expectLinkedRows(await fresh.newPage())
+    } finally {
+      await fresh.close()
+      await resetAnchors(page)
     }
   })
 

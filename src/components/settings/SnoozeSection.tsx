@@ -34,7 +34,10 @@ const SELECT_CLASS =
  * `timeSlots` is the page's one period list (src/app/settings/page.tsx),
  * shared with Reminder periods, so a period added, renamed or moved there
  * shows in these pickers at once. The anchor rows wait for it (`slotsLoaded`)
- * rather than draw a link as "Custom time" for a moment.
+ * AND for the preferences load (`anchors.loaded`): before it, the provider
+ * holds the defaults, and a row drawn then showed "Morning · 9:00 AM, Custom
+ * time" for a linked Morning until the GET landed (seen on dev, 2026-10-21) —
+ * and a pick made in that moment would have saved from the wrong value.
  */
 export function SnoozeSection({
   timeSlots,
@@ -45,6 +48,7 @@ export function SnoozeSection({
 }) {
   const { bulkSnoozeDefault, setBulkSnoozeDefault } = useSnoozePreferences()
   const anchors = useAnchorTimes()
+  const rowsReady = slotsLoaded && anchors.loaded
   // Wake = Sleep reads as awake all day (no quiet hours, nags all day) —
   // allowed, as it always was with custom times, but said.
   const sameWakeSleep =
@@ -59,7 +63,7 @@ export function SnoozeSection({
     >
       <div className="space-y-4">
         <DefaultSnoozeRow />
-        {slotsLoaded && <NumberPadRows timeSlots={timeSlots} />}
+        {rowsReady && <NumberPadRows timeSlots={timeSlots} />}
         {/* Trent, 2026-09-22: the clock press defaults to the next
             period, with this to flip back while he decides. */}
         <SettingRow
@@ -83,7 +87,7 @@ export function SnoozeSection({
             <option value="default_option">Default snooze</option>
           </select>
         </SettingRow>
-        {slotsLoaded && (
+        {rowsReady && (
           <>
             <AnchorTimeRow
               label="Morning time"
