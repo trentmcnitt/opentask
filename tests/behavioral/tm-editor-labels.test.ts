@@ -65,7 +65,8 @@ describe('describeAutoTarget', () => {
   })
 
   test('started once the automatic target has arrived', () => {
-    const label = describeAutoTarget(base, TZ, CTX, new Date('2026-10-17T15:00:00Z'))
+    // The deadline's own day (wait 0) after its morning: the target is now.
+    const label = describeAutoTarget(base, TZ, CTX, new Date('2026-10-20T15:00:00Z'))
     expect(label?.started).toBe(true)
   })
 

@@ -273,8 +273,8 @@ export const onDeckScenarios: GoldenScenario[] = [
     tasks: [{ name: 'task', created: '2026-10-19T09:00', input: UNDATED }],
     events: [
       { at: '2026-10-19T10:00', run: deck(['task'], '2026-10-24') },
-      // Tue: deadline Tue Oct 27 23:59 → wait 7 → lead 3 → auto Sat Oct 24
-      // 08:30, the deck's own day: the deadline wins.
+      // Tue: deadline Sun Oct 25 23:59 → wait 5 → the day before → auto Sat
+      // Oct 24 08:30, the deck's own day: the deadline wins.
       {
         at: '2026-10-20T10:00',
         run: (ctx) =>
@@ -282,7 +282,7 @@ export const onDeckScenarios: GoldenScenario[] = [
             userId: ctx.userId,
             userTimezone: ctx.timezone,
             taskId: ctx.ids.task,
-            input: { deadline_at: iso('2026-10-27T23:59') },
+            input: { deadline_at: iso('2026-10-25T23:59') },
           }),
       },
       {
@@ -293,10 +293,9 @@ export const onDeckScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // An automatic target is not quiet: its horizon segment until the
-        // target arrives Saturday. Tue 21:00 the deadline is 7.1 days out
-        // (weeks, so the Saturday check-in: quiet); from Wed it is within 7
-        // days and pulls the horizon in to Days.
-        '2026-10-21..2026-10-23': 'days',
+        // target arrives Saturday. From Tue the deadline is within 7 days
+        // and pulls the horizon in to Days.
+        '2026-10-20..2026-10-23': 'days',
         '2026-10-24': 'over 1×',
         '2026-10-25': 'over 2×',
       },

@@ -93,8 +93,9 @@ describe('buildTaskSummaries', () => {
           userTimezone: TEST_TIMEZONE,
           input: {
             title: `Deadline only ${i}`,
+            // 2–4 days out: automatic targets the day before (2026-10-21).
             deadline_at: DateTime.fromJSDate(NOW)
-              .plus({ days: 2 + i })
+              .plus({ days: 2 + Math.floor(i / 2) })
               .toUTC()
               .toISO()!,
           },
@@ -157,13 +158,13 @@ describe('withEffectiveSummaryTarget / formatTaskLine', () => {
   const now = DateTime.fromJSDate(NOW).setZone('America/Chicago')
 
   test('deadline only → the automatic target, "(from deadline)"', () => {
-    // Deadline Fri Oct 16, 23:59 Chicago; today Sun Oct 11 → a 5-day wait,
-    // lead 3 → the morning of Tue Oct 13.
+    // Deadline Fri Oct 16, 23:59 Chicago; today Sun Oct 11 → a 5-day wait →
+    // the day before, Thu Oct 15 (2026-10-21's one lead table).
     const s = withEffectiveSummaryTarget({ ...base, deadline_at: '2026-10-17T04:59:00Z' }, ctx, NOW)
-    expect(s.due_at).toBe('2026-10-13T14:00:00.000Z') // Tue Oct 13, 9:00 AM Chicago
+    expect(s.due_at).toBe('2026-10-15T14:00:00.000Z') // Thu Oct 15, 9:00 AM Chicago
     expect(s.target_implied).toBe(true)
     expect(formatTaskLine(s, 'America/Chicago', now)).toContain(
-      'target: Tue, Oct 13, 9:00 AM (from deadline)',
+      'target: Thu, Oct 15, 9:00 AM (from deadline)',
     )
   })
 

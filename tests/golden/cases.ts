@@ -51,8 +51,8 @@ const repeatingNov1 = {
 export const caseScenarios: GoldenScenario[] = [
   {
     id: 'case-deadline-tomorrow-3pm',
-    title: 'Deadline tomorrow 3 PM, made today at 1:35 PM — auto target now, 1× at once',
-    source: 'Trent 10-12; ruling Q10',
+    title: 'Deadline tomorrow 3 PM, made today at 1:35 PM — auto target tomorrow morning',
+    source: 'Trent 10-12; the one lead table (2026-10-21: under 2 days, the deadline day)',
     from: '2026-10-12',
     to: '2026-10-14',
     policy: ['tap'],
@@ -63,9 +63,11 @@ export const caseScenarios: GoldenScenario[] = [
         input: { title: 'Synthetic quick deadline', deadline_at: iso('2026-10-13T15:00') },
       },
     ],
-    // The lead day's morning (Sat Oct 10) has passed: the target is now —
-    // over target at once, "1×" on Monday. An automatic target offers nothing.
-    expect: { task: { '2026-10-12': 'over 1×', '2026-10-13': 'over 2×', '2026-10-14': 'over 3×' } },
+    // Wait 1 (2026-10-21's one lead table): the deadline day at the morning,
+    // Tue 9:00 — before the deadline's 3 PM. Monday it is in Days (the
+    // deadline is a day out); over target from Tuesday. An automatic target
+    // offers nothing. (Until 10-21 the 3-day lead put it in the past: now.)
+    expect: { task: { '2026-10-12': 'days', '2026-10-13': 'over 1×', '2026-10-14': 'over 2×' } },
   },
   {
     id: 'case-squeaky-door',
@@ -198,22 +200,21 @@ export const caseScenarios: GoldenScenario[] = [
         },
       },
     ],
-    // Mon Oct 5, deadline Mon Oct 12 17:00 (wait 7, lead 3): the automatic
-    // target is Fri Oct 9 9:00; until then the deadline pulls it into Days.
-    // Over target Fri–Mon (auto: no offer). Tue 10:00 the picked target —
-    // Tuesday already counted (5×). Wait Tue → Fri 3: Thursday's heads-up.
-    // Fri over again (6×). No "Back to auto?": the deadline has passed.
+    // Mon Oct 5, deadline Mon Oct 12 17:00 (wait 7 → the day before, the one
+    // lead table of 2026-10-21): the automatic target is Sun Oct 11 9:00;
+    // until then the deadline pulls it into Days. Over target Sun–Mon (auto:
+    // no offer). Tue 10:00 the picked target — Tuesday already counted (3×).
+    // Wait Tue → Fri 3: Thursday's heads-up. Fri over again (4×). No "Back to
+    // auto?": the deadline has passed.
     expect: {
       task: {
-        '2026-10-05..2026-10-08': 'days',
-        '2026-10-09': 'over 1×',
-        '2026-10-10': 'over 2×',
-        '2026-10-11': 'over 3×',
-        '2026-10-12': 'over 4×',
-        '2026-10-13..2026-10-14': 'quiet 5×',
-        '2026-10-15': 'upcoming 5×',
-        '2026-10-16': 'over 6×',
-        '2026-10-17': 'over 7×',
+        '2026-10-05..2026-10-10': 'days',
+        '2026-10-11': 'over 1×',
+        '2026-10-12': 'over 2×',
+        '2026-10-13..2026-10-14': 'quiet 3×',
+        '2026-10-15': 'upcoming 3×',
+        '2026-10-16': 'over 4×',
+        '2026-10-17': 'over 5×',
       },
     },
   },

@@ -73,8 +73,9 @@ describe('On deck over HTTP', () => {
       rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
     })
     const reminder = await make({ title: 'Stretch', is_reminder: true, rrule: null })
-    // A deadline two days out: its automatic target has already arrived.
-    const nagging = await make({ title: 'Cancel the trial', deadline_at: daysFromNow(2) })
+    // A deadline an hour ago: its automatic target has arrived, whatever the
+    // time of day (a near one's depends on the morning since 2026-10-21).
+    const nagging = await make({ title: 'Cancel the trial', deadline_at: daysFromNow(-1 / 24) })
     const r = await deck({ ids: [a, b, weekly, reminder, nagging], day: day(1) })
     expect(r.status).toBe(200)
     expect(r.json.data).toMatchObject({
@@ -255,10 +256,10 @@ describe('On deck over HTTP: review fixes (10-20)', () => {
       body: { title: 'x', on_deck_day: day(-1) },
     })
     expect(past.status).toBe(400)
-    // A deadline two days out already reminds: no deck.
+    // A deadline that already reminds (an hour ago): no deck.
     const near = await apiFetch('/api/tasks', {
       method: 'POST',
-      body: { title: 'x', on_deck_day: day(0), deadline_at: daysFromNow(2) },
+      body: { title: 'x', on_deck_day: day(0), deadline_at: daysFromNow(-1 / 24) },
     })
     expect(near.status).toBe(400)
     await setTaskQueue(false)

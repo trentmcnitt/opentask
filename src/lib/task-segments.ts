@@ -157,17 +157,21 @@ function morningOn(day: DateTime, ctx: TargetContext): DateTime {
 /**
  * THE DEADLINE'S AUTOMATIC TARGET (§8.1, 2026-10-12 — replaces the read-time
  * implied target, `deadline_nag_off` and the deadline-day re-arm). Setting a
- * deadline with no target stores a real target: the user's morning on the
- * deadline's local day minus the LEAD — the same 3/4 lead as Upcoming's early
- * heads-up (`leadDaysForWait`; Trent 10-12: "let's make it consistent
- * everywhere"). The wait is counted in local days from now (when the deadline
- * is set) to the deadline's day. A moment already past is now (ruling Q10): the
- * task is over target at once. Never after the deadline (target ≤ deadline,
- * §8.2), so a deadline already past gives the deadline itself.
+ * deadline with no target stores a real target, by the WAIT — local days from
+ * now (when the deadline is set) to the deadline's day — through the ONE lead
+ * table a deadline-anchored repeat's default uses too (`leadTargetFor`,
+ * 2026-10-21, Trent: "one rule everywhere"): under 2 days the deadline day at
+ * the user's morning (or the deadline's own time if earlier); 2–7 the day
+ * before; 8–15 three days before; 16 or more four — at the morning. A moment
+ * already past is now (ruling Q10): the task is over target at once. Never
+ * after the deadline (target ≤ deadline, §8.2), so a deadline already past
+ * gives the deadline itself. Only new or changed deadlines take it: a stored
+ * automatic target is re-derived only when its deadline is next written.
  *
  * Example (Chicago, morning 9:00): deadline Fri Oct 23 23:59, set Mon Oct 12 →
  * wait 11, lead 3 → Tue Oct 20, 9:00 AM. Set Sep 30 (wait 23) → lead 4 → Mon
- * Oct 19, 9:00 AM.
+ * Oct 19, 9:00 AM. Set Mon Oct 19 (wait 4) → the day before, Thu Oct 22,
+ * 9:00 AM (it was 3 days before until 2026-10-21).
  *
  * "Back to auto" recomputes it from the moment it is pressed: nothing records
  * when the deadline was first set, so it is the auto target for this deadline
@@ -181,10 +185,17 @@ export function autoTargetAt(
   const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
   if (deadline.toMillis() <= now.getTime()) return deadlineAt
   const zone = ctx?.timezone ?? 'utc'
-  const deadlineDay = deadline.setZone(zone).startOf('day')
-  const today = DateTime.fromJSDate(now).setZone(zone).startOf('day')
-  const leadDay = deadlineDay.minus({ days: leadDaysForWait(waitDays(deadlineDay, today)) })
-  const at = ctx ? morningOn(leadDay, ctx) : leadDay
+  const local = deadline.setZone(zone)
+  const deadlineDay = local.startOf('day')
+  const wait = waitDays(deadlineDay, DateTime.fromJSDate(now).setZone(zone).startOf('day'))
+  let at: DateTime
+  if (ctx) {
+    const lead = leadTargetFor(wait, local.toFormat('HH:mm'), ctx.morningTime)
+    const day = deadlineDay.minus({ days: lead.days_before }).toISODate()!
+    at = DateTime.fromJSDate(localMoment(day, lead.time, zone)).setZone(zone)
+  } else {
+    at = deadlineDay.minus({ days: deadlineLeadDays(wait) })
+  }
   if (at.toMillis() <= now.getTime()) return now.toISOString()
   return (at < deadline ? at : deadline).toUTC().toISO()!
 }
@@ -1079,12 +1090,14 @@ export function deadlineLeadDays(wait: number): number {
 }
 
 /**
- * The default target for a deadline `wait` local days after the previous one
- * (A1): `deadlineLeadDays(wait)` days before, at the user's morning — and on
- * the deadline day itself, at the morning or the deadline's own time if that
- * is earlier (the picker's "Deadline day", `deadlineDayTarget`). Pure and
- * relative, so a one-off deadline could take the same rule (its wait counted
- * from when the deadline is set); one-offs still use `autoTargetAt`.
+ * THE AUTOMATIC TARGET'S ONE TABLE (2026-10-21, "one rule everywhere"): for a
+ * deadline `wait` local days off — after the previous deadline (a repeat's
+ * default, `defaultRelativeTarget`) or after now (a one-off's automatic
+ * target, `autoTargetAt`) — `deadlineLeadDays(wait)` days before, at the
+ * user's morning; on the deadline day itself, at the morning or the
+ * deadline's own time if that is earlier (the picker's "Deadline day",
+ * `deadlineDayTarget`). Pure, in relative form. Every automatic ("fake")
+ * target goes through it, so replacing them is one change here.
  */
 export function leadTargetFor(
   wait: number,
@@ -1170,10 +1183,10 @@ export function waitDays(targetDay: DateTime, setDay: DateTime): number {
 }
 
 /**
- * THE 3/4 LEAD — one function for both rules that use it (Trent 10-12: "let's
- * make it consistent everywhere"): Upcoming's earlier heads-up and the
- * deadline's automatic target (`autoTargetAt`). 3 days when the wait is under
- * HEADS_UP_LONG_WAIT (16) local days, 4 days at 16 or more.
+ * THE 3/4 LEAD: Upcoming's earlier heads-up, and the far end of the deadline
+ * lead table (`deadlineLeadDays`, which the automatic targets use). 3 days
+ * when the wait is under HEADS_UP_LONG_WAIT (16) local days, 4 days at 16 or
+ * more.
  */
 export function leadDaysForWait(wait: number): number {
   return wait < HEADS_UP_LONG_WAIT ? HEADS_UP_EARLY_LEAD_DAYS : HEADS_UP_LONG_LEAD_DAYS

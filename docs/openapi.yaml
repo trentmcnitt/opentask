@@ -5370,10 +5370,12 @@ components:
           type: boolean
           description: >
             `due_at` is the deadline's AUTOMATIC target (2026-10-12, spec §8): stored by the server
-            for a one-off with a deadline and no target the user picked — the user's morning 3 days
-            before the deadline's day (4 when the deadline was set 16+ days out; now, if that moment
-            had passed). It follows the deadline when the deadline changes. Only a picked target
-            (false) makes a task quiet until its date (Upcoming). Server-set.
+            for a one-off with a deadline and no target the user picked, by the wait from when the
+            deadline was set (2026-10-21): under 2 days, the deadline day at the user's morning (or
+            the deadline's own time if earlier); 2-7 days, the day before; 8-15, 3 days before; 16
+            or more, 4 — at the morning (now, if that moment had passed). It follows the deadline
+            when the deadline changes; a stored one is not re-derived otherwise. Only a picked
+            target (false) makes a task quiet until its date (Upcoming). Server-set.
         occurrence_at:
           type: [string, 'null']
           format: date-time

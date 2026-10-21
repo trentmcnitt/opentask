@@ -128,9 +128,9 @@ describe('deadline and target', () => {
     await enrichSingleTask(task.id, TEST_USER_ID)
 
     const after = getTaskById(task.id)!
-    // Clock: Sat Oct 10, 20:00 Chicago. Deadline Tue Oct 13 → a 3-day wait,
-    // lead 3 → the morning of Oct 10, already past → now.
-    expect(after.due_at).toBe('2026-10-11T01:00:00.000Z')
+    // Clock: Sat Oct 10, 20:00 Chicago. Deadline Tue Oct 13 → a 3-day wait
+    // → the day before, Mon Oct 12 at 9:00 AM (2026-10-21's one lead table).
+    expect(after.due_at).toBe('2026-10-12T14:00:00.000Z')
     expect(after.target_auto).toBe(true)
     expect(after.deadline_at).toBe('2026-10-14T04:59:00.000Z')
   })

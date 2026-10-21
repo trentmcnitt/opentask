@@ -392,9 +392,9 @@ describe('Task model', () => {
     })
 
     test('TM-034: a deadline with no target gets a stored automatic target that follows it (§8.1, §8.4)', () => {
-      // Deadline Tue Oct 13 18:00, set Sat Oct 10 10:00: a 3-day wait, lead 3
-      // → Oct 10 09:00, already past → now. Over target at once.
-      const t = make({ deadline_at: at('2026-10-13T18:00') })
+      // Deadline Sat Oct 10 18:00, set Sat Oct 10 10:00: wait 0 → the deadline
+      // day at 09:00, already past → now. Over target at once.
+      const t = make({ deadline_at: at('2026-10-10T18:00') })
       expect(t.due_at).toBe(SAT.toISOString())
       expect(t.target_auto).toBe(true)
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
@@ -405,9 +405,9 @@ describe('Task model', () => {
 
       // A picked target replaces it.
       const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
-      updateTask({ ...u, input: { due_at: at('2026-10-12T09:00') } })
+      updateTask({ ...u, input: { due_at: at('2026-10-10T12:00') } })
       expect(getTaskById(t.id)!).toMatchObject({
-        due_at: at('2026-10-12T09:00'),
+        due_at: at('2026-10-10T12:00'),
         target_auto: false,
       })
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(t.id)
@@ -435,8 +435,8 @@ describe('Task model', () => {
     })
 
     test('TM-037: a deadline-only task already nagging is snoozed, capped and keeps its attempts', () => {
-      // Deadline Mon Oct 12 18:00 → its automatic target is now (Sat 10:00).
-      const t = make({ deadline_at: at('2026-10-12T18:00') })
+      // Deadline Sat Oct 10 23:30 (wait 0) → its automatic target is now (Sat 10:00).
+      const t = make({ deadline_at: at('2026-10-10T23:30') })
       expect(t.due_at).toBe(SAT.toISOString())
       const u = { userId: TEST_USER_ID, userTimezone: tz, taskId: t.id }
       // A sweep past the deadline stops AT it and reports it.
@@ -449,12 +449,12 @@ describe('Task model', () => {
       expect(swept.deadlineCapped).toBe(1)
       expect(swept.deadlineSkipped).toBe(0)
       expect(getTaskById(t.id)!).toMatchObject({
-        due_at: at('2026-10-12T18:00'),
+        due_at: at('2026-10-10T23:30'),
         target_auto: false,
       })
       // A single snooze past it is capped too — never refused.
       const past = updateTask({ ...u, input: { due_at: at('2026-10-13T09:00') } })
-      expect(past.task.due_at).toBe(at('2026-10-12T18:00'))
+      expect(past.task.due_at).toBe(at('2026-10-10T23:30'))
       expect(past.cappedAtDeadline).toBe(true)
       // A snooze inside the deadline is a move: the first target (the
       // automatic one) is kept, and the attempts go on — 1× on Saturday the
@@ -500,12 +500,13 @@ describe('Task model', () => {
 
     test('TM-040: the automatic target starts at the morning of the lead day, not at 23:59 (B2)', () => {
       const ctx = { timezone: tz, morningTime: '08:30' }
-      // Sat Oct 17 23:59, set Sat Oct 10: a 7-day wait, lead 3 → Wed Oct 14.
-      expect(autoTargetAt(at('2026-10-17T23:59'), ctx, SAT)).toBe(at('2026-10-14T08:30'))
-      // A wait of 16 days or more takes lead 4: Fri Oct 30 → Mon Oct 26.
+      // Sat Oct 17 23:59, set Sat Oct 10: a 7-day wait → the day before, Fri Oct 16.
+      expect(autoTargetAt(at('2026-10-17T23:59'), ctx, SAT)).toBe(at('2026-10-16T08:30'))
+      // 8–15 days: 3 before (Tue Oct 20 → Sat Oct 17); 16 or more: 4 (Fri Oct 30 → Mon Oct 26).
+      expect(autoTargetAt(at('2026-10-20T23:59'), ctx, SAT)).toBe(at('2026-10-17T08:30'))
       expect(autoTargetAt(at('2026-10-30T23:59'), ctx, SAT)).toBe(at('2026-10-26T08:30'))
-      // A deadline before the lead day's morning: never after the deadline.
-      expect(autoTargetAt(at('2026-10-11T07:00'), ctx, SAT)).toBe(SAT.toISOString())
+      // The deadline day (wait 1) with the deadline before the morning: the deadline itself.
+      expect(autoTargetAt(at('2026-10-11T07:00'), ctx, SAT)).toBe(at('2026-10-11T07:00'))
     })
 
     test('TM-041: a repeating deadline and its derived target keep their local times across DST', () => {
@@ -599,9 +600,9 @@ describe('Task model', () => {
     })
 
     test('TM-042: never from before the task existed; an auto target already past is 1× at once (Q10)', () => {
-      // Created today with a deadline in 3 days: the automatic target's lead
-      // day morning is already past, so it is now — over target at once.
-      const t = make({ deadline_at: at('2026-10-13T18:00') })
+      // Created today with a deadline tonight (wait 0): the deadline day's
+      // morning is already past, so the target is now — over target at once.
+      const t = make({ deadline_at: at('2026-10-10T23:30') })
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
       expect(t.attempts).toBe(1)
       vi.setSystemTime(new Date(at('2026-10-12T10:00')))
