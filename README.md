@@ -43,8 +43,8 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 ### 📱 The apps (web, iPhone, Apple Watch, Mac)
 
 - **Mobile-first PWA** — Installable on iOS and Android. Designed for phones first, looks great on desktop too.
-- **Snooze everything** — Bulk snooze all overdue tasks in one tap. Individual snooze with presets, fine-grained adjustments, or custom times.
-- **Native Apple apps** — An iPhone app with home-screen widgets and rich notifications (snooze grids and period checklists right from the lock screen), a full Apple Watch app with its own pages and Smart Stack widgets, and a Mac app with widgets. (Source included — not on the App Store.)
+- **Defer everything** — Bulk defer all overdue tasks in one tap. Individual defer with presets, fine-grained adjustments, or custom times.
+- **Native Apple apps** — An iPhone app with home-screen widgets and rich notifications (defer grids and period checklists right from the lock screen), a full Apple Watch app with its own pages and Smart Stack widgets, and a Mac app with widgets. (Source included — not on the App Store.)
 - **Reminders and quotas** — Recurring reminders grouped into periods of the day (morning, afternoon, evening — yours to edit), checked off as a list. Quotas track a count toward a target per day, week, month, or year ("read 5 times a week").
 - **Full undo/redo** — Every action is logged and reversible.
 - **Trash & archive** — Deleted tasks go to trash, completed tasks go to archive. Nothing is permanently lost until you say so.

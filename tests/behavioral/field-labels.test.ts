@@ -157,7 +157,7 @@ describe('formatEditDescription', () => {
         userTimezone: TZ,
       },
     )
-    expect(result).toBe('Snoozed to Mon 9:00 AM (+4d) \u2014 "Buy groceries"')
+    expect(result).toBe('Deferred to Mon 9:00 AM (+4d) \u2014 "Buy groceries"')
   })
 
   test('snooze + priority change', () => {
@@ -171,7 +171,7 @@ describe('formatEditDescription', () => {
         userTimezone: TZ,
       },
     )
-    expect(result).toContain('Snoozed to Mon 9:00 AM (+4d)')
+    expect(result).toContain('Deferred to Mon 9:00 AM (+4d)')
     expect(result).toContain('Priority Medium \u2192 High')
     expect(result).toContain('\u2014 "Buy groceries"')
   })
@@ -325,7 +325,7 @@ describe('formatEditDescription', () => {
       },
     )
     // Two user-facing fields: due_at + priority → fragment, fragment — title
-    expect(result).toContain('Snoozed to tomorrow 9:00 AM (+1d)')
+    expect(result).toContain('Deferred to tomorrow 9:00 AM (+1d)')
     expect(result).toContain('Priority set to High')
     expect(result).toContain('\u2014 "Buy groceries"')
   })
@@ -469,7 +469,7 @@ describe('Integration: undo description enrichment', () => {
     const log = db
       .prepare('SELECT description FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
       .get(TEST_USER_ID) as { description: string }
-    expect(log.description).toBe('Snoozed to tomorrow 9:00 AM (+1d) \u2014 "Test Task"')
+    expect(log.description).toBe('Deferred to tomorrow 9:00 AM (+1d) \u2014 "Test Task"')
   })
 
   test('updateTask returns description', () => {

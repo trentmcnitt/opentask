@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useTheme } from 'next-themes'
@@ -565,7 +565,7 @@ function TaskCountBadges({
             <span>{taskCount} total tasks</span>
             {overdueCount > 0 && (
               <span className="text-over-target">
-                {overdueCount} {OVER_TARGET_LOWER}
+                {overdueCount} {OVERDUE_LOWER}
               </span>
             )}
             {todayCount > 0 && <span className="text-primary">{todayCount} today</span>}
@@ -577,15 +577,13 @@ function TaskCountBadges({
           count={overdueCount}
           variant="overdue"
           tooltip={
-            overdueActive
-              ? 'Show all tasks'
-              : `${overdueCount} ${OVER_TARGET_LOWER} — show only these`
+            overdueActive ? 'Show all tasks' : `${overdueCount} ${OVERDUE_LOWER} — show only these`
           }
           onClick={() => applyFilter('overdue')}
           ariaLabel={
             overdueActive
-              ? `${overdueCount} ${OVER_TARGET_LOWER} — clear the ${OVER_TARGET_LOWER} filter`
-              : `${overdueCount} ${OVER_TARGET_LOWER} — show only ${OVER_TARGET_LOWER} tasks`
+              ? `${overdueCount} ${OVERDUE_LOWER} — clear the ${OVERDUE_LOWER} filter`
+              : `${overdueCount} ${OVERDUE_LOWER} — show only ${OVERDUE_LOWER} tasks`
           }
           pressed={overdueActive}
           className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"

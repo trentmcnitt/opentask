@@ -958,7 +958,7 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
       {task.due_at !== null && attempts >= 1 && (
         <span
           data-attempts={attempts}
-          title={`Over target on ${attempts} day${attempts === 1 ? '' : 's'}`}
+          title={`Overdue on ${attempts} day${attempts === 1 ? '' : 's'}`}
           className="text-over-target font-semibold tabular-nums"
         >
           {attempts}×

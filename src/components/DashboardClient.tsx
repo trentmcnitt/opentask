@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_WORD, OVERDUE_LOWER } from '@/lib/task-model-words'
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1372,7 +1372,7 @@ function HomeContent({
   // The snooze-all clock and FAB count what a press sweeps: `displayTasks`,
   // the list `useSnoozeOverdue` acts on (no What's Next / signal filter), with
   // the same `isOverdue`. Counting anything else made the badge and the
-  // "Snoozed N" toast disagree.
+  // "Deferred N" toast disagree.
   const { overdueCount: sweepOverdueCount } = useTaskCounts(displayTasks, timezone, now)
   // The nav's Tasks badges read a shared cache; this page is its source of
   // truth. Published from the unfiltered list (reminders excluded, nothing
@@ -1871,7 +1871,7 @@ function TrackColumn({
  * raised its own toast with Undo, so this one offers nothing to click.
  */
 function notifyOverdueFilterCleared() {
-  showToast({ message: `Nothing ${OVER_TARGET_LOWER} left — ${OVER_TARGET} filter cleared` })
+  showToast({ message: `Nothing ${OVERDUE_LOWER} left — ${OVERDUE_WORD} filter cleared` })
 }
 
 function DashboardView({

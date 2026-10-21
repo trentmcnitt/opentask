@@ -634,7 +634,7 @@ describe('Bulk Snooze Relative Mode', () => {
     const history = getUndoHistory(TEST_USER_ID, 20)
     const bulkSnoozeEntries = history.filter((e) => e.action === 'bulk_snooze')
     expect(bulkSnoozeEntries.length).toBe(1)
-    expect(bulkSnoozeEntries[0].description).toBe('Snoozed 2 tasks (+1h)')
+    expect(bulkSnoozeEntries[0].description).toBe('Deferred 2 tasks (+1h)')
 
     // Undo should revert both
     expect(canUndo(TEST_USER_ID)).toBe(true)
@@ -2056,7 +2056,7 @@ describe('Bulk Edit quota/reminder invariants', () => {
         taskIds: [task.id],
         changes: { is_reminder: true, due_at: localTime(18, 0) },
       }),
-    ).toThrow(/Reminders cannot be snoozed/)
+    ).toThrow(/Reminders cannot be deferred/)
     const after = getTaskById(task.id)!
     expect(after.is_reminder).toBe(false)
     expect(after.due_at).toBe(localTime(8, 0))

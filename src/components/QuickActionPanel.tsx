@@ -1860,7 +1860,7 @@ export function QuickActionPanel({
                         <div>
                           <IconButton
                             icon={<TimerOff className="size-4" />}
-                            label="Auto-snooze off"
+                            label="Nag off"
                             onClick={() => setAutoSnoozePopoverOpen(true)}
                           />
                         </div>
@@ -1874,7 +1874,11 @@ export function QuickActionPanel({
                               ? 'text-muted-foreground/60 hover:bg-accent active:bg-accent'
                               : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
                           )}
-                          title={`Auto-snooze: ${isMixedAutoSnooze ? 'mixed' : formatAutoSnoozeLabel(effectiveMinutes)}`}
+                          title={
+                            isMixedAutoSnooze
+                              ? 'Nag: mixed'
+                              : `Nag every ${formatAutoSnoozeLabel(effectiveMinutes)}`
+                          }
                         >
                           <Timer className="size-4" />
                           <span>

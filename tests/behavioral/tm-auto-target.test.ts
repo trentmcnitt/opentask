@@ -168,7 +168,7 @@ describe("TM8: the deadline's automatic target", () => {
       const r = patch(t.id, { due_at: at('2026-10-20T09:00') })
       expect(r.task.due_at).toBe(at(DL))
       expect(r.cappedAtDeadline).toBe(true)
-      expect(r.description).toContain('Snoozed to deadline')
+      expect(r.description).toContain('Deferred to deadline')
       expect(r.task.target_auto).toBe(false)
     })
 
@@ -213,7 +213,7 @@ describe("TM8: the deadline's automatic target", () => {
       const r = patch(t.id, { due_at: at('2026-10-13T09:00') })
       expect(r.fieldsChanged).toContain('due_at')
       expect(r.cappedAtDeadline).toBe(false)
-      expect(r.description).toMatch(/^Snoozed/)
+      expect(r.description).toMatch(/^Deferred/)
       expect(getTaskById(t.id)!).toMatchObject({
         due_at: at('2026-10-13T09:00'),
         deadline_at: at('2026-10-10T17:00'),

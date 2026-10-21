@@ -87,7 +87,9 @@ export function TaskModelFields({
                     : 'text-muted-foreground/60',
             )}
           >
-            {when ? `${past ? 'passed ' : ''}${when.toFormat('ccc LLL d, h:mm a')}` : 'None'}
+            {when
+              ? `${when.toFormat('ccc LLL d, h:mm a')}${past ? ' · past deadline' : ''}`
+              : 'None'}
           </span>
           {when && repeatLabel && (
             <span

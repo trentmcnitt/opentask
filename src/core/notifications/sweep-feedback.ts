@@ -34,14 +34,14 @@
  *
  * WHAT. Counts only, never titles (Trent: no urgent titles on the lock screen):
  *
- *   "Snoozed 8 tasks until 3:00 PM"
+ *   "Deferred 8 tasks until 3:00 PM"
  *   "2 High and 1 Urgent still overdue. Snooze again to move the High ones"
  *
- *   "Nothing snoozed"
- *   "3 Urgent can't be bulk snoozed"
+ *   "Nothing deferred"
+ *   "3 Urgent can't be bulk deferred"
  *
  * The title follows `bulkSnoozeMessage` (the web toast and `data.message`):
- * "Snoozed N tasks", or "N high-priority tasks" on the second press of a double
+ * "Deferred N tasks", or "N high-priority tasks" on the second press of a double
  * snooze. With the task queue on (OPENTASK_TASK_QUEUE) it IS that builder's
  * line with every name suppressed (`bulkSnoozeCountSummary`): "3 will move to
  * the Tasks queue at 6:30 AM · Snoozed 1 task". The toast and `summary` name
@@ -65,7 +65,7 @@
  * fire-and-forget, after the sweep has committed and without delaying the response.
  */
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { taskWord } from '@/lib/utils'
@@ -135,29 +135,29 @@ export function sweepFeedbackContent(
     // the second press of a double snooze, and saying so explains it.
     const what =
       highAffected === affected ? `high-priority ${taskWord(affected)}` : taskWord(affected)
-    title = `Snoozed ${affected} ${what} until ${formatSnoozeTarget(until, timezone)}`
+    title = `Deferred ${affected} ${what} until ${formatSnoozeTarget(until, timezone)}`
   } else {
-    title = 'Nothing snoozed'
+    title = 'Nothing deferred'
   }
 
   const sentences: string[] = []
   if (affected === 0 && waiting === 0) {
     // Only Urgent was there: nothing a sweep could ever move.
-    sentences.push(`${urgent} Urgent can't be bulk snoozed`)
+    sentences.push(`${urgent} Urgent can't be bulk deferred`)
   } else {
-    sentences.push(`${leftList(high, urgent, deadline)} still ${OVER_TARGET_LOWER}`)
+    sentences.push(`${leftList(high, urgent, deadline)} still ${OVERDUE_LOWER}`)
     if (waiting > 0 && affected > 0) {
       // High waits for the next press, once nothing lower is left. When
       // nothing moved at all, another press would do the same, so no hint.
       sentences.push(
         onePerPress
-          ? `Snooze again to move ${waiting === 1 ? 'it' : 'the next one'}`
+          ? `Defer again to move ${waiting === 1 ? 'it' : 'the next one'}`
           : deadline === 0
-            ? `Snooze again to move the High ${high === 1 ? 'one' : 'ones'}`
-            : `Snooze again to move ${waiting === 1 ? 'it' : 'them'}`,
+            ? `Defer again to move the High ${high === 1 ? 'one' : 'ones'}`
+            : `Defer again to move ${waiting === 1 ? 'it' : 'them'}`,
       )
     } else if (waiting === 0) {
-      sentences.push(`Urgent can't be bulk snoozed`)
+      sentences.push(`Urgent can't be bulk deferred`)
     }
   }
 

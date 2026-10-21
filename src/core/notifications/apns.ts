@@ -618,7 +618,7 @@ export async function sendApnsSweepResultNotification(
 export const DEADLINE_CAP_COLLAPSE_ID = 'deadline-cap'
 
 /**
- * "Snoozed to deadline 6:00 PM" (deadline-cap-feedback.ts, ruling A3): a quick
+ * "Deferred to deadline 6:00 PM" (deadline-cap-feedback.ts, ruling A3): a quick
  * snooze from a notification button stopped AT the deadline instead of where
  * it was asked. A banner without sound, like the sweep result above.
  *

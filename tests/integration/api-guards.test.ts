@@ -169,7 +169,7 @@ describe('API guards', () => {
       body: { due_at: hoursFromNow(3) },
     })
     expect(refused.status).toBe(400)
-    expect((await refused.json()).error).toMatch(/Reminders cannot be snoozed/)
+    expect((await refused.json()).error).toMatch(/Reminders cannot be deferred/)
 
     const moved = await apiFetch(`/api/tasks/${reminder.id}`, {
       method: 'PATCH',

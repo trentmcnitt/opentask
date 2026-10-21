@@ -61,7 +61,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         input.slot === 'next'
           ? nextPeriodStart(listTimeSlots(user.id), user.timezone)
           : nextSlotStart(input.slot, user.timezone)
-      if (!resolved) throw new ValidationError('No time slots to snooze to')
+      if (!resolved) throw new ValidationError('No time slots to defer to')
       until = resolved
     } else if (input.until) {
       until = input.until

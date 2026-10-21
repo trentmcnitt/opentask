@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET } from '@/lib/task-model-words'
+import { OVERDUE_WORD } from '@/lib/task-model-words'
 import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -29,7 +29,7 @@ interface DueDateFilterBarProps {
 }
 
 const FILTER_LABELS: Record<DueDateFilter, string> = {
-  overdue: OVER_TARGET,
+  overdue: OVERDUE_WORD,
   soon: 'Soon',
   today: 'Today',
   this_week: 'This Week',

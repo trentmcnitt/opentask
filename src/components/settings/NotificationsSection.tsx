@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -86,7 +86,7 @@ export function NotificationsSection() {
         <div>
           <div className="text-sm">Task reminders</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            {`Send notifications when tasks are ${OVER_TARGET_LOWER}`}
+            {`Send notifications when tasks are ${OVERDUE_LOWER}`}
           </div>
         </div>
         <Switch
@@ -119,20 +119,20 @@ export function NotificationsSection() {
           always shown; greyed out while notifications as a whole are off. */}
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <div className="text-sm">Bulk snooze results</div>
+          <div className="text-sm">Bulk defer results</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            {`When a snooze from a notification, the iPhone widget, the Mac menu or a Shortcut leaves High or Urgent tasks ${OVER_TARGET_LOWER}`}
+            {`When a defer from a notification, the iPhone widget, the Mac menu or a Shortcut leaves High or Urgent tasks ${OVERDUE_LOWER}`}
           </div>
         </div>
         <Switch
           checked={sweepFeedbackNotificationsEnabled}
           disabled={!notificationsEnabled}
           onCheckedChange={(checked) => void handleSweepFeedbackChange(checked)}
-          aria-label="Bulk snooze results"
+          aria-label="Bulk defer results"
         />
       </div>
       <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-        {`How often to repeat notifications for ${OVER_TARGET_LOWER} tasks, by priority tier.`}
+        {`How often to repeat notifications for ${OVERDUE_LOWER} tasks, by priority tier.`}
       </p>
       <AutoSnoozeRows />
 
@@ -188,8 +188,8 @@ function AutoSnoozeRows() {
     <div className="space-y-3">
       {/* Default auto-snooze */}
       <AutoSnoozeRow
-        label="Default auto-snooze"
-        description={`Repeat interval for unset-priority (P0) ${OVER_TARGET_LOWER} tasks`}
+        label="Default nag"
+        description={`Repeat interval for unset-priority (P0) ${OVERDUE_LOWER} tasks`}
         value={autoSnoozeDefault}
         onChange={(v) =>
           savePreferenceField('auto_snooze_minutes', v, autoSnoozeDefault, setAutoSnoozeDefault)
@@ -197,8 +197,8 @@ function AutoSnoozeRows() {
       />
       {/* §4.1: Low is rare but never silent */}
       <AutoSnoozeRow
-        label="Low auto-snooze"
-        description={`Repeat interval for low (P1) ${OVER_TARGET_LOWER} tasks`}
+        label="Low nag"
+        description={`Repeat interval for low (P1) ${OVERDUE_LOWER} tasks`}
         value={autoSnoozeLow}
         onChange={(v) =>
           savePreferenceField('auto_snooze_low_minutes', v, autoSnoozeLow, setAutoSnoozeLow)
@@ -206,8 +206,8 @@ function AutoSnoozeRows() {
       />
       {/* §4.1: Medium is NOT notify-once — one missed glance would lose it */}
       <AutoSnoozeRow
-        label="Medium auto-snooze"
-        description={`Repeat interval for medium (P2) ${OVER_TARGET_LOWER} tasks`}
+        label="Medium nag"
+        description={`Repeat interval for medium (P2) ${OVERDUE_LOWER} tasks`}
         value={autoSnoozeMedium}
         onChange={(v) =>
           savePreferenceField(
@@ -222,8 +222,8 @@ function AutoSnoozeRows() {
       />
       {/* High auto-snooze */}
       <AutoSnoozeRow
-        label="High auto-snooze"
-        description={`Repeat interval for high (P3) ${OVER_TARGET_LOWER} tasks`}
+        label="High nag"
+        description={`Repeat interval for high (P3) ${OVERDUE_LOWER} tasks`}
         value={autoSnoozeHigh}
         onChange={(v) =>
           savePreferenceField('auto_snooze_high_minutes', v, autoSnoozeHigh, setAutoSnoozeHigh)
@@ -232,8 +232,8 @@ function AutoSnoozeRows() {
       />
       {/* Urgent auto-snooze */}
       <AutoSnoozeRow
-        label="Urgent auto-snooze"
-        description={`Repeat interval for urgent (P4) ${OVER_TARGET_LOWER} tasks`}
+        label="Urgent nag"
+        description={`Repeat interval for urgent (P4) ${OVERDUE_LOWER} tasks`}
         value={autoSnoozeUrgent}
         onChange={(v) =>
           savePreferenceField(

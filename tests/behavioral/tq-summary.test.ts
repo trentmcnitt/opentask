@@ -21,14 +21,14 @@ describe('TQ-S: the summary line', () => {
     [
       'switch off: the line is unchanged',
       { affected: 3, high: 1, urgent: 1, deadline: 0, capped: 1 },
-      'Snoozed 3 tasks (1 high, 1 urgent skipped) · 1 stopped at its deadline',
+      'Deferred 3 tasks (1 high, 1 urgent skipped) · 1 stopped at its deadline',
     ],
     [
       'switch off: High only, the second press of a double snooze',
       { affected: 2, highAffected: 2, high: 0, urgent: 0 },
-      'Snoozed 2 high-priority tasks',
+      'Deferred 2 high-priority tasks',
     ],
-    ['nothing moved', { affected: 0, high: 0, urgent: 0, queued: 0 }, 'No snoozable tasks'],
+    ['nothing moved', { affected: 0, high: 0, urgent: 0, queued: 0 }, 'No deferrable tasks'],
     [
       'all queued',
       { affected: 5, high: 0, urgent: 0, queued: 5, queueAt: AT },
@@ -42,17 +42,17 @@ describe('TQ-S: the summary line', () => {
     [
       'one task moved, named',
       { affected: 1, high: 0, urgent: 0, singleName: 'Water the plants' },
-      'Snoozed "Water the plants"',
+      'Deferred "Water the plants"',
     ],
     [
       'the one High moved, named, with the rest of the tier left',
       { affected: 1, highAffected: 1, high: 2, urgent: 1, highName: 'Pay rent' },
-      'Snoozed high-priority "Pay rent" (2 high, 1 urgent skipped)',
+      'Deferred high-priority "Pay rent" (2 high, 1 urgent skipped)',
     ],
     [
       'the one "High" is a passed-deadline P1',
       { affected: 1, high: 1, urgent: 0, highName: 'File taxes', highByDeadline: true },
-      'Snoozed past-deadline "File taxes" (1 high skipped)',
+      'Deferred past-deadline "File taxes" (1 high skipped)',
     ],
     [
       'THE MIXED PRESS: marked (repeating among them) + deadline-capped + one High named',
@@ -66,12 +66,12 @@ describe('TQ-S: the summary line', () => {
         capped: 1,
         highName: 'Pay rent',
       },
-      '4 will move to the Tasks queue at 6:30 AM · Snoozed 2 tasks, including high-priority "Pay rent" (1 high, 1 urgent skipped) · 1 stopped at its deadline',
+      '4 will move to the Tasks queue at 6:30 AM · Deferred 2 tasks, including high-priority "Pay rent" (1 high, 1 urgent skipped) · 1 stopped at its deadline',
     ],
     [
       'queued and a repeating task stopped at its next occurrence',
       { affected: 3, high: 0, urgent: 0, queued: 2, queueAt: AT, cappedOccurrence: 1 },
-      '2 will move to the Tasks queue at 6:30 AM · Snoozed 1 task · 1 stopped at its next occurrence',
+      '2 will move to the Tasks queue at 6:30 AM · Deferred 1 task · 1 stopped at its next occurrence',
     ],
     [
       'queued with only skips beside it',
@@ -81,7 +81,7 @@ describe('TQ-S: the summary line', () => {
     [
       'several stopped at both kinds of cap',
       { affected: 4, high: 0, urgent: 0, capped: 2, cappedOccurrence: 2 },
-      'Snoozed 4 tasks · 2 stopped at their deadline · 2 stopped at their next occurrence',
+      'Deferred 4 tasks · 2 stopped at their deadline · 2 stopped at their next occurrence',
     ],
   ]
 
@@ -115,7 +115,7 @@ describe('TQ-F: the sweep-feedback push uses the count-only summary', () => {
       summary: 'unused',
     }
     expect(bulkSnoozeCountSummary(result, 'America/Chicago')).toBe(
-      '1 will move to the Tasks queue at 6:30 AM · Snoozed 1 high-priority task (1 high skipped)',
+      '1 will move to the Tasks queue at 6:30 AM · Deferred 1 high-priority task (1 high skipped)',
     )
   })
 
@@ -134,13 +134,13 @@ describe('TQ-F: the sweep-feedback push uses the count-only summary', () => {
     const fb = decideSweepFeedback({ ...base, countSummary }, user)!
     expect(fb.title).toBe(countSummary)
     // One High per press: the next press moves one, not "the High ones".
-    expect(fb.body).toBe('2 High still over target. Snooze again to move the next one')
+    expect(fb.body).toBe('2 High still overdue. Defer again to move the next one')
   })
 
   test('TQ-F02: switch off (no summary): exactly as before', () => {
     const fb = decideSweepFeedback(base, user)!
-    expect(fb.title).toMatch(/^Snoozed 3 tasks until /)
-    expect(fb.body).toBe('2 High still over target. Snooze again to move the High ones')
+    expect(fb.title).toMatch(/^Deferred 3 tasks until /)
+    expect(fb.body).toBe('2 High still overdue. Defer again to move the High ones')
   })
 })
 

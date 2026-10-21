@@ -89,7 +89,7 @@ export interface FieldChangeData {
   /**
    * The user moved a dated task's target to another date (any "snooze", any
    * client — §6, 2026-10-12, one gesture). Counts the snooze stat and words
-   * the description "Snoozed to …". Not a first date, a clear, a schedule
+   * the description "Deferred to …". Not a first date, a clear, a schedule
    * change or a target the server derived (the automatic one).
    */
   isSnoozeScenario: boolean
@@ -1228,7 +1228,7 @@ function collectRruleChanges(
  * the first-target date (`original_due_at`) is kept, and nothing else is
  * recorded — no snoozed flag, no snooze count, no snooze/re-target split
  * (old clients' `retarget` changes nothing). The visible word stays "Snooze".
- * `userMoved` says the user sent the date (the snooze stat and the "Snoozed
+ * `userMoved` says the user sent the date (the snooze stat and the "Deferred
  * to …" description); a target the server derived — the automatic one — is
  * not a move. A repeating task's move changes only `due_at`; its occurrence
  * is `collectOccurrence`'s.

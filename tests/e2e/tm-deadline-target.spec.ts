@@ -42,7 +42,7 @@ async function snoozeButton(page: Page, id: number, title: string): Promise<Loca
   const row = page.locator(`#task-row-${id}`)
   await expect(row).toBeVisible({ timeout: 10_000 })
   await row.hover()
-  const btn = row.getByRole('button', { name: new RegExp(`snooze "${title}"`, 'i') })
+  const btn = row.getByRole('button', { name: new RegExp(`defer "${title}"`, 'i') })
   await expect(btn).toBeVisible()
   return btn
 }
@@ -63,7 +63,7 @@ test.describe('Deadline: the snooze menu', () => {
         await page.goto('/')
         // Not over target, so a tap opens the menu.
         await (await snoozeButton(page, id, title)).click()
-        const menu = page.getByRole('menu', { name: 'Snooze options' })
+        const menu = page.getByRole('menu', { name: 'Defer options' })
         await expect(menu).toBeVisible()
         await expect(menu.getByRole('menuitem', { name: 'Back to auto' })).toBeVisible()
         await expect(menu.getByRole('menuitem', { name: 'Remove target' })).toHaveCount(0)
@@ -99,11 +99,11 @@ test.describe('Deadline: the snooze menu', () => {
         await page.goto('/')
         // Over target: a tap would snooze at once, so hold for the menu.
         const btn = await snoozeButton(page, id, title)
-        const menu = page.getByRole('menu', { name: 'Snooze options' })
+        const menu = page.getByRole('menu', { name: 'Defer options' })
         await holdUntil(btn, () => expect(menu).toBeVisible())
         await menu.getByRole('menuitem', { name: '1 hour', exact: true }).click()
         await expect(page.locator('[data-sonner-toast]').first()).toContainText(
-          'Snoozed to deadline',
+          'Deferred to deadline',
         )
         await expect
           .poll(async () => Date.parse(String((await stateOf(page, id)).target_at)))
@@ -129,11 +129,11 @@ test.describe('Deadline: the snooze menu', () => {
       await withPreferences(page, { default_grouping: 'unified' }, async () => {
         await page.goto('/')
         const btn = await snoozeButton(page, id, title)
-        const menu = page.getByRole('menu', { name: 'Snooze options' })
+        const menu = page.getByRole('menu', { name: 'Defer options' })
         await holdUntil(btn, () => expect(menu).toBeVisible())
         await menu.getByRole('menuitem', { name: '1 hour', exact: true }).click()
         const toast = page.locator('[data-sonner-toast]').first()
-        await expect(toast).toContainText('Snoozed')
+        await expect(toast).toContainText('Deferred')
         await expect(toast).not.toContainText('deadline')
         await expect
           .poll(async () => Date.parse(String((await stateOf(page, id)).target_at)))

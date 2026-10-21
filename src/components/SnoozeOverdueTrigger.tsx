@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { useState } from 'react'
 import { Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -76,8 +76,8 @@ export function SnoozeOverdueTrigger({
   }
   const ariaLabel =
     overdueCount > 0
-      ? `Snooze ${overdueCount} ${OVER_TARGET_LOWER} tasks (hold for options)`
-      : `Snooze ${OVER_TARGET_LOWER} tasks (hold for options)`
+      ? `Defer ${overdueCount} ${OVERDUE_LOWER} tasks (hold for options)`
+      : `Defer ${OVERDUE_LOWER} tasks (hold for options)`
   const countText = overdueCount > 999 ? '999+' : overdueCount
 
   return (

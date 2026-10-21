@@ -83,7 +83,7 @@ describe('Bulk snooze-overdue integration', () => {
     // Same shape as the non-empty path, and a displayable message for
     // branchless clients (Apple Shortcuts).
     expect(data.skipped_reminders).toBe(0)
-    expect(data.message).toBe('No snoozable tasks')
+    expect(data.message).toBe('No deferrable tasks')
     expect(typeof data.until).toBe('string')
   })
 
@@ -117,7 +117,7 @@ describe('Bulk snooze-overdue integration', () => {
     expect(res.status).toBe(200)
     const data = (await res.json()).data
     expect(data.tasks_affected).toBeGreaterThanOrEqual(1)
-    expect(data.message).toMatch(/^Snoozed \d+ /)
+    expect(data.message).toMatch(/^Deferred \d+ /)
     expect(new Date(data.until).getTime()).toBeGreaterThan(Date.now())
 
     // Verify the task got snoozed (due_at should now be in the future)

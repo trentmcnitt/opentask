@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://opentask.mcnitt.io'),
   title: 'OpenTask — Self-Hosted AI Task & Habit Manager',
   description:
-    'A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac. Reminders, quotas, snooze-first workflow, and a full REST API — all running on your own server.',
+    'A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac. Reminders, quotas, defer-first workflow, and a full REST API — all running on your own server.',
   manifest: '/manifest.json',
   icons: {
     icon: '/opentask-sun-logo.png',
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'OpenTask — Self-Hosted AI Task & Habit Manager',
     description:
-      'A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac. Reminders, quotas, snooze-first workflow, and a full REST API — all running on your own server.',
+      'A self-hosted, AI-powered task and habit manager for web, iPhone, Apple Watch, and Mac. Reminders, quotas, defer-first workflow, and a full REST API — all running on your own server.',
     url: 'https://opentask.mcnitt.io',
     siteName: 'OpenTask',
     images: [

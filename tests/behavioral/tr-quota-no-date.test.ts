@@ -362,7 +362,7 @@ describe('A quota is not a task — the other paths the first cut missed', () =>
     // The first-target date went with the old schedule: a re-schedule starts
     // the target-age clock over rather than inheriting the old occurrence.
     expect(after.original_due_at).toBeNull()
-    expect(description).not.toMatch(/snooz/i)
+    expect(description).not.toMatch(/defer/i)
   })
 
   /**

@@ -16,11 +16,11 @@ test.describe('Snooze', () => {
     await expect(page.getByText('Reply to email')).toBeVisible({ timeout: 5000 })
 
     // Click snooze button (force: true because it's opacity-0 until hover)
-    const snoozeBtn = page.getByRole('button', { name: /snooze "Reply to email"/i })
+    const snoozeBtn = page.getByRole('button', { name: /defer "Reply to email"/i })
     await snoozeBtn.click({ force: true })
 
     // Quick tap on overdue task triggers immediate snooze with a toast
-    await expect(page.getByText(/Snoozed to .+ — "Reply to email"/)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(/Deferred to .+ — "Reply to email"/)).toBeVisible({ timeout: 3000 })
     await expect(page.getByText('Undo')).toBeVisible({ timeout: 3000 })
   })
 
@@ -33,11 +33,11 @@ test.describe('Snooze', () => {
     // "Buy groceries" is future-dated — quick-tap should open menu, not instant-snooze
     await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
 
-    const snoozeBtn = page.getByRole('button', { name: /snooze "Buy groceries"/i })
+    const snoozeBtn = page.getByRole('button', { name: /defer "Buy groceries"/i })
     await snoozeBtn.click({ force: true })
 
     // Snooze menu should open instead of instant snooze
-    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    const menu = page.getByRole('menu', { name: 'Defer options' })
     await expect(menu).toBeVisible({ timeout: 3000 })
   })
 
@@ -51,12 +51,12 @@ test.describe('Snooze', () => {
     const taskText = page.getByText('Review PRs')
     await taskText.hover()
 
-    const snoozeBtn = page.getByRole('button', { name: /snooze "Review PRs"/i })
+    const snoozeBtn = page.getByRole('button', { name: /defer "Review PRs"/i })
     await expect(snoozeBtn).toBeVisible({ timeout: 3000 })
 
     // Long-press: hold until the menu opens, not for a hand-timed interval
     // (the 400ms threshold under CI load made a timed hold read as a tap).
-    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    const menu = page.getByRole('menu', { name: 'Defer options' })
     await holdUntil(snoozeBtn, () => expect(menu).toBeVisible({ timeout: 3000 }))
 
     // Verify menu items
@@ -135,7 +135,7 @@ test.describe('Row snooze button', () => {
         const row = page.locator(`#task-row-${id}`)
         await waitForPrefsLoaded(page, () => page.goto('/'), row)
         await row.hover()
-        const snoozeBtn = row.getByRole('button', { name: `Snooze "${title}"` })
+        const snoozeBtn = row.getByRole('button', { name: `Defer "${title}"` })
         await expect(snoozeBtn).toBeVisible()
 
         await snoozeBtn.click({ button: 'right' })

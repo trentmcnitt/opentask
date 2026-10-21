@@ -230,7 +230,7 @@ test.describe('Reminders surface', () => {
 
       // A reminder row is a circle and a sentence — no snooze affordance, no
       // due chip, nothing that treats it as an obligation.
-      await expect(page.getByRole('button', { name: /snooze "Morning supplements"/i })).toHaveCount(
+      await expect(page.getByRole('button', { name: /defer "Morning supplements"/i })).toHaveCount(
         0,
       )
       await expect(
@@ -1123,7 +1123,7 @@ test.describe('Reminder details', () => {
         'aria-pressed',
         'true',
       )
-      await expect(dialog.getByRole('button', { name: /snooze/i })).toHaveCount(0)
+      await expect(dialog.getByRole('button', { name: /defer/i })).toHaveCount(0)
 
       // A slot pick is staged, not saved; dismissing with it pending asks first.
       await dialog.locator('[data-slot-label="Evening"]').click()

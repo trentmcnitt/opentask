@@ -23,7 +23,7 @@
  * - P0-P2: user.auto_snooze_minutes (default 30 min)
  */
 
-import { OVER_TARGET, OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_WORD, OVERDUE_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
@@ -150,12 +150,12 @@ function splitIntoBuckets(tasks: OverdueTask[]): {
     regular: {
       individual: regular.slice(0, REGULAR_CAP),
       overflow: Math.max(0, regular.length - REGULAR_CAP),
-      label: `tasks ${OVER_TARGET_LOWER}`,
+      label: `tasks ${OVERDUE_LOWER}`,
     },
     high: {
       individual: high.slice(0, HIGH_CAP),
       overflow: Math.max(0, high.length - HIGH_CAP),
-      label: `high priority tasks ${OVER_TARGET_LOWER}`,
+      label: `high priority tasks ${OVERDUE_LOWER}`,
     },
     urgent: {
       individual: urgent,
@@ -169,7 +169,7 @@ function splitIntoBuckets(tasks: OverdueTask[]): {
 async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
   await sendPushNotification(task.user_id, {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
-    body: `${OVER_TARGET} task`,
+    body: `${OVERDUE_WORD} task`,
     data: { url: `${APP_URL}/?task=${task.id}`, taskId: task.id },
   })
 }
@@ -178,7 +178,7 @@ async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
 async function sendSummaryWebPush(userId: number, count: number, label: string): Promise<void> {
   await sendPushNotification(userId, {
     title: `${count} more ${label}`,
-    body: `Open app to see all ${OVER_TARGET_LOWER} tasks`,
+    body: `Open app to see all ${OVERDUE_LOWER} tasks`,
     data: { url: `${APP_URL}/?filter=overdue` },
   })
 }
@@ -191,7 +191,7 @@ async function sendIndividualApns(
 ): Promise<void> {
   await sendApnsNotification(task.user_id, {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
-    body: `${OVER_TARGET} task`,
+    body: `${OVERDUE_WORD} task`,
     taskId: task.id,
     // The occurrence being notified about, not the stored due_at (§4.6) — for
     // a recurring task those differ, and the client would otherwise show a
@@ -232,7 +232,7 @@ async function sendBucket(
         sendApnsSummaryNotification(
           userId,
           `${bucket.overflow} more ${bucket.label}`,
-          `Open app to see all ${OVER_TARGET_LOWER} tasks`,
+          `Open app to see all ${OVERDUE_LOWER} tasks`,
           bucket.overflow,
           overdueCount,
         ),

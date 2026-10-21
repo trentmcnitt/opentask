@@ -102,7 +102,7 @@ export function SwipeableRow({
   )
 
   const leftColor = leftAction === 'edit' ? 'bg-amber-500' : 'bg-blue-500'
-  const leftLabel = leftAction === 'edit' ? 'Edit' : 'Snooze'
+  const leftLabel = leftAction === 'edit' ? 'Edit' : 'Defer'
   const bgColor = offset > 0 ? 'bg-green-500' : offset < 0 ? leftColor : ''
   const label = offset > 0 ? 'Done' : offset < 0 ? leftLabel : ''
 

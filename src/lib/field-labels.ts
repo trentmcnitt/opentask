@@ -2,7 +2,7 @@
  * Shared field labels and description formatters for toast messages.
  *
  * Produces a single description string used for BOTH the action toast AND the
- * undo log. When a user sees "Snoozed to Mon 9:00 AM (+2d) — "Buy groceries""
+ * undo log. When a user sees "Deferred to Mon 9:00 AM (+2d) — "Buy groceries""
  * after saving, and later undoes it, they see
  * "Undid: Snoozed to Mon 9:00 AM (+2d) — "Buy groceries"" — identical text.
  *
@@ -31,7 +31,7 @@ export const FIELD_LABELS: Record<string, string> = {
   due_at: 'due date',
   notes: 'notes',
   recurrence_mode: 'recurrence mode',
-  auto_snooze_minutes: 'auto-snooze',
+  auto_snooze_minutes: 'nag',
   // §6: moving an item on/off the Reminders surface changes what KIND of thing
   // it is, so it belongs in the user-facing summary rather than being filtered
   // out as internal bookkeeping.
@@ -115,7 +115,7 @@ export interface EditDescriptionContext {
   userTimezone: string
   /** Project name when project_id changed (looked up by caller) */
   projectName?: string
-  /** A3 (2026-10-11): the snooze stopped AT the deadline — "Snoozed to deadline …". */
+  /** A3 (2026-10-11): the snooze stopped AT the deadline — "Deferred to deadline …". */
   cappedAtDeadline?: boolean
 }
 
@@ -287,7 +287,7 @@ function buildPriorityFragment(
 }
 
 /**
- * Snooze fragment: "Snoozed to Mon 9:00 AM (+2d)"
+ * Snooze fragment: "Deferred to Mon 9:00 AM (+2d)"
  * Includes duration delta from the old due_at to the new due_at.
  */
 function buildSnoozeFragment(
@@ -299,17 +299,17 @@ function buildSnoozeFragment(
   const newDueAt = afterState.due_at
   if (typeof newDueAt !== 'string') return null
 
-  // A snooze that stopped at the deadline says so (ruling A3): "Snoozed to
+  // A snooze that stopped at the deadline says so (ruling A3): "Deferred to
   // deadline 6:00 PM (+9h)" — the toast, the activity log and the undo entry.
   const target = `${cappedAtDeadline ? 'deadline ' : ''}${formatSnoozeTarget(newDueAt, userTimezone)}`
   const oldDueAt = beforeState.due_at
 
   if (typeof oldDueAt === 'string') {
     const delta = formatDurationDelta(new Date(oldDueAt).getTime(), new Date(newDueAt).getTime())
-    return `Snoozed to ${target} (${delta})`
+    return `Deferred to ${target} (${delta})`
   }
 
-  return `Snoozed to ${target}`
+  return `Deferred to ${target}`
 }
 
 /**
@@ -362,21 +362,21 @@ function buildTitleFragment(
 }
 
 /**
- * Auto-snooze fragment:
- * - null (default): "Auto-snooze set to default"
- * - 0 (off): "Auto-snooze turned off"
- * - positive: "Auto-snooze set to 15m" / "Auto-snooze set to 1h"
+ * Nag fragment:
+ * - null (default): "Nag set to default"
+ * - 0 (off): "Nag turned off"
+ * - positive: "Nag set to every 15m" / "Nag set to every 1h"
  */
 function buildAutoSnoozeFragment(
   _beforeState: Partial<Record<string, unknown>>,
   afterState: Partial<Record<string, unknown>>,
 ): string {
   const after = afterState.auto_snooze_minutes
-  if (after === null || after === undefined) return 'Auto-snooze set to default'
-  if (after === 0) return 'Auto-snooze turned off'
+  if (after === null || after === undefined) return 'Nag set to default'
+  if (after === 0) return 'Nag turned off'
   if (typeof after === 'number') {
     const label = after >= 60 ? `${after / 60}h` : `${after}m`
-    return `Auto-snooze set to ${label}`
+    return `Nag set to every ${label}`
   }
-  return 'Auto-snooze updated'
+  return 'Nag updated'
 }

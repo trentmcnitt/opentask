@@ -288,7 +288,7 @@ function CompletionsTab({
                     <span
                       data-completion-attempts={c.attempts}
                       className="text-over-target ml-1.5 font-semibold tabular-nums"
-                      title={`Over target on ${c.attempts} day${c.attempts === 1 ? '' : 's'}`}
+                      title={`Overdue on ${c.attempts} day${c.attempts === 1 ? '' : 's'}`}
                     >
                       · {c.attempts}×
                     </span>
@@ -352,9 +352,9 @@ function formatActivityDescription(entry: UndoEntry, timezone: string): string {
             new Date(beforeDue).getTime(),
             new Date(afterDue).getTime(),
           )
-          return `Snoozed ${taskCount} tasks ${delta}`
+          return `Deferred ${taskCount} tasks ${delta}`
         }
-        return `Snoozed ${taskCount} tasks`
+        return `Deferred ${taskCount} tasks`
       }
 
       // Single snooze - show duration and time change
@@ -367,9 +367,9 @@ function formatActivityDescription(entry: UndoEntry, timezone: string): string {
         )
         const fromTime = formatTimeInTimezone(beforeDue, timezone)
         const toTime = formatTimeInTimezone(afterDue, timezone)
-        return `Snoozed '${truncatedTitle}' ${delta} (${fromTime} → ${toTime})`
+        return `Deferred '${truncatedTitle}' ${delta} (${fromTime} → ${toTime})`
       }
-      return `Snoozed '${truncatedTitle}'`
+      return `Deferred '${truncatedTitle}'`
     }
 
     case 'edit':
@@ -973,7 +973,7 @@ function formatFieldName(field: string): string {
     done_at: 'Done at',
     archived_at: 'Archived',
     deleted_at: 'Deleted',
-    snooze_count: 'Snooze count',
+    snooze_count: 'Defer count',
   }
   const label = FIELD_LABELS[field] || extras[field]
   if (label) return label.charAt(0).toUpperCase() + label.slice(1)

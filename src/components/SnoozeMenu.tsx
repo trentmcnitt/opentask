@@ -119,7 +119,7 @@ export function SnoozeMenu({
   onRemoveTarget,
   targetReset = 'remove',
   deadlineAt = null,
-  title = 'Snooze',
+  title = 'Defer',
   onCustom,
 }: SnoozeMenuProps) {
   const timezone = useTimezone()
@@ -294,9 +294,9 @@ function CustomSnoozePicker({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Snooze until...</DialogTitle>
+          <DialogTitle>Defer until...</DialogTitle>
           <DialogDescription className="sr-only">
-            Choose a custom date and time to snooze
+            Choose a custom date and time to defer
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center">
@@ -349,7 +349,7 @@ function CustomSnoozePicker({
         </div>
         <Button onClick={handleSnooze} disabled={!selectedDate} className="w-full">
           <Clock className="mr-1.5 size-4" />
-          Snooze
+          Defer
         </Button>
       </DialogContent>
     </Dialog>

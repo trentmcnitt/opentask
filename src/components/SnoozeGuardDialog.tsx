@@ -30,7 +30,7 @@ interface SnoozeGuardDialogProps {
  * (REDESIGN-V03 §4.3). Rendered by single-task snooze surfaces only — bulk
  * sweeps must never modal-block, so no bulk path constructs this.
  *
- * The layout is deliberate: **"Snooze anyway" is the primary action** in both
+ * The layout is deliberate: **"Defer anyway" is the primary action** in both
  * variants. The app warns, it does not overrule — the user's explicit
  * instruction stays the path of least resistance, and the alternative sits
  * beside it as an equal offer rather than a correction. Silent clamping to the
@@ -58,7 +58,7 @@ export function SnoozeGuardDialog({
         {guard?.kind === 'past-next-occurrence' ? (
           <>
             <AlertDialogHeader>
-              <AlertDialogTitle>Snooze past the next occurrence?</AlertDialogTitle>
+              <AlertDialogTitle>Defer past the next occurrence?</AlertDialogTitle>
               <AlertDialogDescription>
                 This pushes past its next occurrence (
                 {formatDateTime(guard.nextOccurrence, timezone)}), so that one won&apos;t come up.
@@ -66,10 +66,10 @@ export function SnoozeGuardDialog({
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
               <AlertDialogAction onClick={onConfirm} className="w-full">
-                Snooze anyway
+                Defer anyway
               </AlertDialogAction>
               <Button variant="outline" onClick={onSnoozeToNextOccurrence} className="w-full">
-                Snooze to next occurrence
+                Defer to next occurrence
               </Button>
               <AlertDialogCancel onClick={onCancel} className="mt-0 w-full">
                 Cancel
@@ -81,7 +81,7 @@ export function SnoozeGuardDialog({
             <AlertDialogHeader>
               <AlertDialogTitle>Add a due date?</AlertDialogTitle>
               <AlertDialogDescription>
-                This task has no due date. Snoozing it will give it one, and it will start showing
+                This task has no due date. Deferring it will give it one, and it will start showing
                 up as due.
               </AlertDialogDescription>
             </AlertDialogHeader>

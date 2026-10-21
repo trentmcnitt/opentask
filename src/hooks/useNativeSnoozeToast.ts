@@ -31,7 +31,7 @@ declare global {
 }
 
 /**
- * The "Snoozed N tasks · Undo" toast for a snooze the iOS app did natively,
+ * The "Deferred N tasks · Undo" toast for a snooze the iOS app did natively,
  * from a Home Screen quick action (Trent, 2026-09-28: iOS opens the app for
  * one anyway, so the toast is the confirmation — and the chance to undo).
  *
@@ -56,7 +56,7 @@ export function useNativeSnoozeToast() {
       if (!result) return
       delete window.__opentaskNativeSnooze
       if (result.error) {
-        showToast({ message: 'Snooze failed', type: 'error' })
+        showToast({ message: 'Defer failed', type: 'error' })
         return
       }
       // Pages refresh on the sync stream anyway; this makes it immediate.
