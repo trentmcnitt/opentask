@@ -992,6 +992,7 @@ async function runInsightsViaProduction(
   const pollIntervalMs = 2_000
   const deadline = Date.now() + maxWaitMs
 
+  let finished = false
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
     const session = getInsightsSessionStatus(sessionId, QUALITY_TEST_USER_ID)
@@ -1001,8 +1002,13 @@ async function runInsightsViaProduction(
     if (session.status === 'complete' && session.error) {
       throw new Error(`Insights incomplete: ${session.error}`)
     }
-    if (session.status === 'complete') break
+    if (session.status === 'complete') {
+      finished = true
+      break
+    }
   }
+  // Without this, a run still going at the deadline was scored on whatever had been stored
+  if (!finished) throw new Error(`Insights still running after ${maxWaitMs / 1000}s`)
 
   const { results } = getInsightsResults(QUALITY_TEST_USER_ID)
   const durationMs = Date.now() - startMs
