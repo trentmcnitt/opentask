@@ -18,6 +18,8 @@
  *    satisfies the rule (RFC 5545 semantics), at the rule's time of day.
  *  - RD-ORACLE-02: parse → build gives the canonical string back, and
  *    build → parse gives the components back.
+ *  - RD-ORACLE-03: a rule that never occurs (April 31st) is refused by
+ *    validation and never given a made-up date.
  *
  * The grid ("every N", and bare rules that take their day from the task's
  * own occurrence, see `phaseFloats` in compute-next.ts) is anchored at
@@ -41,6 +43,7 @@ import {
   parseRRule,
   type RRuleComponents,
 } from '@/core/recurrence'
+import { NEVER_OCCURS_MESSAGE } from '@/core/recurrence/compute-next'
 
 const SEED = 20261021
 const CASES = 3000
@@ -304,10 +307,6 @@ describe('RD-ORACLE: the recurrence engine against a calendar walk (seeded rando
     for (const { i, c, tz, hour, minute, ref, anchorAt } of cases) {
       const rule = normalizeRRule(buildRRule(c))
       if (!isValidRRule(rule)) continue
-      // Found by this test, 2026-10-21: such a rule passes isValidRRule and
-      // the engine falls back to "tomorrow" (see RD-ORACLE-03). Reported, not
-      // fixed here, so the walk is checked on the rules that do occur.
-      if (neverOccurs(c)) continue
       checked++
       const want = expectedNext(c, tz, ref, hour, minute, anchorAt)
       const got = DateTime.fromJSDate(
@@ -347,10 +346,40 @@ describe('RD-ORACLE: the recurrence engine against a calendar walk (seeded rando
     }
   })
 
-  // Found 2026-10-21: FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=31 (and the 31st of
-  // June, September or November) passes isValidRRule, and computeNextOccurrence
-  // then returns the reference + 1 day, its "shouldn't happen" fallback, every
-  // time. Whether validation should refuse it (or the picker never offer it)
-  // is open; it is left to the repeat-anchor work.
-  test.todo('RD-ORACLE-03: a yearly rule on a day its months lack is refused by isValidRRule')
+  // Found by RD-ORACLE-01, 2026-10-21: FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=31 (the
+  // 31st of April, June, September or November) passed isValidRRule, and
+  // computeNextOccurrence returned the reference + 1 day for it every time.
+  // Fixed in 0a05049f: validation refuses a rule that never occurs, and the
+  // engine throws rather than invent a date (an older row may still hold one).
+  test('RD-ORACLE-03: a rule that never occurs is refused, and never given a date', () => {
+    const generated = cases.filter((x) => neverOccurs(x.c))
+    // The generator must keep producing them, or this checks nothing.
+    expect(generated.length).toBeGreaterThan(0)
+    const rules = [
+      ...generated.map((x) => normalizeRRule(buildRRule(x.c))),
+      'FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=31',
+      'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30',
+      'FREQ=YEARLY;INTERVAL=2;BYMONTH=9;BYMONTHDAY=31',
+      'FREQ=YEARLY;BYDAY=TH;BYMONTH=6;BYMONTHDAY=31',
+      'FREQ=YEARLY;BYMONTH=4,6,9,11;BYMONTHDAY=31',
+    ]
+    for (const rule of rules) {
+      expect(isValidRRule(rule), rule).toBe(false)
+      expect(
+        () =>
+          computeNextOccurrence({
+            rrule: rule,
+            recurrenceMode: 'from_due',
+            anchorTime: '09:00',
+            timezone: 'America/Chicago',
+            completedAt: new Date('2026-10-21T15:00:00Z'),
+            prevDueAt: null,
+            anchorAt: new Date('2026-10-21T14:00:00Z'),
+          }),
+        rule,
+      ).toThrow(NEVER_OCCURS_MESSAGE)
+    }
+    // Leap day stays possible.
+    expect(isValidRRule('FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29')).toBe(true)
+  })
 })
