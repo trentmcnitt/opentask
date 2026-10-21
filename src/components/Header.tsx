@@ -1,5 +1,7 @@
 'use client'
 
+// Sport-lane test commit (2026-10-21): not for merge.
+
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
