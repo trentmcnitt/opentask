@@ -205,6 +205,13 @@ export interface AIQueryResult {
   success: boolean
   /** Error message if the query failed */
   error: string | null
+  /** Output tokens the call used, when the provider reports them (API providers) */
+  outputTokens?: number
+  /**
+   * True when the response stopped at the output cap, so it is cut off (API
+   * providers; the SDK path does not report it). A cut-off JSON answer does not parse.
+   */
+  truncated?: boolean
 }
 
 /** Default timeout for AI queries (60 seconds). Shared by all providers. */

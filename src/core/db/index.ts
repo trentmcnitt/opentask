@@ -149,6 +149,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'ai_provider')) {
     database.exec("ALTER TABLE users ADD COLUMN ai_provider TEXT NOT NULL DEFAULT 'default'")
   }
+  // Insights session heartbeat (2026-10-21): a long chunked run is judged
+  // stale by time since its last chunk, not since it started
+  if (!hasColumn(database, 'ai_insights_sessions', 'heartbeat_at')) {
+    database.exec('ALTER TABLE ai_insights_sessions ADD COLUMN heartbeat_at TEXT')
+  }
   if (!hasColumn(database, 'ai_activity_log', 'provider')) {
     database.exec('ALTER TABLE ai_activity_log ADD COLUMN provider TEXT')
   }

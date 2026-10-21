@@ -67,8 +67,9 @@ export function showSaveError(err: unknown): void {
 // safe to create once at module scope and reuse. Sonner accepts ReactNode for its icon option.
 const sparkleIcon = createElement(Sparkles, { className: 'size-4' })
 
-export function showAiSuccessToast(message: string) {
-  sonnerToast.success(message, { icon: sparkleIcon })
+/** `description` is sonner's muted second line under the message. */
+export function showAiSuccessToast(message: string, description?: string) {
+  sonnerToast.success(message, { icon: sparkleIcon, ...(description && { description }) })
 }
 
 export function showAiSuccessToastWithAction(

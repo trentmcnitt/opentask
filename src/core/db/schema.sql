@@ -488,7 +488,9 @@ CREATE TABLE IF NOT EXISTS ai_insights_sessions (
   completed    INTEGER NOT NULL DEFAULT 0,
   started_at   TEXT NOT NULL,
   finished_at  TEXT,
-  error        TEXT
+  error        TEXT,
+  -- Last sign of life: set at start and after every chunk; staleness is judged from it
+  heartbeat_at TEXT
 );
 
 -- Webhooks (HTTP callbacks on task events)

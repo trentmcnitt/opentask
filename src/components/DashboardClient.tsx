@@ -2422,6 +2422,7 @@ function DashboardView({
                 insightsSingleCall={insightsData.singleCall}
                 insightsGenerationStartedAt={insightsData.generationStartedAt}
                 insightsError={insightsData.error}
+                insightsUnscoredTasks={insightsData.unscoredTasks}
                 onRefreshInsights={onRefreshInsights}
                 enrichmentActive={enrichmentActive}
                 timezone={timezone}

@@ -11,6 +11,7 @@ import {
   getInsightsResults,
   getActiveInsightsSession,
   getLastInsightsDurationMs,
+  getLastInsightsUnscoredCount,
   INSIGHTS_SIGNALS,
 } from '@/core/ai'
 import { success, unauthorized, handleError } from '@/lib/api-response'
@@ -34,6 +35,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       generated_at: generatedAt,
       stale,
       duration_ms: durationMs,
+      unscored_tasks: getLastInsightsUnscoredCount(user.id),
       signal_counts: signalCounts,
       signals: INSIGHTS_SIGNALS.map((s) => ({
         key: s.key,

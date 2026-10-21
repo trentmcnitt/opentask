@@ -26,6 +26,8 @@ import {
 import type { InsightsItem, InsightsSignalKey, TaskSummary } from './types'
 import { resolveFeatureAIConfig, type FeatureAIConfig } from './models'
 import { resolveFeatureTimeout } from './user-context'
+import { outputTokenBudget } from './output-limits'
+import type { AIQueryResult } from './sdk'
 import { log } from '@/lib/logger'
 
 /**
@@ -138,12 +140,15 @@ export const SIGNAL_MAP = new Map(INSIGHTS_SIGNALS.map((s) => [s.key, s]))
 export interface InsightsSession {
   id: string
   user_id: number
+  /** complete may carry an `error` when some tasks could not be scored */
   status: 'running' | 'complete' | 'failed'
   total_tasks: number
   completed: number
   started_at: string
   finished_at: string | null
   error: string | null
+  /** Set at start and after every chunk; staleness is judged from it */
+  heartbeat_at: string | null
 }
 
 export interface InsightsResult {
@@ -235,10 +240,70 @@ export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, Task
 // ---------------------------------------------------------------------------
 
 /**
- * Maximum number of tasks per AI call. Lists up to this size are sent in a
- * single call; larger lists are shuffled and split into equal chunks.
+ * How many tasks one Insights call may carry — sized by the call's output cap.
+ *
+ * Every task costs the call output tokens: its JSON entry (task_id, score, a
+ * one-line commentary, signals) plus, on models that think on their own, the
+ * thinking the model spends on it. A call whose answer outgrows the cap is cut
+ * off mid-JSON and nothing in it can be stored — production lost a whole
+ * 197-task run that way (2026-10-21: claude-haiku-5-5 on the API, `out 8192`).
+ *
+ * Measured 2026-10-21, claude-haiku-5-5 on the Anthropic API, the production
+ * prompt and schema, tasks from the insights-large-realistic scenario
+ * (n tasks → output tokens, of them thinking):
+ *   15 → 2980 (2232) · 30 → 5279 · 45 → 7220 (4892) · 70 → 8192, cut off (7788)
+ *   45 with thinking disabled → 2182 (0): 48.5 a task
+ * So the JSON alone is ~50 tokens a task, and the thinking Haiku 5.5 does
+ * unasked grows with the list: 160–200 tokens a task all told in one call.
+ * Subset calls (shuffled chunks with the calibration summary) think more: the
+ * 196-task quality scenario at 27 a call came back at 4151–7207 out per call,
+ * 230 a task on average and 288 at worst (88% of the cap).
+ *
+ * - `INSIGHTS_TOKENS_PER_TASK_VISIBLE` (60): the call sets an explicit thinking
+ *   budget (Opus), which `outputTokenBudget()` has already taken off the cap,
+ *   so a task costs only its JSON (50, plus margin).
+ * - `INSIGHTS_TOKENS_PER_TASK_ADAPTIVE` (240): no explicit budget — the model
+ *   may think on its own, and that thinking comes out of the same cap (the
+ *   chunked average above, rounded up; the worst chunk then fills ~70%).
+ * - `INSIGHTS_OUTPUT_BUDGET_SHARE` (0.6): plan to fill at most 60% of the
+ *   budget; commentary length and thinking both vary from run to run.
+ * - `INSIGHTS_MAX_TASKS_PER_CALL` (500): the old single-call threshold, kept as
+ *   the ceiling for very large caps (prompt size and attention, not output).
+ *
+ * Resulting chunk sizes: API Haiku (8192) → 20 · API Opus (16384 − 10000
+ * thinking) → 63 · SDK Opus (32000 − 10000) → 220 · SDK without a thinking
+ * budget (32000) → 80. A chunk that is cut off anyway is retried once as two
+ * halves (`runInsightsChunk`).
+ *
+ * Lists larger than one call are shuffled and split into equal chunks, each
+ * with a calibration summary of the whole list (see `processInsightsChunks`).
  */
-const SINGLE_CALL_THRESHOLD = 500
+export const INSIGHTS_TOKENS_PER_TASK_VISIBLE = 60
+export const INSIGHTS_TOKENS_PER_TASK_ADAPTIVE = 240
+export const INSIGHTS_OUTPUT_BUDGET_SHARE = 0.6
+export const INSIGHTS_MAX_TASKS_PER_CALL = 500
+/** Floor, so a tiny or misconfigured cap still makes progress. */
+const INSIGHTS_MIN_TASKS_PER_CALL = 10
+/** Thinking budget Insights asks for on Opus models. */
+const INSIGHTS_OPUS_THINKING_TOKENS = 10000
+
+/** The thinking budget an Insights call sets for this model (Opus only). */
+function insightsThinkingTokens(model: string): number | undefined {
+  return model.includes('opus') ? INSIGHTS_OPUS_THINKING_TOKENS : undefined
+}
+
+/** Max tasks per Insights call for this provider and model. */
+export function insightsTasksPerCall(config: Pick<FeatureAIConfig, 'provider' | 'model'>): number {
+  const thinking = insightsThinkingTokens(config.model)
+  // OpenAI never sends the thinking budget, so it plans like a model that thinks unasked.
+  const explicitThinking = !!thinking && config.provider !== 'openai'
+  const budget = outputTokenBudget(config.provider, thinking)
+  const perTask = explicitThinking
+    ? INSIGHTS_TOKENS_PER_TASK_VISIBLE
+    : INSIGHTS_TOKENS_PER_TASK_ADAPTIVE
+  const fit = Math.floor((budget * INSIGHTS_OUTPUT_BUDGET_SHARE) / perTask)
+  return Math.min(INSIGHTS_MAX_TASKS_PER_CALL, Math.max(INSIGHTS_MIN_TASKS_PER_CALL, fit))
+}
 
 /**
  * Fisher-Yates shuffle — returns a new array in random order.
@@ -327,9 +392,9 @@ export async function generateInsightsForUser(
   const db = getDb()
 
   db.prepare(
-    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at)
-     VALUES (?, ?, 'running', ?, 0, ?)`,
-  ).run(sessionId, userId, tasks.length, now)
+    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at, heartbeat_at)
+     VALUES (?, ?, 'running', ?, 0, ?, ?)`,
+  ).run(sessionId, userId, tasks.length, now, now)
 
   try {
     await processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, aiConfig)
@@ -360,13 +425,21 @@ export function startInsightsGeneration(
   const sessionId = uuid()
   const now = nowUtc()
   const db = getDb()
-  const singleCall = tasks.length <= SINGLE_CALL_THRESHOLD
+  // Whether the client gets incremental progress. The config is resolved again
+  // (and any error recorded on the session) by processInsightsChunks; a config
+  // that cannot resolve here fails there, so the guess does not matter then.
+  let singleCall = true
+  try {
+    singleCall = tasks.length <= insightsTasksPerCall(aiConfig ?? defaultInsightsConfig())
+  } catch {
+    // Reported as the session's error by processInsightsChunks
+  }
 
   // Create session
   db.prepare(
-    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at)
-     VALUES (?, ?, 'running', ?, 0, ?)`,
-  ).run(sessionId, userId, tasks.length, now)
+    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at, heartbeat_at)
+     VALUES (?, ?, 'running', ?, 0, ?, ?)`,
+  ).run(sessionId, userId, tasks.length, now, now)
 
   // Start processing in background (fire-and-forget)
   processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, aiConfig).catch(
@@ -382,12 +455,178 @@ export function startInsightsGeneration(
   return { sessionId, totalTasks: tasks.length, singleCall, startedAt: now }
 }
 
+/** The Insights config when the caller passes none: the feature's API config. */
+function defaultInsightsConfig(): FeatureAIConfig {
+  return resolveFeatureAIConfig('insights', 'api')
+}
+
 /**
- * Process tasks through the AI — single call for ≤500 tasks, chunked for larger lists.
+ * Split a (shuffled) list into the fewest calls of at most `tasksPerCall`
+ * tasks, sized as equally as possible.
+ */
+export function splitIntoChunks<T>(items: T[], tasksPerCall: number): T[][] {
+  const chunkCount = Math.max(1, Math.ceil(items.length / tasksPerCall))
+  const chunkSize = Math.ceil(items.length / chunkCount)
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize))
+  }
+  return chunks
+}
+
+/** What every Insights call in one run shares. */
+interface InsightsRunContext {
+  userId: number
+  timezone: string
+  now: DateTime
+  currentTime: string
+  allTasks: TaskSummary[]
+  scheduleBlock: string
+  sourceBlock: string
+  userContext?: string | null
+  /** Calibration summary of the whole list — built on first use, for subset calls only. */
+  summary: () => string
+  config: FeatureAIConfig
+  timeoutMs: number
+}
+
+/**
+ * One call's outcome: the scored items, or null with whether a retry as two
+ * halves could help — a response cut off at the output cap, or one that came
+ * back but did not parse. A call that errored (timeout, network, provider
+ * error) is not split: halving the list does not fix those.
+ */
+type InsightsCallOutcome = { items: InsightsItem[] } | { items: null; retryable: boolean }
+
+/** Run one Insights call over `chunk`; sanitizes the items but does not store them. */
+async function callInsights(
+  ctx: InsightsRunContext,
+  chunk: TaskSummary[],
+  label: string,
+): Promise<InsightsCallOutcome> {
+  const whole = chunk.length === ctx.allTasks.length
+  // A call over the whole list states the total; a subset call carries the
+  // calibration summary so it can score relative to the full list.
+  const prompt = buildInsightsFullPrompt({
+    currentTime: ctx.currentTime,
+    totalTaskCount: ctx.allTasks.length,
+    taskLines: chunk.map((t) => formatTaskLine(t, ctx.timezone, ctx.now)).join('\n'),
+    scheduleBlock: ctx.scheduleBlock,
+    sourceBlock: ctx.sourceBlock,
+    userContext: ctx.userContext,
+    summaryBlock: whole ? undefined : ctx.summary(),
+    contextBlock: whole
+      ? `Total tasks: ${ctx.allTasks.length}`
+      : `Total tasks in full list: ${ctx.allTasks.length}\nTasks in this subset: ${chunk.length} (random sample — see summary above)`,
+  })
+
+  const { provider, providerConfig, model } = ctx.config
+  const maxThinkingTokens = insightsThinkingTokens(model)
+  let result: AIQueryResult
+  try {
+    result = await aiQuery({
+      prompt,
+      outputSchema: INSIGHTS_JSON_SCHEMA,
+      model,
+      maxTurns: 1,
+      // Extended thinking for Opus models improves scoring quality
+      ...(maxThinkingTokens && { maxThinkingTokens }),
+      userId: ctx.userId,
+      action: 'insights',
+      inputText: whole ? `${chunk.length} tasks` : `${label} (${chunk.length} tasks)`,
+      timeoutMs: ctx.timeoutMs,
+      provider,
+      providerConfig,
+    })
+  } catch (err) {
+    log.error('ai', `Insights ${label} error:`, err)
+    return { items: null, retryable: false }
+  }
+
+  if (result.truncated) {
+    log.warn(
+      'ai',
+      `Insights ${label} truncated: the response hit the output cap (out ${result.outputTokens ?? '?'}) with ${chunk.length} tasks`,
+    )
+  }
+
+  const parsed = parseAIResponse(result, InsightsBatchResponseSchema, 'Insights', (text) => {
+    const json = extractJsonFromText(text)
+    if (!json) return null
+    // Handle both direct array and { tasks: [...] } wrapper
+    const arr = Array.isArray(json) ? json : json.tasks
+    if (!Array.isArray(arr)) return null
+    const attempt = InsightsBatchResultSchema.safeParse(arr)
+    return attempt.success ? attempt.data : null
+  })
+
+  if (!parsed) {
+    const retryable = !!result.truncated || result.success || result.error === 'No output'
+    log.warn('ai', `Insights ${label} failed to parse (${chunk.length} tasks)`)
+    return { items: null, retryable }
+  }
+
+  // Keep only this chunk's tasks, once each (a hallucinated or repeated id is dropped)
+  const taskMap = new Map(chunk.map((t) => [t.id, t]))
+  const seen = new Set<number>()
+  const items = parsed.filter((item) => {
+    if (!taskMap.has(item.task_id) || seen.has(item.task_id)) return false
+    seen.add(item.task_id)
+    return true
+  })
+  if (items.length < chunk.length) {
+    log.warn(
+      'ai',
+      `Insights ${label}: AI returned ${items.length}/${chunk.length} tasks (${chunk.length - items.length} missing)`,
+    )
+  }
+  sanitizeSignals(items, taskMap)
+  return { items }
+}
+
+/**
+ * Score one chunk and store its results; returns how many tasks were scored.
  *
- * For lists over SINGLE_CALL_THRESHOLD, tasks are randomly shuffled and split into
- * equal-sized chunks. Each chunk's prompt includes a calibration summary of the full
- * list so the LLM can score relative to the whole.
+ * A chunk that was cut off at the output cap or did not parse is retried
+ * once as two halves, each half a single call (no further splitting), so a
+ * size estimate that ran short loses no tasks — at most two extra calls.
+ */
+async function runInsightsChunk(
+  ctx: InsightsRunContext,
+  chunk: TaskSummary[],
+  label: string,
+): Promise<number> {
+  const outcome = await callInsights(ctx, chunk, label)
+  if (outcome.items) {
+    storeInsightsResults(ctx.userId, outcome.items)
+    return outcome.items.length
+  }
+  if (!outcome.retryable || chunk.length < 2) {
+    log.warn('ai', `Insights ${label}: skipping ${chunk.length} tasks`)
+    return 0
+  }
+
+  log.warn('ai', `Insights ${label}: retrying its ${chunk.length} tasks once as two halves`)
+  const mid = Math.ceil(chunk.length / 2)
+  let scored = 0
+  for (const [i, half] of [chunk.slice(0, mid), chunk.slice(mid)].entries()) {
+    const halfLabel = `${label} half ${i + 1}/2`
+    const halfOutcome = await callInsights(ctx, half, halfLabel)
+    if (halfOutcome.items) {
+      storeInsightsResults(ctx.userId, halfOutcome.items)
+      scored += halfOutcome.items.length
+    } else {
+      log.warn('ai', `Insights ${halfLabel}: skipping ${half.length} tasks`)
+    }
+  }
+  return scored
+}
+
+/**
+ * Process tasks through the AI — one call when the list fits the call's
+ * output budget (`insightsTasksPerCall`), otherwise shuffled equal chunks,
+ * each prompt carrying a calibration summary of the full list so the LLM can
+ * score relative to the whole.
  */
 async function processInsightsChunks(
   sessionId: string,
@@ -400,139 +639,90 @@ async function processInsightsChunks(
 ): Promise<void> {
   const db = getDb()
   const now = DateTime.now().setZone(timezone)
-  const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
+  const config = aiConfig ?? defaultInsightsConfig()
 
-  const scheduleBlock = getScheduleBlock(userId)
-
-  const sourceBlock = source === 'scheduled' ? '\nThis is an automated insights run.\n' : ''
-
-  // Build chunks: single call for small lists, shuffled equal chunks for large ones
-  let chunks: TaskSummary[][]
-  let summaryHeader: string | null = null
-
-  if (tasks.length <= SINGLE_CALL_THRESHOLD) {
-    chunks = [tasks]
-  } else {
-    const shuffled = shuffleArray(tasks)
-    const chunkCount = Math.ceil(tasks.length / SINGLE_CALL_THRESHOLD)
-    const chunkSize = Math.ceil(tasks.length / chunkCount)
-    chunks = []
-    for (let i = 0; i < shuffled.length; i += chunkSize) {
-      chunks.push(shuffled.slice(i, i + chunkSize))
-    }
-    summaryHeader = buildTaskListSummary(tasks, now)
+  let summary: string | null = null
+  const ctx: InsightsRunContext = {
+    userId,
+    timezone,
+    now,
+    currentTime: now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'"),
+    allTasks: tasks,
+    scheduleBlock: getScheduleBlock(userId),
+    sourceBlock: source === 'scheduled' ? '\nThis is an automated insights run.\n' : '',
+    userContext,
+    summary: () => (summary ??= buildTaskListSummary(tasks, now)),
+    config,
+    timeoutMs: resolveFeatureTimeout(userId, 'insights', config.provider === 'sdk' ? 'sdk' : 'api'),
   }
 
-  let processedCount = 0
-  let failedTasks = 0
-  const config = aiConfig ?? resolveFeatureAIConfig('insights', 'api')
-  const { provider: effectiveProvider, providerConfig, model: insightsModel } = config
-  const insightsTimeoutMs = resolveFeatureTimeout(
-    userId,
-    'insights',
-    effectiveProvider === 'sdk' ? 'sdk' : 'api',
+  const tasksPerCall = insightsTasksPerCall(config)
+  const chunks =
+    tasks.length <= tasksPerCall ? [tasks] : splitIntoChunks(shuffleArray(tasks), tasksPerCall)
+  log.info(
+    'ai',
+    `Insights: ${tasks.length} tasks in ${chunks.length} call(s) of up to ${tasksPerCall} (${config.provider}, ${config.model})`,
   )
 
+  let scored = 0
   for (let ci = 0; ci < chunks.length; ci++) {
-    const chunk = chunks[ci]
-    const taskLines = chunk.map((t) => formatTaskLine(t, timezone, now)).join('\n')
-    const taskIds = new Set(chunk.map((t) => t.id))
-    const taskMap = new Map(chunk.map((t) => [t.id, t]))
-
-    // Context block differs between single-call and chunked modes
-    const contextBlock =
-      chunks.length === 1
-        ? `Total tasks: ${tasks.length}`
-        : `Total tasks in full list: ${tasks.length}\nTasks in this subset: ${chunk.length} (random sample — see summary above)`
-
-    const prompt = buildInsightsFullPrompt({
-      currentTime,
-      totalTaskCount: tasks.length,
-      taskLines,
-      scheduleBlock,
-      sourceBlock,
-      userContext,
-      summaryBlock: summaryHeader ?? undefined,
-      contextBlock,
-    })
-
-    const inputLabel =
-      chunks.length === 1
-        ? `${tasks.length} tasks`
-        : `chunk ${ci + 1}/${chunks.length} (${chunk.length} tasks)`
-
-    try {
-      const result = await aiQuery({
-        prompt,
-        outputSchema: INSIGHTS_JSON_SCHEMA,
-        model: insightsModel,
-        maxTurns: 1,
-        // Enable extended thinking for Opus models to improve scoring quality
-        ...(insightsModel.includes('opus') && { maxThinkingTokens: 10000 }),
-        userId,
-        action: 'insights',
-        inputText: inputLabel,
-        timeoutMs: insightsTimeoutMs,
-        provider: effectiveProvider,
-        providerConfig,
-      })
-
-      const parsed = parseAIResponse(result, InsightsBatchResponseSchema, 'Insights', (text) => {
-        const json = extractJsonFromText(text)
-        if (!json) return null
-
-        // Handle both direct array and { tasks: [...] } wrapper
-        const arr = Array.isArray(json) ? json : json.tasks
-        if (!Array.isArray(arr)) return null
-
-        const attempt = InsightsBatchResultSchema.safeParse(arr)
-        return attempt.success ? attempt.data : null
-      })
-
-      if (parsed) {
-        const validItems = parsed.filter((item) => taskIds.has(item.task_id))
-        if (validItems.length < chunk.length) {
-          log.warn(
-            'ai',
-            `Insights chunk ${ci + 1}: AI returned ${validItems.length}/${chunk.length} tasks (${chunk.length - validItems.length} missing)`,
-          )
-        }
-        sanitizeSignals(validItems, taskMap)
-        storeInsightsResults(userId, validItems)
-        processedCount += chunk.length
-      } else {
-        log.warn('ai', `Insights chunk ${ci + 1} failed to parse — skipping ${chunk.length} tasks`)
-        failedTasks += chunk.length
-        processedCount += chunk.length
-      }
-    } catch (err) {
-      log.error('ai', `Insights chunk ${ci + 1} error:`, err)
-      failedTasks += chunk.length
-      processedCount += chunk.length
-    }
-
-    // Update session progress
-    db.prepare('UPDATE ai_insights_sessions SET completed = ? WHERE id = ?').run(
-      processedCount,
+    scored += await runInsightsChunk(ctx, chunks[ci], `chunk ${ci + 1}/${chunks.length}`)
+    // Progress counts tasks actually scored, never ones that failed. The
+    // heartbeat tells getActiveInsightsSession this run is still alive.
+    db.prepare('UPDATE ai_insights_sessions SET completed = ?, heartbeat_at = ? WHERE id = ?').run(
+      scored,
+      nowUtc(),
       sessionId,
     )
   }
 
-  if (failedTasks > 0) {
-    log.warn('ai', `Insights generation: ${failedTasks}/${tasks.length} tasks failed to process`)
+  finishInsightsSession(sessionId, userId, tasks, scored)
+}
+
+/**
+ * Close a session truthfully (the table's vocabulary: running → complete | failed).
+ *
+ * - every task scored → `complete`, no error
+ * - some scored → `complete`, `completed` = the number scored, and `error`
+ *   says how many could not be (the UI treats it as a finished run; the
+ *   unscored tasks keep any result from an earlier run)
+ * - none scored → `failed` with an error, and earlier results are kept
+ *
+ * The `AND status = 'running'` guard leaves a session that was auto-failed as
+ * stale (or superseded) alone, and stale-result cleanup runs only for a
+ * session this run completed.
+ */
+function finishInsightsSession(
+  sessionId: string,
+  userId: number,
+  tasks: TaskSummary[],
+  scored: number,
+): void {
+  const db = getDb()
+  const unscored = tasks.length - scored
+
+  if (tasks.length > 0 && scored === 0) {
+    const error = `None of the ${tasks.length} tasks could be scored`
+    log.warn('ai', `Insights generation failed: ${error}`)
+    db.prepare(
+      `UPDATE ai_insights_sessions SET status = 'failed', completed = 0, error = ?, finished_at = ?
+       WHERE id = ? AND status = 'running'`,
+    ).run(error, nowUtc(), sessionId)
+    return
   }
 
-  // Mark session complete. The AND status = 'running' guard ensures cleanup only
-  // runs if this session is still valid (not deleted or superseded by another run).
+  const error = unscored > 0 ? `${unscored} of ${tasks.length} tasks could not be scored` : null
+  if (error) log.warn('ai', `Insights generation: ${error}`)
+
   const updateResult = db
     .prepare(
-      `UPDATE ai_insights_sessions SET status = 'complete', completed = ?, finished_at = ?
+      `UPDATE ai_insights_sessions SET status = 'complete', completed = ?, error = ?, finished_at = ?
        WHERE id = ? AND status = 'running'`,
     )
-    .run(processedCount, nowUtc(), sessionId)
+    .run(scored, error, nowUtc(), sessionId)
 
-  // Clean up stale results (tasks no longer in the active list) only on successful
-  // completion. Old results are preserved during generation so failures don't wipe data.
+  // Clean up stale results (tasks no longer in the active list) only on completion.
+  // Old results are preserved during generation so failures don't wipe data.
   if (updateResult.changes > 0 && tasks.length > 0) {
     const allTaskIds = tasks.map((t) => t.id)
     const placeholders = allTaskIds.map(() => '?').join(',')
@@ -642,18 +832,26 @@ export function hasInsightsResults(userId: number): boolean {
   return row.count > 0
 }
 
-/** Sessions running longer than this are considered crashed (e.g. server restart) and auto-failed. */
+/**
+ * A running session with no heartbeat for this long is considered crashed
+ * (e.g. a server restart) and auto-failed. The heartbeat moves after every
+ * chunk, so a long chunked run (25+ calls of 20 tasks on an 8192-cap model)
+ * stays alive as long as it progresses. The bound has to outlast one chunk:
+ * a call up to its timeout (300s on the SDK, 180s on the API) plus, when it
+ * is cut off, its two halves — 15 minutes at worst — so 20 minutes holds.
+ */
 const SESSION_STALE_TIMEOUT_MS = 20 * 60 * 1000
 
 /**
- * Get the duration in milliseconds of the most recent completed insights session.
+ * Get the duration in milliseconds of the most recent finished insights session
+ * (complete or failed), so a failed run is not masked by an older good one.
  */
 export function getLastInsightsDurationMs(userId: number): number | null {
   const db = getDb()
   const row = db
     .prepare(
       `SELECT started_at, finished_at FROM ai_insights_sessions
-       WHERE user_id = ? AND status = 'complete' AND finished_at IS NOT NULL
+       WHERE user_id = ? AND status IN ('complete', 'failed') AND finished_at IS NOT NULL
        ORDER BY finished_at DESC LIMIT 1`,
     )
     .get(userId) as { started_at: string; finished_at: string } | undefined
@@ -662,9 +860,29 @@ export function getLastInsightsDurationMs(userId: number): number | null {
 }
 
 /**
+ * How many tasks the most recent finished Insights run (complete or failed)
+ * could not score — 0 when it scored them all, or there is none. A run that
+ * scored only some tasks finishes `complete` with `completed` counting the
+ * scored ones; a failed run scored none. The panel shows it as a quiet line
+ * ("N tasks couldn't be scored"), and a newer failure is not masked by an
+ * older good run.
+ */
+export function getLastInsightsUnscoredCount(userId: number): number {
+  const db = getDb()
+  const row = db
+    .prepare(
+      `SELECT total_tasks, completed FROM ai_insights_sessions
+       WHERE user_id = ? AND status IN ('complete', 'failed') AND finished_at IS NOT NULL
+       ORDER BY finished_at DESC LIMIT 1`,
+    )
+    .get(userId) as { total_tasks: number; completed: number } | undefined
+  return row ? Math.max(0, row.total_tasks - row.completed) : 0
+}
+
+/**
  * Get the most recent active session for a user (if any is still running).
- * Auto-fails sessions older than SESSION_STALE_TIMEOUT_MS to prevent permanent 409s
- * after server restarts kill background generation.
+ * Auto-fails sessions with no heartbeat for SESSION_STALE_TIMEOUT_MS to prevent
+ * permanent 409s after server restarts kill background generation.
  */
 export function getActiveInsightsSession(userId: number): InsightsSession | null {
   const db = getDb()
@@ -677,8 +895,10 @@ export function getActiveInsightsSession(userId: number): InsightsSession | null
     .get(userId) as InsightsSession | undefined
   if (!row) return null
 
-  const ageMs = Date.now() - new Date(row.started_at).getTime()
-  if (ageMs > SESSION_STALE_TIMEOUT_MS) {
+  // Sessions from before the heartbeat column have none: judge them from their start
+  const lastSignOfLife = row.heartbeat_at ?? row.started_at
+  const silentMs = Date.now() - new Date(lastSignOfLife).getTime()
+  if (silentMs > SESSION_STALE_TIMEOUT_MS) {
     db.prepare(
       `UPDATE ai_insights_sessions SET status = 'failed', error = 'Generation timed out', finished_at = ?
        WHERE id = ? AND status = 'running'`,

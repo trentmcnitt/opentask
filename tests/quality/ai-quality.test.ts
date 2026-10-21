@@ -799,6 +799,18 @@ async function runInsights(
   // Match production (buildTaskSummaries): a deadline-only task shows its implied target.
   const { withEffectiveSummaryTarget } = await import('@/core/ai/task-summaries')
   const ctx = { timezone: input.timezone, morningTime: '09:00' }
+
+  // A list production would split (more tasks than one call's output budget
+  // holds for this provider and model) runs through the production chunking
+  // path, so the test sees the calls production makes. Smaller lists are one
+  // call either way and stay on this direct path.
+  const { insightsTasksPerCall } = await import('@/core/ai/insights')
+  if (input.tasks.length > insightsTasksPerCall(await insightsTestConfig())) {
+    return runInsightsViaProduction({
+      ...input,
+      tasks: input.tasks.map((t) => withEffectiveSummaryTarget(t, ctx)),
+    })
+  }
   const taskLines = input.tasks
     .map((t) => formatTaskLine(withEffectiveSummaryTarget(t, ctx), input.timezone, now))
     .join('\n')
@@ -942,6 +954,14 @@ async function runProcessDuplicates(
   return { output: { groups }, durationMs }
 }
 
+/** The Insights config production would pass for the test run's provider and model. */
+async function insightsTestConfig(): Promise<import('@/core/ai/models').FeatureAIConfig> {
+  const { resolveFeatureAIConfig } = await import('@/core/ai/models')
+  return getTestProvider() === 'sdk'
+    ? { provider: 'sdk', model: getModelForFeature('insights') }
+    : resolveFeatureAIConfig('insights', 'api')
+}
+
 /**
  * Run insights via the production processInsightsChunks code path.
  *
@@ -967,12 +987,19 @@ async function runInsightsViaProduction(
     insertTask.run(t.id, QUALITY_TEST_USER_ID, t.title, t.priority, t.created_at)
   }
 
+  // The test run's provider and model, as production passes the user's
+  // resolved config — without it the run falls back to the API config and
+  // would plan its chunks for the wrong output cap (or fail in SDK mode).
+  const aiConfig = await insightsTestConfig()
+
   const startMs = Date.now()
   const { sessionId } = startInsightsGeneration(
     QUALITY_TEST_USER_ID,
     input.timezone,
     input.tasks,
     input.userContext,
+    'on-demand',
+    aiConfig,
   )
 
   // Poll for completion (max 10 minutes for large lists)
@@ -980,13 +1007,23 @@ async function runInsightsViaProduction(
   const pollIntervalMs = 2_000
   const deadline = Date.now() + maxWaitMs
 
+  let finished = false
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
     const session = getInsightsSessionStatus(sessionId, QUALITY_TEST_USER_ID)
     if (!session) throw new Error('Insights session not found')
-    if (session.status === 'complete') break
     if (session.status === 'failed') throw new Error(`Insights failed: ${session.error}`)
+    // A complete session with an error scored only some tasks — a structural failure here
+    if (session.status === 'complete' && session.error) {
+      throw new Error(`Insights incomplete: ${session.error}`)
+    }
+    if (session.status === 'complete') {
+      finished = true
+      break
+    }
   }
+  // Without this, a run still going at the deadline was scored on whatever had been stored
+  if (!finished) throw new Error(`Insights still running after ${maxWaitMs / 1000}s`)
 
   const { results } = getInsightsResults(QUALITY_TEST_USER_ID)
   const durationMs = Date.now() - startMs
