@@ -138,7 +138,10 @@ jobs:
   # checks out refs/pull/N/merge), so running E2E again on the push to main
   # repeated ~15 min of identical work. The rest of CI still runs on main.
   e2e:
-    name: E2E shard ${{ matrix.shard }}/3
+    # No matrix value in the name: a job skipped by its `if:` never expands
+    # its matrix, and showed the raw expression as its check name. GitHub
+    # appends the value itself: "E2E shard (1)", "(2)", "(3)".
+    name: E2E shard
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
@@ -221,7 +224,7 @@ jobs:
           retention-days: 30
 
   # The one "E2E" result the main-protection ruleset requires; the shards'
-  # names ("E2E shard 1/3"…) aren't in it. Passes when every shard passed, or
+  # names ("E2E shard (1)"…) aren't in it. Passes when every shard passed, or
   # when the shards were skipped because the PR has no code to test (docs or
   # native only). `always()` makes it report even when a shard failed, since a
   # job skipped by a failed dependency would count as passing.
