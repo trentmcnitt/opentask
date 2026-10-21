@@ -286,9 +286,30 @@ func refreshBadgeFromServer() async {
 /// Silently no-ops if the API isn't configured yet or the fetch fails — the
 /// categories already registered (from the cache, or a previous successful
 /// fetch) are left exactly as they are.
+///
+/// On iOS it also refreshes the snooze pad's preset times (`PadPresetStore`,
+/// from `GET /api/user/preferences` `pad_presets`, 2026-10-21) for the
+/// notification content extension's grid, fetched alongside the slots; each
+/// half fails on its own. iOS only because only the content extension reads
+/// that cache — the watch and the Mac have no snooze grid, so they skip the
+/// extra request. No other launch-time code fetches preferences in the app
+/// process (the label-config readers are the widget and watch processes),
+/// so this is the one preferences GET per launch/foreground.
 func refreshSlotActions() async {
     guard APIClient.shared.isConfigured else { return }
-    guard let slots = try? await APIClient.shared.fetchTimeSlots() else { return }
-    TimeSlotStore.save(slots)
-    registerNotificationCategories()
+    #if os(iOS)
+    async let page = try? APIClient.shared.fetchPreferencesPage()
+    #endif
+    let slots = try? await APIClient.shared.fetchTimeSlots()
+    if let slots {
+        TimeSlotStore.save(slots)
+        registerNotificationCategories()
+    }
+    #if os(iOS)
+    // Nil from an older server that doesn't send `pad_presets`: keep the
+    // cache (and so the defaults) rather than writing nothing over it.
+    if let presets = await page?.padPresets {
+        PadPresetStore.save(presets)
+    }
+    #endif
 }

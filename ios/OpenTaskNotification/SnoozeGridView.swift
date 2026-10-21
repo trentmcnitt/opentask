@@ -13,7 +13,7 @@ enum SnoozeMode {
 
 /// Interactive snooze grid for the notification content extension.
 ///
-/// Row 1: Preset times (gray) — snap to next occurrence of that wall-clock time
+/// Row 1: Preset times (gray, the user's pad presets) — snap to next occurrence of that wall-clock time
 /// Row 2: Increments (green) — +1 min, +30 min, +1 hr, +1 day
 /// Row 3: Decrements (amber) — -5 min, -30 min, -1 hr, -1 day
 /// Row 4: Reset + Next Hour (blue) — snap to the next round hour
@@ -74,12 +74,17 @@ struct SnoozeGridView: View {
         let days: Int?
     }
 
-    private let presets: [PresetButton] = [
-        PresetButton(id: "p-9", label: "9:00 AM", hour: 9, minute: 0),
-        PresetButton(id: "p-12", label: "12:00 PM", hour: 12, minute: 0),
-        PresetButton(id: "p-16", label: "4:00 PM", hour: 16, minute: 0),
-        PresetButton(id: "p-20", label: "8:30 PM", hour: 20, minute: 30),
-    ]
+    /// Row 1, from the user's pad presets (`pad_presets`, 2026-10-21; the web
+    /// Quick panel's same four buttons), cached by the app in
+    /// `PadPresetStore` — the four defaults (9:00 AM, 12:00 PM, 4:00 PM,
+    /// 8:30 PM) until the first fetch. Read once when the grid is built, not
+    /// on every body pass. Ids are by position (`p-0`…`p-3`) so they stay
+    /// stable whatever the times are.
+    private let presets: [PresetButton] = PadPresetStore.cachedPresets.enumerated().compactMap { index, preset in
+        guard let (hour, minute) = preset.hourMinute,
+              let label = PadPresetStore.label(for: preset) else { return nil }
+        return PresetButton(id: "p-\(index)", label: label, hour: hour, minute: minute)
+    }
 
     private let increments: [IncrementButton] = [
         IncrementButton(id: "i-1", label: "+1 min", minutes: 1, days: nil),
