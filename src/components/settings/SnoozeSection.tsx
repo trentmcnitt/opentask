@@ -110,21 +110,18 @@ export function SnoozeSection({
           <>
             <AnchorTimeRow
               label="Morning time"
-              name="Morning"
               description="Default task time for snooze and AI enrichment, and a deadline's automatic target. Targets already set keep their time."
               target="morning"
               timeSlots={timeSlots}
             />
             <AnchorTimeRow
               label="Wake time"
-              name="Wake"
               description="When your day starts (used by AI for time-of-day context)"
               target="wake"
               timeSlots={timeSlots}
             />
             <AnchorTimeRow
               label="Sleep time"
-              name="Sleep"
               description="When you go to bed (used by AI for “tonight” and “bedtime”)"
               target="sleep"
               timeSlots={timeSlots}
@@ -211,13 +208,7 @@ function NumberPadRows({ timeSlots }: { timeSlots: TimeSlot[] }) {
         </div>
       </div>
       {Array.from({ length: PAD_PRESET_COUNT }, (_, i) => (
-        <AnchorTimeRow
-          key={i}
-          label={padButtonName(i)}
-          name={padButtonName(i)}
-          target={i}
-          timeSlots={timeSlots}
-        />
+        <AnchorTimeRow key={i} label={padButtonName(i)} target={i} timeSlots={timeSlots} />
       ))}
     </div>
   )

@@ -7,7 +7,7 @@
  *
  * The control is a select of [Custom time, …periods]; a time field appears
  * only for a custom time. Under the row's description a summary line reads
- * what the setting resolves to now — "Morning · 8:30 AM (Morning period)".
+ * what the setting resolves to now — "8:30 AM · Morning period".
  *
  * Choosing "Custom time" on a linked setting unlinks it AT THE TIME IT READS,
  * so nothing jumps; the field then edits it. The save is optimistic: the row
@@ -51,14 +51,11 @@ function prefsFor(
 
 export function AnchorTimeRow({
   label,
-  name,
   description,
   target,
   timeSlots,
 }: {
   label: string
-  /** The summary line's name ("Morning", "Button 1"). */
-  name: string
   description?: string
   target: AnchorTarget
   timeSlots: TimeSlot[]
@@ -98,7 +95,7 @@ export function AnchorTimeRow({
           <div className="text-xs text-zinc-500 dark:text-zinc-400">{description}</div>
         )}
         <div className="text-xs text-zinc-600 dark:text-zinc-300" data-anchor-summary>
-          {anchorLabel(name, resolved)}
+          {anchorLabel(resolved)}
         </div>
       </div>
       <div className="flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
