@@ -130,7 +130,7 @@ enum TasksTimeline {
 
     // MARK: Over target (2026-09-25)
 
-    /// The "Over target" page. `TaskLists.overdue`: every eligible task whose
+    /// The "Overdue" page. `TaskLists.overdue`: every eligible task whose
     /// due time has passed, most overdue first (the order every other Tasks
     /// page uses). Its doc has why that matches the web dashboard's Overdue
     /// chip, which the header link opens.

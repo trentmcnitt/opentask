@@ -31,7 +31,7 @@ struct SetupView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("Enter your server URL. The window loads your OpenTask instance, and notifications with Done and Snooze actions arrive here once you log in.")
+                Text("Enter your server URL. The window loads your OpenTask instance, and notifications with Done and Defer actions arrive here once you log in.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

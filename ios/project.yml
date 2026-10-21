@@ -39,20 +39,20 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # iOS shows at most four. Trent's pick (2026-09-28): the four snoozes;
+        # iOS shows at most four. Trent's pick (2026-09-28): the four defers;
         # Add Task, which was the fourth, gave way to Next Period.
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-1hr
-            UIApplicationShortcutItemTitle: Snooze All +1hr
+            UIApplicationShortcutItemTitle: Defer All +1hr
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeClock
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-next-period
-            UIApplicationShortcutItemTitle: Snooze All to Next Period
+            UIApplicationShortcutItemTitle: Defer All to Next Period
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeDate
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-2hr
-            UIApplicationShortcutItemTitle: Snooze All +2hr
+            UIApplicationShortcutItemTitle: Defer All +2hr
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeTime
           - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-tomorrow
-            UIApplicationShortcutItemTitle: Snooze All to Tomorrow
+            UIApplicationShortcutItemTitle: Defer All to Tomorrow
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAlarm
         # Deep links from the widget extension (opentask://today, ://reminders,
         # ://task/<id>). Resolved to web paths in OpenTaskApp.onOpenURL — the

@@ -58,7 +58,7 @@ struct BulkSnoozeSheetView: View {
 
     @ViewBuilder
     private var choosingContent: some View {
-        Text("Snooze \(model.overdueTasks.count) \(TaskWording.overTargetLower)")
+        Text("Defer \(model.overdueTasks.count) \(TaskWording.overdueLower)")
             .font(.headline)
             .multilineTextAlignment(.center)
 
@@ -90,7 +90,7 @@ struct BulkSnoozeSheetView: View {
         // used to say "High and Urgent items are never bulk-snoozed", which
         // is wrong for High (coordinator review, PR #60: a task genuinely
         // does get included on, e.g., the second press of a double snooze).
-        Text("Urgent never snoozes · High only if nothing lower is \(TaskWording.overTargetLower)")
+        Text("Urgent never defers · High only if nothing lower is \(TaskWording.overdueLower)")
             .font(.caption2)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -104,7 +104,7 @@ struct BulkSnoozeSheetView: View {
             .font(.title2)
             .foregroundStyle(snoozed ? WatchTheme.done : .secondary)
 
-        Text(snoozed ? "Snoozed \(result.tasksAffected)" : "Nothing to snooze")
+        Text(snoozed ? "Deferred \(result.tasksAffected)" : "Nothing to defer")
             .font(.headline)
 
         // Only the counts that actually apply this run — a batch with no
@@ -129,7 +129,7 @@ struct BulkSnoozeSheetView: View {
         Image(systemName: "wifi.exclamationmark")
             .font(.title2)
             .foregroundStyle(WatchTheme.overdue)
-        Text("Couldn't snooze")
+        Text("Couldn't defer")
             .font(.subheadline)
         Text("Check your connection and try again.")
             .font(.caption2)

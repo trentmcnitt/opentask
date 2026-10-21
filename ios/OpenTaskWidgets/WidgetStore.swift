@@ -1723,7 +1723,7 @@ enum WidgetStore {
     /// sentinel additionally drops `todaysTasks`' end-of-day cutoff.
     static let upNextScope = -2
 
-    /// The "Over target" view page (2026-09-25) — `TasksTimeline.overdueTasks`.
+    /// The "Overdue" view page (2026-09-25) — `TasksTimeline.overdueTasks`.
     /// Always one of the three view segments since 2026-10-12.
     static let overdueScope = -3
 

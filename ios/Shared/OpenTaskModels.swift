@@ -358,8 +358,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         return copy
     }
 
-    /// "Over target" (2026-10-10 — what used to be "overdue"; the user-facing
-    /// words live in `TaskWording`): the target (`due_at`) has passed. Since
+    /// "Overdue" ("Over target" 2026-10-10 to 10-21; the user-facing words
+    /// live in `TaskWording`): the target (`due_at`) has passed. Since
     /// 2026-10-12 a deadline's target is STORED (`target_auto`), so `due_at`
     /// is the whole answer — the native implied-target rule is gone (see
     /// `TargetAge`).

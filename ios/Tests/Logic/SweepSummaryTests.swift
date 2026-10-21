@@ -24,7 +24,7 @@ final class SweepSummaryTests: XCTestCase {
     func testHighLeftBehindIsALine() {
         let lines = result(affected: 3, skippedHigh: 2, skippedUrgent: 1).summaryLines
         XCTAssertEqual(lines, [.highStillOverdue(2), .urgentStillOverdue(1)])
-        XCTAssertEqual(lines.map(\.text), ["2 High still over target", "1 Urgent still over target"])
+        XCTAssertEqual(lines.map(\.text), ["2 High still overdue", "1 Urgent still overdue"])
         XCTAssertEqual(lines.map(\.isUrgent), [false, true])
     }
 

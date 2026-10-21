@@ -4,7 +4,7 @@ import Foundation
 /// Urgent counts apply this run. One list, rendered by every surface that
 /// reports a sweep — the watch sheet (`BulkSnoozeSheetView`), the watch
 /// Smart Stack card (`SnoozedCardView`), the Mac menu bar
-/// (`MenuBarModel.sweepSummary`) and the Mac's "Nothing to snooze" alert
+/// (`MenuBarModel.sweepSummary`) and the Mac's "Nothing to defer" alert
 /// (`MenuActions`).
 ///
 /// Structured cases rather than strings so each surface can word them for
@@ -33,8 +33,8 @@ enum SweepLine: Equatable {
     var text: String {
         switch self {
         case .includedHigh(let n): return "Included \(n) High"
-        case .highStillOverdue(let n): return "\(n) High still \(TaskWording.overTargetLower)"
-        case .urgentStillOverdue(let n): return "\(n) Urgent still \(TaskWording.overTargetLower)"
+        case .highStillOverdue(let n): return "\(n) High still \(TaskWording.overdueLower)"
+        case .urgentStillOverdue(let n): return "\(n) Urgent still \(TaskWording.overdueLower)"
         }
     }
 

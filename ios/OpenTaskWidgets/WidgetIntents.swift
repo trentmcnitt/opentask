@@ -1522,7 +1522,7 @@ struct UncompleteTaskIntent: AppIntent {
 /// be one thing at a time (see `WidgetStore`'s "Tasks snooze mode / bulk
 /// select" section doc).
 struct ToggleTasksSnoozeModeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Snooze Mode"
+    static var title: LocalizedStringResource = "Toggle Defer Mode"
     static var isDiscoverable: Bool { false }
 
     init() {}
@@ -1637,7 +1637,7 @@ private func sendSnoozeRequests(_ requests: [TaskSnoozePlan.Request]) async -> S
 /// delta — sent twice, it would land two hours later). `clearInteraction()`
 /// runs either way, forcing the reload to confirm server truth.
 struct SnoozeSelectedTasksIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze Selected Tasks"
+    static var title: LocalizedStringResource = "Defer Selected Tasks"
     static var isDiscoverable: Bool { false }
 
     @Parameter(title: "Target")
@@ -1730,7 +1730,7 @@ struct CompleteSelectedTasksIntent: AppIntent {
 /// deliberate tap bypasses the sweep filter" reasoning (this section's
 /// header doc).
 struct SnoozeTaskRowIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze Task"
+    static var title: LocalizedStringResource = "Defer Task"
     static var isDiscoverable: Bool { false }
 
     @Parameter(title: "Task ID")
@@ -1769,7 +1769,7 @@ struct SnoozeTaskRowIntent: AppIntent {
 /// exactly the caller meant to respect the P3(once-nothing-lower)/P4(never)
 /// protection (this section's header doc's web-parity note).
 struct SnoozeAllOverdueIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze All Overdue"
+    static var title: LocalizedStringResource = "Defer All Overdue"
     static var isDiscoverable: Bool { false }
 
     @Parameter(title: "Target")

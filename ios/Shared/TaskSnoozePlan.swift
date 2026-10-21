@@ -148,7 +148,7 @@ enum TaskSnoozePlan {
     ///
     /// `onCappedAtDeadline` hears how many of a request's tasks stopped at
     /// their deadline, so a surface with a feedback line can say so (the Mac
-    /// menu bar: "Snoozed to deadline 6:00 PM").
+    /// menu bar: "Deferred to deadline 6:00 PM").
     ///
     /// `afterEach` runs once per request that succeeded (the phone widget
     /// bumps its local undo count there — one server undo entry each).

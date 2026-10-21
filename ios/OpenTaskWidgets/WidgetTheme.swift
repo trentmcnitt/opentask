@@ -1802,7 +1802,7 @@ struct SnoozeModeToggle: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(isOn ? WidgetTheme.indigoAccent : Color.secondary)
-        .accessibilityLabel(Text(isOn ? "Exit snooze mode" : "Snooze mode"))
+        .accessibilityLabel(Text(isOn ? "Exit defer mode" : "Defer mode"))
     }
 }
 
@@ -1829,9 +1829,9 @@ struct SnoozeRowButtons: View {
                 isEnabled: !TimeSlotStore.cachedSlots.isEmpty,
                 diameter: Self.height
             )
-            .accessibilityLabel(Text("Snooze to next period"))
+            .accessibilityLabel(Text("Defer to next period"))
             ActionPill(intent: SnoozeTaskRowIntent(taskId: taskId, target: .plusOneHour), label: "+1h")
-                .accessibilityLabel(Text("Snooze one hour"))
+                .accessibilityLabel(Text("Defer one hour"))
         }
     }
 }
@@ -1885,7 +1885,7 @@ struct SelectEntryButton: View {
     }
 }
 
-/// The "All over target (N)" bottom bar — acts on the WHOLE server-side overdue
+/// The overdue sweep bar ("Defer 8 of 10:") — acts on the WHOLE server-side overdue
 /// set via `SnoozeAllOverdueIntent`, not just what's on screen (see that
 /// intent's doc). Snooze mode shows it on every page; resting mode shows it
 /// on the Overdue page (Trent, 2026-09-28), so snoozing everything there is
@@ -1897,7 +1897,8 @@ struct SnoozeAllOverdueBar: View {
     /// moves `count` of them (never Urgent; High only when nothing lower is
     /// left), so "All over target (8)" under a header of "10 tasks" read as
     /// a contradiction (2026-10-11). The label now says what the pills do:
-    /// "Snooze 8 of 10:", or "Snooze all 10:" when they're the same.
+    /// "Defer 8 of 10:", or "Defer all 10 overdue:" when they're the same
+    /// (the "overdue" keeps it apart from a task segment's "Defer all").
     let total: Int
     /// `nil` when `TimeSlotStore` has no cached slots — unlike the per-row/
     /// select-mode buttons, the "Next period" pill here still WORKS (its
@@ -1908,7 +1909,7 @@ struct SnoozeAllOverdueBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(count < total ? "Snooze \(count) of \(total):" : "Snooze all \(count):")
+            Text(count < total ? "Defer \(count) of \(total):" : "Defer all \(count) \(TaskWording.overdueLower):")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1954,11 +1955,11 @@ struct SelectModeActionBar: View {
                 isEnabled: hasSelection && !TimeSlotStore.cachedSlots.isEmpty,
                 diameter: Self.circleDiameter
             )
-            .accessibilityLabel(Text("Snooze selected to next period"))
+            .accessibilityLabel(Text("Defer selected to next period"))
             ActionPill(
                 intent: SnoozeSelectedTasksIntent(target: .plusOneHour), label: "+1h", isEnabled: hasSelection
             )
-            .accessibilityLabel(Text("Snooze selected one hour"))
+            .accessibilityLabel(Text("Defer selected one hour"))
             ActionCircle(
                 intent: CompleteSelectedTasksIntent(), systemImage: "checkmark",
                 isEnabled: hasSelection, diameter: Self.circleDiameter

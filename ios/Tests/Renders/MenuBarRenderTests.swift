@@ -41,7 +41,7 @@ final class MenuBarRenderTests: XCTestCase {
             try snapshot(MenuBarPanel(model: model), appearance: appearance, to: outDir.appendingPathComponent("\(panelName).png"))
             manifest.append([
                 "file": "native/\(panelName).png",
-                "shows": "Mac menu bar panel: quick add, overdue tasks, bulk snooze (the Mac app's SwiftUI view)",
+                "shows": "Mac menu bar panel: quick add, overdue tasks, bulk defer (the Mac app's SwiftUI view)",
                 "theme": theme,
                 "destinations": ["docs:public/images/ios/\(panelName).png"],
             ])

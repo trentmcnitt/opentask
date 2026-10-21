@@ -106,7 +106,7 @@ final class APIClient {
     ///
     /// `cap_at_deadline: true` (ruling A3, 2026-10-11): a one-tap snooze
     /// stops AT a deadline still ahead instead of passing it — the server
-    /// moves the target to the deadline. Only the web's "Snooze anyway" goes
+    /// moves the target to the deadline. Only the web's "Defer anyway" goes
     /// past. A 409 from an older server surfaces as `APIError.serverError(409)`.
     func snoozeTo(taskId: Int, dueAt: String) async throws {
         try await request(method: "PATCH", path: "/api/tasks/\(taskId)", body: [
@@ -173,7 +173,7 @@ final class APIClient {
 
     /// Bulk snooze all overdue tasks to tomorrow at the user's morning time
     /// (`tomorrow: true`, resolved server-side — the Home Screen quick action
-    /// and the Mac's "Snooze All to Tomorrow" menu item).
+    /// and the Mac's "Defer All to Tomorrow" menu item).
     @discardableResult
     func snoozeOverdueTomorrow(notify: Bool? = nil) async throws -> BulkSnoozeResult {
         try await snoozeOverdue(body: ["tomorrow": true], notify: notify)

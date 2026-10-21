@@ -119,7 +119,7 @@ private struct TasksSmallView: View {
                             .lineLimit(1)
                         // On the Overdue page the label above already says
                         // "Overdue" — don't say it twice.
-                        Text(entry.isOverdueScope ? taskNoun(entry.overdueCount(now: entry.date)) : TaskWording.overTargetLower)
+                        Text(entry.isOverdueScope ? taskNoun(entry.overdueCount(now: entry.date)) : TaskWording.overdueLower)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -763,7 +763,7 @@ private struct TasksListView: View {
     ///    ~80pt body holds the seal and one line, and a single squeezed row
     ///    would read as a mistake more than a preview.
     ///
-    /// Over target says "Nothing over target", Up next "Nothing coming up", a
+    /// Overdue says "Nothing overdue", Up next "Nothing coming up", a
     /// project page the original "Nothing for today".
     @ViewBuilder
     private var emptyBody: some View {
@@ -784,7 +784,7 @@ private struct TasksListView: View {
         } else if entry.isOverdueScope {
             // The page stays when its last task goes (2026-10-12) — say so
             // rather than eject the user to another page.
-            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing \(TaskWording.overTargetLower)")
+            WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing \(TaskWording.overdueLower)")
         } else if entry.scope == WidgetStore.upNextScope {
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing coming up")
         } else {
@@ -832,7 +832,7 @@ private struct TasksListView: View {
                     // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
                     // see `RemindersListView.header`'s identical comment.
                     // Snooze/select mode override this subtitle entirely
-                    // (mockup: "Snooze mode" / "N selected") — see
+                    // (mockup: "Snooze mode", now "Defer mode" / "N selected") — see
                     // `subtitleText`'s doc. Shrinks rather than truncating
                     // the three-part "N due · N overdue · N done".
                     // Omitted when there is nothing to count (2026-09-29 —
@@ -882,12 +882,12 @@ private struct TasksListView: View {
     private var headerDestination: URL { entry.headerLink }
 
     /// The header subtitle — snooze/select mode override it entirely
-    /// (mockup: "Snooze mode" / "N selected"), taking priority even over
+    /// (mockup: "Snooze mode", now "Defer mode" / "N selected"), taking priority even over
     /// `actionDescription`'s "Undid: …"/"Redid: …" indication (2026-09-23,
     /// Phase 2): a mode's OWN state is more relevant to what's on screen
     /// right now than a ~60s-old undo/redo notice would be.
     private var subtitleText: String {
-        if snoozeMode { return "Snooze mode" }
+        if snoozeMode { return "Defer mode" }
         if selectMode {
             let count = selectedIds.count
             return count == 0 ? "Select tasks" : "\(count) selected"
@@ -917,10 +917,10 @@ private struct TasksListView: View {
             if entry.isOverdueScope {
                 parts.append("\(entry.tasks.count) \(taskNoun(entry.tasks.count))")
             } else if overdue == entry.tasks.count {
-                parts.append("\(overdue) \(TaskWording.overTargetLower)")
+                parts.append("\(overdue) \(TaskWording.overdueLower)")
             } else {
                 parts.append("\(entry.tasks.count) \(taskNoun(entry.tasks.count))")
-                if overdue > 0 { parts.append("\(overdue) \(TaskWording.overTargetLower)") }
+                if overdue > 0 { parts.append("\(overdue) \(TaskWording.overdueLower)") }
             }
         }
         if showCompleted, !entry.doneTasks.isEmpty { parts.append("\(entry.doneTasks.count) done") }
@@ -1370,7 +1370,7 @@ enum AttemptsInTime {
             WidgetTheme.dueLabelParts(for: due, now: now, isOverdue: task.isOverdue(now: now)).plainString,
         ]
         if TargetAge.attemptsBadge(task) != nil {
-            words.append("\(TaskWording.overTargetLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
+            words.append("\(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
         }
         if TargetAge.isPastDeadline(task, now: now) { words.append(TaskWording.pastDeadline) }
         return words.joined(separator: ", ")

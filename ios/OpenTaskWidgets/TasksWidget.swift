@@ -55,7 +55,7 @@ struct TasksEntry: TimelineEntry {
     /// "Overdue" (2026-09-25, `overdueScope`), ahead of them while anything
     /// is overdue; a real project id falls through to that project's name.
     var scopeLabel: String {
-        if scope == WidgetStore.overdueScope { return TaskWording.overTarget }
+        if scope == WidgetStore.overdueScope { return TaskWording.overdue }
         if scope == WidgetStore.upNextScope { return "Up next" }
         guard scope != WidgetStore.allProjects else { return "Today" }
         // From EVERY project: a project page stays on screen after its last
@@ -367,7 +367,7 @@ struct TasksWidget: Widget {
                 TasksWidgetView(entry: entry)
             }
             .configurationDisplayName("Today's Tasks")
-            .description("Today's tasks: over target, today, up next, and each project.")
+            .description("Today's tasks: overdue, today, up next, and each project.")
             // systemLarge first: it is the primary layout (§8 — the user pointed
             // at a 4x4 Weather widget), and the gallery leads with the first entry.
             // See RemindersWidget for why this is a closure rather than #if inside
@@ -385,7 +385,7 @@ struct TasksWidget: Widget {
                 TasksWidgetView(entry: entry)
             }
             .configurationDisplayName("Today's Tasks")
-            .description("Today's tasks: over target, today, up next, and each project.")
+            .description("Today's tasks: overdue, today, up next, and each project.")
             .supportedFamilies({
                 var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
                 #if os(iOS)

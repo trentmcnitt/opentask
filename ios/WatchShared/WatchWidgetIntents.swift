@@ -235,7 +235,7 @@ struct SkipReminderIntent: AppIntent {
 /// P3 only once nothing lower is left, P4 never — docs/TASK-MODEL.md). The
 /// server's real counts are recorded for the card's result view.
 struct SnoozeOverdueNextPeriodIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze Overdue to Next Period"
+    static var title: LocalizedStringResource = "Defer Overdue to Next Period"
     static var isDiscoverable: Bool { false }
 
     /// The card's name for the target period ("Midday") at tap time, echoed
@@ -264,7 +264,7 @@ struct SnoozeOverdueNextPeriodIntent: AppIntent {
 /// The card's default action (Trent, 2026-09-28: "when things are overdue,
 /// the default thing should be +1 hour"), beside ⏭ next period.
 struct SnoozeOverduePlusHourIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze Overdue One Hour"
+    static var title: LocalizedStringResource = "Defer Overdue One Hour"
     static var isDiscoverable: Bool { false }
 
     init() {}

@@ -4,7 +4,7 @@ import WatchKit
 /// Tasks page: "Up next" (every open, dated, non-reminder, non-tracked task,
 /// soonest first — `WatchSlotLogic.upNextTasks`, the same scope as the phone
 /// Tasks widget's "Up next" page). Tap a row to complete; touch and hold for
-/// per-task snooze ("Next period" / "+1 hour"); a "Snooze all over target"
+/// per-task snooze ("Next period" / "+1 hour"); a "Defer all overdue"
 /// button when anything is over target opens the bulk-snooze sheet.
 ///
 /// Per-task snooze was a trailing `.swipeActions` until 2026-09-24, when the
@@ -44,14 +44,15 @@ struct TasksPageView: View {
             } else {
                 if overdueCount > 0 {
                     // An ACTION, and it must read as one (Trent, 2026-10-11:
-                    // "All over target (4)" looked like a section header): a
+                    // "All over target (4)" looked like a section header; now "Defer all
+                    // overdue (4)"): a
                     // verb, and a filled capsule button set apart from the
                     // rows below, rather than a tinted row.
                     Button {
                         showingBulkSheet = true
                     } label: {
                         Label(
-                            "Snooze all \(TaskWording.overTargetLower) (\(overdueCount))",
+                            "Defer all \(TaskWording.overdueLower) (\(overdueCount))",
                             systemImage: "moon.zzz.fill"
                         )
                         .font(.footnote.weight(.semibold))
@@ -108,7 +109,7 @@ struct TasksPageView: View {
         // Both count from the task's own due time while it is upcoming
         // (`WatchViewModel.snoozeTask` → the phone's shared `TaskSnoozePlan`).
         .confirmationDialog(
-            snoozeTarget?.title ?? "Snooze",
+            snoozeTarget?.title ?? "Defer",
             isPresented: Binding(
                 get: { snoozeTarget != nil },
                 set: { if !$0 { snoozeTarget = nil } }
@@ -165,7 +166,7 @@ private struct TaskRow: View {
     private func spokenDueLine(_ due: Date) -> String {
         var words = [WatchFormatting.dueLine(for: due)]
         if TargetAge.attemptsBadge(task) != nil {
-            words.append("\(TaskWording.overTargetLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
+            words.append("\(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
         }
         if TargetAge.isPastDeadline(task) { words.append(TaskWording.pastDeadline) }
         return words.joined(separator: ", ")
