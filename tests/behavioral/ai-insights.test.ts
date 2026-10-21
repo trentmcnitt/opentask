@@ -340,8 +340,8 @@ describe('Session tracking', () => {
 })
 
 // The env above (provider anthropic, model 'test-model') plans like the
-// production API path: 8192-token cap, no explicit thinking budget → 27 a call.
-const API_TASKS_PER_CALL = 27
+// production API path: 8192-token cap, no explicit thinking budget → 20 a call.
+const API_TASKS_PER_CALL = 20
 
 /** Wait until the session has left 'running', then return it. */
 async function waitForFinish(sessionId: string) {
@@ -385,9 +385,9 @@ describe('Chunk sizing by output cap', () => {
   })
 
   test('the SDK cap follows CLAUDE_CODE_MAX_OUTPUT_TOKENS', () => {
-    expect(insightsTasksPerCall({ provider: 'sdk', model: 'sonnet' })).toBe(106)
+    expect(insightsTasksPerCall({ provider: 'sdk', model: 'sonnet' })).toBe(80)
     vi.stubEnv('CLAUDE_CODE_MAX_OUTPUT_TOKENS', '64000')
-    expect(insightsTasksPerCall({ provider: 'sdk', model: 'sonnet' })).toBe(213)
+    expect(insightsTasksPerCall({ provider: 'sdk', model: 'sonnet' })).toBe(160)
     vi.stubEnv('CLAUDE_CODE_MAX_OUTPUT_TOKENS', '1000000')
     expect(insightsTasksPerCall({ provider: 'sdk', model: 'opus' })).toBe(500)
   })
@@ -395,7 +395,7 @@ describe('Chunk sizing by output cap', () => {
   test('splitIntoChunks makes the fewest near-equal chunks within the limit', () => {
     const items = Array.from({ length: 197 }, (_, i) => i)
     const chunks = splitIntoChunks(items, API_TASKS_PER_CALL)
-    expect(chunks).toHaveLength(8)
+    expect(chunks).toHaveLength(10)
     expect(chunks.every((c) => c.length <= API_TASKS_PER_CALL)).toBe(true)
     expect(chunks.flat()).toEqual(items)
     expect(splitIntoChunks(items, 500)).toEqual([items])
@@ -414,7 +414,7 @@ describe('Chunk splitting', () => {
     expect(mockAiQuery).toHaveBeenCalledOnce()
   })
 
-  test('~200 tasks on an 8192-cap model are split into calls of at most 27', async () => {
+  test('~200 tasks on an 8192-cap model are split into calls of at most 20', async () => {
     const taskCount = 197
     const allIds = Array.from({ length: taskCount }, (_, i) => i + 1)
     // Return every id on every call — the code keeps only the chunk's own ids
@@ -425,7 +425,7 @@ describe('Chunk splitting', () => {
     expect(singleCall).toBe(false)
 
     const session = await waitForFinish(sessionId)
-    expect(mockAiQuery).toHaveBeenCalledTimes(8)
+    expect(mockAiQuery).toHaveBeenCalledTimes(10)
     for (const [call] of mockAiQuery.mock.calls) {
       const lines = call.prompt.split('<tasks>')[1].split('</tasks>')[0].trim().split('\n')
       expect(lines.length).toBeLessThanOrEqual(API_TASKS_PER_CALL)

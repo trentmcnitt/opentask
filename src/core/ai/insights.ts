@@ -252,28 +252,32 @@ export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, Task
  *   15 → 2980 (2232) · 30 → 5279 · 45 → 7220 (4892) · 70 → 8192, cut off (7788)
  *   45 with thinking disabled → 2182 (0): 48.5 a task
  * So the JSON alone is ~50 tokens a task, and the thinking Haiku 5.5 does
- * unasked grows with the list: 160–200 tokens a task all told.
+ * unasked grows with the list: 160–200 tokens a task all told in one call.
+ * Subset calls (shuffled chunks with the calibration summary) think more: the
+ * 196-task quality scenario at 27 a call came back at 4151–7207 out per call,
+ * 230 a task on average and 288 at worst (88% of the cap).
  *
  * - `INSIGHTS_TOKENS_PER_TASK_VISIBLE` (60): the call sets an explicit thinking
  *   budget (Opus), which `outputTokenBudget()` has already taken off the cap,
  *   so a task costs only its JSON (50, plus margin).
- * - `INSIGHTS_TOKENS_PER_TASK_ADAPTIVE` (180): no explicit budget — the model
- *   may think on its own, and that thinking comes out of the same cap.
+ * - `INSIGHTS_TOKENS_PER_TASK_ADAPTIVE` (240): no explicit budget — the model
+ *   may think on its own, and that thinking comes out of the same cap (the
+ *   chunked average above, rounded up; the worst chunk then fills ~70%).
  * - `INSIGHTS_OUTPUT_BUDGET_SHARE` (0.6): plan to fill at most 60% of the
  *   budget; commentary length and thinking both vary from run to run.
  * - `INSIGHTS_MAX_TASKS_PER_CALL` (500): the old single-call threshold, kept as
  *   the ceiling for very large caps (prompt size and attention, not output).
  *
- * Resulting chunk sizes: API Haiku (8192) → 27 · API Opus (16384 − 10000
+ * Resulting chunk sizes: API Haiku (8192) → 20 · API Opus (16384 − 10000
  * thinking) → 63 · SDK Opus (32000 − 10000) → 220 · SDK without a thinking
- * budget (32000) → 106. A chunk that is cut off anyway is retried once as two
+ * budget (32000) → 80. A chunk that is cut off anyway is retried once as two
  * halves (`runInsightsChunk`).
  *
  * Lists larger than one call are shuffled and split into equal chunks, each
  * with a calibration summary of the whole list (see `processInsightsChunks`).
  */
 export const INSIGHTS_TOKENS_PER_TASK_VISIBLE = 60
-export const INSIGHTS_TOKENS_PER_TASK_ADAPTIVE = 180
+export const INSIGHTS_TOKENS_PER_TASK_ADAPTIVE = 240
 export const INSIGHTS_OUTPUT_BUDGET_SHARE = 0.6
 export const INSIGHTS_MAX_TASKS_PER_CALL = 500
 /** Floor, so a tiny or misconfigured cap still makes progress. */

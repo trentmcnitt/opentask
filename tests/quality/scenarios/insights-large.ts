@@ -292,7 +292,7 @@ export const insightsLargeScenarios: AITestScenario[] = [
     feature: 'insights',
     description:
       'Production code path at the size that overflowed in production (~200 tasks, 2026-10-21). ' +
-      'On an 8192-cap API model (claude-haiku-5-5) this must split into calls of at most 27 ' +
+      'On an 8192-cap API model (claude-haiku-5-5) this must split into calls of at most 20 ' +
       'tasks; on the SDK it runs as one or two calls. Every task must come back scored.',
     input: {
       timezone: TIMEZONE,
