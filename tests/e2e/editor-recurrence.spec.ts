@@ -102,7 +102,7 @@ test.describe('Task editor sheet on a phone', () => {
     }
   })
 
-  test('a recurring task: deadline moves with each week, and no Horizon row', async ({
+  test('a deadline-anchored repeat: the deadline line says where the target sits, and no Horizon row', async ({
     authenticatedPage: page,
   }) => {
     const recurring = await createTask(page, {
@@ -112,10 +112,20 @@ test.describe('Task editor sheet on a phone', () => {
     })
     const task = (await (await page.request.get(`/api/tasks/${recurring}`)).json()).data
     // Deadline 11 hours after the occurrence's noon target: 11 PM that day.
+    // Since 2026-10-21 a repeat with a deadline walks the DEADLINE: switch the
+    // anchor with the rule at 11 PM, the target the same day at noon.
     const deadline = new Date(Date.parse(task.due_at) + 11 * 3600_000).toISOString()
     expect(
       (
-        await page.request.patch(`/api/tasks/${recurring}`, { data: { deadline_at: deadline } })
+        await page.request.patch(`/api/tasks/${recurring}`, {
+          data: {
+            repeat_anchor: 'deadline',
+            rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=23;BYMINUTE=0',
+            deadline_at: deadline,
+            target_days_before: 0,
+            target_time: '12:00',
+          },
+        })
       ).ok(),
     ).toBeTruthy()
     const oneOff = await createTask(page, {
@@ -127,7 +137,7 @@ test.describe('Task editor sheet on a phone', () => {
       await withPreferences(page, { default_grouping: 'unified' }, async () => {
         let sheet = await openEditor(page, recurring)
         await expect(sheet.locator('[data-quick-panel-deadline-repeat]')).toHaveText(
-          '· moves with each week',
+          '· target the same day at 12:00 PM',
         )
         await expect(sheet.locator('[data-task-model-fields]')).not.toContainText('Horizon')
 

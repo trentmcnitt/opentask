@@ -238,13 +238,13 @@ test.describe('Row corner · desktop', () => {
   })
 
   test('the corner reads dot · attempts · priority', async ({ authenticatedPage: page }) => {
-    // A deadline two days out: its automatic target is "now" (the 3-day lead
-    // has passed), so it is over target at once — one attempt.
+    // A deadline an hour ago: its automatic target is the deadline itself,
+    // so it is over target at once — one attempt, whatever the time of day.
     const id = await create(page, {
       title: uniqueTitle('RC order'),
       priority: 3,
       horizon: 'months',
-      deadline_at: new Date(Date.now() + 2 * DAY).toISOString(),
+      deadline_at: new Date(Date.now() - DAY / 24).toISOString(),
     })
     try {
       await gotoDashboard(page)

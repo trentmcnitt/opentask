@@ -400,7 +400,9 @@ test('A1: a deadline already reminding refuses On deck with the toast', async ({
   const ids: number[] = []
   try {
     const title = uniqueTitle('OD deadline')
-    const id = await create(page, { title, deadline_at: daysFromNow(2) })
+    // A deadline an hour ago: reminding whatever the time of day (a near one's
+    // automatic target is the morning since 2026-10-21's one lead table).
+    const id = await create(page, { title, deadline_at: daysFromNow(-1 / 24) })
     ids.push(id)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
@@ -596,13 +598,16 @@ test('panel: a refused deck saves nothing — the error shows and the panel stay
     const id = await create(page, { title: uniqueTitle('OD panel refused'), priority: 3 })
     ids.push(id)
     const dialog = await openPanel(page, id)
-    // Two days out: its automatic target has already arrived (A1).
-    await stageDeadline(page, dialog, 2)
+    // Today: its automatic target is today (the deadline day, 2026-10-21's one
+    // lead table) — arrived or not, a deck for today is refused (A1).
+    await stageDeadline(page, dialog, 0)
     await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
     const day = dialog.locator('[data-quick-panel-deck-day]')
     await expect(day).toHaveText('today')
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(toast(page, 'This deadline is close and already reminding you')).toBeVisible()
+    await expect(
+      toast(page, /already reminding you|after this deadline starts reminding you/),
+    ).toBeVisible()
     await expect(dialog).toBeVisible()
     await expect(day).toHaveClass(/text-blue-500/)
     await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
@@ -687,7 +692,8 @@ test('the date picker: opens on an allowed day, resets on reopen, refuses a day 
     const id = await create(page, { title: uniqueTitle('OD picker'), priority: 3 })
     const nagging = await create(page, {
       title: uniqueTitle('OD picker deadline'),
-      deadline_at: daysFromNow(2),
+      // An hour ago: reminding whatever the time of day (2026-10-21's lead table).
+      deadline_at: daysFromNow(-1 / 24),
     })
     ids.push(id, nagging)
     await page.setViewportSize({ width: 1280, height: 800 })
