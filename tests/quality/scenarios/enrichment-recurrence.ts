@@ -337,4 +337,114 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
         'Time must be 09:00 local (T09:00:00, no Z suffix).',
     },
   },
+  // THE NAG, 2026-10-21: the app's word for auto_snooze_minutes is now "nag"
+  // ("auto-snooze" before) and moving a target is "defer" ("snooze" before).
+  // Users may say either word; the old words stay covered by
+  // enrich-recurrence-hourly above and enrich-edge-*'s "auto-snooze 30 minutes".
+  {
+    id: 'enrich-nag-every-30-minutes',
+    feature: 'enrichment',
+    description: 'The nag (new word): "nag me every 30 minutes" → auto_snooze_minutes 30, no rrule',
+    input: {
+      text: 'take the chicken out of the freezer, nag me every 30 minutes',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        auto_snooze_minutes: 30,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        '"nag me every 30 minutes" is the nag interval (what the app called auto-snooze): ' +
+        'auto_snooze_minutes 30, rrule null. Title "Take the chicken out of the freezer" — the nag phrase ' +
+        'leaves the title. No day or time named, so due_at null.',
+    },
+  },
+  {
+    id: 'enrich-nag-defer-reminders-hourly',
+    feature: 'enrichment',
+    description: 'The nag via "defer": "defer reminders every hour" → auto_snooze_minutes 60',
+    input: {
+      text: 'renew the parking permit tomorrow at 10am, defer reminders every hour',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        auto_snooze_minutes: 60,
+        rrule: null,
+        due_at: '~notnull',
+        labels: [],
+      },
+      quality_notes:
+        '"defer reminders every hour" is the nag interval (the old "snooze every hour"): auto_snooze_minutes 60, ' +
+        'rrule null. due_at tomorrow 10:00 local. Title "Renew the parking permit".',
+    },
+  },
+  {
+    id: 'enrich-nag-snooze-every-hour',
+    feature: 'enrichment',
+    description: 'The old word still works: "snooze every hour" → auto_snooze_minutes 60',
+    input: {
+      text: 'call the pharmacy about the refill at 2pm, snooze every hour',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        auto_snooze_minutes: 60,
+        rrule: null,
+        due_at: '~notnull',
+        labels: [],
+      },
+      quality_notes:
+        '"snooze every hour" (the word before 2026-10-21) still sets the nag: auto_snooze_minutes 60, rrule null. ' +
+        'due_at 2:00 PM local (today if still ahead, else tomorrow). Title "Call the pharmacy about the refill".',
+    },
+  },
+  {
+    id: 'enrich-nag-off',
+    feature: 'enrichment',
+    description: 'The nag turned off: "don\'t nag me" → auto_snooze_minutes 0',
+    input: {
+      text: "pay the water bill friday at 9am, don't nag me",
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        auto_snooze_minutes: 0,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        '"don\'t nag me" turns the nag off: auto_snooze_minutes 0 (not null — the user said it). ' +
+        'due_at Friday 9:00 local. No deadline (no cutoff wording). Title "Pay the water bill".',
+    },
+  },
+  {
+    id: 'enrich-nag-verb-not-interval',
+    feature: 'enrichment',
+    description:
+      'The bare verbs set nothing: "nag Dave" is the task; "defer it till Monday" is a day',
+    input: {
+      text: 'nag Dave about the invoice, defer it till monday',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        auto_snooze_minutes: null,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        '"nag Dave" is the task itself (nagging someone), not the nag interval, and "defer it till monday" names a day ' +
+        'with no interval: auto_snooze_minutes null, rrule null. The title keeps the verb: "Nag Dave about the invoice". ' +
+        'Monday is the day to do it — a day with no time: due_at the date alone (or on_deck_day Monday after post-processing). ' +
+        'No deadline (no cutoff wording).',
+    },
+  },
 ]

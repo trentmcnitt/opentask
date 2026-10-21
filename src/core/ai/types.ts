@@ -74,7 +74,7 @@ export const EnrichmentResultSchema = z.object({
     .min(0)
     .max(1440)
     .nullable()
-    .describe('Auto-snooze in minutes. 0 = off. null = unmentioned'),
+    .describe('Nag interval (said "auto-snooze" before) in minutes. 0 = off. null = unmentioned'),
   recurrence_mode: z
     .enum(['from_due', 'from_completion'])
     .nullable()

@@ -92,7 +92,7 @@ Write **reasoning** FIRST, then the fields in the order below. Work each field o
    No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "now" / "right now" / "immediately", "in an hour" and "tonight" name a time).
 
    **Soon today** — a time counted from now. Round to a quarter hour (:00, :15, :30, :45), never earlier than the user said:
-   - "now", "right now", "immediately" → about 15 minutes out, rounded UP to the next quarter hour (at 2:07 PM → 2:30 PM; at 2:45 PM → 3:00 PM). Not the current minute: that is already over target.
+   - "now", "right now", "immediately" → about 15 minutes out, rounded UP to the next quarter hour (at 2:07 PM → 2:30 PM; at 2:45 PM → 3:00 PM). Not the current minute: that is already overdue.
    - "in an hour", "in 3 hours" → now plus that many hours, rounded up to the quarter hour (at 2:07 PM, "in an hour" → 3:15 PM).
    - A range ("in an hour or two", "in 2 or 3 hours") → a WHOLE hour (hh:00) inside it (at 2:30 PM, "in an hour or two" → 4:00 PM; "in 2 or 3 hours" → 5:00 PM). Not the quarter hour after the shorter end.
    - Past midnight it is tomorrow's date: at 11:50 PM, "right now" → 12:15 AM the next day.
@@ -112,7 +112,7 @@ Write **reasoning** FIRST, then the fields in the order below. Work each field o
 
 3. **deadline_at** — the real outside cutoff, as an ISO 8601 local datetime (same format as due_at), or null. Set it ONLY when the wording states a date or time the task must be done by: "by Friday", "before the 17th", "due Monday", "due to the client Monday 10am", "expires Oct 13", "the deadline is February 28th", "last day to return it is Sunday", "the pharmacy closes at 9pm tonight". When the cutoff names a day but no time, use the END of that day: \`T23:59:00\` local.
 
-   **Never infer a deadline.** No cutoff wording, no deadline — not from urgency ("ASAP", "urgent", "critical" set priority only), not from the topic (bills, taxes, renewals, appointments), and not from a target date ("call mom Friday" has a target, no deadline). A guessed deadline is worse than a missing one: the user cannot snooze past it.
+   **Never infer a deadline.** No cutoff wording, no deadline — not from urgency ("ASAP", "urgent", "critical" set priority only), not from the topic (bills, taxes, renewals, appointments), and not from a target date ("call mom Friday" has a target, no deadline). A guessed deadline is worse than a missing one: the user cannot defer past it.
    - A deadline is not a target. Do not copy the deadline's date or time into due_at: "they're due to the client Thursday at 10am" → deadline_at Thursday 10:00, due_at null. due_at gets a value only when the user ALSO names a day to do it.
    - Schedule cues that resolve to a time of day ("before work", "before bed", "on my way home") are targets, not deadlines.
    - A cutoff with no date ("before the trip", "before spring", "the appeal deadline is coming up") gives deadline_at null — keep the phrase in the title or notes.
@@ -184,13 +184,15 @@ Write **reasoning** FIRST, then the fields in the order below. Work each field o
    - "every year in March", a month but no day named → FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1 (the 1st of that month — never today's date)
    - "every year on March 15" → FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15
    A yearly repeat is FREQ=YEARLY, never FREQ=MONTHLY;INTERVAL=12. Today's date applies only to weekly and monthly repeats with nothing named; a yearly repeat in a named month starts on the 1st.
-   - "every 4 hours" → use auto_snooze_minutes: 240 (sub-daily repeats are auto-snooze, not rrule)
-   - "every 90 minutes" → use auto_snooze_minutes: 90 (sub-daily repeats are auto-snooze, not rrule)
+   - "every 4 hours" → use auto_snooze_minutes: 240 (sub-daily repeats are the nag interval, not rrule)
+   - "every 90 minutes" → use auto_snooze_minutes: 90 (sub-daily repeats are the nag interval, not rrule)
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
 
-9. **auto_snooze_minutes** — Integer or null. Parse "auto-snooze 30 minutes" (30), "snooze every hour" (60), "auto-snooze off" (0). Return null if not mentioned. Range: 0-1440. IMPORTANT: Auto-snooze is NOT recurrence. "Auto-snooze every hour" means the task gets re-snoozed every hour — it does NOT create an rrule. When "every X" appears alongside "auto-snooze" or "snooze", it sets auto_snooze_minutes, not rrule.
+9. **auto_snooze_minutes** — Integer or null: the **nag interval**, how many minutes apart the task's reminder repeats once it is overdue. The app calls this the "nag"; it was called "auto-snooze" before, and users say either, so read both the same way. Parse "nag me every 30 minutes" (30), "nag every hour" (60), "auto-snooze 30 minutes" (30), "snooze every hour" (60), "defer reminders every hour" (60). Off: "nag off", "no nag", "don't nag me", "auto-snooze off", "no auto-snooze" (0). Return null if not mentioned. Range: 0-1440. IMPORTANT: The nag is NOT recurrence. "Nag me every hour" / "auto-snooze every hour" means the reminder repeats every hour until the task is handled — it does NOT create an rrule. When "every X" or "X minutes" appears alongside "nag", "auto-snooze", "snooze" or "defer", it sets auto_snooze_minutes, not rrule.
+   It takes an interval or an on/off. The bare verb sets nothing: "nag Dave about the invoice" (nagging someone is the task itself) and "defer the migration until Q3" or "defer it to Friday" (a day or a pace, read under due_at and horizon like any other day) leave auto_snooze_minutes null.
    WRONG: "snooze every hour" → rrule: "FREQ=DAILY" (sub-daily is NOT rrule)
    RIGHT: "snooze every hour" → auto_snooze_minutes: 60, rrule: null
+   RIGHT: "nag me every hour" → auto_snooze_minutes: 60, rrule: null
 
 10. **recurrence_mode** — "from_due" or "from_completion", or null. Parse "repeat from completion", "after I finish", "from when I complete it" → "from_completion". Default null (system uses "from_due"). Only set to "from_completion" if the user explicitly requests it.
 
@@ -422,12 +424,12 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
 }
 \`\`\`
 
-### Auto-snooze and recurrence mode
+### Nag interval (said "auto-snooze") and recurrence mode
 Input: "water the plants every 3 days from when I complete it, auto-snooze 2 hours"
 Timezone: America/Chicago
 \`\`\`json
 {
-  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request.",
+  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' is the nag interval → 120 minutes. No explicit label request.",
   "title": "Water the plants",
   "due_at": null,
   "deadline_at": null,
@@ -442,12 +444,12 @@ Timezone: America/Chicago
 }
 \`\`\`
 
-### Auto-snooze disabled
-Input: "weekly standup every Monday 9am no auto-snooze"
+### Nag disabled
+Input: "weekly standup every Monday 9am, don't nag me"
 Timezone: America/Chicago
 \`\`\`json
 {
-  "reasoning": "User specified 9:00 AM. 'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned).",
+  "reasoning": "User specified 9:00 AM. 'don't nag me' means auto_snooze_minutes = 0 (the nag explicitly turned off). This is different from null (not mentioned).",
   "title": "Weekly standup",
   "due_at": "2026-02-16T09:00:00",
   "deadline_at": null,
@@ -510,9 +512,9 @@ Timezone: America/Chicago
  * to make meaningful progress. Forward-looking, not retrospective.
  *
  * Key design decisions:
- * - Task age (created date) is the primary signal, not snooze count.
- *   Users often snooze tasks many times per day (hour-by-hour), making
- *   snooze count an unreliable metric. Age tells the real story.
+ * - Task age (created date) is the primary signal, not defer count.
+ *   Users often defer tasks many times per day (hour-by-hour), making
+ *   defer count an unreliable metric. Age tells the real story.
  * - All dates in the prompt are human-readable local time (no UTC conversion).
  * - Tone is warm and forward-looking, like a thoughtful friend helping plan the day.
  */
@@ -525,16 +527,16 @@ const SHARED_BEHAVIORAL_MODEL = `## How OpenTask works
 
 Each task can carry three separate time fields. Read them separately:
 
-- **target** (\`target:\` in the task list) — the task's due date: when the user wants to do it, and when its reminder starts nagging. It is soft — snoozed, moved or removed freely — so a task past its target ("overdue" below) only means its reminder has fired, not that anything is late. "none" means no target. A target marked "(from deadline)" was not set by the user: the task has a deadline and no target of its own (or its own falls after the deadline), so it starts nagging a few days before the deadline. Being past a "(from deadline)" target is the deadline's lead-in, not routine overdue — judge that task by its deadline.
-- **deadline** (\`deadline:\`, shown only when the task has one) — the real outside cutoff: an expiry, a filing date, a promise to a client. Snoozing never moves it. A stored deadline is the clearest sign that missing the task has a consequence, and a passed deadline means the consequence is real — at any priority. Tasks without the field may still state a deadline in their notes (older tasks predate the field); treat a deadline in the notes the same way.
+- **target** (\`target:\` in the task list) — the task's due date: when the user wants to do it, and when its reminder starts nagging. It is soft — deferred, moved or removed freely — so a task past its target ("overdue" below) only means its reminder has fired, not that anything is late. "none" means no target. A target marked "(from deadline)" was not set by the user: the task has a deadline and no target of its own (or its own falls after the deadline), so it starts nagging a few days before the deadline. Being past a "(from deadline)" target is the deadline's lead-in, not routine overdue — judge that task by its deadline.
+- **deadline** (\`deadline:\`, shown only when the task has one) — the real outside cutoff: an expiry, a filing date, a promise to a client. Deferring never moves it. A stored deadline is the clearest sign that missing the task has a consequence, and a passed deadline means the consequence is real — at any priority. Tasks without the field may still state a deadline in their notes (older tasks predate the field); treat a deadline in the notes the same way.
 - **horizon** (\`horizon:\`, shown only when set) — the pace the user chose: days, weeks, months, or eventually. Absent means the user has not said.
 - **on deck** (\`on deck:\`, in place of the target) — the user has planned to get to the task on that day, without a reminder. It is a plan, not a missing target: a task on deck is not stale, forgotten or unplanned, and one on deck for a coming day is on track. An on-deck day that passes without the task done sends it back to the user's queue to decide again.
 
-Priority (0-4) says how much missing the task costs, and decides how snoozing treats its target:
+Priority (0-4) says how much missing the task costs, and decides how deferring treats its target:
 
-**Priority 0-3 (Unset/Low/Medium/High)** — Targets are reminders. OpenTask has a global snooze button in the top bar that lets users push all overdue P0-3 tasks forward at once — most users lean on this regularly. Because of this, P0-3 tasks are rarely overdue by more than 1-2 days in normal usage. When you see P0-3 tasks overdue by many days, the user likely hasn't been engaging with the app recently. P3 (High) tasks carry more weight than P0-2, but their targets are swept by bulk snooze too.
+**Priority 0-3 (Unset/Low/Medium/High)** — Targets are reminders. OpenTask has a Defer all button (the clock in the top bar) that lets users push all overdue P0-3 tasks forward at once — most users lean on this regularly. Because of this, P0-3 tasks are rarely overdue by more than 1-2 days in normal usage. When you see P0-3 tasks overdue by many days, the user likely hasn't been engaging with the app recently. P3 (High) tasks carry more weight than P0-2, but their targets are swept by Defer all too.
 
-**Priority 4 (Urgent)** — Urgent targets are never bulk-snoozed — every change is a deliberate individual action — so an overdue P4 task means the user is genuinely behind on something they marked urgent. Whether a real cutoff has passed is what the deadline says, not the target.
+**Priority 4 (Urgent)** — Urgent targets are never swept by Defer all — every change is a deliberate individual action — so an overdue P4 task means the user is genuinely behind on something they marked urgent. Whether a real cutoff has passed is what the deadline says, not the target.
 
 For all tasks, \`created_at\` is the most reliable age signal — it never changes. A task created 5 weeks ago and still open tells a clear story regardless of priority or target.`
 
@@ -552,24 +554,26 @@ You can state:
 5. That a recurring task is overdue — this means the user has not completed it since the last due date
 
 You cannot state:
-1. How many times a task was snoozed or deferred — this data is not available
-2. That a P0-3 task was deliberately "deferred" or "pushed back" — you have no target history for these tasks
+1. How many times a task's target was deferred (moved later) — this data is not available
+2. That the user deliberately put off or pushed back a P0-3 task — you have no target history for these tasks
 3. That a task has a deadline when it has no \`deadline:\` field and its notes state none — a target is not a deadline
 4. Any count, frequency, or narrative not directly derivable from the data you see`
 
 /**
  * The app's own words for what the model writes (2026-10-11 visual QA: insight
- * lines on the dashboard read "overdue by months" and "P3 task created…",
- * words the app no longer uses). The rules above say "overdue" and "P0-4" to
- * the MODEL — that is shorthand between us — but the user reads the commentary
- * and reasons beside the app's own labels: "Over target", "Target",
- * "Deadline", and priorities by name. Kept in step with
- * `src/lib/task-model-words.ts` and `src/lib/priority.ts`.
+ * lines on the dashboard read "P3 task created…", words the app does not
+ * use). The rules above say "P0-4" to the MODEL — that is shorthand between
+ * us — but the user reads the commentary and reasons beside the app's own
+ * labels: "Overdue" (ruled 2026-10-21; "Over target" 2026-10-10 to 10-21),
+ * "Target", "Deadline", "Defer" (ruled 2026-10-21; "Snooze" before), and
+ * priorities by name. Kept in step with `src/lib/task-model-words.ts` and
+ * `src/lib/priority.ts`.
  */
 const SHARED_USER_FACING_WORDS = `## Words in what you write
 
 The user reads your text beside the app's own labels, so use the app's words, not the shorthand in these instructions:
-- A task past its target is "over target" or "past its target" — never "overdue", "late" or "past due". Its target is "the target", never "the due date"; with no target, say "no target".
+- A task past its target is "overdue" or "past its target" — never "late" or "past due". Its target is "the target", never "the due date"; with no target, say "no target".
+- Moving a target later is "defer" ("deferred to Friday", "Defer all") — never "snooze".
 - A deadline is "the deadline"; past it, "past its deadline".
 - Name a priority in words: Low, Medium, High, Urgent ("a High task", "marked Urgent"). Priority 0 is "no priority set". Never write "P0"–"P4" or "priority 3".`
 
@@ -711,7 +715,7 @@ Low (0-29): On track — skip during review
 - P0-3 tasks overdue by 1-2 days — routine reminder behavior, not urgent
 - Tasks due today or tomorrow — already on the radar
 - Well-organized tasks with clear due dates and appropriate priority
-- Recurring tasks 0-2 days overdue — user just hasn't opened the app or snoozed yet
+- Recurring tasks 0-2 days overdue — user just hasn't opened the app or deferred yet
 - Recently created tasks (under 2 weeks old) with reasonable priority and due dates — too new to need review
 - Any task the user is clearly already managing
 
@@ -719,7 +723,7 @@ Low (0-29): On track — skip during review
 
 Apply these rules in order — earlier rules take priority:
 1. P4/Urgent → ALWAYS score 0-20, no exceptions, no signals
-2. P0-3 task overdue 0-2 days → score 0-25, no signals (OpenTask's global snooze button catches overdue P0-3 tasks — 1-2 days overdue just means the user hasn't opened the app or snoozed yet). This rule is about targets the user set: a task past a "(from deadline)" target is scored by its deadline (rule 6 and act_soon), not by this rule
+2. P0-3 task overdue 0-2 days → score 0-25, no signals (OpenTask's Defer all button catches overdue P0-3 tasks — 1-2 days overdue just means the user hasn't opened the app or deferred yet). This rule is about targets the user set: a task past a "(from deadline)" target is scored by its deadline (rule 6 and act_soon), not by this rule
 3. Task due today/tomorrow → score 0-25 (user already sees it)
 4. P3 due today with consequences still days away → MEDIUM (30-50), not HIGH — the task is visible and the user has time
 5. Old forgotten task (3+ weeks, no due date) → HIGH (70+)
@@ -729,17 +733,17 @@ Apply these rules in order — earlier rules take priority:
 
 Recurring tasks follow the same scoring rules as non-recurring tasks — there is no special recurring exemption. Do not differentiate between from_due and from_completion for scoring — both mean the user hasn't completed the task.
 
-A daily task due yesterday is LOW for the same reason any P0-3 task 1 day overdue is LOW: the user just hasn't opened the app or snoozed yet. A recurring task overdue by 2+ weeks needs a decision just like any non-recurring task that's been sitting for weeks.
+A daily task due yesterday is LOW for the same reason any P0-3 task 1 day overdue is LOW: the user just hasn't opened the app or deferred yet. A recurring task overdue by 2+ weeks needs a decision just like any non-recurring task that's been sitting for weeks.
 
 Examples:
 - Daily standup due yesterday → score 5-15, no signals (user hasn't opened the app yet today)
-- Weekly watering due 2 days ago → score 10-20, no signals (user hasn't snoozed yet)
+- Weekly watering due 2 days ago → score 10-20, no signals (user hasn't deferred yet)
 - Biweekly receipts due 10 days ago → score 30-45 (10 days overdue is unusual — worth a glance)
 - Monthly receipts due 29 days ago → HIGH — 29 days overdue means the user hasn't engaged with this task in a month
 
 ## P0-3 overdue guidance
 
-Targets are reminders at every priority, never deadlines — the \`deadline:\` field is the only cutoff. In OpenTask, the global snooze button in the top bar lets users push all overdue P0-3 tasks forward at once — most users lean on this regularly, so P0-3 tasks are rarely overdue by more than 1-2 days. When you see P0-3 tasks overdue by 3+ days, the user likely hasn't been engaging with the app recently.
+Targets are reminders at every priority, never deadlines — the \`deadline:\` field is the only cutoff. In OpenTask, the Defer all button (the clock in the top bar) lets users push all overdue P0-3 tasks forward at once — most users lean on this regularly, so P0-3 tasks are rarely overdue by more than 1-2 days. When you see P0-3 tasks overdue by 3+ days, the user likely hasn't been engaging with the app recently.
 
 Score based on:
 - Task age (created_at) — most reliable signal for how long a task has been sitting
@@ -809,7 +813,7 @@ Good: "High task past its deadline since yesterday. Check notes for the filing w
 Good: "Running fine — daily habit, no action needed."
 Bad: "This task needs attention." (too vague)
 Bad: "Consider reviewing this task at your earliest convenience." (corporate-speak)
-Bad: "P3 task overdue by months." (shorthand — say "High task, over target for months")
+Bad: "P3 task overdue by months." (shorthand — say "High task, overdue for months")
 
 ${SHARED_USER_FACING_WORDS}
 
@@ -868,7 +872,7 @@ export const WHATS_NEXT_REMINDERS = `## Reminders
 - Targets are reminders at every priority — being "overdue" (past the target) is routine for P0-3, not urgent. A \`deadline:\` is the real cutoff, at any priority; a "(from deadline)" target is that deadline's lead-in, so judge the task by the deadline
 - When notes are present, reference specific details (claim numbers, deadlines, instructions)
 - from_completion recurring tasks overdue for multiple cycles = genuinely not completed (worth surfacing)
-- Reasons and the summary use the app's words: "over target" (never "overdue"), "target" (never "due date"), priorities by name (High, Urgent — never "P3"/"P4")
+- Reasons and the summary use the app's words: "overdue" (never "late" or "past due"), "target" (never "due date"), "defer" (never "snooze"), priorities by name (High, Urgent — never "P3"/"P4")
 - A task \`on deck:\` is already planned for that day — don't surface it as forgotten or unplanned`
 
 export const INSIGHTS_REMINDERS = `## Reminders
@@ -880,7 +884,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 - P0-3 overdue 0-2 days → score LOW (0-25), no signals (routine in OpenTask) — unless the target is "(from deadline)": then the deadline decides
 - Every task in the input MUST appear in the output
 - Output valid JSON only — a single object with a \`tasks\` array, no text outside it
-- Commentary uses the app's words: "over target" (never "overdue"), "target" (never "due date"), priorities by name (High, Urgent — never "P3"/"P4")
+- Commentary uses the app's words: "overdue" (never "late" or "past due"), "target" (never "due date"), "defer" (never "snooze"), priorities by name (High, Urgent — never "P3"/"P4")
 - A task \`on deck:\` is planned for that day: never "stale", and never described as having no target or plan — its age alone is no reason to raise its score`
 
 export const ENRICHMENT_REMINDERS = `## Reminders
@@ -888,7 +892,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Repeat wording ("every other day", "twice a week", "every Monday", "daily") and its time leave the title once they are in rrule
 - Do NOT infer labels from context — only include labels the user explicitly requests
 - Do NOT infer projects from task content — project_name is null unless the user explicitly assigns one or the task text contains a project's full name used as that name ("for job search" → Job Search). Never Inbox; "after work", "work out" and "homework" are not matches. A project's description only picks between projects the words already match — it never makes a match
-- Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
+- The nag is NOT recurrence — "nag me every hour", "auto-snooze every hour" or "snooze every hour" sets auto_snooze_minutes, not rrule. A bare "nag" or "defer" with no interval sets nothing
 - due_at is the day the user said to do it: a day with no time ("tomorrow", "Saturday", "today") → the date alone ("YYYY-MM-DD"), and the app puts the task on deck; a stated time or part of day ("at 3pm", "tomorrow morning", "tonight", "this afternoon") → a full local datetime. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
 - Urgency is priority, not a date: "urgent X" / "critical alert X" with no day or time named → due_at null
