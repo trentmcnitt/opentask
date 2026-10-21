@@ -46,6 +46,7 @@ import {
 } from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
+import { ValidationError } from '@/core/errors'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -668,7 +669,11 @@ describe('TM-INV: on deck over a random list', () => {
               .toISO()!,
           },
         }),
-      (id, at) =>
+      // A deadline: a one-off's, or a deadline-anchored repeat's reschedule. A
+      // target-anchored repeat never gains one (2026-10-21, a 400).
+      (id, at) => {
+        const task = getTaskById(id)!
+        if (task.rrule && task.repeat_anchor !== 'deadline') return
         updateTask({
           ...u,
           taskId: id,
@@ -678,7 +683,8 @@ describe('TM-INV: on deck over a random list', () => {
               .toUTC()
               .toISO()!,
           },
-        }),
+        })
+      },
       // Clearing a target: a one-off's only. On a repeating task it is not a
       // deck path (the editor clears the rule with it), so it is left out.
       (id) => {
@@ -819,6 +825,24 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
       })
       let moved = false
       const label = (step: string) => `seed ${SEED8} case ${c} ${step}`
+      const hour = (task: Task) => Number(/BYHOUR=(\d+)/.exec(task.rrule!)![1])
+      const patchSchedule = (op: number, task: Task) => {
+        const deadlineRule = task.repeat_anchor === 'deadline'
+        if (op === 6 && deadlineRule) {
+          const to = DateTime.fromISO(task.occurrence_at!, { zone: 'utc' })
+            .setZone(tz)
+            .plus({ days: Math.floor(r() * 4) - 1 })
+          updateTask({ ...u, taskId: t.id, input: { deadline_at: to.toUTC().toISO()! } })
+        } else if (op === 7 && deadlineRule) {
+          const time = `${String(6 + Math.floor(r() * 16)).padStart(2, '0')}:00`
+          const input = { target_days_before: Math.floor(r() * 3), target_time: time }
+          updateTask({ ...u, taskId: t.id, input })
+        } else if (op === 8) {
+          const timed = `FREQ=WEEKLY;BYDAY=${pick(['MO', 'WE', 'SA'])};BYHOUR=${hour(task)};BYMINUTE=0`
+          const anchor = deadlineRule ? 'target' : 'deadline'
+          updateTask({ ...u, taskId: t.id, input: { repeat_anchor: anchor, rrule: timed } })
+        }
+      }
       const checkTask = (step: string) => {
         const task = getTaskById(t.id)!
         const l = label(step)
@@ -846,10 +870,18 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
       for (let s = 0; s < 8; s++) {
         clock = clock.plus({ minutes: Math.floor(r() * 3 * 24 * 60) })
         vi.setSystemTime(clock.toJSDate())
-        const op = Math.floor(r() * 6)
+        const op = Math.floor(r() * 9)
         const step = `op ${s}:${op}`
         const before = getTaskById(t.id)!
-        if (op === 0) {
+        if (op >= 6) {
+          // The PATCH writes (plan §3.2): a deadline reschedule, new offsets,
+          // an anchor switch. A refusal (400) is part of the contract.
+          try {
+            patchSchedule(op, before)
+          } catch (err) {
+            if (!(err instanceof ValidationError)) throw err
+          }
+        } else if (op === 0) {
           const to = clock.plus({ minutes: Math.round((r() * 2 - 0.5) * 6 * 24 * 60) })
           updateTask({ ...u, taskId: t.id, input: { due_at: to.toUTC().toISO()! } })
         } else if (op === 1) {
@@ -870,11 +902,13 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
           deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day })
         }
         // A move leaves the target moved (or not, capped back onto the
-        // derivation); every other write lands on the derivation.
-        moved = op === 0 ? targetMoved(getTaskById(t.id)!, tz) : moved
+        // derivation), and so may a PATCH (a moved target is kept); every
+        // other write lands on the derivation.
+        moved = op === 0 || op >= 6 ? targetMoved(getTaskById(t.id)!, tz) : moved
         const written = getTaskById(t.id)!
         if (
           op !== 0 &&
+          op < 6 &&
           (written.occurrence_at !== before.occurrence_at || written.due_at !== before.due_at)
         ) {
           moved = false

@@ -371,6 +371,11 @@ export const taskUpdateSchema = z
     deadline_nag_off: z.boolean().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
+    // 2026-10-21: switching the anchor needs `rrule` in the same body; the
+    // offsets are null only on a target-anchored result (`planRepeatSchedule`).
+    repeat_anchor: repeatAnchor.optional(),
+    target_days_before: targetDaysBefore.nullable().optional(),
+    target_time: targetTime.nullable().optional(),
     project_id: z.number().int().positive().optional(),
     priority: priority.optional(),
     labels: labels.optional(),

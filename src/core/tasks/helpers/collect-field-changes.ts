@@ -41,6 +41,7 @@ import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
 import { collectDeckClear, deckRolloverTime } from '../deck-clear'
 import { taskQueueEnabled } from '../task-queue'
+import { planRepeatSchedule, type RepeatPlan } from '../repeat-schedule'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -184,11 +185,24 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // rule, which lands on an arbitrary weekday. Clearing it here rather than in
   // updateTask means bulk edit retires correctly too.
   const ctx = options.targetCtx ?? getTargetContext(task.user_id)
+  // DEADLINE-ANCHORED REPEATS (2026-10-21): what this write does to the
+  // schedule — the anchor, the deadline occurrence, the relative target —
+  // decided up front on the RESULTING row (`planRepeatSchedule`, every 400).
+  const repeat = planRepeatSchedule(task, options.input, {
+    isReminder: willBeReminder,
+    isTracked: willBeTracked,
+    timezone: userTimezone,
+    morningTime: ctx.morningTime,
+    now,
+  })
   const retired = withRuleTime(
     task,
-    wasTracked && !willBeTracked && options.input.rrule === undefined
-      ? { ...options.input, rrule: null }
-      : options.input,
+    scheduleInput(
+      wasTracked && !willBeTracked && options.input.rrule === undefined
+        ? { ...options.input, rrule: null }
+        : options.input,
+      repeat,
+    ),
     willBeTracked,
     { morningTime: ctx.morningTime, timezone: userTimezone },
   )
@@ -202,7 +216,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     ctx,
     now,
   })
-  const input = target.input
+  const input = withRepeatDates(target.input, repeat)
 
   const data: FieldChangeData = {
     setClauses: [],
@@ -211,7 +225,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     beforeState: { id: task.id, title: task.title },
     afterState: { id: task.id, title: task.title },
     isSnoozeScenario: false,
-    cappedAtDeadline: target.capped,
+    cappedAtDeadline: target.capped || repeatCapped(repeat),
   }
 
   // Track basic field changes
@@ -235,7 +249,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   )
 
   // §6: a repeating task's scheduled occurrence, apart from its target.
-  collectOccurrence(data, task, input, rrule, willBeTracked, willBeReminder)
+  collectOccurrence(data, task, input, rrule, willBeTracked, willBeReminder, repeat)
+  collectRepeatSchedule(data, task, repeat)
   // §8: whether the target the write leaves is the deadline's automatic one.
   if (target.auto !== task.target_auto) {
     trackField(data, 'target_auto', task.target_auto, target.auto, undefined, target.auto ? 1 : 0)
@@ -556,6 +571,63 @@ function collectRepeatingUndeck(
   }
 }
 
+/**
+ * The input a repeat plan sends on (2026-10-21), BEFORE the rule's time is
+ * filled: a deadline-anchored rule timed by its deadline (not by a target
+ * sent with it), and — a deadline-anchored repeat switching to its target —
+ * the deadline cleared in the same write (L7).
+ */
+function scheduleInput(input: FieldChangesInput, repeat: RepeatPlan): FieldChangesInput {
+  if (repeat.kind === 'target' && repeat.clearDeadline) return { ...input, deadline_at: null }
+  if (repeat.kind === 'deadline' && repeat.rrule !== undefined) {
+    return { ...input, rrule: repeat.rrule }
+  }
+  return input
+}
+
+/**
+ * A deadline-anchored repeat's dates (2026-10-21), sent on as ordinary
+ * `deadline_at` and `due_at` once the target has been resolved: the deadline
+ * is the occurrence `planRepeatSchedule` decided, the target its derived one
+ * (or the move, or the kept moved target, capped). Only what the plan set.
+ */
+function withRepeatDates(input: FieldChangesInput, repeat: RepeatPlan): FieldChangesInput {
+  if (repeat.kind !== 'deadline') return input
+  const out: FieldChangesInput = { ...input, deadline_at: repeat.occurrenceAt }
+  if (repeat.dueAt !== undefined) out.due_at = repeat.dueAt
+  return out
+}
+
+/** A deadline-anchored repeat's move that stopped at its (new) deadline. */
+function repeatCapped(repeat: RepeatPlan): boolean {
+  return repeat.kind === 'deadline' && repeat.capped
+}
+
+/**
+ * The anchor and the relative target (2026-10-21): written as the plan
+ * leaves them — 'deadline' with its offsets, or back to 'target' with none.
+ */
+function collectRepeatSchedule(data: FieldChangeData, task: Task, repeat: RepeatPlan): void {
+  if (repeat.kind === 'none') return
+  const after =
+    repeat.kind === 'deadline'
+      ? {
+          repeat_anchor: 'deadline' as const,
+          target_days_before: repeat.relative.days_before,
+          target_time: repeat.relative.time,
+        }
+      : { repeat_anchor: 'target' as const, target_days_before: null, target_time: null }
+  if (after.repeat_anchor !== task.repeat_anchor) {
+    trackField(data, 'repeat_anchor', task.repeat_anchor, after.repeat_anchor)
+  }
+  if (after.target_days_before !== task.target_days_before) {
+    trackField(data, 'target_days_before', task.target_days_before, after.target_days_before)
+  }
+  if (after.target_time !== task.target_time) {
+    trackField(data, 'target_time', task.target_time, after.target_time)
+  }
+}
+
 /** A period move's explicit reschedule of a reminder — not a snooze (see the guard above). */
 function reschedulesReminder(input: FieldChangesInput): boolean {
   return input.reset_original_due_at === true
@@ -571,7 +643,9 @@ function reschedulesReminder(input: FieldChangesInput): boolean {
  *   rescheduled), so it follows `due_at`;
  * - a row from before the column, or an undated repeating task getting its
  *   first date, takes the target it had (or the new one);
- * - a one-off (or a quota) has none.
+ * - a one-off (or a quota) has none;
+ * - a DEADLINE-ANCHORED repeat's is its deadline, as `planRepeatSchedule`
+ *   decided it (2026-10-21) — never a target.
  */
 function collectOccurrence(
   data: FieldChangeData,
@@ -580,11 +654,14 @@ function collectOccurrence(
   rrule: RruleChange,
   willBeTracked: boolean,
   willBeReminder: boolean,
+  repeat: RepeatPlan,
 ): void {
   const resultingRule = input.rrule !== undefined ? input.rrule : task.rrule
   const dueAfter = data.afterState.due_at !== undefined ? data.afterState.due_at : task.due_at
   let next: string | null
   if (!resultingRule || willBeTracked) next = null
+  // A deadline-anchored repeat's occurrence IS its deadline (2026-10-21).
+  else if (repeat.kind === 'deadline') next = repeat.occurrenceAt
   else if (rrule.changed) next = rrule.scheduled ?? dueAfter ?? null
   else if (willBeReminder) next = dueAfter ?? null
   else if (task.occurrence_at === null && data.fieldsChanged.includes('due_at')) {

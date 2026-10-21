@@ -79,6 +79,7 @@
 		3EA6CA1B446F4A667F0CDDC2 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */; };
 		3EE6F7B84B2317550D8CC09A /* SegmentWidthsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */; };
 		3F5F24E827B5E77749258D0F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79B196EB051C2A6103B3CB4E /* WidgetKit.framework */; };
+		3FA4C1C7984CD8BD06B1188A /* task-deadline-anchored.json in Resources */ = {isa = PBXBuildFile; fileRef = 96556AA531B7928B74E717D5 /* task-deadline-anchored.json */; };
 		40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */; };
 		416BA9F4F61DED457A9F058E /* reminders-interval.json in Resources */ = {isa = PBXBuildFile; fileRef = A3976D6271B79475E88E8901 /* reminders-interval.json */; };
 		4185E2BB6C6CEE9C0B8B9FE0 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
@@ -386,6 +387,7 @@
 		8F19FED31D51A4F31E33C37B /* undo-status.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "undo-status.json"; sourceTree = "<group>"; };
 		903ACB0C682D367B55AA9A1E /* WidgetRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetRenderTests.swift; sourceTree = "<group>"; };
 		921B76E2529F1F4C5642DE21 /* task-interval-quota.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-interval-quota.json"; sourceTree = "<group>"; };
+		96556AA531B7928B74E717D5 /* task-deadline-anchored.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-deadline-anchored.json"; sourceTree = "<group>"; };
 		9692247898AD0E30DCD14FCD /* reminders-queue.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-queue.json"; sourceTree = "<group>"; };
 		9DD5A0D38F3F38C3D5EC9D21 /* RowCornerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowCornerTests.swift; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
@@ -477,6 +479,7 @@
 				880F73DD5EB836E40BCA134A /* reminders.json */,
 				E3290E5D7B8A509F3BA310ED /* task-badges.json */,
 				F18E00062C7779D38C364472 /* task-counts.json */,
+				96556AA531B7928B74E717D5 /* task-deadline-anchored.json */,
 				921B76E2529F1F4C5642DE21 /* task-interval-quota.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
 				0FB8808D7E3324C55F3E06A1 /* task-segments-consider.json */,
@@ -859,6 +862,7 @@
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
 				FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */,
 				04F8C59F08CACDD3F68757CD /* task-counts.json in Resources */,
+				3FA4C1C7984CD8BD06B1188A /* task-deadline-anchored.json in Resources */,
 				5A0333B4EF13096F70EEC7D8 /* task-interval-quota.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
 				DFD0535376C465799D675624 /* task-segments-consider.json in Resources */,

@@ -13,7 +13,7 @@ import path from 'node:path'
 import { describe, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
-import { createTask, markDone, markUndone, updateTask } from '@/core/tasks'
+import { bulkEdit, createTask, markDone, markUndone, updateTask } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { getTaskById } from '@/core/tasks/read'
@@ -31,6 +31,11 @@ import {
   type RepeatRule,
 } from '@/lib/task-segments'
 import {
+  ANCHOR_SWITCH_NEEDS_RULE_MESSAGE,
+  DEADLINE_CLEAR_MESSAGE,
+  DECK_WITH_SCHEDULE_MESSAGE,
+  REPEAT_TARGET_CLEAR_MESSAGE,
+  RULE_NEEDS_TIME_MESSAGE,
   RELATIVE_TARGET_NEEDS_DEADLINE_MESSAGE,
   RELATIVE_TARGET_PAIR_MESSAGE,
   REPEAT_ANCHOR_KIND_MESSAGE,
@@ -405,6 +410,200 @@ describe('TM-RA: the advancing writers and the readers', () => {
       const t = friday()
       expect(nextScheduledOccurrence(t, tz)!.toISOString()).toBe(at('2026-10-29T18:00'))
     })
+  })
+})
+
+describe('TM-RA: PATCH and bulk edit (plan §3.2)', () => {
+  beforeAll(() => setupTestDb())
+  afterAll(() => teardownTestDb())
+  beforeEach(() => {
+    const db = getDb()
+    db.prepare('DELETE FROM completions').run()
+    db.prepare('DELETE FROM tasks').run()
+    db.prepare('DELETE FROM undo_log').run()
+    db.prepare("UPDATE users SET morning_time = '08:30' WHERE id = ?").run(TEST_USER_ID)
+    setClock('2026-10-20T10:00') // Tue
+  })
+  afterEach(() => vi.useRealTimers())
+
+  const patch = (id: number, input: Record<string, unknown>) =>
+    updateTask({ ...u, taskId: id, input })
+  const FRIDAY_17 = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0'
+
+  test('TM-RA60: a deadline sent reschedules THIS occurrence; an unmoved target re-derives, a moved one stays', () => {
+    const t = friday()
+    const r = patch(t.id, { deadline_at: at('2026-10-24T12:00') })
+    expect(r.task).toMatchObject({
+      occurrence_at: at('2026-10-24T12:00'),
+      deadline_at: at('2026-10-24T12:00'),
+      due_at: at('2026-10-23T18:00'),
+      rrule: FRIDAY_17,
+    })
+    // Moved, then rescheduled earlier: kept, pulled back to the new deadline.
+    patch(t.id, { due_at: at('2026-10-24T09:00') })
+    const back = patch(t.id, { deadline_at: at('2026-10-23T20:00') })
+    expect(back.task.due_at).toBe(at('2026-10-23T20:00'))
+    // Undo puts the deadline, the occurrence and the target back together.
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(t.id)).toMatchObject({
+      occurrence_at: at('2026-10-24T12:00'),
+      deadline_at: at('2026-10-24T12:00'),
+      due_at: at('2026-10-24T09:00'),
+    })
+  })
+
+  test('TM-RA61: new offsets re-derive an unmoved target, and are validated', () => {
+    const t = friday()
+    const r = patch(t.id, { target_days_before: 2, target_time: '09:00' })
+    expect(r.task).toMatchObject({
+      target_days_before: 2,
+      target_time: '09:00',
+      due_at: at('2026-10-21T09:00'),
+    })
+    expect(() => patch(t.id, { target_days_before: 0, target_time: '18:00' })).toThrow(
+      'The target would be after the deadline',
+    )
+    expect(() => patch(t.id, { target_days_before: 9 })).toThrow("previous occurrence's deadline")
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(t.id)).toMatchObject({ target_days_before: 1, target_time: '18:00' })
+  })
+
+  test('TM-RA62: target → deadline needs the rule; the occurrence comes from it', () => {
+    const t = make({ rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0' })
+    expect(t.due_at).toBe(at('2026-10-23T09:00'))
+    expect(() => patch(t.id, { repeat_anchor: 'deadline' })).toThrow(
+      ANCHOR_SWITCH_NEEDS_RULE_MESSAGE,
+    )
+    // With a rule and a deadline: the rule repeats the deadline.
+    const r = patch(t.id, {
+      repeat_anchor: 'deadline',
+      rrule: FRIDAY_17,
+      deadline_at: at('2026-10-23T17:00'),
+    })
+    expect(r.task).toMatchObject({
+      repeat_anchor: 'deadline',
+      target_days_before: 1,
+      target_time: '08:30',
+      occurrence_at: at('2026-10-23T17:00'),
+      deadline_at: at('2026-10-23T17:00'),
+      due_at: at('2026-10-22T08:30'),
+    })
+  })
+
+  test('TM-RA63: deadline → target drops the deadline and the offsets in the same write', () => {
+    const t = friday()
+    const r = patch(t.id, {
+      repeat_anchor: 'target',
+      rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0',
+    })
+    expect(r.task).toMatchObject({
+      repeat_anchor: 'target',
+      target_days_before: null,
+      target_time: null,
+      deadline_at: null,
+      due_at: at('2026-10-23T09:00'),
+      occurrence_at: at('2026-10-23T09:00'),
+    })
+    // Clearing the rule instead: a one-off that keeps its deadline.
+    const s = friday()
+    const one = patch(s.id, { rrule: null })
+    expect(one.task).toMatchObject({
+      rrule: null,
+      repeat_anchor: 'target',
+      target_days_before: null,
+      occurrence_at: null,
+      deadline_at: at('2026-10-23T17:00'),
+    })
+  })
+
+  test('TM-RA64: an over-target repeat switched to its deadline keeps its target as the debt', () => {
+    const t = make({ rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' })
+    // Missed Monday's occurrence: over target since Mon 09:00.
+    getDb()
+      .prepare('UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?')
+      .run(at('2026-10-19T09:00'), at('2026-10-19T09:00'), t.id)
+    const r = patch(t.id, { repeat_anchor: 'deadline', rrule: FRIDAY_17 })
+    expect(r.task).toMatchObject({
+      repeat_anchor: 'deadline',
+      occurrence_at: at('2026-10-23T17:00'),
+      deadline_at: at('2026-10-23T17:00'),
+      due_at: at('2026-10-19T09:00'),
+    })
+    expect(() =>
+      patch(make({ rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' }).id, {
+        repeat_anchor: 'deadline',
+        rrule: 'FREQ=WEEKLY;BYDAY=FR',
+      }),
+    ).toThrow(RULE_NEEDS_TIME_MESSAGE)
+  })
+})
+
+describe('TM-RA: PATCH and bulk edit — the refusals', () => {
+  beforeAll(() => setupTestDb())
+  afterAll(() => teardownTestDb())
+  beforeEach(() => {
+    const db = getDb()
+    db.prepare('DELETE FROM completions').run()
+    db.prepare('DELETE FROM tasks').run()
+    db.prepare('DELETE FROM undo_log').run()
+    db.prepare("UPDATE users SET morning_time = '08:30' WHERE id = ?").run(TEST_USER_ID)
+    setClock('2026-10-20T10:00') // Tue
+  })
+  afterEach(() => vi.useRealTimers())
+
+  const patch = (id: number, input: Record<string, unknown>) =>
+    updateTask({ ...u, taskId: id, input })
+  const FRIDAY_17 = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0'
+
+  test('TM-RA65: the 400s', () => {
+    const t = friday()
+    expect(() => patch(t.id, { deadline_at: null })).toThrow(DEADLINE_CLEAR_MESSAGE)
+    expect(() => patch(t.id, { due_at: null })).toThrow(REPEAT_TARGET_CLEAR_MESSAGE)
+    expect(() => patch(t.id, { is_reminder: true, repeat_anchor: 'deadline' })).toThrow(
+      REPEAT_ANCHOR_KIND_MESSAGE,
+    )
+    expect(() =>
+      patch(t.id, {
+        rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0',
+        deadline_at: at('2026-10-30T17:00'),
+      }),
+    ).toThrow(RULE_NOT_ON_DEADLINE_MESSAGE)
+    expect(() => patch(t.id, { on_deck_day: '2026-10-21', target_days_before: 2 })).toThrow(
+      DECK_WITH_SCHEDULE_MESSAGE,
+    )
+    // L9: a target-anchored repeat never gains a deadline.
+    const plain = make({ rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0' })
+    expect(() => patch(plain.id, { deadline_at: at('2026-10-23T17:00') })).toThrow(
+      TARGET_ANCHORED_DEADLINE_MESSAGE,
+    )
+    expect(() => patch(plain.id, { target_days_before: 1, target_time: '09:00' })).toThrow(
+      RELATIVE_TARGET_NEEDS_DEADLINE_MESSAGE,
+    )
+    // A3: a rule given to a one-off with a deadline needs the anchor.
+    const oneOff = make({ deadline_at: at('2026-10-23T17:00') })
+    expect(() => patch(oneOff.id, { rrule: FRIDAY_17 })).toThrow(TARGET_ANCHORED_DEADLINE_MESSAGE)
+    const made = patch(oneOff.id, { rrule: FRIDAY_17, repeat_anchor: 'deadline' })
+    expect(made.task).toMatchObject({
+      repeat_anchor: 'deadline',
+      occurrence_at: at('2026-10-23T17:00'),
+      deadline_at: at('2026-10-23T17:00'),
+      due_at: at('2026-10-22T08:30'),
+    })
+  })
+
+  test('TM-RA66: bulk edit — held to the same rules; a refusal refuses the batch', () => {
+    const a = friday()
+    const plain = make({ rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0' })
+    expect(() =>
+      bulkEdit({
+        ...u,
+        taskIds: [a.id, plain.id],
+        changes: { deadline_at: at('2026-10-30T17:00') },
+      }),
+    ).toThrow(TARGET_ANCHORED_DEADLINE_MESSAGE)
+    expect(getTaskById(a.id)!.deadline_at).toBe(at('2026-10-23T17:00'))
+    bulkEdit({ ...u, taskIds: [a.id], changes: { target_days_before: 2, target_time: '20:00' } })
+    expect(getTaskById(a.id)).toMatchObject({ due_at: at('2026-10-21T20:00') })
   })
 })
 

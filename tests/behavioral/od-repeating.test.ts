@@ -321,6 +321,16 @@ describe('OD-RP: the deck write', () => {
     expect(deck([t.id], '2026-10-23').refused).toEqual([{ id: t.id, reason: 'after_auto_target' }])
     expect(deck([t.id], '2026-10-22').decked).toBe(1)
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', due_at: null })
+    // A deadline moved onto the deck's day wins: the deck goes, the occurrence
+    // is rescheduled to it and its derived target comes back (Mon Oct 19 08:00).
+    updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-22T17:00') } })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: null,
+      due_at: at('2026-10-19T08:00'),
+      occurrence_at: at('2026-10-22T17:00'),
+      deadline_at: at('2026-10-22T17:00'),
+    })
+    expect(due()).toContain(t.id)
   })
 
   test('OD-RP17: undo of a repeating deck gives the target back; redo takes it again', () => {

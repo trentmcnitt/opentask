@@ -1,8 +1,9 @@
 /**
  * DEADLINE-ANCHORED REPEATS — the write side (2026-10-21; docs/TASK-MODEL.md
  * § Recurrence Model). The dates themselves come from ONE pure function,
- * `occurrenceDates` (src/lib/task-segments.ts); this module decides, for a
- * create, what schedule the new row has and refuses what can't be written:
+ * `occurrenceDates` (src/lib/task-segments.ts); this module decides what
+ * schedule a create (`createAnchor`, `resolveRelativeTarget`) or a PATCH /
+ * bulk edit (`planRepeatSchedule`) leaves, and refuses what can't be written:
  *
  *  - a rule WITH a deadline is deadline-anchored: its occurrence is the
  *    deadline (`deadline_at` mirrors `occurrence_at`) and its target sits
@@ -19,22 +20,32 @@
  *  - never on a reminder or a quota (their date is their occurrence / they
  *    have none), never without a rule or a deadline; the offsets only with
  *    the 'deadline' anchor, and together.
- * The PATCH and bulk-edit side is `collectRepeatSchedule` in
- * helpers/collect-field-changes.ts, held to the same messages.
+ * A PATCH also reschedules this occurrence (a deadline sent), switches the
+ * anchor (with its rule), keeps a moved target (capped) and refuses clearing
+ * the deadline or the target — `planRepeatSchedule`; `collectRepeatSchedule`
+ * in helpers/collect-field-changes.ts writes what it decides.
  */
 
 import { ValidationError } from '@/core/errors'
-import { parseRRule, ruleTimeOfDay } from '@/core/recurrence'
+import {
+  computeFirstOccurrence,
+  ensureRuleTime,
+  parseRRule,
+  ruleTimeOfDay,
+} from '@/core/recurrence'
 import { formatAnchorTime, utcToLocal } from '@/core/recurrence/timezone'
 import {
   RELATIVE_TARGET_MESSAGES,
+  capAtDeadline,
   defaultRelativeTarget,
+  occurrenceDates,
   relativeTargetOf,
   relativeTargetProblem,
+  targetMoved,
   type RelativeTarget,
   type RepeatRule,
 } from '@/lib/task-segments'
-import type { RepeatAnchor } from '@/types'
+import type { RepeatAnchor, Task } from '@/types'
 
 export const REPEAT_ANCHOR_KIND_MESSAGE =
   "repeat_anchor 'deadline' is for an ordinary repeating task: a reminder's date is its occurrence, and a quota has none"
@@ -48,6 +59,8 @@ export const RELATIVE_TARGET_PAIR_MESSAGE = 'Send target_days_before and target_
 export const RULE_NOT_ON_DEADLINE_MESSAGE =
   "A deadline-anchored rule repeats the deadline: its time (BYHOUR/BYMINUTE) must be the deadline's local time"
 export const TARGET_AFTER_DEADLINE_MESSAGE = 'The target must not be after the deadline'
+export const RULE_NEEDS_TIME_MESSAGE =
+  'A deadline-anchored rule repeats the deadline: send deadline_at, or a rule with its time (BYHOUR/BYMINUTE)'
 
 /** Whether the row a write leaves is an ordinary task (not a reminder, not a quota). */
 export interface RowKind {
@@ -142,4 +155,354 @@ export function resolveRelativeTarget(opts: {
   const problem = relativeTargetProblem(offset, rule, firstDeadline, timezone)
   if (problem) throw new ValidationError(RELATIVE_TARGET_MESSAGES[problem])
   return offset
+}
+
+// ===========================================================================
+// PATCH and bulk edit (`collectFieldChanges`)
+// ===========================================================================
+
+export const ANCHOR_SWITCH_NEEDS_RULE_MESSAGE =
+  "Changing repeat_anchor changes what the rule's time means: send the rule (rrule) with it"
+export const DEADLINE_CLEAR_MESSAGE =
+  "This task repeats its deadline: to remove the deadline, send rrule null, or repeat_anchor 'target' with the rule"
+export const REPEAT_TARGET_CLEAR_MESSAGE =
+  'A repeating task anchored on its deadline always has a target: move it instead'
+export const DECK_WITH_SCHEDULE_MESSAGE =
+  'Send on_deck_day without a schedule change (rrule, deadline_at, repeat_anchor, target_days_before, target_time): it sets its own date, which takes a task off deck'
+
+/** The schedule fields of a PATCH (or a bulk edit's `changes`). */
+export interface ScheduleInput {
+  rrule?: string | null
+  recurrence_mode?: 'from_due' | 'from_completion'
+  deadline_at?: string | null
+  due_at?: string | null
+  repeat_anchor?: RepeatAnchor
+  target_days_before?: number | null
+  target_time?: string | null
+  on_deck_day?: string | null
+}
+
+/** The row fields the planner reads. */
+type PlanTask = Pick<
+  Task,
+  | 'rrule'
+  | 'recurrence_mode'
+  | 'anchor_time'
+  | 'deadline_at'
+  | 'due_at'
+  | 'occurrence_at'
+  | 'repeat_anchor'
+  | 'target_days_before'
+  | 'target_time'
+>
+
+/**
+ * What a write does to a repeating task's schedule:
+ *  - `none`: nothing to do here (no rule, or a target-anchored repeat that
+ *    stays one);
+ *  - `target`: the row leaves deadline-anchored — the anchor and the offsets
+ *    are written back to 'target' / null, and `clearDeadline` when it keeps
+ *    its rule (L7: the deadline goes with the switch);
+ *  - `deadline`: the row is (or becomes) deadline-anchored; the planner has
+ *    decided its occurrence (= deadline), relative target, filled rule and —
+ *    `dueAt` — the target this write leaves (undefined: unchanged).
+ */
+export type RepeatPlan =
+  | { kind: 'none' }
+  | { kind: 'target'; clearDeadline: boolean }
+  | {
+      kind: 'deadline'
+      rrule: string | undefined
+      relative: RelativeTarget
+      occurrenceAt: string
+      dueAt: string | undefined
+      /** The target the caller sent stopped at the deadline (`capped_at_deadline`). */
+      capped: boolean
+    }
+
+interface PlanContext extends RowKind {
+  timezone: string
+  morningTime: string
+  now: Date
+}
+
+/** The facts every branch reads. */
+interface Request {
+  task: PlanTask
+  input: ScheduleInput
+  ctx: PlanContext
+  /** The rule the write leaves. */
+  rule: string | null
+  ordinary: boolean
+  wasDeadline: boolean
+}
+
+const sent = <T>(value: T | undefined, stored: T): T => (value !== undefined ? value : stored)
+
+/**
+ * THE PATCH SIDE (2026-10-21, plan §3.2). Judged on the RESULTING row, like
+ * the quota invariants; every refusal is a 400 (in a bulk edit it refuses the
+ * whole batch). A deadline-anchored result: `planDeadlineAnchored`.
+ */
+export function planRepeatSchedule(
+  task: PlanTask,
+  input: ScheduleInput,
+  ctx: PlanContext,
+): RepeatPlan {
+  const req: Request = {
+    task,
+    input,
+    ctx,
+    rule: sent(input.rrule, task.rrule),
+    ordinary: !ctx.isReminder && !ctx.isTracked,
+    wasDeadline: !!task.rrule && task.repeat_anchor === 'deadline',
+  }
+  const switching = assertAnchorRequest(req)
+  if (resultAnchor(req) === 'deadline') {
+    assertNoDeckWithSchedule(input)
+    return planDeadlineAnchored(req, switching || !req.wasDeadline)
+  }
+  return planTargetAnchored(req)
+}
+
+/**
+ * The anchor's own 400s; returns whether the write SWITCHES a repeating
+ * task's anchor (which needs its rule: the rule's time changes meaning, L7).
+ */
+function assertAnchorRequest({ task, input, rule, ordinary }: Request): boolean {
+  if (input.repeat_anchor === 'deadline' && !ordinary) {
+    throw new ValidationError(REPEAT_ANCHOR_KIND_MESSAGE)
+  }
+  if (input.repeat_anchor === 'deadline' && !rule) {
+    throw new ValidationError(REPEAT_ANCHOR_NEEDS_RULE_MESSAGE)
+  }
+  const switching =
+    !!task.rrule && input.repeat_anchor !== undefined && input.repeat_anchor !== task.repeat_anchor
+  if (switching && input.rrule === undefined) {
+    throw new ValidationError(ANCHOR_SWITCH_NEEDS_RULE_MESSAGE)
+  }
+  return switching
+}
+
+/**
+ * The anchor the row is left with. A reminder or a quota is always
+ * target-anchored: a conversion takes the anchor back with it (`'deadline'`
+ * sent for one is refused above); so is a row with no rule.
+ */
+function resultAnchor({ task, input, rule, ordinary }: Request): RepeatAnchor {
+  if (!rule || !ordinary) return 'target'
+  if (input.repeat_anchor) return input.repeat_anchor
+  return task.rrule && task.repeat_anchor === 'deadline' ? 'deadline' : 'target'
+}
+
+/** A deck write never travels with a schedule change: it sets its own date. */
+function assertNoDeckWithSchedule(input: ScheduleInput): void {
+  if (typeof input.on_deck_day !== 'string') return
+  const schedule = [
+    input.repeat_anchor,
+    input.target_days_before,
+    input.target_time,
+    input.deadline_at,
+  ]
+  if (schedule.some((v) => v !== undefined)) throw new ValidationError(DECK_WITH_SCHEDULE_MESSAGE)
+}
+
+/**
+ * A TARGET-ANCHORED result. No offsets (400). L9 / A3: it never GAINS a
+ * deadline — not by a deadline sent to one, nor by a rule given to a one-off
+ * that has one (a legacy row that already carries one is left as it is). A
+ * deadline-anchored row leaving its anchor (with its rule kept) loses its
+ * deadline in the same write; one losing its rule keeps it, as a one-off.
+ */
+function planTargetAnchored({ task, input, rule, ordinary, wasDeadline }: Request): RepeatPlan {
+  if (input.target_days_before != null || input.target_time != null) {
+    throw new ValidationError(RELATIVE_TARGET_NEEDS_DEADLINE_MESSAGE)
+  }
+  const switching = wasDeadline && !!rule && ordinary
+  const deadline = sent(input.deadline_at, task.deadline_at)
+  const sentDeadline = input.deadline_at != null
+  const ruleAdded = !task.rrule && input.rrule != null
+  if (rule && ordinary && deadline !== null && (sentDeadline || ruleAdded) && !switching) {
+    throw new ValidationError(TARGET_ANCHORED_DEADLINE_MESSAGE)
+  }
+  if (!wasDeadline) return { kind: 'none' }
+  return { kind: 'target', clearDeadline: switching && input.deadline_at === undefined }
+}
+
+/** A deadline-anchored result's rule and where its schedule starts. */
+interface DeadlineSchedule {
+  /** The rule to store, when the write changes it (timed by the deadline). */
+  rrule: string | undefined
+  ruleFields: RepeatRule
+  /** The deadline the write starts the schedule at, if any. */
+  first: string | null
+  /** A new rule, or the row becoming deadline-anchored. */
+  scheduleChanged: boolean
+}
+
+/**
+ * A DEADLINE-ANCHORED result (plan §3.2):
+ *  - `deadline_at: null` and `target_at: null` are 400s (L8; A8 — "Back to
+ *    schedule" — is not built);
+ *  - THE RULE repeats the deadline (`deadlineRule`);
+ *  - THE OCCURRENCE (= the deadline, `occurrenceFor`);
+ *  - THE RELATIVE TARGET (`relativeFor`), validated when the rule's walk
+ *    changes;
+ *  - THE TARGET (`targetFor`).
+ */
+function planDeadlineAnchored(req: Request, becoming: boolean): RepeatPlan {
+  const { input } = req
+  if (input.deadline_at === null) throw new ValidationError(DEADLINE_CLEAR_MESSAGE)
+  if (input.due_at === null) throw new ValidationError(REPEAT_TARGET_CLEAR_MESSAGE)
+  const schedule = deadlineRule(req, becoming)
+  const occurrenceAt = occurrenceFor(req, schedule, becoming)
+  const { relative, validated } = relativeFor(req, schedule, occurrenceAt, becoming)
+  const changed = validated || occurrenceAt !== req.task.occurrence_at
+  const target = targetFor(req, { schedule, occurrenceAt, relative, changed, becoming })
+  return { kind: 'deadline', rrule: schedule.rrule, relative, occurrenceAt, ...target }
+}
+
+/**
+ * The rule, timed by the deadline it starts from: a timeless one takes the
+ * deadline's local time (a 400 when there is none to take), one at another
+ * time than a deadline sent with it is refused. A one-off given its rule
+ * starts the schedule at its own deadline (A3).
+ */
+function deadlineRule({ task, input, rule, ctx }: Request, becoming: boolean): DeadlineSchedule {
+  const ruleChanged = input.rrule !== undefined && input.rrule !== task.rrule
+  const first = input.deadline_at ?? (task.rrule ? null : task.deadline_at)
+  let rrule: string | undefined
+  if (ruleChanged) {
+    const timeless = parseRRule(rule!).byhour === undefined
+    const timeFrom = first ?? task.deadline_at
+    if (timeless && !timeFrom) throw new ValidationError(RULE_NEEDS_TIME_MESSAGE)
+    rrule = timeless ? fillFromDeadline(rule!, timeFrom!, ctx.timezone) : rule!
+    if (first) assertRuleOnDeadline(rrule, null, first, ctx.timezone)
+  }
+  return {
+    rrule,
+    first,
+    scheduleChanged: becoming || ruleChanged,
+    ruleFields: {
+      rrule: rrule ?? rule!,
+      recurrence_mode: input.recurrence_mode ?? task.recurrence_mode,
+      anchor_time: rrule ? null : task.anchor_time,
+    },
+  }
+}
+
+/** Whether the row's target has already arrived. */
+function overTarget(task: PlanTask, now: Date): boolean {
+  return task.due_at !== null && Date.parse(task.due_at) < now.getTime()
+}
+
+/**
+ * THE OCCURRENCE (= the deadline): a deadline sent reschedules THIS
+ * occurrence (and starts a new schedule); with the schedule unchanged it
+ * stays; a new rule on a repeat already over target whose anchor stays keeps
+ * its occurrence (the debt — the next done walks the new rule); else the
+ * rule's first occurrence from now.
+ */
+function occurrenceFor(
+  { task, ctx }: Request,
+  schedule: DeadlineSchedule,
+  becoming: boolean,
+): string {
+  if (schedule.first) return schedule.first
+  const current = task.occurrence_at ?? task.deadline_at
+  if (!schedule.scheduleChanged && current) return current
+  if (!becoming && overTarget(task, ctx.now) && task.occurrence_at) return task.occurrence_at
+  const { rrule, anchor_time } = schedule.ruleFields
+  const { hour, minute } = ruleTimeOfDay(rrule, anchor_time)
+  return computeFirstOccurrence(
+    rrule,
+    formatAnchorTime(hour, minute),
+    ctx.timezone,
+    ctx.now,
+  ).toISOString()
+}
+
+/**
+ * THE RELATIVE TARGET: the offsets sent, merged over the row's (both or
+ * neither, else a 400); becoming deadline-anchored with none — the inverse of
+ * a target sent with it, else the default (A1; `resolveRelativeTarget`
+ * validates those). Kept offsets are validated when the RULE's walk changes
+ * — a new rule or anchor, new offsets, a new mode — never for a reschedule of
+ * this one occurrence (its date is the user's; the next comes from the rule).
+ */
+function relativeFor(
+  { task, input, ctx }: Request,
+  schedule: DeadlineSchedule,
+  occurrenceAt: string,
+  becoming: boolean,
+): { relative: RelativeTarget; validated: boolean } {
+  const days = sent(input.target_days_before, task.target_days_before)
+  const time = sent(input.target_time, task.target_time)
+  if ((days === null) !== (time === null)) throw new ValidationError(RELATIVE_TARGET_PAIR_MESSAGE)
+  const pair = days !== null && time !== null ? { days_before: days, time } : null
+  const offsetsSent = input.target_days_before !== undefined || input.target_time !== undefined
+  const modeChanged = sent(input.recurrence_mode, task.recurrence_mode) !== task.recurrence_mode
+  const validated = schedule.scheduleChanged || offsetsSent || modeChanged
+  if (!pair || becoming) {
+    const relative = resolveRelativeTarget({
+      sent: pair,
+      targetAt: input.due_at ?? null,
+      givenDeadline: occurrenceAt,
+      rule: schedule.ruleFields,
+      firstDeadline: occurrenceAt,
+      timezone: ctx.timezone,
+      morningTime: ctx.morningTime,
+    })
+    return { relative, validated }
+  }
+  if (validated) {
+    const problem = relativeTargetProblem(pair, schedule.ruleFields, occurrenceAt, ctx.timezone)
+    if (problem) throw new ValidationError(RELATIVE_TARGET_MESSAGES[problem])
+  }
+  return { relative: pair, validated }
+}
+
+/**
+ * THE TARGET: a move the caller sent, capped at the deadline while it is
+ * ahead (becoming deadline-anchored with no offsets, the offsets came from
+ * it, so it IS the derived target); else, when the schedule or this
+ * occurrence changed, its derived target — unless the target was MOVED this
+ * occurrence (kept, capped: §8.4's picked target) or, on a schedule change,
+ * already over target (the debt, capped). Otherwise unchanged.
+ */
+function targetFor(
+  { task, input, ctx }: Request,
+  plan: {
+    schedule: DeadlineSchedule
+    occurrenceAt: string
+    relative: RelativeTarget
+    changed: boolean
+    becoming: boolean
+  },
+): { dueAt: string | undefined; capped: boolean } {
+  const cap = (at: string) => capAtDeadline(at, plan.occurrenceAt, ctx.now)
+  if (input.due_at != null) {
+    const dueAt = cap(input.due_at)
+    return { dueAt, capped: dueAt !== input.due_at }
+  }
+  if (!plan.changed) return { dueAt: undefined, capped: false }
+  const moved = !plan.becoming && targetMoved(task, ctx.timezone)
+  const debt = plan.schedule.scheduleChanged && overTarget(task, ctx.now)
+  if ((moved || debt) && task.due_at) return { dueAt: cap(task.due_at), capped: false }
+  const derived = occurrenceDates(
+    {
+      rrule: plan.schedule.ruleFields.rrule,
+      repeat_anchor: 'deadline',
+      target_days_before: plan.relative.days_before,
+      target_time: plan.relative.time,
+    },
+    plan.occurrenceAt,
+    ctx.timezone,
+  )
+  return { dueAt: derived.targetAt, capped: false }
+}
+
+/** A timeless rule with the deadline's local time (`ensureRuleTime`). */
+function fillFromDeadline(rule: string, deadline: string, timezone: string): string {
+  return ensureRuleTime(rule, localTime(deadline, timezone))
 }
