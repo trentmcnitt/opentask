@@ -498,6 +498,19 @@ function formatEditDetails(
         }
         break
       }
+      // Deadline-anchored repeats (2026-10-21): what the schedule's instant is,
+      // and where the target sits before the deadline.
+      case 'repeat_anchor': {
+        const after = after_state.repeat_anchor
+        if (before_state.repeat_anchor !== after) {
+          parts.push(after === 'deadline' ? 'repeats on deadline' : 'repeats on target')
+        }
+        break
+      }
+      case 'target_days_before':
+      case 'target_time':
+        if (!parts.includes('changed target lead')) parts.push('changed target lead')
+        break
       // Skip internal fields that don't need display
       case 'anchor_time':
       case 'anchor_dow':

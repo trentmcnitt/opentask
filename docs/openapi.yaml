@@ -5266,6 +5266,29 @@ components:
           type: [integer, 'null']
         anchor_dom:
           type: [integer, 'null']
+        repeat_anchor:
+          type: [string, 'null']
+          enum: [target, deadline, null]
+          description: >
+            What a repeating task's scheduled instant (`occurrence_at`, the instant its rule walks)
+            IS (2026-10-21). `target`: the occurrence is the target, and the task has no deadline.
+            `deadline`: the occurrence is the DEADLINE (`deadline_at` equals `occurrence_at`), and
+            the target is derived from it — `target_days_before` local calendar days earlier at
+            `target_time`; done and skip move both to the next occurrence. Null on a one-off.
+            Never `deadline` on a reminder or a quota.
+        target_days_before:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 366
+          description: >
+            A deadline-anchored repeat's target: local calendar days from the deadline's date back
+            to the target's date (0 = the same day). Null unless `repeat_anchor` is `deadline`.
+        target_time:
+          type: [string, 'null']
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: >
+            A deadline-anchored repeat's target time of day (HH:MM, the owner's local time). Null
+            unless `repeat_anchor` is `deadline`.
         original_due_at:
           type: [string, 'null']
           format: date-time

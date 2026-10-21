@@ -143,6 +143,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   anchor_time   TEXT,
   anchor_dow    INTEGER,
   anchor_dom    INTEGER,
+  -- What the rule's instant (`occurrence_at`) IS (2026-10-21, deadline-anchored
+  -- repeats; docs/TASK-MODEL.md § Recurrence Model). Read only when rrule is set.
+  --  'target'   — the occurrence is the target; no deadline (every repeat before).
+  --  'deadline' — the occurrence is the DEADLINE (deadline_at mirrors it), and
+  --               the target is derived from it: `target_days_before` local
+  --               calendar days earlier (0 = the same day) at `target_time`
+  --               (HH:MM, local). Both are set iff the anchor is 'deadline'.
+  -- One pure function derives the dates of an occurrence (`occurrenceDates`
+  -- in src/lib/task-segments.ts). Never on a reminder or a quota.
+  repeat_anchor TEXT NOT NULL DEFAULT 'target' CHECK (repeat_anchor IN ('target', 'deadline')),
+  target_days_before INTEGER DEFAULT NULL,
+  target_time   TEXT DEFAULT NULL,
 
   -- Snooze tracking (stores the original due_at when task is first snoozed)
   original_due_at  TEXT,
@@ -295,6 +307,9 @@ CREATE TABLE IF NOT EXISTS completions (
   -- The occurrence it completed (§6, 2026-10-12), so a put-back restores the
   -- schedule as well as the target. NULL on older rows: put-back reads due_at_was.
   occurrence_at_was TEXT,
+  -- The occurrence it advanced TO (2026-10-21): put-back checks the task is
+  -- still on it. NULL on older rows: put-back compares the target (due_at_next).
+  occurrence_at_next TEXT,
   -- The task's attempts when it was completed (§7, 2026-10-12): how many local
   -- days the occurrence was over target. Put-back restores it.
   attempts INTEGER DEFAULT NULL

@@ -102,6 +102,8 @@ export function formatTaskResponse(task: Task, timezone: string): FormattedTask 
     ...task,
     target_at: task.due_at,
     is_recurring: task.rrule !== null,
+    // 2026-10-21: null on a one-off — it has no rule for the anchor to describe.
+    repeat_anchor: task.rrule !== null ? task.repeat_anchor : null,
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),
     // Task queue on: no "Remove target?" on a strippable task (resolution 1).

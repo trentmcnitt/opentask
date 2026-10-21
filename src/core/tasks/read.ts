@@ -36,6 +36,9 @@ const TASK_COLUMNS = [
   'anchor_time',
   'anchor_dow',
   'anchor_dom',
+  'repeat_anchor',
+  'target_days_before',
+  'target_time',
   'original_due_at',
   'deadline_at',
   'horizon',
@@ -288,6 +291,9 @@ export interface TaskRow {
   anchor_time: string | null
   anchor_dow: number | null
   anchor_dom: number | null
+  repeat_anchor?: string | null
+  target_days_before?: number | null
+  target_time?: string | null
   original_due_at: string | null
   deadline_at: string | null
   horizon: string | null
@@ -429,6 +435,9 @@ function baseTask(row: TaskRow): Task {
     anchor_time: row.anchor_time,
     anchor_dow: row.anchor_dow,
     anchor_dom: row.anchor_dom,
+    repeat_anchor: row.repeat_anchor === 'deadline' ? 'deadline' : 'target',
+    target_days_before: row.target_days_before ?? null,
+    target_time: row.target_time ?? null,
     original_due_at: row.original_due_at,
     deadline_at: row.deadline_at ?? null,
     horizon: (row.horizon ?? null) as Task['horizon'],

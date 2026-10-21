@@ -409,6 +409,24 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // Deadline-anchored repeats (2026-10-21). NOT NULL DEFAULT 'target': every
+  // existing repeat is target-anchored as it stands, so no backfill — the one
+  // data step is `migrateRepeatAnchors`, for repeats that carry a deadline.
+  if (!hasColumn(database, 'tasks', 'repeat_anchor')) {
+    database.exec(
+      `ALTER TABLE tasks ADD COLUMN repeat_anchor TEXT NOT NULL DEFAULT 'target'
+         CHECK (repeat_anchor IN ('target', 'deadline'))`,
+    )
+  }
+  if (!hasColumn(database, 'tasks', 'target_days_before')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_days_before INTEGER DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'tasks', 'target_time')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_time TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'completions', 'occurrence_at_next')) {
+    database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_next TEXT DEFAULT NULL')
+  }
   if (!hasColumn(database, 'completions', 'attempts')) {
     database.exec('ALTER TABLE completions ADD COLUMN attempts INTEGER DEFAULT NULL')
   }

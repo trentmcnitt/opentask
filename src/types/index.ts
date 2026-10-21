@@ -64,6 +64,9 @@ export interface QuotaDayState {
   did_applied: Record<string, number>
 }
 
+/** What a repeating task's scheduled instant is (`Task.repeat_anchor`). */
+export type RepeatAnchor = 'target' | 'deadline'
+
 export interface Task {
   id: number
   user_id: number
@@ -88,6 +91,21 @@ export interface Task {
   anchor_time: string | null // HH:MM in user's local timezone
   anchor_dow: number | null // 0=Mon..6=Sun
   anchor_dom: number | null // 1-31
+  /**
+   * What the rule's instant (`occurrence_at`) IS (2026-10-21; read only when
+   * `rrule` is set): 'target' — the occurrence is the target, no deadline;
+   * 'deadline' — the occurrence is the deadline (`deadline_at` mirrors it) and
+   * the target is derived from it, `target_days_before` local calendar days
+   * earlier at `target_time` (HH:MM). Both are set iff the anchor is
+   * 'deadline'. The dates of an occurrence: `occurrenceDates`.
+   *
+   * Null only in API responses, on a one-off (`formatTaskResponse`): the
+   * column is never null, so a row read on the server carries what is stored
+   * ('target' on a one-off) and every undo snapshot can be written back.
+   */
+  repeat_anchor: RepeatAnchor | null
+  target_days_before: number | null
+  target_time: string | null
 
   // The FIRST-TARGET date (2026-10-10): kept by every move, set when a task
   // with no target gets one, cleared with the target, and reset to the next
