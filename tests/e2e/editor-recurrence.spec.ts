@@ -140,6 +140,12 @@ test.describe('Task editor sheet on a phone', () => {
           '· target the same day at 12:00 PM',
         )
         await expect(sheet.locator('[data-task-model-fields]')).not.toContainText('Horizon')
+        // The rule's time is the DEADLINE's: the line and the picker say so.
+        const line = sheet.locator('[data-quick-panel-recurrence]')
+        await expect(line).toHaveText('Deadline Sundays at 11:00 PM')
+        await line.tap()
+        await expect(sheet.locator('[data-recurrence-time-label]')).toHaveText('Deadline')
+        await line.tap()
 
         sheet = await openEditor(page, oneOff)
         await expect(sheet.locator('[data-task-model-fields]')).toContainText('Horizon')
@@ -152,28 +158,24 @@ test.describe('Task editor sheet on a phone', () => {
     }
   })
 
-  test("a recurring task's empty deadline picker opens on the occurrence, not tomorrow", async ({
+  test('a target-anchored repeat offers no deadline; its rule time reads Target', async ({
     authenticatedPage: page,
   }) => {
-    // The noon target is the occurrence; a deadline "before bed that night" is
-    // then just a time change, with no hunting through the calendar for Sunday.
+    // 2026-10-21, until the editor's anchor switch (PR 4): a deadline on a
+    // repeat whose rule walks its target is a 400 (L9), so none is offered.
     const id = await createTask(page, {
       title: uniqueTitle('Timesheet'),
       rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0',
       priority: 2,
     })
-    const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
     try {
       await withPreferences(page, { default_grouping: 'unified' }, async () => {
         const sheet = await openEditor(page, id)
-        await sheet.locator('[data-quick-panel-deadline]').tap()
-        // The picker selects its day as a browser-local Date, so ask the browser.
-        const day = await page.evaluate((iso) => new Date(iso).getDate(), task.due_at as string)
-        const selected = page.locator('[data-selected-single="true"]')
-        await expect(selected).toHaveText(String(day))
-        await expect(page.getByLabel('Hour')).toHaveValue('12')
-        // Opening it stages nothing.
-        await expect(sheet.locator('[data-quick-panel-deadline]')).toContainText('None')
+        const line = sheet.locator('[data-quick-panel-recurrence]')
+        await expect(line).toHaveText('Target Sundays at 12:00 PM')
+        await expect(sheet.locator('[data-quick-panel-deadline]')).toHaveCount(0)
+        await line.tap()
+        await expect(sheet.locator('[data-recurrence-time-label]')).toHaveText('Target')
       })
     } finally {
       await page.request.delete(`/api/tasks/${id}`)

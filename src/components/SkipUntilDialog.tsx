@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatDateTime } from '@/lib/format-date'
+import { occurrenceTarget } from '@/lib/task-segments'
 import { taskWord } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -84,7 +85,9 @@ export function SkipUntilDialog({
   }
 
   const single = tasks.length === 1 ? tasks[0] : null
-  const occurrence = single ? (single.occurrence_at ?? single.due_at) : null
+  // The occurrence's own TARGET day (2026-10-21): on a deadline-anchored
+  // repeat the occurrence is its deadline, and the words name when it nags.
+  const occurrence = single ? occurrenceTarget(single, timezone) : null
   const others = leftAlone > 0 ? ` · ${leftAlone} other ${taskWord(leftAlone)} left as is` : ''
 
   return (

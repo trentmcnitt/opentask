@@ -1,8 +1,8 @@
 'use client'
 
-import { targetReset, type HorizonValue } from '@/lib/task-segments'
+import { isDeadlineAnchored, targetReset, type HorizonValue } from '@/lib/task-segments'
 import { HorizonPicker } from '@/components/HorizonDot'
-import { BACK_TO_AUTO, TARGET_WORD } from '@/lib/task-model-words'
+import { BACK_TO_AUTO, DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { TaskModelFields } from '@/components/TaskModelFields'
 import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
 import { deckLimit } from '@/lib/deck-menu'
@@ -473,6 +473,16 @@ export function QuickActionPanel({
   const displayIsReminder = pendingIsReminder ?? effectiveTask?.is_reminder ?? false
   // Reminders and quotas carry no deadline or horizon (2026-10-10).
   const isReminderLike = displayIsReminder || (effectiveTask ? isTracked(effectiveTask) : false)
+  // DEADLINE-ANCHORED REPEATS (2026-10-21) — until the editor's anchor switch
+  // (PR 4): a repeat whose rule walks its DEADLINE keeps the deadline line (a
+  // deadline edit reschedules this one occurrence) and its rule's time reads
+  // "Deadline". Any other repeat — a target-anchored one, or a rule staged on
+  // a task being made — offers no deadline: the API refuses a deadline on a
+  // target-anchored repeat (L9), and the editor can't yet say which date the
+  // rule walks.
+  const deadlineAnchored =
+    !!displayRrule && !!effectiveTask?.rrule && isDeadlineAnchored(effectiveTask)
+  const offersDeadline = !displayRrule || deadlineAnchored
 
   // Preview of new due_at when changing recurrence for non-overdue tasks
   // This helps users understand what date the task will move to with the new schedule
@@ -1425,7 +1435,7 @@ export function QuickActionPanel({
           {/* Deadline + horizon (2026-10-10): their own lines, never moved by a
               snooze button. Ordinary tasks only — a reminder or a quota has
               neither — and one task at a time (Process sets horizons in bulk). */}
-          {!isBulkMode && !isReminderLike && (
+          {!isBulkMode && !isReminderLike && offersDeadline && (
             <TaskModelFields
               deadline={
                 pendingDeadline !== undefined
@@ -1492,6 +1502,7 @@ export function QuickActionPanel({
           {recurrenceText && (
             <RecurrenceSummaryLine
               text={recurrenceText}
+              word={deadlineAnchored ? DEADLINE_WORD : TARGET_WORD}
               isRecurring={!isBulkMode && !!displayRrule}
               isOneTime={isOneTime}
               dirty={isRruleDirty}
@@ -2009,6 +2020,7 @@ export function QuickActionPanel({
             recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
             initialTime={recurrenceInitialTime}
             defaultDayOfWeek={defaultDayOfWeek}
+            timeLabel={deadlineAnchored ? DEADLINE_WORD : TARGET_WORD}
             onChange={(rrule, mode) => {
               setPendingRrule(rrule)
               if (mode) setPendingRecurrenceMode(mode)
