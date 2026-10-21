@@ -759,7 +759,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   // Parse and validate the enrichment result
   let parsed: EnrichmentResult | null = null
   if (result.structuredOutput) {
-    const validation = EnrichmentResultSchema.safeParse(result.structuredOutput)
+    const validation = parseEnrichmentAnswer(result.structuredOutput, row.id)
     if (validation.success) {
       parsed = validation.data
     } else {
@@ -775,7 +775,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
     if (fenceMatch) textToParse = fenceMatch[1]
     try {
       const json = JSON.parse(textToParse)
-      const validation = EnrichmentResultSchema.safeParse(json)
+      const validation = parseEnrichmentAnswer(json, row.id)
       if (validation.success) parsed = validation.data
     } catch {
       // Not valid JSON text
@@ -2890,6 +2890,28 @@ export function withoutRuleOnDeadline(task: Task, enrichment: EnrichmentResult):
   if (!hasDeadline || !enrichment.rrule || enrichment.rrule === task.rrule) return enrichment
   log.warn('ai', `Enrichment: task ${task.id} has a deadline — its rule not applied (PR 5)`)
   return { ...enrichment, rrule: null }
+}
+
+/**
+ * The model's answer, validated — with an invalid rule DROPPED rather than the
+ * whole answer lost (2026-10-21): a rule `isValidRRule` refuses (one that never
+ * occurs, like the 31st of April) fails only its own field, so the answer is
+ * parsed again without it and the drop is logged. Any other problem fails the
+ * parse as before.
+ */
+export function parseEnrichmentAnswer(
+  output: unknown,
+  taskId: number,
+): ReturnType<typeof EnrichmentResultSchema.safeParse> {
+  const first = EnrichmentResultSchema.safeParse(output)
+  if (first.success || !output || typeof output !== 'object') return first
+  const onlyRule = first.error.issues.every((issue) => issue.path[0] === 'rrule')
+  if (!onlyRule) return first
+  log.warn(
+    'ai',
+    `Enrichment[${taskId}]: invalid rule dropped: ${String((output as { rrule?: unknown }).rrule)}`,
+  )
+  return EnrichmentResultSchema.safeParse({ ...output, rrule: null, recurrence_mode: null })
 }
 
 /** Bookkeeping columns that ride along with a change but are not news to the user. */

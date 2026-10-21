@@ -5,6 +5,7 @@
  * for anti-drift recurrence computation.
  */
 
+import { RRule } from 'rrule'
 import { dowToRRuleDay } from './timezone'
 
 const DAY_CODES: Record<string, number> = { MO: 0, TU: 1, WE: 2, TH: 3, FR: 4, SA: 5, SU: 6 }
@@ -170,7 +171,41 @@ function monthFieldsValid(components: RRuleComponents): boolean {
   const days = Array.isArray(components.bymonthday)
     ? components.bymonthday
     : [components.bymonthday]
-  return !days.some((day) => day === 0 || day < -31 || day > 31)
+  if (days.some((day) => day === 0 || day < -31 || day > 31)) return false
+  return daysFitMonths(days, components.bymonth)
+}
+
+/** The most days each month ever has (February: 29, a leap year's). */
+const MONTH_MAX_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+/**
+ * Every BYMONTHDAY exists in some month the rule names (2026-10-21, the
+ * recurrence oracle): "the 31st" with BYMONTH=4 (or 6, 9, 11), or the 30th of
+ * February, never happens. February 29 does (leap years). No BYMONTH: every
+ * month, so any day 1–31 exists in some.
+ */
+function daysFitMonths(days: number[], months: number[] | undefined): boolean {
+  if (!months || months.length === 0) return true
+  const longest = Math.max(...months.map((m) => MONTH_MAX_DAYS[m - 1]))
+  return days.every((day) => Math.abs(day) <= longest)
+}
+
+/**
+ * Whether the rule ever occurs (2026-10-21): one rrule.js probe for the first
+ * occurrence from the start of this year. Null means it never does in the
+ * years rrule.js searches — "the 31st of September", or a Thursday that must
+ * also be one the months never have — and such a rule is refused, never
+ * stored (`computeNextOccurrence` would have no date to give).
+ */
+function everOccurs(rrule: string): boolean {
+  const start = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1))
+  try {
+    const rule = new RRule({ ...RRule.parseString(rrule), dtstart: start })
+    return rule.after(start, true) !== null
+  } catch {
+    // A form rrule.js's own parser doesn't take: the field checks above stand.
+    return true
+  }
 }
 
 /**
@@ -271,7 +306,7 @@ function validateComponents(components: RRuleComponents): boolean {
  */
 export function isValidRRule(rrule: string): boolean {
   try {
-    return validateComponents(parseRRule(rrule))
+    return validateComponents(parseRRule(rrule)) && everOccurs(rrule)
   } catch {
     return false
   }
