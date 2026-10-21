@@ -251,7 +251,7 @@ Don't add buffers, timeouts, or tolerances to work around symptoms. If something
 - **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`. Common failures: Prettier formatting (fix with `npx prettier --write <files>`), ESLint errors (fix the code, do not suppress).
 - **Node version**: Pinned in `.node-version` at the project root.
 - **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). CI fails on unformatted files (`format:check`). `.prettierignore` excludes `.claude/`, so `npm run format` from the main checkout leaves other sessions' agent worktrees alone.
-- **CI** (`.github/workflows/ci.yml`, on PRs and pushes to `main`): Quality (type-check, lint, format:check), Test, Build, Integration, E2E, Dependency Review. PRs that only touch `ios/` or `macos/` skip the web jobs; `native-logic-tests.yml` runs the Swift `OpenTaskLogicTests` when `ios/`, `macos/` or `tests/fixtures/contract/` change.
+- **CI** (`.github/workflows/ci.yml`, on PRs and pushes to `main`): Quality (type-check, lint, format:check), Test, Build, Integration, E2E (three shards on PRs only; the required `E2E` check is their result), Dependency Review. PRs that only touch `ios/` or `macos/` skip the web jobs; `native-logic-tests.yml` runs the Swift `OpenTaskLogicTests` when `ios/`, `macos/` or `tests/fixtures/contract/` change.
 
 ## Route Handler Guide
 
@@ -331,15 +331,15 @@ Follow the pattern above, and verify:
 
 If a change spans multiple rows in this table, combine the test suites from all matching rows. If a change affects what the user sees on screen (even via a shared utility like `format-task.ts`), treat it as a UI change.
 
-| Change type                                   | What to run                                                                                                                                         |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Every change (always run)                     | The [quick check](#commands)                                                                                                                        |
-| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                            |
-| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                                |
-| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                                     |
-| iOS / macOS app (Swift, project.yml)          | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/AGENTS.md` § Tests), then manual testing on device. |
-| Refactoring / code reorganization             | All test suites                                                                                                                                     |
-| Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed)                 |
+| Change type                                   | What to run                                                                                                                                                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every change (always run)                     | The [quick check](#commands)                                                                                                                                                                              |
+| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                                                                                  |
+| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                                                                                      |
+| UI components, hooks, styles, client behavior | Quick check + the [related E2E specs](#the-full-e2e-suite-is-cis) + **deploy to dev + [browser verification](#ui-verification)**                                                                          |
+| iOS / macOS app (Swift, project.yml)          | Build with `xcodegen` + `xcodebuild`, run the Swift logic tests (`OpenTaskLogicTests`, see `ios/AGENTS.md` § Tests), then manual testing on device.                                                       |
+| Refactoring / code reorganization             | Quick check + `npm run test:integration` + the related E2E specs; the full E2E suite runs in CI                                                                                                           |
+| Production deploy                             | A `main` commit whose PR passed CI: nothing more. Anything CI hasn't passed (a fix branch shipped before merge): quick check + integration + the related E2E specs, and `test:quality` if AI code changed |
 
 During rapid iteration (deploy, verify in browser, fix, re-deploy), the quick check between deploys is sufficient. Run the full checklist on the final version before reporting results.
 
@@ -347,6 +347,12 @@ E2E tests (run locally) and browser verification (run against dev) are complemen
 
 Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
+
+#### The full E2E suite is CI's
+
+Locally, run the E2E specs you added or changed and the specs for the area you touched (`npx playwright test tests/e2e/a.spec.ts tests/e2e/b.spec.ts`), not the whole suite. CI runs every spec on the PR, split three ways (~7 min), and that result is the gate. A full local run is ~13 min and repeats it. Don't run the suites again before a prod deploy of a `main` commit whose PR passed CI.
+
+**Background long runs, and don't poll.** Start E2E, integration and quality runs with `run_in_background` and keep working or end the turn; the harness reports when the job exits. Never wait in an `until grep …; sleep` loop, and never re-read the output file to check on it. Each check is a full turn at the session's whole context (one week in October had 609 of them).
 
 **Run every E2E spec you added or changed locally, and see it pass, before you push.** A new E2E test that has only ever run in CI tends to fail there first: a pixel-exact position, a time-of-day assumption, a second element with the same label. Each such failure costs Trent a red CI run and a notification email. CI is the second check, not the first. If the change is visible on every page (a new floating button, a layout change), run the whole suite, since other specs can trip over it.
 
@@ -388,7 +394,7 @@ During iterative UI verification deploys to dev, committing between each deploy 
 **A UI change is not done until every box is checked.** Note any pre-existing test failures in your results — they do not block this checklist.
 
 - [ ] Quick check passes
-- [ ] E2E tests pass (`npm run test:e2e`)
+- [ ] The related E2E specs pass locally, and the full suite in the PR's CI
 - [ ] Deployed to dev environment (see `CLAUDE.local.md` for deploy commands)
 - [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports (save to `.tmp/`)
 - [ ] Playwright: no console errors/warnings, no failed network requests
