@@ -261,8 +261,8 @@ export function useTaskActions(config: UseTaskActionsConfig) {
           body: JSON.stringify({ until }),
         })
         // A snooze past the deadline stops AT it (§8.2, 2026-10-12): the
-        // server's description says so ("Snoozed to deadline …"), and the
-        // toast below shows it. There is no "Snooze anyway".
+        // server's description says so ("Deferred to deadline …"), and the
+        // toast below shows it. There is no "Defer anyway".
         if (!res.ok) throw new Error('Failed to defer')
         const data = await res.json()
         cfg.onRefresh()

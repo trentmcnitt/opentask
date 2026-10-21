@@ -34,14 +34,14 @@
  *
  * WHAT. Counts only, never titles (Trent: no urgent titles on the lock screen):
  *
- *   "Snoozed 8 tasks until 3:00 PM"
+ *   "Deferred 8 tasks until 3:00 PM"
  *   "2 High and 1 Urgent still overdue. Snooze again to move the High ones"
  *
- *   "Nothing snoozed"
+ *   "Nothing deferred"
  *   "3 Urgent can't be bulk deferred"
  *
  * The title follows `bulkSnoozeMessage` (the web toast and `data.message`):
- * "Snoozed N tasks", or "N high-priority tasks" on the second press of a double
+ * "Deferred N tasks", or "N high-priority tasks" on the second press of a double
  * snooze. With the task queue on (OPENTASK_TASK_QUEUE) it IS that builder's
  * line with every name suppressed (`bulkSnoozeCountSummary`): "3 will move to
  * the Tasks queue at 6:30 AM · Snoozed 1 task". The toast and `summary` name

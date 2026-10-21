@@ -31,7 +31,7 @@ declare global {
 }
 
 /**
- * The "Snoozed N tasks · Undo" toast for a snooze the iOS app did natively,
+ * The "Deferred N tasks · Undo" toast for a snooze the iOS app did natively,
  * from a Home Screen quick action (Trent, 2026-09-28: iOS opens the app for
  * one anyway, so the toast is the confirmation — and the chance to undo).
  *

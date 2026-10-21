@@ -1372,7 +1372,7 @@ function HomeContent({
   // The snooze-all clock and FAB count what a press sweeps: `displayTasks`,
   // the list `useSnoozeOverdue` acts on (no What's Next / signal filter), with
   // the same `isOverdue`. Counting anything else made the badge and the
-  // "Snoozed N" toast disagree.
+  // "Deferred N" toast disagree.
   const { overdueCount: sweepOverdueCount } = useTaskCounts(displayTasks, timezone, now)
   // The nav's Tasks badges read a shared cache; this page is its source of
   // truth. Published from the unfiltered list (reminders excluded, nothing

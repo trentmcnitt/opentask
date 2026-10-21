@@ -277,7 +277,7 @@ function bulkSnoozeCore(skips: BulkSnoozeSkips, list: string): string {
   return `No deferrable tasks (${list} skipped)`
 }
 
-/** `Snoozed 3 tasks`, `Snoozed "Title"`, `Snoozed high-priority "Title"`. */
+/** `Deferred 3 tasks`, `Deferred "Title"`, `Deferred high-priority "Title"`. */
 function snoozedPart(skips: BulkSnoozeSkips, other: number): string {
   const { affected, highAffected = 0, highName, singleName } = skips
   // The one High (B8) by name: "high-priority" when it is High by priority,
