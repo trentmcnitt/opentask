@@ -99,12 +99,14 @@ The output has `on_deck_day` (a local date, `YYYY-MM-DD`) beside `due_at`. **A d
 - Was nothing guessed when uncertain?
 - "Better to leave empty than guess wrong" — was this principle followed?
 
-### 8. Auto-Snooze Correctness
+### 8. Nag Interval Correctness (`auto_snooze_minutes`)
 
-- Was `auto_snooze_minutes` parsed to the correct integer value? ("auto-snooze 30 minutes" = 30, "snooze every 2 hours" = 120)
-- Was `null` returned when auto-snooze was not mentioned?
-- Was `0` returned when the user explicitly disabled auto-snooze? ("no auto-snooze")
-- Was auto-snooze not confused with regular snooze behavior? (regular snooze changes `due_at`; auto-snooze is a repeating reminder interval)
+The app calls this field the **nag** (2026-10-21; "auto-snooze" before) and calls moving a target **defer** ("snooze" before). Users may say either word; both must land the same way.
+
+- Was `auto_snooze_minutes` parsed to the correct integer value? ("nag me every 30 minutes" = 30, "auto-snooze 30 minutes" = 30, "snooze every 2 hours" = 120, "defer reminders every hour" = 60)
+- Was `null` returned when no nag interval was mentioned? A bare verb is not an interval: "nag Dave about the invoice" (nagging someone is the task) and "defer it to Friday" (a day) leave it null.
+- Was `0` returned when the user explicitly turned it off? ("nag off", "don't nag me", "no auto-snooze")
+- Was the nag not confused with deferring? (deferring moves `due_at`; the nag is a repeating reminder interval, never an `rrule`)
 
 ### 9. Recurrence Mode
 
@@ -156,7 +158,7 @@ The output has `on_deck_day` (a local date, `YYYY-MM-DD`) beside `due_at`. **A d
 
 ### 5. Overdue/Deadline Distinction
 
-Task lines show `target:` (soft, snoozable — "overdue" means past it), `deadline:` (the real cutoff, only when set) and `horizon:` (pace, only when set).
+Task lines show `target:` (soft, deferrable — "overdue" means past it), `deadline:` (the real cutoff, only when set) and `horizon:` (pace, only when set).
 
 - A `deadline:` within the week (or passed) is time-sensitive at ANY priority — does commentary treat it as real?
 - A far `deadline:` is not urgent, even at P3-4, even when the target is near.
@@ -171,6 +173,7 @@ Task lines show `target:` (soft, snoozable — "overdue" means past it), `deadli
 - Does the AI only state things derivable from the input data?
 - For P0-2 tasks: is commentary based on task age (created_at) rather than due date gap?
 - Does the AI avoid fabricated counts ("deferred twice", "snoozed X times")?
+- Words (2026-10-21): the app says "overdue" for a task past its target, "defer" for moving a target and names priorities in words. "Overdue" is correct; "snooze" and "P3"/"P4" in user-facing text are word misses.
 - Are notes referenced accurately when present (exact claim numbers, deadlines)?
 - Is no narrative fabricated about what happened between two dates?
 
