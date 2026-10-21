@@ -757,7 +757,7 @@ function DeckTomorrowSlot({
       >
         <DeckTomorrowIcon
           className={panel ? 'size-[18px]' : 'size-[22px]'}
-          // On deck's `Layers2` weight beside it (`DeckFace`).
+          // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
           strokeWidth={1.75}
         />
       </span>
