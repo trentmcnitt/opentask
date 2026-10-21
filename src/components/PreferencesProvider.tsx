@@ -26,7 +26,6 @@ import {
 } from '@/lib/preferences-state'
 import type { TimeSetting } from '@/lib/anchor-times'
 import { anchorPrefsOf, type AnchorPrefKey } from '@/lib/preferences-state'
-import { useSyncStream } from '@/hooks/useSyncStream'
 
 export type { FeatureMode, FeatureInfo, FeatureInfoMap, BulkSnoozeDefault }
 
@@ -424,9 +423,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // Settings writes them with the server's answer (or the same resolver,
   // optimistically) — and a reload takes the server's values for those seven
   // fields only, leaving every other field and the dirty set alone. Reloaded
-  // after a period edit or undo in Settings (`TimeSlotSettings`), when Settings
-  // opens, and on every sync event (`AnchorSync` below): a period moved, a
-  // delete undone or a setting changed in another tab or device moves them.
+  // after a period edit or undo in Settings (`TimeSlotSettings`), and when
+  // Settings opens or its window regains focus (`SnoozeSection`). Deliberately
+  // NOT on sync events: every page already holds its own stream, and a second
+  // stream plus a preferences GET after every task change in every tab costs
+  // latency for a value that only Settings edits. Other pages read the new
+  // anchor times on their next load, like every other preference.
   const [anchorActions] = useState(() => ({
     setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) =>
       setPrefs((prev) => ({ ...prev, ...values })),
@@ -492,20 +494,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         },
       }}
     >
-      {status === 'authenticated' && <AnchorSync reload={anchorActions.reloadPreferences} />}
       {children}
     </PreferencesContext.Provider>
   )
-}
-
-/**
- * Keeps the anchor times current while the app stays open: every sync event
- * (any change by this user, from any client) re-reads them. Rendered only
- * once signed in, so the login page never opens the stream.
- */
-function AnchorSync({ reload }: { reload: () => Promise<boolean> }) {
-  useSyncStream({ onSync: () => void reload() })
-  return null
 }
 
 export function useLabelConfig() {

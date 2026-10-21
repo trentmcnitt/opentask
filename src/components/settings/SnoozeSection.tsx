@@ -51,13 +51,20 @@ export function SnoozeSection({
   const anchors = useAnchorTimes()
   const { reloadPreferences } = anchors
   const [anchorsFresh, setAnchorsFresh] = useState(false)
+  // Read on opening, and again whenever the window comes back into focus — a
+  // period or setting changed in another tab or on another device shows here
+  // before the user edits from a stale copy.
   useEffect(() => {
     let cancelled = false
-    void reloadPreferences().then((ok) => {
-      if (!cancelled && ok) setAnchorsFresh(true)
-    })
+    const reload = () =>
+      void reloadPreferences().then((ok) => {
+        if (!cancelled && ok) setAnchorsFresh(true)
+      })
+    reload()
+    window.addEventListener('focus', reload)
     return () => {
       cancelled = true
+      window.removeEventListener('focus', reload)
     }
   }, [reloadPreferences])
   const rowsReady = slotsLoaded && anchorsFresh
