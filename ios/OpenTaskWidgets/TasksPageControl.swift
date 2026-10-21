@@ -93,7 +93,7 @@ struct TasksPageControl: View {
                 // the lifted dark-mode text plum.
                 selectedFill: WidgetTheme.overTargetBadge(colorScheme),
                 dimmed: entry.overdueTotalCount == 0,
-                label: "\(TaskWording.overTarget), \(entry.overdueTotalCount)"
+                label: "\(TaskWording.overdue), \(entry.overdueTotalCount)"
             )
             segment(
                 page: WidgetStore.allProjects, word: "Today",

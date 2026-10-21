@@ -95,7 +95,7 @@ enum MenuActions {
                 if result.tasksAffected == 0 {
                     alert(
                         style: .informational,
-                        title: "Nothing to snooze",
+                        title: "Nothing to defer",
                         message: nothingToSnoozeMessage(result)
                     )
                 }
@@ -130,9 +130,9 @@ enum MenuActions {
                 total += n
             }
         }
-        guard !parts.isEmpty else { return "Nothing \(TaskWording.overTargetLower)." }
-        return "\(parts.joined(separator: " and ")) task\(total == 1 ? " is" : "s are") still \(TaskWording.overTargetLower). "
-            + "Urgent tasks are never bulk-snoozed, and High tasks only once nothing lower is left."
+        guard !parts.isEmpty else { return "Nothing \(TaskWording.overdueLower)." }
+        return "\(parts.joined(separator: " and ")) task\(total == 1 ? " is" : "s are") still \(TaskWording.overdueLower). "
+            + "Urgent tasks are never bulk-deferred, and High tasks only once nothing lower is left."
     }
 
     private static func alert(style: NSAlert.Style, title: String, message: String) {

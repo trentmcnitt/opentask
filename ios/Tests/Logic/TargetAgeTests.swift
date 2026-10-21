@@ -69,7 +69,7 @@ final class TargetAgeTests: XCTestCase {
     }
 
     func testWordingIsOneConstant() {
-        XCTAssertEqual(TaskWording.overTarget, "Over target")
-        XCTAssertEqual(TaskWording.overTargetLower, "over target")
+        XCTAssertEqual(TaskWording.overdue, "Overdue")
+        XCTAssertEqual(TaskWording.overdueLower, "overdue")
     }
 }

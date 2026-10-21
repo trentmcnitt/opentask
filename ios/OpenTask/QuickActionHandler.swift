@@ -10,7 +10,7 @@ import WidgetKit
 /// page, which is already on screen — iOS always opens the app for a Home
 /// Screen quick action, so the page is where the answer goes: the result is
 /// handed to it (`WebViewManager.deliverSnoozeResult`) and it shows the same
-/// "Snoozed N tasks · Undo" toast its own snooze does (Trent, 2026-09-28: the
+/// "Deferred N tasks · Undo" toast its own snooze does (Trent, 2026-09-28: the
 /// toast "would have acted as a notification and also given me a chance to
 /// undo"). A local notification was tried first and dropped — pointless with
 /// the app already open. For the same reason every call here sends

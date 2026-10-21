@@ -36,7 +36,7 @@ final class MenuBarModel: ObservableObject {
     /// Rows with an action in flight — drawn dimmed, buttons disabled.
     @Published private(set) var busyIds: Set<Int> = []
     @Published private(set) var isSweeping = false
-    /// One line of feedback under the bulk bar ("Snoozed 12 · 2 Urgent left"),
+    /// One line of feedback under the bulk bar ("Deferred 12 · 2 Urgent left"),
     /// cleared on the next action or refresh.
     @Published private(set) var note: String?
     @Published var draftTitle = ""
@@ -142,10 +142,10 @@ final class MenuBarModel: ObservableObject {
         act(on: task.id) {
             var capped = false
             let moved = await TaskSnoozePlan.send(requests, onCappedAtDeadline: { _ in capped = true })
-            guard moved.contains(task.id) else { return "Couldn't snooze \"\(task.title)\"" }
+            guard moved.contains(task.id) else { return "Couldn't defer \"\(task.title)\"" }
             // Ruling A3: a quick snooze stops AT a deadline still ahead — say so.
             guard capped, let deadline = task.deadlineDate else { return nil }
-            return "Snoozed to deadline \(deadline.formatted(date: .omitted, time: .shortened))"
+            return "Deferred to deadline \(deadline.formatted(date: .omitted, time: .shortened))"
         }
     }
 
@@ -181,7 +181,7 @@ final class MenuBarModel: ObservableObject {
                 }
                 note = Self.sweepSummary(result)
             } catch {
-                note = "Snooze failed — try again"
+                note = "Defer failed — try again"
             }
             await refresh()
             isSweeping = false
@@ -191,7 +191,7 @@ final class MenuBarModel: ObservableObject {
     static func sweepSummary(_ result: APIClient.BulkSnoozeResult) -> String {
         var parts: [String] = []
         let n = result.tasksAffected
-        parts.append(n == 0 ? "Nothing to snooze" : "Snoozed \(n) \(n == 1 ? "task" : "tasks")")
+        parts.append(n == 0 ? "Nothing to defer" : "Deferred \(n) \(n == 1 ? "task" : "tasks")")
         // What stayed behind, in the menu bar's short wording (`SweepLine`).
         // "Included N High" is left out: the headline already counts them.
         for line in result.summaryLines {

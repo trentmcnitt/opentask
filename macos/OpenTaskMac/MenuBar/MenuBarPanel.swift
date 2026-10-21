@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Row controls mirror the phone Tasks widget's snooze mode: a circle to
 /// complete, "⏭" for the next period, "+1h". The bulk bar is the widget's
-/// "All over target (N): ⏭ 4:30 PM · +1h".
+/// "All overdue (N): ⏭ 4:30 PM · +1h".
 struct MenuBarPanel: View {
     /// Over target (2026-10-11): the calm plum the widgets and the web use
     /// (`WidgetTheme.overTarget`, `--over-target`) — never red. Lifted in
@@ -77,7 +77,7 @@ struct MenuBarPanel: View {
     private var summary: String {
         guard model.hasLoaded else { return "Loading…" }
         let n = model.overdue.count
-        return n == 0 ? "Nothing \(TaskWording.overTargetLower)" : "\(n) \(TaskWording.overTargetLower)"
+        return n == 0 ? "Nothing \(TaskWording.overdueLower)" : "\(n) \(TaskWording.overdueLower)"
     }
 
     // MARK: - Quick add
@@ -182,7 +182,7 @@ struct MenuBarPanel: View {
                         .accessibilityLabel(Text(
                             TargetAge.attemptsBadge(task) == nil
                                 ? dueText(due, isOverdue: isOverdue)
-                                : "\(dueText(due, isOverdue: isOverdue)), \(TaskWording.overTargetLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")"
+                                : "\(dueText(due, isOverdue: isOverdue)), \(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")"
                         ))
                     }
                 }
@@ -201,7 +201,7 @@ struct MenuBarPanel: View {
                 pill(systemImage: nil, text: "+1h", filled: false) {
                     model.snooze(task, .plusOneHour)
                 }
-                .help("Snooze one hour")
+                .help("Defer one hour")
             }
         }
         .opacity(busy ? 0.4 : 1)
@@ -212,7 +212,7 @@ struct MenuBarPanel: View {
 
     private var bulkBar: some View {
         HStack(spacing: 6) {
-            Text("All \(TaskWording.overTargetLower) (\(model.sweepCount)):")
+            Text("All \(TaskWording.overdueLower) (\(model.sweepCount)):")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 4)
@@ -226,11 +226,11 @@ struct MenuBarPanel: View {
             ) {
                 model.snoozeAll(.nextPeriod)
             }
-            .help("Snooze everything \(TaskWording.overTargetLower) to the next period")
+            .help("Defer everything \(TaskWording.overdueLower) to the next period")
             pill(systemImage: nil, text: "+1h", filled: false) {
                 model.snoozeAll(.plusOneHour)
             }
-            .help("Snooze everything \(TaskWording.overTargetLower) one hour")
+            .help("Defer everything \(TaskWording.overdueLower) one hour")
         }
         .disabled(model.isSweeping)
     }
@@ -275,7 +275,7 @@ struct MenuBarPanel: View {
 
     private func nextPeriodHelp(for task: TaskDTO) -> String {
         let target = TaskSnoozePlan.target(.nextPeriod, dueAt: task.dueDate, now: model.now, slots: model.slots)
-        return target.map { "Snooze to \(DateHelpers.formatShortTime($0))" } ?? "Snooze to the next period"
+        return target.map { "Defer to \(DateHelpers.formatShortTime($0))" } ?? "Defer to the next period"
     }
 
     private func openApp(path: String) {

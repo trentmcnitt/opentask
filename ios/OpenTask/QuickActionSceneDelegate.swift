@@ -12,7 +12,7 @@ import UIKit
 ///
 /// It replaces `SceneDelegateInterceptor` (2026-09-28), which swapped itself
 /// in for SwiftUI's own scene delegate on each activation and relied on the
-/// `scenePhase` observer for cold launches. Trent's "Snooze All +1hr" from
+/// `scenePhase` observer for cold launches. Trent's "Defer All +1hr" from
 /// the icon menu reached neither: the server saw no request at all.
 final class QuickActionSceneDelegate: NSObject, UIWindowSceneDelegate {
 

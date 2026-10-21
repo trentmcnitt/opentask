@@ -14,7 +14,7 @@ struct SetupView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Enter your OpenTask server URL to enable push notifications with snooze actions.")
+                    Text("Enter your OpenTask server URL to enable push notifications with defer actions.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

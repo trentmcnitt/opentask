@@ -26,18 +26,18 @@ struct OpenTaskCommands: Commands {
 
             Divider()
 
-            Button("Snooze All +1hr") {
-                MenuActions.snoozeAll(deltaMinutes: 60, label: "Snooze All +1hr")
+            Button("Defer All +1hr") {
+                MenuActions.snoozeAll(deltaMinutes: 60, label: "Defer All +1hr")
             }
             .keyboardShortcut("1", modifiers: [.command, .control])
 
-            Button("Snooze All +2hr") {
-                MenuActions.snoozeAll(deltaMinutes: 120, label: "Snooze All +2hr")
+            Button("Defer All +2hr") {
+                MenuActions.snoozeAll(deltaMinutes: 120, label: "Defer All +2hr")
             }
             .keyboardShortcut("2", modifiers: [.command, .control])
 
-            Button("Snooze All to Tomorrow") {
-                MenuActions.snoozeAllToTomorrow(label: "Snooze All to Tomorrow")
+            Button("Defer All to Tomorrow") {
+                MenuActions.snoozeAllToTomorrow(label: "Defer All to Tomorrow")
             }
             .keyboardShortcut("3", modifiers: [.command, .control])
         }

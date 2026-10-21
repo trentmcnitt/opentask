@@ -118,7 +118,7 @@ final class WidgetRenderTests: XCTestCase {
             staleSince: nil, isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
         )
 
-        // Tasks: the Over target page, Today (the default page), and a
+        // Tasks: the Overdue page, Today (the default page), and a
         // finished day (every task due today completed, nothing over).
         let provider = TasksProvider()
         let snapshot = TaskFeed.Snapshot(
@@ -183,7 +183,7 @@ final class WidgetRenderTests: XCTestCase {
                     TasksWidgetView(entry: tasksDefault, familyOverride: family), size: size, scheme: scheme,
                     wash: tasksDefault.isDayComplete,
                     name: "widget-tasks-\(familyName)-\(theme)",
-                    shows: "Tasks widget, \(familyName), the Over target page", theme: theme, env: env
+                    shows: "Tasks widget, \(familyName), the Overdue page", theme: theme, env: env
                 )
                 try render(
                     TasksWidgetView(entry: tasksToday, familyOverride: family), size: size, scheme: scheme,

@@ -5,8 +5,8 @@ import Foundation
 /// step with that file.
 ///
 /// A task's `due_at` is its TARGET: when nagging starts. Once the target has
-/// passed the task is "over target" (`TaskWording.overTarget`, what used to be
-/// "overdue"). Since 2026-10-12 (spec §8) a deadline's target is STORED — a
+/// passed the task is "overdue" (`TaskWording.overdue`; the UI said "over
+/// target" from 2026-10-10 to 2026-10-21). Since 2026-10-12 (spec §8) a deadline's target is STORED — a
 /// one-off with a deadline always carries a real `due_at`, flagged
 /// `target_auto` when the user didn't pick it — so `due_at` is the whole
 /// answer. The native port of the old IMPLIED target (computed from the
@@ -243,16 +243,18 @@ enum SegmentMetaPlacement: Equatable {
     }
 }
 
-/// User-facing words of the 2026-10-10 task model that are PROVISIONAL
-/// (amendment 4): each lives in exactly one constant so a rename is one edit.
-/// API names are unchanged — the server still says `overdue` in
-/// `/api/tasks/counts`, and the `opentask://overdue` deep link keeps its host.
+/// User-facing words of the task model, each in exactly one constant so a
+/// ruling is one edit — the twin of the web's `src/lib/task-model-words.ts`.
+/// "Overdue" is settled (Trent, 2026-10-21: "over target", used from
+/// 2026-10-10, went back to "overdue"). API names are unchanged — the server
+/// says `overdue` in `/api/tasks/counts`, and the `opentask://overdue` deep
+/// link keeps its host.
 enum TaskWording {
-    /// What used to read "Overdue": a task whose target has passed.
-    static let overTarget = "Over target"
+    /// A task whose target has passed ("Over target" 2026-10-10 to 10-21).
+    static let overdue = "Overdue"
 
-    /// Mid-sentence form: "3 over target".
-    static var overTargetLower: String { overTarget.lowercased() }
+    /// Mid-sentence form: "3 overdue".
+    static var overdueLower: String { overdue.lowercased() }
 
     /// The past-deadline marker's word.
     static let pastDeadline = "Past deadline"
