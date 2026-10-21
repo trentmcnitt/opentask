@@ -330,7 +330,12 @@ describe('Skip until: batches, undo and checks', () => {
   test('SKU-015: the plan is pure — a far date walks a daily rule without a write', () => {
     const t = make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', due_at: at('2026-01-16T09:00') })
     const plan = planSkipUntil(t, tz, '2026-04-15', new Date())
-    expect(plan).toEqual({ kind: 'skip', landing: at('2026-04-15T09:00'), skipped: 89 })
+    expect(plan).toEqual({
+      kind: 'skip',
+      landing: at('2026-04-15T09:00'),
+      skipped: 89,
+      keepDeck: false,
+    })
     expect(task(t.id).skip_count ?? 0).toBe(0)
   })
 })
@@ -361,9 +366,29 @@ describe('Skip until: targets, far dates and rule times', () => {
 
     const entries = undoEntries()
     expect(entries.at(-1)!.action).toBe('bulk_skip')
+    // The undo / History words match the toast.
+    const { description } = getDb()
+      .prepare('SELECT description FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+      .get(TEST_USER_ID) as { description: string }
+    expect(description).toBe('Moved "Task" to its occurrence')
     executeUndo(TEST_USER_ID)
     expect(task(t.id).due_at).toBe(at('2026-01-16T09:00'))
     expect(task(t.id).queue_mark).toBe(true)
+  })
+
+  test('SKU-016b: a deadline before the date already holds the target — a re-run writes nothing', () => {
+    const t = make({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
+      due_at: at('2026-01-19T09:00'),
+    })
+    // The occurrence Mon Jan 19; the deadline Sat Jan 17 noon caps the target there.
+    set(t.id, { due_at: at('2026-01-17T12:00'), deadline_at: at('2026-01-17T12:00') })
+    const before = undoEntries().length
+    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-18' })
+    expect(r.tasksAffected).toBe(0)
+    expect(r.alreadyClear).toBe(1)
+    expect(task(t.id).due_at).toBe(at('2026-01-17T12:00'))
+    expect(undoEntries().length).toBe(before)
   })
 
   test('SKU-017: a multi-BYHOUR daily rule two years out, counted in one pass', () => {
@@ -375,7 +400,12 @@ describe('Skip until: targets, far dates and rule times', () => {
     const plan = planSkipUntil(task(t.id), tz, '2028-01-16', new Date())
     expect(performance.now() - started).toBeLessThan(1000)
     // Jan 16 2026 up to Jan 15 2028: 730 days.
-    expect(plan).toEqual({ kind: 'skip', landing: at('2028-01-16T09:00'), skipped: 730 })
+    expect(plan).toEqual({
+      kind: 'skip',
+      landing: at('2028-01-16T09:00'),
+      skipped: 730,
+      keepDeck: false,
+    })
   })
 
   test('SKU-018: past the guard is a 400 (ValidationError), never a 500', () => {
@@ -418,21 +448,21 @@ describe('Skip until: on deck and ordinal rules', () => {
 
   const DAILY_9 = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0'
 
-  /** A daily at 09:00 whose occurrence is tomorrow, decked for today. */
-  function deckedDaily(): Task {
+  /** A daily at 09:00 whose occurrence is tomorrow, decked for `day` (today by default). */
+  function deckedDaily(day = '2026-01-15'): Task {
     const t = make({ rrule: DAILY_9, due_at: at('2026-01-16T09:00') })
-    const r = deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day: '2026-01-15' })
+    const r = deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day })
     expect(r.refused).toEqual([])
     const decked = task(t.id)
     // A decked repeating task: no target, its occurrence kept.
-    expect(decked.on_deck_day).toBe('2026-01-15')
+    expect(decked.on_deck_day).toBe(day)
     expect(decked.due_at).toBeNull()
     expect(decked.occurrence_at).toBe(at('2026-01-16T09:00'))
     return decked
   }
 
-  test('SKU-020: a decked repeating task is skipped from its occurrence; the deck goes, undo restores it', () => {
-    const t = deckedDaily()
+  test('SKU-020: a deck the day before the date goes; the target lands on the occurrence; undo restores the deck', () => {
+    const t = deckedDaily('2026-01-19')
     const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-20' })
     const after = task(t.id)
     expect(after.on_deck_day).toBeNull()
@@ -447,7 +477,7 @@ describe('Skip until: on deck and ordinal rules', () => {
 
     executeUndo(TEST_USER_ID)
     const undone = task(t.id)
-    expect(undone.on_deck_day).toBe('2026-01-15')
+    expect(undone.on_deck_day).toBe('2026-01-19')
     expect(undone.due_at).toBeNull()
     expect(undone.occurrence_at).toBe(at('2026-01-16T09:00'))
   })
@@ -472,7 +502,7 @@ describe('Skip until: on deck and ordinal rules', () => {
     expect(task(t.id).due_at).toBeNull()
   })
 
-  test('SKU-023: a decked task whose occurrence is already past the date gets its target back, no skip', () => {
+  test('SKU-023: a deck before the date, occurrence already past it — the target comes back, no skip', () => {
     const weekly = make({
       rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
       due_at: at('2026-01-19T09:00'),
@@ -495,6 +525,80 @@ describe('Skip until: on deck and ordinal rules', () => {
     executeUndo(TEST_USER_ID)
     expect(task(weekly.id).on_deck_day).toBe('2026-01-15')
     expect(task(weekly.id).due_at).toBeNull()
+  })
+
+  test.each([
+    ['on the date', '2026-01-20'],
+    ['after the date', '2026-01-22'],
+  ])('SKU-025: a deck %s is kept — still decked, the occurrence moved; undo', (_, day) => {
+    const t = deckedDaily(day)
+    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-20' })
+    const after = task(t.id)
+    // The deck stays and now refers to the landing occurrence; no target.
+    expect(after.on_deck_day).toBe(day)
+    expect(after.due_at).toBeNull()
+    // The same landing and count as an undecked skip: Jan 16–19.
+    expect(after.occurrence_at).toBe(at('2026-01-20T09:00'))
+    expect(after.skip_count).toBe(4)
+    expect(r.occurrencesSkipped).toBe(4)
+    expect(r.tasksAffected).toBe(1)
+    const entry = undoEntries().at(-1)!
+    expect(entry.action).toBe('bulk_skip')
+    // The deck is not part of the write: the snapshot leaves it alone.
+    expect(JSON.parse(entry.snapshot)[0].after_state).not.toHaveProperty('on_deck_day')
+    expect(JSON.parse(entry.snapshot)[0].after_state.due_at).toBeNull()
+
+    executeUndo(TEST_USER_ID)
+    const undone = task(t.id)
+    expect(undone.on_deck_day).toBe(day)
+    expect(undone.due_at).toBeNull()
+    expect(undone.occurrence_at).toBe(at('2026-01-16T09:00'))
+    expect(undone.skip_count ?? 0).toBe(0)
+
+    executeRedo(TEST_USER_ID)
+    expect(task(t.id).occurrence_at).toBe(at('2026-01-20T09:00'))
+    expect(task(t.id).on_deck_day).toBe(day)
+  })
+
+  test('SKU-026: a deck on or after the date with the occurrence already past it is already clear', () => {
+    const weekly = make({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
+      due_at: at('2026-01-19T09:00'),
+    })
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [weekly.id], day: '2026-01-17' })
+    const before = undoEntries().length
+    const r = skipUntil({ ...u, taskIds: [weekly.id], until: '2026-01-17' })
+    expect(r.alreadyClear).toBe(1)
+    expect(r.tasksAffected).toBe(0)
+    expect(task(weekly.id).on_deck_day).toBe('2026-01-17')
+    expect(task(weekly.id).due_at).toBeNull()
+    expect(undoEntries().length).toBe(before)
+  })
+
+  test('SKU-028: a kept deck with no occurrence on the row (an old row) lands on the walk', () => {
+    const t = deckedDaily('2026-01-22')
+    set(t.id, { occurrence_at: null })
+    const r = skipUntil({ ...u, taskIds: [t.id], until: '2026-01-20' })
+    const after = task(t.id)
+    // Walked from now (Jan 15 10:00), the occurrence set to the landing one.
+    expect(after.occurrence_at).toBe(at('2026-01-20T09:00'))
+    expect(after.on_deck_day).toBe('2026-01-22')
+    expect(after.due_at).toBeNull()
+    // With no occurrence on the row, the walk still counts one for "the current
+    // occurrence" (as every skip does), then Jan 16–19 before the date.
+    expect(r.occurrencesSkipped).toBe(5)
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id).occurrence_at).toBeNull()
+    expect(task(t.id).on_deck_day).toBe('2026-01-22')
+  })
+
+  test('SKU-027: skip this occurrence (no date) clears even a later deck', () => {
+    const t = deckedDaily('2026-01-22')
+    skipUntil({ ...u, taskIds: [t.id], until: null })
+    expect(task(t.id).on_deck_day).toBeNull()
+    expect(task(t.id).due_at).toBe(at('2026-01-17T09:00'))
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id).on_deck_day).toBe('2026-01-22')
   })
 
   test('SKU-024: monthly on the 1st Saturday lands on the right 1st Saturday', () => {

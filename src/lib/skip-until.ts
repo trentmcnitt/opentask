@@ -32,6 +32,8 @@ export function canSkipUntil(
 export interface SkipUntilResponse {
   tasks_affected: number
   occurrences_skipped: number
+  /** Nothing to skip, but the target (or a deck) was before the date: moved to the occurrence. */
+  targets_moved: number
   skipped_not_repeating: number
   skipped_reminders: number
   skipped_quotas: number

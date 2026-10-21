@@ -22,15 +22,24 @@
  *   target write, no skip; counted as affected and in `targetsMoved`). Only a
  *   task whose target AND occurrence are both on or after the date is left as
  *   it is (`already_clear`).
- * - ON DECK (2026-10-20, ruling E): skip-until takes a task off deck, in the
- *   same write and undo snapshot. A decked repeating task has no target
- *   (`due_at` NULL, its occurrence kept), so every rule here reads the
- *   occurrence (`occurrence_at`), never the null target, and the write
- *   leaves a target on the landing occurrence — never a repeating task with
- *   neither a target nor a deck. So a decked task whose occurrence is
- *   already on or after the date is not `already_clear`: like an early
- *   target, it is retargeted to its occurrence, the deck cleared. Undo puts
- *   the deck back.
+ * - ON DECK (designer ruling, 2026-10-21): "skip until Sunday" means
+ *   nothing BEFORE Sunday, and a deck already planned for Monday is part of
+ *   the after. A decked repeating task has no target (`due_at` NULL, its
+ *   occurrence kept), so every rule here reads the occurrence
+ *   (`occurrence_at`), never the null target.
+ *   - A deck day BEFORE the date is cleared in the same write and undo
+ *     snapshot, and the task gets a target at its landing occurrence (or,
+ *     with its occurrence already on or after the date, back on that
+ *     occurrence: a retarget). Never a repeating task with neither.
+ *   - A deck day ON or AFTER the date is kept: the occurrence still moves to
+ *     the landing one with the same skip count, the target stays NULL and
+ *     `on_deck_day` is unchanged — the deck now refers to the landing
+ *     occurrence. With nothing to skip, the task is `already_clear`. A1
+ *     (decks never nag) needs no new check: the deadline only moves forward
+ *     with the occurrence (`advanceDeadline`), and the deck day already sat
+ *     before the old deadline's day (`deckRefusal`, checked when decked).
+ *   - "Skip this occurrence" (no date) always clears the deck, like
+ *     `skipOccurrence`.
  * - a from_completion rule (resolution 7): it has no schedule to walk, so it
  *   lands on the date at the rule's time of day, and the interval restarts
  *   from there — never earlier than the plain (no-date) skip would land.
@@ -60,7 +69,7 @@ import {
   isRecurring,
   computeNextOccurrence,
   occurrencesFromDue,
-  ruleTimeOf,
+  ruleTimeOfDay,
 } from '@/core/recurrence'
 import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
@@ -95,7 +104,8 @@ export type SkipUntilLeaveReason =
   | 'already_clear'
 
 export type SkipUntilPlan =
-  | { kind: 'skip'; landing: string; skipped: number }
+  /** `keepDeck`: the task's deck day is on or after the date, so the deck stays. */
+  | { kind: 'skip'; landing: string; skipped: number; keepDeck: boolean }
   /** Nothing to skip, but the target was pulled before the date: it goes back to the occurrence. */
   | { kind: 'retarget'; landing: string }
   | { kind: 'leave'; reason: SkipUntilLeaveReason }
@@ -114,6 +124,7 @@ type PlanTask = Pick<
   | 'deleted_at'
   | 'archived_at'
   | 'on_deck_day'
+  | 'deadline_at'
 >
 
 /** Why a task in the batch is not one skip-until moves, or null when it is. */
@@ -161,7 +172,7 @@ function walkFromDue(
 
 /**
  * A from_completion rule (resolution 7) has no schedule to walk, so it lands
- * on the date itself at the rule's time (`ruleTimeOf`, the fallback the next
+ * on the date itself at the rule's time (`ruleTimeOfDay`, the fallback the next
  * Done uses too) and the interval restarts from there — but NEVER earlier
  * than the plain skip would land: the floor is exactly the no-date skip's
  * landing (`nextOccurrenceAfterSkip`, the path `skipOccurrence` uses — for
@@ -197,7 +208,7 @@ function walkFromCompletion(
     if (++skipped > MAX_SKIPPED) throw tooManySkips()
     at = step(at)
   }
-  const { hour, minute } = ruleTimeOf(task.rrule!, task.anchor_time)
+  const { hour, minute } = ruleTimeOfDay(task.rrule!, task.anchor_time)
   const onTheDay = untilDay.set({ hour, minute, second: 0, millisecond: 0 }).toJSDate()
   const landing = onTheDay > plain ? onTheDay : plain
   return { landing: landing.toISOString(), skipped }
@@ -223,17 +234,30 @@ export function planSkipUntil(
   const reason = leaveReason(task)
   if (reason) return { kind: 'leave', reason }
   if (until === null) {
-    return { kind: 'skip', landing: nextOccurrenceAfterSkip(task, timezone, now), skipped: 1 }
+    return {
+      kind: 'skip',
+      landing: nextOccurrenceAfterSkip(task, timezone, now),
+      skipped: 1,
+      keepDeck: false,
+    }
   }
   const untilDay = DateTime.fromISO(until, { zone: timezone }).startOf('day')
   const untilStart = untilDay.toJSDate()
+  // A deck on or after the date is part of the after: it stays. Both days are
+  // `yyyy-MM-dd` in the user's timezone, so the string compare is the day compare.
+  const keepDeck = !!task.on_deck_day && task.due_at === null && task.on_deck_day >= until
   // A decked repeating task has `due_at` NULL: its occurrence is the truth.
   const occurrence = task.occurrence_at ?? task.due_at
   if (occurrence && Date.parse(occurrence) >= untilStart.getTime()) {
     const targetEarly = task.due_at !== null && Date.parse(task.due_at) < untilStart.getTime()
-    // Ruling E: skip-until always takes a task off deck, so a decked task is never
-    // left alone — its target goes back on the occurrence and the deck is cleared.
-    if (targetEarly || task.on_deck_day) {
+    const deckEarly = !!task.on_deck_day && !keepDeck
+    // The target the retarget would write: the occurrence, capped at a deadline
+    // still ahead. A deadline before the date already holds the target there, so
+    // a re-run with no deck to clear would rewrite the same target — nothing to do.
+    const capped = capAtDeadline(occurrence, task.deadline_at, now)
+    const sameTarget = task.due_at !== null && Date.parse(task.due_at) === Date.parse(capped)
+    // A deck before the date goes, and the target comes back on the occurrence.
+    if (deckEarly || (targetEarly && !sameTarget)) {
       return { kind: 'retarget', landing: occurrence }
     }
     return { kind: 'leave', reason: 'already_clear' }
@@ -242,7 +266,7 @@ export function planSkipUntil(
     task.recurrence_mode === 'from_completion'
       ? walkFromCompletion(task, timezone, untilDay, now)
       : walkFromDue(task, timezone, untilStart, now)
-  return { kind: 'skip', ...walked }
+  return { kind: 'skip', ...walked, keepDeck }
 }
 
 /**
@@ -400,6 +424,8 @@ interface PlannedWrite {
   task: Task
   landing: string
   skipped: number
+  /** A skip that keeps the task's deck (its day on or after the date). */
+  keepDeck: boolean
 }
 
 /** Skip every repeating task in the batch to `until` (or past this occurrence). */
@@ -419,9 +445,11 @@ export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
   const planned: PlannedWrite[] = []
   for (const task of batch) {
     const plan = planSkipUntil(task, userTimezone, until, now)
-    if (plan.kind === 'skip') planned.push({ task, landing: plan.landing, skipped: plan.skipped })
-    else if (plan.kind === 'retarget') planned.push({ task, landing: plan.landing, skipped: 0 })
-    else counts[LEAVE_COUNTER[plan.reason]] += 1
+    if (plan.kind === 'skip') {
+      planned.push({ task, landing: plan.landing, skipped: plan.skipped, keepDeck: plan.keepDeck })
+    } else if (plan.kind === 'retarget') {
+      planned.push({ task, landing: plan.landing, skipped: 0, keepDeck: false })
+    } else counts[LEAVE_COUNTER[plan.reason]] += 1
   }
 
   const occurrencesSkipped = planned.reduce((sum, p) => sum + p.skipped, 0)
@@ -499,7 +527,7 @@ function writeSkips(
     const activity: ActivityEntry[] = []
     const afters: Task[] = []
     let fields: string[] = []
-    for (const { task, landing, skipped } of planned) {
+    for (const { task, landing, skipped, keepDeck } of planned) {
       const { after, fieldsChanged } =
         skipped > 0
           ? writeRecurringSkip(tx, {
@@ -508,6 +536,7 @@ function writeSkips(
               skipsAdded: skipped,
               nowStr,
               timezone,
+              keepDeck,
             })
           : writeRetarget(tx, task, landing, nowStr)
       snapshots.push(createTaskSnapshot(task, after, fieldsChanged))
@@ -526,8 +555,14 @@ function writeSkips(
       afters.push(after)
     }
     const to = until ? ` until ${untilLabel(until)}` : ''
-    const description =
-      planned.length === 1
+    // The undo / History words match the toast: a batch that only moved
+    // targets back onto their occurrences says so.
+    const onlyMoved = planned.every((p) => p.skipped === 0)
+    const description = onlyMoved
+      ? planned.length === 1
+        ? `Moved "${planned[0].task.title}" to its occurrence`
+        : `Moved ${planned.length} tasks to their occurrence`
+      : planned.length === 1
         ? `Skipped "${planned[0].task.title}"${to}`
         : `Skipped ${planned.length} tasks${to}`
     logAction(userId, 'bulk_skip', description, fields, snapshots)

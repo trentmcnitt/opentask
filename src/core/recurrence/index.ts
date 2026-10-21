@@ -44,7 +44,7 @@ export { ensureRuleTime, ruleTimeFor, fillRuleTime, type RuleTimeSources } from 
 export {
   computeNextOccurrence,
   occurrencesFromDue,
-  ruleTimeOf,
+  ruleTimeOfDay,
   computeFirstOccurrence,
   rollPassedFirstOccurrence,
   isRecurring,

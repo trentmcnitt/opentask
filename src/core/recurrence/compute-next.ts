@@ -255,7 +255,7 @@ function computeFromDue(
   anchorAt?: Date | null,
 ): Date {
   const components = parseRRule(rruleStr)
-  const { hour, minute } = ruleTimeOf(rruleStr, anchorTime)
+  const { hour, minute } = ruleTimeOfDay(rruleStr, anchorTime)
 
   // Reference point: the later of prevDueAt and completedAt. This ensures the next
   // occurrence is strictly after the previous due, so completing early (or completing
@@ -294,7 +294,7 @@ function computeFromDue(
  * BYMINUTE, else local midnight — the one fallback every computation uses,
  * so the time a skip lands on is the time the next Done keeps.
  */
-export function ruleTimeOf(
+export function ruleTimeOfDay(
   rruleStr: string,
   anchorTime: string | null,
 ): { hour: number; minute: number } {
@@ -395,7 +395,7 @@ export function occurrencesFromDue(options: {
 }): { count: number; firstOnOrAfter: Date } {
   const { rrule, anchorTime, timezone, from, before, anchorAt } = options
   const components = parseRRule(rrule)
-  const { hour, minute } = ruleTimeOf(rrule, anchorTime)
+  const { hour, minute } = ruleTimeOfDay(rrule, anchorTime)
   const fromNaive = toNaiveLocal(DateTime.fromJSDate(from).setZone(timezone))
   const beforeNaive = toNaiveLocal(DateTime.fromJSDate(before).setZone(timezone))
   const rule = buildDueRule(components, hour, minute, timezone, fromNaive, anchorAt)
@@ -425,7 +425,7 @@ function computeFromCompletion(
   const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
 
   // Get anchor time for snapping
-  const { hour, minute } = ruleTimeOf(rruleStr, anchorTime)
+  const { hour, minute } = ruleTimeOfDay(rruleStr, anchorTime)
 
   const interval = components.interval || 1
   let nextDt: DateTime

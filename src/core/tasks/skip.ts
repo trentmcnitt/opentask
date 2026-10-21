@@ -175,6 +175,14 @@ export interface RecurringSkipWrite {
   skipsAdded: number
   nowStr: string
   timezone: string
+  /**
+   * Skip until only (designer ruling, 2026-10-21): the task is on deck for a
+   * day ON or AFTER the skip-until date, so the deck stays — it now refers to
+   * the landing occurrence. The target stays NULL (a decked repeating task
+   * has none) while the occurrence, deadline and counts move as in any skip.
+   * Every other skip clears the deck.
+   */
+  keepDeck?: boolean
 }
 
 /**
@@ -186,14 +194,20 @@ export interface RecurringSkipWrite {
  */
 export function writeRecurringSkip(
   tx: Database.Database,
-  { task, nextOccurrenceAt, skipsAdded, nowStr, timezone }: RecurringSkipWrite,
+  { task, nextOccurrenceAt, skipsAdded, nowStr, timezone, keepDeck = false }: RecurringSkipWrite,
 ): { after: Task; fieldsChanged: string[] } {
+  const keep = keepDeck && !!task.on_deck_day
   const skipCount = (task.skip_count ?? 0) + skipsAdded
   // The deadline moves with the occurrence (2026-10-10, `advanceDeadline`),
   // measured from the scheduled occurrence to the one landed on.
   const nextDeadlineAt = advanceDeadline(task, nextOccurrenceAt, timezone)
   // The target is the occurrence, never past its deadline (§8.2).
-  const nextDueAt = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
+  const nextTarget = nextOccurrenceAt ? capAtDeadline(nextOccurrenceAt, nextDeadlineAt) : null
+  // A kept deck keeps the task without a target; `original_due_at` still gets
+  // the landing occurrence's target, as taking it off deck later would give it.
+  const nextDueAt = keep ? null : nextTarget
+
+  const deckClear = keep ? '' : `, ${DECK_CLEAR_SQL}`
 
   // §5: advancing the occurrence is a period boundary, so a tracked task's
   // progress resets here exactly as it would on completion.
@@ -201,17 +215,17 @@ export function writeRecurringSkip(
     `UPDATE tasks
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
             progress_current = 0, ${TARGET_SET_FIELD} = ?,
-            attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL},
+            attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}${deckClear},
             updated_at = ?
       WHERE id = ?`,
-  ).run(nextDueAt, nextOccurrenceAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, nowStr, task.id)
+  ).run(nextDueAt, nextOccurrenceAt, nextTarget, nextDeadlineAt, skipCount, nowStr, nowStr, task.id)
 
   const queue = queueStateToClear(task)
   const after: Task = {
     ...task,
     due_at: nextDueAt,
     occurrence_at: nextOccurrenceAt,
-    original_due_at: nextDueAt,
+    original_due_at: nextTarget,
     deadline_at: nextDeadlineAt,
     skip_count: skipCount,
     progress_current: 0,
@@ -223,8 +237,9 @@ export function writeRecurringSkip(
     // The task queue (2026-10-19): the new target clears the queue state.
     ...queue.after,
     // On deck (2026-10-20, ruling E): skipping takes the task off deck — the
-    // occurrence it was decked for is gone. Undo restores the deck.
-    on_deck_day: null,
+    // occurrence it was decked for is gone. Undo restores the deck. A kept
+    // deck (skip until, a deck day on or after the date) stays.
+    on_deck_day: keep ? task.on_deck_day : null,
   }
   const fieldsChanged = [
     'due_at',
@@ -237,7 +252,7 @@ export function writeRecurringSkip(
     'attempts',
     'attempts_counted_through',
     ...queue.fields,
-    ...(task.on_deck_day ? ['on_deck_day'] : []),
+    ...(task.on_deck_day && !keep ? ['on_deck_day'] : []),
   ]
   return { after, fieldsChanged }
 }
