@@ -478,6 +478,22 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(try Fixtures.object("user-preferences")["check_in_day"] as? Int, 6)
     }
 
+    /// `GET /api/user/preferences` carries the snooze pad's four resolved
+    /// preset times (2026-10-21), unlinked in the fixture's scenario.
+    func testPreferencesPadPresets() throws {
+        let page = try Fixtures.decode(UserPreferencesLabelConfigPage.self, "user-preferences")
+        let presets = try XCTUnwrap(page.padPresets)
+        XCTAssertEqual(presets.map(\.time), ["09:00", "12:00", "16:00", "20:30"])
+        XCTAssertEqual(presets.map(\.slotId), [nil, nil, nil, nil])
+        XCTAssertTrue(PadPresetStore.isUsable(presets))
+        let raw = try XCTUnwrap(try Fixtures.object("user-preferences")["pad_presets"] as? [[String: Any]])
+        XCTAssertEqual(raw.map { $0["time"] as? String }, ["09:00", "12:00", "16:00", "20:30"])
+        for entry in raw {
+            XCTAssertTrue(entry.keys.contains("slot_id"))
+            XCTAssertTrue(entry["slot_id"] is NSNull)
+        }
+    }
+
     /// Every task in every fixture carries the task-model fields now.
     func testOpenTasksCarryTheTaskModelFields() throws {
         let raw = try XCTUnwrap(try Fixtures.object("tasks")["tasks"] as? [[String: Any]])

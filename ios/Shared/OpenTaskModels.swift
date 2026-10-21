@@ -1277,13 +1277,47 @@ struct LabelConfigDTO: Codable, Hashable {
     }
 }
 
+/// One of the four buttons on the snooze pad's preset row (`pad_presets` in
+/// `GET /api/user/preferences`, 2026-10-21). `time` is always the RESOLVED
+/// "HH:MM" (local, 24-hour): when the button is linked to a reminder period
+/// (`slot_id`), the server has already put that period's current start time
+/// in it, so native never resolves a link itself. `slot_id` is decoded for
+/// the contract; nothing native reads it.
+struct PadPresetDTO: Codable, Hashable {
+    let time: String
+    let slotId: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case time
+        case slotId = "slot_id"
+    }
+
+    init(time: String, slotId: Int? = nil) {
+        self.time = time
+        self.slotId = slotId
+    }
+
+    /// (hour, minute) from `time`, or nil when it isn't a valid "H:MM"/"HH:MM"
+    /// (hour 0–23, minute 0–59) — `PadPresetStore` treats a list holding one
+    /// of those as garbage and draws the defaults instead.
+    var hourMinute: (hour: Int, minute: Int)? {
+        let parts = time.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[1].count == 2,
+              let h = Int(parts[0]), let m = Int(parts[1]),
+              (0...23).contains(h), (0...59).contains(m)
+        else { return nil }
+        return (h, m)
+    }
+}
+
 /// `GET /api/user/preferences` → `{"data":{..., "label_config":[...], ...}}`
-/// (`src/app/api/user/preferences/route.ts`) — a ~30-field payload this
-/// decodes only ONE key out of. `Decodable` already ignores keys it wasn't
+/// (`src/app/api/user/preferences/route.ts`) — a ~60-field payload this
+/// decodes only the few keys native reads (`label_config`, `pad_presets`)
+/// or pins for the contract. `Decodable` already ignores keys it wasn't
 /// told about, so no custom `init(from:)` is needed to skip the rest; only
-/// `decodeIfPresent` is, so a server that predates `label_config` (or a
-/// malformed one) still yields an empty cluster color set instead of failing
-/// the whole preferences fetch.
+/// `decodeIfPresent` is, so a server that predates a key (or a malformed
+/// one) still yields an empty cluster color set / nil presets instead of
+/// failing the whole preferences fetch.
 struct UserPreferencesLabelConfigPage: Decodable {
     let labelConfig: [LabelConfigDTO]
     /// `morning_time` ("HH:MM", 2026-10-11). Decoded for the contract; nothing
@@ -1296,11 +1330,16 @@ struct UserPreferencesLabelConfigPage: Decodable {
     /// native surface shows the segments' "Saturdays" hints, so nothing reads
     /// it yet — if one ever does, derive the words from this, never hardcode.
     let checkInDay: Int?
+    /// `pad_presets` (2026-10-21): the snooze pad's four preset times, each
+    /// already resolved by the server. Nil from an older server, in which
+    /// case `refreshSlotActions()` leaves `PadPresetStore`'s cache alone.
+    let padPresets: [PadPresetDTO]?
 
     enum CodingKeys: String, CodingKey {
         case labelConfig = "label_config"
         case morningTime = "morning_time"
         case checkInDay = "check_in_day"
+        case padPresets = "pad_presets"
     }
 
     init(from decoder: Decoder) throws {
@@ -1308,5 +1347,6 @@ struct UserPreferencesLabelConfigPage: Decodable {
         labelConfig = try c.decodeIfPresent([LabelConfigDTO].self, forKey: .labelConfig) ?? []
         morningTime = try c.decodeIfPresent(String.self, forKey: .morningTime)
         checkInDay = try c.decodeIfPresent(Int.self, forKey: .checkInDay)
+        padPresets = try? c.decodeIfPresent([PadPresetDTO].self, forKey: .padPresets)
     }
 }

@@ -755,8 +755,14 @@ final class APIClient {
     /// time (`UserPreferencesLabelConfigPage`) rather than adding a
     /// label-config-only endpoint server-side.
     func fetchLabelConfig() async throws -> [LabelConfigDTO] {
-        let page = try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
-        return page.labelConfig
+        try await fetchPreferencesPage().labelConfig
+    }
+
+    /// `GET /api/user/preferences`, decoded down to the keys native reads
+    /// (`UserPreferencesLabelConfigPage`: `label_config`, `pad_presets`, …).
+    /// One fetch for a caller that needs more than one of them.
+    func fetchPreferencesPage() async throws -> UserPreferencesLabelConfigPage {
+        try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
     }
 
     /// The user's time slots (§6.0), for the notification slot-snooze actions
