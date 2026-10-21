@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
-import { deckLimit, deckMenuDays, deckTapDay, offersDeck } from '@/lib/deck-menu'
+import { deckLimit, deckMenuDays, deckTapDay, deckTomorrowDay, offersDeck } from '@/lib/deck-menu'
 import { deckPickerDefault } from '@/components/OnDeckButton'
 import { deckToastMessage, type DeckResponse } from '@/lib/deck-request'
 import { inDeckSection } from '@/lib/now-view'
@@ -136,6 +136,22 @@ describe('OD-UI-01: the hold menu days', () => {
     // 1 AM Friday Jan 16 Chicago.
     const early = new Date('2026-01-16T07:00:00Z')
     expect(deckMenuDays(TZ, early, 6)[0].day).toBe('2026-01-17')
+  })
+
+  test('the row’s one-tap "On deck tomorrow" sends the menu’s Tomorrow, at any hour', () => {
+    expect(deckTomorrowDay(TZ, NOW)).toBe('2026-01-16')
+    // Just before and after local midnight, a check-in day, and 1 AM (A2).
+    for (const iso of [
+      '2026-01-16T05:59:00Z',
+      '2026-01-16T06:01:00Z',
+      '2026-01-16T07:00:00Z',
+      '2026-01-17T16:00:00Z',
+    ]) {
+      const at = new Date(iso)
+      expect(deckTomorrowDay(TZ, at), iso).toBe(deckMenuDays(TZ, at, 6)[0].day)
+    }
+    expect(deckTomorrowDay(TZ, new Date('2026-01-16T05:59:00Z'))).toBe('2026-01-16')
+    expect(deckTomorrowDay(TZ, new Date('2026-01-16T06:01:00Z'))).toBe('2026-01-17')
   })
 
   test('A1: the days after the latest are greyed, with the caption', () => {

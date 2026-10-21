@@ -107,6 +107,16 @@ async function strip(
 const panel = (page: Page, kind: 'queue_today' | 'queue_previous') =>
   page.locator('[data-task-segments]').locator(`[data-task-segment="${kind}"]`)
 const row = (scope: Page | Locator, id: number) => scope.locator(`[data-segment-task="${id}"]`)
+
+/**
+ * A task-segment row's details (2026-10-20, the pencil gone): right-click the
+ * row's title for its peek bubble, then the bubble's Open.
+ */
+async function openDetails(row: Locator) {
+  const page = row.page()
+  await row.locator('p').first().click({ button: 'right' })
+  await page.locator('[data-task-peek]').getByRole('button', { name: 'Open' }).click()
+}
 const toastUndo = (page: Page) =>
   page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' })
 
@@ -251,7 +261,7 @@ test('a waiting repeating row and its details show the occurrence, not the moved
     await expect(chip).not.toContainText(target.toFormat('LLL d'))
     await expect(chip).toContainText(/every/i)
 
-    await r.getByRole('button', { name: /^Details:/ }).click()
+    await openDetails(r)
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
     await expect(dialog.locator('[data-queued-occurrence]')).toContainText(
@@ -360,7 +370,7 @@ test('Today retargets out of the queue; the checkbox is done', async ({ page }) 
   }
 })
 
-test('the details icon on a queue row and on a horizon row opens the Quick panel', async ({
+test('the peek bubble on a queue row and on a horizon row opens the Quick panel', async ({
   page,
 }) => {
   const ids: number[] = []
@@ -382,9 +392,10 @@ test('the details icon on a queue row and on a horizon row opens the Quick panel
     for (const id of [queued, plain]) {
       const r = row(page, id)
       await expect(r).toBeVisible()
-      // The details icon replaced the horizon dot menu; the dot is on the
+      // No pencil (2026-10-20) and no horizon dot menu: the dot is on the
       // meta line (a stripped one-off has no target).
       await expect(r.locator('button[data-horizon-chip]')).toHaveCount(0)
+      await expect(r.locator('[data-segment-details]')).toHaveCount(0)
       const dialog = page.getByRole('dialog')
       const opensDetails = async () => {
         await expect(dialog).toBeVisible()
@@ -392,14 +403,17 @@ test('the details icon on a queue row and on a horizon row opens the Quick panel
         await page.keyboard.press('Escape')
         await expect(dialog).toHaveCount(0)
       }
-      // The icon.
-      await r.getByRole('button', { name: /^Details:/ }).click()
+      // The peek bubble's Open.
+      await openDetails(r)
       await opensDetails()
       // A tap on the meta-line dot opens details too, never the row's consider.
       await r.locator('[data-horizon-meta]').click()
       await opensDetails()
-      // Enter on the focused details button is the button's, not the row's.
-      await r.getByRole('button', { name: /^Details:/ }).focus()
+      // The keyboard: Cmd/Ctrl+Enter on the row, then Enter on the bubble's
+      // focused Open — never the row's consider.
+      await r.focus()
+      await page.keyboard.press('ControlOrMeta+Enter')
+      await expect(page.locator(`[data-task-peek="${id}"]`)).toBeVisible()
       await page.keyboard.press('Enter')
       await opensDetails()
       await expect(r).toHaveAttribute('data-segment-state', 'waiting')
@@ -546,12 +560,8 @@ test('row polish: On deck lines up the column, the dot follows the project, ever
       await expect(a.locator('[data-on-deck]')).toHaveCount(1)
       await expect(w.locator('[data-on-deck]')).toHaveCount(1)
       await expect(w.locator('[data-deck-slot-empty]')).toHaveCount(0)
-      for (const sel of [
-        '[data-segment-details]',
-        '[data-target-today]',
-        '[data-segment-project]',
-      ]) {
-        // The pencil and Today line up down the column, and so do the
+      for (const sel of ['[data-deck-tomorrow]', '[data-target-today]', '[data-segment-project]']) {
+        // On deck tomorrow and Today line up down the column, and so do the
         // project names (the dot no longer comes before them).
         expect(await x(w.locator(sel)), sel).toBeCloseTo(await x(a.locator(sel)), 0)
       }
@@ -566,7 +576,7 @@ test('row polish: On deck lines up the column, the dot follows the project, ever
       for (const sel of [
         '[data-on-deck]',
         '[data-target-today]',
-        '[data-segment-details]',
+        '[data-deck-tomorrow]',
         '[data-horizon-meta]',
         '[aria-label^="Mark"]',
         '[aria-label^="Done"]',

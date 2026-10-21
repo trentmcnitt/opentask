@@ -80,6 +80,16 @@ const toast = (page: Page, text: string | RegExp) =>
   page.locator('[data-sonner-toast]').filter({ hasText: text })
 const dashRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
+/**
+ * A task-segment row's details (2026-10-20, the pencil gone): right-click the
+ * row's title for its peek bubble, then the bubble's Open.
+ */
+async function openDetails(row: Locator) {
+  const page = row.page()
+  await row.locator('p').first().click({ button: 'right' })
+  await page.locator('[data-task-peek]').getByRole('button', { name: 'Open' }).click()
+}
+
 /** The user's overdue set (the badge's): `GET /api/tasks?overdue=true`. */
 async function overdueIds(page: Page): Promise<number[]> {
   const res = await page.request.get('/api/tasks?overdue=true&limit=1000')
@@ -137,13 +147,14 @@ test('a horizon row: tap decks it for today (the row leaves), Undo puts it back'
     const button = r.locator('[data-on-deck]')
     await expect(button).toBeVisible()
     await expect(button).not.toHaveAttribute('data-on-deck-active', '')
-    // Order: details · On deck · Today · done.
+    // Order: On deck tomorrow · On deck · Today · done (no pencil, 2026-10-20).
+    await expect(r.locator('[data-segment-details]')).toHaveCount(0)
     const order = await r
-      .locator('[data-segment-details], [data-on-deck], [data-target-today], [aria-label^="Done"]')
+      .locator('[data-deck-tomorrow], [data-on-deck], [data-target-today], [aria-label^="Done"]')
       .evaluateAll((els) =>
         els.map((e) =>
-          e.hasAttribute('data-segment-details')
-            ? 'details'
+          e.hasAttribute('data-deck-tomorrow')
+            ? 'deck-tomorrow'
             : e.hasAttribute('data-on-deck')
               ? 'deck'
               : e.hasAttribute('data-target-today')
@@ -151,7 +162,7 @@ test('a horizon row: tap decks it for today (the row leaves), Undo puts it back'
                 : 'done',
         ),
       )
-    expect(order).toEqual(['details', 'deck', 'today', 'done'])
+    expect(order).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
 
     await button.click()
     await expect(r).toHaveCount(0)
@@ -375,9 +386,7 @@ test('the Quick panel: an On deck line, staged until Save; "was on deck" in deta
     madeYesterday(id)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/reminders')
-    await segRow(segment(page, 'days'), id)
-      .getByRole('button', { name: /^Details:/ })
-      .click()
+    await openDetails(segRow(segment(page, 'days'), id))
     const dialog = page.getByRole('dialog')
     const line = dialog.locator('[data-quick-panel-deck]')
     await expect(line).toContainText('Not on deck')
@@ -401,7 +410,7 @@ test('the Quick panel: an On deck line, staged until Save; "was on deck" in deta
     const r = segRow(page.locator('[data-task-segments]'), queued).first()
     await expect(r).toBeVisible()
     await expect(r).not.toContainText('was on deck')
-    await r.getByRole('button', { name: /^Details:/ }).click()
+    await openDetails(r)
     await expect(page.getByRole('dialog').locator('[data-quick-panel-was-on-deck]')).toContainText(
       `was on deck ${DateTime.fromISO(calendarDay(-1)).toFormat('ccc LLL d')}`,
     )
