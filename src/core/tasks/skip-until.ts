@@ -22,6 +22,15 @@
  *   target write, no skip; counted as affected and in `targetsMoved`). Only a
  *   task whose target AND occurrence are both on or after the date is left as
  *   it is (`already_clear`).
+ * - ON DECK (2026-10-20, ruling E): skip-until takes a task off deck, in the
+ *   same write and undo snapshot. A decked repeating task has no target
+ *   (`due_at` NULL, its occurrence kept), so every rule here reads the
+ *   occurrence (`occurrence_at`), never the null target, and the write
+ *   leaves a target on the landing occurrence — never a repeating task with
+ *   neither a target nor a deck. So a decked task whose occurrence is
+ *   already on or after the date is not `already_clear`: like an early
+ *   target, it is retargeted to its occurrence, the deck cleared. Undo puts
+ *   the deck back.
  * - a from_completion rule (resolution 7): it has no schedule to walk, so it
  *   lands on the date at the rule's time of day, and the interval restarts
  *   from there — never earlier than the plain (no-date) skip would land.
@@ -65,6 +74,7 @@ import { canUserAccessTask } from './access'
 import { getTaskById } from './read'
 import { nextOccurrenceAfterSkip, writeRecurringSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
+import { collectDeckClear } from './deck-clear'
 import { capAtDeadline } from '@/lib/task-segments'
 
 /**
@@ -103,6 +113,7 @@ type PlanTask = Pick<
   | 'done'
   | 'deleted_at'
   | 'archived_at'
+  | 'on_deck_day'
 >
 
 /** Why a task in the batch is not one skip-until moves, or null when it is. */
@@ -216,9 +227,13 @@ export function planSkipUntil(
   }
   const untilDay = DateTime.fromISO(until, { zone: timezone }).startOf('day')
   const untilStart = untilDay.toJSDate()
+  // A decked repeating task has `due_at` NULL: its occurrence is the truth.
   const occurrence = task.occurrence_at ?? task.due_at
   if (occurrence && Date.parse(occurrence) >= untilStart.getTime()) {
-    if (task.due_at && Date.parse(task.due_at) < untilStart.getTime()) {
+    const targetEarly = task.due_at !== null && Date.parse(task.due_at) < untilStart.getTime()
+    // Ruling E: skip-until always takes a task off deck, so a decked task is never
+    // left alone — its target goes back on the occurrence and the deck is cleared.
+    if (targetEarly || task.on_deck_day) {
       return { kind: 'retarget', landing: occurrence }
     }
     return { kind: 'leave', reason: 'already_clear' }
@@ -434,7 +449,7 @@ export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
 /**
  * A task with nothing before the date to skip whose target was pulled before
  * it: the target goes back to the occurrence (capped at a deadline still
- * ahead, as every move). A plain move of the target — stamped, the queue state
+ * ahead, as every move) and any deck cleared. A plain move of the target — stamped, the queue state
  * cleared and the attempts checkpointed by `stampTargetSet` — not a new
  * occurrence, so attempts and `skip_count` stand.
  */
@@ -453,6 +468,15 @@ function writeRetarget(
     afterState: { due_at: dueAt },
   }
   stampTargetSet(write, task, nowStr)
+  // On deck (ruling E): the target this leaves is the occurrence, so a deck goes
+  // in the same write (and the snapshot, so undo puts it back).
+  collectDeckClear(write, task, {
+    dueAt,
+    auto: false,
+    rrule: task.rrule,
+    isReminder: false,
+    isTracked: false,
+  })
   tx.prepare(`UPDATE tasks SET ${write.setClauses.join(', ')}, updated_at = ? WHERE id = ?`).run(
     ...write.values,
     nowStr,

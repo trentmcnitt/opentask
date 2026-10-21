@@ -1706,6 +1706,12 @@ paths:
         target and occurrence are both on or after the date is left as it is
         (`already_clear`).
 
+        A task on deck is taken off deck in the same write (undo puts the deck
+        back). A decked repeating task (no target, its occurrence kept) is
+        counted from its occurrence and always comes out with a target on the
+        occurrence it lands on; with its occurrence already on or after the
+        date, it is a target move (`targets_moved`), never `already_clear`.
+
         A `from_completion` rule has no schedule to walk: it lands on the date
         itself at the rule's time of day, and its interval restarts from there
         — but never earlier than skipping this occurrence would land it (one
