@@ -55,6 +55,7 @@ import { runAsSystem } from '@/core/request-context'
 import { stampTargetSet } from '@/core/tasks/target-set'
 import { collectDeckClear } from '@/core/tasks/deck-clear'
 import { getTargetContext } from '@/core/tasks/target-context'
+import { getAnchorTimes } from '@/core/users/anchor-times'
 import {
   CHECK_IN_DAY_DEFAULT,
   coerceCheckInDay,
@@ -688,23 +689,21 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   const db = getDb()
 
   // Get user's timezone, AI context, and schedule preferences
-  const user = db
-    .prepare(
-      'SELECT id, timezone, ai_context, morning_time, wake_time, sleep_time, check_in_day FROM users WHERE id = ?',
-    )
+  const userRow = db
+    .prepare('SELECT id, timezone, ai_context, check_in_day FROM users WHERE id = ?')
     .get(row.user_id) as
-    | {
-        id: number
-        timezone: string
-        ai_context: string | null
-        morning_time: string
-        wake_time: string
-        sleep_time: string
-        check_in_day: number
-      }
+    | { id: number; timezone: string; ai_context: string | null; check_in_day: number }
     | undefined
-  if (!user) {
+  if (!userRow) {
     throw new Error(`User ${row.user_id} not found`)
+  }
+  // Morning, Wake and Sleep as resolved (a linked period's start, 2026-10-21).
+  const anchors = getAnchorTimes(userRow.id)
+  const user = {
+    ...userRow,
+    morning_time: anchors.morning.time,
+    wake_time: anchors.wake.time,
+    sleep_time: anchors.sleep.time,
   }
 
   // Available projects for project name resolution (owned + shared). The

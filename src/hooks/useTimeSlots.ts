@@ -26,10 +26,18 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
 export function useTimeSlots(initial?: TimeSlot[]): {
   timeSlots: TimeSlot[]
   loading: boolean
+  /**
+   * A read has SUCCEEDED (or the page shipped the list). False after a failed
+   * first read, when `timeSlots` is the empty fallback — a surface that would
+   * act on the list (Settings' anchor rows, which would show a linked time as
+   * custom and then save it so) waits for this rather than `!loading`.
+   */
+  loaded: boolean
   refresh: () => Promise<void>
 } {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(initial ?? [])
   const [loading, setLoading] = useState(initial === undefined)
+  const [loaded, setLoaded] = useState(initial !== undefined)
   const hasInitial = initial !== undefined
 
   useEffect(() => {
@@ -40,7 +48,9 @@ export function useTimeSlots(initial?: TimeSlot[]): {
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (cancelled) return
-        setTimeSlots(json?.data?.time_slots ?? [])
+        const list = json?.data?.time_slots
+        setTimeSlots(Array.isArray(list) ? list : [])
+        if (Array.isArray(list)) setLoaded(true)
       })
       .catch(() => {
         if (!cancelled) setTimeSlots([])
@@ -59,11 +69,14 @@ export function useTimeSlots(initial?: TimeSlot[]): {
       const res = await fetch('/api/time-slots')
       if (!res.ok) return
       const json = await res.json()
-      if (Array.isArray(json?.data?.time_slots)) setTimeSlots(json.data.time_slots)
+      if (Array.isArray(json?.data?.time_slots)) {
+        setTimeSlots(json.data.time_slots)
+        setLoaded(true)
+      }
     } catch {
       // Keep what we have — see the header.
     }
   }, [])
 
-  return { timeSlots, loading, refresh }
+  return { timeSlots, loading, loaded, refresh }
 }

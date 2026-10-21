@@ -139,6 +139,29 @@ describe('parseServerPrefs', () => {
     expect('projectPreviewCount' in parseServerPrefs({ project_preview_count: 'x' })).toBe(false)
   })
 
+  test('the anchor times: resolved times, slot ids (null = custom) and the pad (2026-10-21)', () => {
+    const parsed = parseServerPrefs({
+      morning_time: '08:30',
+      morning_slot_id: 4,
+      wake_slot_id: null,
+      pad_presets: [
+        { slot_id: null, time: '07:15' },
+        { slot_id: 4, time: '08:30' },
+        { slot_id: null, time: '16:00' },
+        { slot_id: null, time: '20:30' },
+      ],
+    })
+    expect(parsed.morningTime).toBe('08:30')
+    expect(parsed.morningSlotId).toBe(4)
+    expect(parsed.wakeSlotId).toBeNull()
+    expect(parsed).not.toHaveProperty('sleepSlotId')
+    expect(parsed.padPresets?.map((p) => p.time)).toEqual(['07:15', '08:30', '16:00', '20:30'])
+    // A malformed pad reads as the four defaults, never a broken row.
+    expect(parseServerPrefs({ pad_presets: [{ time: '7' }] }).padPresets).toEqual(
+      DEFAULT_PREFS.padPresets,
+    )
+  })
+
   test('null / missing data parses to nothing', () => {
     expect(parseServerPrefs(null)).toEqual({})
     expect(parseServerPrefs(undefined)).toEqual({})

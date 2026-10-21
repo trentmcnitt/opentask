@@ -124,7 +124,6 @@ export interface TaskRolloverOptions {
 export interface UserRow {
   id: number
   timezone: string
-  morning_time: string | null
   last_rollover_date: string | null
 }
 
@@ -145,7 +144,7 @@ export function runTaskRollover(opts: TaskRolloverOptions = {}): TaskRolloverRes
     flagsCleared: 0,
     deckStripped: 0,
   }
-  const sql = 'SELECT id, timezone, morning_time, last_rollover_date FROM users'
+  const sql = 'SELECT id, timezone, last_rollover_date FROM users'
   const users = (
     opts.userId === undefined
       ? getDb().prepare(sql).all()

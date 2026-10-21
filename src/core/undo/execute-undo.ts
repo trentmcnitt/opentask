@@ -14,7 +14,7 @@ import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
 import { rolledOverSince } from './rollover-fence'
 import { compensate, countBefore } from './progress-compensation'
-import { applyPromptDefault, applySlotRow } from './slot-row'
+import { applyPromptDefault, applySlotRow, applyUserSettings } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
@@ -24,10 +24,12 @@ import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entrie
 export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   // A slot edit/delete: put the slot row back as it was, alongside the
   // reminders and quota prompt periods it moved (the ordinary snapshot loop
-  // below), and the default prompt period if the delete repointed it.
+  // below), the default prompt period if the delete repointed it, and the
+  // settings linked to it that the delete made custom (anchor times).
   if (entry.slotState) {
     applySlotRow(tx, entry.slotState.after, entry.slotState.before)
     applyPromptDefault(tx, entry.slotState, 'before')
+    applyUserSettings(tx, entry.slotState, 'before', entry.id)
   }
 
   // Handle special case: undoing a 'create' means soft-deleting the task

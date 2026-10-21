@@ -30,8 +30,17 @@
     "default_reminder_slot_id": null,
     "quota_prompts_enabled": true,
     "morning_time": "09:00",
+    "morning_slot_id": null,
     "wake_time": "07:00",
+    "wake_slot_id": null,
     "sleep_time": "22:00",
+    "sleep_slot_id": null,
+    "pad_presets": [
+      { "slot_id": null, "time": "09:00" },
+      { "slot_id": null, "time": "12:00" },
+      { "slot_id": null, "time": "16:00" },
+      { "slot_id": null, "time": "20:30" }
+    ],
     "notifications_enabled": true,
     "enrichment_notifications_enabled": true,
     "sweep_feedback_notifications_enabled": true,

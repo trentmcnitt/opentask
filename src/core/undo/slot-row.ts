@@ -18,6 +18,8 @@
 import Database from 'better-sqlite3'
 import type { SlotRow, SlotUndoState } from '@/types'
 import { ValidationError } from '@/core/errors'
+import { applySettingChanges, readAnchorRow } from '@/core/users/anchor-times'
+import { unlinkSlot } from '@/lib/anchor-times'
 
 /**
  * Write the user's default quota prompt period back to one side of a slot
@@ -35,6 +37,41 @@ export function applyPromptDefault(
   const userId = state.before?.user_id ?? state.after?.user_id
   if (!change || userId === undefined) return
   tx.prepare('UPDATE users SET quota_prompt_slot_id = ? WHERE id = ?').run(change[side], userId)
+}
+
+/**
+ * The user's settings linked to a deleted period (Morning, Wake, Sleep,
+ * number-pad buttons — `SlotUndoState.user_settings`), on undo and redo of
+ * the delete. Called after `applySlotRow`, so the period is already back (or
+ * gone again).
+ *
+ * UNDO writes the recorded links back, compare-and-set per setting: one the
+ * user has changed since keeps the newer value (`settingWrites`).
+ *
+ * REDO deletes the period again, so whatever links to it NOW must become
+ * custom — not only what linked to it the first time: between the undo and
+ * the redo the user may have linked another setting to the restored period,
+ * and replaying the recorded changes alone would leave that one pointing at
+ * a period that no longer exists. So redo unlinks the current row
+ * (`unlinkSlot`) and rewrites the entry's record to match (`entryId`), so a
+ * later undo puts back exactly what this redo converted.
+ */
+export function applyUserSettings(
+  tx: Database.Database,
+  state: SlotUndoState,
+  side: 'before' | 'after',
+  entryId: number,
+): void {
+  const userId = state.before?.user_id ?? state.after?.user_id
+  if (userId === undefined) return
+  if (side === 'after' && state.after === null && state.before) {
+    const changes = unlinkSlot(readAnchorRow(userId, tx), state.before)
+    applySettingChanges(tx, userId, changes, 'after')
+    const next: SlotUndoState = { ...state, user_settings: changes.length ? changes : undefined }
+    tx.prepare('UPDATE undo_log SET slot_state = ? WHERE id = ?').run(JSON.stringify(next), entryId)
+    return
+  }
+  if (state.user_settings) applySettingChanges(tx, userId, state.user_settings, side)
 }
 
 export function parseSlotState(raw: string | null | undefined): SlotUndoState | null {

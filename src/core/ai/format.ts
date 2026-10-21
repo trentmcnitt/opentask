@@ -7,6 +7,7 @@
 
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
+import { getAnchorTimes } from '@/core/users/anchor-times'
 import { formatMorningTime } from '@/lib/snooze'
 import type { TaskSummary } from './types'
 
@@ -97,11 +98,8 @@ export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime):
  * Returns an empty string if no schedule data is found.
  */
 export function getScheduleBlock(userId: number): string {
-  const db = getDb()
-  const userSchedule = db
-    .prepare('SELECT wake_time, sleep_time FROM users WHERE id = ?')
-    .get(userId) as { wake_time: string; sleep_time: string } | undefined
-  return userSchedule
-    ? `\nUser's schedule: wakes at ${formatMorningTime(userSchedule.wake_time)}, sleeps at ${formatMorningTime(userSchedule.sleep_time)}\n`
-    : ''
+  if (!getDb().prepare('SELECT 1 FROM users WHERE id = ?').get(userId)) return ''
+  // Resolved: a Wake or Sleep linked to a period reads its start (2026-10-21).
+  const { wake, sleep } = getAnchorTimes(userId)
+  return `\nUser's schedule: wakes at ${formatMorningTime(wake.time)}, sleeps at ${formatMorningTime(sleep.time)}\n`
 }

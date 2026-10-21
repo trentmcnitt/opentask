@@ -15,14 +15,6 @@ import {
 } from '@/lib/format-date'
 import { snapToHour } from '@/lib/snooze'
 
-/** Preset time slots (24h format in user's local timezone) */
-export const PRESET_TIMES = [
-  { label: '9:00 AM', hour: 9, minute: 0 },
-  { label: '12:00 PM', hour: 12, minute: 0 },
-  { label: '4:00 PM', hour: 16, minute: 0 },
-  { label: '8:30 PM', hour: 20, minute: 30 },
-] as const
-
 /** Increment buttons: positive = forward, negative = backward */
 export const INCREMENTS = [
   { label: '+1 min', minutes: 1 },

@@ -1,6 +1,7 @@
 // Core domain types for OpenTask
 
 import type { GroupingMode } from '@/lib/grouping'
+import type { SettingChange } from '@/lib/anchor-times'
 
 export type LabelColor = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'gray'
 
@@ -373,6 +374,14 @@ export interface SlotUndoState {
    * on every entry logged before this existed.
    */
   prompt_default?: { before: number | null; after: number | null }
+  /**
+   * A time_slot_delete that converted the user's settings linked to the
+   * removed period — Morning, Wake, Sleep, number-pad buttons — to custom
+   * times at its start (anchor times, 2026-10-21). Undo puts the links back,
+   * redo converts again, each compare-and-set (`settingWrites`). Absent when
+   * nothing linked to the period, and on every entry logged before this existed.
+   */
+  user_settings?: SettingChange[]
 }
 
 /** A time_slots row as stored — mirrors `TimeSlot` in `@/lib/time-slot-assign`. */

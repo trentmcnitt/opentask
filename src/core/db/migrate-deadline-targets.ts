@@ -133,6 +133,10 @@ export function countsOf(plan: TargetMigrationPlan): TargetMigrationCounts {
 }
 
 function ctxOf(row: AutoRow): TargetContext {
+  // The raw column, not `getAnchorTimes`: this runs inside `getDb()`'s
+  // startup migrations, below the layer the resolver's adapter lives in
+  // (which itself calls `getDb()`), and it is a one-shot that ran before
+  // Morning could link to a period — every row it reads is custom.
   return { timezone: row.timezone || 'UTC', morningTime: row.morning_time || '09:00' }
 }
 

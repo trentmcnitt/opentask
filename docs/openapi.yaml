@@ -960,9 +960,14 @@ paths:
         naming it — a quota's `quota_prompt_config.slot_id` and per-number
         overrides, and the user's default prompt period — is repointed to the
         remaining slot nearest the removed slot's start (`quotas_moved`). The
-        last remaining slot cannot be removed (400). Always an undo entry
+        last remaining slot cannot be removed (400). The user's settings
+        linked to the slot (Morning, Wake, Sleep, number-pad buttons — see
+        `UserPreferences`) keep its start as a custom time
+        (`settings_converted`, 2026-10-21). Always an undo entry
         (`time_slot_delete`, `undo_id`): undo restores the slot under its
-        original id together with its reminders and prompt placements.
+        original id together with its reminders and prompt placements, and
+        puts each converted setting's link back unless the user has changed
+        that setting since.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       responses:
@@ -5074,6 +5079,68 @@ components:
             start of the next reminder period - later today, or tomorrow's
             first period once the day's last one has begun. With no periods,
             `"next_period"` acts as `"60"`.
+        morning_time:
+          type: string
+          example: '09:00'
+          description: |
+            The user's Morning time (HH:MM): the default task time — a
+            timeless rule's time, a deadline's automatic target, "Tomorrow".
+            Always the RESOLVED time: when `morning_slot_id` links it to a
+            reminder period, the period's current start (anchor times,
+            2026-10-21). PATCH alone sets a custom time and unlinks; sent with
+            `morning_slot_id` it must equal that period's start (else 400).
+            Values already stored (automatic targets, rule times) don't move
+            when it changes.
+        morning_slot_id:
+          type: [integer, 'null']
+          description: |
+            The reminder period Morning follows, or `null` for a custom time.
+            PATCH an id of one of the user's own periods to link (400
+            otherwise); `null` to unlink, at `morning_time` if sent, else at
+            the time it reads now. Deleting the period keeps its start as a
+            custom time (`settings_converted` on the DELETE).
+        wake_time:
+          type: string
+          example: '07:00'
+          description: |
+            Wake time (HH:MM), resolved like `morning_time`: the start of the
+            user's waking window (hourly nags, widget-push quiet hours, the AI
+            schedule line). Same PATCH rules as `morning_time`.
+        wake_slot_id:
+          type: [integer, 'null']
+          description: The period Wake follows, or `null`; as `morning_slot_id`.
+        sleep_time:
+          type: string
+          example: '22:00'
+          description: |
+            Sleep time (HH:MM), resolved like `morning_time`: the end of the
+            waking window. Same PATCH rules as `morning_time`.
+        sleep_slot_id:
+          type: [integer, 'null']
+          description: The period Sleep follows, or `null`; as `morning_slot_id`.
+        pad_presets:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: |
+            The number pad's four preset buttons, in button order (anchor
+            times, 2026-10-21); the defaults are 09:00, 12:00, 16:00 and 20:30,
+            all custom. GET returns each `{ slot_id, time }` with `time`
+            resolved (a linked period's start). PATCH exactly four entries,
+            each `{ time }` (custom) or `{ slot_id }` (one of the user's
+            periods; with a `time` too it must be the period's start) — GET's
+            own array round-trips — or `null` to put back the defaults. To set
+            ONE button and keep the other three as stored, PATCH
+            `pad_preset: { index, time | slot_id }` instead (`index` 0–3;
+            write-only; not with `pad_presets`).
+          items:
+            type: object
+            properties:
+              slot_id:
+                type: [integer, 'null']
+              time:
+                type: string
+                example: '09:00'
         ai_context:
           type: [string, 'null']
           maxLength: 4000
@@ -5835,6 +5902,15 @@ components:
             Quotas whose stored prompt period named a deleted slot and now name
             the nearest remaining one (DELETE only; always 0 for PATCH — a
             retime keeps the slot's id, so its prompts follow it).
+        settings_converted:
+          type: array
+          items:
+            type: string
+          example: ['Morning time', 'Number pad button 2']
+          description: >
+            The user's settings that were linked to a deleted slot and now keep
+            its start as a custom time (DELETE only; always empty for PATCH — a
+            linked setting follows a retimed slot on its own).
         undo_id:
           type: [integer, 'null']
           description: The undo_log entry for this change (POST /api/undo/batch with through_id undoes exactly it); null for a rename.

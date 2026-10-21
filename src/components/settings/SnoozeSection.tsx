@@ -1,12 +1,12 @@
 'use client'
 
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
+  useAnchorTimes,
   useSnoozePreferences,
-  useSchedulePreferences,
   useWeekStart,
   useCheckInDay,
 } from '@/components/PreferencesProvider'
@@ -19,33 +19,59 @@ import { formatSnoozeOptionLabel, formatMorningTime, NEXT_PERIOD_OPTION } from '
 import { SettingsSection } from './SettingsSection'
 import { SettingRow } from './SettingRow'
 import { RolloverNowRow } from './RolloverNowRow'
+import { AnchorTimeRow } from './AnchorTimeRow'
+import { PAD_PRESET_COUNT, padButtonName, resolveTime } from '@/lib/anchor-times'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 
 const SELECT_CLASS =
   'rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
 
-/** A time-of-day input that saves on change (an emptied field is ignored). */
-function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <input
-      type="time"
-      value={value}
-      onChange={(e) => {
-        if (e.target.value) onChange(e.target.value)
-      }}
-      className={SELECT_CLASS}
-    />
-  )
-}
-
 /**
  * Settings → Snooze: the single-tap snooze duration, the snooze-all button's
- * target, and the day's anchor times (morning, wake, sleep) plus the week's
- * first day.
+ * target, the number pad's four buttons, and the day's anchor times (morning,
+ * wake, sleep) plus the week's first day.
+ *
+ * `timeSlots` is the page's one period list (src/app/settings/page.tsx),
+ * shared with Reminder periods, so a period added, renamed or moved there
+ * shows in these pickers at once. The anchor rows wait for a SUCCESSFUL read
+ * of it (`slotsLoaded`) AND for their own fresh read of the anchor times on
+ * opening (`anchorsFresh`): before that the provider may hold its defaults or
+ * a value another tab has since changed, and a row drawn then showed
+ * "Morning · 9:00 AM, Custom time" for a linked Morning (seen on dev,
+ * 2026-10-21) — and a pick made in that moment would have saved from it.
  */
-export function SnoozeSection() {
-  const { bulkSnoozeDefault, setBulkSnoozeDefault, morningTime, setMorningTime } =
-    useSnoozePreferences()
-  const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
+export function SnoozeSection({
+  timeSlots,
+  slotsLoaded,
+}: {
+  timeSlots: TimeSlot[]
+  slotsLoaded: boolean
+}) {
+  const { bulkSnoozeDefault, setBulkSnoozeDefault } = useSnoozePreferences()
+  const anchors = useAnchorTimes()
+  const { reloadPreferences } = anchors
+  const [anchorsFresh, setAnchorsFresh] = useState(false)
+  // Read on opening, and again whenever the window comes back into focus — a
+  // period or setting changed in another tab or on another device shows here
+  // before the user edits from a stale copy.
+  useEffect(() => {
+    let cancelled = false
+    const reload = () =>
+      void reloadPreferences().then((ok) => {
+        if (!cancelled && ok) setAnchorsFresh(true)
+      })
+    reload()
+    window.addEventListener('focus', reload)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', reload)
+    }
+  }, [reloadPreferences])
+  const rowsReady = slotsLoaded && anchorsFresh
+  // Wake = Sleep reads as awake all day (no quiet hours, nags all day) —
+  // allowed, as it always was with custom times, but said.
+  const sameWakeSleep =
+    resolveTime(anchors.wake, timeSlots).time === resolveTime(anchors.sleep, timeSlots).time
   const { weekStart, setWeekStart } = useWeekStart()
   const { checkInDay, setCheckInDay } = useCheckInDay()
 
@@ -56,6 +82,7 @@ export function SnoozeSection() {
     >
       <div className="space-y-4">
         <DefaultSnoozeRow />
+        {rowsReady && <NumberPadRows timeSlots={timeSlots} />}
         {/* Trent, 2026-09-22: the clock press defaults to the next
             period, with this to flip back while he decides. */}
         <SettingRow
@@ -79,35 +106,37 @@ export function SnoozeSection() {
             <option value="default_option">Default snooze</option>
           </select>
         </SettingRow>
-        <SettingRow
-          label="Morning time"
-          description="Default task time for snooze and AI enrichment, and a deadline's automatic target"
-        >
-          <TimeInput
-            value={morningTime}
-            onChange={(v) => savePreferenceField('morning_time', v, morningTime, setMorningTime)}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Wake time"
-          description="When your day starts (used by AI for time-of-day context)"
-        >
-          <TimeInput
-            value={wakeTime}
-            onChange={(v) => savePreferenceField('wake_time', v, wakeTime, setWakeTime)}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Sleep time"
-          description={
-            <>When you go to bed (used by AI for &ldquo;tonight&rdquo; and &ldquo;bedtime&rdquo;)</>
-          }
-        >
-          <TimeInput
-            value={sleepTime}
-            onChange={(v) => savePreferenceField('sleep_time', v, sleepTime, setSleepTime)}
-          />
-        </SettingRow>
+        {rowsReady && (
+          <>
+            <AnchorTimeRow
+              label="Morning time"
+              name="Morning"
+              description="Default task time for snooze and AI enrichment, and a deadline's automatic target. Targets already set keep their time."
+              target="morning"
+              timeSlots={timeSlots}
+            />
+            <AnchorTimeRow
+              label="Wake time"
+              name="Wake"
+              description="When your day starts (used by AI for time-of-day context)"
+              target="wake"
+              timeSlots={timeSlots}
+            />
+            <AnchorTimeRow
+              label="Sleep time"
+              name="Sleep"
+              description="When you go to bed (used by AI for “tonight” and “bedtime”)"
+              target="sleep"
+              timeSlots={timeSlots}
+            />
+            {sameWakeSleep && (
+              <p className="text-xs text-amber-700 dark:text-amber-400" data-wake-sleep-warning>
+                Wake and Sleep are the same time, so you&rsquo;re never asleep: hourly reminders and
+                widget updates run all day.
+              </p>
+            )}
+          </>
+        )}
         {/* Trent, 2026-09-27: Sunday, so Saturday is the last day to do a
             week's quotas. Moves every weekly quota's boundary. The server
             closes any weekly quota period the new boundary ends before it
@@ -164,6 +193,33 @@ export function SnoozeSection() {
         <RolloverNowRow />
       </div>
     </SettingsSection>
+  )
+}
+
+/**
+ * The number pad's four preset buttons (the quick panel's first row), each a
+ * custom time or a reminder period it follows. Kept in their positions, never
+ * sorted: a period moving past another shouldn't reshuffle the pad.
+ */
+function NumberPadRows({ timeSlots }: { timeSlots: TimeSlot[] }) {
+  return (
+    <div className="space-y-3" data-number-pad-settings>
+      <div>
+        <div className="text-sm">Number pad</div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+          The quick panel&rsquo;s four preset times
+        </div>
+      </div>
+      {Array.from({ length: PAD_PRESET_COUNT }, (_, i) => (
+        <AnchorTimeRow
+          key={i}
+          label={padButtonName(i)}
+          name={padButtonName(i)}
+          target={i}
+          timeSlots={timeSlots}
+        />
+      ))}
+    </div>
   )
 }
 

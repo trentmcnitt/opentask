@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { DateTime } from 'luxon'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { snapToNearestFiveMinutes } from '@/lib/quick-select-dates'
+import { computeSnoozeTime } from '@/lib/snooze'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
 
 interface DateTimePickerProps {
   /** Current value as UTC ISO string, or null if no date */
@@ -27,8 +29,9 @@ interface DateTimePickerProps {
    */
   allowClear?: boolean
   /**
-   * What the picker opens on when `value` is null: tomorrow at 9:00 AM (the
-   * default), or the current time snapped to five minutes. Computed when the
+   * What the picker opens on when `value` is null: tomorrow at the user's
+   * Morning time (the default; anchor times, 2026-10-21 — it was a fixed
+   * 9:00 AM), or the current time snapped to five minutes. Computed when the
    * popover opens, not during render, so "now" is the moment of the tap.
    */
   emptyDefault?: 'tomorrow' | 'now'
@@ -61,14 +64,14 @@ interface DateTimePickerProps {
   quickPick?: { label: string; at: string } | null
 }
 
-/** The empty default: tomorrow at 9:00 AM in the user's timezone (UTC ISO). */
-function tomorrowAtNine(timezone: string): string {
-  return DateTime.now()
-    .setZone(timezone)
-    .plus({ days: 1 })
-    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
-    .toUTC()
-    .toISO()!
+/**
+ * Where an empty picker opens (`emptyDefault`): tomorrow at the user's Morning
+ * time, or now snapped to five minutes. UTC ISO.
+ */
+function emptyDefaultAt(kind: 'tomorrow' | 'now', timezone: string, morningTime: string): string {
+  return kind === 'now'
+    ? snapToNearestFiveMinutes()
+    : computeSnoozeTime('tomorrow', timezone, morningTime)
 }
 
 /** The picker's one ready choice above the calendar (`quickPick`). */
@@ -140,6 +143,7 @@ export function DateTimePicker({
   clearLabel = 'Clear',
   quickPick = null,
 }: DateTimePickerProps) {
+  const { morningTime } = useSnoozePreferences()
   const controlled = controlledOpen !== undefined
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlled ? controlledOpen : uncontrolledOpen
@@ -150,16 +154,13 @@ export function DateTimePicker({
 
   // Initialize internal state from external value when popover opens
   const initialize = useCallback(() => {
-    const initial =
-      value ??
-      emptyAnchor ??
-      (emptyDefault === 'now' ? snapToNearestFiveMinutes() : tomorrowAtNine(timezone))
+    const initial = value ?? emptyAnchor ?? emptyDefaultAt(emptyDefault, timezone, morningTime)
     const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
     setSelectedDate(dt.toJSDate())
     setHour12(to12Hour(dt.hour))
     setMinute(dt.minute)
     setPeriod(dt.hour >= 12 ? 'PM' : 'AM')
-  }, [value, timezone, emptyDefault, emptyAnchor])
+  }, [value, timezone, emptyDefault, emptyAnchor, morningTime])
 
   const setOpen = useCallback(
     (newOpen: boolean) => {

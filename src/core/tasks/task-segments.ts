@@ -40,6 +40,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { listTimeSlots } from '@/core/time-slots'
+import { getAnchorTimes } from '@/core/users/anchor-times'
 import { targetTodayTimeFor } from '@/lib/snooze'
 import { DateTime } from 'luxon'
 import type { Task } from '@/types'
@@ -406,20 +407,17 @@ export function restoreTasks(userId: number, ids: number[]): number {
  */
 export function targetTodayTime(userId: number, timezone: string, now = new Date()): string {
   const prefs = getDb()
-    .prepare(
-      'SELECT bulk_snooze_default, default_snooze_option, morning_time FROM users WHERE id = ?',
-    )
-    .get(userId) as
-    | { bulk_snooze_default: string; default_snooze_option: string; morning_time: string }
-    | undefined
+    .prepare('SELECT bulk_snooze_default, default_snooze_option FROM users WHERE id = ?')
+    .get(userId) as { bulk_snooze_default: string; default_snooze_option: string } | undefined
+  const slots = listTimeSlots(userId)
   return targetTodayTimeFor(
     {
       bulkSnoozeDefault: prefs?.bulk_snooze_default ?? 'next_period',
       // No row: no default option to read, so the next period (or next hour).
       defaultSnoozeOption: prefs?.default_snooze_option ?? 'tomorrow',
-      morningTime: prefs?.morning_time ?? '09:00',
+      morningTime: getAnchorTimes(userId, slots).morning.time,
     },
-    listTimeSlots(userId),
+    slots,
     timezone,
     now,
   )
