@@ -83,7 +83,7 @@ function AttemptsTab({ attempts, className }: { attempts: number; className?: st
   return (
     <span
       data-attempts={attempts}
-      title={`Over target on ${attempts} day${attempts === 1 ? '' : 's'}`}
+      title={`Overdue on ${attempts} day${attempts === 1 ? '' : 's'}`}
       className={cn(
         'flex h-[18px] items-center px-[7px] text-[11px] leading-none font-semibold tabular-nums',
         tone === 'light' && 'bg-over-target/10 text-over-target',

@@ -11,7 +11,7 @@
  * (`bg-indigo-100`/`dark:bg-indigo-900/40` + `text-indigo-700`/`dark:text-indigo-300`)
  * matches the signal-badge treatment in TaskRow.tsx.
  */
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { cn } from '@/lib/utils'
 
 interface ChipDueBadgesProps {
@@ -80,6 +80,6 @@ export function describeChipDueBadges({
 }): string {
   const parts = [totalLabel ? `${total} ${totalLabel}` : `${total} for today`]
   if (dueToday > 0 && totalLabel) parts.push(`${dueToday} for today`)
-  if (overdue > 0) parts.push(`${overdue} ${OVER_TARGET_LOWER}`)
+  if (overdue > 0) parts.push(`${overdue} ${OVERDUE_LOWER}`)
   return `${name}: ${parts.join(', ')}`
 }

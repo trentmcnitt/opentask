@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { CalendarClock } from 'lucide-react'
 
 interface OverdueJumpFabProps {
@@ -86,8 +86,8 @@ export function OverdueJumpFab({
   // The pressed label must not end like the top-bar pill's ("clear the
   // overdue filter"), which the E2E suite finds by its whole label.
   const label = overdueFilterOn
-    ? `${overdueCount} ${OVER_TARGET_LOWER} — showing only ${OVER_TARGET_LOWER} tasks; tap to show everything`
-    : `${overdueCount} ${OVER_TARGET_LOWER} — show only ${OVER_TARGET_LOWER} tasks and scroll to them`
+    ? `${overdueCount} ${OVERDUE_LOWER} — showing only ${OVERDUE_LOWER} tasks; tap to show everything`
+    : `${overdueCount} ${OVERDUE_LOWER} — show only ${OVERDUE_LOWER} tasks and scroll to them`
   const pill = `size-12 items-center justify-center rounded-full text-white shadow-md ${
     overdueFilterOn
       ? 'bg-over-target ring-2 ring-over-target/50 ring-offset-2 ring-offset-background hover:bg-over-target/90'
@@ -101,7 +101,7 @@ export function OverdueJumpFab({
         onClick={onJump}
         aria-label={label}
         aria-pressed={overdueFilterOn}
-        title={`${overdueCount} ${OVER_TARGET_LOWER}`}
+        title={`${overdueCount} ${OVERDUE_LOWER}`}
         data-overdue-jump-fab="phone"
         className={`${pill} pointer-events-auto flex cursor-pointer transition-[background-color,opacity] md:hidden ${
           overdueFilterOn ? '' : 'opacity-80 hover:opacity-100 active:opacity-100'
@@ -118,7 +118,7 @@ export function OverdueJumpFab({
       onClick={onJump}
       aria-label={label}
       aria-pressed={overdueFilterOn}
-      title={`${overdueCount} ${OVER_TARGET_LOWER}`}
+      title={`${overdueCount} ${OVERDUE_LOWER}`}
       data-overdue-jump-fab="desktop"
       className={`${pill} pointer-events-auto hidden cursor-pointer opacity-90 transition-[background-color,opacity] hover:opacity-100 md:flex`}
     >

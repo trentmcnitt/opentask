@@ -288,7 +288,7 @@ function CompletionsTab({
                     <span
                       data-completion-attempts={c.attempts}
                       className="text-over-target ml-1.5 font-semibold tabular-nums"
-                      title={`Over target on ${c.attempts} day${c.attempts === 1 ? '' : 's'}`}
+                      title={`Overdue on ${c.attempts} day${c.attempts === 1 ? '' : 's'}`}
                     >
                       · {c.attempts}×
                     </span>

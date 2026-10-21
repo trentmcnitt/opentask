@@ -12,7 +12,7 @@
  * server's `summary` line, when it sends one).
  */
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { useCallback } from 'react'
 import { isOverdue } from '@/lib/task-counts'
 import type { Task } from '@/types'
@@ -63,7 +63,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       const overdueTasks = displayTasks.filter((t) => isOverdue(t, now))
 
       if (overdueTasks.length === 0) {
-        showToast({ message: `Nothing ${OVER_TARGET_LOWER}` })
+        showToast({ message: `Nothing ${OVERDUE_LOWER}` })
         return
       }
 

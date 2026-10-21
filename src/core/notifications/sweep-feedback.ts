@@ -65,7 +65,7 @@
  * fire-and-forget, after the sweep has committed and without delaying the response.
  */
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { taskWord } from '@/lib/utils'
@@ -145,7 +145,7 @@ export function sweepFeedbackContent(
     // Only Urgent was there: nothing a sweep could ever move.
     sentences.push(`${urgent} Urgent can't be bulk deferred`)
   } else {
-    sentences.push(`${leftList(high, urgent, deadline)} still ${OVER_TARGET_LOWER}`)
+    sentences.push(`${leftList(high, urgent, deadline)} still ${OVERDUE_LOWER}`)
     if (waiting > 0 && affected > 0) {
       // High waits for the next press, once nothing lower is left. When
       // nothing moved at all, another press would do the same, so no hint.

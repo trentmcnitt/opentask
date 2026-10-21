@@ -1,6 +1,6 @@
 'use client'
 
-import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -87,7 +87,7 @@ export function SnoozeSection({
             period, with this to flip back while he decides. */}
         <SettingRow
           label="Defer all button"
-          description={`Where a tap of the clock sends every ${OVER_TARGET_LOWER} task`}
+          description={`Where a tap of the clock sends every ${OVERDUE_LOWER} task`}
         >
           <select
             aria-label="Defer all button"
@@ -245,7 +245,7 @@ function DefaultSnoozeRow() {
   return (
     <SettingRow
       label="Default defer"
-      description={`Where a single tap or swipe defers an ${OVER_TARGET_LOWER} task`}
+      description={`Where a single tap or swipe defers an ${OVERDUE_LOWER} task`}
     >
       {showCustom ? (
         <div className="flex items-center gap-2">

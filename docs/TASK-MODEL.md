@@ -110,7 +110,7 @@ The dashboard's `horizon` sort (`src/lib/task-grouping.ts`) orders over target f
 
 ### Over target
 
-"Over target" is what "overdue" was: a task whose target (picked or automatic) has arrived. Same machinery, new word — see [Over target (overdue)](#over-target-overdue) for the code. The code, the API and the query parameters keep "overdue". The UI word lives in one constant, `OVER_TARGET` in `src/lib/task-model-words.ts`, beside `HORIZON_WORD` and the horizon labels. Both words are **PROVISIONAL** (Trent: "not a fan of the name"; "horizon" "doesn't resonate"). The native apps keep their own copy.
+"Overdue" (ruled by Trent 2026-10-21) is a task whose target (picked or automatic) has arrived. From 2026-10-10 to 2026-10-21 the UI called it "over target"; it is "overdue" again, the same word the code, the API and the query parameters always used — see [Over target (overdue)](#over-target-overdue) for the code. The UI word lives in one constant, `OVERDUE_WORD` (mid-sentence `OVERDUE_LOWER`) in `src/lib/task-model-words.ts`, beside `HORIZON_WORD` and the horizon labels. "Horizon" is still **PROVISIONAL** ("doesn't resonate"). The native apps keep their own copy (still "over target" until the native word pass).
 
 ## Task segments
 

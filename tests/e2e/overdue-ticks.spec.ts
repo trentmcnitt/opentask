@@ -21,7 +21,7 @@ const pinned = (page: Page) => page.locator('[data-pinned-date-chip="overdue"]')
 // The top bar's pill, not the jump button (whose label starts the same way).
 const redPill = (page: Page) =>
   page.getByRole('button', {
-    name: /^\d+ over target — (show only over target tasks|clear the over target filter)$/,
+    name: /^\d+ overdue — (show only overdue tasks|clear the overdue filter)$/,
   })
 const fab = (page: Page) => page.locator('[data-overdue-jump-fab="phone"]')
 const row = (page: Page, id: number) => page.locator(`#task-row-${id}`)
@@ -89,8 +89,8 @@ test.describe('Overdue follows the clock', () => {
     await page.clock.fastForward('02:00')
 
     await expect(pinned(page)).toBeVisible()
-    await expect(pinned(page)).toHaveAttribute('aria-label', /^Over target, 1 /)
-    await expect(redPill(page)).toHaveAttribute('aria-label', /^1 over target — /)
+    await expect(pinned(page)).toHaveAttribute('aria-label', /^Overdue, 1 /)
+    await expect(redPill(page)).toHaveAttribute('aria-label', /^1 overdue — /)
     await expect(row(page, id)).toHaveClass(/border-l-over-target/)
   })
 
@@ -106,7 +106,7 @@ test.describe('Overdue follows the clock', () => {
       await page.clock.fastForward('02:00')
 
       await expect(fab(page)).toBeVisible()
-      await expect(fab(page)).toHaveAttribute('aria-label', /^1 over target — /)
+      await expect(fab(page)).toHaveAttribute('aria-label', /^1 overdue — /)
     })
   })
 
@@ -134,7 +134,7 @@ test.describe('Overdue follows the clock', () => {
     await page.goto(`/?project=${projectId}`)
     await expect(row(page, future)).toBeVisible()
 
-    await expect(pinned(page)).toHaveAttribute('aria-label', /^Over target, 2 /)
+    await expect(pinned(page)).toHaveAttribute('aria-label', /^Overdue, 2 /)
     await pinned(page).click()
     await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
     await expect(row(page, future)).toHaveCount(0)
@@ -144,16 +144,14 @@ test.describe('Overdue follows the clock', () => {
       .getByRole('button', { name: /^Mark ".*" as done$/ })
       .click()
     await expect(row(page, overdueA)).toHaveCount(0)
-    await expect(pinned(page)).toHaveAttribute('aria-label', /^Over target, 1 /)
+    await expect(pinned(page)).toHaveAttribute('aria-label', /^Overdue, 1 /)
     await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
 
     // The last one: the filter clears itself and says so.
     await row(page, overdueB)
       .getByRole('button', { name: /^Mark ".*" as done$/ })
       .click()
-    await expect(
-      page.getByText('Nothing over target left — Over target filter cleared'),
-    ).toBeVisible()
+    await expect(page.getByText('Nothing overdue left — Overdue filter cleared')).toBeVisible()
     await expect(pinned(page)).toHaveCount(0)
     await expect(row(page, future)).toBeVisible()
     // Only Overdue went: the project filter is still the one active filter.
@@ -176,8 +174,6 @@ test.describe('Overdue follows the clock', () => {
     await page.goto(`/?filter=overdue&project=${projectId}`)
     await expect(pinned(page)).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByText(/Showing 0 of \d+ tasks/)).toBeVisible()
-    await expect(
-      page.getByText('Nothing over target left — Over target filter cleared'),
-    ).toHaveCount(0)
+    await expect(page.getByText('Nothing overdue left — Overdue filter cleared')).toHaveCount(0)
   })
 })

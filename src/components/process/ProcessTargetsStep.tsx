@@ -58,8 +58,8 @@ export function ProcessTargetsStep({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-muted-foreground text-sm">
-        Over target on {ATTEMPTS_OFFER_REMOVE} or more days. Removing a target sends the task back
-        to its segment.
+        Overdue on {ATTEMPTS_OFFER_REMOVE} or more days. Removing a target sends the task back to
+        its segment.
       </p>
       {plain.length > 0 && (
         <TargetList
@@ -136,7 +136,7 @@ function TargetList({
             </label>
             <span
               className="text-over-target flex-shrink-0 text-xs font-semibold tabular-nums"
-              title={`Over target on ${attempts} days`}
+              title={`Overdue on ${attempts} days`}
             >
               {attempts}×
             </span>

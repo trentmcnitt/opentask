@@ -1,14 +1,15 @@
 /**
- * The task model's user-facing words (2026-10-10), each in ONE place because
- * Trent has not settled them: "Over target" ("not a fan of the name") and
- * "Horizon" ("doesn't resonate"). Change a word here and every web surface
+ * The task model's user-facing words (2026-10-10), each in ONE place so a
+ * ruling changes every web surface at once. "Overdue" is settled (Trent,
+ * 2026-10-21: "over target" went back to "overdue"); "Horizon" is still
+ * provisional ("doesn't resonate"). Change a word here and every web surface
  * follows. The native apps keep their own copy (see ios/AGENTS.md). API field
  * names (`due_at`/`target_at`, `horizon`) are not words and do not change.
  */
 import type { CheckInDay, HorizonValue } from '@/lib/task-segments'
 
-/** What "overdue" used to say: a task whose target has arrived. PROVISIONAL. */
-export const OVER_TARGET = 'Over target'
+/** A task whose target has arrived (ruled 2026-10-21; "Over target" from 2026-10-10). */
+export const OVERDUE_WORD = 'Overdue'
 
 /** The editor's word for the deadline's stored automatic target (§8.1). */
 export const AUTO_TARGET_WORD = 'auto'
@@ -16,8 +17,8 @@ export const AUTO_TARGET_WORD = 'auto'
 export const BACK_TO_AUTO = 'Back to auto'
 /** The picker's choice for the deadline's own day (ruling Q8). */
 export const DEADLINE_DAY = 'Deadline day'
-/** Lower-case, mid-sentence form ("3 over target"). */
-export const OVER_TARGET_LOWER = 'over target'
+/** Lower-case, mid-sentence form ("3 overdue"). */
+export const OVERDUE_LOWER = 'overdue'
 
 /** The name of the pace field. PROVISIONAL. */
 export const HORIZON_WORD = 'Horizon'

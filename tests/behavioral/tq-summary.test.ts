@@ -134,13 +134,13 @@ describe('TQ-F: the sweep-feedback push uses the count-only summary', () => {
     const fb = decideSweepFeedback({ ...base, countSummary }, user)!
     expect(fb.title).toBe(countSummary)
     // One High per press: the next press moves one, not "the High ones".
-    expect(fb.body).toBe('2 High still over target. Defer again to move the next one')
+    expect(fb.body).toBe('2 High still overdue. Defer again to move the next one')
   })
 
   test('TQ-F02: switch off (no summary): exactly as before', () => {
     const fb = decideSweepFeedback(base, user)!
     expect(fb.title).toMatch(/^Deferred 3 tasks until /)
-    expect(fb.body).toBe('2 High still over target. Defer again to move the High ones')
+    expect(fb.body).toBe('2 High still overdue. Defer again to move the High ones')
   })
 })
 
