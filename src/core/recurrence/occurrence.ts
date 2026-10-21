@@ -60,6 +60,11 @@ export interface OccurrenceTask {
   anchor_time: string | null
   /** The scheduled occurrence: anchors a floating rule's grid (every N or bare; compute-next `phaseFloats`, `gridDtstart`). */
   occurrence_at?: string | null
+  /**
+   * On deck (2026-10-20): a decked task is never due — not over target, not
+   * in the badge, never swept, never notified (docs/TASK-MODEL.md § On deck).
+   */
+  on_deck_day?: string | null
 }
 
 /** The occurrence a floating rule's grid (every N, or bare) is anchored at, if the item has one. */
@@ -126,6 +131,16 @@ export function effectiveDueAt(
   timezone: string,
   now: Date = new Date(),
 ): Date | null {
+  // ON DECK never nags (2026-10-20). A REPEATING task on deck has `due_at`
+  // NULL with its occurrence kept, and without this the schedule fallback
+  // below would derive today's occurrence and nag it. Every "due now" reader
+  // (the badge, the notifier, each project's overdue_count, `?overdue=true`,
+  // the snooze-overdue sweep, the day simulator) goes through here, so they
+  // all agree. A deck WITH a target is a one-off's deadline automatic target
+  // (the deadline protects regardless, A1's belt and braces): that target is
+  // the truth, as below.
+  if (task.on_deck_day && !task.due_at) return null
+
   // One-offs: due_at is the whole truth.
   if (!task.rrule) {
     return task.due_at ? new Date(task.due_at) : null

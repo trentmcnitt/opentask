@@ -228,6 +228,7 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
     })
   }
 
+  // Its activity rows are `system` (the rollover runs as the system itself).
   if (changes.week_start !== undefined) rolloverTrackedPeriods(new Date(), userId)
 
   if (columns.length > 0) emitSyncEvent(userId, { widgets: labelConfigChanged })

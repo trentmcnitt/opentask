@@ -171,6 +171,15 @@ export interface Task {
    * before it skips this task. Null = never.
    */
   rolled_over_at: string | null
+  /**
+   * ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): the owner's local
+   * CALENDAR date (yyyy-MM-dd) the task is on deck for — a day with no nag.
+   * Never together with a picked target (rule 1). Null = not on deck.
+   * `queued_from_deck_day`: the deck day the rollover remembered when it sent
+   * the undone deck to the queue (shown in details only, never on the row).
+   */
+  on_deck_day: string | null
+  queued_from_deck_day: string | null
 
   // Notifications
   last_notified_at: string | null
@@ -258,6 +267,10 @@ export interface UndoLogEntry {
   snapshot: UndoSnapshot[] // JSON array
   created_at: string
   undone: boolean
+  /** Which client made it (`src/lib/client-attribution.ts`); null on rows before 2026-10-20. */
+  client: string | null
+  /** The Bearer token's name, or null (session, proxy, system, older rows). */
+  token_name: string | null
 }
 
 export interface DailyStat {
@@ -319,6 +332,12 @@ export type UndoAction =
   // Task model (2026-10-10): a task segment's circle (considered) or Defer All.
   // Field snapshots of last_considered_at / segment_deferred_at; never a completion.
   | 'task_segment'
+  // The task queue (2026-10-20): "Roll over now" — the rollover run by hand
+  // (src/core/tasks/rollover-now.ts). The cron's rollover writes no entry.
+  | 'task_rollover'
+  // On deck (2026-10-20): POST /api/tasks/deck — decked or un-decked
+  // (src/core/tasks/deck.ts). Field snapshots, like a bulk edit.
+  | 'deck'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,

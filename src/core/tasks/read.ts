@@ -54,6 +54,8 @@ const TASK_COLUMNS = [
   'queued_at',
   'queued_from_due_at',
   'rolled_over_at',
+  'on_deck_day',
+  'queued_from_deck_day',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -304,6 +306,8 @@ export interface TaskRow {
   queued_at?: string | null
   queued_from_due_at?: string | null
   rolled_over_at?: string | null
+  on_deck_day?: string | null
+  queued_from_deck_day?: string | null
   /** Not a column: the owner's rollover time (`taskColumns`), for the attempts read. */
   owner_rollover_time?: string | null
   /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
@@ -389,7 +393,13 @@ function queueFields(
   row: TaskRow,
 ): Pick<
   Task,
-  'queue_mark' | 'try_tomorrow' | 'queued_at' | 'queued_from_due_at' | 'rolled_over_at'
+  | 'queue_mark'
+  | 'try_tomorrow'
+  | 'queued_at'
+  | 'queued_from_due_at'
+  | 'rolled_over_at'
+  | 'on_deck_day'
+  | 'queued_from_deck_day'
 > {
   return {
     queue_mark: row.queue_mark === 1,
@@ -397,6 +407,8 @@ function queueFields(
     queued_at: row.queued_at ?? null,
     queued_from_due_at: row.queued_from_due_at ?? null,
     rolled_over_at: row.rolled_over_at ?? null,
+    on_deck_day: row.on_deck_day ?? null,
+    queued_from_deck_day: row.queued_from_deck_day ?? null,
   }
 }
 

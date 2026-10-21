@@ -27,6 +27,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // predates the queue does not, and gets the queued tasks left out (an
     // unknown segment kind would show there as a page of its own).
     const queuePanels = request.nextUrl.searchParams.get('queue') === '1'
+    // `?deck=1` (On deck, 2026-10-20): this client draws a future deck's
+    // Upcoming row ("On deck Sat Oct 24"). Without it a decked task is simply
+    // absent from Upcoming — a shipped native build would draw a dateless row.
+    const deckRows = request.nextUrl.searchParams.get('deck') === '1'
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)
     const promptsBySlot = getQuotaPromptsBySlot(user.id, user.timezone, now)
@@ -76,22 +80,24 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       // include task rows: segments never feed the headline count, the nav
       // badge or the slot notifications. With the task queue on, the queue's
       // two panels come first — only for a caller that sent `?queue=1`.
-      task_segments: getTaskSegments(user.id, user.timezone, now, { queuePanels }).map((seg) => ({
-        horizon: seg.horizon,
-        tasks: seg.tasks.map(({ task, state }) => ({
-          ...formatTaskResponse(task, user.timezone),
-          segment_state: state,
-          // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
-          // hide Today, its picker and Remove target on these rows: target-today
-          // skips them (`skipped_recurring`), and removing the target would
-          // take the recurrence with it.
-          recurring: task.rrule !== null,
-        })),
-        waiting: seg.waiting,
-        considered: seg.considered,
-        deferred: seg.deferred,
-        nudge: seg.nudge,
-      })),
+      task_segments: getTaskSegments(user.id, user.timezone, now, { queuePanels, deckRows }).map(
+        (seg) => ({
+          horizon: seg.horizon,
+          tasks: seg.tasks.map(({ task, state }) => ({
+            ...formatTaskResponse(task, user.timezone),
+            segment_state: state,
+            // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
+            // hide Today, its picker and Remove target on these rows: target-today
+            // skips them (`skipped_recurring`), and removing the target would
+            // take the recurrence with it.
+            recurring: task.rrule !== null,
+          })),
+          waiting: seg.waiting,
+          considered: seg.considered,
+          deferred: seg.deferred,
+          nudge: seg.nudge,
+        }),
+      ),
       // Whether the user has any reminders at all. Nothing renders it directly —
       // it only picks which empty state the surface shows when today is clear.
       // Reminder-only, as native builds read it; a day with prompts is never

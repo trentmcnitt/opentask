@@ -96,18 +96,26 @@ describe('left alone', () => {
 })
 
 describe('through postProcessTaskDates (the whole shared post-process)', () => {
-  const pipe = (text: string, overrides: Partial<EnrichmentResult>) =>
+  const full = (text: string, overrides: Partial<EnrichmentResult>) =>
     postProcessTaskDates(result(overrides), text, TZ, {
       morningTime: '09:00',
       todayTarget: TODAY_TARGET,
       now: NOW,
       newTask: true,
-    }).due_at
+    })
+  const pipe = (text: string, overrides: Partial<EnrichmentResult>) => full(text, overrides).due_at
+  const deck = (text: string, overrides: Partial<EnrichmentResult>) => {
+    const out = full(text, overrides)
+    return { due_at: out.due_at, on_deck_day: out.on_deck_day ?? null }
+  }
 
-  test('the real failure, end to end: "today" dated tomorrow at 10:57 PM → today 11 PM', () => {
-    expect(pipe('text Matthew today', { due_at: '2026-10-17T09:00:00' })).toBe(
-      '2026-10-16T23:00:00',
-    )
+  // On deck (D3, 2026-10-20): "today" with no time is a deck now, not a
+  // target. The same late-evening date slip is fixed on the deck day.
+  test('the real failure, end to end: "today" dated tomorrow at 10:57 PM → on deck today', () => {
+    expect(deck('text Matthew today', { due_at: '2026-10-17T09:00:00' })).toEqual({
+      due_at: null,
+      on_deck_day: '2026-10-16',
+    })
   })
 
   test('"tonight at 11pm" dated tomorrow → today 11 PM, and no later rule moves it', () => {
@@ -116,15 +124,17 @@ describe('through postProcessTaskDates (the whole shared post-process)', () => {
     )
   })
 
-  test('a date-only "today" the model dated tomorrow → today', () => {
-    // resolveDateOnlyTarget places tomorrow's date at the morning time; the
-    // "today" rule then brings it back to today, the app's "today" time.
-    expect(pipe('text Matthew today', { due_at: '2026-10-17' })).toBe('2026-10-16T23:00:00')
+  test('a date-only "today" the model dated tomorrow → on deck today', () => {
+    expect(deck('text Matthew today', { due_at: '2026-10-17' })).toEqual({
+      due_at: null,
+      on_deck_day: '2026-10-16',
+    })
   })
 
-  test('"today or tomorrow" keeps the model\'s tomorrow', () => {
-    expect(pipe('do it today or tomorrow', { due_at: '2026-10-17T09:00:00' })).toBe(
-      '2026-10-17T09:00:00',
-    )
+  test('"today or tomorrow" keeps the model\'s tomorrow (on deck)', () => {
+    expect(deck('do it today or tomorrow', { due_at: '2026-10-17T09:00:00' })).toEqual({
+      due_at: null,
+      on_deck_day: '2026-10-17',
+    })
   })
 })

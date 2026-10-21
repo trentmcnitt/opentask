@@ -9,8 +9,9 @@ import {
   type SegmentKind,
   type SegmentState,
 } from '@/lib/task-segments'
-import { HORIZON_LABELS } from '@/lib/task-model-words'
+import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
+import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import type { Task } from '@/types'
 
 /**
@@ -42,10 +43,22 @@ import type { Task } from '@/types'
  *   in that segment considered in ONE call to /api/task-segments/consider —
  *   one undo entry, Undo on the toast. A queued one-off leaves the queue for
  *   its horizon segment (ticked there today); a waiting repeating task stays
- * - the details icon (resolution 10) → `openDetails`: the Quick panel for
- *   that task (`SegmentDetailsModal`, which each surface renders)
+ * - a HOLD on the row (or right-click, or Cmd/Ctrl+Enter; 2026-10-20 — it
+ *   replaced the pencil) → `openPeek`: the row's read-only bubble
+ *   (`RowPeekPopover`, the reminder rows' own). Its Open → `openDetails`: the
+ *   Quick panel for that task (`SegmentDetailsModal`, which each surface
+ *   renders); its trash can → `remove`: a soft delete, Undo on the toast
+ * - On deck tomorrow (2026-10-20) → `deck(task, deckTomorrowDay(...))`: one
+ *   tap, the hold menu's Tomorrow
+ * - On deck (D2, 2026-10-20) → `POST /api/tasks/deck`: a tap decks it for
+ *   today, or takes a today's deck off (A10); a hold picks the day. The row
+ *   leaves at once, like Today: today's deck is in the dashboard's On deck
+ *   section, a later one in Upcoming (on its heads-up days), an un-decked one
+ *   back in its horizon segment. A refusal (A1) comes back as a 200 with
+ *   nothing changed: the row comes back and the toast says why
+ *   (`src/lib/deck-request.ts`)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
- *   toast then says "Moved to Tasks · <Horizon>")
+ *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
  */
 
 type Overlay = SegmentState | 'gone'
@@ -218,11 +231,16 @@ export function useTaskSegments({
   )
 
   const considerAll = useConsiderAll(run)
-  // The details icon's Quick panel: which task is open (`SegmentDetailsModal`).
+  // The peek bubble's Open: the Quick panel, which task is open
+  // (`SegmentDetailsModal`).
   const [detailsTask, setDetailsTask] = useState<Task | null>(null)
+  const peek = useRowPeek()
+  const remove = useRemoveTask(run)
 
   const removeTarget = useRemoveTarget(run)
+  const deck = useDeck(setOverlay, inFlight, timezone, onUndo, refresh, onCompleted)
   const actions = {
+    deck,
     consider,
     considerAll,
     done,
@@ -231,6 +249,7 @@ export function useTaskSegments({
     setHorizon,
     restore,
     removeTarget,
+    remove,
   }
   return {
     segments: view,
@@ -239,8 +258,41 @@ export function useTaskSegments({
     detailsTask,
     openDetails: setDetailsTask as (task: Task) => void,
     closeDetails: () => setDetailsTask(null),
+    ...peek,
     refresh,
   }
+}
+
+/**
+ * Which row's PEEK BUBBLE is open, if any (2026-10-20) — one id rather than a
+ * flag per row: only ever one bubble at a time (the reminder panel's
+ * `peekId`). `viaKeyboard`: opened with Cmd/Ctrl+Enter, so focus moves in.
+ */
+function useRowPeek() {
+  const [peek, setPeek] = useState<{ id: number; viaKeyboard: boolean } | null>(null)
+  const openPeek = useCallback(
+    (task: Task, viaKeyboard = false) => setPeek({ id: task.id, viaKeyboard }),
+    [],
+  )
+  const closePeek = useCallback(() => setPeek(null), [])
+  return { peek, openPeek, closePeek }
+}
+
+/**
+ * The peek bubble's trash can: the reminder bubble's own delete (bulk delete,
+ * soft), optimistic — the row leaves — with Undo on the toast.
+ */
+function useRemoveTask(run: RunSegmentAction) {
+  return useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        'gone',
+        () => post('/api/tasks/bulk/delete', { ids: [task.id] }),
+        `Moved “${task.title}” to Trash`,
+      ),
+    [run],
+  )
 }
 
 /**
@@ -306,6 +358,54 @@ type RunSegmentAction = (
   send: () => Promise<unknown>,
   message: string,
 ) => Promise<void>
+
+/**
+ * On deck (D2): like `run`, optimistic — the row leaves — but the answer
+ * decides: a deck write that changed nothing (an A1 refusal, a skipped kind)
+ * puts the row back and toasts the server's reason as an error.
+ */
+function useDeck(
+  setOverlay: React.Dispatch<React.SetStateAction<Map<number, Overlay>>>,
+  inFlight: { current: number },
+  timezone: string,
+  onUndo: () => void,
+  refresh: () => Promise<void>,
+  onCompleted?: () => void,
+) {
+  return useCallback(
+    async (task: Task, day: string | null | undefined) => {
+      const putBack = () =>
+        setOverlay((prev) => {
+          const next = new Map(prev)
+          next.delete(task.id)
+          return next
+        })
+      setOverlay((prev) => new Map(prev).set(task.id, 'gone'))
+      inFlight.current++
+      try {
+        const result = await sendDeck([task.id], day)
+        const message = deckToastMessage(result, task.title, timezone)
+        if (message) {
+          toastResult(message, onUndo)
+          onCompleted?.()
+        } else {
+          putBack()
+          showToast({ message: deckErrorMessage(result, task), type: 'error' })
+        }
+      } catch (err) {
+        putBack()
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Something went wrong',
+          type: 'error',
+        })
+      } finally {
+        inFlight.current--
+        void refresh()
+      }
+    },
+    [setOverlay, inFlight, timezone, onUndo, refresh, onCompleted],
+  )
+}
 
 /**
  * Remove target / Back to auto (2026-10-12, `targetReset`): the same PATCH
@@ -386,15 +486,16 @@ export function targetWhen(when: DateTime, today: DateTime): string {
 
 /**
  * The horizon chip's toast. When the change moves the row to another segment,
- * it says where it went ("Moved to Tasks · Months", 2026-10-11) — the row is
- * about to leave the list, and "Horizon: Months" didn't say that. Compared on
- * the EFFECTIVE horizon (a deadline can pull a task in, so a new set horizon
- * may leave it where it is); unchanged, it keeps the plain "Horizon: X".
+ * it says where it went, by the panel's title ("Moved to Monthly", 2026-10-11;
+ * the title since 2026-10-20) — the row is about to leave the list, and
+ * "Horizon: Months" didn't say that. Compared on the EFFECTIVE horizon (a
+ * deadline can pull a task in, so a new set horizon may leave it where it
+ * is); unchanged, it keeps the plain "Horizon: X".
  */
 function horizonToast(task: Task, horizon: HorizonValue | null, segment?: SegmentKind): string {
   if (segment) {
     const next = effectiveHorizon({ horizon, deadline_at: task.deadline_at }, new Date())
-    if (next !== segment) return `Moved to Tasks · ${HORIZON_LABELS[next]}`
+    if (next !== segment) return `Moved to ${SEGMENT_TITLES[next]}`
   }
   return horizon ? `Horizon: ${HORIZON_LABELS[horizon]}` : 'Horizon cleared'
 }

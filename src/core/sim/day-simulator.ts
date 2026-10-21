@@ -24,6 +24,7 @@ import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { considerTasks, getTaskSegments } from '@/core/tasks/task-segments'
 import { getTaskById } from '@/core/tasks/read'
 import { markDone } from '@/core/tasks/mark-done'
+import { onDeckToday } from '@/core/tasks/deck'
 import { ageLabel, attemptsOffer, type SegmentKind } from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser, runTaskRollover } from '@/core/tasks/task-rollover'
@@ -56,7 +57,11 @@ export interface SimContext {
   ids: Record<string, number>
 }
 
-export type Place = 'quiet' | 'over' | 'done' | 'gone' | SegmentKind
+/**
+ * `deck`: on deck for today (On deck, 2026-10-20 — `onDeckToday`, the On deck
+ * section D2 draws), or an earlier day not yet stripped.
+ */
+export type Place = 'quiet' | 'over' | 'done' | 'gone' | 'deck' | SegmentKind
 
 export interface SimTaskDay {
   id: number
@@ -119,7 +124,7 @@ const ORDER: Place[] = ['done', 'over']
 /** Read one tick: every task's place and badges. */
 export function readTick(userId: number, timezone: string, ids: number[], now: Date): SimTaskDay[] {
   const segment = new Map<number, { kind: SegmentKind; state: string }[]>()
-  for (const seg of getTaskSegments(userId, timezone, now, { queuePanels: true })) {
+  for (const seg of getTaskSegments(userId, timezone, now, { queuePanels: true, deckRows: true })) {
     for (const row of seg.tasks) {
       const list = segment.get(row.task.id) ?? []
       list.push({ kind: seg.horizon, state: row.state })
@@ -127,6 +132,7 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
     }
   }
   const over = new Set(getCurrentlyDueTaskIds(userId, now))
+  const deck = new Set(onDeckToday(userId, timezone, now).map((t) => t.id))
   const out: SimTaskDay[] = []
   for (const id of ids) {
     const task = getTaskById(id)
@@ -137,6 +143,7 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
     const places: Place[] = []
     if (task.done || task.archived_at) places.push('done')
     if (over.has(id)) places.push('over')
+    if (deck.has(id)) places.push('deck')
     for (const s of segment.get(id) ?? []) places.push(s.kind)
     if (places.length === 0) places.push('quiet')
     const place = ORDER.find((p) => places.includes(p)) ?? places[0]
@@ -195,7 +202,7 @@ function applyPolicy(
   ids: number[],
 ): void {
   if (policy.includes('tap')) {
-    const waiting = getTaskSegments(userId, timezone, now, { queuePanels: true })
+    const waiting = getTaskSegments(userId, timezone, now, { queuePanels: true, deckRows: true })
       .flatMap((s) => s.tasks)
       .filter((r) => r.state === 'waiting' && ids.includes(r.task.id))
       .map((r) => r.task.id)
@@ -213,9 +220,10 @@ function applyPolicy(
 
 /** The user's open, ordinary task ids (no reminders or quotas): the CLI's default report set. */
 function defaultIds(userId: number, now: Date, timezone: string): number[] {
-  return getTaskSegments(userId, timezone, now, { queuePanels: true })
+  return getTaskSegments(userId, timezone, now, { queuePanels: true, deckRows: true })
     .flatMap((s) => s.tasks.map((r) => r.task.id))
     .concat(getCurrentlyDueTaskIds(userId, now))
+    .concat(onDeckToday(userId, timezone, now).map((t) => t.id))
 }
 
 /** When a day's rollover runs in the simulation: its moment, or the day's `late` time. */

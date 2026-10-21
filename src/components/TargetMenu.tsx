@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarClock } from 'lucide-react'
+import { SunSolid } from '@/components/icons/SunSolid'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
@@ -118,6 +118,7 @@ export function TargetTodayButton({
   onTargetAt,
   className,
   iconClassName,
+  boxClassName,
   showLabel = false,
 }: {
   task: Task
@@ -127,6 +128,13 @@ export function TargetTodayButton({
   /** Layout and hit-target classes of the button. */
   className?: string
   iconClassName?: string
+  /**
+   * The HOVER BOX (segment rows): the hover background goes on an inner box
+   * of these classes instead of the whole button, so a hit target taller
+   * than its row (44px on a 33px panel row) keeps its size while the grey
+   * block stays inside the row — the row buttons' 32px box (2026-10-20).
+   */
+  boxClassName?: string
   /** Show the word "Today" from `sm` up (segment rows); icon-only otherwise. */
   showLabel?: boolean
 }) {
@@ -173,17 +181,40 @@ export function TargetTodayButton({
           aria-label={`Target "${task.title}" today (hold for a time)`}
           // No text selection or iOS callout under a held finger.
           className={cn(
-            'text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
+            'text-muted-foreground hover:text-foreground flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
+            boxClassName ? 'group/today' : 'hover:bg-foreground/5',
             className,
           )}
         >
-          <CalendarClock className={iconClassName} strokeWidth={1.75} />
-          {showLabel ? (
-            // Icon-only on a phone, so the title keeps the width.
-            <span className="sr-only sm:not-sr-only">Today</span>
-          ) : null}
+          {boxClassName ? (
+            <span
+              data-target-today-box
+              className={cn(
+                'group-hover/today:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
+                boxClassName,
+              )}
+            >
+              <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
+            </span>
+          ) : (
+            <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
+          )}
         </button>
       </TargetMenu>
     </span>
+  )
+}
+
+/** Today's icon (`SunSolid`), and its word from `sm` up when `showLabel`. */
+function TodayFace({ iconClassName, showLabel }: { iconClassName?: string; showLabel: boolean }) {
+  return (
+    <>
+      {/* A sun with a solid core (Trent, 2026-10-20): "today", beside On deck. */}
+      <SunSolid className={iconClassName} strokeWidth={1.75} />
+      {showLabel ? (
+        // Icon-only on a phone, so the title keeps the width.
+        <span className="sr-only sm:not-sr-only">Today</span>
+      ) : null}
+    </>
   )
 }

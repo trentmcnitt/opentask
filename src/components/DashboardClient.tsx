@@ -12,11 +12,12 @@ import {
   nowFoldKey,
   orderedTaskIds,
   sortTaskGroups,
+  withDeckSection,
   type SortOption,
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
 import { useNowFolds } from '@/hooks/useNowFolds'
-import { isRelevantNow } from '@/lib/now-view'
+import { inDeckSection, isRelevantNow } from '@/lib/now-view'
 import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
 import type { GroupingMode } from '@/lib/grouping'
 import { resolveTaskLink, missingTaskMessage } from '@/lib/task-link'
@@ -71,6 +72,7 @@ import {
   useDefaultSort,
   useAiAvailable,
   useAiPreferences,
+  useTaskQueue,
 } from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
@@ -1019,6 +1021,66 @@ function HomeContent({
     [taskGroups],
   )
 
+  // Now's folds are on in Now, unless Show all is, or anything narrows the
+  // list — search, filter chips, the AI filter or signal chips: the user
+  // asked for exactly those rows, and a match behind "+ N more" would read
+  // as no match (see `src/lib/now-view.ts`).
+  const taskQueue = useTaskQueue()
+  const listNarrowed =
+    !!searchQuery ||
+    activeFilterCount > 0 ||
+    (aiMode !== 'off' && (aiFilterActive || selectedSignals.length > 0))
+  const nowAvailable = grouping === 'project' && !listNarrowed
+  // The task queue switch: with it on, a queued undated High folds (A8).
+  const queueOn = taskQueue.enabled
+  // Now's On deck section (D2, `withDeckSection`): today's decks, with the
+  // task queue on — part of what Now shows, so part of its count.
+  const deckSection = nowAvailable && queueOn
+  // "N of M now": the rows relevant now, out of the whole list.
+  const nowRelevantCount = useMemo(
+    () =>
+      nowAvailable
+        ? tasks_.filter(
+            (t) =>
+              (deckSection && inDeckSection(t, timezone, now)) ||
+              isRelevantNow(t, timezone, now, { queue: queueOn }),
+          ).length
+        : 0,
+    [nowAvailable, deckSection, tasks_, timezone, now, queueOn],
+  )
+  // Something is folded. When nothing is (every row relevant, or no rows),
+  // there is no fold to lift: the strip hides, and Show all — which would
+  // only bring the preview cap back — has no effect.
+  const nowHasFolds = nowAvailable && nowRelevantCount < shownTaskCount
+  const nowFolds = nowAvailable && !(nowShowAll && nowHasFolds)
+
+  // THE visual order, computed once (`src/lib/task-grouping.ts`): TaskList
+  // draws these groups, and the keyboard, shift-click ranges and Cmd+C read
+  // the same order — including the AI sort, which needs the score map the
+  // rows show, and Now's split (relevant rows, then the fold). Collapsed
+  // groups and shut folds drop out of `orderedIds` so navigation skips them.
+  const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+  const sortedGroups = useMemo(() => {
+    const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
+    if (!nowFolds) return sorted
+    const withDecks = deckSection ? withDeckSection(sorted, timezone, now) : sorted
+    return applyNowFolds(withDecks, timezone, now, { queue: queueOn })
+  }, [
+    taskGroups,
+    listSort,
+    listReversed,
+    listScoreMap,
+    nowFolds,
+    deckSection,
+    timezone,
+    now,
+    queueOn,
+  ])
+  const orderedIds = useMemo(
+    () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),
+    [sortedGroups, isCollapsed, isFoldOpen],
+  )
+
   /**
    * Support `?task=<id>` — two shapes, sharing one URL:
    *
@@ -1066,11 +1128,11 @@ function HomeContent({
   const revealRow = useCallback(
     (taskId: number, groupLabel: string) => {
       if (isCollapsed(groupLabel)) expand(groupLabel)
-      const group = taskGroups.find((g) => g.label === groupLabel)
-      if (group) openFold(nowFoldKey(group))
+      const group = sortedGroups.find((g) => g.label === groupLabel)
+      if (group && !group.deck) openFold(nowFoldKey(group))
       setHighlightTaskId(taskId)
     },
-    [isCollapsed, expand, taskGroups, openFold],
+    [isCollapsed, expand, sortedGroups, openFold],
   )
   useEffect(() => {
     if (taskParamProcessed.current || loading) return
@@ -1092,7 +1154,8 @@ function HomeContent({
       taskId,
       tasks,
       listed: tasks_,
-      groups: taskGroups,
+      // The groups as drawn: a task in Now's On deck section is shown there.
+      groups: sortedGroups,
       tried: taskLinkTried.current,
     })
     // The row's group depends on the view, and `defaultGrouping` starts at a
@@ -1142,7 +1205,7 @@ function HomeContent({
     loading,
     tasks,
     tasks_,
-    taskGroups,
+    sortedGroups,
     grouping,
     router,
     revealRow,
@@ -1161,40 +1224,6 @@ function HomeContent({
   const justAddedNow = useJustAddedClock(visibleTasks)
   const justAddedSource = searchQuery ? null : visibleTasks
 
-  // Now's folds are on in Now, unless Show all is, or anything narrows the
-  // list — search, filter chips, the AI filter or signal chips: the user
-  // asked for exactly those rows, and a match behind "+ N more" would read
-  // as no match (see `src/lib/now-view.ts`).
-  const listNarrowed =
-    !!searchQuery ||
-    activeFilterCount > 0 ||
-    (aiMode !== 'off' && (aiFilterActive || selectedSignals.length > 0))
-  const nowAvailable = grouping === 'project' && !listNarrowed
-  // "N of M now": the rows relevant now, out of the whole list.
-  const nowRelevantCount = useMemo(
-    () => (nowAvailable ? tasks_.filter((t) => isRelevantNow(t, timezone, now)).length : 0),
-    [nowAvailable, tasks_, timezone, now],
-  )
-  // Something is folded. When nothing is (every row relevant, or no rows),
-  // there is no fold to lift: the strip hides, and Show all — which would
-  // only bring the preview cap back — has no effect.
-  const nowHasFolds = nowAvailable && nowRelevantCount < shownTaskCount
-  const nowFolds = nowAvailable && !(nowShowAll && nowHasFolds)
-
-  // THE visual order, computed once (`src/lib/task-grouping.ts`): TaskList
-  // draws these groups, and the keyboard, shift-click ranges and Cmd+C read
-  // the same order — including the AI sort, which needs the score map the
-  // rows show, and Now's split (relevant rows, then the fold). Collapsed
-  // groups and shut folds drop out of `orderedIds` so navigation skips them.
-  const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
-  const sortedGroups = useMemo(() => {
-    const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
-    return nowFolds ? applyNowFolds(sorted, timezone, now) : sorted
-  }, [taskGroups, listSort, listReversed, listScoreMap, nowFolds, timezone, now])
-  const orderedIds = useMemo(
-    () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),
-    [sortedGroups, isCollapsed, isFoldOpen],
-  )
   // Shutting a fold deselects the rows it hides, as collapsing a group does.
   const handleToggleFold = useCallback(
     (key: string) => {
@@ -1212,7 +1241,7 @@ function HomeContent({
     (label: string) => {
       if (!isCollapsed(label)) {
         // About to collapse — deselect tasks in this group
-        const group = taskGroups.find((g) => g.label === label)
+        const group = sortedGroups.find((g) => g.label === label)
         if (group && selection.isSelectionMode) {
           const groupIds = group.tasks.map((t) => t.id)
           selection.removeAll(groupIds)
@@ -1220,7 +1249,7 @@ function HomeContent({
       }
       toggleCollapse(label)
     },
-    [isCollapsed, toggleCollapse, taskGroups, selection],
+    [isCollapsed, toggleCollapse, sortedGroups, selection],
   )
 
   const bulk = useBulkActions(
@@ -1252,7 +1281,8 @@ function HomeContent({
   const keyboardNavEnabled = !quickActionOpen && !showShortcutsDialog && !createPanelOpen
   const keyboard = useKeyboardNavigation({
     orderedIds,
-    groups: taskGroups,
+    // The groups as drawn, Now's On deck section included.
+    groups: sortedGroups,
     keyboardFocusedId,
     setKeyboardFocusedId,
     selection,
@@ -2232,6 +2262,97 @@ function DashboardView({
       )
     : []
   const revealTaskRef = useRef<((task: Task) => void) | null>(null)
+  // NOW'S ON DECK SECTION AT THE TOP (D2 review, 2026-10-20, provisional):
+  // the list is drawn in two parts — the section under the filter row,
+  // above the task-segment panel and the project groups; the rest in its
+  // usual place (`TaskList`'s `part`). One set of props for both.
+  const deckRevealRef = useRef<((task: Task) => void) | null>(null)
+  const renderTaskList = (part: 'deck' | 'rest') => (
+    <TaskList
+      part={part}
+      deckRevealRef={deckRevealRef}
+      tasks={tasks}
+      timeSlots={timeSlots}
+      uncapped={overdueFilterOn}
+      sortedGroups={sortedGroups}
+      orderedIds={orderedIds}
+      projects={projects}
+      grouping={grouping}
+      now={now}
+      highlightTaskId={highlightTaskId}
+      onHighlightDone={onHighlightDone}
+      justAddedSource={justAddedSource}
+      justAddedNow={justAddedNow}
+      revealRef={revealTaskRef}
+      onDone={actions.handleDone}
+      onSnooze={actions.handleSnooze}
+      // Remove target (2026-10-10): back to its horizon's task segment.
+      // On a deadline task the same clear is "Back to auto" (§8.3): the
+      // server puts the deadline's automatic target back.
+      onRemoveTarget={(task) =>
+        void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
+      }
+      // The row's horizon dot menu and its hover Today (and the Today
+      // hold's Target menu) — on every row, the ones inside an open Now
+      // fold included.
+      onSetHorizon={(task, horizon) =>
+        void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
+      }
+      onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
+      onDeck={(task, day) => void actions.handleDeck(task, day)}
+      onLabelClick={onToggleLabel}
+      onTaskFocus={onTaskFocus}
+      keyboardFocusedId={keyboardFocusedId}
+      isKeyboardActive={isKeyboardActive}
+      onKeyDown={onKeyDown}
+      onListFocus={onListFocus}
+      onListBlur={onListBlur}
+      sortOption={sortOption}
+      reversed={reversed}
+      setSortOption={setSortOption}
+      isCollapsed={isCollapsed}
+      toggleCollapse={toggleCollapse}
+      isFoldOpen={isFoldOpen}
+      onToggleFold={onToggleFold}
+      onActivate={onActivate}
+      onDoubleClick={onDoubleClick}
+      annotationMap={effectiveAnnotationMap}
+      showAnnotations={showAnnotations}
+      wnTaskIds={aiInsights.aiTaskIds}
+      showWnHighlight={showWnHighlight}
+      onReprocess={onReprocess}
+      insightsScoreMap={
+        showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+      }
+      insightsSignalMap={
+        showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
+      }
+      insightsCommentaryMap={effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined}
+      showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
+      aiScoreDisabled={!showInsights || aiMode === 'off'}
+      headerLeft={
+        tasks.length > 0 ? (
+          <button
+            onClick={() => {
+              const allSelected =
+                tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+              if (allSelected) {
+                selection.clear()
+              } else {
+                selection.selectAll(tasks.map((t) => t.id))
+              }
+            }}
+            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+          >
+            {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+              ? 'Select None'
+              : 'Select All'}
+          </button>
+        ) : undefined
+      }
+      onUnifiedChange={onUnifiedChange}
+    />
+  )
 
   return (
     <div className="flex flex-1 flex-col">
@@ -2418,6 +2539,9 @@ function DashboardView({
               </button>
             </div>
           )}
+
+          {/* Now's On deck section (D2): under the filter row, at the top. */}
+          {renderTaskList('deck')}
         </div>
 
         <TrackColumn
@@ -2439,89 +2563,7 @@ function DashboardView({
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
-          <TaskList
-            tasks={tasks}
-            timeSlots={timeSlots}
-            uncapped={overdueFilterOn}
-            sortedGroups={sortedGroups}
-            orderedIds={orderedIds}
-            projects={projects}
-            grouping={grouping}
-            now={now}
-            highlightTaskId={highlightTaskId}
-            onHighlightDone={onHighlightDone}
-            justAddedSource={justAddedSource}
-            justAddedNow={justAddedNow}
-            revealRef={revealTaskRef}
-            onDone={actions.handleDone}
-            onSnooze={actions.handleSnooze}
-            // Remove target (2026-10-10): back to its horizon's task segment.
-            // On a deadline task the same clear is "Back to auto" (§8.3): the
-            // server puts the deadline's automatic target back.
-            onRemoveTarget={(task) =>
-              void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
-            }
-            // The row's horizon dot menu and its hover Today (and the Today
-            // hold's Target menu) — on every row, the ones inside an open Now
-            // fold included.
-            onSetHorizon={(task, horizon) =>
-              void actions.handleSaveAllChanges(task.id, { horizon }).catch(() => undefined)
-            }
-            onTargetAt={(task, at) => void actions.handleTargetAt(task, at)}
-            onLabelClick={onToggleLabel}
-            onTaskFocus={onTaskFocus}
-            keyboardFocusedId={keyboardFocusedId}
-            isKeyboardActive={isKeyboardActive}
-            onKeyDown={onKeyDown}
-            onListFocus={onListFocus}
-            onListBlur={onListBlur}
-            sortOption={sortOption}
-            reversed={reversed}
-            setSortOption={setSortOption}
-            isCollapsed={isCollapsed}
-            toggleCollapse={toggleCollapse}
-            isFoldOpen={isFoldOpen}
-            onToggleFold={onToggleFold}
-            onActivate={onActivate}
-            onDoubleClick={onDoubleClick}
-            annotationMap={effectiveAnnotationMap}
-            showAnnotations={showAnnotations}
-            wnTaskIds={aiInsights.aiTaskIds}
-            showWnHighlight={showWnHighlight}
-            onReprocess={onReprocess}
-            insightsScoreMap={
-              showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
-            }
-            insightsSignalMap={
-              showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
-            }
-            insightsCommentaryMap={
-              effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
-            }
-            showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
-            aiScoreDisabled={!showInsights || aiMode === 'off'}
-            headerLeft={
-              tasks.length > 0 ? (
-                <button
-                  onClick={() => {
-                    const allSelected =
-                      tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                    if (allSelected) {
-                      selection.clear()
-                    } else {
-                      selection.selectAll(tasks.map((t) => t.id))
-                    }
-                  }}
-                  className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-                >
-                  {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                    ? 'Select None'
-                    : 'Select All'}
-                </button>
-              ) : undefined
-            }
-            onUnifiedChange={onUnifiedChange}
-          />
+          {renderTaskList('rest')}
         </div>
       </main>
 

@@ -4,7 +4,7 @@
 
 import { z } from 'zod'
 import { ValidationError } from '@/core/errors'
-import { isValidRRule, isPeriodRRule } from '@/core/recurrence/rrule-builder'
+import { isValidRRule, isPeriodRRule, normalizeRRule } from '@/core/recurrence/rrule-builder'
 
 /**
  * ISO 8601 datetime string validator
@@ -117,6 +117,9 @@ const rruleString = z
   .refine((val) => !val || isValidRRule(val) || isPeriodRRule(val), {
     message: 'Invalid RRULE format',
   })
+  // A WEEKLY/DAILY rule's meaningless BYDAY ordinal ("1FR") is dropped, not
+  // refused — `normalizeRRule`.
+  .overwrite((val) => (val ? normalizeRRule(val) : val))
 
 function isTrackedInput(data: { progress_target?: number; is_tracked?: boolean }): boolean {
   return data.is_tracked === true || (data.progress_target ?? 1) > 1
@@ -239,6 +242,41 @@ const quotaPromptConfig = z
  * task segment on the reminders screen the task appears in. `null` = unset,
  * treated as weeks but never reported as set.
  */
+/**
+ * A deck day: a local calendar date, yyyy-MM-dd (On deck, 2026-10-20). Only
+ * the shape here; "today or later" needs the owner's zone (`deckDayProblem`).
+ */
+const deckDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date (yyyy-MM-dd)')
+
+/**
+ * A target and a deck never travel together (rule 1: a task has one or the
+ * other). A deadline may come in the same body (D2 review, 2026-10-20): the
+ * Quick panel saves a staged deadline and deck as ONE write — one undo entry —
+ * and the A1 rule judges the deck against the RESULTING deadline.
+ */
+export const DECK_WITH_DATE_MESSAGE =
+  'Send on_deck_day without target_at / due_at: a task is on deck or has a target'
+
+export const CREATE_DECK_WITH_TARGET_MESSAGE =
+  'Send on_deck_day or target_at / due_at, not both: a task is on deck or has a target'
+
+function deckAlone(data: { on_deck_day?: string | null; due_at?: string | null }): boolean {
+  if (data.on_deck_day === undefined) return true
+  return data.due_at === undefined
+}
+
+/**
+ * A deck and a rule never travel together either (2026-10-20, repeating
+ * decks): a new rule schedules its own date, which would take the deck
+ * straight off. The core refuses it too (`prepareDeck`).
+ */
+export const DECK_WITH_RULE_MESSAGE =
+  'Send on_deck_day without rrule: a new schedule sets its own date, which takes a task off deck'
+
+function deckWithoutRule(data: { on_deck_day?: string | null; rrule?: string | null }): boolean {
+  return typeof data.on_deck_day !== 'string' || data.rrule === undefined
+}
+
 export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
@@ -281,8 +319,16 @@ export const taskCreateSchema = z
     // OMITTED means "put it in my default reminder slot" (createTask), while
     // an explicit null means "no schedule" (the editor's one-time thought).
     enrich: z.boolean().optional(),
+    // ON DECK (2026-10-20): create the task on deck for this local calendar
+    // date. One-offs only, today or later, the A1 rule against any deadline
+    // in the same body — checked in `createTask`. Never with a target.
+    on_deck_day: deckDay.nullable().optional(),
   })
   .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })
+  .refine((data) => !(data.on_deck_day && data.due_at !== undefined && data.due_at !== null), {
+    message: CREATE_DECK_WITH_TARGET_MESSAGE,
+    path: ['on_deck_day'],
+  })
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
@@ -329,10 +375,17 @@ export const taskUpdateSchema = z
     is_reminder: isReminderFlag.optional(),
     is_tracked: z.boolean().optional(),
     quota_prompt_config: quotaPromptConfig.optional(),
+    // ON DECK (2026-10-20, docs/TASK-MODEL.md § On deck): the local calendar
+    // date (yyyy-MM-dd) to put the task on deck for; null takes it off deck.
+    // Today or later, one-offs only, and the A1 deadline rule — checked in
+    // `collectFieldChanges`, which knows the task and the owner's zone.
+    on_deck_day: deckDay.nullable().optional(),
   })
   // A PATCH carrying a bare period rule must say the task is tracked in the
   // same request (is_tracked or progress_target); the schema has no task to ask.
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
+  .refine(deckAlone, { message: DECK_WITH_DATE_MESSAGE, path: ['on_deck_day'] })
+  .refine(deckWithoutRule, { message: DECK_WITH_RULE_MESSAGE, path: ['on_deck_day'] })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
 
@@ -457,6 +510,11 @@ export const bulkEditSchema = z
   .refine((data) => !(data.delta_minutes !== undefined && data.changes.due_at !== undefined), {
     message: 'Cannot provide both changes.due_at and delta_minutes',
   })
+  // On deck: a relative move is a target too (rule 1, never both).
+  .refine((data) => !(data.delta_minutes !== undefined && data.changes.on_deck_day !== undefined), {
+    message: DECK_WITH_DATE_MESSAGE,
+    path: ['changes', 'on_deck_day'],
+  })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>
 
@@ -465,6 +523,16 @@ export type BulkEditInput = z.infer<typeof bulkEditSchema>
  * `{ ids: [taskId, ...] }` — the caller's own open tasks only.
  */
 export const segmentIdsSchema = z.object({ ids: bulkIds })
+
+/**
+ * POST /api/tasks/deck (On deck, 2026-10-20): `{ ids, day? }`. `day` is the
+ * local calendar date (yyyy-MM-dd); omitted = today; null = take off deck.
+ */
+export const deckSchema = z.object({ ids: bulkIds, day: deckDay.nullable().optional() })
+
+export function validateDeck(input: unknown): { ids: number[]; day?: string | null } {
+  return deckSchema.parse(input)
+}
 
 export function validateSegmentIds(input: unknown): { ids: number[] } {
   return segmentIdsSchema.parse(input)

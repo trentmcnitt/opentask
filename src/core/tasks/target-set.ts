@@ -120,9 +120,18 @@ export function stampTargetSet(
   task: Pick<Task, 'target_set_at'> &
     Partial<Pick<Task, 'attempts' | 'attempts_counted_through'> & QueueState>,
   nowStr: string,
-  opts: { keepQueue?: boolean } = {},
+  /**
+   * `deck`: this write puts the task ON DECK (2026-10-20). A deck is a plan
+   * for a day, like a picked target, so it stamps too even when `due_at` does
+   * not move (A6: `target_set_at` is the deck's heads-up anchor), and clears
+   * the queue state (rule 3, B8: decking a queued task takes it out).
+   */
+  opts: { keepQueue?: boolean; deck?: boolean } = {},
 ): boolean {
-  if (!movesTarget(write.fieldsChanged) || write.fieldsChanged.includes(TARGET_SET_FIELD)) {
+  if (
+    !(opts.deck || movesTarget(write.fieldsChanged)) ||
+    write.fieldsChanged.includes(TARGET_SET_FIELD)
+  ) {
     return false
   }
   // The queue state (see above): a target write clears it. The defer that

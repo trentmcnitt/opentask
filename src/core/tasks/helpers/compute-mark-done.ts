@@ -136,6 +136,9 @@ export function computeMarkDone(
         // The task queue (2026-10-19): the advance sets a new target, which
         // clears the queue state — only the fields that were set.
         ...queueStateToClear(task).fields,
+        // On deck (2026-10-20): done completes the decked occurrence and the
+        // next one is not on deck (DECK_CLEAR_SQL); undo puts the deck back.
+        ...(task.on_deck_day ? ['on_deck_day'] : []),
       ],
     }
   } else {

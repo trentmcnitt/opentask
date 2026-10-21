@@ -52,6 +52,8 @@ interface ParsedRRule {
   interval: number
   byDay: string[]
   byMonthDay: number[]
+  /** BYSETPOS ("last Friday" as BYDAY=FR;BYSETPOS=-1), or null. */
+  setPos: number | null
   timeStr: string
 }
 
@@ -75,6 +77,7 @@ function parseForFormat(rrule: string, anchorTime?: string | null): ParsedRRule 
     interval: parts.INTERVAL ? parseInt(parts.INTERVAL) : 1,
     byDay: parts.BYDAY?.split(',') || [],
     byMonthDay: parts.BYMONTHDAY?.split(',').map(Number) || [],
+    setPos: parts.BYSETPOS && /^[+-]?\d+$/.test(parts.BYSETPOS) ? parseInt(parts.BYSETPOS) : null,
     timeStr,
   }
 }
@@ -101,10 +104,48 @@ function formatWeekly(interval: number, byDay: string[], timeStr: string): strin
   return `${prefix} on ${dayNames.join(', ')}${timeStr}`
 }
 
+/**
+ * A monthly rule's day, with its position when it has one: "1SA" → "the 1st
+ * Saturday", "-1FR" (or FR with BYSETPOS=-1) → "the last Friday", a bare
+ * "SA" → "Saturday". The position is part of the rule — it used to be
+ * dropped here, so "the 1st Saturday" read "Monthly on Sat" (2026-10-20).
+ */
+export function monthlyDay(
+  token: string,
+  setPos: number | null,
+  names: Record<string, string> = SHORT_DAY_NAMES,
+): string {
+  const m = token.toUpperCase().match(/^([+-]?\d{1,2})?([A-Z]{2})$/)
+  const code = m?.[2] ?? token.replace(/[^A-Z]/gi, '').toUpperCase()
+  const name = names[code] || token
+  const position = m?.[1] !== undefined ? parseInt(m[1]) : setPos
+  if (position === null || position === 0) return name
+  if (position === -1) return `the last ${name}`
+  if (position < 0) return `the ${ordinal(-position)}-to-last ${name}`
+  return `the ${ordinal(position)} ${name}`
+}
+
+/**
+ * `monthlyDay` for a rule's whole BYDAY list: Monday to Friday with a
+ * BYSETPOS is "the last weekday" / "the 1st weekday" of the month
+ * (BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1), not "the last Monday"; anything else
+ * is named by its first day, as before.
+ */
+function monthlyDays(byDay: string[], setPos: number | null, names: Record<string, string>) {
+  const days = new Set(byDay.map((d) => d.toUpperCase()))
+  const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
+  if (setPos !== null && setPos !== 0 && days.size === 5 && weekdays.every((d) => days.has(d))) {
+    if (setPos === -1) return 'the last weekday'
+    return setPos > 0 ? `the ${ordinal(setPos)} weekday` : `the ${ordinal(-setPos)}-to-last weekday`
+  }
+  return monthlyDay(byDay[0], setPos, names)
+}
+
 function formatMonthly(
   interval: number,
   byDay: string[],
   byMonthDay: number[],
+  setPos: number | null,
   timeStr: string,
 ): string {
   const prefix = interval === 1 ? 'Monthly' : `Every ${interval} months`
@@ -113,8 +154,7 @@ function formatMonthly(
     return `${prefix} on the ${ordinals.join(', ')}${timeStr}`
   }
   if (byDay.length > 0) {
-    const dayName = DAY_NAMES[byDay[0].replace(/[^A-Z]/gi, '').toUpperCase()] || byDay[0]
-    return `${prefix} on ${dayName}${timeStr}`
+    return `${prefix} on ${monthlyDays(byDay, setPos, DAY_NAMES)}${timeStr}`
   }
   return `${prefix}${timeStr}`
 }
@@ -128,7 +168,7 @@ function formatYearly(interval: number, timeStr: string): string {
  * Convert an RRULE string to human-readable text
  */
 export function formatRRule(rrule: string, anchorTime?: string | null): string {
-  const { freq, interval, byDay, byMonthDay, timeStr } = parseForFormat(rrule, anchorTime)
+  const { freq, interval, byDay, byMonthDay, setPos, timeStr } = parseForFormat(rrule, anchorTime)
 
   switch (freq) {
     case 'DAILY':
@@ -136,7 +176,7 @@ export function formatRRule(rrule: string, anchorTime?: string | null): string {
     case 'WEEKLY':
       return formatWeekly(interval, byDay, timeStr)
     case 'MONTHLY':
-      return formatMonthly(interval, byDay, byMonthDay, timeStr)
+      return formatMonthly(interval, byDay, byMonthDay, setPos, timeStr)
     case 'YEARLY':
       return formatYearly(interval, timeStr)
     default:
@@ -200,7 +240,7 @@ function formatDaysCompact(byDay: string[]): string {
  * Optionally includes time from anchorTime if provided.
  */
 export function formatRRuleCompact(rrule: string, anchorTime?: string | null): string {
-  const { freq, interval, byDay, byMonthDay, timeStr } = parseForFormat(rrule, anchorTime)
+  const { freq, interval, byDay, byMonthDay, setPos, timeStr } = parseForFormat(rrule, anchorTime)
 
   switch (freq) {
     case 'DAILY':
@@ -208,7 +248,7 @@ export function formatRRuleCompact(rrule: string, anchorTime?: string | null): s
     case 'WEEKLY':
       return formatWeeklyCompact(interval, byDay, timeStr)
     case 'MONTHLY':
-      return formatMonthlyCompact(interval, byDay, byMonthDay, timeStr)
+      return formatMonthlyCompact(interval, byDay, byMonthDay, setPos, timeStr)
     case 'YEARLY':
       return formatYearlyCompact(interval, timeStr)
     default:
@@ -250,6 +290,7 @@ function formatMonthlyCompact(
   interval: number,
   byDay: string[],
   byMonthDay: number[],
+  setPos: number | null,
   timeStr: string,
 ): string {
   const prefix = interval === 1 ? 'Monthly' : `Every ${interval} months`
@@ -257,8 +298,7 @@ function formatMonthlyCompact(
     return `${prefix} on the ${byMonthDay.map(ordinal).join(', ')}${timeStr}`
   }
   if (byDay.length > 0) {
-    const dayName = SHORT_DAY_NAMES[byDay[0].replace(/[^A-Z]/gi, '').toUpperCase()] || byDay[0]
-    return `${prefix} on ${dayName}${timeStr}`
+    return `${prefix} on ${monthlyDays(byDay, setPos, SHORT_DAY_NAMES)}${timeStr}`
   }
   return `${prefix}${timeStr}`
 }

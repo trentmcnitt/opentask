@@ -46,10 +46,10 @@ export type HorizonValue = (typeof HORIZON_ORDER)[number]
 
 /**
  * The task queue's two panels (task queue PR 3, 2026-10-19; design rules 6-8,
- * docs/TASK-MODEL.md § The task queue). Code words only — the names on screen
- * are provisional (`QUEUE_WORD` in task-model-words.ts):
- * - `queue_today`: queued at or after the latest rollover ("Stripped today");
- * - `queue_previous`: queued before it ("Previously targeted").
+ * docs/TASK-MODEL.md § The task queue). Code words only — the titles on screen
+ * are `QUEUE_PANEL_TITLES` in task-model-words.ts:
+ * - `queue_today`: queued at or after the latest rollover ("Staged");
+ * - `queue_previous`: queued before it ("Previously staged").
  * Only with the server switch on (`OPENTASK_TASK_QUEUE`); `queueKind`, below.
  */
 export const QUEUE_KINDS = ['queue_today', 'queue_previous'] as const
@@ -393,6 +393,8 @@ export interface SegmentTaskFields {
   last_considered_at: string | null
   segment_deferred_at: string | null
   created_at: string
+  /** On deck (2026-10-20): a deck is a plan, so the task is in no horizon segment. */
+  on_deck_day?: string | null
 }
 
 export type SegmentState = 'waiting' | 'considered' | 'deferred'
@@ -441,6 +443,9 @@ export function segmentState(
   checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
 ): { horizon: HorizonValue; state: SegmentState } | null {
   if (hasPickedTarget(task)) return null
+  // ON DECK is quiet like a picked target (B6): no horizon segment. A future
+  // deck shows in Upcoming on its heads-up days, today's in the On deck section.
+  if (task.on_deck_day) return null
   if (targetIsToday(task.due_at, timezone, now)) return null
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const horizon = effectiveHorizon(task, now)
@@ -531,6 +536,8 @@ export interface BadgeTaskFields {
   progress_target?: number
   attempts?: number
   attempts_counted_through?: string | null
+  /** On deck (2026-10-20): a deck is a plan — no age badge (B7). */
+  on_deck_day?: string | null
 }
 
 function isQuotaOrReminder(task: BadgeTaskFields): boolean {
@@ -543,6 +550,7 @@ function isQuotaOrReminder(task: BadgeTaskFields): boolean {
  */
 export function ageLabel(task: BadgeTaskFields, now: Date, timezone = 'utc'): string | null {
   if (task.due_at !== null || task.deadline_at !== null || task.rrule) return null
+  if (task.on_deck_day) return null
   if (isQuotaOrReminder(task) || task.done) return null
   const horizon = setHorizonOrUnset(task.horizon ?? null)
   return pastAgeThreshold(horizon, task.created_at, now, timezone) ? AGE_LABELS[horizon] : null
@@ -787,8 +795,8 @@ export function queueKind(
  *
  * "Today" is the OPENTASK day (`openTaskDayOf` with the user's rollover
  * time), the day the panels split on — so a repeating row considered at 23:30
- * stays considered at 00:30, inside the same "Stripped today" panel, until the
- * rollover moves it to "Previously targeted", waiting again. Queue panels
+ * stays considered at 00:30, inside the same "Staged" panel, until the
+ * rollover moves it to "Previously staged", waiting again. Queue panels
  * only: horizon segments and Upcoming stay on midnight (resolution 4).
  */
 export function queueRowState(
@@ -813,14 +821,34 @@ export function queueRowState(
  * they carry a mark instead.
  */
 export function compareQueueRows(
-  a: { id: number; priority: number; queued_from_due_at?: string | null },
-  b: { id: number; priority: number; queued_from_due_at?: string | null },
+  a: QueueSortFields,
+  b: QueueSortFields,
+  /**
+   * On deck (2026-10-20, B5): a deck the rollover sent to the queue remembers
+   * its DAY (`queued_from_deck_day`), not an instant. A row with no remembered
+   * target sorts by the rollover moment that started that day — the server
+   * passes `rolloverMoment` with the owner's zone and rollover time. Without
+   * it, the day's UTC midnight (enough to order days).
+   */
+  deckMoment: (day: string) => number = (day) => Date.parse(`${day}T00:00:00Z`),
 ): number {
   if (a.priority !== b.priority) return b.priority - a.priority
-  const fa = a.queued_from_due_at ? Date.parse(a.queued_from_due_at) : Infinity
-  const fb = b.queued_from_due_at ? Date.parse(b.queued_from_due_at) : Infinity
+  const key = (r: QueueSortFields) => {
+    if (r.queued_from_due_at) return Date.parse(r.queued_from_due_at)
+    return r.queued_from_deck_day ? deckMoment(r.queued_from_deck_day) : Infinity
+  }
+  const fa = key(a)
+  const fb = key(b)
   if (fa !== fb) return fa < fb ? -1 : 1
   return a.id - b.id
+}
+
+/** The fields the queue order reads. */
+export interface QueueSortFields {
+  id: number
+  priority: number
+  queued_from_due_at?: string | null
+  queued_from_deck_day?: string | null
 }
 
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */
@@ -947,6 +975,8 @@ export interface UpcomingTaskFields extends TargetFields {
   last_completed_at?: string | null
   last_considered_at: string | null
   segment_deferred_at: string | null
+  /** On deck (2026-10-20): a future deck's heads-ups count to its day. */
+  on_deck_day?: string | null
 }
 
 /**
@@ -985,10 +1015,24 @@ export function upcomingState(
   timezone: string,
   now: Date,
 ): { state: SegmentState; target: string } | null {
-  if (!upcomingCandidate(task)) return null
-  const target = task.due_at!
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  const targetDay = localDay(target, timezone)
+  let target: string
+  let targetDay: DateTime
+  if (task.on_deck_day) {
+    // ON DECK (2026-10-20, B6, spec rule 5): a future deck gets the heads-ups
+    // a picked target would, counted to its DAY from `target_set_at` (every
+    // deck write stamps it, A6). On its day and after, it is in the On deck
+    // section (`deckIsToday`), not here. A deck outranks a deadline's
+    // automatic target, which has no Upcoming rows of its own.
+    const day = parseDeckDay(task.on_deck_day, timezone)
+    if (!day) return null
+    targetDay = day
+    target = targetDay.toUTC().toISO()!
+  } else {
+    if (!upcomingCandidate(task)) return null
+    target = task.due_at!
+    targetDay = localDay(target, timezone)
+  }
   if (targetDay <= today) return null
 
   const heads = headsUpDays(targetDay, localDay(targetSetAtOf(task), timezone))
@@ -1012,12 +1056,20 @@ export function upcomingState(
  * so the row can make the target a chip.
  */
 export function upcomingGap(
-  task: Pick<TargetFields, 'due_at' | 'deadline_at'>,
+  task: Pick<TargetFields, 'due_at' | 'deadline_at'> & { on_deck_day?: string | null },
   timezone: string,
 ): { target: string | null; deadline: string | null } {
   const fmt = (iso: string) =>
     DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
-  const target = task.due_at ? `Target ${fmt(task.due_at)}` : null
+  // On deck (2026-10-20): "On deck Sat Oct 24" — the day, no time. It wins
+  // over a deadline's automatic target, which is not the plan.
+  let target: string | null = null
+  const deck = task.on_deck_day ? parseDeckDay(task.on_deck_day, timezone) : null
+  if (deck) {
+    target = `On deck ${deck.toFormat('ccc LLL d')}`
+  } else if (task.due_at) {
+    target = `Target ${fmt(task.due_at)}`
+  }
   if (!task.deadline_at) return { target, deadline: null }
   return { target, deadline: `deadline ${fmt(task.deadline_at)}` }
 }
@@ -1057,4 +1109,245 @@ export function upcomingRowActions(row: {
   task: { due_at: string | null; deadline_at: string | null; target_auto?: boolean }
 }): { today: boolean; reset: 'auto' | 'remove' | null } {
   return { today: true, reset: row.recurring ? null : targetReset(row.task) }
+}
+
+// ===========================================================================
+// ON DECK (2026-10-20; docs/TASK-MODEL.md § On deck)
+// ===========================================================================
+
+/**
+ * ON DECK — a target's DAY without its nag: "I'd like to get to this on that
+ * day; if it gets done it gets done." `tasks.on_deck_day` is the owner's local
+ * CALENDAR date (yyyy-MM-dd; red-team A2 — "today" between midnight and the
+ * rollover is the coming calendar day, not the OpenTask day). The rules:
+ *
+ *  1. A task carries a picked target OR a deck, never both. Decking drops a
+ *     picked target (a deadline task keeps its AUTOMATIC one — the deadline
+ *     protects regardless); a pick clears the deck (`src/core/tasks/deck-clear.ts`).
+ *  2. A deck never nags: no over target, no badge, no Snooze-all.
+ *  3. Decking a queued task takes it out of the queue.
+ *  4. At the rollover an undone deck whose day has ended goes to the queue
+ *     at every priority, remembering its day (`queued_from_deck_day`).
+ *  5. A future deck shows in Upcoming on the heads-up days a picked target
+ *     would get (`upcomingState`); today's is in the On deck section.
+ *  6. No reminder or quota. A REPEATING task can be decked (Trent,
+ *     2026-10-20: "It needs to be added."): the deck is for its CURRENT
+ *     occurrence — `occurrence_at` stays, `due_at` is NULL while decked (never
+ *     a held value: old native builds read over-target from `due_at` alone),
+ *     taking it off deck puts `due_at` back on the occurrence, and the
+ *     rollover hands an un-done one to the repeating rules (roll or wait).
+ *
+ * A deadline task can be decked only while its automatic target is still
+ * ahead, and only BEFORE that target's day (red-team A1), so a deck
+ * never sits on a task that is already nagging (`deckRefusal`). A repeating
+ * task has no automatic target: its deck must come before its (per-occurrence)
+ * deadline's own day, while that deadline is ahead.
+ */
+
+/** The deck day's format: a local calendar date. */
+export const DECK_DAY_FORMAT = 'yyyy-MM-dd'
+
+/** Why a deck write is refused for one task (the response's `refused[].reason`). */
+export type DeckRefusal = 'deadline_nagging' | 'after_auto_target'
+
+/** Why a task cannot be decked at all (the endpoint skips and counts it). */
+export type DeckSkip = 'recurring' | 'reminder' | 'quota' | 'done' | 'trashed'
+
+/** The local calendar date (yyyy-MM-dd) of `now` in `timezone`. */
+export function calendarToday(timezone: string, now: Date): string {
+  return DateTime.fromJSDate(now).setZone(timezone).toFormat(DECK_DAY_FORMAT)
+}
+
+const DECK_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * A deck day as the local start of that day, or null when it is not a valid
+ * yyyy-MM-dd date. Never throws (Luxon throws on an invalid date here,
+ * `throwOnInvalid`): a hand-written stored value must not take down a read.
+ */
+export function parseDeckDay(day: string, timezone: string): DateTime | null {
+  if (!DECK_DAY_PATTERN.test(day)) return null
+  try {
+    const d = DateTime.fromISO(day, { zone: timezone })
+    return d.isValid ? d.startOf('day') : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What is wrong with a deck day, or null: not a yyyy-MM-dd calendar date, or
+ * a day before the calendar today (the earliest deck is today).
+ */
+export function deckDayProblem(day: string, timezone: string, now: Date): string | null {
+  if (!parseDeckDay(day, timezone)) {
+    return 'The deck day must be a date (yyyy-MM-dd)'
+  }
+  if (day < calendarToday(timezone, now)) return 'The deck day must be today or later'
+  return null
+}
+
+/**
+ * Whether the task is on deck for TODAY (calendar day): its day, or an
+ * earlier one not yet stripped — yesterday's leftovers between midnight and
+ * the rollover still count (A2) until the rollover sends them to the queue.
+ */
+export function deckIsToday(
+  task: { on_deck_day?: string | null },
+  timezone: string,
+  now: Date,
+): boolean {
+  return !!task.on_deck_day && task.on_deck_day <= calendarToday(timezone, now)
+}
+
+/**
+ * The kind test: what keeps a task off deck altogether, or null. A repeating
+ * task is no longer one of them (2026-10-20); `'recurring'` stays in the type
+ * (and `skipped_recurring` in the deck endpoint's answer, always 0 now) for
+ * clients that read it.
+ */
+export function deckSkip(task: {
+  rrule?: string | null
+  is_reminder?: boolean
+  is_tracked?: boolean
+  progress_target?: number
+  done?: boolean
+  deleted_at?: string | null
+}): DeckSkip | null {
+  if (task.deleted_at) return 'trashed'
+  if (task.done) return 'done'
+  if (task.is_reminder) return 'reminder'
+  if (task.is_tracked || (task.progress_target ?? 1) > 1) return 'quota'
+  return null
+}
+
+/**
+ * A1 (red team, APPROVED 2026-10-20): a deadline task goes on deck only while
+ * its AUTOMATIC target is still ahead, and only BEFORE that target's
+ * local day — so a deck never nags and Snooze-all never meets one.
+ *  - `deadline_nagging`: the automatic target has arrived (or the deadline
+ *    has passed) — "This deadline is close and already reminding you — use
+ *    Today."
+ *  - `after_auto_target`: the day is ON OR AFTER the automatic target's day
+ *    (strict, review 2026-10-20: on its own day the deck would meet the nag).
+ * The automatic target is the one the deck leaves: the stored one when the
+ * target already is automatic, else (decking drops a picked target) the one
+ * "Back to auto" computes now. No deadline: never refused.
+ *
+ * A REPEATING task (2026-10-20) has no automatic target — its deadline is per
+ * occurrence — so it is judged against the deadline itself: refused once the
+ * deadline has passed (`deadline_nagging`), or for a day on or after the
+ * deadline's day (`after_auto_target`; the same two reasons, so the API's
+ * enum is unchanged). `deckLimit` (the web's greyed days) matches.
+ */
+export function deckRefusal(
+  task: Pick<TargetFields, 'due_at' | 'deadline_at' | 'target_auto' | 'rrule'>,
+  day: string,
+  ctx: TargetContext,
+  now: Date,
+  /** The owner's rollover time, for a repeating task's deadline day (`repeatingDeadlineDay`). */
+  rolloverTime: string | null = null,
+): DeckRefusal | null {
+  if (!task.deadline_at) return null
+  if (task.rrule) {
+    if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'
+    const deadlineDay = repeatingDeadlineDay(task.deadline_at, ctx.timezone, rolloverTime)
+    return day >= deadlineDay ? 'after_auto_target' : null
+  }
+  const auto =
+    task.target_auto && task.due_at ? task.due_at : autoTargetAt(task.deadline_at, ctx, now)
+  if (Date.parse(auto) <= now.getTime()) return 'deadline_nagging'
+  const autoDay = DateTime.fromISO(auto, { zone: 'utc' })
+    .setZone(ctx.timezone)
+    .toFormat(DECK_DAY_FORMAT)
+  return day >= autoDay ? 'after_auto_target' : null
+}
+
+/**
+ * A repeating task's deadline DAY for the deck check (review 2026-10-20): the
+ * OpenTask day it falls in — the local day of `deadline − rollover time`. A
+ * deadline between local midnight and the rollover belongs to the evening
+ * before: a deck on that calendar day would last until the rollover, so the
+ * deadline would pass while decked, silently (the rollover only gives the
+ * target back after it). The deck must come BEFORE this day. Without a
+ * rollover time (the switch off — no decks then anyway): the calendar day.
+ */
+export function repeatingDeadlineDay(
+  deadlineAt: string,
+  timezone: string,
+  rolloverTime: string | null,
+): string {
+  if (rolloverTime) return openTaskDayOf(new Date(deadlineAt), timezone, rolloverTime)
+  return DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone).toFormat(DECK_DAY_FORMAT)
+}
+
+/** The refusal's words (the API's `refused[].message`; D2's toast reads the first). */
+export const DECK_REFUSAL_MESSAGES: Record<DeckRefusal, string> = {
+  deadline_nagging: 'This deadline is close and already reminding you — use Today.',
+  after_auto_target: 'That day is after this deadline starts reminding you.',
+}
+
+/**
+ * A repeating task refused for its deadline's day (`after_auto_target`, the
+ * enum kept): its deadline is per occurrence and never "starts reminding", so
+ * a PATCH's 400 says this (the web's toast too, `deckErrorMessage`).
+ */
+export const REPEATING_DECK_REFUSAL_MESSAGE = "That day is after this task's deadline."
+
+/** The counts a deck write reports (`POST /api/tasks/deck`). */
+export interface DeckResultCounts {
+  day: string | null
+  decked: number
+  undecked: number
+  skipped_recurring: number
+  skipped_reminder: number
+  skipped_quota: number
+  skipped_done: number
+  skipped_trashed: number
+  refused: { id: number; reason: DeckRefusal }[]
+}
+
+/** "today", "tomorrow", else "Sat Oct 24" — a deck day as words. */
+export function deckDayWords(day: string, timezone: string, now: Date): string {
+  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
+  const d = DateTime.fromISO(day, { zone: timezone })
+  if (+d === +today) return 'today'
+  if (+d === +today.plus({ days: 1 })) return 'tomorrow'
+  return d.toFormat('ccc LLL d')
+}
+
+function countWord(k: number, one: string, many: string): string {
+  return k === 1 ? `1 ${one}` : `${k} ${many}`
+}
+
+/**
+ * The one line a deck write answers with (the API's `summary`, the undo
+ * entry's description, D2's toast): "3 tasks on deck for tomorrow · 1
+ * repeating skipped". A lone refusal says why, in the toast's words.
+ */
+export function deckSummary(r: DeckResultCounts, timezone: string, now: Date): string {
+  const parts: string[] = []
+  if (r.day === null) {
+    parts.push(
+      r.undecked > 0
+        ? `Took ${countWord(r.undecked, 'task', 'tasks')} off deck`
+        : 'Nothing on deck',
+    )
+  } else if (r.decked > 0) {
+    const words = deckDayWords(r.day, timezone, now)
+    parts.push(`${countWord(r.decked, 'task', 'tasks')} on deck for ${words}`)
+  }
+  const skipped = [
+    r.skipped_recurring > 0 ? `${r.skipped_recurring} repeating` : null,
+    r.skipped_reminder > 0 ? countWord(r.skipped_reminder, 'reminder', 'reminders') : null,
+    r.skipped_quota > 0 ? countWord(r.skipped_quota, 'quota', 'quotas') : null,
+    r.skipped_done > 0 ? `${r.skipped_done} done` : null,
+    r.skipped_trashed > 0 ? `${r.skipped_trashed} in trash` : null,
+  ].filter((p): p is string => p !== null)
+  if (skipped.length > 0) parts.push(`${skipped.join(', ')} skipped`)
+  if (r.refused.length === 1 && parts.length === 0) {
+    return DECK_REFUSAL_MESSAGES[r.refused[0].reason]
+  }
+  if (r.refused.length > 0) parts.push(`${r.refused.length} refused (deadline close)`)
+  return parts.length > 0 ? parts.join(' · ') : 'Nothing to put on deck'
 }

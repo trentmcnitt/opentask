@@ -19,6 +19,7 @@
 import { getDb, withTransaction } from '@/core/db'
 import { logActivity } from '@/core/activity'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD } from './target-set'
+import { DECK_CLEAR_SQL } from './deck-clear'
 
 export interface StrippedTarget {
   id: number
@@ -48,7 +49,7 @@ export function restoreStrippedTargets(userId: number, now: Date = new Date()): 
     const found = findStrippedTargets(userId)
     const update = tx.prepare(
       `UPDATE tasks
-          SET due_at = queued_from_due_at, ${QUEUE_CLEAR_SQL}, ${TARGET_SET_FIELD} = ?,
+          SET due_at = queued_from_due_at, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, ${TARGET_SET_FIELD} = ?,
               updated_at = ?
         WHERE id = ? AND due_at IS NULL AND queued_at IS NOT NULL`,
     )

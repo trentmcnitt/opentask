@@ -41,11 +41,13 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         labels: ['party'],
+        due_at: null,
       },
       quality_notes:
         'Title: "Order birthday cake" or similar (date/tag phrase removed). ' +
         'Labels MUST include "party" — user explicitly said "tag it party". ' +
-        'due_at should be Saturday.',
+        '"for Saturday" names a day with no time: on_deck_day Saturday is best; a Saturday deadline is acceptable ' +
+        '(the cake is for Saturday); a due_at with a time the user never said is a miss.',
     },
   },
   {

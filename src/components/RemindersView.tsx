@@ -754,7 +754,7 @@ export function RemindersView({
         }
         onClear={clear}
       />
-      {/* A task-segment row's details icon (task queue PR 3). */}
+      {/* A task-segment row's editor: its peek bubble's Open (task queue PR 3). */}
       <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
       <ConsiderAllDialog
         request={considerAll.request}

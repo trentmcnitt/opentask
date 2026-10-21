@@ -63,10 +63,12 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
       must_include: {
         rrule: null,
         labels: [],
+        due_at: null,
+        on_deck_day: '~notnull',
       },
       quality_notes:
         'Title: "Drop off the package at the post office" — the correction ("no actually drop off") is the real intent. ' +
-        '"pick up" was a false start. due_at should be tomorrow.',
+        '"pick up" was a false start. "tomorrow" is a day with no time: on_deck_day tomorrow, due_at null (on deck, 2026-10-20).',
     },
   },
   {
@@ -182,10 +184,12 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         labels: [],
+        due_at: '~notnull',
+        on_deck_day: null,
       },
       quality_notes:
         'Title: "Call mom" or similar. ' +
-        'due_at should be Tuesday afternoon. ' +
+        'due_at should be Tuesday afternoon (a part of day is a target, never on deck). ' +
         'Priority should be 3 ("highpriority" = "high priority"). ' +
         'Missing spaces between words should not prevent extraction.',
     },

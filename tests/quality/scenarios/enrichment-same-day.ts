@@ -41,7 +41,12 @@ export const enrichmentSameDayScenarios: AITestScenario[] = [
       now: todayAt('19:52'),
     },
     requirements: {
-      must_include: { due_at: `~date:${tomorrow}`, deadline_at: null, rrule: null },
+      must_include: {
+        due_at: `~date:${tomorrow}`,
+        on_deck_day: null,
+        deadline_at: null,
+        rrule: null,
+      },
       quality_notes:
         'Now is 7:52 PM. due_at must be TOMORROW in the evening (about 5–8 PM; 7 PM is typical) — never today. Title "Call mom".',
     },
@@ -126,9 +131,14 @@ export const enrichmentSameDayScenarios: AITestScenario[] = [
       now: todayAt('19:38'),
     },
     requirements: {
-      must_include: { due_at: `~date:${nextTuesday}`, deadline_at: null, rrule: null },
+      must_include: {
+        on_deck_day: `~date:${nextTuesday}`,
+        due_at: null,
+        deadline_at: null,
+        rrule: null,
+      },
       quality_notes:
-        '"revisit it on Tuesday" names the day: due_at on the coming Tuesday at the default time. "for now" names no time and must not produce a target tonight. Title like "Revisit the bathroom remodel".',
+        '"revisit it on Tuesday" names the day with no time: on deck for the coming Tuesday (on_deck_day), due_at null. "for now" names no time and must not produce a target tonight. Title like "Revisit the bathroom remodel".',
     },
   },
 ]

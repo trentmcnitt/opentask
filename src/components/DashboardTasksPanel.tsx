@@ -18,7 +18,6 @@ import {
   handledRows,
   segmentColor,
   segmentCounts,
-  useSegmentHint,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -37,16 +36,16 @@ import { isQueueKind } from '@/lib/task-segments'
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
  * across today's segments (the task queue's two panels first, with the
- * switch on, then Days, Upcoming, Weeks, Months, Eventually), its own strip of
+ * switch on, then Daily, Upcoming, Weekly, Monthly, Quarterly), its own strip of
  * teal bars (the current one taller, as a slot's is; green when finished), the
- * same header ("TASKS · DAYS · Daily", "X of Y" that opens what was
- * considered with put-back, ‹ ›), the same rows, and "Defer all" behind the
- * header tap where a slot has "Considered all".
+ * same header (the title, "TASK QUEUE · DAILY", as a slot shows its name; "X of Y"
+ * that opens what was considered with put-back, ‹ ›), the same rows, and
+ * "Defer all" behind the header tap where a slot has "Considered all".
  *
  * WHERE IT OPENS: the first segment with anything waiting; finishing one (its
  * last row, or Defer all) moves to the next that waits. It never lands on a
  * finished segment while another waits — Trent's screenshot had the old pager
- * on "Tasks · Weeks 75 of 75 — Nothing left here". When every segment is
+ * on a weeks segment at "75 of 75 — Nothing left here". When every segment is
  * finished the card collapses to one line ("Tasks · 75 of 75 ✓"), whose count
  * still opens what was considered.
  *
@@ -75,7 +74,6 @@ export function DashboardTasksPanel({
   })
   // No page is a slot: the natural page is the first segment still waiting.
   const pager = usePanelPager(pages, 0, 0)
-  const hint = useSegmentHint()
   const queue = useTaskQueue()
   if (!pager) return null
   if (pages.every((p) => p.waiting === 0)) {
@@ -83,6 +81,12 @@ export function DashboardTasksPanel({
   }
   const { page, index, expanded, setExpanded, showConsidered } = pager
   const { segment } = page
+  // A page flip closes a row's peek bubble (the reminder panel's `onJump`):
+  // left open, it would come back with its row on the way back.
+  const goTo = (next: number) => {
+    actions.closePeek()
+    pager.goTo(next)
+  }
   // A queue panel is only ever sent with the switch on (`useQueueOn`).
   // Before the preferences load (`queue.loaded`) a non-queue page draws no
   // "Considered all" yet, so nothing appears or vanishes when they land.
@@ -98,15 +102,14 @@ export function DashboardTasksPanel({
       <SlotPagerHeader
         label={page.label}
         accent={segmentTitleColor(segment.horizon)}
-        time={hint(segment)}
-        stackTime
+        time={null}
         considered={page.considered}
         total={page.total}
         expanded={expanded}
         canGoPrev={index > 0}
         canGoNext={index < pages.length - 1}
-        onPrev={() => pager.goTo(index - 1)}
-        onNext={() => pager.goTo(index + 1)}
+        onPrev={() => goTo(index - 1)}
+        onNext={() => goTo(index + 1)}
         prevLabel="Previous task segment"
         nextLabel="Next task segment"
         sweep={
@@ -139,7 +142,7 @@ export function DashboardTasksPanel({
       <ReminderSlotBar
         items={pages}
         currentIndex={index}
-        onJump={pager.goTo}
+        onJump={goTo}
         ariaLabel="Today's task segments"
       />
       <TaskPageBody

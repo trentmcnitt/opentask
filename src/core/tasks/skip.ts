@@ -34,6 +34,7 @@ import { loadTaskForMutation } from './access'
 import type Database from 'better-sqlite3'
 import type { Task } from '@/types'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
+import { DECK_CLEAR_SQL } from './deck-clear'
 
 export interface SkipOccurrenceOptions {
   userId: number
@@ -200,7 +201,7 @@ export function writeRecurringSkip(
     `UPDATE tasks
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
             progress_current = 0, ${TARGET_SET_FIELD} = ?,
-            attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL},
+            attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL},
             updated_at = ?
       WHERE id = ?`,
   ).run(nextDueAt, nextOccurrenceAt, nextDueAt, nextDeadlineAt, skipCount, nowStr, nowStr, task.id)
@@ -221,6 +222,9 @@ export function writeRecurringSkip(
     attempts_counted_through: null,
     // The task queue (2026-10-19): the new target clears the queue state.
     ...queue.after,
+    // On deck (2026-10-20, ruling E): skipping takes the task off deck — the
+    // occurrence it was decked for is gone. Undo restores the deck.
+    on_deck_day: null,
   }
   const fieldsChanged = [
     'due_at',
@@ -233,6 +237,7 @@ export function writeRecurringSkip(
     'attempts',
     'attempts_counted_through',
     ...queue.fields,
+    ...(task.on_deck_day ? ['on_deck_day'] : []),
   ]
   return { after, fieldsChanged }
 }

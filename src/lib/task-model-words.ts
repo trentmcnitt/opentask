@@ -22,7 +22,7 @@ export const OVER_TARGET_LOWER = 'over target'
 /** The name of the pace field. PROVISIONAL. */
 export const HORIZON_WORD = 'Horizon'
 
-/** One word per horizon, for chips and segment headers. */
+/** One word per horizon, for the horizon chips and picker. */
 export const HORIZON_LABELS: Record<HorizonValue, string> = {
   days: 'Days',
   weeks: 'Weeks',
@@ -31,10 +31,21 @@ export const HORIZON_LABELS: Record<HorizonValue, string> = {
 }
 
 /**
- * When each segment comes round, after its name in the header ("TASKS · WEEKS
- * · Saturdays"), where a slot shows its start time. Short on purpose
- * (2026-10-12): the longer "Shown on the first Saturday" forms truncated on a
- * 390px phone beside the "X of Y" count and the pager's chevrons. Weeks and
+ * The horizon segments' WORDS (Trent, 2026-10-20): one each. A panel header
+ * is `TASK_QUEUE_PREFIX` · the word (`segmentTitle` in TaskSegmentRow); the
+ * horizon-move toast says the bare word ("Moved to Weekly"). Display text
+ * only: the segment kinds the API sends (`days` … `eventually`) do not change.
+ */
+export const SEGMENT_TITLES: Record<HorizonValue, string> = {
+  days: 'Daily',
+  weeks: 'Weekly',
+  months: 'Monthly',
+  eventually: 'Quarterly',
+}
+
+/**
+ * When each horizon comes round, for the horizon picker and the row corner
+ * (the panel headers carry only their title since 2026-10-20). Weeks and
  * Months name the user's check-in day (`users.check_in_day`, §3): "Tuesdays",
  * "1st Tuesday".
  */
@@ -49,27 +60,35 @@ export function horizonHints(checkInDay: CheckInDay): Record<HorizonValue, strin
 }
 
 /**
- * Upcoming (2026-10-12, spec §2): the heads-up segment's name and the word
- * after it in the header ("TASKS · UPCOMING · Heads-up") — its rows are
- * targeted tasks on their heads-up days, not a cadence.
+ * Upcoming (2026-10-12, spec §2): the heads-up segment's word — its rows are
+ * targeted tasks on their heads-up days, not a cadence. Its "Heads-up" hint
+ * went with the others' (2026-10-20).
  */
 export const UPCOMING_LABEL = 'Upcoming'
-export const UPCOMING_HINT = 'Heads-up'
 
 /**
- * THE TASK QUEUE (task queue PR 3, 2026-10-19; spec rule 6): the panels' name.
- * PROVISIONAL — Trent's working words are "Reminders" for the reminder panels
- * and "Task reminders" for these; the names are TBD. The two panels share the
- * name and differ by their word after it ("TASK REMINDERS · TODAY") and their
- * hint, which says what each holds — the spec's working names.
+ * THE TASK QUEUE (task queue PR 3, 2026-10-19; spec rule 6): the two panels'
+ * words (Trent, 2026-10-20). "Staged" holds the latest rollover's strips,
+ * a manual Roll over now's included (`queue_today`); "Previously staged" the
+ * ones stripped before it (`queue_previous`). Display text only: the kind
+ * strings the API sends do not change.
  */
-export const QUEUE_WORD = 'Task reminders'
-export const QUEUE_PANEL_WORDS = { queue_today: 'Today', queue_previous: 'Earlier' } as const
-export const QUEUE_PANEL_HINTS = {
-  queue_today: 'Stripped today',
-  queue_previous: 'Previously targeted',
+export const QUEUE_PANEL_TITLES = {
+  queue_today: 'Staged',
+  queue_previous: 'Previously staged',
 } as const
-/** Try Tomorrow's mark on a "Stripped today" row (its tooltip and accessible name). */
+
+/**
+ * Every task-segment panel's title is "Task queue · <word>" (Trent,
+ * 2026-10-20: one format everywhere) — "TASK QUEUE · STAGED", "TASK QUEUE ·
+ * DAILY", "TASK QUEUE · UPCOMING" on screen, where the header's `uppercase`
+ * does the capitals. A middle dot, never an em dash.
+ */
+export const TASK_QUEUE_PREFIX = 'Task queue'
+export function taskQueueTitle(word: string): string {
+  return `${TASK_QUEUE_PREFIX} · ${word}`
+}
+/** Try Tomorrow's mark on a "Staged" row (its tooltip and accessible name). */
 export const TRY_TOMORROW_MARK = 'Try tomorrow'
 
 /** The weekday names for the check-in day setting, 1 = Monday … 7 = Sunday. */

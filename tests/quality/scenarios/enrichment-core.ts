@@ -49,9 +49,12 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       projects: [{ id: 1, name: 'Inbox', shared: false }],
     },
     requirements: {
+      // A part of day is a target, never on deck (A5, 2026-10-20).
       must_include: {
         rrule: null,
         labels: [],
+        due_at: '~notnull',
+        on_deck_day: null,
       },
       quality_notes:
         'Title should be clean (e.g., "Call the dentist"). ' +
@@ -144,11 +147,13 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       must_include: {
         rrule: null,
         labels: [],
+        due_at: null,
+        on_deck_day: '~notnull',
       },
       quality_notes:
         'Priority should be 3 (high). ' +
         'Title: "Call mom" (priority/date/project phrases removed). ' +
-        'due_at should be next Tuesday. ' +
+        '"next tuesday" is a day with no time: on_deck_day next Tuesday, due_at null (on deck). ' +
         'project_name should be "Family". ' +
         'Labels must be an empty array — "add it to family" is a project assignment, not a label request.',
     },
@@ -765,11 +770,13 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         rrule: null,
         auto_snooze_minutes: null,
         labels: [],
+        due_at: null,
+        on_deck_day: '~notnull',
       },
       quality_notes:
         'Title: "Buy new socks" (date phrase removed). ' +
         'notes MUST be null — there is no extra context to capture. ' +
-        'due_at should be tomorrow. ' +
+        '"tomorrow" with no time → on_deck_day tomorrow, due_at null (on deck). ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
   },

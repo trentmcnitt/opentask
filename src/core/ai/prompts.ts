@@ -72,15 +72,22 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 ## Fields to extract
 
+Write **reasoning** FIRST, then the fields in the order below. Work each field out in the reasoning before you fill it in, and make the fields match it.
+
+0. **reasoning** — Brief: what you extracted and why, worked out before the fields. For a time with no day, say whether it is still ahead today.
+
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
    **Repeat wording never stays in the title.** Once a repeat is in rrule (or auto_snooze_minutes), every word of it leaves the title — "every other day", "twice a week", "every Monday", "daily", "every morning", "on weekdays", "every 3 months", and the time that goes with it ("at 9am"). The rule carries it; in the title it only repeats itself. Keep the rest of the title in the user's words. "Water the ferns every other day" → title "Water the ferns"; "go to the gym twice a week" → "Go to the gym". A repeat word that is part of a name stays: "weekly standup every Monday 9am" → "Weekly standup".
 
-2. **due_at** — the task's **target**: the day and time the user said to DO it, or to be reminded. ISO 8601 local datetime (no Z suffix, no offset), or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "call the plumber Thursday", "do it Saturday", "remind me Thursday at 9", "remind me Monday at 3"). When no specific time is mentioned, use the configured default task time from the user prompt — except for today (see below). If neither a day nor a time is mentioned, return null.
+2. **due_at** — the day, and the time if one is stated, that the user said to DO it, or to be reminded. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm", "call the plumber Thursday", "do it Saturday", "remind me Thursday at 9", "remind me Monday at 3"). If neither a day nor a time is mentioned, return null. Two forms:
+   - **A day with no time → the date alone**, \`YYYY-MM-DD\`, no time part: "call the plumber Thursday", "do it Saturday", "tomorrow", "today", "next Tuesday", "in 3 days", "order the cake for Saturday" ("for" a day is not a cutoff). The app puts the task **on deck** for that day — planned for the day, with no reminder time. Never fill in a time the user did not say.
+   - **A time, or a part of the day → a full ISO 8601 local datetime** (no Z suffix, no offset) — the **target**, when reminding starts: "Friday at 2pm", "remind me Thursday at 9", "at noon", "tomorrow morning", "this afternoon", "this evening", "tonight", "after work", "before bed". A part of the day with no clock time uses the times in the user prompt ("morning" → the default task time).
+   - **"remind me" + a day with no time** asks for a reminder, so it is a target too: that day at the default task time ("remind me Monday to call the bank" → Monday 9:00 AM when the default is 9:00 AM).
 
    The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
 
-   A date that only says when the task must be done BY ("by Friday", "due the 23rd", "before the 17th", "expires Oct 13") is a deadline, not a target: put it in deadline_at and leave due_at null. Nothing is lost: the app gives a deadline with no target an automatic target of its own, a few days before the deadline, and starts reminding the user from there. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both. A target never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
+   A date that only says when the task must be done BY ("by Friday", "due the 23rd", "before the 17th", "expires Oct 13") is a deadline, not a day to do it: put it in deadline_at and leave due_at null. Nothing is lost: the app gives a deadline with no target an automatic target of its own, a few days before the deadline, and starts reminding the user from there. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both (the day to do it as usual: "Wednesday" alone is the date alone). due_at never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
 
    No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "now" / "right now" / "immediately", "in an hour" and "tonight" name a time).
 
@@ -93,13 +100,15 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    **A time with no day is a target:** its NEXT occurrence — today if that time is still ahead of the current local time, otherwise tomorrow. "call mom 7pm" at 3 PM → today at 7:00 PM; "8:30am standup" at 10 AM → tomorrow at 8:30 AM. A time in the words is the time to do it even when it sits next to a name or a noun ("block Jordan time 930am" → target 9:30 AM, title "Block Jordan time"). Dictation often drops the colon: "830am" is 8:30 AM, "1015pm" is 10:15 PM. With no am/pm ("at 9", "at 3"), take whichever of the two readings comes next between 7 AM and 11 PM. Remove the time phrase from the title, as with any other target wording.
 
-   **A target makes the task quiet until its date.** The app hides a task with a target from the user's lists until that day, apart from a heads-up shortly before, so a wrong target buries the task. Set due_at ONLY from a day or time the user's words state. Never infer one — not from the topic, a deadline, urgency or priority, a pace ("this week", "next month"), or what would be sensible. When unsure, leave due_at null: a task with no target stays in view.
+   **"this weekend"** on its own ("clean the garage this weekend") is a day: the date of the coming Saturday alone (today's date when today is Saturday or Sunday). With a day named ("plan Sunday brunch this weekend"), that day of this weekend. "sometime this weekend" / "over the weekend" is a pace (horizon days), due_at null.
+
+   **due_at makes the task quiet until its date.** The app hides a task with a target or an on-deck day from the user's lists until that day, apart from a heads-up shortly before, so a wrong date buries the task. Set due_at ONLY from a day or time the user's words state. Never infer one — not from the topic, a deadline, urgency or priority, a pace ("this week", "next month"), or what would be sensible. When unsure, leave due_at null: a task with no target stays in view.
 
    Return the date and time in the user's local timezone. Do NOT convert to UTC or append a Z suffix — the application handles timezone conversion. Example: if the user says "3pm tomorrow" in America/Chicago, return \`2026-03-05T15:00:00\` (not \`2026-03-05T21:00:00Z\`).
 
    Use the current **local** time (not UTC) to determine today's date and day of week. When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date. A month and day with no year ("February 28th", "Oct 13") means the NEXT time that date comes round: if it has already passed this year, use next year. This applies to due_at and deadline_at alike.
 
-   **The word "today" with no time:** ONLY when the user's words say "today" as the day to do it and give no time of day ("do it today", "text Matthew today"), return the date alone — \`2026-03-04\`, no time part — and the app places it. This never applies when the user names no day: no day mentioned → due_at null, as above (a bare task like "check the mail" or "urgent call the bank" has no target). "now" / "right now" / "immediately" → soon today, as above. A time the user states for today ("today at 3pm", "tonight", "this afternoon") is a full datetime, as usual.
+   **"today" with no time** is a day like any other: the date alone ("do it today", "text Matthew today" → \`2026-03-04\`). This never applies when the user names no day: no day mentioned → due_at null, as above (a bare task like "check the mail" or "urgent call the bank" has no day). "now" / "right now" / "immediately" → soon today, as above. A time the user states for today ("today at 3pm", "tonight", "this afternoon") is a full datetime, as usual.
 
 3. **deadline_at** — the real outside cutoff, as an ISO 8601 local datetime (same format as due_at), or null. Set it ONLY when the wording states a date or time the task must be done by: "by Friday", "before the 17th", "due Monday", "due to the client Monday 10am", "expires Oct 13", "the deadline is February 28th", "last day to return it is Sunday", "the pharmacy closes at 9pm tonight". When the cutoff names a day but no time, use the END of that day: \`T23:59:00\` local.
 
@@ -187,7 +196,6 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
 11. **notes** — Supplementary context extracted from dictation: reference numbers, phone numbers, addresses, reasons, instructions, background info. Separate from the title. Return null if no extra context beyond what's captured in other fields.
 
-12. **reasoning** — Brief explanation of what you extracted and why.
 
 ## Examples
 
@@ -196,6 +204,7 @@ Input: "call the dentist tomorrow morning"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'tomorrow morning' names a day AND a part of the day → a full datetime: tomorrow at the default task time for 'morning' (9:00 AM). No cutoff wording, so no deadline; a named day is not a pace, so no horizon. Title cleaned up capitalization. No explicit label request.",
   "title": "Call the dentist",
   "due_at": "2026-02-10T09:00:00",
   "deadline_at": null,
@@ -206,8 +215,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'tomorrow morning' says when to do it → target (due_at) at the configured task time (9:00 AM). No cutoff wording, so no deadline; a named day is not a pace, so no horizon. Title cleaned up capitalization. No explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -216,6 +224,7 @@ Input: "return the library books by Friday"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app sets the deadline's automatic target. No pace wording, priority, or label request.",
   "title": "Return the library books",
   "due_at": null,
   "deadline_at": "2026-02-13T23:59:00",
@@ -226,8 +235,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app sets the deadline's automatic target. No pace wording, priority, or label request."
+  "notes": null
 }
 \`\`\`
 
@@ -236,8 +244,9 @@ Input: "renew the domain before it expires on the 20th, do it Monday"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'expires on the 20th' is the cutoff → deadline_at Feb 20, end of day. 'do it Monday' is when to do it, a day with no time → due_at the date alone, next Monday. No pace wording, so no horizon.",
   "title": "Renew the domain",
-  "due_at": "2026-02-16T09:00:00",
+  "due_at": "2026-02-16",
   "deadline_at": "2026-02-20T23:59:00",
   "horizon": null,
   "priority": 0,
@@ -246,8 +255,27 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'expires on the 20th' is the cutoff → deadline_at Feb 20, end of day. 'do it Monday' is when to do it → target (due_at) next Monday at the default task time. No pace wording, so no horizon."
+  "notes": null
+}
+\`\`\`
+
+### A day with no time — the date alone
+Input: "grab winter gloves Saturday"
+Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
+\`\`\`json
+{
+  "reasoning": "'Saturday' is the day to do it, with no time or part of the day → due_at the date alone, Sat Feb 14 (the app puts it on deck for that day). No cutoff, pace, priority, or label request.",
+  "title": "Grab winter gloves",
+  "due_at": "2026-02-14",
+  "deadline_at": null,
+  "horizon": null,
+  "priority": 0,
+  "labels": [],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null
 }
 \`\`\`
 
@@ -256,6 +284,7 @@ Input: "sometime this month clean out the garage"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "'sometime this month' is a pace, not a day or a cutoff → horizon months; due_at and deadline_at stay null. Pace phrase removed from the title.",
   "title": "Clean out the garage",
   "due_at": null,
   "deadline_at": null,
@@ -266,8 +295,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'sometime this month' is a pace, not a day or a cutoff → horizon months; due_at and deadline_at stay null. Pace phrase removed from the title."
+  "notes": null
 }
 \`\`\`
 
@@ -276,6 +304,7 @@ Input: "um I need to like take my vitamins every morning at 8 or whatever"
 Current date: Mon, Feb 9 | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. 8:00 AM local. Title preserves user's phrasing 'take my vitamins'. No explicit label request.",
   "title": "Take my vitamins",
   "due_at": "2026-02-10T08:00:00",
   "deadline_at": null,
@@ -286,8 +315,7 @@ Current date: Mon, Feb 9 | Timezone: America/Chicago
   "rrule": "FREQ=DAILY",
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. 8:00 AM local. Title preserves user's phrasing 'take my vitamins'. No explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -297,8 +325,9 @@ Current date: Tue, Feb 10 | Default task time: 9:00 AM | Timezone: America/Chica
 Available projects: Inbox, Family
 \`\`\`json
 {
+  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17, a day with no time → the date alone (the app puts it on deck). Matched 'family' project from user's explicit instruction — 'add it to family' is a project assignment, not a label request.",
   "title": "Call mom",
-  "due_at": "2026-02-17T09:00:00",
+  "due_at": "2026-02-17",
   "deadline_at": null,
   "horizon": null,
   "priority": 3,
@@ -307,8 +336,7 @@ Available projects: Inbox, Family
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time, defaulting to configured task time (9:00 AM). Matched 'family' project from user's explicit instruction — 'add it to family' is a project assignment, not a label request."
+  "notes": null
 }
 \`\`\`
 
@@ -318,6 +346,7 @@ Timezone: America/Chicago
 Available projects: Inbox, Work, Job Search
 \`\`\`json
 {
+  "reasoning": "'job search' is the full name of the Job Search project, used as a noun naming what the task is for → name match. Title keeps the user's words. No date, priority, or explicit label request.",
   "title": "Test task for job search",
   "due_at": null,
   "deadline_at": null,
@@ -328,8 +357,7 @@ Available projects: Inbox, Work, Job Search
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "'job search' is the full name of the Job Search project, used as a noun naming what the task is for → name match. Title keeps the user's words. No date, priority, or explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -339,6 +367,7 @@ Timezone: America/Chicago
 Available projects: Inbox, Home
 \`\`\`json
 {
+  "reasoning": "Gutters are a home chore, but the word 'home' is not in the text and the user gave no assignment — topic never picks a project, so project_name is null. No date, priority, or explicit label request.",
   "title": "Clean the gutters before it rains",
   "due_at": null,
   "deadline_at": null,
@@ -349,8 +378,7 @@ Available projects: Inbox, Home
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Gutters are a home chore, but the word 'home' is not in the text and the user gave no assignment — topic never picks a project, so project_name is null. No date, priority, or explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -359,6 +387,7 @@ Input: "Fix the door hinge"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Title already clean and concise. No date, priority, or explicit label request. No pace wording, so horizon is null — a small repair is not 'eventually' unless the user says so.",
   "title": "Fix the door hinge",
   "due_at": null,
   "deadline_at": null,
@@ -369,8 +398,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Title already clean and concise. No date, priority, or explicit label request. No pace wording, so horizon is null — a small repair is not 'eventually' unless the user says so."
+  "notes": null
 }
 \`\`\`
 
@@ -379,6 +407,7 @@ Input: "I need to call my insurance company about the claim they denied for the 
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → a day and a part of the day → tomorrow at the default task time (9:00 AM). The appeal deadline has no date, so deadline_at stays null and the phrase goes to notes. 'high priority' → 3. No explicit label request.",
   "title": "Call insurance company about denied ER claim",
   "due_at": "2026-02-10T09:00:00",
   "deadline_at": null,
@@ -389,8 +418,7 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
-  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → target at the configured task time (9:00 AM). The appeal deadline has no date, so deadline_at stays null and the phrase goes to notes. 'high priority' → 3. No explicit label request."
+  "notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching."
 }
 \`\`\`
 
@@ -399,6 +427,7 @@ Input: "water the plants every 3 days from when I complete it, auto-snooze 2 hou
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request.",
   "title": "Water the plants",
   "due_at": null,
   "deadline_at": null,
@@ -409,8 +438,7 @@ Timezone: America/Chicago
   "rrule": "FREQ=DAILY;INTERVAL=3",
   "auto_snooze_minutes": 120,
   "recurrence_mode": "from_completion",
-  "notes": null,
-  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request."
+  "notes": null
 }
 \`\`\`
 
@@ -419,6 +447,7 @@ Input: "weekly standup every Monday 9am no auto-snooze"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "User specified 9:00 AM. 'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned).",
   "title": "Weekly standup",
   "due_at": "2026-02-16T09:00:00",
   "deadline_at": null,
@@ -429,8 +458,7 @@ Timezone: America/Chicago
   "rrule": "FREQ=WEEKLY;BYDAY=MO",
   "auto_snooze_minutes": 0,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "User specified 9:00 AM. 'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned)."
+  "notes": null
 }
 \`\`\`
 
@@ -439,6 +467,7 @@ Input: "pick up dry cleaning and label it as errands"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence.",
   "title": "Pick up dry cleaning",
   "due_at": null,
   "deadline_at": null,
@@ -449,8 +478,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence."
+  "notes": null
 }
 \`\`\`
 
@@ -459,6 +487,7 @@ Input: "this is a matter of life and death pick up the prescription"
 Timezone: America/Chicago
 \`\`\`json
 {
+  "reasoning": "Extreme urgency phrase 'matter of life and death' — hyperbolic but clearly signals high stakes. Priority 4. No date, label, or recurrence.",
   "title": "Pick up the prescription",
   "due_at": null,
   "deadline_at": null,
@@ -469,8 +498,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "notes": null,
-  "reasoning": "Extreme urgency phrase 'matter of life and death' — hyperbolic but clearly signals high stakes. Priority 4. No date, label, or recurrence."
+  "notes": null
 }
 \`\`\``
 
@@ -500,6 +528,7 @@ Each task can carry three separate time fields. Read them separately:
 - **target** (\`target:\` in the task list) — the task's due date: when the user wants to do it, and when its reminder starts nagging. It is soft — snoozed, moved or removed freely — so a task past its target ("overdue" below) only means its reminder has fired, not that anything is late. "none" means no target. A target marked "(from deadline)" was not set by the user: the task has a deadline and no target of its own (or its own falls after the deadline), so it starts nagging a few days before the deadline. Being past a "(from deadline)" target is the deadline's lead-in, not routine overdue — judge that task by its deadline.
 - **deadline** (\`deadline:\`, shown only when the task has one) — the real outside cutoff: an expiry, a filing date, a promise to a client. Snoozing never moves it. A stored deadline is the clearest sign that missing the task has a consequence, and a passed deadline means the consequence is real — at any priority. Tasks without the field may still state a deadline in their notes (older tasks predate the field); treat a deadline in the notes the same way.
 - **horizon** (\`horizon:\`, shown only when set) — the pace the user chose: days, weeks, months, or eventually. Absent means the user has not said.
+- **on deck** (\`on deck:\`, in place of the target) — the user has planned to get to the task on that day, without a reminder. It is a plan, not a missing target: a task on deck is not stale, forgotten or unplanned, and one on deck for a coming day is on track. An on-deck day that passes without the task done sends it back to the user's queue to decide again.
 
 Priority (0-4) says how much missing the task costs, and decides how snoozing treats its target:
 
@@ -839,7 +868,8 @@ export const WHATS_NEXT_REMINDERS = `## Reminders
 - Targets are reminders at every priority — being "overdue" (past the target) is routine for P0-3, not urgent. A \`deadline:\` is the real cutoff, at any priority; a "(from deadline)" target is that deadline's lead-in, so judge the task by the deadline
 - When notes are present, reference specific details (claim numbers, deadlines, instructions)
 - from_completion recurring tasks overdue for multiple cycles = genuinely not completed (worth surfacing)
-- Reasons and the summary use the app's words: "over target" (never "overdue"), "target" (never "due date"), priorities by name (High, Urgent — never "P3"/"P4")`
+- Reasons and the summary use the app's words: "over target" (never "overdue"), "target" (never "due date"), priorities by name (High, Urgent — never "P3"/"P4")
+- A task \`on deck:\` is already planned for that day — don't surface it as forgotten or unplanned`
 
 export const INSIGHTS_REMINDERS = `## Reminders
 - P4/Urgent → ALWAYS score 0-20, no exceptions, no signals
@@ -850,7 +880,8 @@ export const INSIGHTS_REMINDERS = `## Reminders
 - P0-3 overdue 0-2 days → score LOW (0-25), no signals (routine in OpenTask) — unless the target is "(from deadline)": then the deadline decides
 - Every task in the input MUST appear in the output
 - Output valid JSON only — a single object with a \`tasks\` array, no text outside it
-- Commentary uses the app's words: "over target" (never "overdue"), "target" (never "due date"), priorities by name (High, Urgent — never "P3"/"P4")`
+- Commentary uses the app's words: "over target" (never "overdue"), "target" (never "due date"), priorities by name (High, Urgent — never "P3"/"P4")
+- A task \`on deck:\` is planned for that day: never "stale", and never described as having no target or plan — its age alone is no reason to raise its score`
 
 export const ENRICHMENT_REMINDERS = `## Reminders
 - Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
@@ -858,13 +889,13 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Do NOT infer labels from context — only include labels the user explicitly requests
 - Do NOT infer projects from task content — project_name is null unless the user explicitly assigns one or the task text contains a project's full name used as that name ("for job search" → Job Search). Never Inbox; "after work", "work out" and "homework" are not matches. A project's description only picks between projects the words already match — it never makes a match
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
-- due_at is the TARGET — the day the user said to do it. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
+- due_at is the day the user said to do it: a day with no time ("tomorrow", "Saturday", "today") → the date alone ("YYYY-MM-DD"), and the app puts the task on deck; a stated time or part of day ("at 3pm", "tomorrow morning", "tonight", "this afternoon") → a full local datetime. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
 - Urgency is priority, not a date: "urgent X" / "critical alert X" with no day or time named → due_at null
 - Soon today: "now" / "right now" → ~15 min out, rounded UP to the quarter hour; "in an hour" → now + 1h, rounded up to the quarter hour; "in an hour or two" / "in 2 or 3 hours" → a whole hour (hh:00) inside the range
 - horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
 - Return due_at and deadline_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
-- When no specific time is mentioned for a target, use the configured default task time. Exception: the user says "today" with no time → the date alone ("YYYY-MM-DD"); the app places it. No day mentioned at all → due_at null, never today
+- Never fill in a time the user did not say: a day with no time is the date alone ("remind me <day>" is the one exception: that day at the default task time). A bare "this weekend" → the coming Saturday's date; "sometime this weekend" → horizon days. No day mentioned at all → due_at null, never today
 - When uncertain about priority, prefer 0 over guessing — but don't ignore strong emotional signals (hyperbolic urgency = P3-4, not P0)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
 - Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL. Yearly is FREQ=YEARLY (never MONTHLY;INTERVAL=12); a yearly repeat in a named month with no day named is BYMONTHDAY=1, not today's date
@@ -952,13 +983,12 @@ User's timezone: ${timezone}
 Current local time: ${localNow}
 
 User's schedule:
-- Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
+- Default task time: ${formattedMorning} (for "morning" and "remind me <day>" with no clock time; a day with no time at all is the date alone)
 - Wakes up: ${formattedWake}
 - Goes to sleep: ${formattedSleep}
 
 When resolving time-of-day language:
-- the word "today" with no time specified → the date alone (YYYY-MM-DD, no time part) — the app picks the time. No day mentioned → null
-- "tomorrow" with no time specified → default task time (${formattedMorning})
+- a day with no time specified ("today", "tomorrow", "Saturday", "next Tuesday") → the date alone (YYYY-MM-DD, no time part) — the app puts it on deck for that day. No day mentioned → null
 - "morning" → default task time (${formattedMorning})
 - "afternoon" → use your judgment, typically early afternoon
 - "evening" → use your judgment, typically early evening

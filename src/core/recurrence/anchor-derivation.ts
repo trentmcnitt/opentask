@@ -71,7 +71,7 @@ export function deriveAnchorFields(
   if (components.freq === 'WEEKLY' && components.byday && components.byday.length > 0) {
     // For multi-day patterns, use the first day as the primary anchor
     // This is mainly for display/sorting purposes
-    anchorDow = components.byday[0]
+    anchorDow = components.byday[0].day
   }
 
   // Derive anchor_dom for monthly patterns

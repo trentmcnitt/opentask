@@ -148,7 +148,11 @@ export function HorizonDotButton({
 }: {
   task: Pick<Task, 'horizon' | 'title' | 'deadline_at' | 'due_at'>
   onChange?: (horizon: HorizonValue | null) => void
-  /** 'meta': the segment row's meta line (task queue on) — opens details (`onOpen`), never a menu. */
+  /**
+   * 'meta': the segment row's meta line (task queue on) — opens details
+   * (`onOpen`), never a menu; without `onOpen` (the row's peek bubble) just
+   * the mark and its tooltip.
+   */
   variant: 'corner' | 'inline' | 'meta'
   className?: string
   /** 'meta' only: open the task's details. */
@@ -167,7 +171,7 @@ export function HorizonDotButton({
     className,
   )
   const data = { 'data-horizon-dot': horizon ?? 'unset', 'data-horizon-chip': '' }
-  if (variant === 'meta') {
+  if (variant === 'meta' && onOpen) {
     // The segment row's meta line (task queue on): a press opens the task's
     // details, where the horizon is changed — never the row's consider.
     return (

@@ -30,6 +30,7 @@ interface DueCandidate {
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
   occurrence_at: string | null
+  on_deck_day: string | null
   timezone: string
 }
 
@@ -44,7 +45,7 @@ function fetchDueCandidates(userId: number, now: Date): DueCandidate[] {
   const rows = getDb()
     .prepare(
       `SELECT t.id, t.project_id, t.due_at, t.rrule, t.recurrence_mode, t.anchor_time,
-              t.occurrence_at, u.timezone
+              t.occurrence_at, t.on_deck_day, u.timezone
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
         WHERE t.user_id = ?
@@ -62,6 +63,11 @@ function fetchDueCandidates(userId: number, now: Date): DueCandidate[] {
           -- notifies, not the item. Missing one costs nothing; the next
           -- occurrence simply arrives.
           AND t.is_reminder = 0
+          -- On deck (2026-10-20): a deck never nags — a decked repeating
+          -- task (no target) must not have its schedule asked; a deck with a
+          -- target is a deadline's automatic one, which protects regardless
+          -- (effectiveDueAt says the same).
+          AND (t.on_deck_day IS NULL OR t.due_at IS NOT NULL)
           AND (
             t.rrule IS NOT NULL
             -- At or before now: an automatic target set to "now" (ruling Q10)

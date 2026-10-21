@@ -140,7 +140,7 @@ function printDay(day: SimDay, titles: Map<number, string> | null): void {
   const head =
     `${day.weekday} ${day.date}  ` +
     SEGMENTS.map((s) => `${s} ${c(s)}`).join('  ') +
-    `  | over ${c('over')}  3×+ ${c('offers')}  queued ${c('queued')}`
+    `  | over ${c('over')}  3×+ ${c('offers')}  queued ${c('queued')}  deck ${c('deck')}`
   console.log(head)
   for (const kind of ['upcoming', 'over'] as const) {
     const ids = day.tasks.filter((t) => t.places.includes(kind)).map((t) => t.id)

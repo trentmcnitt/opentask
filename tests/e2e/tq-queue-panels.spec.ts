@@ -1,7 +1,7 @@
 /**
  * The task queue's panels on the web (task-queue PR 3; docs/TASK-MODEL.md
- * § The task queue): "Task reminders · Today" (stripped by this OpenTask
- * day's rollover) and "Task reminders · Earlier" (stripped before), first
+ * § The task queue): "Queued" (stripped by this OpenTask day's rollover)
+ * and "Previously queued" (stripped before), first
  * among the task segments, with the switch on (`POST /api/test/task-queue`).
  *
  * Its own user (`queue@opentask.local`, seeded in globalSetup with nothing
@@ -22,7 +22,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const QUEUE_USER_ID = 2
@@ -107,6 +107,16 @@ async function strip(
 const panel = (page: Page, kind: 'queue_today' | 'queue_previous') =>
   page.locator('[data-task-segments]').locator(`[data-task-segment="${kind}"]`)
 const row = (scope: Page | Locator, id: number) => scope.locator(`[data-segment-task="${id}"]`)
+
+/**
+ * A task-segment row's details (2026-10-20, the pencil gone): right-click the
+ * row's title for its peek bubble, then the bubble's Open.
+ */
+async function openDetails(row: Locator) {
+  const page = row.page()
+  await row.locator('p').first().click({ button: 'right' })
+  await page.locator('[data-task-peek]').getByRole('button', { name: 'Open' }).click()
+}
 const toastUndo = (page: Page) =>
   page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' })
 
@@ -170,8 +180,13 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     const earlier = panel(page, 'queue_previous')
     await expect(today).toBeVisible()
     await expect(earlier).toBeVisible()
-    await expect(today).toContainText(/Task reminders · Today/i)
-    await expect(earlier).toContainText(/Task reminders · Earlier/i)
+    // "Task queue · <word>", nothing after it (Trent, 2026-10-20).
+    await expect(today).toHaveAttribute('aria-label', 'Task queue · Staged')
+    await expect(earlier).toHaveAttribute('aria-label', 'Task queue · Previously staged')
+    await expect(today.getByText('Task queue · Staged', { exact: true })).toBeVisible()
+    await expect(earlier.getByText('Task queue · Previously staged', { exact: true })).toBeVisible()
+    await expect(today.getByText('Stripped today')).toHaveCount(0)
+    await expect(earlier.getByText('Previously targeted')).toHaveCount(0)
     // First among the task segments.
     const kinds = await page
       .locator('[data-task-segments] > [data-task-segment]')
@@ -205,6 +220,76 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
       'data-tasks-page',
       'tasks:queue_today',
     )
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('a waiting repeating row and its details show the occurrence, not the moved target', async ({
+  page,
+}) => {
+  // Trent, 2026-10-20: "Oct 23 · every Fri at 4 PM" and "Target Fri Oct 23 ·
+  // in 3 days / Occurrence Fri Oct 16 · target moved" — "What does that even
+  // mean?" The row stands for the occurrence it missed; it shows that date.
+  const ids: number[] = []
+  try {
+    const weekly = await create(page, {
+      title: uniqueTitle('TQ waiting'),
+      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+      due_at: daysFromNow(3),
+    })
+    ids.push(weekly)
+    // Its last occurrence was four days ago; today has none, so the rollover
+    // makes it wait: target → the next occurrence, occurrence_at kept.
+    sql(
+      'UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?',
+      daysFromNow(-4),
+      daysFromNow(-4),
+      weekly,
+    )
+    await strip(page, { today: [weekly] })
+    const state = await stateOf(page, weekly)
+    expect(state.queued_at).not.toBeNull()
+    const occurrence = DateTime.fromISO(state.occurrence_at as string).setZone(TEST_TZ)
+    const target = DateTime.fromISO(state.due_at as string).setZone(TEST_TZ)
+    expect(target > occurrence).toBe(true)
+
+    await page.goto('/reminders')
+    const r = row(panel(page, 'queue_today'), weekly)
+    const chip = r.locator('[data-target-chip]')
+    await expect(chip).toContainText(occurrence.toFormat('LLL d'))
+    await expect(chip).not.toContainText(target.toFormat('LLL d'))
+    await expect(chip).toContainText(/every/i)
+
+    await openDetails(r)
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('[data-queued-occurrence]')).toContainText(
+      occurrence.toFormat('LLL d'),
+    )
+    await expect(dialog.locator('[data-quick-panel-date]')).not.toContainText(/Target|\bin \d/)
+    await expect(dialog.locator('[data-occurrence-line]')).toHaveCount(0)
+    await expect(dialog).not.toContainText('target moved')
+    // The controls start from NOW (the task has no live target): "+1 day"
+    // stages about this time tomorrow — not the day after the missed
+    // occurrence (a past date), not the moved target plus a day.
+    await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
+    const line = dialog.locator('[data-quick-panel-date]')
+    await expect(dialog.locator('[data-queued-occurrence]')).toHaveCount(0)
+    await expect(line).toContainText('Target')
+    await expect(line).not.toContainText('ago')
+    await expect(line).not.toContainText(occurrence.plus({ days: 1 }).toFormat('LLL d'))
+    await expect(line).not.toContainText(target.plus({ days: 1 }).toFormat('LLL d'))
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toHaveCount(0)
+
+    // The dashboard row says the same (Newest: every open task, flat).
+    await withPreferences(page, { default_grouping: 'new' }, async () => {
+      await page.goto('/')
+      const dashRow = page.locator(`#task-row-${weekly}`)
+      await expect(dashRow).toContainText(occurrence.toFormat('LLL d'))
+      await expect(dashRow).not.toContainText(target.toFormat('LLL d'))
+    })
   } finally {
     await trash(page, ids)
   }
@@ -285,7 +370,7 @@ test('Today retargets out of the queue; the checkbox is done', async ({ page }) 
   }
 })
 
-test('the details icon on a queue row and on a horizon row opens the Quick panel', async ({
+test('the peek bubble on a queue row and on a horizon row opens the Quick panel', async ({
   page,
 }) => {
   const ids: number[] = []
@@ -307,9 +392,10 @@ test('the details icon on a queue row and on a horizon row opens the Quick panel
     for (const id of [queued, plain]) {
       const r = row(page, id)
       await expect(r).toBeVisible()
-      // The details icon replaced the horizon dot menu; the dot is on the
+      // No pencil (2026-10-20) and no horizon dot menu: the dot is on the
       // meta line (a stripped one-off has no target).
       await expect(r.locator('button[data-horizon-chip]')).toHaveCount(0)
+      await expect(r.locator('[data-segment-details]')).toHaveCount(0)
       const dialog = page.getByRole('dialog')
       const opensDetails = async () => {
         await expect(dialog).toBeVisible()
@@ -317,14 +403,17 @@ test('the details icon on a queue row and on a horizon row opens the Quick panel
         await page.keyboard.press('Escape')
         await expect(dialog).toHaveCount(0)
       }
-      // The icon.
-      await r.getByRole('button', { name: /^Details:/ }).click()
+      // The peek bubble's Open.
+      await openDetails(r)
       await opensDetails()
       // A tap on the meta-line dot opens details too, never the row's consider.
       await r.locator('[data-horizon-meta]').click()
       await opensDetails()
-      // Enter on the focused details button is the button's, not the row's.
-      await r.getByRole('button', { name: /^Details:/ }).focus()
+      // The keyboard: Cmd/Ctrl+Enter on the row, then Enter on the bubble's
+      // focused Open — never the row's consider.
+      await r.focus()
+      await page.keyboard.press('ControlOrMeta+Enter')
+      await expect(page.locator(`[data-task-peek="${id}"]`)).toBeVisible()
       await page.keyboard.press('Enter')
       await opensDetails()
       await expect(r).toHaveAttribute('data-segment-state', 'waiting')
@@ -349,7 +438,9 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     // No Defer all on a queue panel.
     await expect(earlier.getByRole('button', { name: /^Defer all/ })).toHaveCount(0)
     await earlier
-      .getByRole('button', { name: /^Mark all \d+ in Task reminders · Earlier as considered$/ })
+      .getByRole('button', {
+        name: /^Mark all \d+ in Task queue · Previously staged as considered$/,
+      })
       .click()
     await expect(row(page, a)).toHaveCount(0)
     await expect(row(page, b)).toHaveCount(0)
@@ -431,6 +522,84 @@ test('the sweep toast says what moves to the Tasks queue', async ({ page }) => {
         default_snooze_option: was.default_snooze_option,
       },
     })
+    await trash(page, ids)
+  }
+})
+
+test('row polish: On deck lines up the column, the dot follows the project, every control has the hand', async ({
+  page,
+}) => {
+  // Trent, 2026-10-20. A repeating row had no On deck, so its pencil sat
+  // elsewhere (now it has On deck too, 2026-10-20); the one-off's horizon dot
+  // came before the project, so the project names zig-zagged; Today and On
+  // deck showed the arrow cursor.
+  const ids: number[] = []
+  try {
+    const oneOff = await create(page, { title: uniqueTitle('TQ one-off'), due_at: daysFromNow(-4) })
+    const weekly = await create(page, {
+      title: uniqueTitle('TQ repeating'),
+      rrule: `FREQ=WEEKLY;BYDAY=${weekdayCode(daysFromNow(3))}`,
+      due_at: daysFromNow(3),
+    })
+    ids.push(oneOff, weekly)
+    sql(
+      'UPDATE tasks SET due_at = ?, occurrence_at = ? WHERE id = ?',
+      daysFromNow(-4),
+      daysFromNow(-4),
+      weekly,
+    )
+    await strip(page, { today: [oneOff, weekly] })
+
+    const x = async (l: Locator) => (await l.boundingBox())!.x
+    const check = async (scope: Locator) => {
+      const a = row(scope, oneOff)
+      const w = row(scope, weekly)
+      await expect(a).toBeVisible()
+      await expect(w).toBeVisible()
+      // Both have On deck (a repeating task decks its occurrence, 2026-10-20).
+      await expect(a.locator('[data-on-deck]')).toHaveCount(1)
+      await expect(w.locator('[data-on-deck]')).toHaveCount(1)
+      await expect(w.locator('[data-deck-slot-empty]')).toHaveCount(0)
+      for (const sel of ['[data-deck-tomorrow]', '[data-target-today]', '[data-segment-project]']) {
+        // On deck tomorrow and Today line up down the column, and so do the
+        // project names (the dot no longer comes before them).
+        expect(await x(w.locator(sel)), sel).toBeCloseTo(await x(a.locator(sel)), 0)
+      }
+      const dotAfterProject = await a.locator('[data-horizon-meta]').evaluate((dot) => {
+        const project = dot.parentElement!.querySelector('[data-segment-project]')!
+        return !!(project.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING)
+      })
+      expect(dotAfterProject).toBe(true)
+      // Today's icon is the sun with a solid core (Trent, 2026-10-20).
+      await expect(a.locator('[data-target-today] [data-sun-solid]')).toHaveCount(1)
+      // Every control on the row shows the hand.
+      for (const sel of [
+        '[data-on-deck]',
+        '[data-target-today]',
+        '[data-deck-tomorrow]',
+        '[data-horizon-meta]',
+        '[aria-label^="Mark"]',
+        '[aria-label^="Done"]',
+      ]) {
+        await expect(a.locator(sel).first(), sel).toHaveCSS('cursor', 'pointer')
+      }
+    }
+
+    await page.goto('/reminders')
+    const today = panel(page, 'queue_today')
+    await check(today)
+    await expect(today.locator('[data-segment-consider-all]')).toHaveCSS('cursor', 'pointer')
+
+    // The dashboard's right panel: the same rows, and its pager header.
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.goto('/')
+    const card = page.locator('[data-tasks-panel]')
+    await expect(card).toHaveAttribute('data-task-segment', 'queue_today')
+    await check(card)
+    await expect(card.locator('[data-slot-header-toggle]')).toHaveCSS('cursor', 'pointer')
+    const next = card.getByRole('button', { name: 'Next task segment' })
+    if (await next.isEnabled()) await expect(next).toHaveCSS('cursor', 'pointer')
+  } finally {
     await trash(page, ids)
   }
 })

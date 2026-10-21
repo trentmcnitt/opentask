@@ -8,7 +8,7 @@ import { getTargetContext } from './target-context'
 import type { TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
-import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
+import type { QuotaPromptConfig, Task, UndoAction, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring, computeNextOccurrence } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
@@ -1026,7 +1026,7 @@ function bulkSnoozeDescription(
  * `bulkSnooze` is synchronous from its read to here (nothing interleaves), so
  * their label lists are still current.
  */
-function cancelPendingEnrichment(tasks: Task[]): void {
+export function cancelPendingEnrichment(tasks: Task[]): void {
   const pending = tasks.filter((t) => t.labels.includes('ai-to-process'))
   if (pending.length === 0) return
   const stmt = getDb().prepare('UPDATE tasks SET labels = ? WHERE id = ?')
@@ -1097,6 +1097,12 @@ export interface BulkEditOptions {
    * Omitted = the date applies to all of them.
    */
   dateTaskIds?: number[]
+  /**
+   * The undo entry's action and description, when the edit is a gesture of
+   * its own (On deck, 2026-10-20: `deck`). Default: `bulk_edit`, described
+   * by the fields changed.
+   */
+  undo?: { action: UndoAction; description: (affected: number) => string }
 }
 
 export interface BulkEditResult {
@@ -1419,8 +1425,10 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     if (snapshots.length > 0) {
       logAction(
         userId,
-        'bulk_edit',
-        formatBulkEditDescription(snapshots.length, Array.from(allFieldsChanged)),
+        options.undo?.action ?? 'bulk_edit',
+        options.undo
+          ? options.undo.description(snapshots.length)
+          : formatBulkEditDescription(snapshots.length, Array.from(allFieldsChanged)),
         Array.from(allFieldsChanged),
         snapshots,
       )

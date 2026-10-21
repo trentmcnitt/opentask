@@ -1,7 +1,7 @@
 'use client'
 
 import { OVER_TARGET_LOWER } from '@/lib/task-model-words'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,29 +17,11 @@ import { CHECK_IN_DAY_NAMES } from '@/lib/task-model-words'
 import { savePreferenceField } from '@/lib/save-preference'
 import { formatSnoozeOptionLabel, formatMorningTime, NEXT_PERIOD_OPTION } from '@/lib/snooze'
 import { SettingsSection } from './SettingsSection'
+import { SettingRow } from './SettingRow'
+import { RolloverNowRow } from './RolloverNowRow'
 
 const SELECT_CLASS =
   'rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
-
-function SettingRow({
-  label,
-  description,
-  children,
-}: {
-  label: string
-  description: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="text-sm">{label}</div>
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">{description}</div>
-      </div>
-      {children}
-    </div>
-  )
-}
 
 /** A time-of-day input that saves on change (an emptied field is ignored). */
 function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -179,6 +161,7 @@ export function SnoozeSection() {
             ))}
           </select>
         </SettingRow>
+        <RolloverNowRow />
       </div>
     </SettingsSection>
   )

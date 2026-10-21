@@ -164,7 +164,7 @@ export function offersTargetToday(task: CornerTask): boolean {
 
 /**
  * The dot's tooltip: "Weeks · comes back Saturdays" — when its horizon
- * segment comes round, in the segment headers' own words (`horizonHints`,
+ * segment comes round, in the horizon picker's own words (`horizonHints`,
  * lower-cased where they are not a day name). Unset says so: "Unset (counts as
  * Weeks) · comes back Saturdays". When a near deadline pulls the task into a
  * sooner segment, the tooltip names the segment it is actually in.

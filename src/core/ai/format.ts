@@ -19,6 +19,12 @@ export function formatLocalDate(isoUtc: string, timezone: string): string {
   return dt.toFormat('ccc, LLL d, h:mm a')
 }
 
+/** An on-deck day (yyyy-MM-dd, a local date) for the prompt: "Sat, Oct 24". */
+export function formatDeckDay(day: string, timezone: string): string {
+  const dt = DateTime.fromISO(day, { zone: timezone })
+  return dt.isValid ? dt.toFormat('ccc, LLL d') : day
+}
+
 /**
  * Pre-compute a human-readable age string from a UTC timestamp.
  * Prevents the AI from miscounting task age (a common hallucination).
@@ -46,6 +52,9 @@ export function formatAge(isoUtc: string, now: DateTime): string {
  * P0-3 target was "pushed back" only where it can see the history, and showing
  * it on every line would invite exactly that narrative about routine sweeps.
  *
+ * A task ON DECK (no target; `on_deck_day`) reads `on deck: Sat, Oct 24` in
+ * the target's place.
+ *
  * The deadline's automatic target (no target the user picked — `target_auto`,
  * carried as `target_implied`) reads `target: <date> (from deadline)` and
  * never gets the first-target note: comparing an old target with an automatic
@@ -55,6 +64,12 @@ export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime):
   const due = t.due_at
     ? `${formatLocalDate(t.due_at, timezone)}${t.target_implied ? ' (from deadline)' : ''}`
     : 'none'
+  // On deck (B11, 2026-10-20): a task with no target the user planned for a
+  // day reads "on deck: Sat, Oct 24" — not "target: none", which the models
+  // read as never planned (Insights' "no target for 2 months").
+  const deck = t.on_deck_day ? formatDeckDay(t.on_deck_day, timezone) : null
+  const when =
+    deck && !t.due_at ? `on deck: ${deck}` : `target: ${due}${deck ? ` | on deck: ${deck}` : ''}`
   const originalDue =
     !t.target_implied &&
     t.priority >= 3 &&
@@ -71,7 +86,7 @@ export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime):
   const recMode = t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
   const notes = t.notes ? ` | notes: ${t.notes}` : ''
   return (
-    `- [${t.id}] "${t.title}" | priority: ${t.priority} | target: ${due}${originalDue}${deadline}${horizon} | ` +
+    `- [${t.id}] "${t.title}" | priority: ${t.priority} | ${when}${originalDue}${deadline}${horizon} | ` +
     `created: ${created} (${createdAge}) | labels: ${t.labels.join(', ') || 'none'} | ` +
     `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
   )

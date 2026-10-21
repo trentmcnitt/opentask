@@ -58,6 +58,10 @@ const VALID_TASK_COLUMNS = new Set([
   'try_tomorrow',
   'queued_at',
   'queued_from_due_at',
+  // On deck (2026-10-20): a deck write, a pick that clears a deck, and Roll
+  // over now's deck strip all put these in undo snapshots.
+  'on_deck_day',
+  'queued_from_deck_day',
   // Retired 2026-10-12 but KEPT: undo entries written before then name them,
   // and an unknown field throws (wedging the stack — see `is_tracked`).
   'deadline_nag_off',

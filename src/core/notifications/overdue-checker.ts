@@ -64,6 +64,8 @@ interface OverdueTask {
   anchor_time: string | null
   /** Anchors a floating rule's grid (every N, or bare) when there is no due_at (`todaysOccurrence`). */
   occurrence_at?: string | null
+  /** On deck (2026-10-20): never notified (the SQL leaves decks out; `effectiveDueAt` agrees). */
+  on_deck_day?: string | null
   timezone: string
   /**
    * The due time this task is actually being notified about, from
@@ -307,7 +309,7 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         `
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
-               t.rrule, t.recurrence_mode, t.anchor_time, t.occurrence_at,
+               t.rrule, t.recurrence_mode, t.anchor_time, t.occurrence_at, t.on_deck_day,
                u.timezone,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
@@ -327,6 +329,8 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           AND t.is_tracked = 0
           -- §6: reminders never fire individually — their time slot notifies.
           AND t.is_reminder = 0
+          -- On deck (2026-10-20): a target-less deck never nags (see currently-due.ts).
+          AND (t.on_deck_day IS NULL OR t.due_at IS NOT NULL)
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))

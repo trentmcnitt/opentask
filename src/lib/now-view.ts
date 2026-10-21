@@ -18,7 +18,13 @@
  *    does not — deferring says "not today";
  * 4. undated High or Urgent — priority 3 or 4 with no target at all. (A
  *    deadline task always carries a target, its automatic one, so "undated"
- *    means no dates at all.)
+ *    means no dates at all.) Not while it is in the task queue (A8, 2026-10-20).
+ *
+ * ON DECK (2026-10-20): a task on deck for today (or an earlier day not yet
+ * stripped) is NOT relevant here — it belongs to the On deck section — unless
+ * a deadline's automatic target has arrived; a future deck is relevant on its
+ * Upcoming heads-up days only. The server's list of today's decks is
+ * `onDeckToday` (src/core/tasks/deck.ts).
  *
  * Everything else in the project — later targets, Low/Medium/unset with no
  * date — sits behind the project's fold row, "+ N more in <Project>", which
@@ -46,14 +52,47 @@
  */
 import type { Task } from '@/types'
 import { isOverdue } from '@/lib/task-counts'
-import { targetIsToday, upcomingState } from '@/lib/task-segments'
+import { deckIsToday, targetIsToday, upcomingState } from '@/lib/task-segments'
 
 /** High (3) and Urgent (4): the priorities an undated task needs to be relevant now. */
 export const NOW_PRIORITY_MIN = 3
 
-export function isRelevantNow(task: Task, timezone: string, now: Date): boolean {
-  if (task.due_at === null) return (task.priority ?? 0) >= NOW_PRIORITY_MIN
-  if (isOverdue(task, now)) return true
+/**
+ * `opts.queue`: the task queue's server switch (the browser's `useTaskQueue`,
+ * like `attemptsOffer`). Only with it on does the undated-High rule skip a
+ * queued task (A8); off, main's behaviour exactly — a rollback leaves no
+ * High task hidden behind a fold.
+ */
+export interface NowOptions {
+  queue?: boolean
+}
+
+export function isRelevantNow(
+  task: Task,
+  timezone: string,
+  now: Date,
+  opts: NowOptions = {},
+): boolean {
+  // Over target first. Belt and braces: A1 (strict) keeps a deck off a task
+  // whose automatic target has arrived, but one that nags is relevant, deck
+  // or not.
+  if (task.due_at !== null && isOverdue(task, now)) return true
+  // ON DECK (2026-10-20, A13). Today's decks (and yesterday's leftovers until
+  // the rollover strips them, A2) are not relevant in their project group:
+  // they live in the On deck section (D2), and fold behind "+ N more" here so
+  // "Show all" stays complete. A future deck is a plan, like a future picked
+  // target: relevant only on its Upcoming heads-up days. With the queue
+  // switch on only, like A8 — off, main's behaviour exactly.
+  if (opts.queue && task.on_deck_day) {
+    const heads = upcomingState(task, timezone, now)
+    return heads !== null && heads.state !== 'deferred'
+  }
+  // Undated High/Urgent — but, with the queue on, not a QUEUED one (A8): the
+  // queue already holds it, so it is not on two surfaces at once.
+  if (task.due_at === null) {
+    if (opts.queue && task.queued_at) return false
+    return (task.priority ?? 0) >= NOW_PRIORITY_MIN
+  }
   if (targetIsToday(task.due_at, timezone, now)) return true
   const heads = upcomingState(task, timezone, now)
   return heads !== null && heads.state !== 'deferred'
@@ -67,12 +106,36 @@ export interface NowSplit {
   more: Task[]
 }
 
-export function splitNow(sortedTasks: Task[], timezone: string, now: Date): NowSplit {
+export function splitNow(
+  sortedTasks: Task[],
+  timezone: string,
+  now: Date,
+  opts: NowOptions = {},
+): NowSplit {
   const relevant: Task[] = []
   const more: Task[] = []
   for (const task of sortedTasks) {
-    if (isRelevantNow(task, timezone, now)) relevant.push(task)
+    if (isRelevantNow(task, timezone, now, opts)) relevant.push(task)
     else more.push(task)
   }
   return { relevant, more }
+}
+
+/**
+ * NOW'S ON DECK SECTION (D2, 2026-10-20; spec rule 9, red-team A13): the
+ * tasks it holds — on deck for today, or an earlier day the rollover has not
+ * stripped yet (A2) — except one already over target (a deadline's automatic
+ * target arrived, A1), which nags and so stays in its project's relevant
+ * rows, as the server's `onDeckToday` leaves it out. At the top of Now (D2
+ * review), sorted priority then id (`deckSectionOrder`). Only while Now's folds are on
+ * (with Show all, a search or a filter, decks are ordinary rows in their
+ * project), and only with the task queue on.
+ */
+export function inDeckSection(task: Task, timezone: string, now: Date): boolean {
+  return deckIsToday(task, timezone, now) && !isOverdue(task, now)
+}
+
+/** The On deck section's order: priority, highest first, then id (A13). */
+export function deckSectionOrder(a: Task, b: Task): number {
+  return (b.priority ?? 0) - (a.priority ?? 0) || a.id - b.id
 }

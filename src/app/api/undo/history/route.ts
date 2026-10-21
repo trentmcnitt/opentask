@@ -39,6 +39,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         undone: entry.undone,
         fields_changed: entry.fields_changed,
         snapshot: entry.snapshot,
+        // Client attribution: which client made the write, and its token's name.
+        client: entry.client,
+        token_name: entry.token_name,
       })),
       count: history.length,
     })

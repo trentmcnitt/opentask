@@ -6,6 +6,7 @@
 
 import type Database from 'better-sqlite3'
 import { getDb } from '@/core/db'
+import { currentAttribution } from '@/core/request-context'
 import type { UndoAction, UndoSnapshot, Task, SlotUndoState } from '@/types'
 
 /**
@@ -18,6 +19,9 @@ import type { UndoAction, UndoSnapshot, Task, SlotUndoState } from '@/types'
  * @param snapshots Array of task snapshots (before/after state)
  * @param slotState The time slot row a time_slot_edit / time_slot_delete changed
  *   (see `SlotUndoState`); omitted by every task-only action
+ *
+ * The entry records which client made it (`client`, `token_name`), read from
+ * the request context — `system` outside a request (`request-context.ts`).
  */
 export function logAction(
   userId: number,
@@ -28,6 +32,7 @@ export function logAction(
   slotState?: SlotUndoState,
 ): number {
   const db = getDb()
+  const attribution = currentAttribution()
 
   // Clear any redo entries (undone actions that are newer)
   // When a new action is performed, the redo stack is cleared
@@ -45,8 +50,8 @@ export function logAction(
     .prepare(
       `
     INSERT INTO undo_log (user_id, action, description, fields_changed, snapshot, slot_state,
-                          created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+                          created_at, client, token_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     )
     .run(
@@ -60,6 +65,8 @@ export function logAction(
       // compares exactly with the instants the app writes, `rolled_over_at`
       // above all (the rollover's undo fence, `rollover-fence.ts`).
       new Date().toISOString(),
+      attribution.client,
+      attribution.tokenName,
     )
 
   return Number(result.lastInsertRowid)

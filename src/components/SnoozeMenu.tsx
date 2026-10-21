@@ -1,15 +1,7 @@
 'use client'
 
-import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useCallback, useState } from 'react'
 import { Clock, XCircle, CalendarDays, RotateCcw } from 'lucide-react'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +12,7 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useIsMobile } from '@/hooks/useIsMobile'
+import { OptionMenu } from '@/components/OptionMenu'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
@@ -65,28 +57,6 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
     }
   }, [open])
   return slots
-}
-
-/**
- * Whether a click on an option is a real choice. A menu opened by a HOLD
- * opens under the finger that is still down: on a phone the sheet slides up
- * beneath it, and lifting that finger clicks whichever option is now there —
- * the Today button's hold picked "Next period" that way (2026-10-14). So an
- * option only counts once a new press has begun since the menu opened; a
- * keyboard's click (`detail` 0) always counts.
- */
-function useChoiceGuard(open: boolean): (e: React.MouseEvent) => boolean {
-  const armed = useRef(false)
-  useEffect(() => {
-    if (!open) return
-    armed.current = false
-    const arm = () => {
-      armed.current = true
-    }
-    document.addEventListener('pointerdown', arm, true)
-    return () => document.removeEventListener('pointerdown', arm, true)
-  }, [open])
-  return (e) => armed.current || e.detail === 0
 }
 
 /** The menu's remove-target / back-to-auto entry (not a snooze option). */
@@ -136,9 +106,9 @@ interface SnoozeMenuProps {
 }
 
 /**
- * Snooze option menu opened via long-press. Desktop: portal-rendered dropdown
- * positioned via getBoundingClientRect to escape stacking contexts.
- * Mobile: bottom Sheet. Children (trigger button) are never wrapped in a Radix trigger
+ * Snooze option menu opened via long-press, in the shared hold-menu shell
+ * (`OptionMenu`): desktop, a portal-rendered dropdown positioned via
+ * getBoundingClientRect to escape stacking contexts; mobile, a bottom Sheet. Children (trigger button) are never wrapped in a Radix trigger
  * to avoid event interception — the parent component controls open state directly.
  */
 export function SnoozeMenu({
@@ -152,14 +122,11 @@ export function SnoozeMenu({
   title = 'Snooze',
   onCustom,
 }: SnoozeMenuProps) {
-  const isMobile = useIsMobile()
   const timezone = useTimezone()
   const { morningTime } = useSnoozePreferences()
-  const triggerRef = useRef<HTMLDivElement>(null)
   const [customPickerOpen, setCustomPickerOpen] = useState(false)
 
   const slots = useSlotsWhenOpen(open)
-  const isChoice = useChoiceGuard(open)
 
   // THE USER'S TIME SLOTS ARE SNOOZE TARGETS (Trent, 2026-09-22: "snooze till
   // tomorrow morning (early), tomorrow morning… midday, afternoon, evening").
@@ -247,168 +214,27 @@ export function SnoozeMenu({
     setCustomPickerOpen(false)
   }
 
-  if (isMobile) {
-    return (
-      <>
-        {children}
-        <Sheet open={open} onOpenChange={onOpenChange}>
-          <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
-            <SheetHeader>
-              <SheetTitle>{title}</SheetTitle>
-              <SheetDescription className="sr-only">Choose when</SheetDescription>
-            </SheetHeader>
-            <div className="space-y-1 px-4 pb-4">
-              {options.map((opt) => (
-                <button
-                  key={opt.option}
-                  type="button"
-                  onClick={(e) => {
-                    if (isChoice(e)) handleSelect(opt.option)
-                  }}
-                  className="hover:bg-accent active:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors"
-                >
-                  <OptionIcon option={opt.option} className="text-muted-foreground size-4" />
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div className="h-6 sm:hidden" />
-          </SheetContent>
-        </Sheet>
+  return (
+    <OptionMenu
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      options={options.map((o) => ({
+        ...o,
+        icon: <OptionIcon option={o.option} className="size-4" />,
+      }))}
+      onSelect={handleSelect}
+      after={
         <CustomSnoozePicker
           open={customPickerOpen}
           onOpenChange={setCustomPickerOpen}
           timezone={timezone}
           onSnooze={handleCustomSnooze}
         />
-      </>
-    )
-  }
-
-  // Desktop: portal-rendered dropdown positioned via getBoundingClientRect.
-  // This escapes all stacking contexts (SwipeableRow's position:relative)
-  // so the dropdown renders above subsequent task rows.
-  return (
-    <div ref={triggerRef} className="relative inline-flex">
-      {children}
-      {open && (
-        <SnoozeDropdown
-          triggerRef={triggerRef}
-          options={options}
-          label={`${title} options`}
-          onSelect={handleSelect}
-          isChoice={isChoice}
-          onClose={() => onOpenChange(false)}
-        />
-      )}
-      <CustomSnoozePicker
-        open={customPickerOpen}
-        onOpenChange={setCustomPickerOpen}
-        timezone={timezone}
-        onSnooze={handleCustomSnooze}
-      />
-    </div>
-  )
-}
-
-/**
- * Desktop dropdown rendered via portal into document.body, positioned using
- * the trigger's bounding rect. This fully escapes SwipeableRow stacking contexts.
- *
- * Uses pointerdown (not click) for outside detection so that the pointer-up
- * after a long-press doesn't immediately close the dropdown. The originating
- * pointerdown has already fired before the dropdown mounts, so it can't
- * accidentally trigger the outside handler.
- */
-function SnoozeDropdown({
-  triggerRef,
-  options,
-  label,
-  onSelect,
-  isChoice,
-  onClose,
-}: {
-  triggerRef: React.RefObject<HTMLDivElement | null>
-  options: { label: string; option: string }[]
-  label: string
-  onSelect: (option: string) => void
-  isChoice: (e: React.MouseEvent) => boolean
-  onClose: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  // Position from the trigger's bounding rect, written straight onto the menu
-  // element in a layout effect — before paint, so it never flashes elsewhere.
-  // Below the trigger by default; ABOVE it when the trigger sits in the lower
-  // half of the viewport — the snooze-all FAB lives in the bottom-right corner
-  // (Trent, 2026-09-28), where a menu opened downward is off-screen.
-  useLayoutEffect(() => {
-    const menu = ref.current
-    if (!triggerRef.current || !menu) return
-    // Measure the trigger itself, not the wrapper: a `fixed` trigger (the FAB)
-    // leaves its in-flow wrapper somewhere else entirely.
-    const trigger = triggerRef.current.firstElementChild ?? triggerRef.current
-    const rect = trigger.getBoundingClientRect()
-    menu.style.left = `${rect.right}px` // right-aligned with trigger
-    if (rect.top > window.innerHeight / 2) {
-      menu.style.bottom = `${window.innerHeight - rect.top + 4}px` // 4px gap above
-    } else {
-      menu.style.top = `${rect.bottom + 4}px` // 4px gap below
-    }
-  }, [triggerRef])
-
-  // Close on pointerdown outside. Using pointerdown instead of click prevents
-  // the pointer-up from a long-press (which synthesizes a click) from closing
-  // the dropdown immediately after it opens.
-  const handlePointerDownOutside = useCallback(
-    (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose()
       }
-    },
-    [onClose],
-  )
-
-  // Close on Escape
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    },
-    [onClose],
-  )
-
-  useEffect(() => {
-    document.addEventListener('pointerdown', handlePointerDownOutside)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDownOutside)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [handlePointerDownOutside, handleKeyDown])
-
-  return createPortal(
-    <div
-      ref={ref}
-      role="menu"
-      aria-label={label}
-      className="bg-popover text-popover-foreground fixed z-50 min-w-[200px] rounded-md border p-1 shadow-md"
-      style={{ transform: 'translateX(-100%)' }}
     >
-      {options.map((opt) => (
-        <button
-          key={opt.option}
-          role="menuitem"
-          type="button"
-          onClick={(e) => {
-            if (isChoice(e)) onSelect(opt.option)
-          }}
-          className="hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors"
-        >
-          <OptionIcon option={opt.option} className="size-4 flex-shrink-0" />
-          {opt.label}
-        </button>
-      ))}
-    </div>,
-    document.body,
+      {children}
+    </OptionMenu>
   )
 }
 

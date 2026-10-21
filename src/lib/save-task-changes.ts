@@ -41,6 +41,13 @@ export async function saveTaskChanges(
   taskId: number | string,
   changes: QuickActionPanelChanges | QuotaChanges,
 ): Promise<SaveTaskResult> {
+  // ON DECK (D2): `on_deck_day` travels with the rest — a staged deadline
+  // and deck are ONE write and one undo entry (the server judges the deck
+  // against that deadline). Never with a target: the panel never sends both.
+  return patchTask(taskId, changes)
+}
+
+async function patchTask(taskId: number | string, changes: object): Promise<SaveTaskResult> {
   const res = await fetch(`/api/tasks/${taskId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

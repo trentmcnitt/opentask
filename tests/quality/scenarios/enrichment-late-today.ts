@@ -26,9 +26,9 @@ export const enrichmentLateTodayScenarios: AITestScenario[] = [
     description: 'Real failure: "today" at 10:57 PM must stay on today\'s local date',
     input: { text: 'text Matthew today', timezone: TZ, projects: INBOX, now: LATE },
     requirements: {
-      must_include: { due_at: `~date:${todayIso}`, deadline_at: null, rrule: null },
+      must_include: { on_deck_day: todayIso, due_at: null, deadline_at: null, rrule: null },
       quality_notes:
-        'Now is 10:57 PM. "today" is TODAY\'s local date (late tonight, e.g. 11 PM) — never tomorrow (the UTC date). Title "Text Matthew".',
+        'Now is 10:57 PM. "today" with no time puts it on deck for TODAY\'s local date (on_deck_day today, due_at null) — never tomorrow (the UTC date). Title "Text Matthew".',
     },
   },
   {
@@ -60,7 +60,7 @@ export const enrichmentLateTodayScenarios: AITestScenario[] = [
     requirements: {
       must_include: { deadline_at: null, rrule: null },
       quality_notes:
-        '"today or tomorrow" is pace wording: horizon "days" with no target is best; a target later today or tomorrow is acceptable (the user named both). The "today" rule must not act here (another day is named). Title "Call the vet".',
+        '"today or tomorrow" is pace wording: horizon "days" with no date is best; on deck today or tomorrow is acceptable (the user named both). The "today" rule must not act here (another day is named). Title "Call the vet".',
     },
   },
 ]
