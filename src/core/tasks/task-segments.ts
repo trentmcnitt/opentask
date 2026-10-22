@@ -48,6 +48,7 @@ import {
   SEGMENT_NUDGE_THRESHOLD,
   SEGMENT_ORDER,
   compareQueueRows,
+  isQueueKind,
   queueKind,
   queueRowState,
   coerceCheckInDay,
@@ -254,7 +255,7 @@ export function getTaskSegments(
       upcoming.map(({ task, state }) => ({ task, state })),
     )
   }
-  if (handledRows) addLeftRows(userId, timezone, now, byKind)
+  if (handledRows) addLeftRows(userId, timezone, now, byKind, queuePanels)
   return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
     const tasks = byKind.get(kind)!
     if (kind === 'queue_today' || kind === 'queue_previous') {
@@ -278,9 +279,14 @@ function addLeftRows(
   timezone: string,
   now: Date,
   byKind: Map<SegmentKind, SegmentTask[]>,
+  /** The caller draws the queue's panels (`queuePanels`). */
+  queuePanels: boolean,
 ): void {
+  // Never add a queue panel of left rows that would not otherwise be drawn.
+  const queueShown = queuePanels && taskQueueEnabled()
   const listed = new Map([...byKind].map(([kind, rows]) => [kind, rows.map((r) => r.task)]))
   for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
+    if (isQueueKind(kind) && !queueShown) continue
     const list = byKind.get(kind) ?? []
     for (const { task, left } of rows) list.push({ task, state: 'considered', left })
     byKind.set(kind, list)

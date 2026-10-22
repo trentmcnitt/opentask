@@ -23,7 +23,7 @@ vi.mock('@/lib/sync-events', async (importOriginal) => {
 })
 
 import { getDb } from '@/core/db'
-import { createTask, deleteTask, markDone } from '@/core/tasks'
+import { createTask, deleteTask, markDone, markUndone } from '@/core/tasks'
 import { deckTasks } from '@/core/tasks/deck'
 import {
   considerTasks,
@@ -192,6 +192,24 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(counts(queue)).toBe('1 of 2')
     expect(queue.tasks.find((r) => r.task.id === t.id)?.left).toBe('considered')
     expect(queue.tasks.find((r) => r.task.id === other.id)?.state).toBe('waiting')
+
+    // The switch off: no queue panel made of remembered rows alone.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '0')
+    expect(segment('2026-10-22T07:15', 'queue_today')).toBeUndefined()
+  })
+
+  test('TQ-R08: a one-off done, reopened, then decked reads "deck", not "done"', () => {
+    const [t] = daysTasks(2)
+    expect(counts(segment('2026-10-22T08:00', 'days'))).toBe('0 of 2')
+    setClock('2026-10-22T09:00')
+    markDone({ ...u, taskId: t.id })
+    markUndone({ ...u, taskId: t.id })
+    markDone({ ...u, taskId: t.id })
+    markUndone({ ...u, taskId: t.id })
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day: '2026-10-23' })
+    const days = segment('2026-10-22T09:05', 'days')!
+    expect(counts(days)).toBe('1 of 2')
+    expect(days.tasks.find((r) => r.task.id === t.id)?.left).toBe('deck')
   })
 
   test('TQ-R07: reading the roster is bookkeeping — no undo entry, no sync event', () => {

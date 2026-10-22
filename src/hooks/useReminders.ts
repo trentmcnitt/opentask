@@ -217,8 +217,8 @@ interface RemindersCache {
 export interface TaskSegmentPayload {
   /** A horizon, or `upcoming` (2026-10-12, the heads-up segment). */
   horizon: SegmentKind
-  /** `recurring`: a repeating task's occurrence (Upcoming only) — no Today, no Remove target. */
-  /** `segment_left`: how a row that left the segment today was handled (`?handled=1`). */
+  /** `recurring`: a repeating task's occurrence (Upcoming only) — no Today, no Remove target.
+   *  `segment_left`: how a row that left the segment today was handled (`?handled=1`). */
   tasks: (Task & { segment_state: SegmentState; recurring?: boolean; segment_left?: SegmentLeft })[]
   waiting: number
   considered: number

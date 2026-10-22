@@ -128,7 +128,13 @@ export function rosterLeftRows(
 
 /** How the task was handled on the segment's day, or null when it was not. */
 function howItLeft(task: Task, onDay: (iso: string | null) => boolean): SegmentLeft | null {
-  if ((task.done && onDay(task.done_at)) || onDay(task.last_completed_at)) return 'done'
+  // `last_completed_at` for a repeating task only: an undone one-off keeps it.
+  if (
+    (task.done && onDay(task.done_at)) ||
+    (task.rrule !== null && onDay(task.last_completed_at))
+  ) {
+    return 'done'
+  }
   if (onDay(task.segment_targeted_at)) return task.on_deck_day ? 'deck' : 'target'
   if (onDay(task.last_considered_at)) return 'considered'
   return null

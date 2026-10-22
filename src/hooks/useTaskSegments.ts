@@ -411,8 +411,11 @@ function useDeck(
           return next
         })
       // Decked: handled today, counted (the day roster). Taken off deck (an
-      // Upcoming deck row): back to its horizon segment, out of this one.
-      setOverlay((prev) => new Map(prev).set(task.id, day === null ? 'gone' : { left: 'deck' }))
+      // Upcoming deck row): the deck's consider stamp stays, so the server
+      // keeps it here as handled (`segment_left: 'considered'`) — the same.
+      setOverlay((prev) =>
+        new Map(prev).set(task.id, { left: day === null ? 'considered' : 'deck' }),
+      )
       inFlight.current++
       try {
         const result = await sendDeck([task.id], day)
