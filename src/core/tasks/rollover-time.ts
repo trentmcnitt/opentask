@@ -6,6 +6,12 @@
 import { listTimeSlots } from '@/core/time-slots'
 import { getAnchorTimes } from '@/core/users/anchor-times'
 import { rolloverTimeOf } from '@/lib/opentask-day'
+import {
+  hasRelativeTarget,
+  isDeadlineAnchored,
+  type LeadContext,
+  type RepeatSchedule,
+} from '@/lib/task-segments'
 import { taskQueueEnabled } from './task-queue'
 
 /**
@@ -25,4 +31,18 @@ export function rolloverTimeForUser(userId: number): string {
  */
 export function attemptsRolloverTime(ownerId: number): string | null {
   return taskQueueEnabled() ? rolloverTimeForUser(ownerId) : null
+}
+
+/**
+ * The lead context an ADVANCE needs (the deadlines page, 2026-10-22): only a
+ * deadline-anchored repeat with no relative target has a lead day to derive
+ * for its next occurrence (`occurrenceDates`' `leadFrom`); anything else,
+ * undefined (no database read).
+ */
+export function leadContextFor(
+  task: RepeatSchedule & { user_id: number },
+  now: Date = new Date(),
+): LeadContext | undefined {
+  if (!isDeadlineAnchored(task) || hasRelativeTarget(task)) return undefined
+  return { rolloverTime: rolloverTimeForUser(task.user_id), now }
 }

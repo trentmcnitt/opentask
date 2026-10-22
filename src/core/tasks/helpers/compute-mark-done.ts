@@ -8,7 +8,13 @@
 
 import type { Task } from '@/types'
 import { isRecurring } from '@/core/recurrence'
-import { nextOrEnd, occurrenceDates, repeatEndOf } from '@/lib/task-segments'
+import {
+  hasRelativeTarget,
+  isDeadlineAnchored,
+  nextOrEnd,
+  occurrenceDates,
+  repeatEndOf,
+} from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import { TARGET_SET_FIELD, queueStateToClear } from '../target-set'
 
@@ -32,6 +38,12 @@ export interface RecurringComputation {
   nextOccurrenceAt: string | null
   /** The next occurrence's deadline: itself on a deadline-anchored repeat, else null. */
   nextDeadlineAt: string | null
+  /**
+   * The next occurrence's lead day (the deadlines page, 2026-10-22): on a
+   * deadline-anchored repeat with no relative target, re-derived (a deferral
+   * never carries over); else null.
+   */
+  nextLeadFrom: string | null
   prevDueAt: string | null
   /** The occurrence this completion closes (`completions.occurrence_at_was`). */
   prevOccurrenceAt: string | null
@@ -82,6 +94,8 @@ export function computeMarkDone(
   userTimezone: string,
   completedAt: Date,
   nowStr: string,
+  /** The owner's rollover time, read only for a target-less deadline-anchored repeat. */
+  rolloverTime: () => string | null = () => null,
 ): MarkDoneComputation {
   // Compute new stats values (same for both recurring and one-off)
   const stats: MarkDoneStats = {
@@ -116,14 +130,20 @@ export function computeMarkDone(
     const nextOccurrenceAt = step ? step.occurrenceAt : null
     // The next occurrence's dates (2026-10-21): its derived target and, on a
     // deadline-anchored repeat, its deadline. Nothing a move did carries over.
-    const next = nextOccurrenceAt ? occurrenceDates(task, nextOccurrenceAt, userTimezone) : null
+    const leads = isDeadlineAnchored(task) && !hasRelativeTarget(task)
+    const lead = leads ? { rolloverTime: rolloverTime(), now: new Date(nowStr) } : undefined
+    const next = nextOccurrenceAt
+      ? occurrenceDates(task, nextOccurrenceAt, userTimezone, lead)
+      : null
     const nextDueAt = next?.targetAt ?? null
     const nextDeadlineAt = next ? next.deadlineAt : task.deadline_at
+    const nextLeadFrom = next ? next.leadFrom : task.lead_from
     return {
       type: 'recurring',
       nextDueAt,
       nextOccurrenceAt,
       nextDeadlineAt,
+      nextLeadFrom,
       prevDueAt: task.due_at,
       prevOccurrenceAt: task.occurrence_at,
       usedAfter,
@@ -154,6 +174,8 @@ export function computeMarkDone(
         // On deck (2026-10-20): done completes the decked occurrence and the
         // next one is not on deck (DECK_CLEAR_SQL); undo puts the deck back.
         ...(task.on_deck_day ? ['on_deck_day'] : []),
+        // The deadlines page (2026-10-22): the next occurrence's lead day.
+        ...(nextLeadFrom !== task.lead_from ? ['lead_from'] : []),
       ],
     }
   } else {

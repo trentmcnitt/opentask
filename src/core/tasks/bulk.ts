@@ -27,6 +27,7 @@ import { bulkSnoozeMessage } from '@/lib/snooze'
 import { taskWord } from '@/lib/utils'
 import { nextRollover, rolloverTimeOf } from '@/lib/opentask-day'
 import { taskQueueEnabled } from './task-queue'
+import { rolloverTimeForUser } from './rollover-time'
 import { validateLabelsExist } from '@/core/labels'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -197,7 +198,9 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const result = withTransaction((tx) => {
     for (const task of tasks) {
       // Compute state changes using shared helper
-      const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
+      const computation = computeMarkDone(task, userTimezone, completedAt, nowStr, () =>
+        rolloverTimeForUser(task.user_id),
+      )
       computation.fieldsChanged.forEach((f) => fieldsChanged.add(f))
 
       // Track counts (an ended series counts as recurring — repeat ends)

@@ -27,6 +27,7 @@ import {
   seriesEndedBySkip,
   type AdvanceTask,
 } from '@/lib/task-segments'
+import { leadContextFor } from './rollover-time'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
@@ -239,8 +240,12 @@ export function writeRecurringSkip(
   const skipCount = (task.skip_count ?? 0) + skipsAdded
   // The landing occurrence's dates (2026-10-21, `occurrenceDates`): its
   // derived target and, on a deadline-anchored repeat, its deadline.
-  const next = nextOccurrenceAt ? occurrenceDates(task, nextOccurrenceAt, timezone) : null
+  // A target-less deadline-anchored repeat (the deadlines page, 2026-10-22)
+  // gets the landing occurrence's lead day too — a deferral never carries over.
+  const lead = leadContextFor(task)
+  const next = nextOccurrenceAt ? occurrenceDates(task, nextOccurrenceAt, timezone, lead) : null
   const nextDeadlineAt = next ? next.deadlineAt : task.deadline_at
+  const nextLeadFrom = next ? next.leadFrom : task.lead_from
   const nextTarget = next?.targetAt ?? null
   // A kept deck keeps the task without a target; `original_due_at` still gets
   // the landing occurrence's target, as taking it off deck later would give it.
@@ -254,8 +259,8 @@ export function writeRecurringSkip(
   const used = repeatEndOf(task).repeat_count_used + skipsAdded
   tx.prepare(
     `UPDATE tasks
-        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
-            repeat_count_used = ?, progress_current = 0, ${TARGET_SET_FIELD} = ?,
+        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, lead_from = ?,
+            skip_count = ?, repeat_count_used = ?, progress_current = 0, ${TARGET_SET_FIELD} = ?,
             attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}${deckClear},
             updated_at = ?
       WHERE id = ?`,
@@ -264,6 +269,7 @@ export function writeRecurringSkip(
     nextOccurrenceAt,
     nextTarget,
     nextDeadlineAt,
+    nextLeadFrom,
     skipCount,
     used,
     nowStr,
@@ -278,6 +284,7 @@ export function writeRecurringSkip(
     occurrence_at: nextOccurrenceAt,
     original_due_at: nextTarget,
     deadline_at: nextDeadlineAt,
+    lead_from: nextLeadFrom,
     skip_count: skipCount,
     repeat_count_used: used,
     progress_current: 0,
@@ -306,6 +313,7 @@ export function writeRecurringSkip(
     'attempts_counted_through',
     ...queue.fields,
     ...(task.on_deck_day && !keep ? ['on_deck_day'] : []),
+    ...(nextLeadFrom !== task.lead_from ? ['lead_from'] : []),
   ]
   return { after, fieldsChanged }
 }
