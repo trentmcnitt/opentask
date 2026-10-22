@@ -1,6 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useRef, type CSSProperties, type ReactNode } from 'react'
+import { useToastClearance } from '@/hooks/useToastClearance'
 
 /**
  * The dashboard's right-hand FAB column — one fixed container for every
@@ -28,12 +29,29 @@ import type { ReactNode } from 'react'
  * chevron's reserved slot while faded) don't swallow taps on the rows under
  * them; each button turns them back on for itself (`pointer-events-auto`).
  * `z-40`, as the buttons each had.
+ *
+ * ABOVE A TOAST (Trent's phone review, 2026-10-22): on a phone the toast is
+ * full width just above the tab bar, where the column's bottom buttons sit,
+ * and the two overlapped. While a toast is up the column lifts clear of it
+ * (snackbar-style) and drops back when it goes: `--toast-clearance`
+ * (`useToastClearance`) feeds a `max()` with the usual bottom, so the column
+ * only ever moves up. On a wide screen the centred toast never reaches the
+ * column, the hook reports nothing, and `md:bottom-6` holds.
  */
 export function DashboardFabStack({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const clearance = useToastClearance(ref)
   return (
     <div
+      ref={ref}
       data-fab-stack
-      className="pointer-events-none fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-40 flex flex-col items-end gap-3 md:right-6 md:bottom-6"
+      data-toast-lifted={clearance !== null ? '' : undefined}
+      style={
+        clearance !== null
+          ? ({ '--toast-clearance': `${clearance}px` } as CSSProperties)
+          : undefined
+      }
+      className="pointer-events-none fixed right-4 bottom-[max(calc(env(safe-area-inset-bottom,0px)+4.5rem),var(--toast-clearance,0px))] z-40 flex flex-col items-end gap-3 transition-[bottom] duration-300 md:right-6 md:bottom-6"
     >
       {children}
     </div>
