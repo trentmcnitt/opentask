@@ -5,7 +5,12 @@ import { Info, Loader2, Check, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useAiContext, useAiPreferences, useAiFeatureInfo } from '@/components/PreferencesProvider'
+import {
+  useAiContext,
+  useAiPreferences,
+  useAiFeatureInfo,
+  useAiUnshelved,
+} from '@/components/PreferencesProvider'
 import type { FeatureMode, FeatureInfo, FeatureInfoMap } from '@/components/PreferencesProvider'
 import { savePreference } from '@/lib/save-preference'
 import { showToast } from '@/lib/toast'
@@ -33,14 +38,25 @@ const showDemoToast = () => {
  * enabled server-side. Demo users see it read-only.
  */
 export function AiSection({ isDemo }: { isDemo: boolean }) {
+  // SHELVED (2026-10-22; src/core/ai/shelved.ts): with Quick Take, What's
+  // Next and Insights shelved, enrichment is the only AI feature, so the
+  // description names only it and FeatureModes lists only its row.
+  const aiUnshelved = useAiUnshelved()
   return (
     <SettingsSection
       title="AI Context"
       description={
-        <>
-          Help the AI understand your situation. This context is included in all AI features
-          (enrichment, what&apos;s next, insights) to improve relevance.
-        </>
+        aiUnshelved ? (
+          <>
+            Help the AI understand your situation. This context is included in all AI features
+            (enrichment, what&apos;s next, insights) to improve relevance.
+          </>
+        ) : (
+          <>
+            Help the AI understand your situation. This context is included when AI enriches your
+            new tasks, to improve relevance.
+          </>
+        )
       }
     >
       <AiContextEditor isDemo={isDemo} />
@@ -201,6 +217,7 @@ function FeatureModes({ isDemo }: { isDemo: boolean }) {
     aiApiAvailable,
   } = useAiPreferences()
   const { aiFeatureInfo, setAiFeatureInfo } = useAiFeatureInfo()
+  const aiUnshelved = useAiUnshelved()
 
   const handleFeatureModeChange = async (
     feature: FeatureKey,
@@ -255,6 +272,9 @@ function FeatureModes({ isDemo }: { isDemo: boolean }) {
       infoKey: 'insights',
     },
   ] as const
+  // Shelved: only Enrichment's row. The other three modes stay saved as they
+  // are — nothing here writes them — for when the features come back.
+  const shownFeatures = aiUnshelved ? features : features.filter((f) => f.key === 'enrichment')
 
   return (
     <div className="mt-4 space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
@@ -264,7 +284,7 @@ function FeatureModes({ isDemo }: { isDemo: boolean }) {
           Off disables the feature. SDK uses Claude Code subprocesses. API makes direct HTTP calls.
         </div>
       </div>
-      {features.map((feature) => (
+      {shownFeatures.map((feature) => (
         <FeatureModeRow
           key={feature.key}
           label={feature.label}

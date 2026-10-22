@@ -345,6 +345,8 @@ function pinServerEnvironment(raw: Json): Json {
   // test route's state), not the user's: left out, like the AI fields.
   // `rollover_time` is user data and stays.
   delete data.task_queue
+  // The shelved-AI switch (`OPENTASK_AI_UNSHELVE`), the server's too.
+  delete data.ai_unshelved
   return { ...(raw as Record<string, Json>), data }
 }
 

@@ -115,6 +115,13 @@ export interface Prefs {
    */
   taskQueue: boolean
   rolloverTime: string | null
+  /**
+   * SHELVED (2026-10-22): the server's `OPENTASK_AI_UNSHELVE` switch
+   * (`ai_unshelved`). False — the default, so nothing flashes before the
+   * fetch lands — while What's Next, Insights and Quick Take are shelved;
+   * every surface of the three hides (`useAiUnshelved`).
+   */
+  aiUnshelved: boolean
 }
 
 /**
@@ -193,6 +200,7 @@ export const DEFAULT_PREFS: Prefs = {
   aiFeatureInfo: null,
   taskQueue: false,
   rolloverTime: null,
+  aiUnshelved: false,
 }
 
 function featureMode(value: unknown): FeatureMode | undefined {
@@ -281,6 +289,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'aiFeatureInfo', data.ai_feature_info, truthy)
   take(out, 'taskQueue', data.task_queue)
   take(out, 'rolloverTime', data.rollover_time, truthy)
+  take(out, 'aiUnshelved', data.ai_unshelved, (v) => typeof v === 'boolean')
   return out
 }
 

@@ -29,6 +29,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import { runSkipUntil } from '@/lib/skip-until'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
+import { useAiAvailable, useAiUnshelved } from '@/components/PreferencesProvider'
 import { useInsightsData } from '@/hooks/useInsightsData'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream, type EnrichmentCompleteData } from '@/hooks/useSyncStream'
@@ -58,8 +59,14 @@ export default function TaskDetailPage() {
   const [error, setError] = useState<string | null>(null)
 
   const taskArray = useMemo(() => (task ? [task] : []), [task])
-  const { annotationMap } = useAiInsights(taskArray)
-  const insightsData = useInsightsData(taskArray)
+  // SHELVED (2026-10-22; src/core/ai/shelved.ts): What's Next and Insights
+  // are fetched only when the server has them unshelved (and AI on) — shelved,
+  // their endpoints answer 410, so the page does not ask.
+  const aiAvailable = useAiAvailable()
+  const aiUnshelved = useAiUnshelved()
+  const aiReviewOn = aiAvailable && aiUnshelved
+  const { annotationMap } = useAiInsights(taskArray, aiReviewOn)
+  const insightsData = useInsightsData(taskArray, aiReviewOn)
 
   // Navigation guard: bridge dirty state to the app-level navigation guard context
   // so sidebar/bottom tab links show a confirmation dialog before navigating away.

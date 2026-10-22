@@ -419,6 +419,7 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'CONFLICT'
   | 'SERVICE_UNAVAILABLE'
+  | 'FEATURE_SHELVED'
   | 'INTERNAL_ERROR'
 
 export interface UndoResult {

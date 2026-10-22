@@ -52,6 +52,11 @@ import type {
 
 const AI_ENABLED = process.env.OPENTASK_AI_ENABLED === 'true'
 const LARGE_TESTS_ENABLED = process.env.QUALITY_TEST_LARGE === 'true'
+// SHELVED (2026-10-22; src/core/ai/shelved.ts): What's Next, Insights and
+// Quick Take are shelved, so their scenarios are skipped by default — kept,
+// not deleted. Include them with the server's own switch:
+//   OPENTASK_AI_ENABLED=true OPENTASK_AI_UNSHELVE=1 npm run test:quality
+const SHELVED_RUN = process.env.OPENTASK_AI_UNSHELVE === '1'
 
 // ---------------------------------------------------------------------------
 // Quality test user ID
@@ -223,7 +228,7 @@ describe('AI Quality — Layer 1', () => {
     const whatsNextTests = allScenarios.filter((s) => s.feature === 'whats_next')
 
     for (const scenario of whatsNextTests) {
-      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
+      test.skipIf(!AI_ENABLED || !SHELVED_RUN)(scenario.id, async () => {
         await runScenario(scenario)
       })
     }
@@ -237,7 +242,7 @@ describe('AI Quality — Layer 1', () => {
     const quickTakeTests = allScenarios.filter((s) => s.feature === 'quick_take')
 
     for (const scenario of quickTakeTests) {
-      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
+      test.skipIf(!AI_ENABLED || !SHELVED_RUN)(scenario.id, async () => {
         await runScenario(scenario)
       })
     }
@@ -273,7 +278,7 @@ describe('AI Quality — Layer 1', () => {
     for (const scenario of insightsTests) {
       const input = scenario.input as InsightsInput
       const isLarge = input.tasks.length > 100
-      const skipReason = !AI_ENABLED || (isLarge && !LARGE_TESTS_ENABLED)
+      const skipReason = !AI_ENABLED || !SHELVED_RUN || (isLarge && !LARGE_TESTS_ENABLED)
 
       test.skipIf(skipReason)(
         isLarge ? `${scenario.id} [large - ${input.tasks.length} tasks]` : scenario.id,

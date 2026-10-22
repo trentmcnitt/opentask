@@ -1,5 +1,10 @@
 'use client'
 
+/**
+ * SHELVED (2026-10-22): What's Next and Insights (the dashboard's AI chip) are shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until they are redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'

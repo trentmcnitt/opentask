@@ -1,4 +1,9 @@
 /**
+ * SHELVED (2026-10-22): Quick Take is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
+/**
  * Quick Take — AI commentary on task creation
  *
  * Generates a snappy one-liner after a task is quick-added, showing awareness

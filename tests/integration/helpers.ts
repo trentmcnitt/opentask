@@ -105,3 +105,20 @@ export async function setTaskQueue(enabled: boolean): Promise<void> {
     throw new Error(`Task queue switch failed: ${res.status}`)
   }
 }
+
+/**
+ * Turn the server's shelved-AI-features switch (OPENTASK_AI_UNSHELVE:
+ * What's Next, Insights, Quick Take) on or off, via the test-only endpoint.
+ * Every test file expects it off (shelved, as in production): one that turns
+ * it on turns it off again in a `finally` / `afterAll`.
+ */
+export async function setAiUnshelved(enabled: boolean): Promise<void> {
+  const res = await fetch(`${baseUrl()}/api/test/ai-unshelve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) {
+    throw new Error(`AI unshelve switch failed: ${res.status}`)
+  }
+}

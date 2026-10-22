@@ -1,6 +1,17 @@
+/**
+ * SHELVED (2026-10-22): What's Next (this route answers 410 FEATURE_SHELVED) is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError, serviceUnavailable } from '@/lib/api-response'
+import {
+  success,
+  unauthorized,
+  handleError,
+  serviceUnavailable,
+  featureShelved,
+} from '@/lib/api-response'
 import {
   isAIEnabled,
   generateWhatsNext,
@@ -12,10 +23,15 @@ import {
 import { getUserFeatureModes } from '@/core/ai/user-context'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+import { shelvedAiFeaturesOn } from '@/core/ai/shelved'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
+
+    // SHELVED (2026-10-22): src/core/ai/shelved.ts. After auth (a bad token
+    // is still a 401), before the AI-enabled check.
+    if (!shelvedAiFeaturesOn()) return featureShelved()
 
     if (!isAIEnabled()) {
       return serviceUnavailable('AI features are not enabled')

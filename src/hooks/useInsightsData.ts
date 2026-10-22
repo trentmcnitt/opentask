@@ -1,5 +1,10 @@
 'use client'
 
+/**
+ * SHELVED (2026-10-22): Insights (this hook) is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { showToast, showAiSuccessToast, showErrorToast } from '@/lib/toast'
 import { unscoredTasksText } from '@/lib/insights-text'

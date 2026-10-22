@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeAll } from 'vitest'
-import { apiFetch, apiFetchB, apiAnon, resetTestData } from './helpers'
+import { describe, test, expect, beforeAll, afterAll } from 'vitest'
+import { apiFetch, apiFetchB, apiAnon, resetTestData, setAiUnshelved } from './helpers'
 
 describe('AI endpoints integration', () => {
   beforeAll(async () => {
@@ -19,6 +19,16 @@ describe('AI endpoints integration', () => {
   })
 
   describe('AI disabled (503)', () => {
+    // What's Next is shelved by default (2026-10-22, src/core/ai/shelved.ts:
+    // a 410, pinned in ai-shelved.test.ts); these pin its AI-disabled answer
+    // underneath, so they run with the switch on.
+    beforeAll(async () => {
+      await setAiUnshelved(true)
+    })
+    afterAll(async () => {
+      await setAiUnshelved(false)
+    })
+
     test('GET /api/ai/status returns 503 with SERVICE_UNAVAILABLE code', async () => {
       const res = await apiFetch('/api/ai/status')
       expect(res.status).toBe(503)

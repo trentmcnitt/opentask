@@ -1,4 +1,9 @@
 /**
+ * SHELVED (2026-10-22): What's Next is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
+/**
  * What's Next AI recommendations
  *
  * Helps the user decide what to focus on next — surfacing tasks that

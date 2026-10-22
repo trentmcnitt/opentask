@@ -1,4 +1,9 @@
 /**
+ * SHELVED (2026-10-22): Insights is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
+/**
  * AI Insights — batch task scoring, commentary, and signal detection
  *
  * Processes the user's entire task list in batches, scoring each task 0-100

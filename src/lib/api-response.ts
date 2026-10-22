@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { AppError } from '@/core/errors'
 import type { ErrorCode } from '@/types'
+import { AI_SHELVED_MESSAGE } from '@/core/ai/shelved'
 
 /**
  * Create a successful JSON response
@@ -72,6 +73,18 @@ export function conflict(message: string, details?: Record<string, unknown>): Ne
  */
 export function serviceUnavailable(message: string = 'Service unavailable'): NextResponse {
   return error(message, 'SERVICE_UNAVAILABLE', 503)
+}
+
+/**
+ * 410 Gone - a shelved feature (2026-10-22: What's Next, Insights and Quick
+ * Take, behind `OPENTASK_AI_UNSHELVE`; see src/core/ai/shelved.ts). The one
+ * response every shelved endpoint gives, body exactly
+ * `{ "error": "What's Next, Insights and Quick Take are shelved", "code": "FEATURE_SHELVED" }`.
+ * 410, not 503: the feature is gone on purpose, not briefly unavailable, so a
+ * client should stop asking rather than retry.
+ */
+export function featureShelved(): NextResponse {
+  return error(AI_SHELVED_MESSAGE, 'FEATURE_SHELVED', 410)
 }
 
 /**

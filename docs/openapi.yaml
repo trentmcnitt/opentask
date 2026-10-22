@@ -3829,6 +3829,8 @@ paths:
   # Every AI endpoint except GET /api/ai/insights/results and
   # GET /api/ai/insights/status returns 503 SERVICE_UNAVAILABLE when the
   # server runs without AI enabled.
+  # SHELVED (2026-10-22): What's Next, Insights and Quick Take answer 410
+  # FEATURE_SHELVED unless the server runs with OPENTASK_AI_UNSHELVE=1.
 
   /api/ai/status:
     get:
@@ -3972,6 +3974,18 @@ paths:
                   type: string
                   enum: [enrichment, quick_take, whats_next, insights]
       responses:
+        '410':
+          description: |
+            SHELVED (2026-10-22): `feature` is `quick_take`, `whats_next` or
+            `insights` while those features are shelved (`OPENTASK_AI_UNSHELVE`
+            unset). Enrichment is never shelved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "What's Next, Insights and Quick Take are shelved"
+                code: FEATURE_SHELVED
         '200':
           description: Test result
           content:
@@ -4032,6 +4046,19 @@ paths:
                   type: boolean
                   default: false
       responses:
+        '410':
+          description: |
+            SHELVED (2026-10-22): What's Next, Insights and Quick Take are shelved
+            unless the server runs with `OPENTASK_AI_UNSHELVE=1`. Shelved (the
+            default), this endpoint always answers 410 `FEATURE_SHELVED`, after auth
+            and before the AI-enabled check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "What's Next, Insights and Quick Take are shelved"
+                code: FEATURE_SHELVED
         '200':
           description: The quick take
           content:
@@ -4069,6 +4096,19 @@ paths:
             type: boolean
           description: Generate fresh recommendations now.
       responses:
+        '410':
+          description: |
+            SHELVED (2026-10-22): What's Next, Insights and Quick Take are shelved
+            unless the server runs with `OPENTASK_AI_UNSHELVE=1`. Shelved (the
+            default), this endpoint always answers 410 `FEATURE_SHELVED`, after auth
+            and before the AI-enabled check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "What's Next, Insights and Quick Take are shelved"
+                code: FEATURE_SHELVED
         '200':
           description: Recommendations, or null
           content:
@@ -4115,6 +4155,19 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       responses:
+        '410':
+          description: |
+            SHELVED (2026-10-22): What's Next, Insights and Quick Take are shelved
+            unless the server runs with `OPENTASK_AI_UNSHELVE=1`. Shelved (the
+            default), this endpoint always answers 410 `FEATURE_SHELVED`, after auth
+            and before the AI-enabled check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "What's Next, Insights and Quick Take are shelved"
+                code: FEATURE_SHELVED
         '200':
           description: |
             Generation started. With no active tasks, `session_id` is null,
@@ -4171,6 +4224,19 @@ paths:
           schema:
             type: string
       responses:
+        '410':
+          description: |
+            SHELVED (2026-10-22): What's Next, Insights and Quick Take are shelved
+            unless the server runs with `OPENTASK_AI_UNSHELVE=1`. Shelved (the
+            default), this endpoint always answers 410 `FEATURE_SHELVED`, after auth
+            and before the AI-enabled check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "What's Next, Insights and Quick Take are shelved"
+                code: FEATURE_SHELVED
         '200':
           description: Session progress
           content:
@@ -4225,6 +4291,19 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       responses:
+        '410':
+          description: |
+            SHELVED (2026-10-22): What's Next, Insights and Quick Take are shelved
+            unless the server runs with `OPENTASK_AI_UNSHELVE=1`. Shelved (the
+            default), this endpoint always answers 410 `FEATURE_SHELVED`, after auth
+            and before the AI-enabled check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "What's Next, Insights and Quick Take are shelved"
+                code: FEATURE_SHELVED
         '200':
           description: Insights results
           content:
@@ -4928,6 +5007,15 @@ components:
             `GET /api/reminders` `task_segments`, and attempts count OpenTask
             days (rollover to rollover). Clients gate the queue UI on it.
             Ignored on PATCH.
+        ai_unshelved:
+          type: boolean
+          readOnly: true
+          description: |
+            SHELVED (2026-10-22): the server's `OPENTASK_AI_UNSHELVE` switch.
+            False (the default) while What's Next, Insights and Quick Take are
+            shelved: their endpoints answer 410 `FEATURE_SHELVED` and clients
+            hide them. The user's own `ai_*_mode` fields are still reported,
+            unchanged. Ignored on PATCH.
         rollover_time:
           type: string
           readOnly: true
@@ -5294,6 +5382,7 @@ components:
             - FORBIDDEN
             - CONFLICT
             - SERVICE_UNAVAILABLE
+            - FEATURE_SHELVED
             - INTERNAL_ERROR
         details:
           type: object
