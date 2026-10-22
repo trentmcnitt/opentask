@@ -1248,6 +1248,18 @@ export function isLastOccurrence(
   }
 }
 
+/**
+ * A series that ended on the SKIP of its last occurrence: a repeat with an end,
+ * archived and not done (`writeSeriesEndSkip`, A1). Asked with the end, so a
+ * repeating row archived any other way (a one-off skipped, then given a rule)
+ * is not read as an ended series.
+ */
+export function seriesEndedBySkip(
+  task: RepeatEndFields & { rrule: string | null; done: boolean; archived_at: string | null },
+): boolean {
+  return !!task.rrule && !task.done && task.archived_at !== null && hasRepeatEnd(task)
+}
+
 /** `repeat_count − repeat_count_used` (the current one included), or null with no count. */
 export function repeatRemaining(task: RepeatEndFields): number | null {
   const end = repeatEndOf(task)

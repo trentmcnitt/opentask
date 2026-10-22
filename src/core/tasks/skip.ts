@@ -24,6 +24,7 @@ import {
   occurrenceDates,
   repeatEndOf,
   seriesEndWords,
+  seriesEndedBySkip,
   type AdvanceTask,
 } from '@/lib/task-segments'
 import { withTransaction } from '@/core/db'
@@ -101,7 +102,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
     throw new ValidationError('Task is already done')
   }
   const recurring = isRecurring(task.rrule)
-  if (recurring && task.archived_at) throw new ValidationError(REPEAT_ENDED_MESSAGE)
+  if (seriesEndedBySkip(task)) throw new ValidationError(REPEAT_ENDED_MESSAGE)
 
   const nowStr = nowUtc()
   const skipCount = (task.skip_count ?? 0) + 1

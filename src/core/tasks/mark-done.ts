@@ -5,7 +5,12 @@
  */
 
 import { attemptsRolloverTime } from './rollover-time'
-import { occurrenceDates, putBackCountedThrough, seriesEndWords } from '@/lib/task-segments'
+import {
+  occurrenceDates,
+  putBackCountedThrough,
+  seriesEndedBySkip,
+  seriesEndWords,
+} from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
@@ -76,7 +81,7 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
     throw new ValidationError('Task is already done')
   }
   // A series ended by skipping its last occurrence is archived, not done.
-  if (isRecurring(task.rrule) && task.archived_at) {
+  if (seriesEndedBySkip(task)) {
     throw new ValidationError(REPEAT_ENDED_MESSAGE)
   }
 
@@ -187,7 +192,7 @@ export function markUndone(options: MarkDoneOptions): Task {
   if (recurring && !task.done) {
     // A series ended by SKIPPING its last occurrence is archived, not done:
     // nothing to put back (undo reverses the skip).
-    if (task.archived_at) throw new ValidationError('Task is not done')
+    if (seriesEndedBySkip(task)) throw new ValidationError('Task is not done')
     return putBackLatestOccurrence(task, userId, options.userTimezone)
   }
 

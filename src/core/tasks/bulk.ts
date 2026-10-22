@@ -39,7 +39,7 @@ import {
   type FieldChangesInput,
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
-import { isPastDeadline, occurrenceDates } from '@/lib/task-segments'
+import { isPastDeadline, occurrenceDates, seriesEndedBySkip } from '@/lib/task-segments'
 import type { ClientProgressSource } from '@/lib/progress-source'
 import {
   describePromptActions,
@@ -84,7 +84,7 @@ function validateBulkTasks(
       failedIds.push(taskId)
       continue
     }
-    if (options.excludeClosed && (task.done || (isRecurring(task.rrule) && task.archived_at))) {
+    if (options.excludeClosed && (task.done || seriesEndedBySkip(task))) {
       failedIds.push(taskId)
       continue
     }

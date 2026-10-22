@@ -63,6 +63,7 @@ import {
   repeatRemaining,
   repeatStep,
   seriesEndWords,
+  seriesEndedBySkip,
 } from '@/lib/task-segments'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -240,6 +241,11 @@ describe('RE: the judge (pure)', () => {
     // A closed row is never "the last".
     const closed = { ...base, repeat_count: 3, repeat_count_used: 3, done: true }
     expect(isLastOccurrence(closed, tz, now)).toBe(false)
+    // An ended-by-skip series needs the end: an archived repeat without one is not.
+    const archived = { rrule: FRIDAY_9, done: false, archived_at: at('2026-10-20T10:00') }
+    expect(seriesEndedBySkip({ ...archived, repeat_count: 2, repeat_count_used: 2 })).toBe(true)
+    expect(seriesEndedBySkip(archived)).toBe(false)
+    expect(seriesEndedBySkip({ ...archived, done: true, repeat_count: 2 })).toBe(false)
     expect(repeatRemaining({ repeat_count: 6, repeat_count_used: 4 })).toBe(2)
     expect(repeatRemaining({ repeat_until: '2026-12-31' })).toBeNull()
   })
