@@ -955,7 +955,8 @@ function TaskSegmentMeta({
  * grows into what the line has left, clipped there with a short fade — so a
  * row's height never changes because of its labels, and a long label can't
  * push the row past the screen's edge on a phone. Nothing when the task has
- * none to show.
+ * none to show. `-my-px`: a chip is 18px (its 1px border), the line 16px —
+ * the chips overhang by a pixel each side rather than grow the row.
  */
 function SegmentLabels({ task }: { task: Task }) {
   const { labelConfig } = useLabelConfig()
@@ -964,7 +965,7 @@ function SegmentLabels({ task }: { task: Task }) {
     <LabelBadges
       labels={task.labels}
       labelConfig={labelConfig}
-      className="min-w-0 shrink grow basis-0 overflow-hidden [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)]"
+      className="-my-px min-w-0 shrink grow basis-0 overflow-hidden [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)]"
     />
   )
 }
