@@ -1175,7 +1175,8 @@ export function QuickActionPanel({
     if (inEveryTime) {
       const heading = everyTimeHeadingRef.current
       scrollParentToTop(heading)
-      heading?.focus({ preventScroll: true })
+      // Opened from the Deadline row, "+ Add" keeps the focus it took on mount.
+      if (!everyTime.session?.focusDeadline) heading?.focus({ preventScroll: true })
     } else {
       repeatLinkRef.current?.focus({ preventScroll: true })
     }

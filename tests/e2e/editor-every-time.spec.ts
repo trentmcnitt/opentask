@@ -405,6 +405,7 @@ test.describe('Every-time mode', () => {
   }) => {
     const title = uniqueTitle('Water the plants')
     await page.goto('/')
+    await page.waitForSelector('[id^="task-row-"], .text-4xl, [data-now-summary]')
     await page.getByRole('button', { name: 'Add', exact: true }).click()
     await page.getByRole('textbox', { name: 'Quick add task' }).fill(title)
     await page.getByRole('button', { name: 'Open full add form' }).click()
@@ -483,10 +484,8 @@ test.describe('Every-time mode', () => {
         expect(Object.keys(body.changes).sort()).toEqual(['recurrence_mode', 'rrule'])
         await expect.poll(async () => (await stateOf(page, a)).rrule).toBe(body.changes.rrule)
         expect((await stateOf(page, b)).rrule).toBe(body.changes.rrule)
-        await page
-          .locator('[data-sonner-toast]', { hasText: /recurrence/i })
-          .getByRole('button', { name: 'Undo' })
-          .click()
+        // One undo entry for both (the header's Undo).
+        await page.getByRole('button', { name: /^Undo \(\d+ available\)$/ }).click()
         await expect.poll(async () => (await stateOf(page, a)).rrule).toBeNull()
         expect((await stateOf(page, b)).rrule).toBeNull()
       })
