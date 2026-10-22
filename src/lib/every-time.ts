@@ -68,7 +68,7 @@ import {
   occurrenceDates,
   relativeTargetOf,
   relativeTargetProblem,
-  targetMoved,
+  occurrenceIsPersonal,
   type RelativeTarget,
   type RelativeTargetProblem,
   type RepeatRule,
@@ -93,8 +93,8 @@ export type EveryTimeTask = Pick<
   | 'repeat_anchor'
   | 'target_days_before'
   | 'target_time'
+  | 'on_deck_day'
 > & {
-  on_deck_day?: string | null
   queued_at?: string | null
   done?: boolean
 }
@@ -289,6 +289,7 @@ export function createModeTask(staged: {
     repeat_anchor: null,
     target_days_before: null,
     target_time: null,
+    on_deck_day: null,
   }
 }
 
@@ -625,18 +626,36 @@ function planContext(ctx: EveryTimeContext) {
   return { ...ctx, isReminder: false, isTracked: false }
 }
 
-/** The planner's answer for the draft, or the refusal it throws. */
-function planDraft(
-  task: EveryTimeTask,
-  draft: EveryTimeDraft,
-  ctx: EveryTimeContext,
-): { plan: RepeatPlan; patch: EveryTimePatch } | { error: string } {
+type Planned = { plan: RepeatPlan; patch: EveryTimePatch } | { error: string }
+
+const PLAN_CACHE_SIZE = 8
+const planCache = new Map<string, Planned>()
+
+/**
+ * The planner's answer for the draft, or the refusal it throws. Memoised on
+ * (task, patch, context): the planner walks the rule (up to 61 occurrences)
+ * and one draft change asks it from `draftProblem`, `nextDates`,
+ * `daysBeforeChoices` and `thisOneHint` alike (RT-9). A small LRU; the
+ * result is never mutated by its readers.
+ */
+function planDraft(task: EveryTimeTask, draft: EveryTimeDraft, ctx: EveryTimeContext): Planned {
   const patch = draftToPatch(task, draft, ctx)
-  try {
-    return { plan: planRepeatSchedule(task, patch as ScheduleInput, planContext(ctx)), patch }
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) }
+  const key = JSON.stringify([task, patch, ctx.timezone, ctx.morningTime, ctx.now.getTime()])
+  const hit = planCache.get(key)
+  if (hit) {
+    planCache.delete(key)
+    planCache.set(key, hit)
+    return hit
   }
+  let planned: Planned
+  try {
+    planned = { plan: planRepeatSchedule(task, patch as ScheduleInput, planContext(ctx)), patch }
+  } catch (e) {
+    planned = { error: e instanceof Error ? e.message : String(e) }
+  }
+  planCache.set(key, planned)
+  if (planCache.size > PLAN_CACHE_SIZE) planCache.delete(planCache.keys().next().value!)
+  return planned
 }
 
 /**
@@ -743,6 +762,10 @@ function deadlineStart(
 ): string | null {
   if (!draft.deadlineTime) return null
   if (isDeadlineAnchored(task)) {
+    // The draft's own plan when it has one (memoised — `draftProblem` just
+    // asked it); the safe offsets only when the draft's own are refused.
+    const own = planDraft(task, draft, ctx)
+    if (!('error' in own) && own.plan.kind === 'deadline') return own.plan.occurrenceAt
     const safe = { ...draft, daysBefore: 0, targetTime: draft.deadlineTime }
     const planned = planDraft(task, safe, ctx)
     if ('error' in planned || planned.plan.kind !== 'deadline') return null
@@ -866,31 +889,15 @@ export function targetTimeRefused(draft: EveryTimeDraft, time: string): boolean 
 
 /**
  * Whether THIS occurrence has something of its own a schedule change keeps:
- * a deck, or a target the USER moved (`targetMoved`). It mirrors the
- * server's keep rule for a schedule change (editor PR 4a's personal
- * occurrence — deck or moved — in `collect-field-changes.ts` and `targetFor`
- * in repeat-schedule.ts).
- *
- * A QUEUED repeat is NOT personal: the rollover moved its target, not the
- * user, so a schedule change recomputes it (the on-schedule hint). An
- * arrived target (over target) is not either: the server's debt branch keeps
- * it on a RULE change only — `thisOneHint` asks the planner for that case.
+ * a deck, or a target the USER moved — the server's own rule,
+ * `occurrenceIsPersonal` (src/lib/task-segments.ts, PR 4a), which the
+ * writers keep it by. A QUEUED repeat is not personal (the rollover moved
+ * its target, not the user). An arrived target (over target) is not either:
+ * the server's debt branch keeps it on a RULE change only — `thisOneHint`
+ * asks the planner for that case.
  */
 export function occurrenceKeepsItsOwn(task: EveryTimeTask, ctx: EveryTimeContext): boolean {
-  if (!task.rrule) return false
-  if (task.on_deck_day) return true
-  if (task.queued_at) return false
-  return targetMoved(
-    {
-      rrule: task.rrule,
-      repeat_anchor: task.repeat_anchor,
-      target_days_before: task.target_days_before,
-      target_time: task.target_time,
-      due_at: task.due_at,
-      occurrence_at: task.occurrence_at,
-    },
-    ctx.timezone,
-  )
+  return occurrenceIsPersonal(task, ctx.timezone) !== null
 }
 
 /**

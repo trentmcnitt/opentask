@@ -533,7 +533,12 @@ function seeded(seed: number) {
 }
 
 describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and validation', () => {
-  test('seeded random drafts on the four kinds of task', () => {
+  /** Enough to cover all 110 (task kind × reducer action) pairs with this seed, with margin. */
+  const DRAFTS = 250
+
+  // 30 s like the other seeded invariants (TM-INV-03/06): each draft runs the
+  // planner's rule walk, and a CI runner is several times slower than a laptop.
+  test('seeded random drafts on every kind of task, every reducer action', () => {
     const rand = seeded(20261022)
     const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]
     const time = () =>
@@ -578,11 +583,18 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
     }
     let valid = 0
     let refused = 0
-    for (let i = 0; i < 400; i++) {
-      const task = pick(tasks)
+    // Coverage: every (task kind × reducer action) pair is exercised.
+    const seen = new Set<string>()
+    for (let i = 0; i < DRAFTS; i++) {
+      const t = Math.floor(rand() * tasks.length)
+      const task = tasks[t]
       let draft = draftFromTask(task, ctx)
       const steps = 1 + Math.floor(rand() * 5)
-      for (let s = 0; s < steps; s++) draft = draftReducer(draft, action())
+      for (let s = 0; s < steps; s++) {
+        const a = action()
+        seen.add(`${t}:${a.type}`)
+        draft = draftReducer(draft, a)
+      }
       const problem = draftProblem(task, draft, ctx)
       if (problem) {
         refused++
@@ -599,9 +611,10 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
       // Next agrees: a valid draft always has dates.
       if (!draft.stop) expect(nextDates(task, draft, ctx).dates.length, label).toBeGreaterThan(0)
     }
-    expect(valid).toBeGreaterThan(150)
+    expect(seen.size).toBe(tasks.length * 11)
+    expect(valid).toBeGreaterThan(DRAFTS / 3)
     expect(refused).toBeGreaterThan(10)
-  })
+  }, 30_000)
 })
 
 // ===========================================================================
