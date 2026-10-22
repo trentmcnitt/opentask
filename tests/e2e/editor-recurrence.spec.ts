@@ -63,7 +63,6 @@ test.describe('Task editor sheet on a phone', () => {
         const link = sheet.locator('[data-quick-panel-repeat-link]')
         await expect(link).toContainText('Repeats — Sundays at 9:00 AM')
         await expect(link).toHaveAccessibleName('Repeats Sundays at 9:00 AM — edit every time')
-        await expect(link).toHaveAttribute('aria-controls', 'quick-panel-every-time')
 
         // #7: the sheet stays on screen (it scrolls when taller than it).
         expect(await sheet.evaluate((el) => el.getBoundingClientRect().top)).toBeGreaterThanOrEqual(

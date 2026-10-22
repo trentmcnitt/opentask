@@ -127,446 +127,567 @@ function nextDates(region: Locator) {
   return region.locator('[data-every-time-next] [data-next-date]')
 }
 
-test.describe('Every-time mode', () => {
-  test('Home Depot: Next shows three target → deadline pairs; "2 days before" saves in one PATCH, and Undo restores', async ({
+test('Home Depot: Next shows three target → deadline pairs; "2 days before" saves in one PATCH, and Undo restores', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await homeDepot(page)
+  try {
+    await withPreferences(page, unified, async () => {
+      const before = await stateOf(page, id)
+      const dialog = await openPanel(page, id)
+      await expect(dialog.locator('[data-quick-panel-deadline-repeat]')).toHaveText(
+        '· target the day before at 6:00 PM',
+      )
+      await expect(dialog.locator('[data-quick-panel-repeat-link]')).toContainText(
+        'Monthly on the 1st Sat, deadline 8:00 AM',
+      )
+      const region = await enterEveryTime(dialog)
+      await expect(region.getByRole('radio', { name: 'Deadline' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      )
+      await expect(nextDates(region)).toHaveCount(3)
+      await expect(nextDates(region).first()).toContainText(' → ')
+      // Opening changes nothing.
+      await expect(region.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+
+      const sent = patches(page, id)
+      await pick(
+        page,
+        region.getByRole('combobox', { name: 'Days before the deadline' }),
+        /^2 days before/,
+      )
+      await expect(region.locator('[data-every-time-hint]')).toContainText('starting with this one')
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      const toast = page.locator('[data-sonner-toast]', { hasText: 'Target 2 days before' })
+      await expect(toast).toBeVisible()
+      expect(sent).toHaveLength(1)
+      expect(sent[0].postDataJSON()).toEqual({ target_days_before: 2, target_time: '18:00' })
+      const after = await stateOf(page, id)
+      expect(after.target_days_before).toBe(2)
+      expect(Date.parse(after.due_at!)).toBe(
+        DateTime.fromISO(before.due_at!).minus({ days: 1 }).toMillis(),
+      )
+
+      await toast.getByRole('button', { name: 'Undo' }).click()
+      await expect.poll(async () => (await stateOf(page, id)).target_days_before).toBe(1)
+      expect((await stateOf(page, id)).due_at).toBe(before.due_at)
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test('"+ Add" an 8 AM deadline to a 4 PM target: the day before, one PATCH that switches the anchor', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await create(page, {
+    title: uniqueTitle('Weekly allowance ($8)'),
+    rrule: FRIDAYS_4PM,
+  })
+  try {
+    await withPreferences(page, unified, async () => {
+      const before = await stateOf(page, id)
+      const dialog = await openPanel(page, id)
+      // A target-anchored repeat's Deadline row says None and opens every-time with "+ Add" focused.
+      const deadline = dialog.locator('[data-quick-panel-deadline]')
+      await expect(deadline).toHaveText('None')
+      await deadline.click()
+      const region = dialog.getByRole('region', { name: 'Editing every time' })
+      const add = region.locator('[data-every-time-add-deadline]')
+      await expect(add).toBeFocused()
+
+      await add.click()
+      await page.getByRole('option', { name: '8:00 AM', exact: true }).click()
+      await expect(region.getByRole('radio', { name: 'Deadline' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      )
+      await expect(region.getByRole('combobox', { name: 'Days before the deadline' })).toHaveText(
+        'the day before',
+      )
+      await expect(region.getByRole('combobox', { name: 'Target time' })).toHaveText('4:00 PM')
+      await expect(nextDates(region).first()).toContainText(/^Fri .* → Sat /)
+
+      const sent = patches(page, id)
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => sent.length).toBe(1)
+      const body = sent[0].postDataJSON()
+      expect(body).toMatchObject({
+        repeat_anchor: 'deadline',
+        rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
+        target_days_before: 1,
+        target_time: '16:00',
+      })
+      const after = await stateOf(page, id)
+      expect(after.repeat_anchor).toBe('deadline')
+      // The target stays exactly where it was: Fri 4 PM, the deadline Sat 8 AM.
+      expect(after.due_at).toBe(before.due_at)
+      expect(DateTime.fromISO(after.deadline_at!).setZone(TZ).toFormat('ccc h:mm a')).toBe(
+        'Sat 8:00 AM',
+      )
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test("Repeats on → Target: the deadline goes; a 1st-Saturday rule that can't move is refused inline", async ({
+  authenticatedPage: page,
+}) => {
+  const weekly = await weeklyDeadline(page)
+  const monthly = await homeDepot(page)
+  try {
+    await withPreferences(page, unified, async () => {
+      let dialog = await openPanel(page, weekly)
+      let region = await enterEveryTime(dialog)
+      await region.getByRole('radio', { name: 'Target' }).click()
+      await expect(region.getByRole('combobox', { name: 'Target time' })).toHaveText('6:00 PM')
+      await expect(region.locator('[data-every-time-add-deadline]')).toBeVisible()
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, weekly)).repeat_anchor).toBe('target')
+      const after = await stateOf(page, weekly)
+      expect(after.deadline_at).toBeNull()
+      expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=FR;BYHOUR=18;BYMINUTE=0')
+
+      dialog = await openPanel(page, monthly)
+      region = await enterEveryTime(dialog)
+      await region.getByRole('radio', { name: 'Target' }).click()
+      await expect(region.locator('[data-every-time-problem]')).toContainText(
+        "can't be written as their own days",
+      )
+      await expect(region.getByRole('radio', { name: 'Deadline' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      )
+    })
+  } finally {
+    await trash(page, [weekly, monthly])
+  }
+})
+
+test('Stop repeating: a one-time task that keeps its target and deadline', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await weeklyDeadline(page, 'Stop me')
+  try {
+    await withPreferences(page, unified, async () => {
+      const before = await stateOf(page, id)
+      const dialog = await openPanel(page, id)
+      const region = await enterEveryTime(dialog)
+      await region.locator('[data-every-time-stop]').click()
+      await expect(region.locator('[data-every-time-hint]')).toContainText(
+        'This one stays as a one-time task',
+      )
+      const sent = patches(page, id)
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => sent.length).toBe(1)
+      expect(sent[0].postDataJSON()).toEqual({ rrule: null })
+      const after = await stateOf(page, id)
+      expect(after.rrule).toBeNull()
+      expect(after.deadline_at).toBe(before.deadline_at)
+      expect(after.due_at).toBe(before.due_at)
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test('a repeating task: the target has no Clear, and nothing in this mode removes the rule', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await create(page, { title: uniqueTitle('No clear'), rrule: FRIDAYS_4PM })
+  try {
+    await withPreferences(page, unified, async () => {
+      const dialog = await openPanel(page, id)
+      await dialog.locator('[data-quick-panel-date]').click()
+      await expect(page.getByRole('button', { name: 'Set Date' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await dialog.getByRole('button', { name: 'More options' }).click()
+      await expect(page.getByRole('menuitem', { name: /Remove target/ })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      expect((await stateOf(page, id)).rrule).toBe(FRIDAYS_4PM)
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test('a refused choice is greyed, a problem disables Save, and no request goes out', async ({
+  authenticatedPage: page,
+}) => {
+  // Daily, deadline 8 AM, the target the day before at 6 PM: two days
+  // before would land on or before the previous deadline.
+  const daily = await create(page, {
+    title: uniqueTitle('Daily deadline'),
+    rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+    repeat_anchor: 'deadline',
+    deadline_at: DateTime.now()
+      .setZone(TZ)
+      .plus({ days: 2 })
+      .set({ hour: 8, minute: 0 })
+      .toUTC()
+      .toISO(),
+    target_days_before: 1,
+    target_time: '18:00',
+  })
+  const fridays = await create(page, { title: uniqueTitle('Fridays'), rrule: FRIDAYS_4PM })
+  try {
+    await withPreferences(page, unified, async () => {
+      let dialog = await openPanel(page, daily)
+      let region = await enterEveryTime(dialog)
+      await region.getByRole('combobox', { name: 'Days before the deadline' }).click()
+      await expect(page.getByRole('option', { name: /^2 days before/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      await expect(page.getByRole('option', { name: /^the same day/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      await page.keyboard.press('Escape')
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toHaveCount(0)
+
+      dialog = await openPanel(page, fridays)
+      region = await enterEveryTime(dialog)
+      const sent = patches(page, fridays)
+      await region.getByRole('button', { name: 'Friday' }).click()
+      await expect(region.locator('[data-every-time-problem]')).toHaveText('Pick at least one day.')
+      const save = region.getByRole('button', { name: 'Save', exact: true })
+      await expect(save).toBeDisabled()
+      await save.click({ force: true })
+      expect(sent).toHaveLength(0)
+    })
+  } finally {
+    await trash(page, [daily, fridays])
+  }
+})
+
+test('the link is disabled while this one has unsaved edits; Back with a changed draft asks first', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await create(page, { title: uniqueTitle('Dirty link'), rrule: FRIDAYS_4PM })
+  try {
+    await withPreferences(page, unified, async () => {
+      const dialog = await openPanel(page, id)
+      await dialog.getByRole('button', { name: '+1 hr', exact: true }).click()
+      await expect(dialog.locator('[data-quick-panel-repeat-link]')).toBeDisabled()
+      await dialog.getByRole('button', { name: 'Reset', exact: true }).click()
+      const region = await enterEveryTime(dialog)
+      await region.getByRole('button', { name: 'Saturday' }).click()
+      await region.locator('[data-every-time-back]').click()
+      const confirm = page.getByRole('alertdialog')
+      await expect(confirm).toContainText('Discard changes to every time?')
+      await confirm.getByRole('button', { name: 'Discard' }).click()
+      await expect(region).toHaveCount(0)
+      // Focus comes back to the link.
+      await expect(dialog.locator('[data-quick-panel-repeat-link]')).toBeFocused()
+      await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test('create: "Make it repeat" → Done stages the rule; Create Task sends it', async ({
+  authenticatedPage: page,
+}) => {
+  const title = uniqueTitle('Water the plants')
+  // The full add form, the way a phone reaches it (as unsaved-edits.spec).
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/')
+  await page.waitForSelector('[id^="task-row-"], .text-4xl, [data-now-summary]')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Quick add task' }).fill(title)
+  await page.getByRole('button', { name: 'Open full add form' }).click()
+  const form = page.getByRole('dialog', { name: 'New Task' })
+  await form.locator('[data-quick-panel-repeat-link]').click()
+  const region = form.getByRole('region', { name: 'Editing every time' })
+  await expect(region).toBeVisible()
+  // Cancel leaves every time (the draft dropped) — never the whole add form.
+  await region.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(region).toHaveCount(0)
+  await expect(form).toBeVisible()
+  await expect(form.locator('[data-quick-panel-repeat-link]')).toHaveText('Make it repeat')
+  await form.locator('[data-quick-panel-repeat-link]').click()
+  await pick(page, region.getByRole('combobox', { name: 'How often' }), 'Daily')
+  await region.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(region).toHaveCount(0)
+  await expect(form.locator('[data-quick-panel-repeat-link]')).toContainText('Daily at')
+  await expect(form.locator('[data-quick-panel-repeat-link]')).toContainText('edit')
+
+  const posted = page.waitForRequest(
+    (r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+  )
+  await form.getByRole('button', { name: 'Create Task' }).click()
+  const body = (await posted).postDataJSON()
+  expect(body.rrule).toMatch(/^FREQ=DAILY;BYHOUR=\d+;BYMINUTE=\d+$/)
+  // A fixed schedule is the default: only a change of mode is sent.
+  expect(body.recurrence_mode).toBeUndefined()
+  await expect(form).toHaveCount(0)
+  const found = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
+  const tasks = (await found.json()).data.tasks as { id: number; rrule: string }[]
+  expect(tasks).toHaveLength(1)
+  expect(tasks[0].rrule).toBe(body.rrule)
+  await trash(
+    page,
+    tasks.map((t) => t.id),
+  )
+})
+
+test('bulk: a deadline in the selection disables it; one-offs take one rule, with one Undo', async ({
+  authenticatedPage: page,
+}) => {
+  const soon = new Date(Date.now() + 2 * 86_400_000).toISOString()
+  const a = await create(page, { title: uniqueTitle('Bulk A'), due_at: soon })
+  const b = await create(page, { title: uniqueTitle('Bulk B'), due_at: soon })
+  const c = await create(page, {
+    title: uniqueTitle('Bulk deadline'),
+    deadline_at: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+  })
+  const row = (id: number) => page.locator(`#task-row-${id}`)
+  const bar = page.locator('[data-selection-sheet]')
+  try {
+    await withPreferences(page, unified, async () => {
+      await waitForPrefsLoaded(page, () => page.goto('/'), row(a))
+      for (const id of [a, c]) await cmdClickRow(row(id))
+      await bar.getByRole('button', { name: 'More', exact: true }).click()
+      let dialog = page.getByRole('dialog', { name: '2 tasks selected' })
+      const link = dialog.locator('[data-quick-panel-repeat-link]')
+      await expect(link).toBeDisabled()
+      await expect(link).toHaveAttribute(
+        'title',
+        'Some of these have deadlines — edit them one at a time.',
+      )
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await cmdClickRow(row(c))
+      await cmdClickRow(row(b))
+      await expect(bar).toContainText('2 selected')
+
+      await bar.getByRole('button', { name: 'More', exact: true }).click()
+      dialog = page.getByRole('dialog', { name: '2 tasks selected' })
+      await dialog.locator('[data-quick-panel-repeat-link]').click()
+      const region = dialog.getByRole('region', { name: 'Editing every time' })
+      await expect(region.getByRole('radiogroup', { name: 'Repeats on' })).toHaveCount(0)
+      await expect(region.getByRole('combobox', { name: 'Ends' })).toHaveCount(0)
+      await expect(region.locator('[data-every-time-hint]')).toHaveText(
+        'Changes apply to all 2 selected tasks.',
+      )
+      const sent = page.waitForRequest(
+        (r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/tasks/bulk/edit',
+      )
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      const body = (await sent).postDataJSON()
+      expect(body.changes.rrule).toMatch(/^FREQ=WEEKLY;BYDAY=[A-Z]{2};BYHOUR=\d+;BYMINUTE=\d+$/)
+      expect(Object.keys(body.changes).sort()).toEqual(['recurrence_mode', 'rrule'])
+      await expect.poll(async () => (await stateOf(page, a)).rrule).toBe(body.changes.rrule)
+      expect((await stateOf(page, b)).rrule).toBe(body.changes.rrule)
+      // One undo entry for both (the header's Undo).
+      await page.getByRole('button', { name: /^Undo \(\d+ available\)$/ }).click()
+      await expect.poll(async () => (await stateOf(page, a)).rrule).toBeNull()
+      expect((await stateOf(page, b)).rrule).toBeNull()
+    })
+  } finally {
+    await trash(page, [a, b, c])
+  }
+})
+
+test('save-and-leave declines a half-picked end: "On date…" with no date keeps the count', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await create(page, {
+    title: uniqueTitle('Six Fridays'),
+    rrule: FRIDAYS_4PM,
+    repeat_count: 6,
+  })
+  try {
+    await page.goto(`/tasks/${id}`)
+    await page.locator('[data-quick-panel-repeat-link]').click()
+    const region = page.getByRole('region', { name: 'Editing every time' })
+    await pick(page, region.getByRole('combobox', { name: 'Ends' }), 'On date…')
+    await expect(region.locator('[data-every-time-problem]')).toHaveText(
+      'Pick the date it ends on.',
+    )
+    const sent = patches(page, id)
+    await page.getByRole('button', { name: 'Back to dashboard' }).click()
+    const dialog = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    // Nothing sent, still here, the end untouched.
+    await expect(page).toHaveURL(`/tasks/${id}`)
+    await expect(region).toBeVisible()
+    expect(sent).toHaveLength(0)
+    expect((await stateOf(page, id)).repeat_count).toBe(6)
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test("a rule the editor can't hold (BYMONTHDAY=1,15) is read-only; Stop repeating still works", async ({
+  authenticatedPage: page,
+}) => {
+  const rrule = 'FREQ=MONTHLY;BYMONTHDAY=1,15;BYHOUR=9;BYMINUTE=0'
+  const id = await create(page, { title: uniqueTitle('Twice a month'), rrule })
+  try {
+    await withPreferences(page, unified, async () => {
+      const dialog = await openPanel(page, id)
+      const region = await enterEveryTime(dialog)
+      await expect(region.locator('[data-every-time-locked]')).toContainText(
+        "This repeat can't be edited here.",
+      )
+      await expect(region.getByRole('combobox', { name: 'How often' })).toHaveCount(0)
+      await expect(region.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+      const sent = patches(page, id)
+      await region.locator('[data-every-time-stop]').click()
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => sent.length).toBe(1)
+      expect(sent[0].postDataJSON()).toEqual({ rrule: null })
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test('bulk with different rules reads "Repeats — mixed"; an untouched placeholder never saves', async ({
+  authenticatedPage: page,
+}) => {
+  const a = await create(page, { title: uniqueTitle('Mixed A'), rrule: FRIDAYS_4PM })
+  const b = await create(page, {
+    title: uniqueTitle('Mixed B'),
+    rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+  })
+  const row = (id: number) => page.locator(`#task-row-${id}`)
+  const bar = page.locator('[data-selection-sheet]')
+  try {
+    await withPreferences(page, unified, async () => {
+      await waitForPrefsLoaded(page, () => page.goto('/'), row(a))
+      for (const id of [a, b]) await cmdClickRow(row(id))
+      await bar.getByRole('button', { name: 'More', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: '2 tasks selected' })
+      const link = dialog.locator('[data-quick-panel-repeat-link]')
+      await expect(link).toContainText('Repeats — mixed')
+      await link.click()
+      const region = dialog.getByRole('region', { name: 'Editing every time' })
+      const save = region.getByRole('button', { name: 'Save', exact: true })
+      await expect(save).toBeDisabled()
+      await region.getByRole('button', { name: 'Monday' }).click()
+      await expect(save).toBeEnabled()
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Discard' }).click()
+      expect((await stateOf(page, a)).rrule).toBe(FRIDAYS_4PM)
+      expect((await stateOf(page, b)).rrule).toBe('FREQ=DAILY;BYHOUR=7;BYMINUTE=0')
+    })
+  } finally {
+    await trash(page, [a, b])
+  }
+})
+
+test('a deadline-anchored repeat: a new deadline previews the target it re-derives', async ({
+  authenticatedPage: page,
+}) => {
+  const id = await weeklyDeadline(page, 'Preview target')
+  try {
+    await withPreferences(page, unified, async () => {
+      const dialog = await openPanel(page, id)
+      const target = dialog.locator('[data-quick-panel-date]')
+      await expect(target).not.toContainText('moves with the deadline')
+      // The deadline a day later (the picker's own time): the target, the day before, follows.
+      await dialog.locator('[data-quick-panel-deadline]').click()
+      const next = nextWeekday(6, 8).plus({ days: 1 })
+      const key = await page.evaluate(
+        ([y, m, d]) => new Date(y, m - 1, d).toLocaleDateString(),
+        [next.year, next.month, next.day],
+      )
+      const cell = page.locator(`button[data-day="${key}"]`).first()
+      if ((await cell.count()) === 0) {
+        await page.getByRole('button', { name: /next month/i }).click()
+      }
+      await cell.click()
+      await page.getByRole('button', { name: 'Set Date', exact: true }).click()
+      await expect(target).toContainText('moves with the deadline')
+      await expect(target).toContainText(next.minus({ days: 1 }).toFormat('ccc, LLL d'))
+      await dialog.getByRole('button', { name: 'Reset', exact: true }).click()
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
+test.describe('Every-time mode: ends', () => {
+  test('"After 3 times": Next shows three, the third "· last one"; Save sends repeat_count alone', async ({
     authenticatedPage: page,
   }) => {
-    const id = await homeDepot(page)
+    const id = await create(page, { title: uniqueTitle('Three Fridays'), rrule: FRIDAYS_4PM })
     try {
       await withPreferences(page, unified, async () => {
-        const before = await stateOf(page, id)
         const dialog = await openPanel(page, id)
-        await expect(dialog.locator('[data-quick-panel-deadline-repeat]')).toHaveText(
-          '· target the day before at 6:00 PM',
-        )
-        await expect(dialog.locator('[data-quick-panel-repeat-link]')).toContainText(
-          'Monthly on the 1st Sat, deadline 8:00 AM',
-        )
         const region = await enterEveryTime(dialog)
-        await expect(region.getByRole('radio', { name: 'Deadline' })).toHaveAttribute(
-          'aria-checked',
-          'true',
-        )
+        await pick(page, region.getByRole('combobox', { name: 'Ends' }), 'After…')
+        await region.getByRole('textbox', { name: 'How many times' }).fill('3')
         await expect(nextDates(region)).toHaveCount(3)
-        await expect(nextDates(region).first()).toContainText(' → ')
-        // Opening changes nothing.
-        await expect(region.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
-
-        const sent = patches(page, id)
-        await pick(
-          page,
-          region.getByRole('combobox', { name: 'Days before the deadline' }),
-          /^2 days before/,
-        )
-        await expect(region.locator('[data-every-time-hint]')).toContainText(
+        await expect(nextDates(region).nth(2)).toContainText('· last one')
+        await expect(nextDates(region).nth(1)).not.toContainText('last one')
+        await expect(region.locator('[data-every-time-ends-progress]')).toHaveText(
           'starting with this one',
         )
-        await region.getByRole('button', { name: 'Save', exact: true }).click()
-        await expect(dialog).toHaveCount(0)
-        const toast = page.locator('[data-sonner-toast]', { hasText: 'Target 2 days before' })
-        await expect(toast).toBeVisible()
-        expect(sent).toHaveLength(1)
-        expect(sent[0].postDataJSON()).toEqual({ target_days_before: 2, target_time: '18:00' })
-        const after = await stateOf(page, id)
-        expect(after.target_days_before).toBe(2)
-        expect(Date.parse(after.due_at!)).toBe(
-          DateTime.fromISO(before.due_at!).minus({ days: 1 }).toMillis(),
-        )
-
-        await toast.getByRole('button', { name: 'Undo' }).click()
-        await expect.poll(async () => (await stateOf(page, id)).target_days_before).toBe(1)
-        expect((await stateOf(page, id)).due_at).toBe(before.due_at)
-      })
-    } finally {
-      await trash(page, [id])
-    }
-  })
-
-  test('"+ Add" an 8 AM deadline to a 4 PM target: the day before, one PATCH that switches the anchor', async ({
-    authenticatedPage: page,
-  }) => {
-    const id = await create(page, {
-      title: uniqueTitle('Weekly allowance ($8)'),
-      rrule: FRIDAYS_4PM,
-    })
-    try {
-      await withPreferences(page, unified, async () => {
-        const before = await stateOf(page, id)
-        const dialog = await openPanel(page, id)
-        // A target-anchored repeat's Deadline row says None and opens every-time with "+ Add" focused.
-        const deadline = dialog.locator('[data-quick-panel-deadline]')
-        await expect(deadline).toHaveText('None')
-        await deadline.click()
-        const region = dialog.getByRole('region', { name: 'Editing every time' })
-        const add = region.locator('[data-every-time-add-deadline]')
-        await expect(add).toBeFocused()
-
-        await add.click()
-        await page.getByRole('option', { name: '8:00 AM', exact: true }).click()
-        await expect(region.getByRole('radio', { name: 'Deadline' })).toHaveAttribute(
-          'aria-checked',
-          'true',
-        )
-        await expect(region.getByRole('combobox', { name: 'Days before the deadline' })).toHaveText(
-          'the day before',
-        )
-        await expect(region.getByRole('combobox', { name: 'Target time' })).toHaveText('4:00 PM')
-        await expect(nextDates(region).first()).toContainText(/^Fri .* → Sat /)
-
         const sent = patches(page, id)
         await region.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(dialog).toHaveCount(0)
         await expect.poll(() => sent.length).toBe(1)
-        const body = sent[0].postDataJSON()
-        expect(body).toMatchObject({
-          repeat_anchor: 'deadline',
-          rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
-          target_days_before: 1,
-          target_time: '16:00',
-        })
+        expect(sent[0].postDataJSON()).toEqual({ repeat_count: 3 })
         const after = await stateOf(page, id)
-        expect(after.repeat_anchor).toBe('deadline')
-        // The target stays exactly where it was: Fri 4 PM, the deadline Sat 8 AM.
-        expect(after.due_at).toBe(before.due_at)
-        expect(DateTime.fromISO(after.deadline_at!).setZone(TZ).toFormat('ccc h:mm a')).toBe(
-          'Sat 8:00 AM',
-        )
+        expect(after.repeat_count).toBe(3)
+        expect(after.rrule).toBe(FRIDAYS_4PM)
+
+        // Reopened: the link and the row say how far it has got.
+        const again = await openPanel(page, id)
+        await expect(again.locator('[data-quick-panel-repeat-link]')).toContainText('3 times')
+        const r2 = await enterEveryTime(again)
+        await expect(r2.locator('[data-every-time-ends-progress]')).toHaveText('0 of 3 so far')
       })
     } finally {
       await trash(page, [id])
     }
   })
 
-  test("Repeats on → Target: the deadline goes; a 1st-Saturday rule that can't move is refused inline", async ({
+  test('"On date" says the exact date; a past date is refused inline', async ({
     authenticatedPage: page,
   }) => {
-    const weekly = await weeklyDeadline(page)
-    const monthly = await homeDepot(page)
+    const id = await create(page, { title: uniqueTitle('Until Fridays'), rrule: FRIDAYS_4PM })
+    const end = DateTime.now().setZone(TZ).plus({ days: 60 })
     try {
       await withPreferences(page, unified, async () => {
-        let dialog = await openPanel(page, weekly)
-        let region = await enterEveryTime(dialog)
-        await region.getByRole('radio', { name: 'Target' }).click()
-        await expect(region.getByRole('combobox', { name: 'Target time' })).toHaveText('6:00 PM')
-        await expect(region.locator('[data-every-time-add-deadline]')).toBeVisible()
-        await region.getByRole('button', { name: 'Save', exact: true }).click()
-        await expect(dialog).toHaveCount(0)
-        await expect.poll(async () => (await stateOf(page, weekly)).repeat_anchor).toBe('target')
-        const after = await stateOf(page, weekly)
-        expect(after.deadline_at).toBeNull()
-        expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=FR;BYHOUR=18;BYMINUTE=0')
-
-        dialog = await openPanel(page, monthly)
-        region = await enterEveryTime(dialog)
-        await region.getByRole('radio', { name: 'Target' }).click()
-        await expect(region.locator('[data-every-time-problem]')).toContainText(
-          "can't be written as their own days",
-        )
-        await expect(region.getByRole('radio', { name: 'Deadline' })).toHaveAttribute(
-          'aria-checked',
-          'true',
-        )
-      })
-    } finally {
-      await trash(page, [weekly, monthly])
-    }
-  })
-
-  test('Stop repeating: a one-time task that keeps its target and deadline', async ({
-    authenticatedPage: page,
-  }) => {
-    const id = await weeklyDeadline(page, 'Stop me')
-    try {
-      await withPreferences(page, unified, async () => {
-        const before = await stateOf(page, id)
         const dialog = await openPanel(page, id)
         const region = await enterEveryTime(dialog)
-        await region.locator('[data-every-time-stop]').click()
-        await expect(region.locator('[data-every-time-hint]')).toContainText(
-          'This one stays as a one-time task',
-        )
-        const sent = patches(page, id)
-        await region.getByRole('button', { name: 'Save', exact: true }).click()
-        await expect(dialog).toHaveCount(0)
-        await expect.poll(() => sent.length).toBe(1)
-        expect(sent[0].postDataJSON()).toEqual({ rrule: null })
-        const after = await stateOf(page, id)
-        expect(after.rrule).toBeNull()
-        expect(after.deadline_at).toBe(before.deadline_at)
-        expect(after.due_at).toBe(before.due_at)
-      })
-    } finally {
-      await trash(page, [id])
-    }
-  })
-
-  test('a repeating task: the target has no Clear, and nothing in this mode removes the rule', async ({
-    authenticatedPage: page,
-  }) => {
-    const id = await create(page, { title: uniqueTitle('No clear'), rrule: FRIDAYS_4PM })
-    try {
-      await withPreferences(page, unified, async () => {
-        const dialog = await openPanel(page, id)
-        await dialog.locator('[data-quick-panel-date]').click()
-        await expect(page.getByRole('button', { name: 'Set Date' })).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0)
-        await page.keyboard.press('Escape')
-        await dialog.getByRole('button', { name: 'More options' }).click()
-        await expect(page.getByRole('menuitem', { name: /Remove target/ })).toHaveCount(0)
-        await page.keyboard.press('Escape')
-        expect((await stateOf(page, id)).rrule).toBe(FRIDAYS_4PM)
-      })
-    } finally {
-      await trash(page, [id])
-    }
-  })
-
-  test('a refused choice is greyed, a problem disables Save, and no request goes out', async ({
-    authenticatedPage: page,
-  }) => {
-    // Daily, deadline 8 AM, the target the day before at 6 PM: two days
-    // before would land on or before the previous deadline.
-    const daily = await create(page, {
-      title: uniqueTitle('Daily deadline'),
-      rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
-      repeat_anchor: 'deadline',
-      deadline_at: DateTime.now()
-        .setZone(TZ)
-        .plus({ days: 2 })
-        .set({ hour: 8, minute: 0 })
-        .toUTC()
-        .toISO(),
-      target_days_before: 1,
-      target_time: '18:00',
-    })
-    const fridays = await create(page, { title: uniqueTitle('Fridays'), rrule: FRIDAYS_4PM })
-    try {
-      await withPreferences(page, unified, async () => {
-        let dialog = await openPanel(page, daily)
-        let region = await enterEveryTime(dialog)
-        await region.getByRole('combobox', { name: 'Days before the deadline' }).click()
-        await expect(page.getByRole('option', { name: /^2 days before/ })).toHaveAttribute(
-          'aria-disabled',
-          'true',
-        )
-        await expect(page.getByRole('option', { name: /^the same day/ })).toHaveAttribute(
-          'aria-disabled',
-          'true',
-        )
-        await page.keyboard.press('Escape')
-        await dialog.getByRole('button', { name: 'Cancel' }).click()
-        await expect(dialog).toHaveCount(0)
-
-        dialog = await openPanel(page, fridays)
-        region = await enterEveryTime(dialog)
-        const sent = patches(page, fridays)
-        await region.getByRole('button', { name: 'Friday' }).click()
+        await pick(page, region.getByRole('combobox', { name: 'Ends' }), 'On date…')
+        const day = region.getByLabel('Last day')
+        await day.fill(DateTime.now().setZone(TZ).minus({ days: 3 }).toISODate()!)
         await expect(region.locator('[data-every-time-problem]')).toHaveText(
-          'Pick at least one day.',
+          'That end date has passed.',
         )
-        const save = region.getByRole('button', { name: 'Save', exact: true })
-        await expect(save).toBeDisabled()
-        await save.click({ force: true })
-        expect(sent).toHaveLength(0)
-      })
-    } finally {
-      await trash(page, [daily, fridays])
-    }
-  })
+        await expect(region.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
 
-  test('the link is disabled while this one has unsaved edits; Back with a changed draft asks first', async ({
-    authenticatedPage: page,
-  }) => {
-    const id = await create(page, { title: uniqueTitle('Dirty link'), rrule: FRIDAYS_4PM })
-    try {
-      await withPreferences(page, unified, async () => {
-        const dialog = await openPanel(page, id)
-        await dialog.getByRole('button', { name: '+1 hr', exact: true }).click()
-        await expect(dialog.locator('[data-quick-panel-repeat-link]')).toBeDisabled()
-        await dialog.getByRole('button', { name: 'Reset', exact: true }).click()
-        const region = await enterEveryTime(dialog)
-        await region.getByRole('button', { name: 'Saturday' }).click()
-        await region.locator('[data-every-time-back]').click()
-        const confirm = page.getByRole('alertdialog')
-        await expect(confirm).toContainText('Discard changes to every time?')
-        await confirm.getByRole('button', { name: 'Discard' }).click()
-        await expect(region).toHaveCount(0)
-        // Focus comes back to the link.
-        await expect(dialog.locator('[data-quick-panel-repeat-link]')).toBeFocused()
-        await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+        await day.fill(end.toISODate()!)
+        await expect(region.locator('[data-every-time-ends-date]')).toHaveText(
+          `Ends ${end.toFormat('LLL d, yyyy')}`,
+        )
+        await expect(region.locator('[data-every-time-problem]')).toHaveCount(0)
+        const sent = patches(page, id)
+        await region.getByRole('button', { name: 'Save', exact: true }).click()
+        await expect(dialog).toHaveCount(0)
+        await expect.poll(() => sent.length).toBe(1)
+        expect(sent[0].postDataJSON()).toEqual({ repeat_until: end.toISODate() })
+        expect((await stateOf(page, id)).repeat_until).toBe(end.toISODate())
       })
     } finally {
       await trash(page, [id])
     }
-  })
-
-  test('create: "Make it repeat" → Done stages the rule; Create Task sends it', async ({
-    authenticatedPage: page,
-  }) => {
-    const title = uniqueTitle('Water the plants')
-    // The full add form, the way a phone reaches it (as unsaved-edits.spec).
-    await page.setViewportSize({ width: 375, height: 812 })
-    await page.goto('/')
-    await page.waitForSelector('[id^="task-row-"], .text-4xl, [data-now-summary]')
-    await page.getByRole('button', { name: 'Add', exact: true }).click()
-    await page.getByRole('textbox', { name: 'Quick add task' }).fill(title)
-    await page.getByRole('button', { name: 'Open full add form' }).click()
-    const form = page.getByRole('dialog', { name: 'New Task' })
-    await form.locator('[data-quick-panel-repeat-link]').click()
-    const region = form.getByRole('region', { name: 'Editing every time' })
-    await expect(region).toBeVisible()
-    await pick(page, region.getByRole('combobox', { name: 'How often' }), 'Daily')
-    await region.getByRole('button', { name: 'Done', exact: true }).click()
-    await expect(region).toHaveCount(0)
-    await expect(form.locator('[data-quick-panel-repeat-link]')).toContainText('Daily at')
-    await expect(form.locator('[data-quick-panel-repeat-link]')).toContainText('edit')
-
-    const posted = page.waitForRequest(
-      (r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
-    )
-    await form.getByRole('button', { name: 'Create Task' }).click()
-    const body = (await posted).postDataJSON()
-    expect(body.rrule).toMatch(/^FREQ=DAILY;BYHOUR=\d+;BYMINUTE=\d+$/)
-    // A fixed schedule is the default: only a change of mode is sent.
-    expect(body.recurrence_mode).toBeUndefined()
-    await expect(form).toHaveCount(0)
-    const found = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
-    const tasks = (await found.json()).data.tasks as { id: number; rrule: string }[]
-    expect(tasks).toHaveLength(1)
-    expect(tasks[0].rrule).toBe(body.rrule)
-    await trash(
-      page,
-      tasks.map((t) => t.id),
-    )
-  })
-
-  test('bulk: a deadline in the selection disables it; one-offs take one rule, with one Undo', async ({
-    authenticatedPage: page,
-  }) => {
-    const soon = new Date(Date.now() + 2 * 86_400_000).toISOString()
-    const a = await create(page, { title: uniqueTitle('Bulk A'), due_at: soon })
-    const b = await create(page, { title: uniqueTitle('Bulk B'), due_at: soon })
-    const c = await create(page, {
-      title: uniqueTitle('Bulk deadline'),
-      deadline_at: new Date(Date.now() + 5 * 86_400_000).toISOString(),
-    })
-    const row = (id: number) => page.locator(`#task-row-${id}`)
-    const bar = page.locator('[data-selection-sheet]')
-    try {
-      await withPreferences(page, unified, async () => {
-        await waitForPrefsLoaded(page, () => page.goto('/'), row(a))
-        for (const id of [a, c]) await cmdClickRow(row(id))
-        await bar.getByRole('button', { name: 'More', exact: true }).click()
-        let dialog = page.getByRole('dialog', { name: '2 tasks selected' })
-        const link = dialog.locator('[data-quick-panel-repeat-link]')
-        await expect(link).toBeDisabled()
-        await expect(link).toHaveAttribute(
-          'title',
-          'Some of these have deadlines — edit them one at a time.',
-        )
-        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-        await cmdClickRow(row(c))
-        await cmdClickRow(row(b))
-        await expect(bar).toContainText('2 selected')
-
-        await bar.getByRole('button', { name: 'More', exact: true }).click()
-        dialog = page.getByRole('dialog', { name: '2 tasks selected' })
-        await dialog.locator('[data-quick-panel-repeat-link]').click()
-        const region = dialog.getByRole('region', { name: 'Editing every time' })
-        await expect(region.getByRole('radiogroup', { name: 'Repeats on' })).toHaveCount(0)
-        await expect(region.getByRole('combobox', { name: 'Ends' })).toHaveCount(0)
-        await expect(region.locator('[data-every-time-hint]')).toHaveText(
-          'Changes apply to all 2 selected tasks.',
-        )
-        const sent = page.waitForRequest(
-          (r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/tasks/bulk/edit',
-        )
-        await region.getByRole('button', { name: 'Save', exact: true }).click()
-        const body = (await sent).postDataJSON()
-        expect(body.changes.rrule).toMatch(/^FREQ=WEEKLY;BYDAY=[A-Z]{2};BYHOUR=\d+;BYMINUTE=\d+$/)
-        expect(Object.keys(body.changes).sort()).toEqual(['recurrence_mode', 'rrule'])
-        await expect.poll(async () => (await stateOf(page, a)).rrule).toBe(body.changes.rrule)
-        expect((await stateOf(page, b)).rrule).toBe(body.changes.rrule)
-        // One undo entry for both (the header's Undo).
-        await page.getByRole('button', { name: /^Undo \(\d+ available\)$/ }).click()
-        await expect.poll(async () => (await stateOf(page, a)).rrule).toBeNull()
-        expect((await stateOf(page, b)).rrule).toBeNull()
-      })
-    } finally {
-      await trash(page, [a, b, c])
-    }
-  })
-
-  test.describe('ends', () => {
-    test('"After 3 times": Next shows three, the third "· last one"; Save sends repeat_count alone', async ({
-      authenticatedPage: page,
-    }) => {
-      const id = await create(page, { title: uniqueTitle('Three Fridays'), rrule: FRIDAYS_4PM })
-      try {
-        await withPreferences(page, unified, async () => {
-          const dialog = await openPanel(page, id)
-          const region = await enterEveryTime(dialog)
-          await pick(page, region.getByRole('combobox', { name: 'Ends' }), 'After…')
-          await region.getByRole('spinbutton', { name: 'How many times' }).fill('3')
-          await expect(nextDates(region)).toHaveCount(3)
-          await expect(nextDates(region).nth(2)).toContainText('· last one')
-          await expect(nextDates(region).nth(1)).not.toContainText('last one')
-          await expect(region.locator('[data-every-time-ends-progress]')).toHaveText(
-            'starting with this one',
-          )
-          const sent = patches(page, id)
-          await region.getByRole('button', { name: 'Save', exact: true }).click()
-          await expect(dialog).toHaveCount(0)
-          await expect.poll(() => sent.length).toBe(1)
-          expect(sent[0].postDataJSON()).toEqual({ repeat_count: 3 })
-          const after = await stateOf(page, id)
-          expect(after.repeat_count).toBe(3)
-          expect(after.rrule).toBe(FRIDAYS_4PM)
-
-          // Reopened: the link and the row say how far it has got.
-          const again = await openPanel(page, id)
-          await expect(again.locator('[data-quick-panel-repeat-link]')).toContainText('3 times')
-          const r2 = await enterEveryTime(again)
-          await expect(r2.locator('[data-every-time-ends-progress]')).toHaveText('0 of 3 so far')
-        })
-      } finally {
-        await trash(page, [id])
-      }
-    })
-
-    test('"On date" says the exact date; a past date is refused inline', async ({
-      authenticatedPage: page,
-    }) => {
-      const id = await create(page, { title: uniqueTitle('Until Fridays'), rrule: FRIDAYS_4PM })
-      const end = DateTime.now().setZone(TZ).plus({ days: 60 })
-      try {
-        await withPreferences(page, unified, async () => {
-          const dialog = await openPanel(page, id)
-          const region = await enterEveryTime(dialog)
-          await pick(page, region.getByRole('combobox', { name: 'Ends' }), 'On date…')
-          const day = region.getByLabel('Last day')
-          await day.fill(DateTime.now().setZone(TZ).minus({ days: 3 }).toISODate()!)
-          await expect(region.locator('[data-every-time-problem]')).toHaveText(
-            'That end date has passed.',
-          )
-          await expect(region.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
-
-          await day.fill(end.toISODate()!)
-          await expect(region.locator('[data-every-time-ends-date]')).toHaveText(
-            `Ends ${end.toFormat('LLL d, yyyy')}`,
-          )
-          await expect(region.locator('[data-every-time-problem]')).toHaveCount(0)
-          const sent = patches(page, id)
-          await region.getByRole('button', { name: 'Save', exact: true }).click()
-          await expect(dialog).toHaveCount(0)
-          await expect.poll(() => sent.length).toBe(1)
-          expect(sent[0].postDataJSON()).toEqual({ repeat_until: end.toISODate() })
-          expect((await stateOf(page, id)).repeat_until).toBe(end.toISODate())
-        })
-      } finally {
-        await trash(page, [id])
-      }
-    })
   })
 })
 
@@ -591,6 +712,13 @@ test.describe('Every-time mode on a phone', () => {
         const region = sheet.getByRole('region', { name: 'Editing every time' })
         const banner = region.locator('[data-every-time-back]')
         await expect(banner).toBeInViewport()
+        // One line at 375px ("EVERY TIME" · "‹ Back"); the names stay whole.
+        await expect(banner).toHaveAccessibleName('Back to this one')
+        await expect(banner).toHaveText('Back')
+        const heading = region.getByRole('heading', { name: 'Editing every time' })
+        expect((await heading.boundingBox())!.height).toBeLessThan(24)
+        expect((await banner.boundingBox())!.height).toBeLessThanOrEqual(44)
+        await page.screenshot({ path: '.tmp/screens/every-time-banner-375.png' })
         await expect(region.getByRole('button', { name: 'Sunday' })).toBeInViewport()
 
         expect(

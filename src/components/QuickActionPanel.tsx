@@ -82,6 +82,7 @@ import { ThisOneFields } from '@/components/quick-panel/ThisOneFields'
 import { EveryTimePanel } from '@/components/quick-panel/EveryTimePanel'
 import {
   deadlineRowFor,
+  derivedTargetFor,
   repeatLinkFor,
   scrollParentToTop,
   targetValueFor,
@@ -1023,6 +1024,9 @@ export function QuickActionPanel({
   }, [isBulkMode, everyTime.bulkChanges, everyTime.patch, onSaveAll])
 
   const save = useCallback(async () => {
+    // Every-time mode declines a draft with a problem (the inline line says
+    // why) — the host's save-and-leave too: nothing is sent, nothing closes.
+    if (everyTime.session && !everyTime.saveable) return
     try {
       if (everyTime.session) await saveEveryTime()
       else await applyAllPendingChanges()
@@ -1131,6 +1135,7 @@ export function QuickActionPanel({
     pendingDeadline !== undefined ? pendingDeadline : (effectiveTask?.deadline_at ?? null)
   const deadlineRow = deadlineRowFor({
     hidden: isBulkMode || isReminderLike,
+    canEdit,
     task: effectiveTask,
     stagedAnchor: stagedSchedule?.draft.anchor ?? null,
     stagedFirstDeadline: stagedCreateFields?.deadline_at ?? null,
@@ -1154,6 +1159,9 @@ export function QuickActionPanel({
     delta: effectiveDeltaDisplay,
     staged: isBulkMode ? null : (pendingDueAt ?? (isDateDirty ? workingDate : null)),
     deadline: stagedDeadlineValue,
+    derived: deadlineAnchored
+      ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime })
+      : null,
   })
   // Create mode with a staged deadline-anchored repeat: the offsets set the
   // target (`draftToCreateFields` sends no `due_at`) — said in words, no pad.
@@ -1169,6 +1177,11 @@ export function QuickActionPanel({
   const repeatLinkRef = useRef<HTMLButtonElement>(null)
   const inEveryTime = everyTime.mode === 'everyTime'
   const wasEveryTime = useRef(false)
+  // Read in the effect below without making it re-run on every draft change.
+  const focusDeadlineRef = useRef(false)
+  useEffect(() => {
+    focusDeadlineRef.current = !!everyTime.session?.focusDeadline
+  })
   useEffect(() => {
     if (inEveryTime === wasEveryTime.current) return
     wasEveryTime.current = inEveryTime
@@ -1176,7 +1189,7 @@ export function QuickActionPanel({
       const heading = everyTimeHeadingRef.current
       scrollParentToTop(heading)
       // Opened from the Deadline row, "+ Add" keeps the focus it took on mount.
-      if (!everyTime.session?.focusDeadline) heading?.focus({ preventScroll: true })
+      if (!focusDeadlineRef.current) heading?.focus({ preventScroll: true })
     } else {
       repeatLinkRef.current?.focus({ preventScroll: true })
     }
@@ -1275,7 +1288,7 @@ export function QuickActionPanel({
     return (
       <div className="space-y-3">
         <span className="sr-only" aria-live="polite">
-          Editing every time
+          {everyTime.announce}
         </span>
         <EveryTimePanel
           variant={isCreateMode ? 'create' : isBulkMode ? 'bulk' : 'single'}
@@ -1311,9 +1324,16 @@ export function QuickActionPanel({
           onBack={everyTime.back}
           onSave={isCreateMode ? everyTime.stage : () => void handleSave()}
           onReset={everyTime.reset}
-          onCancel={handleCancel}
+          // Create mode: Cancel leaves every time (the draft dropped), never
+          // the whole add form. Editing: the discard question when changed.
+          onCancel={isCreateMode ? everyTime.leave : () => everyTime.cancel(handleCancel)}
+          locked={everyTime.locked}
+          problem={everyTime.problem}
         />
-        <AlertDialog open={everyTime.confirmBack} onOpenChange={everyTime.setConfirmBack}>
+        <AlertDialog
+          open={everyTime.confirm !== null}
+          onOpenChange={(open) => !open && everyTime.setConfirm(null)}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Discard changes to every time?</AlertDialogTitle>
@@ -1323,7 +1343,10 @@ export function QuickActionPanel({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep editing</AlertDialogCancel>
-              <AlertDialogAction variant="outline" onClick={everyTime.leave}>
+              <AlertDialogAction
+                variant="outline"
+                onClick={everyTime.confirm === 'cancel' ? handleCancel : everyTime.leave}
+              >
                 Discard
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -1335,6 +1358,11 @@ export function QuickActionPanel({
 
   return (
     <div className="space-y-3">
+      {/* The mode's live region (§12): the same element as every-time's, at
+          the same place, so it stays mounted and "Back to this one" is read. */}
+      <span className="sr-only" aria-live="polite">
+        {everyTime.announce}
+      </span>
       {/* Header section — stacked: metadata on top (full width), priority+actions row below */}
       <div>
         <div className="min-w-0">

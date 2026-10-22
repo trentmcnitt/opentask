@@ -6,7 +6,6 @@ import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
 import { AutoTargetText } from '@/components/quick-panel/AutoTargetText'
-import { EVERY_TIME_REGION_ID } from '@/components/quick-panel/EveryTimePanel'
 import { DEADLINE_WORD, HORIZON_WORD, TARGET_WORD, targetQuietUntil } from '@/lib/task-model-words'
 import { isPastDeadline } from '@/lib/task-segments'
 import type { AutoTargetLabel } from '@/lib/editor-target-labels'
@@ -324,7 +323,7 @@ export interface RepeatLinkProps {
  * "↻ Repeats — Fridays at 4:00 PM · edit every time ›" / "↻ Make it repeat ›":
  * the text itself is the control (Trent's rule: affordance from the text, a
  * soft background box), a button with an accessible name and
- * `aria-controls` on the every-time region (§12). Focus comes back here on
+ * no `aria-controls` (the region it opens replaces it, never beside it). Focus comes back here on
  * "Back to this one".
  */
 export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(function RepeatLink(
@@ -343,7 +342,6 @@ export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(functio
       disabled={disabled}
       title={disabledReason ?? undefined}
       aria-label={label}
-      aria-controls={EVERY_TIME_REGION_ID}
       className={cn(
         '-mx-1.5 inline-flex flex-wrap items-center gap-x-1 rounded px-1.5 py-0.5 text-left transition-colors',
         'bg-muted/60 hover:bg-accent active:bg-accent disabled:cursor-not-allowed disabled:opacity-60',

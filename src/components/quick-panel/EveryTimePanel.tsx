@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, Repeat } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
@@ -15,7 +15,6 @@ import {
 import {
   ENDS_BEFORE_NEXT,
   daysBeforeChoices,
-  draftProblem,
   nextDateWords,
   nextDates,
   targetTimeRefused,
@@ -25,7 +24,7 @@ import {
   type EveryTimeDraft,
   type EveryTimeTask,
 } from '@/lib/every-time'
-import { relativeDaysWords } from '@/lib/editor-target-labels'
+import { relativeDaysWords, repeatWords } from '@/lib/editor-target-labels'
 import { RELATIVE_TARGET_MESSAGES, repeatEndOf } from '@/lib/task-segments'
 import { DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { HowOftenField } from '@/components/quick-panel/HowOftenField'
@@ -73,6 +72,8 @@ export function EveryTimePanel({
   bulkCount = 0,
   focusDeadline,
   canStop,
+  locked,
+  problem,
   saveable,
   saving,
   headingRef,
@@ -95,6 +96,14 @@ export function EveryTimePanel({
   focusDeadline: boolean
   /** "Stop repeating" is offered: the task (or a selected one, or the staged create) repeats. */
   canStop: boolean
+  /**
+   * The rule is one the draft can't hold (`scheduleEditable`): shown in
+   * words, read-only — "This repeat can't be edited here" — with Stop
+   * repeating only; nothing rebuilds it.
+   */
+  locked: boolean
+  /** Why Save is disabled (`draftProblem`, asked once by `useEveryTime`). */
+  problem: string | null
   /** The Save would send something (create: always — Done stages the draft). */
   saveable: boolean
   saving: boolean
@@ -106,15 +115,18 @@ export function EveryTimePanel({
 }) {
   const headingId = useId()
   const problemId = useId()
-  const problem = useMemo(() => draftProblem(task, draft, ctx), [task, draft, ctx])
-  const next = useMemo(() => nextDates(task, draft, ctx), [task, draft, ctx])
+  const next = useMemo(
+    () => (locked ? null : nextDates(task, draft, ctx)),
+    [locked, task, draft, ctx],
+  )
   const hint = useMemo(() => {
     if (variant === 'bulk') return `Changes apply to all ${bulkCount} selected tasks.`
-    if (variant === 'create') return null
+    if (variant === 'create' || (locked && !draft.stop)) return null
     return thisOneHint(task, draft, ctx)
-  }, [variant, bulkCount, task, draft, ctx])
+  }, [variant, bulkCount, locked, task, draft, ctx])
   const stopped = draft.stop
   const saveDisabled = !!problem || saving || (variant !== 'create' && !saveable)
+  const shownProblem = stopped || locked ? null : (draft.refusal ?? problem)
 
   return (
     <section
@@ -127,29 +139,33 @@ export function EveryTimePanel({
       <Banner headingId={headingId} headingRef={headingRef} onBack={onBack} />
       <div className="space-y-3 p-3">
         {title}
-        <ScheduleRows
-          variant={variant}
-          task={task}
-          initial={initial}
-          draft={draft}
-          dispatch={dispatch}
-          ctx={ctx}
-          focusDeadline={focusDeadline}
-        />
-        <NextLine next={next} timezone={ctx.timezone} hidden={stopped || !!problem} />
+        {locked ? (
+          <LockedRule task={task} stopped={stopped} />
+        ) : (
+          <ScheduleRows
+            variant={variant}
+            task={task}
+            initial={initial}
+            draft={draft}
+            dispatch={dispatch}
+            ctx={ctx}
+            focusDeadline={focusDeadline}
+          />
+        )}
+        {next && <NextLine next={next} timezone={ctx.timezone} hidden={stopped || !!problem} />}
         {hint && (
           <p data-every-time-hint className="text-muted-foreground text-xs">
             {hint}
           </p>
         )}
-        {(problem || draft.refusal) && !stopped && (
+        {shownProblem && (
           <p
             id={problemId}
             role="alert"
             data-every-time-problem
             className="text-destructive text-xs font-medium"
           >
-            {draft.refusal ?? problem}
+            {shownProblem}
           </p>
         )}
         <StopRepeating
@@ -163,7 +179,7 @@ export function EveryTimePanel({
             size="sm"
             onClick={onSave}
             disabled={saveDisabled}
-            aria-describedby={problem ? problemId : undefined}
+            aria-describedby={shownProblem ? problemId : undefined}
             className="flex-1"
           >
             {variant === 'create' ? 'Done' : 'Save'}
@@ -203,16 +219,22 @@ function Banner({
         className="flex items-center gap-1.5 text-xs font-bold tracking-wide uppercase outline-none"
       >
         <Repeat className="size-3.5" aria-hidden />
-        Editing every time
+        {/* "EVERY TIME" on a phone (one line at 375px), the whole phrase
+            from sm up; the heading's name is "Editing every time" at both. */}
+        <span>
+          <span className="sr-only sm:not-sr-only">Editing </span>every time
+        </span>
       </h2>
       <button
         type="button"
         onClick={onBack}
         data-every-time-back
-        className="flex h-11 items-center gap-0.5 px-3 text-xs font-semibold hover:underline"
+        className="flex h-11 shrink-0 items-center gap-0.5 px-3 text-xs font-semibold whitespace-nowrap hover:underline"
       >
         <ChevronLeft className="size-3.5" aria-hidden />
-        Back to this one
+        <span>
+          Back<span className="sr-only sm:not-sr-only"> to this one</span>
+        </span>
       </button>
     </div>
   )
@@ -347,6 +369,19 @@ function ScheduleRows({
   )
 }
 
+/** A rule the draft can't hold, in words, read-only (see `locked`). */
+function LockedRule({ task, stopped }: { task: EveryTimeTask; stopped: boolean }) {
+  return (
+    <div data-every-time-locked className={cn('space-y-1 text-sm', stopped && 'opacity-50')}>
+      <p className="font-medium">{task.rrule ? repeatWords({ ...task, rrule: task.rrule }) : ''}</p>
+      <p className="text-muted-foreground text-xs">
+        This repeat can&apos;t be edited here. Stop repeating ends it; its schedule is kept exactly
+        as it is otherwise.
+      </p>
+    </div>
+  )
+}
+
 /** One labelled row of the grid; the label stacks above its control on a phone. */
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -370,6 +405,14 @@ function AnchorSegment({
   onChange: (anchor: 'target' | 'deadline') => void
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
+  // An arrow key asks for the switch; focus follows only if it happened (a
+  // refused switch — the rule's days can't move — leaves focus where it was).
+  const wantFocus = useRef(false)
+  useEffect(() => {
+    if (!wantFocus.current) return
+    wantFocus.current = false
+    refs.current[anchor === 'target' ? 0 : 1]?.focus()
+  }, [anchor])
   const options = [
     { value: 'target' as const, label: TARGET_WORD },
     { value: 'deadline' as const, label: DEADLINE_WORD },
@@ -383,9 +426,8 @@ function AnchorSegment({
       onKeyDown={(e) => {
         if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
         e.preventDefault()
-        const nextValue = anchor === 'target' ? 'deadline' : 'target'
-        onChange(nextValue)
-        refs.current[nextValue === 'target' ? 0 : 1]?.focus()
+        wantFocus.current = true
+        onChange(anchor === 'target' ? 'deadline' : 'target')
       }}
     >
       {options.map((o, i) => {

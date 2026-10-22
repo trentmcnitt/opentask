@@ -7,6 +7,7 @@
 
 import { DateTime } from 'luxon'
 import { capAtDeadline, capsAt } from '@/lib/task-segments'
+import { planRepeatSchedule } from '@/core/tasks/repeat-schedule'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { deadlineRepeatLabel, repeatWords, type AutoTargetLabel } from '@/lib/editor-target-labels'
 import { bulkEveryTimeGate, draftEnd, draftRule } from '@/lib/every-time'
@@ -55,8 +56,12 @@ export function repeatLinkFor({
     const gate = bulkEveryTimeGate(selectedTasks)
     const summary = bulkSummary ?? formatBulkRecurrence(selectedTasks)
     const allRepeat = selectedTasks.every((t) => !!t.rrule)
+    const someRepeat = selectedTasks.some((t) => !!t.rrule)
+    // Different rules (or a repeat beside a one-off): "Repeats — mixed", not
+    // "Make it repeat" — and its untouched placeholder never saves (`useEveryTime`).
+    const words = allRepeat && summary && summary !== '—' ? summary : someRepeat ? 'mixed' : null
     return {
-      words: allRepeat && summary && summary !== '—' ? summary : null,
+      words,
       disabled: !gate.offered || editingBlocked,
       disabledReason: gate.reason ?? blocked,
       onOpen,
@@ -88,6 +93,7 @@ export function repeatLinkFor({
 /** The Deadline row by kind of task (§3 — see `ThisOneFields`). */
 export function deadlineRowFor({
   hidden,
+  canEdit,
   task,
   stagedAnchor,
   stagedFirstDeadline,
@@ -101,6 +107,8 @@ export function deadlineRowFor({
 }: {
   /** Bulk, a reminder or a quota: no Deadline row. */
   hidden: boolean
+  /** Read-only: a target-anchored repeat's "None" opens nothing. */
+  canEdit: boolean
   task: Task | null
   /** Create mode's staged schedule's anchor, if any. */
   stagedAnchor: 'target' | 'deadline' | null
@@ -117,8 +125,8 @@ export function deadlineRowFor({
   if (hidden) return null
   if (stagedAnchor === 'deadline') return { kind: 'text', value: stagedFirstDeadline }
   if (rule && !deadlineAnchored) {
-    // A done task has no every-time mode: its row just says there is none.
-    if (task?.done) return { kind: 'text', value: null }
+    // A done or read-only task has no every-time mode: the row just says none.
+    if (task?.done || !canEdit) return { kind: 'text', value: null }
     return {
       kind: 'everyTime',
       onOpen: onOpenEveryTime,
@@ -162,6 +170,8 @@ export function targetValueFor(s: {
   /** The staged target (null: none staged) and the deadline it would stop at. */
   staged: string | null
   deadline: string | null
+  /** A deadline-anchored repeat's target, re-derived from a staged deadline (`derivedTargetFor`). */
+  derived?: string | null
 }): TargetValueProps {
   // A waiting repeating task has no live target (its occurrence is named on
   // the "This is the … one" line); the controls start from now.
@@ -169,6 +179,18 @@ export function targetValueFor(s: {
   if (s.auto)
     return { kind: 'auto', label: s.auto.label, dirty: s.auto.dirty, timezone: s.timezone }
   if (s.none) return { kind: 'none', dirty: s.none.dirty }
+  if (s.derived && !s.dateDirty) {
+    const at = DateTime.fromISO(s.derived, { zone: 'utc' }).setZone(s.timezone)
+    return {
+      kind: 'date',
+      header: at.toFormat('ccc, LLL d, h:mm a'),
+      relative: 'moves with the deadline',
+      dirty: true,
+      past: false,
+      delta: null,
+      capped: null,
+    }
+  }
   const capped =
     s.staged && s.deadline && capsAt(s.staged, s.deadline)
       ? DateTime.fromISO(capAtDeadline(s.staged, s.deadline))
@@ -183,6 +205,32 @@ export function targetValueFor(s: {
     past: s.past,
     delta: s.delta,
     capped,
+  }
+}
+
+/**
+ * THE TARGET A STAGED DEADLINE GIVES THIS OCCURRENCE (plan §3): on a
+ * deadline-anchored repeat a deadline pick reschedules this occurrence and
+ * re-derives an unmoved target — asked of the server's own planner
+ * (`planRepeatSchedule`, browser-safe), so the preview is the saved value.
+ * Null when nothing is staged, the target is the user's own (kept), or the
+ * planner refuses (the Save's 400 says why).
+ */
+export function derivedTargetFor(
+  task: Task | null,
+  stagedDeadline: string | null | undefined,
+  ctx: { timezone: string; morningTime: string },
+): string | null {
+  if (!task?.rrule || task.repeat_anchor !== 'deadline' || !stagedDeadline) return null
+  try {
+    const plan = planRepeatSchedule(
+      task,
+      { deadline_at: stagedDeadline },
+      { ...ctx, now: new Date(), isReminder: false, isTracked: false },
+    )
+    return plan.kind === 'deadline' && plan.dueAt && plan.dueAt !== task.due_at ? plan.dueAt : null
+  } catch {
+    return null
   }
 }
 

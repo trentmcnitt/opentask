@@ -4,10 +4,12 @@ import { useCallback, useMemo, useState } from 'react'
 import {
   createModeTask,
   draftFromTask,
+  draftProblem,
   draftReducer,
   draftToBulkChanges,
   draftToPatch,
   draftsEqual,
+  scheduleEditable,
   type DraftAction,
   type EveryTimeContext,
   type EveryTimeDraft,
@@ -26,6 +28,11 @@ interface Session {
   /** Pinned when the mode opens, so the planner's memo holds across keystrokes (RT-9). */
   ctx: EveryTimeContext
   focusDeadline: boolean
+  /**
+   * Bulk: the selected tasks repeat on different rules (or some don't), so
+   * the draft is only a placeholder — an untouched one never replaces them.
+   */
+  mixed: boolean
 }
 
 /** A create-mode schedule staged by Done (A7), sent with Create Task. */
@@ -68,14 +75,19 @@ export function useEveryTime({
   morningTime: string
 }) {
   const [session, setSession] = useState<Session | null>(null)
-  const [confirmBack, setConfirmBack] = useState(false)
+  // The discard question (A6), and what a yes leads to: back to this one,
+  // or Cancel (which closes the host).
+  const [confirm, setConfirm] = useState<'back' | 'cancel' | null>(null)
   const [staged, setStaged] = useState<StagedSchedule | null>(null)
+  // "Back to this one" for the live region once the mode has been left.
+  const [left, setLeft] = useState(false)
 
   const enter = useCallback(
     (opts?: { focusDeadline?: boolean }) => {
       const ctx: EveryTimeContext = { timezone, morningTime, now: new Date() }
       let checkTask: EveryTimeTask
       let initial: EveryTimeDraft
+      let mixed = false
       if (variant === 'create') {
         checkTask = createModeTask(createStaged)
         initial = staged?.draft ?? draftFromTask(checkTask, ctx)
@@ -88,6 +100,7 @@ export function useEveryTime({
           )
         checkTask = shared ? first : createModeTask({})
         initial = draftFromTask(checkTask, ctx)
+        mixed = !shared && selectedTasks.some((t) => !!t.rrule)
       } else {
         checkTask = task!
         initial = draftFromTask(checkTask, ctx)
@@ -98,7 +111,9 @@ export function useEveryTime({
         task: checkTask,
         ctx,
         focusDeadline: !!opts?.focusDeadline,
+        mixed,
       })
+      setLeft(false)
     },
     [variant, task, selectedTasks, createStaged, timezone, morningTime, staged],
   )
@@ -110,13 +125,26 @@ export function useEveryTime({
   const dirty = !!session && !draftsEqual(session.initial, session.draft)
 
   const leave = useCallback(() => {
-    setConfirmBack(false)
+    setConfirm(null)
     setSession(null)
+    setLeft(true)
   }, [])
+  /** Back to this one; with unsaved changes, ask first (A6). */
   const back = useCallback(() => {
-    if (dirty) setConfirmBack(true)
+    if (dirty) setConfirm('back')
     else leave()
   }, [dirty, leave])
+  /**
+   * Cancel: with unsaved changes, the same question first; the caller's
+   * `close` runs on a yes (or at once when clean).
+   */
+  const cancel = useCallback(
+    (close: () => void) => {
+      if (dirty) setConfirm('cancel')
+      else close()
+    },
+    [dirty],
+  )
   const reset = useCallback(() => {
     setSession((s) => (s ? { ...s, draft: s.initial } : s))
   }, [])
@@ -130,12 +158,26 @@ export function useEveryTime({
     [session, variant],
   )
 
-  /** Whether Save would send anything. */
+  /**
+   * Why the draft can't be saved (the server's own checks, `draftProblem`):
+   * Save is disabled, and a host's save-and-leave declines rather than
+   * sending a half-picked draft.
+   */
+  const problem = useMemo(
+    () => (session ? draftProblem(session.task, session.draft, session.ctx) : null),
+    [session],
+  )
+
+  /** Whether Save would send anything (and may). */
   const saveable =
     !!session &&
+    !problem &&
     (variant === 'create' ||
       (variant === 'single' && !!patch && Object.keys(patch).length > 0) ||
-      (variant === 'bulk' && (dirty || session.task.rrule === null || session.draft.stop)))
+      (variant === 'bulk' && bulkSaveable(session, dirty)))
+
+  /** The rule is one the draft can't hold: read-only, Stop repeating only. */
+  const locked = !!session && !scheduleEditable(session.task)
 
   /** The bulk Save's `changes` for bulk/edit. */
   const bulkChanges = session && variant === 'bulk' ? draftToBulkChanges(session.draft) : null
@@ -157,12 +199,27 @@ export function useEveryTime({
     dispatch,
     dirty,
     patch,
+    problem,
     saveable,
+    locked,
     bulkChanges,
-    confirmBack,
-    setConfirmBack,
+    confirm,
+    setConfirm,
+    cancel,
+    /** What the live region says: "Editing every time" / "Back to this one" / nothing yet. */
+    announce: session ? 'Editing every time' : left ? 'Back to this one' : '',
     staged,
     setStaged,
     stage,
   }
+}
+
+/**
+ * A bulk Save sends a rule to every selected task: a changed draft, Stop
+ * repeating, or — when none of them repeats — the proposed rule as it is.
+ * An untouched placeholder never replaces rules the tasks already have.
+ */
+function bulkSaveable(session: Session, dirty: boolean): boolean {
+  if (dirty || session.draft.stop) return true
+  return !session.mixed && session.task.rrule === null
 }

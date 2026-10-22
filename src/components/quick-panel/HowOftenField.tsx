@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { Input } from '@/components/ui/input'
+import { NumberBox } from '@/components/quick-panel/NumberBox'
 import {
   Select,
   SelectContent,
@@ -93,19 +93,15 @@ export function HowOftenField({
         </Select>
         <label className="text-muted-foreground flex items-center gap-1.5 text-sm">
           every
-          <Input
-            type="number"
-            inputMode="numeric"
+          <NumberBox
+            value={rule.interval}
             min={1}
             max={99}
-            value={rule.interval}
             disabled={disabled}
-            aria-label={`Every how many ${freq.unit[1]}`}
-            onChange={(e) => onInterval(Math.max(1, parseInt(e.target.value) || 1))}
-            className={cn(
-              'h-8 w-12 px-1 text-center',
-              dirty.interval && 'font-medium text-blue-500',
-            )}
+            dirty={dirty.interval}
+            label={`Every how many ${freq.unit[1]}`}
+            onChange={onInterval}
+            className="w-12"
           />
           {rule.interval === 1 ? freq.unit[0] : freq.unit[1]}
         </label>

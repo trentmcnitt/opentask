@@ -3,6 +3,7 @@
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { NumberBox } from '@/components/quick-panel/NumberBox'
 import {
   Select,
   SelectContent,
@@ -73,18 +74,15 @@ export function EndsField({
       {rule.endType === 'count' && (
         <>
           <label className="text-muted-foreground flex items-center gap-1.5 text-sm">
-            <Input
-              type="number"
-              inputMode="numeric"
+            <NumberBox
+              value={rule.endCount}
               min={1}
               max={999}
-              value={rule.endCount}
               disabled={disabled}
-              aria-label="How many times"
-              onChange={(e) =>
-                onEnds({ endType: 'count', endCount: Math.max(1, parseInt(e.target.value) || 1) })
-              }
-              className={cn('h-8 w-16 px-2 text-center', dirtyText)}
+              dirty={dirty}
+              label="How many times"
+              onChange={(n) => onEnds({ endType: 'count', endCount: n })}
+              className="w-16"
             />
             times
           </label>
