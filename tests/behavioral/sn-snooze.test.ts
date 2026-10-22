@@ -491,17 +491,18 @@ describe('Snooze Validation Tests', () => {
   })
 
   /**
-   * SN-011: Snoozed task + rrule change clears snooze tracking
+   * SN-011: Snoozed (moved) task + rrule change keeps its target and origin
    *
-   * When a snoozed task's rrule is changed, the snooze tracking is cleared.
-   * This is because changing the recurrence schedule establishes a new baseline,
-   * making the original snooze tracking irrelevant.
+   * PR 4a (2026-10-22, ruling A1): a target moved this occurrence is the
+   * user's own, so a schedule change keeps it — and its origin with it (the
+   * age clock: still the same occurrence). An occurrence on its schedule
+   * still drops the origin with the new rule (RD-018, TR-028).
    *
    * Task: snoozed twice (original_due_at set)
    * Action: Change rrule
-   * Result: original_due_at=NULL (cleared), anchors re-derived
+   * Result: due_at and original_due_at kept, anchors re-derived
    */
-  test('SN-011: Snoozed task + rrule change clears snooze tracking', () => {
+  test('SN-011: Snoozed (moved) task + rrule change keeps its target and origin', () => {
     // Create recurring task
     const originalDueAt = futureLocalTime(8, 0, 1)
     const task = createTask({
@@ -540,8 +541,9 @@ describe('Snooze Validation Tests', () => {
       input: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' },
     })
 
-    // Snooze tracking should be cleared (new schedule = new baseline)
-    expect(updatedTask.original_due_at).toBeNull()
+    // The moved target and its origin stay with the occurrence (PR 4a)
+    expect(updatedTask.due_at).toBe(futureLocalTime(16, 0, 1))
+    expect(updatedTask.original_due_at).toBe(originalDueAt)
 
     // Anchors should be re-derived from new rrule
     expect(updatedTask.anchor_time).toBe('09:00')

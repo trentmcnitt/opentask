@@ -512,7 +512,7 @@ describe('The occurrence origin survives what it should', () => {
     expect(after.due_at).toBe(before.due_at)
   })
 
-  test('TR-028: changing to a new rule still drops the old origin', () => {
+  test('TR-028: a new rule drops the origin of an occurrence on its schedule; a moved one keeps it (PR 4a)', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -526,15 +526,35 @@ describe('The occurrence origin survives what it should', () => {
     })
     expect(getTaskById(task.id)!.original_due_at).not.toBeNull()
 
-    // A NEW schedule: the old occurrence origin means nothing under it. This is
-    // the behaviour that predates the whole PR and must not be lost.
+    const moved = getTaskById(task.id)!
+
+    // PR 4a (2026-10-22): a target moved this occurrence is kept across the
+    // new rule, and its origin with it — still the same occurrence.
     updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       input: { rrule: 'FREQ=DAILY' },
     })
-    expect(getTaskById(task.id)!.original_due_at).toBeNull()
+    expect(getTaskById(task.id)!.original_due_at).toBe(moved.original_due_at)
+
+    // An occurrence on its schedule takes the NEW schedule's date: the old
+    // origin means nothing under it. This is the behaviour that predates the
+    // whole PR and must not be lost.
+    const onSchedule = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Weekly review', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    })
+    getDb().prepare('UPDATE tasks SET original_due_at = due_at WHERE id = ?').run(onSchedule.id)
+    expect(getTaskById(onSchedule.id)!.original_due_at).not.toBeNull()
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: onSchedule.id,
+      input: { rrule: 'FREQ=DAILY' },
+    })
+    expect(getTaskById(onSchedule.id)!.original_due_at).toBeNull()
   })
 
   /**
@@ -571,7 +591,8 @@ describe('The occurrence origin survives what it should', () => {
     expect(after.original_due_at).not.toBe(moved.due_at)
     expect(after.due_at).toBe(moved.due_at)
 
-    // A NEW rule still drops the old origin, reset flag or not.
+    // A NEW rule on a MOVED target keeps the origin (PR 4a) — the reset flag
+    // changes nothing either way.
     const other = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -589,7 +610,7 @@ describe('The occurrence origin survives what it should', () => {
       taskId: other.id,
       input: { reset_original_due_at: true, rrule: 'FREQ=DAILY' },
     })
-    expect(getTaskById(other.id)!.original_due_at).toBeNull()
+    expect(getTaskById(other.id)!.original_due_at).toBe(other.due_at)
   })
 
   /**

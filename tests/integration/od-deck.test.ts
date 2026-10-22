@@ -226,6 +226,61 @@ describe('On deck over HTTP: repeating tasks (2026-10-20)', () => {
       occurrence_at: before.occurrence_at,
     })
   })
+
+  // PR 4a (2026-10-22, plan RT-1): a schedule change keeps what this
+  // occurrence has of its own — a deck, a moved target. Undo restores exactly.
+  const MONDAY_6PM = 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=18;BYMINUTE=0'
+  const SCHEDULE_FIELDS = [
+    'rrule',
+    'target_at',
+    'due_at',
+    'occurrence_at',
+    'on_deck_day',
+    'anchor_time',
+    'anchor_dow',
+    'deadline_at',
+    'repeat_anchor',
+  ] as const
+  const pickFields = (t: Record<string, unknown>) =>
+    Object.fromEntries(SCHEDULE_FIELDS.map((f) => [f, t[f]]))
+
+  test('OD-I12: PATCH a new rule on a decked repeat — the deck stays, its day re-timed; Undo restores', async () => {
+    const daily = await make({ title: 'Water the ferns', rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' })
+    expect((await deck({ ids: [daily] })).json.data.decked).toBe(1)
+    const before = await getTask(daily)
+    const r = await patch(daily, { rrule: MONDAY_6PM })
+    expect(r.status).toBe(200)
+    expect(r.json.data.fields_changed).not.toContain('due_at')
+    const sameDayAt6 = DateTime.fromISO(before.occurrence_at)
+      .setZone('America/Chicago')
+      .set({ hour: 18, minute: 0 })
+    const after = await getTask(daily)
+    expect(after).toMatchObject({ rrule: MONDAY_6PM, on_deck_day: day(0), target_at: null })
+    expect(Date.parse(after.occurrence_at)).toBe(sameDayAt6.toMillis())
+    const undo = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undo.status).toBe(200)
+    expect(pickFields(await getTask(daily))).toEqual(pickFields(before))
+  })
+
+  test('OD-I13: PATCH a new rule on a repeat whose target was moved — the target stays; Undo restores', async () => {
+    const weekly = await make({
+      title: 'Take the bins out',
+      rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0',
+    })
+    await patch(weekly, { target_at: daysFromNow(3) })
+    const before = await getTask(weekly)
+    expect(before.target_at).not.toBe(before.occurrence_at)
+    const r = await patch(weekly, { rrule: MONDAY_6PM })
+    expect(r.status).toBe(200)
+    const after = await getTask(weekly)
+    expect(after.target_at).toBe(before.target_at)
+    // The occurrence is the new rule's first: a Monday at 18:00.
+    const occurrence = DateTime.fromISO(after.occurrence_at).setZone('America/Chicago')
+    expect([occurrence.weekday, occurrence.hour, occurrence.minute]).toEqual([1, 18, 0])
+    const undo = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undo.status).toBe(200)
+    expect(pickFields(await getTask(weekly))).toEqual(pickFields(before))
+  })
 })
 
 describe('On deck over HTTP: review fixes (10-20)', () => {

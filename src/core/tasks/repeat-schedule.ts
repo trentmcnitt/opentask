@@ -21,14 +21,13 @@
  *    have none), never without a rule or a deadline; the offsets only with
  *    the 'deadline' anchor, and together.
  * A PATCH also reschedules this occurrence (a deadline sent), switches the
- * anchor (with its rule), keeps a moved target (capped) and refuses clearing
- * the deadline or the target — `planRepeatSchedule`; `collectRepeatSchedule`
+ * anchor (with its rule), keeps a moved target (capped) and a deck (PR 4a,
+ * `occurrenceIsPersonal`) and refuses clearing the deadline or the target —
+ * `planRepeatSchedule`; `collectRepeatSchedule`
  * in helpers/collect-field-changes.ts writes what it decides.
  */
 
-import { DateTime } from 'luxon'
 import { ValidationError } from '@/core/errors'
-import { localMoment } from '@/lib/opentask-day'
 import {
   computeFirstOccurrence,
   ensureRuleTime,
@@ -40,11 +39,12 @@ import {
   RELATIVE_TARGET_MESSAGES,
   capAtDeadline,
   deadlineWalk,
+  occurrenceDayAtRuleTime,
+  occurrenceIsPersonal,
   defaultRelativeTarget,
   occurrenceDates,
   relativeTargetOf,
   relativeTargetProblem,
-  targetMoved,
   type RelativeTarget,
   type RepeatRule,
 } from '@/lib/task-segments'
@@ -199,6 +199,7 @@ type PlanTask = Pick<
   | 'repeat_anchor'
   | 'target_days_before'
   | 'target_time'
+  | 'on_deck_day'
 >
 
 /**
@@ -404,10 +405,11 @@ function overTarget(task: PlanTask, now: Date): boolean {
 /**
  * THE OCCURRENCE (= the deadline): a deadline sent reschedules THIS
  * occurrence (and starts a new schedule); with the schedule unchanged it
- * stays; a new rule on a repeat already over target whose anchor stays keeps
- * its occurrence's DAY (the debt — the next done walks the new rule), at the
- * new rule's time, so the deadline is never left at a time the rule no longer
- * has; else the rule's first occurrence from now.
+ * stays; a new rule on a repeat whose anchor stays and that is already over
+ * target (the debt — the next done walks the new rule) or ON DECK (PR 4a: the
+ * deck is for this occurrence) keeps its occurrence's DAY, at the new rule's
+ * time, so the deadline is never left at a time the rule no longer has; else
+ * the rule's first occurrence from now.
  */
 function occurrenceFor(
   { task, ctx }: Request,
@@ -418,11 +420,11 @@ function occurrenceFor(
   const current = task.occurrence_at ?? task.deadline_at
   if (!schedule.scheduleChanged && current) return current
   const { rrule, anchor_time } = schedule.ruleFields
-  const { hour, minute } = ruleTimeOfDay(rrule, anchor_time)
-  if (!becoming && overTarget(task, ctx.now) && task.occurrence_at) {
-    const day = DateTime.fromISO(task.occurrence_at, { zone: 'utc' }).setZone(ctx.timezone)
-    return localMoment(day.toISODate()!, formatAnchorTime(hour, minute), ctx.timezone).toISOString()
+  const keepsDay = overTarget(task, ctx.now) || !!task.on_deck_day
+  if (!becoming && keepsDay && task.occurrence_at) {
+    return occurrenceDayAtRuleTime(task.occurrence_at, schedule.ruleFields, ctx.timezone)
   }
+  const { hour, minute } = ruleTimeOfDay(rrule, anchor_time)
   return computeFirstOccurrence(
     rrule,
     formatAnchorTime(hour, minute),
@@ -475,9 +477,12 @@ function relativeFor(
  * THE TARGET: a move the caller sent, capped at the deadline while it is
  * ahead (becoming deadline-anchored with no offsets, the offsets came from
  * it, so it IS the derived target); else, when the schedule or this
- * occurrence changed, its derived target — unless the target was MOVED this
- * occurrence (kept, capped: §8.4's picked target) or, on a schedule change,
- * already over target (the debt, capped). Otherwise unchanged.
+ * occurrence changed, its derived target — unless the task is ON DECK (PR 4a:
+ * no target; the deck stays, and `collectDeckClear` re-runs A1 against the
+ * deadline this write leaves — if that refuses, the deadline wins), the
+ * target was MOVED this occurrence (kept, capped: §8.4's picked target) or,
+ * on a schedule change, already over target (the debt, capped). Otherwise
+ * unchanged.
  */
 function targetFor(
   { task, input, ctx }: Request,
@@ -494,8 +499,8 @@ function targetFor(
     const dueAt = cap(input.due_at)
     return { dueAt, capped: dueAt !== input.due_at }
   }
-  if (!plan.changed) return { dueAt: undefined, capped: false }
-  const moved = !plan.becoming && targetMoved(task, ctx.timezone)
+  if (!plan.changed || task.on_deck_day) return { dueAt: undefined, capped: false }
+  const moved = !plan.becoming && occurrenceIsPersonal(task, ctx.timezone) === 'moved'
   const debt = plan.schedule.scheduleChanged && overTarget(task, ctx.now)
   if ((moved || debt) && task.due_at) return { dueAt: cap(task.due_at), capped: false }
   const derived = occurrenceDates(

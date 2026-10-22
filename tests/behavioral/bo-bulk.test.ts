@@ -868,17 +868,17 @@ describe('Bulk Edit Snooze & Recurrence', () => {
   })
 
   /**
-   * BE-003: bulkEdit rrule change clears snooze tracking
+   * BE-003: bulkEdit rrule change keeps a moved target's origin
    *
-   * When bulkEdit changes rrule on snoozed tasks, snooze tracking
-   * (original_due_at) is cleared since the schedule change establishes
-   * a new baseline.
+   * PR 4a (2026-10-22, ruling A1): a snoozed (moved) target is the
+   * occurrence's own, so a schedule change keeps it and its origin
+   * (original_due_at) — the same rule as a single PATCH (SN-011).
    *
    * Task: multiple snoozed tasks
    * Action: bulkEdit with { rrule: 'FREQ=WEEKLY;BYDAY=MO' }
-   * Result: original_due_at=NULL for all
+   * Result: original_due_at kept for all
    */
-  test('BE-003: bulkEdit rrule change clears snooze tracking', () => {
+  test('BE-003: bulkEdit rrule change keeps a moved target and its origin', () => {
     // Create recurring tasks and snooze them
     const task1 = createTask({
       userId: TEST_USER_ID,
@@ -930,12 +930,14 @@ describe('Bulk Edit Snooze & Recurrence', () => {
 
     expect(result.tasksAffected).toBe(2)
 
-    // Snooze tracking should be cleared
+    // The moved targets and their origins stay (PR 4a)
     const updatedTask1 = getTaskById(task1.id)!
     const updatedTask2 = getTaskById(task2.id)!
 
-    expect(updatedTask1.original_due_at).toBeNull()
-    expect(updatedTask2.original_due_at).toBeNull()
+    expect(updatedTask1.original_due_at).toBe(snoozedTask1.original_due_at)
+    expect(updatedTask2.original_due_at).toBe(snoozedTask2.original_due_at)
+    expect(updatedTask1.due_at).toBe(snoozedTask1.due_at)
+    expect(updatedTask2.due_at).toBe(snoozedTask2.due_at)
 
     // New rrule applied
     expect(updatedTask1.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0')
