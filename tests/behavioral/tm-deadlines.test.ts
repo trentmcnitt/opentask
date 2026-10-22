@@ -12,6 +12,10 @@
  *  - TM-INV-10 / TM-INV-11, seeded random (plan §10 named them INV-09/10;
  *    TM-INV-09 was already repeat ends).
  */
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import Database from 'better-sqlite3'
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { DateTime } from 'luxon'
 
@@ -622,6 +626,29 @@ describe('DL-M: migrateDeadlineLeads', () => {
     // On the page from its old auto day.
     setClock('2026-10-26T10:00')
     expect(placesOf(auto.id)).toEqual(['deadlines'])
+  })
+
+  test('DL-M03: the dry run reads a copy from BEFORE this build (no lead columns)', () => {
+    setClock('2026-10-12T10:00')
+    const auto = make({ deadline_at: at('2026-10-30T23:59') })
+    const offsets = make({
+      rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
+      deadline_at: at('2026-10-24T08:00'),
+    })
+    const file = path.join(os.tmpdir(), `dl-m03-${process.pid}.db`)
+    fs.rmSync(file, { force: true })
+    getDb().exec(`VACUUM INTO '${file}'`)
+    const copy = new Database(file)
+    try {
+      copy.exec('ALTER TABLE tasks DROP COLUMN lead_from')
+      copy.exec('ALTER TABLE tasks DROP COLUMN lead_days')
+      const plan = planDeadlineLeadMigration(copy)
+      expect(plan.autoToLead).toEqual([auto.id])
+      expect(plan.repeatOffsets.map((r) => [r.id, r.matchesDefault])).toEqual([[offsets.id, true]])
+    } finally {
+      copy.close()
+      fs.rmSync(file, { force: true })
+    }
   })
 
   test('DL-M02: the attempts of an arrived automatic target are checkpointed, then frozen', () => {

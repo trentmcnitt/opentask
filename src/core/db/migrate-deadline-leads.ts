@@ -178,7 +178,16 @@ export interface DeadlineLeadPlan {
 }
 
 function repeatOffsets(db: Database.Database): RepeatOffsetRow[] {
-  return rows(db, OFFSETS_WHERE).map((row) => {
+  // Only columns a copy from before this build has (no `lead_*` yet).
+  const found = db
+    .prepare(
+      `SELECT t.id, t.user_id, t.rrule, t.recurrence_mode, t.anchor_time, t.deadline_at,
+              t.occurrence_at, t.target_days_before, t.target_time, u.timezone, u.morning_time
+         FROM tasks t JOIN users u ON u.id = t.user_id
+        WHERE ${OFFSETS_WHERE} ORDER BY t.id`,
+    )
+    .all() as Row[]
+  return found.map((row) => {
     const tz = row.timezone || 'UTC'
     let def: { days_before: number; time: string } | null = null
     try {
