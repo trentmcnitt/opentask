@@ -11,8 +11,11 @@
  * A REPEATING task can be on deck (2026-10-20), so a rule on the row clears
  * nothing by itself — any edit of a decked repeating task would otherwise
  * take it off. Its deck goes when the write leaves a picked `due_at` (Today,
- * any snooze, or a NEW rule, which schedules its own date). A PATCH sending a
- * rule AND a deck day is refused outright (`prepareDeck`).
+ * any snooze). A SCHEDULE change (a new rule, offsets, mode, anchor) keeps it
+ * since PR 4a (2026-10-22): the decked occurrence is the user's, so no target
+ * is computed (`occurrenceIsPersonal`) — unless the deadline it leaves
+ * outranks the deck (A1, below). A PATCH sending a rule AND a deck day is
+ * refused outright (`prepareDeck`).
  *
  * What does NOT clear it: a deadline added or changed, or "Back to auto" — the
  * target they leave is the deadline's AUTOMATIC one, which a deck lives beside

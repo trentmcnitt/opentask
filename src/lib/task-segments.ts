@@ -42,6 +42,7 @@
 
 import { DateTime } from 'luxon'
 import { computeNextOccurrence, ruleTimeOfDay } from '@/core/recurrence/compute-next'
+import { formatAnchorTime } from '@/core/recurrence/timezone'
 import { localMoment, openTaskDayOf, targetOpenTaskDay } from '@/lib/opentask-day'
 import type { RepeatAnchor } from '@/types'
 
@@ -986,6 +987,55 @@ export function targetMoved(
   if (!task.rrule || !task.due_at || !task.occurrence_at) return false
   const derived = occurrenceDates(task, task.occurrence_at, timezone).targetAt
   return Date.parse(task.due_at) !== Date.parse(derived)
+}
+
+/**
+ * What makes a repeating task's CURRENT occurrence its own (PR 4a, 2026-10-22;
+ * plan RT-1, ruling A1): it is ON DECK, or its target was MOVED this
+ * occurrence. Such an occurrence keeps what it has across a SCHEDULE change
+ * (a new rule, mode, anchor or offsets — PATCH and bulk edit alike,
+ * `collectFieldChanges`): a moved target stays (capped at the deadline), a
+ * deck stays with its occurrence's day re-timed to the new rule — for both
+ * anchors. Anything else is on its schedule and moves with it.
+ *
+ * NOT personal: a repeat WAITING in the task queue (`queued_at`). The rollover
+ * moved its target on to the old rule's next occurrence, which `targetMoved`
+ * reads as a move — but it is not the user's (B3), so a schedule change still
+ * recomputes it and takes it out of the queue. Plain over-target debt is not
+ * named here either: the writers keep it by their own older rule (the target
+ * stays; a deadline-anchored one keeps its occurrence's day). The editor's
+ * "This one keeps its own target and deck" hint reads this, plus those two.
+ */
+export type PersonalOccurrence = 'deck' | 'moved'
+
+export function occurrenceIsPersonal(
+  task: RepeatSchedule & {
+    due_at: string | null
+    occurrence_at?: string | null
+    on_deck_day?: string | null
+    queued_at?: string | null
+  },
+  timezone: string,
+): PersonalOccurrence | null {
+  if (!task.rrule) return null
+  if (task.on_deck_day) return 'deck'
+  if (task.queued_at) return null
+  return targetMoved(task, timezone) ? 'moved' : null
+}
+
+/**
+ * An occurrence's local DAY at a (new) rule's time — what a schedule change
+ * leaves an occurrence that keeps its day (over-target debt, a deck). The
+ * rule's time comes from `ruleTimeOfDay` (BYHOUR/BYMINUTE, else `anchorTime`).
+ */
+export function occurrenceDayAtRuleTime(
+  occurrenceAt: string,
+  rule: { rrule: string; anchor_time: string | null },
+  timezone: string,
+): string {
+  const { hour, minute } = ruleTimeOfDay(rule.rrule, rule.anchor_time)
+  const day = DateTime.fromISO(occurrenceAt, { zone: 'utc' }).setZone(timezone).toISODate()!
+  return localMoment(day, formatAnchorTime(hour, minute), timezone).toISOString()
 }
 
 /**

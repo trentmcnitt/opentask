@@ -18,8 +18,12 @@ import {
   deriveAnchorFields,
   RRulePatterns,
 } from '@/core/recurrence'
-import { createTask } from '@/core/tasks'
+import { bulkEdit, createTask } from '@/core/tasks'
 import { updateTask } from '@/core/tasks/update'
+import { getTaskById } from '@/core/tasks/read'
+import { getDb } from '@/core/db'
+import { executeUndo } from '@/core/undo'
+import { occurrenceIsPersonal, targetMoved } from '@/lib/task-segments'
 import {
   setupTestDb,
   teardownTestDb,
@@ -606,6 +610,112 @@ describe('Recurrence Changes via Task Update', () => {
 
     // Anchors should be derived
     expect(updatedTask.anchor_time).toBe('09:00')
+  })
+})
+
+/**
+ * RD-016…019 (PR 4a, 2026-10-22; plan RT-1, ruling A1): a rule change on a
+ * TARGET-ANCHORED repeat whose target was MOVED this occurrence keeps the
+ * target — the occurrence moves to the new rule's first, so the move stays a
+ * move (the same rule as a deadline-anchored repeat's `targetFor`). An
+ * occurrence on its schedule, or one waiting in the task queue, still moves
+ * with the schedule. The clock: Thu Jan 15 2026, 10:00 Chicago.
+ */
+describe('RD-016: a moved target survives a rule change (target-anchored)', () => {
+  const u = { userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE }
+  const FRIDAY_4PM = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0'
+  const THURSDAY_4PM = 'FREQ=WEEKLY;BYDAY=TH;BYHOUR=16;BYMINUTE=0'
+  const at = (local: string) => DateTime.fromISO(local, { zone: TEST_TIMEZONE }).toUTC().toISO()!
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /** Weekly Friday 4 PM (Fri Jan 16), its target moved to Sat Jan 17 10:00. */
+  function movedFriday() {
+    const t = createTask({ ...u, input: { title: 'Bins', rrule: FRIDAY_4PM } })
+    expect(t.due_at).toBe(at('2026-01-16T16:00'))
+    updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-01-17T10:00') } })
+    const moved = getTaskById(t.id)!
+    expect(targetMoved(moved, TEST_TIMEZONE)).toBe(true)
+    expect(occurrenceIsPersonal(moved, TEST_TIMEZONE)).toBe('moved')
+    return moved
+  }
+
+  test('RD-016: PATCH — the moved target stays, the occurrence takes the new rule; undo restores exactly', () => {
+    const before = movedFriday()
+    const { fieldsChanged } = updateTask({
+      ...u,
+      taskId: before.id,
+      input: { rrule: THURSDAY_4PM },
+    })
+    expect(fieldsChanged).not.toContain('due_at')
+    const after = getTaskById(before.id)!
+    expect(after).toMatchObject({
+      rrule: THURSDAY_4PM,
+      due_at: at('2026-01-17T10:00'),
+      occurrence_at: at('2026-01-15T16:00'),
+      anchor_dow: 3,
+    })
+    expect(targetMoved(after, TEST_TIMEZONE)).toBe(true)
+
+    executeUndo(TEST_USER_ID)
+    const undone = getTaskById(before.id)!
+    for (const f of [
+      'rrule',
+      'due_at',
+      'occurrence_at',
+      'original_due_at',
+      'anchor_time',
+      'anchor_dow',
+      'anchor_dom',
+      'target_set_at',
+      'on_deck_day',
+    ] as const) {
+      expect(undone[f], f).toEqual(before[f])
+    }
+  })
+
+  test('RD-017: bulk edit — the same rule (collectFieldChanges is shared)', () => {
+    const t = movedFriday()
+    bulkEdit({ ...u, taskIds: [t.id], changes: { rrule: THURSDAY_4PM } })
+    expect(getTaskById(t.id)).toMatchObject({
+      due_at: at('2026-01-17T10:00'),
+      occurrence_at: at('2026-01-15T16:00'),
+    })
+  })
+
+  test('RD-018: an occurrence on its schedule still moves with it', () => {
+    const t = createTask({ ...u, input: { title: 'Bins', rrule: FRIDAY_4PM } })
+    expect(occurrenceIsPersonal(t, TEST_TIMEZONE)).toBeNull()
+    updateTask({ ...u, taskId: t.id, input: { rrule: THURSDAY_4PM } })
+    expect(getTaskById(t.id)).toMatchObject({
+      due_at: at('2026-01-15T16:00'),
+      occurrence_at: at('2026-01-15T16:00'),
+    })
+  })
+
+  test('RD-019: a repeat waiting in the queue is not a move: recomputed, out of the queue', () => {
+    const t = createTask({ ...u, input: { title: 'Bins', rrule: FRIDAY_4PM } })
+    // As the rollover leaves it (B3): the missed occurrence kept, the target
+    // on the next one.
+    getDb()
+      .prepare('UPDATE tasks SET occurrence_at = ?, due_at = ?, queued_at = ? WHERE id = ?')
+      .run(at('2026-01-09T16:00'), at('2026-01-16T16:00'), at('2026-01-15T06:30'), t.id)
+    const queued = getTaskById(t.id)!
+    expect(targetMoved(queued, TEST_TIMEZONE)).toBe(true)
+    expect(occurrenceIsPersonal(queued, TEST_TIMEZONE)).toBeNull()
+    updateTask({ ...u, taskId: t.id, input: { rrule: THURSDAY_4PM } })
+    expect(getTaskById(t.id)).toMatchObject({
+      due_at: at('2026-01-15T16:00'),
+      occurrence_at: at('2026-01-15T16:00'),
+      queued_at: null,
+    })
   })
 })
 

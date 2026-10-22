@@ -42,7 +42,9 @@ import {
   upcomingState,
   hasPickedTarget,
   occurrenceDates,
+  occurrenceIsPersonal,
   targetMoved,
+  type PersonalOccurrence,
 } from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
@@ -305,6 +307,39 @@ function expectRepeatingDeckRules(task: Task, dueNow: Set<number>, l: string) {
   }
   expect(task.due_at, `${l}: a repeating deck holds a target`).toBeNull()
   expect(dueNow.has(task.id), `${l}: a repeating deck is currently due`).toBe(false)
+}
+
+/**
+ * PR 4a (2026-10-22): a rule change (the anchor kept) on a repeating task,
+ * checked. A deck or a moved target is the occurrence's own and survives it
+ * (a deadline-anchored deck can still lose to A1, its deadline re-timed); a
+ * deck never ends up with a target. Returns what the occurrence was.
+ */
+function changeRuleKeeping(id: number, rrule: string, l: string): PersonalOccurrence | null {
+  const task = getTaskById(id)!
+  const personal = occurrenceIsPersonal(task, tz)
+  updateTask({ ...u, taskId: id, input: { rrule } })
+  const after = getTaskById(id)!
+  const targetAnchored = task.repeat_anchor !== 'deadline'
+  if (personal === 'deck' && targetAnchored) {
+    expect(after.on_deck_day, `${l}: a rule change undecked it`).toBe(task.on_deck_day)
+  }
+  if (personal === 'moved' && targetAnchored) {
+    expect(after.due_at, `${l}: a rule change lost the moved target`).toBe(task.due_at)
+  }
+  if (after.on_deck_day) expect(after.due_at, `${l}: a rule change targeted a deck`).toBeNull()
+  return personal
+}
+
+/** TM-INV-07's rule changes on a decked repeat (the test's own count). */
+const rulesOnDeck = { count: 0 }
+
+/** TM-INV-07: a random weekly rule for a repeating task (`changeRuleKeeping`). */
+function randomRuleChange(id: number, r: () => number, l: string): void {
+  if (!getTaskById(id)!.rrule) return
+  const day = ['MO', 'WE', 'FR', 'SU'][Math.floor(r() * 4)]
+  const rrule = `FREQ=WEEKLY;BYDAY=${day};BYHOUR=${7 + Math.floor(r() * 12)};BYMINUTE=0`
+  if (changeRuleKeeping(id, rrule, l) === 'deck') rulesOnDeck.count++
 }
 
 function randomList(seed: number, start: DateTime) {
@@ -698,6 +733,9 @@ describe('TM-INV: on deck over a random list', () => {
           source: 'sweep',
         }),
       (id) => targetTasksToday(TEST_USER_ID, tz, [id]),
+      // A new rule (PR 4a, 2026-10-22): a schedule change computes no target
+      // for a decked repeat, so its deck stays — still never with a target.
+      (id) => randomRuleChange(id, r, `seed ${SEED7} task ${id}`),
     ]
     for (let m = 0; m < 200; m++) {
       const at = start.plus({ minutes: Math.floor(r() * DAYS * 24 * 60) })
@@ -762,6 +800,7 @@ describe('TM-INV: on deck over a random list', () => {
     }
     expect(decked).toBeGreaterThan(10)
     expect(repeatingDecked).toBeGreaterThan(2)
+    expect(rulesOnDeck.count).toBeGreaterThan(0)
   }, 30_000)
 })
 
@@ -802,6 +841,7 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
       'FREQ=WEEKLY;INTERVAL=2;BYDAY=SU;BYHOUR=23;BYMINUTE=0',
     ]
     let wrote = 0
+    let ruleChanges = 0
     for (let c = 0; c < 40; c++) {
       let clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
         minutes: Math.floor(r() * 10 * 24 * 60),
@@ -841,6 +881,13 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
           const timed = `FREQ=WEEKLY;BYDAY=${pick(['MO', 'WE', 'SA'])};BYHOUR=${hour(task)};BYMINUTE=0`
           const anchor = deadlineRule ? 'target' : 'deadline'
           updateTask({ ...u, taskId: t.id, input: { repeat_anchor: anchor, rrule: timed } })
+        } else if (op === 9) {
+          // A rule change, the anchor kept (PR 4a): a moved target or a deck
+          // is this occurrence's own and survives it.
+          const h = 6 + Math.floor(r() * 16)
+          const rrule = `FREQ=WEEKLY;BYDAY=${pick(['MO', 'WE', 'SA'])};BYHOUR=${h};BYMINUTE=0`
+          changeRuleKeeping(t.id, rrule, label('rule change'))
+          ruleChanges++
         }
       }
       const checkTask = (step: string) => {
@@ -870,7 +917,7 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
       for (let s = 0; s < 8; s++) {
         clock = clock.plus({ minutes: Math.floor(r() * 3 * 24 * 60) })
         vi.setSystemTime(clock.toJSDate())
-        const op = Math.floor(r() * 9)
+        const op = Math.floor(r() * 10)
         const step = `op ${s}:${op}`
         const before = getTaskById(t.id)!
         if (op >= 6) {
@@ -928,5 +975,6 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
       }
     }
     expect(wrote).toBe(40 * 8)
+    expect(ruleChanges).toBeGreaterThan(10)
   }, 30_000)
 })

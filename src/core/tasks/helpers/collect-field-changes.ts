@@ -33,6 +33,8 @@ import {
   deckSkip,
   hasPickedTarget,
   occurrenceDates,
+  occurrenceDayAtRuleTime,
+  occurrenceIsPersonal,
   resolveTarget,
   type TargetContext,
 } from '@/lib/task-segments'
@@ -234,7 +236,11 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   collectQuotaPromptFields(data, task, input)
 
   // Track rrule changes with anchor derivation
-  const rrule = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
+  const rrule = collectRruleChanges(data, task, input, userTimezone, now, {
+    willBeTracked,
+    willBeReminder,
+    deadlineAnchored: repeat.kind === 'deadline',
+  })
 
   // Track due_at changes and move detection. Only a date the USER sent is a
   // move — not a clear, and not the automatic target the server put in its
@@ -288,9 +294,10 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 
   // On deck (2026-10-20): the deck this write sets or clears, and — the
   // pick-only clear (B1, `deck-clear.ts`) — a write that leaves a PICKED
-  // target (or a rule, a reminder, a quota) takes an existing deck off.
-  // Judged on the RESULTING row, so a rule change that computes its own
-  // `due_at` clears it too. A deadline change or Back to auto leaves an
+  // target (or a reminder, a quota) takes an existing deck off. Judged on the
+  // RESULTING row. A schedule change on a decked repeat computes no target
+  // (PR 4a, `occurrenceIsPersonal`), so the deck stays — unless the deadline
+  // it leaves outranks it (A1). A deadline change or Back to auto leaves an
   // automatic target, and the deck stays.
   collectDeckChange(data, task, input, {
     auto: target.auto,
@@ -561,10 +568,19 @@ function collectRepeatingUndeck(
   const rule = input.rrule !== undefined ? input.rrule : task.rrule
   if (!rule || left.willBeReminder || left.willBeTracked) return
   if (data.fieldsChanged.includes('due_at') || task.due_at !== null) return
-  const occurrence =
-    data.afterState.occurrence_at !== undefined ? data.afterState.occurrence_at : task.occurrence_at
+  const after = <K extends keyof Task>(field: K): Task[K] =>
+    data.afterState[field] !== undefined ? (data.afterState[field] as Task[K]) : task[field]
+  const occurrence = after('occurrence_at')
   if (!occurrence) return
-  const restored = occurrenceDates(task, occurrence, left.timezone).targetAt
+  // The schedule this write LEAVES: a schedule change that keeps the deck
+  // until A1 takes it off (PR 4a) may have changed the rule or the offsets.
+  const schedule = {
+    rrule: rule,
+    repeat_anchor: after('repeat_anchor'),
+    target_days_before: after('target_days_before'),
+    target_time: after('target_time'),
+  }
+  const restored = occurrenceDates(schedule, occurrence, left.timezone).targetAt
   trackField(data, 'due_at', task.due_at, restored)
   if (task.original_due_at !== restored && !data.fieldsChanged.includes('original_due_at')) {
     trackField(data, 'original_due_at', task.original_due_at, restored)
@@ -1094,8 +1110,9 @@ function collectRruleChanges(
   input: FieldChangesInput,
   userTimezone: string,
   now: Date,
-  willBeTracked: boolean,
+  left: RuleChangeResult,
 ): RruleChange {
+  const { willBeTracked } = left
   if (input.rrule === undefined || input.rrule === task.rrule) {
     return { changed: false }
   }
@@ -1154,38 +1171,18 @@ function collectRruleChanges(
     const dueAtForAnchors = applyDateWithNewRule(data, task, input, willBeTracked)
     const anchors = deriveAnchorFields(input.rrule, dueAtForAnchors, userTimezone)
 
-    // Update anchor_time
-    data.setClauses.push('anchor_time = ?')
-    data.values.push(anchors.anchor_time)
-    if (!data.fieldsChanged.includes('anchor_time')) {
-      data.fieldsChanged.push('anchor_time')
-      data.beforeState.anchor_time = task.anchor_time
+    // Update anchor_time, anchor_dow and anchor_dom
+    for (const field of ['anchor_time', 'anchor_dow', 'anchor_dom'] as const) {
+      writeAnchor(data, task, field, anchors[field])
     }
-    data.afterState.anchor_time = anchors.anchor_time
-
-    // Update anchor_dow
-    data.setClauses.push('anchor_dow = ?')
-    data.values.push(anchors.anchor_dow)
-    if (!data.fieldsChanged.includes('anchor_dow')) {
-      data.fieldsChanged.push('anchor_dow')
-      data.beforeState.anchor_dow = task.anchor_dow
-    }
-    data.afterState.anchor_dow = anchors.anchor_dow
-
-    // Update anchor_dom
-    data.setClauses.push('anchor_dom = ?')
-    data.values.push(anchors.anchor_dom)
-    if (!data.fieldsChanged.includes('anchor_dom')) {
-      data.fieldsChanged.push('anchor_dom')
-      data.beforeState.anchor_dom = task.anchor_dom
-    }
-    data.afterState.anchor_dom = anchors.anchor_dom
 
     // Only auto-compute due_at if:
     // 1. User didn't explicitly pass due_at
     // 2. Task is NOT overdue (due_at is in the future or null) — an overdue
     //    task keeps its overdue date so a schedule edit cannot quietly clear
     //    debt the user still has to sweep.
+    // 3. The occurrence is not the user's own (PR 4a, `keepPersonalOccurrence`
+    //    below: a deck or a moved target is kept).
     // A reminder (§6) has no debt to protect, and a missed one's due_at is
     // just frozen at its last occurrence, so its due_at follows the new
     // schedule: the reminder editor's "move it to the evening" must not leave
@@ -1197,6 +1194,15 @@ function collectRruleChanges(
     // not to touch" note used to be working around — it sent the rule and the
     // server stamped a date behind it.
     const isOverdue = task.due_at && new Date(task.due_at) < now
+    // PR 4a: an occurrence of its own (on deck, a moved target) keeps it.
+    const kept = keepPersonalOccurrence(data, task, input.rrule, anchors.anchor_time, {
+      ...left,
+      timezone: userTimezone,
+      now,
+      overdue: !!isOverdue,
+      dueSent: input.due_at !== undefined,
+    })
+    if (kept) return kept
     if (!willBeTracked && input.due_at === undefined && (!isOverdue || task.is_reminder)) {
       const nextOccurrence = computeFirstOccurrence(input.rrule, anchors.anchor_time, userTimezone)
       const scheduled = nextOccurrence.toISOString()
@@ -1218,6 +1224,83 @@ function collectRruleChanges(
   }
 
   return { changed: true }
+}
+
+/**
+ * A rule's anchor field, derived by `collectRruleChanges` (bound by position,
+ * so its clause and value go together; the before value only once).
+ */
+function writeAnchor(
+  data: FieldChangeData,
+  task: Task,
+  field: 'anchor_time' | 'anchor_dow' | 'anchor_dom',
+  value: Task[typeof field],
+): void {
+  data.setClauses.push(`${field} = ?`)
+  data.values.push(value)
+  if (!data.fieldsChanged.includes(field)) {
+    data.fieldsChanged.push(field)
+    Object.assign(data.beforeState, { [field]: task[field] })
+  }
+  Object.assign(data.afterState, { [field]: value })
+}
+
+/** What the row a rule change leaves is (`collectRruleChanges`). */
+interface RuleChangeResult {
+  willBeTracked: boolean
+  willBeReminder: boolean
+  /** `planRepeatSchedule` decided the dates (a deadline-anchored result). */
+  deadlineAnchored: boolean
+}
+
+/**
+ * PR 4a (2026-10-22; plan RT-1, ruling A1): a new rule on a repeat whose
+ * current occurrence is its own (`occurrenceIsPersonal`) keeps it, instead of
+ * computing a fresh target from the rule:
+ *  - a DEADLINE-ANCHORED result: `planRepeatSchedule` decided its dates, and
+ *    leaves no target to write only for a deck (`targetFor`) — nothing here;
+ *  - ON DECK (target-anchored result): no target is written, so
+ *    `collectDeckClear` keeps the deck; the occurrence keeps its DAY — its
+ *    target's day, the derived target's on a row leaving the deadline
+ *    anchor — at the new rule's time, as over-target debt does on a
+ *    deadline-anchored repeat (`occurrenceFor`);
+ *  - a MOVED target (target-anchored result): `due_at` stays (capped at a
+ *    deadline a legacy row still carries); the occurrence moves to the new
+ *    rule's first, so the move stays a move — the same "moved" rule as
+ *    `targetFor`'s on the other anchor.
+ * Returns null when the occurrence is on its schedule, or the row becomes a
+ * reminder or a quota: the caller computes as before. Over-target debt is the
+ * caller's (its target is kept already).
+ */
+function keepPersonalOccurrence(
+  data: FieldChangeData,
+  task: Task,
+  rrule: string,
+  anchorTime: string | null,
+  left: RuleChangeResult & { timezone: string; now: Date; overdue: boolean; dueSent: boolean },
+): RruleChange | null {
+  // A date sent with the rule is honored, and debt is kept, by the caller.
+  if (left.overdue || left.dueSent) return null
+  if (left.willBeTracked || left.willBeReminder || task.is_reminder) return null
+  const personal = occurrenceIsPersonal(task, left.timezone)
+  if (!personal) return null
+  if (left.deadlineAnchored) return { changed: true }
+  if (personal === 'moved') {
+    const deadline =
+      data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
+    const capped = capAtDeadline(task.due_at!, deadline ?? null, left.now)
+    if (capped !== task.due_at) trackField(data, 'due_at', task.due_at, capped)
+    const scheduled = computeFirstOccurrence(rrule, anchorTime, left.timezone).toISOString()
+    return { changed: true, scheduled }
+  }
+  if (!task.occurrence_at) return null
+  const target = occurrenceDates(task, task.occurrence_at, left.timezone).targetAt
+  const scheduled = occurrenceDayAtRuleTime(
+    target,
+    { rrule, anchor_time: anchorTime },
+    left.timezone,
+  )
+  return { changed: true, scheduled }
 }
 
 /**

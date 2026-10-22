@@ -270,7 +270,7 @@ describe('OD-RP: the deck write', () => {
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-21', due_at: null })
   })
 
-  test('OD-RP14: an edit keeps a repeating deck; Today, a snooze and a new rule clear it', () => {
+  test('OD-RP14: an edit keeps a repeating deck — a new rule too (PR 4a); Today and a snooze clear it', () => {
     const a = daily()
     deck([a.id])
     updateTask({ ...u, taskId: a.id, input: { title: 'Renamed', priority: 2, notes: 'x' } })
@@ -285,11 +285,17 @@ describe('OD-RP: the deck write', () => {
     bulkSnooze({ ...u, taskIds: [b.id], until: at('2026-10-21T09:00') })
     expect(task(b.id)).toMatchObject({ on_deck_day: null, due_at: at('2026-10-21T09:00') })
 
+    // A new rule is a schedule change: the decked occurrence is the user's,
+    // so it keeps its day (Tue Oct 20) at the new rule's time (08:00 still).
     const c = daily()
     deck([c.id], '2026-10-22')
     updateTask({ ...u, taskId: c.id, input: { rrule: MONDAY_8 } })
-    expect(task(c.id).on_deck_day).toBeNull()
-    expect(task(c.id).due_at).toBe(at('2026-10-26T08:00'))
+    expect(task(c.id)).toMatchObject({
+      rrule: MONDAY_8,
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      occurrence_at: at('2026-10-20T08:00'),
+    })
   })
 
   test('OD-RP15: taking it off deck puts the target back on the occurrence — the debt returns', () => {
@@ -614,5 +620,167 @@ describe('OD-RP: review round (2026-10-20)', () => {
       "That day is after this task's deadline.",
     )
     expect(deckErrorMessage(refused, { id: 7, rrule: null })).toBe(refused.summary)
+  })
+})
+
+/**
+ * PR 4a (2026-10-22; plan RT-1, ruling A1): a SCHEDULE change — a new rule,
+ * new offsets, a new mode, an anchor switch; PATCH or bulk edit — on a decked
+ * repeating task keeps the deck: no target is computed, the occurrence keeps
+ * its DAY at the new rule's time (as over-target debt does). On a
+ * deadline-anchored repeat the A1 check is re-run against the deadline the
+ * write leaves, and if it refuses, the deadline wins as before: the deck goes
+ * and the target comes back — from the NEW schedule.
+ */
+describe('OD-RP: a schedule change keeps the deck (PR 4a)', () => {
+  const MONDAY_6PM = 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=18;BYMINUTE=0'
+  const FRIDAY_7PM = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=19;BYMINUTE=0'
+
+  test('OD-RP50: target-anchored — the deck stays, the occurrence is re-timed; off deck it comes back there', () => {
+    const t = daily()
+    deck([t.id], '2026-10-22')
+    const before = task(t.id)
+    const { fieldsChanged } = updateTask({ ...u, taskId: t.id, input: { rrule: MONDAY_6PM } })
+    expect(fieldsChanged).not.toContain('due_at')
+    expect(fieldsChanged).not.toContain('on_deck_day')
+    expect(task(t.id)).toMatchObject({
+      rrule: MONDAY_6PM,
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      occurrence_at: at('2026-10-20T18:00'),
+    })
+    expect(due()).not.toContain(t.id)
+
+    // Undo restores the row exactly; redo again.
+    executeUndo(TEST_USER_ID)
+    const undone = task(t.id)
+    for (const f of [
+      'rrule',
+      'due_at',
+      'occurrence_at',
+      'on_deck_day',
+      'anchor_time',
+      'anchor_dow',
+      'original_due_at',
+      'target_set_at',
+    ] as const) {
+      expect(undone[f], f).toEqual(before[f])
+    }
+    executeRedo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      occurrence_at: at('2026-10-20T18:00'),
+    })
+
+    // Off deck, the target is the occurrence's — at the new time.
+    deck([t.id], null)
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, due_at: at('2026-10-20T18:00') })
+  })
+
+  test('OD-RP51: bulk edit — the same (collectFieldChanges is shared)', () => {
+    const t = daily()
+    deck([t.id], '2026-10-22')
+    bulkEdit({ ...u, taskIds: [t.id], changes: { rrule: MONDAY_6PM } })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      occurrence_at: at('2026-10-20T18:00'),
+    })
+  })
+
+  test('OD-RP52: deadline-anchored — a rule, offsets and mode change keep the deck; the deadline is re-timed', () => {
+    const t = fridayDeadline()
+    expect(deck([t.id], '2026-10-22').decked).toBe(1)
+    updateTask({ ...u, taskId: t.id, input: { rrule: FRIDAY_7PM } })
+    expect(task(t.id)).toMatchObject({
+      rrule: FRIDAY_7PM,
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      occurrence_at: at('2026-10-23T19:00'),
+      deadline_at: at('2026-10-23T19:00'),
+    })
+    updateTask({ ...u, taskId: t.id, input: { target_days_before: 1, target_time: '09:00' } })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      target_days_before: 1,
+      target_time: '09:00',
+    })
+    bulkEdit({ ...u, taskIds: [t.id], changes: { recurrence_mode: 'from_completion' } })
+    expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', due_at: null })
+    expect(due()).not.toContain(t.id)
+    // Off deck: the target the NEW offsets derive (Thu Oct 22 09:00).
+    deck([t.id], null)
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, due_at: at('2026-10-22T09:00') })
+  })
+
+  test('OD-RP53: deadline-anchored — A1 re-run: a new deadline the deck no longer comes before wins', () => {
+    const t = fridayDeadline()
+    deck([t.id], '2026-10-22')
+    // 01:00 is before the 06:30 rollover, so the Fri Oct 23 01:00 deadline
+    // belongs to Thursday Oct 22 — the deck's own day (A1 strict): refused,
+    // the deck goes, and the target comes back from the NEW schedule (1 day
+    // before at 00:30 → Thu Oct 22 00:30), not the old one's Tue 08:00.
+    updateTask({
+      ...u,
+      taskId: t.id,
+      input: {
+        rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=1;BYMINUTE=0',
+        target_days_before: 1,
+        target_time: '00:30',
+      },
+    })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: null,
+      deadline_at: at('2026-10-23T01:00'),
+      occurrence_at: at('2026-10-23T01:00'),
+      due_at: at('2026-10-22T00:30'),
+    })
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      deadline_at: at('2026-10-23T17:00'),
+      target_days_before: 3,
+    })
+  })
+
+  test('OD-RP54: an anchor switch keeps the deck — deadline → target lands on the target’s day', () => {
+    const t = fridayDeadline()
+    deck([t.id], '2026-10-22')
+    // The occurrence's target was Tue Oct 20 08:00; target-anchored Tuesdays 08:00.
+    updateTask({
+      ...u,
+      taskId: t.id,
+      input: { repeat_anchor: 'target', rrule: 'FREQ=WEEKLY;BYDAY=TU;BYHOUR=8;BYMINUTE=0' },
+    })
+    expect(task(t.id)).toMatchObject({
+      repeat_anchor: 'target',
+      deadline_at: null,
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      occurrence_at: at('2026-10-20T08:00'),
+    })
+  })
+
+  test('OD-RP56: deadline-anchored — this occurrence’s deadline rescheduled later keeps the deck (no target derived)', () => {
+    const t = fridayDeadline()
+    deck([t.id], '2026-10-22')
+    updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-24T17:00') } })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      deadline_at: at('2026-10-24T17:00'),
+      occurrence_at: at('2026-10-24T17:00'),
+    })
+  })
+
+  test('OD-RP55: a reminder conversion with a new rule still takes the deck off and dates it', () => {
+    const t = daily()
+    deck([t.id], '2026-10-22')
+    updateTask({ ...u, taskId: t.id, input: { rrule: MONDAY_6PM, is_reminder: true } })
+    const r = task(t.id)
+    expect(r.on_deck_day).toBeNull()
+    expect(r.due_at).toBe(at('2026-10-26T18:00'))
   })
 })
