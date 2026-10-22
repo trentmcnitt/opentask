@@ -315,8 +315,8 @@ function buildRelativeTargetFragment(afterState: Partial<Record<string, unknown>
 /**
  * On deck fragment (2026-10-20): "On deck for Sat Oct 24", or "Taken off
  * deck" (an un-deck, or a pick that cleared the deck). When a deadline added
- * or moved in the same write took it off (A1, strict: the deadline wins), it
- * says why: "Taken off deck: the deadline reminds you from Tue".
+ * or moved in the same write took it off (A1: the deadline wins), it says
+ * why: "Taken off deck: the deadline is Fri".
  */
 function buildDeckFragment(
   afterState: Partial<Record<string, unknown>>,
@@ -325,12 +325,14 @@ function buildDeckFragment(
   const day = afterState.on_deck_day
   if (typeof day !== 'string') {
     if (afterState.deadline_at === undefined) return 'Taken off deck'
-    const target = afterState.due_at
-    if (typeof target !== 'string' || Date.parse(target) <= Date.now()) {
-      return 'Taken off deck: the deadline is already reminding you'
+    // The deadlines page (2026-10-22): the deadline that won is before the
+    // deck day, or has passed (A1) — said by the deadline itself.
+    const deadline = afterState.deadline_at
+    if (typeof deadline !== 'string' || Date.parse(deadline) <= Date.now()) {
+      return 'Taken off deck: the deadline has passed'
     }
-    const from = DateTime.fromISO(target, { zone: 'utc' }).setZone(userTimezone).toFormat('ccc')
-    return `Taken off deck: the deadline reminds you from ${from}`
+    const on = DateTime.fromISO(deadline, { zone: 'utc' }).setZone(userTimezone).toFormat('ccc')
+    return `Taken off deck: the deadline is ${on}`
   }
   const parsed = parseDeckDay(day, 'utc')
   return `On deck for ${parsed ? parsed.toFormat('ccc LLL d') : day}`

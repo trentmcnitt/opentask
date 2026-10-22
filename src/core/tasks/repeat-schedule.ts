@@ -471,9 +471,12 @@ function relativeFor(
   const modeChanged = sent(input.recurrence_mode, task.recurrence_mode) !== task.recurrence_mode
   const validated = schedule.scheduleChanged || offsetsSent || modeChanged
   if (!pair || becoming) {
+    // A target sent to a repeat that STAYS without a relative target (the
+    // deadlines page, L1) is this occurrence's pick, never the series'
+    // offsets; only a row becoming deadline-anchored takes them from it.
     const relative = resolveRelativeTarget({
       sent: pair,
-      targetAt: input.due_at ?? null,
+      targetAt: becoming || !ctx.leads ? (input.due_at ?? null) : null,
       givenDeadline: occurrenceAt,
       rule: schedule.ruleFields,
       firstDeadline: occurrenceAt,

@@ -26,7 +26,6 @@ import { DateTime } from 'luxon'
 import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
-  autoTargetAt,
   calendarToday,
   repeatingDeadlineDay,
   type CheckInDay,
@@ -104,19 +103,13 @@ export function deckMenuDays(
 }
 
 /**
- * A deadline task's deck limit (A1, as the server's `deckRefusal` judges it):
- * the day BEFORE its automatic target's local day — a deck on that day would
- * nag, so the server refuses it. The automatic target is the stored one when
- * the target already is automatic, else the one the deadline gives now (a
- * picked target goes when decking; the Quick panel passes a STAGED deadline
- * here). One that has already arrived leaves no day at all (the latest day is
- * yesterday). No deadline: null.
- *
- * A REPEATING task (2026-10-20) has no automatic target: its deck must land
- * before its deadline's own day — its OpenTask day, so a deadline before the
- * rollover counts as the evening before (`repeatingDeadlineDay`) — while the
- * deadline is ahead ("deadline Tue"; a passed deadline leaves no day) —
- * `deckRefusal`'s repeating branch.
+ * A deadline task's deck limit (A1, as the server's `deckRefusal` judges it —
+ * the deadlines page, 2026-10-22): any day up to and including the deadline's
+ * own OpenTask day ("deadline Fri"; a deadline before the rollover counts as
+ * the evening before, `repeatingDeadlineDay`), one-off or repeating, while
+ * the deadline is ahead. A passed deadline leaves no day at all (the latest
+ * day is yesterday). No deadline: null. The Quick panel passes a STAGED
+ * deadline here. (`ctx` is kept for the callers; the deadline alone decides.)
  */
 export function deckLimit(
   task: {
@@ -128,30 +121,24 @@ export function deckLimit(
   timezone: string,
   now: Date = new Date(),
   ctx?: TargetContext | null,
-  /** The user's rollover time: a repeating deadline's day is its OpenTask day (`repeatingDeadlineDay`). */
+  /** The user's rollover time: the deadline's day is its OpenTask day (`repeatingDeadlineDay`). */
   rolloverTime: string | null = null,
 ): DeckLimit | null {
   if (!task.deadline_at) return null
   const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
-  if (task.rrule) {
-    const passed = Date.parse(task.deadline_at) <= now.getTime()
-    const deadlineDay = DateTime.fromISO(
-      repeatingDeadlineDay(task.deadline_at, timezone, rolloverTime),
-      { zone: timezone },
-    )
-    const limitDay = passed ? today : deadlineDay
+  if (Date.parse(task.deadline_at) <= now.getTime()) {
     return {
-      latestDay: limitDay.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
-      caption: passed ? 'deadline passed' : `deadline ${deadlineDay.toFormat('ccc')}`,
+      latestDay: today.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
+      caption: 'deadline passed',
     }
   }
-  const auto =
-    task.target_auto && task.due_at ? task.due_at : autoTargetAt(task.deadline_at, ctx, now)
-  const autoDay = DateTime.fromISO(auto, { zone: 'utc' }).setZone(timezone)
-  const reminds = Date.parse(auto) <= now.getTime() ? today : autoDay.startOf('day')
+  const deadlineDay = DateTime.fromISO(
+    repeatingDeadlineDay(task.deadline_at, timezone, rolloverTime),
+    { zone: timezone },
+  )
   return {
-    latestDay: reminds.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
-    caption: `deadline reminds from ${reminds.toFormat('ccc')}`,
+    latestDay: deadlineDay.toFormat(DECK_DAY_FORMAT),
+    caption: `deadline ${deadlineDay.toFormat('ccc')}`,
   }
 }
 

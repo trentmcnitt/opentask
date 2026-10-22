@@ -192,29 +192,26 @@ describe('OD-R: the rules', () => {
     expect(deckIsToday({ on_deck_day: '2026-10-22' }, tz, wed1am)).toBe(false)
   })
 
-  test('OD-R02: A1 (strict) — a deadline deck only while the auto target is ahead, BEFORE its day', () => {
-    // Deadline Fri Oct 30 23:59, now Tue Oct 20: wait 10 → lead 3 → Tue Oct 27 08:30.
+  test('OD-R02: A1 (the deadlines page, 2026-10-22) — a deadline deck up to the deadline day, while it is ahead', () => {
+    // Deadline Fri Oct 30 23:59, now Tue Oct 20: any day up to Fri Oct 30.
     const t = bare({ deadline_at: at('2026-10-30T23:59') })
     expect(deckRefusal(t, '2026-10-26', ctx, tue10)).toBeNull()
-    // Its own day too: the deck would meet the nag that morning.
-    expect(deckRefusal(t, '2026-10-27', ctx, tue10)).toBe('after_auto_target')
-    expect(deckRefusal(t, '2026-10-28', ctx, tue10)).toBe('after_auto_target')
-    // Deadline tonight (wait 0): its auto target (this morning, 08:30) has passed → now: nagging.
+    expect(deckRefusal(t, '2026-10-27', ctx, tue10)).toBeNull()
+    // The deadline's own day is allowed: the safety net still holds it.
+    expect(deckRefusal(t, '2026-10-30', ctx, tue10)).toBeNull()
+    expect(deckRefusal(t, '2026-10-31', ctx, tue10)).toBe('after_auto_target')
+    // Deadline tonight: still ahead, today allowed.
     expect(
       deckRefusal(bare({ deadline_at: at('2026-10-20T23:59') }), '2026-10-20', ctx, tue10),
-    ).toBe('deadline_nagging')
-    // A stored automatic target is the one judged.
-    const stored = bare({
-      deadline_at: at('2026-10-30T23:59'),
-      due_at: at('2026-10-24T08:30'),
-      target_auto: true,
-    })
-    expect(deckRefusal(stored, '2026-10-23', ctx, tue10)).toBeNull()
-    expect(deckRefusal(stored, '2026-10-24', ctx, tue10)).toBe('after_auto_target')
-    // A passed deadline is nagging.
+    ).toBeNull()
+    // A passed deadline refuses every day.
     expect(
       deckRefusal(bare({ deadline_at: at('2026-10-19T17:00') }), '2026-10-20', ctx, tue10),
     ).toBe('deadline_nagging')
+    // A deadline before the rollover belongs to the evening before (its OpenTask day).
+    const early = bare({ deadline_at: at('2026-10-31T01:00') })
+    expect(deckRefusal(early, '2026-10-31', ctx, tue10, '06:30')).toBe('after_auto_target')
+    expect(deckRefusal(early, '2026-10-30', ctx, tue10, '06:30')).toBeNull()
     expect(deckRefusal(bare(), '2027-01-01', ctx, tue10)).toBeNull()
   })
 
@@ -306,7 +303,7 @@ describe('OD-R: the rules', () => {
         tz,
         tue10,
       ),
-    ).toBe('This deadline is close and already reminding you — use Today.')
+    ).toBe('This deadline has passed.')
     expect(
       deckSummary(
         { ...base, day: null, decked: 0, undecked: 2, skipped_recurring: 0, skipped_quota: 0 },
@@ -361,32 +358,38 @@ describe('OD-W: deckTasks', () => {
     expect(task(t.id)).toMatchObject({ due_at: null, on_deck_day: '2026-10-22' })
   })
 
-  test('OD-W04: a deadline task keeps its automatic target; a picked one goes back to auto', () => {
-    // Deadline Fri Oct 30 23:59 → auto Tue Oct 27 08:30.
-    const auto = make({ deadline_at: at('2026-10-30T23:59') })
+  test('OD-W04: a deadline task on deck has no target; a picked one is dropped (the deadlines page)', () => {
+    // Deadline Fri Oct 30 23:59: no automatic target (2026-10-22); lead day Tue Oct 27.
+    const bareDeadline = make({ deadline_at: at('2026-10-30T23:59') })
     const picked = make({ deadline_at: at('2026-10-30T23:59'), due_at: at('2026-10-21T12:00') })
-    expect(deck([auto.id, picked.id], '2026-10-24')).toMatchObject({ decked: 2, refused: [] })
-    for (const id of [auto.id, picked.id]) {
+    expect(deck([bareDeadline.id, picked.id], '2026-10-24')).toMatchObject({
+      decked: 2,
+      refused: [],
+    })
+    for (const id of [bareDeadline.id, picked.id]) {
       expect(task(id)).toMatchObject({
         on_deck_day: '2026-10-24',
-        due_at: at('2026-10-27T08:30'),
-        target_auto: true,
+        due_at: null,
+        target_auto: false,
+        lead_from: '2026-10-27',
       })
     }
   })
 
   test('OD-W05: A1 refusals, per task, never the batch', () => {
-    const nagging = make({ deadline_at: at('2026-10-20T23:59') })
+    const passed = make({ deadline_at: at('2026-10-19T17:00') })
+    const sooner = make({ deadline_at: at('2026-10-25T23:59') })
     const later = make({ deadline_at: at('2026-10-30T23:59') })
     const plain = make()
-    const r = deck([nagging.id, later.id, plain.id], '2026-10-28')
-    expect(r.decked).toBe(1)
+    const r = deck([passed.id, sooner.id, later.id, plain.id], '2026-10-28')
+    expect(r.decked).toBe(2)
     expect(r.refused).toEqual([
-      { id: nagging.id, reason: 'deadline_nagging' },
-      { id: later.id, reason: 'after_auto_target' },
+      { id: passed.id, reason: 'deadline_nagging' },
+      { id: sooner.id, reason: 'after_auto_target' },
     ])
     expect(task(plain.id).on_deck_day).toBe('2026-10-28')
-    expect(task(later.id).on_deck_day).toBeNull()
+    expect(task(later.id).on_deck_day).toBe('2026-10-28')
+    expect(task(sooner.id).on_deck_day).toBeNull()
   })
 
   test('OD-W06: reminders, quotas, done and trashed are skipped and counted (A11); repeating is decked', () => {
@@ -477,10 +480,10 @@ describe('OD-W: refusals, un-deck, the queue, PATCH, undo', () => {
     expect(() =>
       updateTask({ ...u, taskId: reminder.id, input: { on_deck_day: '2026-10-22' } }),
     ).toThrow(/can go on deck/)
-    const near = make({ deadline_at: at('2026-10-20T23:59') })
+    const passed = make({ deadline_at: at('2026-10-19T17:00') })
     expect(() =>
-      updateTask({ ...u, taskId: near.id, input: { on_deck_day: '2026-10-20' } }),
-    ).toThrow(/already reminding you/)
+      updateTask({ ...u, taskId: passed.id, input: { on_deck_day: '2026-10-20' } }),
+    ).toThrow(/has passed/)
   })
 
   test('OD-W11: one undo entry, webhooks for each, a deck never nags', () => {
@@ -550,58 +553,59 @@ describe('OD-B: a pick clears the deck; a deadline write does not', () => {
     expect(task(d.id).due_at).not.toBeNull()
   })
 
-  test('OD-B03: no deck on its auto target’s own day; one put there by hand is cleared by a sweep', () => {
-    // Deadline Fri Oct 23 23:59, decided Sat Oct 17: wait 6 → the day before,
-    // auto Thu Oct 22 08:30. A deck for Thu is refused (A1 strict), Wed is fine.
+  test('OD-B03: a deck up to the deadline day; on its safety-net days the page holds it, a pick takes the deck off', () => {
+    // Deadline Fri Oct 23 23:59, decided Sat Oct 17: no target (the deadlines
+    // page, 2026-10-22); a deck for the deadline day itself is allowed, the
+    // day after is refused (A1).
     setClock('2026-10-17T10:00')
     const t = make({ deadline_at: at('2026-10-23T23:59') })
-    expect(task(t.id).due_at).toBe(at('2026-10-22T08:30'))
-    expect(deck([t.id], '2026-10-22').refused).toEqual([{ id: t.id, reason: 'after_auto_target' }])
-    expect(deck([t.id], '2026-10-21').decked).toBe(1)
-    // Belt and braces: forced onto the nagging day by hand, a sweep's move
-    // (a pick) still takes the deck off.
-    getDb().prepare("UPDATE tasks SET on_deck_day = '2026-10-22' WHERE id = ?").run(t.id)
-    setClock('2026-10-22T10:00')
-    expect(onDeckToday(TEST_USER_ID, tz)).toEqual([]) // nagging, so not on deck today
-    expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toEqual([t.id])
-    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-22T15:00'), source: 'sweep' })
-    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-22T15:00'), on_deck_day: null })
+    expect(task(t.id).due_at).toBeNull()
+    expect(deck([t.id], '2026-10-24').refused).toEqual([{ id: t.id, reason: 'after_auto_target' }])
+    expect(deck([t.id], '2026-10-23').decked).toBe(1)
+    // On the deck day — D, inside the safety net — the page holds it, not
+    // the On deck section, and it is never over target.
+    setClock('2026-10-23T10:00')
+    expect(onDeckToday(TEST_USER_ID, tz)).toEqual([])
+    expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toEqual([])
+    // A pick (a sweep's move) takes the deck off.
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-23T15:00'), source: 'sweep' })
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-23T15:00'), on_deck_day: null })
   })
 
-  test('OD-B04b: a NEAR deadline — reminding on or before the deck day — wins: the deck goes', () => {
-    // Decked for Sat Oct 24; a deadline Sun Oct 25 23:59 added Tue Oct 20:
-    // wait 5 → the day before → auto Sat Oct 24 08:30, the deck's own day.
-    const t = decked({ title: 'Gloves' }, '2026-10-24')
-    const r = updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-25T23:59') } })
-    expect(task(t.id)).toMatchObject({
-      on_deck_day: null,
-      due_at: at('2026-10-24T08:30'),
-      target_auto: true,
-    })
-    expect(r.description).toContain('Taken off deck: the deadline reminds you from Sat')
+  test('OD-B04b: a deadline BEFORE the deck day wins: the deck goes', () => {
+    // Decked for Sat Oct 24; a deadline Fri Oct 23 23:59 added Tue Oct 20:
+    // the deck day is after the deadline's day (A1) — the deadline wins.
+    const t = decked({ title: 'Synthetic gloves' }, '2026-10-24')
+    const r = updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-23T23:59') } })
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, due_at: null, target_auto: false })
+    expect(r.description).toContain('Taken off deck: the deadline is Fri')
     // One undo puts the deck and the old (no) deadline back.
     executeUndo(TEST_USER_ID)
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-24', deadline_at: null })
-    // A deadline whose auto target has already arrived wins too.
-    const u2 = decked({}, '2026-10-26')
-    updateTask({ ...u, taskId: u2.id, input: { deadline_at: at('2026-10-21T23:59') } })
-    expect(task(u2.id).on_deck_day).toBeNull()
+    // A deadline on the deck day itself keeps it (the safety net still holds it).
+    const same = decked({}, '2026-10-24')
+    updateTask({ ...u, taskId: same.id, input: { deadline_at: at('2026-10-24T23:59') } })
+    expect(task(same.id).on_deck_day).toBe('2026-10-24')
     // Moving a deadline in: the same check.
     const v = decked({}, '2026-10-24')
     updateTask({ ...u, taskId: v.id, input: { deadline_at: at('2026-11-20T23:59') } })
     expect(task(v.id).on_deck_day).toBe('2026-10-24')
-    updateTask({ ...u, taskId: v.id, input: { deadline_at: at('2026-10-25T23:59') } })
+    updateTask({ ...u, taskId: v.id, input: { deadline_at: at('2026-10-22T23:59') } })
     expect(task(v.id).on_deck_day).toBeNull()
   })
 
-  test('OD-B04: a FAR deadline added, changed or Back to auto KEEPS the deck', () => {
+  test('OD-B04: a deadline added or changed, or the target removed, KEEPS the deck', () => {
     const t = decked()
     updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-30T23:59') } })
-    expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', target_auto: true })
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      target_auto: false,
+      due_at: null,
+    })
     updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-11-06T23:59') } })
     expect(task(t.id).on_deck_day).toBe('2026-10-22')
-    updateTask({ ...u, taskId: t.id, input: { due_at: null } }) // Back to auto
-    expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', target_auto: true })
+    updateTask({ ...u, taskId: t.id, input: { due_at: null } }) // Remove target: nothing to remove
+    expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', due_at: null })
     // A title or priority edit leaves it alone.
     updateTask({ ...u, taskId: t.id, input: { title: 'Renamed', priority: 2 } })
     expect(task(t.id).on_deck_day).toBe('2026-10-22')
@@ -796,25 +800,19 @@ describe('OD-RO: the rollover sends an ended deck to the queue', () => {
     expect(task(t.id)).toMatchObject({ on_deck_day: null, queued_from_deck_day: '2026-10-21' })
   })
 
-  test('OD-RO03: a deadline deck keeps its auto target in the queue; a nagging one (by hand) is just cleared', () => {
-    const ahead = make({ deadline_at: at('2026-10-30T23:59') }) // auto Tue Oct 27 08:30
+  test('OD-RO03: a deadline task’s expired deck is cleared, never queued (the deadlines page)', () => {
+    const ahead = make({ deadline_at: at('2026-10-30T23:59') }) // lead day Tue Oct 27
     deck([ahead.id])
-    setClock('2026-10-17T10:00')
-    const near = make({ deadline_at: at('2026-10-21T23:59') }) // auto Tue Oct 20 08:30 (wait 4)
-    // A1 refuses Tue (the auto target's day); the rollover's belt and braces
-    // is tested with the deck put there by hand.
-    expect(deck([near.id], '2026-10-20').refused).toHaveLength(1)
-    getDb().prepare("UPDATE tasks SET on_deck_day = '2026-10-20' WHERE id = ?").run(near.id)
     roll('2026-10-21T06:30')
     expect(task(ahead.id)).toMatchObject({
       on_deck_day: null,
-      due_at: at('2026-10-27T08:30'),
-      queued_from_deck_day: '2026-10-20',
+      due_at: null,
+      queued_at: null,
+      queued_from_deck_day: null,
     })
-    expect(placesOf(ahead.id)).toEqual(['queue_today'])
-    // Over target since Tue 08:30: on the dashboard, nagging — not queued.
-    expect(task(near.id)).toMatchObject({ on_deck_day: null, queued_at: null })
-    expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(near.id)
+    // Before its lead day: in no queue panel and no segment (its heads-ups come later).
+    expect(placesOf(ahead.id)).toEqual([])
+    expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(ahead.id)
   })
 
   test('OD-RO04: the fence — an older entry’s undo leaves a stripped deck alone', () => {
@@ -928,7 +926,7 @@ describe('OD-C: clear-decks (rollback)', () => {
     expect(findDecks(TEST_USER_ID).map((t) => t.id)).toEqual([a.id, b.id])
     expect(clearDecks(TEST_USER_ID).map((t) => t.id)).toEqual([a.id, b.id])
     expect(task(a.id).on_deck_day).toBeNull()
-    expect(task(b.id)).toMatchObject({ on_deck_day: null, target_auto: true })
+    expect(task(b.id)).toMatchObject({ on_deck_day: null, due_at: null, target_auto: false })
     expect(task(done.id).on_deck_day).toBe('2026-10-23')
     expect(findDecks(TEST_USER_ID)).toEqual([])
   })
@@ -996,15 +994,15 @@ describe('OD-W: review fixes (10-20)', () => {
     const t = make({ on_deck_day: '2026-10-22' })
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', due_at: null })
     expect(placesOf(t.id)).toEqual([])
-    // A deadline in the same body: A1 against its auto target (Sat Oct 24 08:30).
-    const ok = make({ on_deck_day: '2026-10-23', deadline_at: at('2026-10-25T23:59') })
+    // A deadline in the same body: A1 against it — up to its own day (Sun Oct 25).
+    const ok = make({ on_deck_day: '2026-10-25', deadline_at: at('2026-10-25T23:59') })
     expect(task(ok.id)).toMatchObject({
-      on_deck_day: '2026-10-23',
-      target_auto: true,
-      due_at: at('2026-10-24T08:30'),
+      on_deck_day: '2026-10-25',
+      target_auto: false,
+      due_at: null,
     })
-    expect(() => make({ on_deck_day: '2026-10-24', deadline_at: at('2026-10-25T23:59') })).toThrow(
-      /reminding you/,
+    expect(() => make({ on_deck_day: '2026-10-26', deadline_at: at('2026-10-25T23:59') })).toThrow(
+      /after this task's deadline/,
     )
     expect(() => make({ on_deck_day: '2026-10-19' })).toThrow(/today or later/)
     expect(() =>
@@ -1065,7 +1063,8 @@ describe('OD-D2: the Quick panel’s deck writes (D2 review, 10-20)', () => {
     expect(task(t.id)).toMatchObject({
       on_deck_day: '2026-10-22',
       deadline_at: at('2026-10-30T23:59'),
-      target_auto: true,
+      target_auto: false,
+      due_at: null,
     })
     expect(task(t.id).last_considered_at).not.toBeNull()
     expect(task(t.id).segment_targeted_at).not.toBeNull()
@@ -1075,25 +1074,25 @@ describe('OD-D2: the Quick panel’s deck writes (D2 review, 10-20)', () => {
   })
 
   test('OD-D2-02: A1 is judged against the RESULTING deadline; a refusal saves nothing', () => {
-    // Deadline Sun Oct 25 23:59 set Tue Oct 20 (wait 5, the day before): auto Sat Oct 24 08:30.
+    // Deadline Sun Oct 25 23:59: a deck day after it is refused (A1, 2026-10-22).
     const t = make()
     const before = undoCount()
     expect(() =>
       updateTask({
         ...u,
         taskId: t.id,
-        input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-24', priority: 3 },
+        input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-26', priority: 3 },
       }),
     ).toThrow(ValidationError)
     expect(task(t.id)).toMatchObject({ on_deck_day: null, deadline_at: null, priority: 0 })
     expect(undoCount()).toBe(before)
-    // The day before the automatic target is fine.
+    // The deadline's own day is fine.
     updateTask({
       ...u,
       taskId: t.id,
-      input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-23' },
+      input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-25' },
     })
-    expect(task(t.id).on_deck_day).toBe('2026-10-23')
+    expect(task(t.id).on_deck_day).toBe('2026-10-25')
     // A target with a deck is still refused.
     expect(() =>
       updateTask({

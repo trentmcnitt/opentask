@@ -174,24 +174,24 @@ describe('OD-UI-01: the hold menu days', () => {
     expect(days.find((d) => d.day === '2026-01-18')?.caption).toBeUndefined()
   })
 
-  test('the limit: the day before the automatic target, stored or from the (staged) deadline', () => {
+  test('the limit: up to the deadline day (the deadlines page, 2026-10-22), stored or staged', () => {
     const ctx = { timezone: TZ, morningTime: '08:30' }
-    // Stored automatic target Sat Jan 17 → latest Fri Jan 16.
-    expect(
-      deckLimit({ deadline_at: local(5, 17), due_at: local(2, 9), target_auto: true }, TZ, NOW),
-    ).toEqual({ latestDay: '2026-01-16', caption: 'deadline reminds from Sat' })
-    // No stored automatic target (a picked one, or a deadline only staged):
-    // the one the deadline gives (`autoTargetAt`, the server's own) — Tue Jan
-    // 27 23:00 decided Thu Jan 15 → Sat Jan 24 08:30, so the latest is Fri Jan 23.
+    // Deadline Tue Jan 20 17:00 → the latest is Tue Jan 20 itself.
+    expect(deckLimit({ deadline_at: local(5, 17), due_at: null }, TZ, NOW)).toEqual({
+      latestDay: '2026-01-20',
+      caption: 'deadline Tue',
+    })
+    // A staged deadline (the Quick panel): the same, Tue Jan 27.
     const staged = { deadline_at: local(12, 23), due_at: null }
     expect(deckLimit(staged, TZ, NOW, ctx)).toEqual({
-      latestDay: '2026-01-23',
-      caption: 'deadline reminds from Sat',
+      latestDay: '2026-01-27',
+      caption: 'deadline Tue',
     })
-    // Already reminding: no day left (the latest is yesterday).
-    expect(
-      deckLimit({ deadline_at: local(2, 17), due_at: local(0, 8), target_auto: true }, TZ, NOW),
-    ).toEqual({ latestDay: '2026-01-14', caption: 'deadline reminds from Thu' })
+    // A passed deadline: no day left (the latest is yesterday).
+    expect(deckLimit({ deadline_at: local(-1, 17), due_at: null }, TZ, NOW)).toEqual({
+      latestDay: '2026-01-14',
+      caption: 'deadline passed',
+    })
     expect(deckLimit({ deadline_at: null, due_at: null }, TZ, NOW)).toBeNull()
   })
 

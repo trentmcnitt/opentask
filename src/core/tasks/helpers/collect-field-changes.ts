@@ -269,6 +269,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // §6: a repeating task's scheduled occurrence, apart from its target.
   collectOccurrence(data, task, input, rrule, willBeTracked, willBeReminder, repeat)
   collectRepeatSchedule(data, task, repeat)
+  collectTargetBack(data, task, repeat)
   // Repeat ends (2026-10-22): judged once the occurrence is decided.
   collectRepeatEnds(data, task, input, {
     isReminder: willBeReminder,
@@ -751,6 +752,23 @@ function collectRepeatSchedule(data: FieldChangeData, task: Task, repeat: Repeat
   if (after.target_time !== task.target_time) {
     trackField(data, 'target_time', task.target_time, after.target_time)
   }
+}
+
+/**
+ * A repeat LEAVING its deadline anchor with no target (the deadlines page,
+ * 2026-10-22: a deadline-anchored repeat with no relative target has none)
+ * gets one back: a target-anchored occurrence IS its target, so `due_at` :=
+ * the occurrence it is left on — unless it is on deck, or the write set a
+ * date itself. Never a stuck target-less target-anchored repeat (TM-INV-08).
+ */
+function collectTargetBack(data: FieldChangeData, task: Task, repeat: RepeatPlan): void {
+  if (repeat.kind !== 'target' || data.fieldsChanged.includes('due_at')) return
+  const after = <K extends keyof Task>(field: K): Task[K] =>
+    data.afterState[field] !== undefined ? (data.afterState[field] as Task[K]) : task[field]
+  if (after('due_at') !== null || after('on_deck_day') || !after('rrule')) return
+  const occurrence = after('occurrence_at')
+  if (!occurrence) return
+  trackField(data, 'due_at', task.due_at, occurrence)
 }
 
 /** A period move's explicit reschedule of a reminder — not a snooze (see the guard above). */
