@@ -1,7 +1,19 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { formatTime, monthlyDay, parseRRuleParts } from '@/lib/format-rrule'
+import {
+  DAYS_OF_WEEK,
+  buildRule,
+  defaultRuleDraft,
+  describeRuleDraft,
+  monthWeekdayLabel,
+  parseRule,
+  parseRuleTime,
+  type MonthlyWeekday,
+  type RuleDraft,
+  type RuleEndType,
+  type RuleFrequency,
+} from '@/lib/rrule-draft'
 import { TARGET_WORD } from '@/lib/task-model-words'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,19 +25,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type Frequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
-type EndType = 'never' | 'count' | 'date'
+/** The picker's own "None" choice wraps the shared `RuleDraft` (src/lib/rrule-draft.ts). */
+type Frequency = 'NONE' | RuleFrequency
+type EndType = RuleEndType
 export type RecurrenceMode = 'from_due' | 'from_completion'
-
-const DAYS_OF_WEEK = [
-  { id: 'MO', label: 'M', full: 'Monday' },
-  { id: 'TU', label: 'T', full: 'Tuesday' },
-  { id: 'WE', label: 'W', full: 'Wednesday' },
-  { id: 'TH', label: 'T', full: 'Thursday' },
-  { id: 'FR', label: 'F', full: 'Friday' },
-  { id: 'SA', label: 'S', full: 'Saturday' },
-  { id: 'SU', label: 'S', full: 'Sunday' },
-]
 
 // Generate hour options (1-12)
 const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
@@ -33,29 +36,9 @@ const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => i)
 const PRESET_MINUTES = new Set([0, 15, 30, 45])
 
-/**
- * A monthly rule on a weekday of the month ("the 1st Saturday": BYDAY=1SA,
- * or BYDAY=FR;BYSETPOS=-1) — kept as it was. The picker has no control for
- * one (its monthly choice is a day of the month), so before 2026-10-20 any
- * edit to such a rule, even its time, quietly rewrote it to BYMONTHDAY=1.
- * Now it is carried through untouched until a day of the month is picked.
- */
-interface MonthlyWeekday {
-  byDay: string
-  setPos: string | null
-}
-
-/** "the 1st Sat" (`withArticle`) / "1st Sat" for the day select. */
-function monthWeekdayLabel(w: MonthlyWeekday, withArticle: boolean): string {
-  const setPos = w.setPos && /^[+-]?\d+$/.test(w.setPos) ? parseInt(w.setPos) : null
-  const text = monthlyDay(w.byDay.split(',')[0], setPos)
-  return withArticle ? text : text.replace(/^the /, '')
-}
-
-function monthlyPreview(monthDay: number | 'last', monthWeekday: MonthlyWeekday | null): string {
-  if (monthWeekday) return monthWeekdayLabel(monthWeekday, true)
-  return monthDay === 'last' ? 'the last day' : `day ${monthDay}`
-}
+// A monthly rule on a weekday of the month ("the 1st Saturday": BYDAY=1SA, or
+// BYDAY=FR;BYSETPOS=-1) is carried through untouched until a day of the month
+// is picked (`MonthlyWeekday`, src/lib/rrule-draft.ts).
 
 /**
  * The monthly "On day" select: 1–31, Last day, and — only while the rule is
@@ -99,133 +82,20 @@ function MonthDaySelect({
   )
 }
 
-function useRRuleBuilder(
-  frequency: Frequency,
-  interval: number,
-  selectedDays: string[],
-  monthDay: number | 'last',
-  monthWeekday: MonthlyWeekday | null,
-  endType: EndType,
-  endCount: number,
-  endDate: string,
-  hour: number,
-  minute: number,
-) {
-  const rrule = useMemo(() => {
-    if (frequency === 'NONE') return null
+/** The picker's state as the shared draft (null while "None" is chosen). */
+function toDraft(frequency: Frequency, fields: Omit<RuleDraft, 'freq'>): RuleDraft | null {
+  return frequency === 'NONE' ? null : { freq: frequency, ...fields }
+}
 
-    const parts: string[] = [`FREQ=${frequency}`]
-
-    if (interval > 1) {
-      parts.push(`INTERVAL=${interval}`)
-    }
-
-    if (frequency === 'WEEKLY' && selectedDays.length > 0) {
-      parts.push(`BYDAY=${selectedDays.join(',')}`)
-    }
-
-    if (frequency === 'MONTHLY') {
-      if (monthWeekday) {
-        parts.push(`BYDAY=${monthWeekday.byDay}`)
-        if (monthWeekday.setPos) parts.push(`BYSETPOS=${monthWeekday.setPos}`)
-      } else if (monthDay === 'last') {
-        parts.push('BYMONTHDAY=-1')
-      } else {
-        parts.push(`BYMONTHDAY=${monthDay}`)
-      }
-    }
-
-    // Include time in RRULE
-    parts.push(`BYHOUR=${hour}`)
-    parts.push(`BYMINUTE=${minute}`)
-
-    if (endType === 'count' && endCount > 0) {
-      parts.push(`COUNT=${endCount}`)
-    } else if (endType === 'date' && endDate) {
-      parts.push(`UNTIL=${endDate.replace(/-/g, '')}T235959Z`)
-    }
-
-    return parts.join(';')
-  }, [
-    frequency,
-    interval,
-    selectedDays,
-    monthDay,
-    monthWeekday,
-    endType,
-    endCount,
-    endDate,
-    hour,
-    minute,
-  ])
-
-  const previewText = useMemo(() => {
-    if (frequency === 'NONE') return 'No repeat'
-
-    let base = ''
-
-    switch (frequency) {
-      case 'DAILY':
-        base = interval === 1 ? 'Every day' : `Every ${interval} days`
-        break
-      case 'WEEKLY':
-        base = interval === 1 ? 'Every week' : `Every ${interval} weeks`
-        if (selectedDays.length > 0) {
-          // Check for weekdays (Mon-Fri) and weekends (Sat-Sun) shortcuts
-          const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
-          const weekend = ['SA', 'SU']
-          const isWeekdays =
-            selectedDays.length === 5 &&
-            weekdays.every((d) => selectedDays.includes(d)) &&
-            !selectedDays.includes('SA') &&
-            !selectedDays.includes('SU')
-          const isWeekends =
-            selectedDays.length === 2 && weekend.every((d) => selectedDays.includes(d))
-
-          if (isWeekdays) {
-            base = 'Weekdays'
-          } else if (isWeekends) {
-            base = 'Weekends'
-          } else {
-            const dayNames = selectedDays.map(
-              (d) => DAYS_OF_WEEK.find((day) => day.id === d)?.full || d,
-            )
-            base += ` on ${dayNames.join(', ')}`
-          }
-        }
-        break
-      case 'MONTHLY':
-        base = interval === 1 ? 'Every month' : `Every ${interval} months`
-        base += ` on ${monthlyPreview(monthDay, monthWeekday)}`
-        break
-      case 'YEARLY':
-        base = interval === 1 ? 'Every year' : `Every ${interval} years`
-        break
-    }
-
-    // Add time to preview
-    base += ` at ${formatTime(hour, minute)}`
-
-    if (endType === 'count') {
-      base += `, ${endCount} times`
-    } else if (endType === 'date' && endDate) {
-      base += `, until ${new Date(endDate).toLocaleDateString()}`
-    }
-
-    return base
-  }, [
-    frequency,
-    interval,
-    selectedDays,
-    monthDay,
-    monthWeekday,
-    endType,
-    endCount,
-    endDate,
-    hour,
-    minute,
-  ])
-
+function useRRuleBuilder(draft: RuleDraft | null, hour: number, minute: number) {
+  const rrule = useMemo(
+    () => (draft ? buildRule(draft, { hour, minute }) : null),
+    [draft, hour, minute],
+  )
+  const previewText = useMemo(
+    () => (draft ? describeRuleDraft(draft, { hour, minute }) : 'No repeat'),
+    [draft, hour, minute],
+  )
   return { rrule, previewText }
 }
 
@@ -431,6 +301,7 @@ export function RecurrencePicker({
   const [selectedDays, setSelectedDays] = useState<string[]>(initial.selectedDays)
   const [monthDay, setMonthDay] = useState<number | 'last'>(initial.monthDay)
   const [monthWeekday, setMonthWeekday] = useState<MonthlyWeekday | null>(initial.monthWeekday)
+  const [yearDate, setYearDate] = useState<string | null>(initial.yearDate)
   const [endType, setEndType] = useState<EndType>(initial.endType)
   const [endCount, setEndCount] = useState(initial.endCount)
   const [endDate, setEndDate] = useState(initial.endDate)
@@ -449,6 +320,7 @@ export function RecurrencePicker({
     setSelectedDays(parsed.selectedDays)
     setMonthDay(parsed.monthDay)
     setMonthWeekday(parsed.monthWeekday)
+    setYearDate(parsed.yearDate)
     setEndType(parsed.endType)
     setEndCount(parsed.endCount)
     setEndDate(parsed.endDate)
@@ -456,18 +328,31 @@ export function RecurrencePicker({
     setMinute(parsed.minute)
   }
 
-  const { rrule, previewText } = useRRuleBuilder(
-    frequency,
-    interval,
-    selectedDays,
-    monthDay,
-    monthWeekday,
-    endType,
-    endCount,
-    endDate,
-    hour,
-    minute,
+  const draft = useMemo(
+    () =>
+      toDraft(frequency, {
+        interval,
+        days: selectedDays,
+        monthDay,
+        monthWeekday,
+        yearDate,
+        endType,
+        endCount,
+        endDate,
+      }),
+    [
+      frequency,
+      interval,
+      selectedDays,
+      monthDay,
+      monthWeekday,
+      yearDate,
+      endType,
+      endCount,
+      endDate,
+    ],
   )
+  const { rrule, previewText } = useRRuleBuilder(draft, hour, minute)
 
   // Store onChange in a ref so the effect only fires when rrule/recurrenceMode actually
   // change — not when the parent re-renders and passes a new closure reference.
@@ -626,68 +511,21 @@ export function RecurrencePicker({
   )
 }
 
+/** The picker's starting state: the shared parse (`parseRule`), "None" for no rule. */
 function parseInitialState(value: string | null | undefined, initialTime?: string | null) {
-  // Default time: 9:00 AM, or parse from initialTime if provided
-  let defaultHour = 9
-  let defaultMinute = 0
-
-  if (initialTime) {
-    const [h, m] = initialTime.split(':').map(Number)
-    if (!isNaN(h) && !isNaN(m)) {
-      defaultHour = h
-      defaultMinute = m
-    }
-  }
-
-  const defaults = {
-    frequency: 'NONE' as Frequency,
-    interval: 1,
-    selectedDays: [] as string[],
-    monthDay: 1 as number | 'last',
-    monthWeekday: null as MonthlyWeekday | null,
-    endType: 'never' as EndType,
-    endCount: 10,
-    endDate: '',
-    hour: defaultHour,
-    minute: defaultMinute,
-  }
-
-  if (!value) return defaults
-
-  const parts = parseRRuleParts(value)
-
-  // Parse time from RRULE if present, otherwise use defaults
-  let hour = defaults.hour
-  let minute = defaults.minute
-  if (parts.BYHOUR) {
-    hour = parseInt(parts.BYHOUR)
-  }
-  if (parts.BYMINUTE) {
-    minute = parseInt(parts.BYMINUTE)
-  }
-
+  const { hour, minute } = parseRuleTime(value, initialTime)
+  const draft = parseRule(value)
+  const { freq, ...fields } = draft ?? defaultRuleDraft()
   return {
-    frequency: (parts.FREQ as Frequency) || defaults.frequency,
-    interval: parts.INTERVAL ? parseInt(parts.INTERVAL) : defaults.interval,
-    // The weekly day toggles take plain days: a monthly "1SA" offers SA if the
-    // user switches to Weekly (an ordinal is invalid on a weekly rule).
-    selectedDays: parts.BYDAY
-      ? [...new Set(parts.BYDAY.split(',').map((d) => d.replace(/^[+-]?\d+/, '').toUpperCase()))]
-      : defaults.selectedDays,
-    monthDay: parts.BYMONTHDAY
-      ? parseInt(parts.BYMONTHDAY) === -1
-        ? 'last'
-        : parseInt(parts.BYMONTHDAY)
-      : defaults.monthDay,
-    monthWeekday:
-      parts.FREQ === 'MONTHLY' && parts.BYDAY && !parts.BYMONTHDAY
-        ? { byDay: parts.BYDAY, setPos: parts.BYSETPOS ?? null }
-        : defaults.monthWeekday,
-    endType: parts.COUNT ? 'count' : parts.UNTIL ? 'date' : defaults.endType,
-    endCount: parts.COUNT ? parseInt(parts.COUNT) : defaults.endCount,
-    endDate: parts.UNTIL
-      ? `${parts.UNTIL.slice(0, 4)}-${parts.UNTIL.slice(4, 6)}-${parts.UNTIL.slice(6, 8)}`
-      : defaults.endDate,
+    frequency: (draft ? freq : 'NONE') as Frequency,
+    interval: fields.interval,
+    selectedDays: fields.days,
+    monthDay: fields.monthDay,
+    monthWeekday: fields.monthWeekday,
+    yearDate: fields.yearDate,
+    endType: fields.endType,
+    endCount: fields.endCount,
+    endDate: fields.endDate,
     hour,
     minute,
   }

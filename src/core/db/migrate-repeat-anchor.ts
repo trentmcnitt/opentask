@@ -19,7 +19,8 @@
  *  3. the rule's DAYS moved by the offset (`shiftRuleDays`: BYDAY weekdays,
  *     BYMONTHDAY) and its BYHOUR/BYMINUTE := the deadline's local time
  *     (`setRuleTime`), its anchors re-derived (`deriveAnchorFields`) — then
- *     PROVED by walking both rules (`walksShifted`): every new occurrence is
+ *     PROVED by walking both rules (`shiftedRuleHolds`;
+ *     both in src/core/recurrence/rule-shift.ts): every new occurrence is
  *     the old one plus the offset's days, at the deadline's time;
  *  4. `repeat_anchor` 'deadline', the offset, `occurrence_at` := `deadline_at`;
  *  5. `due_at` is left as stored: on schedule it IS the new derivation; moved,
@@ -53,14 +54,9 @@
 import type Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
 import { deriveAnchorFields, setRuleTime } from '@/core/recurrence'
+import { shiftRuleDays, shiftedRuleHolds } from '@/core/recurrence/rule-shift'
 import { localMoment } from '@/lib/opentask-day'
-import {
-  deadlineWalk,
-  relativeTargetOf,
-  relativeTargetProblem,
-  type RelativeTarget,
-  type RepeatRule,
-} from '@/lib/task-segments'
+import { relativeTargetOf, relativeTargetProblem, type RelativeTarget } from '@/lib/task-segments'
 
 /** Repeats with a deadline, still walking their target (columns qualified by `t.`). */
 const REPEAT_WITH_DEADLINE = `t.rrule IS NOT NULL AND t.deadline_at IS NOT NULL
@@ -116,73 +112,15 @@ function convert(row: Row, tz: string): Conversion {
     recurrence_mode: 'from_due' as const,
     anchor_time: row.anchor_time,
   }
-  if (!walksShifted(old, occurrence, rule, row.deadline_at, offset.days_before, tz)) {
+  if (
+    !shiftedRuleHolds(old, occurrence, rule, row.deadline_at, offset.days_before, deadlineTime, tz)
+  ) {
     return { kind: 'skip', reason: 'rule_day_shift' }
   }
   if (relativeTargetProblem(offset, rule, row.deadline_at, tz)) {
     return { kind: 'skip', reason: 'problem' }
   }
   return { kind: 'convert', rrule, anchors, offset, deadlineTime }
-}
-
-const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
-/** Parts a day shift can't be expressed through: refused, never guessed. */
-const UNSHIFTABLE = /^(BYSETPOS|BYYEARDAY|BYWEEKNO)=/i
-
-/**
- * The rule's DAYS moved `days` local days later, as the deadline is from the
- * target the rule walked: each BYDAY weekday (its ordinal kept — "1SA" + 1 is
- * "1SU", which `walksShifted` then checks), each BYMONTHDAY (only while it
- * stays within 1–28, every month's days). Null when the shift can't be
- * expressed: a BYSETPOS / BYYEARDAY / BYWEEKNO, a negative or late month day.
- */
-export function shiftRuleDays(rrule: string, days: number): string | null {
-  if (days === 0) return rrule
-  const parts = rrule.split(';').filter((p) => p !== '')
-  if (parts.some((p) => UNSHIFTABLE.test(p))) return null
-  const out: string[] = []
-  for (const part of parts) {
-    const [key, value] = part.split('=')
-    if (/^BYDAY$/i.test(key)) {
-      const shifted = value.split(',').map((d) => {
-        const m = /^([+-]?\d*)([A-Z]{2})$/i.exec(d)
-        const i = m ? WEEKDAYS.indexOf(m[2].toUpperCase()) : -1
-        return m && i >= 0 ? `${m[1]}${WEEKDAYS[(i + days) % 7]}` : null
-      })
-      if (shifted.includes(null)) return null
-      out.push(`BYDAY=${shifted.join(',')}`)
-    } else if (/^BYMONTHDAY$/i.test(key)) {
-      const shifted = value.split(',').map((n) => Number(n) + days)
-      if (shifted.some((n) => !Number.isInteger(n) || n - days < 1 || n > 28)) return null
-      out.push(`BYMONTHDAY=${shifted.join(',')}`)
-    } else out.push(part)
-  }
-  return out.join(';')
-}
-
-/**
- * The proof a shifted rule is the old one moved: walking the OLD rule from
- * the target occurrence and the NEW rule from the deadline, every step must
- * land `days` local days later, at the deadline's time — over the shared
- * walk (60 occurrences or a year).
- */
-function walksShifted(
-  old: RepeatRule,
-  occurrence: string,
-  rule: RepeatRule,
-  deadline: string,
-  days: number,
-  tz: string,
-): boolean {
-  const before = deadlineWalk(old, occurrence, tz)
-  const after = deadlineWalk(rule, deadline, tz)
-  if (before.length !== after.length) return false
-  const time = DateTime.fromISO(deadline, { zone: 'utc' }).setZone(tz).toFormat('HH:mm')
-  return before.every((b, i) => {
-    const a = DateTime.fromJSDate(after[i]).setZone(tz)
-    const expected = DateTime.fromJSDate(b).setZone(tz).plus({ days }).toISODate()
-    return a.toISODate() === expected && a.toFormat('HH:mm') === time
-  })
 }
 
 function rows(db: Database.Database, where: string): Row[] {

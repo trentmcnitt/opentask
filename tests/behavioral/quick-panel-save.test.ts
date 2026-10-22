@@ -116,6 +116,33 @@ describe('planQuickPanelSave — request routing', () => {
     expect(planQuickPanelSave([1, 2], { labels_add: [], labels_remove: [] })).toBeNull()
     expect(() => planQuickPanelSave([], { priority: 1 })).toThrow()
   })
+
+  // Every-time mode (editor plan §5, §9; 2026-10-22): one task's Save carries
+  // the anchor and the relative target straight through; a bulk one never
+  // does (bulk every-time is target-anchored only, `draftToBulkChanges`).
+  const switchToDeadline = {
+    repeat_anchor: 'deadline' as const,
+    rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
+    deadline_at: TARGET,
+    target_days_before: 1,
+    target_time: '16:00',
+  }
+
+  test('one id: an every-time Save passes through whole', () => {
+    expect(planQuickPanelSave([5], switchToDeadline)).toEqual({
+      kind: 'patch',
+      taskId: 5,
+      body: switchToDeadline,
+    })
+  })
+
+  test('several ids: the anchor and offsets are dropped (the rule rides bulk/edit)', () => {
+    expect(planQuickPanelSave([1, 2], switchToDeadline)).toEqual({
+      kind: 'bulk',
+      url: '/api/tasks/bulk/edit',
+      body: { ids: [1, 2], changes: { rrule: switchToDeadline.rrule } },
+    })
+  })
 })
 
 describe('isPickedReschedule — picker vs +1h', () => {

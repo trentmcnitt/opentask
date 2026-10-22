@@ -102,7 +102,7 @@ import {
   repeatButtonState,
   stagedAutoTarget,
 } from '@/lib/editor-target-labels'
-import type { Task, Project } from '@/types'
+import type { Task, Project, RepeatAnchor } from '@/types'
 
 /**
  * Staged changes architecture:
@@ -146,6 +146,14 @@ export interface QuickActionPanelChanges {
   horizon?: HorizonValue | null
   /** On deck (D2): a yyyy-MM-dd day, or null = off deck. Single-task only. */
   on_deck_day?: string | null
+  /**
+   * Every-time mode (editor plan §5; `draftToPatch` in src/lib/every-time.ts):
+   * what the rule repeats, and a deadline-anchored target's place before its
+   * deadline. Single-task only — a bulk save never sends them (`editFields`).
+   */
+  repeat_anchor?: RepeatAnchor
+  target_days_before?: number
+  target_time?: string
 }
 
 export interface QuickActionPanelProps {

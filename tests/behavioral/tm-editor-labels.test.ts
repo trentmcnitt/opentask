@@ -7,7 +7,14 @@
  * for a wait under 16 days, else 4).
  */
 import { describe, expect, test } from 'vitest'
-import { describeAutoTarget, deadlineRepeatLabel } from '@/lib/editor-target-labels'
+import {
+  deadlineRepeatLabel,
+  describeAutoTarget,
+  occurrenceDiffers,
+  relativeDaysWords,
+  relativeTargetWords,
+} from '@/lib/editor-target-labels'
+import { DateTime } from 'luxon'
 
 const TZ = 'America/Chicago'
 const CTX = { timezone: TZ, morningTime: '09:00' }
@@ -104,5 +111,107 @@ describe('deadlineRepeatLabel', () => {
   test('nothing for a target-anchored repeat or a one-off', () => {
     expect(deadlineRepeatLabel({ ...task, repeat_anchor: 'target' })).toBe(null)
     expect(deadlineRepeatLabel({ ...task, rrule: null })).toBe(null)
+  })
+})
+
+describe('relativeTargetWords (2026-10-22, editor plan §2.1)', () => {
+  test('the words the deadline line and every-time mode share', () => {
+    expect(relativeTargetWords(0, '12:00')).toBe('the same day at 12:00 PM')
+    expect(relativeTargetWords(1, '18:00')).toBe('the day before at 6:00 PM')
+    expect(relativeTargetWords(4, '09:30')).toBe('4 days before at 9:30 AM')
+    expect(relativeDaysWords(2)).toBe('2 days before')
+  })
+})
+
+describe('occurrenceDiffers — "This is the Fri Oct 23 one" (editor plan §7, A4)', () => {
+  const at = (local: string) => DateTime.fromISO(local, { zone: TZ }).toUTC().toISO()!
+  // Weekly on Friday at 4 PM, on its rule.
+  const fridays = {
+    rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0',
+    recurrence_mode: 'from_due' as const,
+    anchor_time: '16:00',
+    repeat_anchor: 'target' as const,
+    due_at: at('2026-10-23T16:00'),
+    occurrence_at: at('2026-10-23T16:00'),
+    done: false,
+  }
+  // Monthly on the 1st Saturday at 8 AM; target the day before at 6 PM.
+  const homeDepot = {
+    rrule: 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=8;BYMINUTE=0',
+    recurrence_mode: 'from_due' as const,
+    anchor_time: '08:00',
+    repeat_anchor: 'deadline' as const,
+    target_days_before: 1,
+    target_time: '18:00',
+    due_at: at('2026-11-06T18:00'),
+    occurrence_at: at('2026-11-07T08:00'),
+  }
+
+  test('not shown on its rule — Home Depot, Fridays', () => {
+    expect(occurrenceDiffers(fridays, TZ, true)).toBe(null)
+    expect(occurrenceDiffers(homeDepot, TZ, true)).toBe(null)
+  })
+
+  test('(a) on deck', () => {
+    expect(
+      occurrenceDiffers({ ...fridays, due_at: null, on_deck_day: '2026-10-22' }, TZ, false),
+    ).toBe('Fri Oct 23')
+  })
+
+  test('(b) moved', () => {
+    expect(occurrenceDiffers({ ...fridays, due_at: at('2026-10-24T10:00') }, TZ, false)).toBe(
+      'Fri Oct 23',
+    )
+  })
+
+  test('(c) queued — only with the queue switch on', () => {
+    const queued = { ...fridays, queued_at: at('2026-10-22T06:00') }
+    expect(occurrenceDiffers(queued, TZ, true)).toBe('Fri Oct 23')
+    expect(occurrenceDiffers(queued, TZ, false)).toBe(null)
+  })
+
+  test('(d) rescheduled off its rule — names the deadline’s day, "(deadline)" when the target’s differs', () => {
+    const pulled = {
+      ...homeDepot,
+      occurrence_at: at('2026-11-06T08:00'),
+      due_at: at('2026-11-05T18:00'),
+    }
+    expect(occurrenceDiffers(pulled, TZ, false)).toBe('Fri Nov 6 (deadline)')
+    // The same day: no "(deadline)".
+    const sameDay = {
+      ...pulled,
+      target_days_before: 0,
+      target_time: '07:00',
+      due_at: at('2026-11-06T07:00'),
+    }
+    expect(occurrenceDiffers(sameDay, TZ, false)).toBe('Fri Nov 6')
+    // from_completion has no rule days to be off.
+    expect(occurrenceDiffers({ ...pulled, recurrence_mode: 'from_completion' }, TZ, false)).toBe(
+      null,
+    )
+  })
+
+  test('a decked deadline-anchored repeat names its deadline’s day', () => {
+    expect(
+      occurrenceDiffers({ ...homeDepot, due_at: null, on_deck_day: '2026-10-22' }, TZ, false),
+    ).toBe('Sat Nov 7 (deadline)')
+  })
+
+  test('negatives: plain over-target debt, done, a one-off, no occurrence', () => {
+    const over = {
+      ...fridays,
+      due_at: at('2026-10-16T16:00'),
+      occurrence_at: at('2026-10-16T16:00'),
+    }
+    expect(occurrenceDiffers(over, TZ, true)).toBe(null)
+    expect(
+      occurrenceDiffers({ ...fridays, due_at: null, on_deck_day: 'x', done: true }, TZ, true),
+    ).toBe(null)
+    expect(
+      occurrenceDiffers({ ...fridays, rrule: null, on_deck_day: '2026-10-22' }, TZ, true),
+    ).toBe(null)
+    expect(occurrenceDiffers({ ...fridays, occurrence_at: null, on_deck_day: 'x' }, TZ, true)).toBe(
+      null,
+    )
   })
 })
