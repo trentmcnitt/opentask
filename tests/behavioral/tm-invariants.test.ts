@@ -45,6 +45,8 @@ import {
   occurrenceIsPersonal,
   targetMoved,
   type PersonalOccurrence,
+  hasRelativeTarget,
+  isDeadlineAnchored,
 } from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
@@ -301,6 +303,9 @@ describe('TM-INV: the bulk tier (seeded random)', () => {
  */
 function expectRepeatingDeckRules(task: Task, dueNow: Set<number>, l: string) {
   if (!task.rrule || task.done) return
+  // L3 (2026-10-22): a deadline-anchored repeat with NO relative target has
+  // no target of its own — the deadlines page holds it, never a stuck row.
+  if (!task.on_deck_day && isDeadlineAnchored(task) && !hasRelativeTarget(task)) return
   if (!task.on_deck_day) {
     expect(task.due_at, `${l}: a repeating task left target-less off deck`).not.toBeNull()
     return
@@ -901,13 +906,19 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
           expect(task.deadline_at, `${l}: I1 (target-anchored)`).toBeNull()
         }
         if (task.on_deck_day) return
-        expect(task.due_at, `${l}: no target off deck`).not.toBeNull()
+        // L3 (2026-10-22): with no relative target there is no target to
+        // derive — the deadlines page holds the occurrence from its lead day.
+        const targetLess = isDeadlineAnchored(task) && !hasRelativeTarget(task)
+        if (!targetLess) expect(task.due_at, `${l}: no target off deck`).not.toBeNull()
+        if (targetLess && task.due_at === null) {
+          expect(task.lead_from, `${l}: a target-less occurrence with no lead day`).not.toBeNull()
+        }
         // A target-anchored repeat waiting in the queue holds its NEXT
         // occurrence's target over the missed one (B3): not a move.
         if (task.queued_at) return
         const derived = occurrenceDates(task, task.occurrence_at!, tz).targetAt
         if (!moved) expect(task.due_at, `${l}: not the derivation`).toBe(derived)
-        if (task.deadline_at && Date.parse(task.deadline_at) > Date.now()) {
+        if (task.due_at && task.deadline_at && Date.parse(task.deadline_at) > Date.now()) {
           expect(Date.parse(task.due_at!), `${l}: after the deadline`).toBeLessThanOrEqual(
             Date.parse(task.deadline_at),
           )

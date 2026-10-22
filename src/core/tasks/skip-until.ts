@@ -486,7 +486,8 @@ function summaryLead(
     const t = r.tasks[0]
     // The landing occurrence's TARGET day (a deadline-anchored repeat's lies
     // before its deadline, 2026-10-21) — when it next nags.
-    const next = dayLabel(occurrenceTarget(t, timezone)!, timezone)
+    // No target of its own (L1, the deadlines page): its deadline's day.
+    const next = dayLabel(occurrenceTarget(t, timezone) ?? t.occurrence_at!, timezone)
     if (r.targetsMoved === 1) return [`Moved "${t.title}" to its occurrence · ${next}`]
     const lead = r.occurrencesSkipped > 1 ? `Skipped ${occ(r.occurrencesSkipped)} of` : 'Skipped'
     return [`${lead} "${t.title}" · next ${next}`]

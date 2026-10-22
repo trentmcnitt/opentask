@@ -83,6 +83,7 @@ describe('TM-RA: occurrenceDates and its helpers (pure)', () => {
       occurrenceAt: at('2026-10-18T12:00'),
       targetAt: at('2026-10-18T12:00'),
       deadlineAt: null,
+      leadFrom: null,
     })
   })
 
@@ -93,6 +94,7 @@ describe('TM-RA: occurrenceDates and its helpers (pure)', () => {
       occurrenceAt: at('2027-05-01T08:00'),
       targetAt: at('2027-04-30T18:00'),
       deadlineAt: at('2027-05-01T08:00'),
+      leadFrom: null,
     })
   })
 

@@ -71,6 +71,8 @@ export interface SimTaskDay {
   places: Place[]
   /** Its segment row's state, when in a segment. */
   segmentState: string | null
+  /** On the deadlines page (2026-10-22): its safety net and seen flags. */
+  deadlines: { safetyNet: boolean; seen: boolean } | null
   hasTarget: boolean
   /** In the task queue (`queued_at`, task-queue PR 2): stripped, or a repeating task waiting. */
   queued: boolean
@@ -123,11 +125,18 @@ const ORDER: Place[] = ['done', 'over']
 
 /** Read one tick: every task's place and badges. */
 export function readTick(userId: number, timezone: string, ids: number[], now: Date): SimTaskDay[] {
-  const segment = new Map<number, { kind: SegmentKind; state: string }[]>()
-  for (const seg of getTaskSegments(userId, timezone, now, { queuePanels: true, deckRows: true })) {
+  const segment = new Map<
+    number,
+    { kind: SegmentKind; state: string; safetyNet?: boolean; seen?: boolean }[]
+  >()
+  for (const seg of getTaskSegments(userId, timezone, now, {
+    queuePanels: true,
+    deckRows: true,
+    deadlineRows: true,
+  })) {
     for (const row of seg.tasks) {
       const list = segment.get(row.task.id) ?? []
-      list.push({ kind: seg.horizon, state: row.state })
+      list.push({ kind: seg.horizon, state: row.state, safetyNet: row.safetyNet, seen: row.seen })
       segment.set(row.task.id, list)
     }
   }
@@ -152,6 +161,7 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
       place,
       places,
       segmentState: segment.get(id)?.[0]?.state ?? null,
+      deadlines: deadlinesRow(segment.get(id)),
       hasTarget: task.due_at !== null,
       queued: task.queued_at !== null,
       attempts: task.attempts,
@@ -162,12 +172,21 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
   return out
 }
 
+/** A deadlines-page row's flags, when the task is on the page. */
+function deadlinesRow(
+  rows: { kind: SegmentKind; safetyNet?: boolean; seen?: boolean }[] | undefined,
+): { safetyNet: boolean; seen: boolean } | null {
+  const row = rows?.find((r) => r.kind === 'deadlines')
+  return row ? { safetyNet: !!row.safetyNet, seen: !!row.seen } : null
+}
+
 function blank(id: number, place: Place): SimTaskDay {
   return {
     id,
     place,
     places: [place],
     segmentState: null,
+    deadlines: null,
     hasTarget: false,
     queued: false,
     attempts: 0,
@@ -185,6 +204,13 @@ function blank(id: number, place: Place): SimTaskDay {
  */
 export function dayLine(t: SimTaskDay): string {
   const parts: string[] = [t.place]
+  // The deadlines page (2026-10-22): "deadlines net" in the safety net, and
+  // "seen" once considered this OpenTask day ("deadlines seen" outside the
+  // net is the considered state; "deadlines net seen" still nags).
+  if (t.place === 'deadlines' && t.deadlines) {
+    if (t.deadlines.safetyNet) parts.push('net')
+    if (t.deadlines.seen) parts.push('seen')
+  }
   if (t.place !== 'done' && t.queued) parts.push('queued')
   if (t.place !== 'done' && (t.hasTarget || t.queued) && t.attempts > 0) {
     parts.push(`${t.attempts}×`)
@@ -202,7 +228,11 @@ function applyPolicy(
   ids: number[],
 ): void {
   if (policy.includes('tap')) {
-    const waiting = getTaskSegments(userId, timezone, now, { queuePanels: true, deckRows: true })
+    const waiting = getTaskSegments(userId, timezone, now, {
+      queuePanels: true,
+      deckRows: true,
+      deadlineRows: true,
+    })
       .flatMap((s) => s.tasks)
       .filter((r) => r.state === 'waiting' && ids.includes(r.task.id))
       .map((r) => r.task.id)
@@ -220,7 +250,11 @@ function applyPolicy(
 
 /** The user's open, ordinary task ids (no reminders or quotas): the CLI's default report set. */
 function defaultIds(userId: number, now: Date, timezone: string): number[] {
-  return getTaskSegments(userId, timezone, now, { queuePanels: true, deckRows: true })
+  return getTaskSegments(userId, timezone, now, {
+    queuePanels: true,
+    deckRows: true,
+    deadlineRows: true,
+  })
     .flatMap((s) => s.tasks.map((r) => r.task.id))
     .concat(getCurrentlyDueTaskIds(userId, now))
     .concat(onDeckToday(userId, timezone, now).map((t) => t.id))

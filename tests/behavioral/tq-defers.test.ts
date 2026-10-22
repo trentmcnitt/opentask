@@ -450,7 +450,7 @@ describe('TQ-C: every pick clears the mark (and its undo puts it back)', () => {
     clearedThenRestored(t.id, () => targetTasksToday(TEST_USER_ID, tz, [t.id]))
   })
 
-  test('TQ-C06: a deadline added → its automatic target ("Back to auto")', () => {
+  test('TQ-C06: a deadline added, target removed → no target: the deadlines page (2026-10-22)', () => {
     const t = marked()
     clearedThenRestored(t.id, () =>
       updateTask({
@@ -459,8 +459,11 @@ describe('TQ-C: every pick clears the mark (and its undo puts it back)', () => {
         input: { due_at: null, deadline_at: at('2026-10-30T17:00') },
       }),
     )
-    // The undo/redo round trip ends on the redo: the automatic target.
-    expect(task(t.id).target_auto).toBe(true)
+    // The undo/redo round trip ends on the redo. With the task queue on there
+    // is no automatic target any more: the task is target-less, with a lead
+    // day (the deadlines page holds it).
+    expect(task(t.id)).toMatchObject({ due_at: null, target_auto: false })
+    expect(task(t.id).lead_from).not.toBeNull()
   })
 
   test('TQ-C06b: a deadline added while the target stays put', () => {

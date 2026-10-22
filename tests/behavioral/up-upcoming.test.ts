@@ -707,6 +707,9 @@ describe('target_set_at guard', () => {
     // §8 (2026-10-12): the one-time pass that gives deadline tasks their
     // automatic target and caps targets at their deadline.
     'src/core/db/migrate-deadline-targets.ts': 'migrations',
+    // The deadlines page (2026-10-22): removes automatic targets once, under
+    // the undo fence; never a target the user sets.
+    'src/core/db/migrate-deadline-leads.ts': 'migrations',
   }
 
   function files(dir: string): string[] {

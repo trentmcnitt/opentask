@@ -700,6 +700,8 @@ describe('OD-G: every writer of a target applies the deck clear', () => {
     // Migrations and backfills: no deck exists before the column does.
     'src/core/db/index.ts': 'migrations',
     'src/core/db/migrate-deadline-targets.ts': 'migrations',
+    // The deadlines page (2026-10-22): only clears automatic targets.
+    'src/core/db/migrate-deadline-leads.ts': 'migrations',
     // A new row starts with `on_deck_day` NULL.
     'src/core/tasks/create.ts': 'new row',
     // The module that defines the stamp; no target of its own.
