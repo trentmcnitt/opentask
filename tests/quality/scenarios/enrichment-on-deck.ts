@@ -272,6 +272,95 @@ export const enrichmentOnDeckScenarios: AITestScenario[] = [
         'A day with no time and no "remind me": on deck Thursday, due_at null. Title "Call the bank".',
     },
   },
+  // "nag me <day>" is "remind me <day>" (Trent, 2026-10-22). Pinned to
+  // Wednesday 2 PM where it says so, so "Monday" is next week's Monday.
+  {
+    id: 'enrich-nag-me-day',
+    feature: 'enrichment',
+    description: 'Ruling 10-22: "nag me <day>" with no time is a target at the default time',
+    input: input('nag me Monday about the invoice', at(2, '14:00')),
+    requirements: {
+      must_include: {
+        due_at: `~datetime:${day(7)}T09:00`,
+        on_deck_day: null,
+        deadline_at: null,
+        auto_snooze_minutes: null,
+      },
+      quality_notes:
+        'Now is Wednesday 2 PM. "nag me Monday" asks for a reminder on Monday, like "remind me": due_at next Monday at the default task time (9:00 AM), on_deck_day null. No interval was given, so auto_snooze_minutes null. Title about the invoice (e.g. "The invoice" / "Invoice"); "nag me" leaves the title.',
+    },
+  },
+  {
+    id: 'enrich-nag-me-on-day',
+    feature: 'enrichment',
+    description: 'Ruling 10-22: "nag me on <day>" → a target that day at the default time',
+    input: input('nag me on Friday to renew the car registration'),
+    requirements: {
+      must_include: {
+        due_at: `~datetime:${FRI}T09:00`,
+        on_deck_day: null,
+        deadline_at: null,
+        auto_snooze_minutes: null,
+      },
+      quality_notes:
+        'Now is Monday 2 PM. "nag me on Friday": due_at Friday 9:00 AM, on_deck_day null, auto_snooze_minutes null. Title "Renew the car registration".',
+    },
+  },
+  {
+    id: 'enrich-nag-me-next-day',
+    feature: 'enrichment',
+    description: 'Ruling 10-22: "nag me next <day>" → a target that day at the default time',
+    input: input('nag me next Monday to call the landlord about the lease'),
+    requirements: {
+      must_include: {
+        due_at: `~datetime:${day(7)}T09:00`,
+        on_deck_day: null,
+        deadline_at: null,
+        auto_snooze_minutes: null,
+      },
+      quality_notes:
+        'Now is Monday 2 PM, so "next Monday" is a week from today: due_at that Monday 9:00 AM, on_deck_day null, auto_snooze_minutes null. Title like "Call the landlord about the lease".',
+    },
+  },
+  {
+    id: 'enrich-dont-nag-me-day-decks',
+    feature: 'enrichment',
+    description: 'Negative of the 10-22 ruling: "don\'t nag me" beside a bare day still decks',
+    input: input("call the bank Thursday, don't nag me"),
+    requirements: {
+      must_include: {
+        on_deck_day: THU,
+        due_at: null,
+        deadline_at: null,
+        auto_snooze_minutes: 0,
+      },
+      quality_notes:
+        '"don\'t nag me" turns the nag off (auto_snooze_minutes 0); it does not ask for a reminder, so Thursday is a day with no time: on deck Thursday, due_at null. Title "Call the bank".',
+    },
+  },
+  {
+    id: 'enrich-remind-me-monday-unchanged',
+    feature: 'enrichment',
+    description:
+      '"remind me Monday" is unchanged by the nag-me ruling: a target at the default time',
+    input: input('remind me Monday about the invoice', at(2, '14:00')),
+    requirements: {
+      must_include: { due_at: `~datetime:${day(7)}T09:00`, on_deck_day: null, deadline_at: null },
+      quality_notes:
+        'Now is Wednesday 2 PM. "remind me Monday": due_at next Monday 9:00 AM, on_deck_day null. Title about the invoice.',
+    },
+  },
+  {
+    id: 'enrich-deck-do-it-monday',
+    feature: 'enrichment',
+    description: 'Negative of the 10-22 ruling: "send the invoice Monday" (no nag me) still decks',
+    input: input('send the invoice Monday', at(2, '14:00')),
+    requirements: {
+      must_include: { on_deck_day: day(7), due_at: null, deadline_at: null },
+      quality_notes:
+        'Now is Wednesday 2 PM. A day with no time and no "remind me" / "nag me": on deck next Monday, due_at null. Title "Send the invoice".',
+    },
+  },
   {
     id: 'enrich-deck-weekend-named-weekday',
     feature: 'enrichment',

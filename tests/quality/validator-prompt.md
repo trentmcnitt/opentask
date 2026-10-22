@@ -55,7 +55,7 @@ The output has `on_deck_day` (a local date, `YYYY-MM-DD`) beside `due_at`. **A d
 - A clock time ("at noon", "1 PM", "tomorrow at 9am") or a **part of day** ("tomorrow morning", "tonight", "this afternoon", "this evening", "after work", "before bed") is a **target**: `due_at` a full datetime, `on_deck_day` null. A part-of-day word decked instead is a failure.
 - A deadline plus a day to do it ("by Friday, do it Wednesday") keeps the day as a **target** (`due_at` Wednesday at the default task time, `deadline_at` Friday 23:59) — `on_deck_day` null.
 - Repeating tasks are never on deck.
-- **"remind me <day>" with no time** asks for a reminder: a TARGET that day at the default task time (9:00 AM), never on deck. Every other bare day decks ("call the bank Thursday").
+- **"remind me <day>" or "nag me <day>" with no time** ("nag me on Friday", "nag me next Monday" too; 2026-10-22) asks for a reminder: a TARGET that day at the default task time (9:00 AM), never on deck, and `auto_snooze_minutes` null (no interval was given). Every other bare day decks ("call the bank Thursday"), including one beside "don't nag me" (that is the nag turned off: `auto_snooze_minutes` 0).
 - A named weekday beside "this weekend" wins ("plan Sunday brunch this weekend" → Sunday). A misspelled "tomorrow" ("tommorow") is still tomorrow.
 - A4 also applies to deadlines: "by tomorrow" at 00:30 → `deadline_at` on the calendar today.
 - A bare "this weekend" → on deck the coming Saturday (today on a Saturday or Sunday). "sometime this weekend" is a pace: `horizon` days, both dates null.
