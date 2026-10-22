@@ -94,6 +94,9 @@ CREATE TABLE IF NOT EXISTS users (
   ai_quicktake_mode   TEXT NOT NULL DEFAULT 'api',
   ai_whats_next_mode  TEXT NOT NULL DEFAULT 'api',
   ai_insights_mode    TEXT NOT NULL DEFAULT 'api',
+  -- Process's AI (project recommendations, duplicate groups) — its own mode
+  -- since 2026-10-22; existing databases backfill it from ai_insights_mode.
+  ai_process_mode     TEXT NOT NULL DEFAULT 'api',
   ai_query_timeout_ms INTEGER,              -- vestigial (replaced by per-feature timeouts below)
   ai_enrichment_timeout_ms INTEGER,
   ai_quicktake_timeout_ms INTEGER,

@@ -1,7 +1,8 @@
 /**
  * THE SHELVED AI FEATURES (2026-10-22, Trent): What's Next, Insights and
  * Quick Take are shelved — the whole feature set, until they are redesigned.
- * Enrichment is the only AI feature that runs.
+ * Enrichment and Process are the AI features that run: Process has its own
+ * mode (`ai_process_mode`) and is not under this switch (src/core/ai/process.ts).
  *
  * `OPENTASK_AI_UNSHELVE=1` brings all three back; unset (the default, and
  * production) keeps them shelved:

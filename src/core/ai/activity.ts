@@ -40,7 +40,17 @@ export function logAIActivity(entry: Omit<AIActivityEntry, 'id' | 'created_at'>)
 }
 
 /**
- * Query AI activity log entries for a user.
+ * Filter values that stand for several logged actions: Process logs its two
+ * AI steps under their own names (src/core/ai/process.ts), and the AI Status
+ * filter has one "Process" chip for both.
+ */
+const ACTION_GROUPS: Record<string, string[]> = {
+  process: ['process_projects', 'process_duplicates'],
+}
+
+/**
+ * Query AI activity log entries for a user. `action` filters to one logged
+ * action, or to a group of them (`ACTION_GROUPS`, e.g. `process`).
  */
 export function getAIActivity(
   userId: number,
@@ -53,8 +63,9 @@ export function getAIActivity(
   const params: unknown[] = [userId]
 
   if (action) {
-    conditions.push('action = ?')
-    params.push(action)
+    const actions = ACTION_GROUPS[action] ?? [action]
+    conditions.push(`action IN (${actions.map(() => '?').join(', ')})`)
+    params.push(...actions)
   }
 
   params.push(limit, offset)

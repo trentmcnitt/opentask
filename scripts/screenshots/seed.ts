@@ -832,7 +832,7 @@ async function main(): Promise<void> {
   // address, and the pre-baked results below are what the UI shows.
   db.prepare(
     `UPDATE users SET ai_mode = 'on', ai_enrichment_mode = 'api', ai_quicktake_mode = 'api',
-       ai_whats_next_mode = 'api', ai_insights_mode = 'api' WHERE id = ?`,
+       ai_whats_next_mode = 'api', ai_insights_mode = 'api', ai_process_mode = 'api' WHERE id = ?`,
   ).run(userId)
   db.prepare(
     "INSERT INTO api_tokens (user_id, token, token_preview, name) VALUES (?, ?, ?, 'Screenshots')",

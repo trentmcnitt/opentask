@@ -3859,8 +3859,11 @@ paths:
           in: query
           schema:
             type: string
-            example: enrichment
-          description: Only activity entries of this action.
+            example: enrich
+          description: |
+            Only activity entries of this action (`enrich`, `quick_take`,
+            `whats_next`, `insights`, `process_projects`, `process_duplicates`,
+            `test`). `process` matches both of Process's actions.
       responses:
         '200':
           description: AI status
@@ -5250,6 +5253,18 @@ components:
             is a 400. To mark the context reviewed without changing it, PATCH
             `ai_context_reviewed: true` (write-only; anything but `true` is a
             400; 403 for the demo account), which restamps it to now.
+        ai_process_mode:
+          type: string
+          enum: ['off', sdk, api]
+          description: |
+            The AI mode of Process's suggestions (project recommendations and
+            duplicate groups, `POST /api/process/recommend-projects` and
+            `GET /api/process/duplicates`), 2026-10-22. `off` makes both answer
+            an empty list. Its own feature, not shelved: it is reported and
+            honoured whatever `ai_unshelved` says. Existing users started with
+            a copy of their `ai_insights_mode`, which Process read before.
+            Not writable by the demo account (403). `ai_feature_info.process`
+            reports the provider and model it resolves to.
     PromptKeys:
       type: object
       required: [keys]

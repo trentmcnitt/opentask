@@ -90,12 +90,15 @@ test.describe('Shelved AI features (the default)', () => {
     }
   })
 
-  test('Settings → AI lists only Enrichment', async ({ authenticatedPage: page }) => {
+  // Process has its own mode and is not shelved (2026-10-22): its row stays
+  // (tests/e2e/settings-ai-process.spec.ts).
+  test('Settings → AI lists only Enrichment and Process', async ({ authenticatedPage: page }) => {
     await reportPrefs(page)
     await gotoWithPrefs(page, '/settings')
     await expect(page.getByRole('heading', { name: 'AI Context' })).toBeVisible()
     await expect(page.getByText('Feature modes')).toBeVisible()
     await expect(page.getByText('Enrichment', { exact: true })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Process mode' })).toBeVisible()
     for (const row of SHELVED_ROWS) {
       await expect(page.getByText(row, { exact: true })).toHaveCount(0)
     }

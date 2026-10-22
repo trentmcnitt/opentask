@@ -19,6 +19,7 @@ function clearAIEnv() {
     'OPENTASK_AI_QUICKTAKE',
     'OPENTASK_AI_WHATS_NEXT',
     'OPENTASK_AI_INSIGHTS',
+    'OPENTASK_AI_PROCESS',
     'ANTHROPIC_API_KEY',
     'OPENAI_API_KEY',
     'OPENAI_BASE_URL',
@@ -327,6 +328,73 @@ describe('resolveFeatureAIConfig', () => {
     expect(insightsConfig.provider).toBe('openai')
     expect(insightsConfig.model).toBe('grok-4-1-fast-non-reasoning')
     expect(insightsConfig.providerConfig!.baseUrl).toBe('https://api.x.ai/v1')
+  })
+})
+
+/**
+ * Process (2026-10-22) has its own feature config, and every PROCESS env var
+ * falls back to its INSIGHTS twin — what Process ran on before — so a
+ * deployment that only set the INSIGHTS vars keeps the same model/provider.
+ */
+describe('process falls back to the Insights env vars', () => {
+  test('API model: own var wins, else the Insights one, else null', async () => {
+    const { resolveFeatureModel } = await getModels()
+    expect(resolveFeatureModel('process')).toBeNull()
+    process.env.OPENTASK_AI_INSIGHTS_MODEL = 'insights-model'
+    expect(resolveFeatureModel('process')).toBe('insights-model')
+    process.env.OPENTASK_AI_PROCESS_MODEL = 'process-model'
+    expect(resolveFeatureModel('process')).toBe('process-model')
+    expect(resolveFeatureModel('insights')).toBe('insights-model')
+  })
+
+  test('SDK model: own var → Insights SDK var → global → sonnet', async () => {
+    const { resolveSDKModel } = await getModels()
+    expect(resolveSDKModel('process')).toBe('sonnet')
+    process.env.OPENTASK_AI_SDK_MODEL = 'haiku'
+    expect(resolveSDKModel('process')).toBe('haiku')
+    process.env.OPENTASK_AI_INSIGHTS_SDK_MODEL = 'opus'
+    expect(resolveSDKModel('process')).toBe('opus')
+    process.env.OPENTASK_AI_PROCESS_SDK_MODEL = 'sonnet'
+    expect(resolveSDKModel('process')).toBe('sonnet')
+  })
+
+  test('provider routing follows the Insights per-feature vars when Process has none', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-global'
+    process.env.OPENTASK_AI_INSIGHTS_PROVIDER = 'openai'
+    process.env.OPENTASK_AI_INSIGHTS_API_KEY = 'xai-insights'
+    process.env.OPENTASK_AI_INSIGHTS_BASE_URL = 'https://api.x.ai/v1'
+    process.env.OPENTASK_AI_INSIGHTS_MODEL = 'grok-insights'
+    const { resolveFeatureAIConfig } = await getModels()
+    const config = resolveFeatureAIConfig('process', 'api')
+    expect(config).toEqual({
+      provider: 'openai',
+      model: 'grok-insights',
+      providerConfig: {
+        providerType: 'openai',
+        apiKey: 'xai-insights',
+        baseUrl: 'https://api.x.ai/v1',
+      },
+    })
+  })
+
+  test("Process's own provider vars win over the Insights ones", async () => {
+    process.env.OPENTASK_AI_INSIGHTS_PROVIDER = 'openai'
+    process.env.OPENTASK_AI_INSIGHTS_API_KEY = 'xai-insights'
+    process.env.OPENTASK_AI_PROCESS_PROVIDER = 'anthropic'
+    process.env.OPENTASK_AI_PROCESS_API_KEY = 'sk-process'
+    process.env.OPENTASK_AI_PROCESS_MODEL = 'claude-process'
+    const { resolveFeatureAIConfig } = await getModels()
+    const config = resolveFeatureAIConfig('process', 'api')
+    expect(config.provider).toBe('anthropic')
+    expect(config.model).toBe('claude-process')
+    expect(config.providerConfig!.apiKey).toBe('sk-process')
+  })
+
+  test('no fallback for the other features', async () => {
+    process.env.OPENTASK_AI_INSIGHTS_MODEL = 'insights-model'
+    const { resolveFeatureModel } = await getModels()
+    expect(resolveFeatureModel('enrichment')).toBeNull()
+    expect(resolveFeatureModel('whats_next')).toBeNull()
   })
 })
 

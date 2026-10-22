@@ -195,6 +195,15 @@ function runMigrations(database: Database.Database): void {
     database.exec("UPDATE users SET ai_insights_mode = 'off' WHERE ai_show_insights = 0")
     database.exec("UPDATE users SET ai_quicktake_mode = 'off' WHERE ai_show_commentary = 0")
   }
+  // Process's own AI mode (2026-10-22). Process (src/core/ai/process.ts) read
+  // the Insights mode until the AI shelve hid the Insights row, so the column
+  // starts as a copy of each user's Insights mode — nobody's Process
+  // behaviour changes. Inside the guard, so it runs once: later Insights
+  // changes never touch it.
+  if (!hasColumn(database, 'users', 'ai_process_mode')) {
+    database.exec("ALTER TABLE users ADD COLUMN ai_process_mode TEXT NOT NULL DEFAULT 'api'")
+    database.exec('UPDATE users SET ai_process_mode = ai_insights_mode')
+  }
   // Per-user AI query timeout (2026-03) — vestigial, kept for existing DBs
   if (!hasColumn(database, 'users', 'ai_query_timeout_ms')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_query_timeout_ms INTEGER')

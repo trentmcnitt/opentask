@@ -91,6 +91,30 @@ describe('shelved AI features (the default)', () => {
       expect(res.status).toBe(201)
     })
 
+    // Process has its own AI mode and is not shelved (2026-10-22): with AI
+    // off here, both of its AI steps answer their AI-off empty list, never 410.
+    test('Process AI is not shelved: recommend-projects and duplicates answer 200', async () => {
+      const created = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Shelved-features Process check' },
+      })
+      const id = (await created.json()).data.id
+      const rec = await apiFetch('/api/process/recommend-projects', {
+        method: 'POST',
+        body: { ids: [id] },
+      })
+      expect(rec.status).toBe(200)
+      expect((await rec.json()).data).toEqual({ recommendations: [] })
+      const dup = await apiFetch('/api/process/duplicates')
+      expect(dup.status).toBe(200)
+      expect((await dup.json()).data).toEqual({ groups: [] })
+    })
+
+    test('POST /api/ai/test { feature: process } is not shelved (503: AI off here)', async () => {
+      const res = await apiFetch('/api/ai/test', { method: 'POST', body: { feature: 'process' } })
+      expect(res.status).toBe(503)
+    })
+
     test('the review-session API (not an AI feature) is not shelved', async () => {
       const res = await apiFetch('/api/review')
       expect(res.status).toBe(200)

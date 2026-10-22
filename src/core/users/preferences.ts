@@ -72,6 +72,7 @@ export interface PreferencesRow {
   ai_quicktake_mode: string
   ai_whats_next_mode: string
   ai_insights_mode: string
+  ai_process_mode: string
   ai_wn_commentary_unfiltered: number
   ai_wn_highlight: number
   ai_insights_signal_chips: number
@@ -133,6 +134,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   ai_quicktake_mode: 'api',
   ai_whats_next_mode: 'api',
   ai_insights_mode: 'api',
+  ai_process_mode: 'api',
   ai_wn_commentary_unfiltered: 0,
   ai_wn_highlight: 1,
   ai_insights_signal_chips: 1,
