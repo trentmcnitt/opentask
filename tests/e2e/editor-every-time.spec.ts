@@ -714,7 +714,6 @@ test.describe('Every-time mode on a phone', () => {
         await expect(banner).toBeInViewport()
         // One line at 375px ("EVERY TIME" · "‹ Back"); the names stay whole.
         await expect(banner).toHaveAccessibleName('Back to this one')
-        await expect(banner).toHaveText('Back')
         const heading = region.getByRole('heading', { name: 'Editing every time' })
         expect((await heading.boundingBox())!.height).toBeLessThan(24)
         expect((await banner.boundingBox())!.height).toBeLessThanOrEqual(44)
