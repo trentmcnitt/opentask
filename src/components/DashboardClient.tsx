@@ -72,6 +72,7 @@ import {
   useDefaultSort,
   useAiAvailable,
   useAiPreferences,
+  useAiUnshelved,
   useTaskQueue,
 } from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
@@ -616,12 +617,23 @@ function HomeContent({
   // Keyboard navigation state
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
 
+  // SHELVED (2026-10-22; src/core/ai/shelved.ts): What's Next, Insights and
+  // Quick Take are shelved unless the server runs with OPENTASK_AI_UNSHELVE=1.
+  // Shelved, this dashboard READS every one of their preferences as off — the
+  // AI mode, the Insights chip, a saved AI Score sort — and hides their UI,
+  // but never writes a preference: each user's saved values come back as they
+  // were when the switch is turned on.
+  const aiUnshelved = useAiUnshelved()
+
   // Sort state — persisted via PreferencesProvider (single source of truth)
   const {
-    defaultSort: sortOption,
+    defaultSort: savedSort,
     defaultSortReversed: reversed,
     setSortPreference,
   } = useDefaultSort()
+  // The AI Score sort needs Insights scores: shelved, a saved 'ai_insights'
+  // reads as the default sort (not rewritten — see `aiUnshelved` above).
+  const sortOption: SortOption = !aiUnshelved && savedSort === 'ai_insights' ? 'horizon' : savedSort
   const setSortOption = useCallback(
     (option: SortOption) => {
       const newReversed = sortOption === option ? !reversed : false
@@ -839,9 +851,9 @@ function HomeContent({
 
   // AI mode: Off / On toggle + feature preferences
   const {
-    mode: aiMode,
+    mode: savedAiMode,
     setMode: setAiMode,
-    showInsights,
+    showInsights: savedShowInsights,
     setShowInsights,
     wnCommentaryUnfiltered,
     setWnCommentaryUnfiltered,
@@ -852,6 +864,11 @@ function HomeContent({
     insightsScoreChips,
     setInsightsScoreChips,
   } = useAiMode()
+  // Shelved (see `aiUnshelved`): the dashboard's AI mode — which drives only
+  // What's Next and Insights — and the Insights chip read as off, so every
+  // overlay, chip, score and highlight below stays hidden.
+  const aiMode: AiMode = aiUnshelved ? savedAiMode : 'off'
+  const showInsights = aiUnshelved && savedShowInsights
 
   // AI enrichment: true when any task has the ai-to-process label
   const enrichmentActive = tasks.some((t) => t.labels.includes('ai-to-process'))
@@ -861,10 +878,10 @@ function HomeContent({
   const { aiQuickTakeMode } = useAiPreferences()
 
   // AI What's Next: fetch recommendations and resolve against current task list
-  const aiInsights = useAiInsights(baseTasks, aiAvailable)
+  const aiInsights = useAiInsights(baseTasks, aiAvailable && aiUnshelved)
 
   // AI Insights: fetch/generate insights results
-  const insightsData = useInsightsData(baseTasks, aiAvailable)
+  const insightsData = useInsightsData(baseTasks, aiAvailable && aiUnshelved)
 
   // Refresh handlers for each AI system (guards are in AiControlArea)
   const handleRefreshAnnotations = aiInsights.refresh
@@ -1496,8 +1513,14 @@ function HomeContent({
     )
   }
 
+  // Quick Take is shelved with What's Next and Insights (`aiUnshelved`):
+  // shelved, a quick add is the plain create — the same path as Quick Take
+  // set to Off. Enrichment is untouched either way: the server queues it on
+  // create, and its result arrives over the sync stream (`onEnrichmentComplete`).
   const quickAdd =
-    aiAvailable && aiQuickTakeMode !== 'off' ? handleQuickAddWithQuickTake : actions.handleQuickAdd
+    aiAvailable && aiUnshelved && aiQuickTakeMode !== 'off'
+      ? handleQuickAddWithQuickTake
+      : actions.handleQuickAdd
 
   return (
     <>
@@ -2183,6 +2206,8 @@ function DashboardView({
   // criteria object is `useFilterState`'s own memo, so its identity changes
   // only when a filter does (the auto-clear scope below depends on that).
   const headerCounts = useDateFacetCounts(allTasks, filterCriteria, timezone, now)
+  // SHELVED (2026-10-22): hides the AI chip and the Quick Take banner below.
+  const aiUnshelved = useAiUnshelved()
   // The Overdue filter switches itself off when its last task stops being
   // overdue (done, snoozed, rescheduled — here or via sync), counted with the
   // same facet number the pill and pinned chip show. Rules and the deep-link
@@ -2395,7 +2420,9 @@ function DashboardView({
                 }}
               />
             </div>
-            {aiAvailable && (
+            {/* The AI chip holds only What's Next and Insights: hidden while
+                they are shelved (`aiUnshelved`). AI Status stays in the top bar. */}
+            {aiAvailable && aiUnshelved && (
               <AiControlArea
                 mode={aiMode}
                 onModeChange={onAiModeChange}
@@ -2443,7 +2470,7 @@ function DashboardView({
             }
           />
 
-          {aiAvailable && bannerState && (
+          {aiAvailable && aiUnshelved && bannerState && (
             <QuickTakeBanner
               title={bannerState.title}
               quickTakeText={bannerState.quickTakeText}

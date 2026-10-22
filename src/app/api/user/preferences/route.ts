@@ -36,6 +36,7 @@ import {
 } from '@/core/users/preferences'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
+import { shelvedAiFeaturesOn } from '@/core/ai/shelved'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import { getAnchorTimes, readAnchorRow, resolveUserAnchorTimes } from '@/core/users/anchor-times'
 import {
@@ -695,6 +696,11 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
     task_queue: taskQueueEnabled(),
     rollover_time: rolloverTimeForUser(userId),
     ai_available: isAIEnabled(),
+    // SHELVED (2026-10-22, read-only): the server's `OPENTASK_AI_UNSHELVE`
+    // switch. False (the default) while What's Next, Insights and Quick Take
+    // are shelved — clients hide every surface of the three. The user's own
+    // `ai_*_mode` values below are untouched and still reported.
+    ai_unshelved: shelvedAiFeaturesOn(),
     // Coerced on the way out too, so a 'time' written by anything that
     // skipped this route reads as the 'project' the dashboard will show.
     default_grouping: coerceGrouping(row.default_grouping),

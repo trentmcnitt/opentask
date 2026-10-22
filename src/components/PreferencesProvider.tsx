@@ -131,6 +131,8 @@ interface PreferencesContextValue {
   /** The server's task-queue switch and the user's rollover time (`useTaskQueue`). */
   taskQueue: boolean
   rolloverTime: string | null
+  /** SHELVED (2026-10-22): the server's AI unshelve switch (`useAiUnshelved`). */
+  aiUnshelved: boolean
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -216,6 +218,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiFeatureInfo: () => {},
   taskQueue: false,
   rolloverTime: null,
+  aiUnshelved: false,
 })
 
 // Register the iOS APNs device token with the server using session cookie auth.
@@ -760,6 +763,17 @@ export function useAiPreferences() {
 
 export function useAiAvailable() {
   return useContext(PreferencesContext).aiAvailable
+}
+
+/**
+ * SHELVED (2026-10-22; src/core/ai/shelved.ts): true only when the server runs
+ * with `OPENTASK_AI_UNSHELVE=1`. False — the default, and false until the
+ * preferences load — hides every What's Next, Insights and Quick Take
+ * surface. Callers never write a preference because of it: a user's AI modes
+ * stay as they were for when the features come back.
+ */
+export function useAiUnshelved() {
+  return useContext(PreferencesContext).aiUnshelved
 }
 
 export function useAiFeatureInfo() {

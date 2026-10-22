@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useAiUnshelved } from '@/components/PreferencesProvider'
 
 /**
  * First-time guided tour for the public demo account.
@@ -28,6 +29,8 @@ export interface DemoTourStep {
   selector: string
   title: string
   body: string
+  /** Points at an Insights surface (score, commentary): left out while shelved. */
+  insights?: true
 }
 
 // Selectors correspond to `data-tour` attributes added to QuickAdd.tsx and TaskRow.tsx.
@@ -41,15 +44,23 @@ export const DEMO_TOUR_STEPS: DemoTourStep[] = [
   },
   {
     selector: '[data-tour="task-score"]',
+    insights: true,
     title: 'AI ranks what matters',
     body: 'Every task gets a 0–100 urgency score from the AI, based on due date, priority, and how long it has been waiting.',
   },
   {
     selector: '[data-tour="task-insight"]',
+    insights: true,
     title: 'Context, not just a checklist',
     body: 'AI adds a short read on why a task matters right now — no manual tagging required.',
   },
 ]
+
+/**
+ * SHELVED (2026-10-22; src/core/ai/shelved.ts): with Insights shelved there is
+ * no score or commentary to point at, so the tour is the quick-add step alone.
+ */
+const SHELVED_TOUR_STEPS = DEMO_TOUR_STEPS.filter((step) => !step.insights)
 
 function shouldOfferTour(isDemo: boolean): boolean {
   if (!isDemo) return false
@@ -66,6 +77,7 @@ export function useDemoTour() {
   const startedRef = useRef(false)
 
   const isDemo = status === 'authenticated' && !!session?.user?.is_demo
+  const steps = useAiUnshelved() ? DEMO_TOUR_STEPS : SHELVED_TOUR_STEPS
 
   const finish = useCallback(() => {
     setActive(false)
@@ -86,7 +98,7 @@ export function useDemoTour() {
   // spotlight rect in sync with scroll/resize, and skip the step if the target never shows up.
   useEffect(() => {
     if (!active) return
-    const step = DEMO_TOUR_STEPS[stepIndex]
+    const step = steps[stepIndex]
     if (!step) return // out of range shouldn't happen — next()/the timeout branch below call finish() first
 
     let elapsed = 0
@@ -109,7 +121,7 @@ export function useDemoTour() {
       elapsed += ELEMENT_POLL_MS
       if (elapsed >= ELEMENT_WAIT_MS) {
         clearInterval(poll)
-        if (stepIndex + 1 >= DEMO_TOUR_STEPS.length) finish()
+        if (stepIndex + 1 >= steps.length) finish()
         else setStepIndex((i) => i + 1)
       }
     }, ELEMENT_POLL_MS)
@@ -122,23 +134,23 @@ export function useDemoTour() {
       window.removeEventListener('resize', reposition)
       window.removeEventListener('scroll', reposition, true)
     }
-  }, [active, stepIndex, finish])
+  }, [active, stepIndex, finish, steps])
 
   const next = useCallback(() => {
     setStepIndex((i) => {
-      if (i + 1 >= DEMO_TOUR_STEPS.length) {
+      if (i + 1 >= steps.length) {
         finish()
         return i
       }
       return i + 1
     })
-  }, [finish])
+  }, [finish, steps])
 
   return {
     active,
-    step: active ? (DEMO_TOUR_STEPS[stepIndex] ?? null) : null,
+    step: active ? (steps[stepIndex] ?? null) : null,
     stepIndex,
-    stepCount: DEMO_TOUR_STEPS.length,
+    stepCount: steps.length,
     rect,
     next,
     skip: finish,

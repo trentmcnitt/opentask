@@ -13,7 +13,9 @@ import {
   badRequest,
   serviceUnavailable,
   handleError,
+  featureShelved,
 } from '@/lib/api-response'
+import { shelvedAiFeaturesOn, SHELVED_AI_FEATURES } from '@/core/ai/shelved'
 import { isAIEnabled, aiQuery } from '@/core/ai/sdk'
 import {
   getFeatureInfo,
@@ -28,6 +30,21 @@ import { withLogging } from '@/lib/with-logging'
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
+
+    // SHELVED (2026-10-22): testing a shelved feature (Quick Take, What's
+    // Next, Insights) would make the AI call the shelve exists to stop, so it
+    // answers like their own endpoints. Peeked at before the body is
+    // validated, so the answer does not depend on AI being enabled.
+    const peeked = (await request
+      .clone()
+      .json()
+      .catch(() => null)) as { feature?: unknown } | null
+    if (
+      !shelvedAiFeaturesOn() &&
+      (SHELVED_AI_FEATURES as readonly unknown[]).includes(peeked?.feature)
+    ) {
+      return featureShelved()
+    }
 
     if (!isAIEnabled()) {
       return serviceUnavailable('AI features are not enabled')

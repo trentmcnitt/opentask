@@ -1,4 +1,9 @@
 /**
+ * SHELVED (2026-10-22): What's Next and Insights are shelved behind
+ * `OPENTASK_AI_UNSHELVE` (src/core/ai/shelved.ts) until they are redesigned.
+ * Unset, both runners return at once and instrumentation.ts never schedules
+ * them. Code kept dormant on purpose — do not "fix" or re-enable without Trent.
+ *
  * Scheduled (daily) AI generation — REDESIGN-V03 §7.4
  *
  * What's Next and Insights run **once daily on a schedule, plus on-demand
@@ -20,6 +25,7 @@
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { isAIEnabled } from './sdk'
+import { shelvedAiFeaturesOn } from './shelved'
 import { generateWhatsNext } from './whats-next'
 import { generateInsightsForUser } from './insights'
 import { buildTaskSummaries } from './task-summaries'
@@ -44,7 +50,7 @@ function getScheduledUsers(): ScheduledUser[] {
  * disabled entirely — it becomes a no-op.
  */
 export async function runScheduledWhatsNext(): Promise<void> {
-  if (!isAIEnabled()) return
+  if (!shelvedAiFeaturesOn() || !isAIEnabled()) return
 
   for (const user of getScheduledUsers()) {
     const modes = getUserFeatureModes(user.id)
@@ -76,7 +82,7 @@ export async function runScheduledWhatsNext(): Promise<void> {
  * time instead of all being kicked off at once.
  */
 export async function runScheduledInsights(): Promise<void> {
-  if (!isAIEnabled()) return
+  if (!shelvedAiFeaturesOn() || !isAIEnabled()) return
 
   for (const user of getScheduledUsers()) {
     const modes = getUserFeatureModes(user.id)

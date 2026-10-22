@@ -10,6 +10,8 @@ import type { AIActivityEntry } from '@/core/ai/types'
 import type { EnrichmentSlotStats, QuickTakeSlotStats } from '@/core/ai'
 import type { FeatureInfoMap, FeatureMode } from '@/components/PreferencesProvider'
 import type { AIFeature } from '@/core/ai/models'
+import { useAiUnshelved } from '@/components/PreferencesProvider'
+import { SHELVED_AI_FEATURES } from '@/core/ai/shelved'
 
 interface QueueStats {
   active: number
@@ -64,6 +66,14 @@ function getActionLabel(action: string): string {
 
 const FEATURE_DISPLAY_ORDER: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
 
+/**
+ * SHELVED (2026-10-22; src/core/ai/shelved.ts): while Quick Take, What's Next
+ * and Insights are shelved, AI Status lists only Enrichment — in Features,
+ * the SDK check and the activity filter chips. Their past activity rows still
+ * show under All: that is history, not a feature that runs.
+ */
+const isShelvedFeature = (key: string) => (SHELVED_AI_FEATURES as readonly string[]).includes(key)
+
 const ACTION_FILTER_OPTIONS = [
   { value: '', label: 'All' },
   { value: 'enrich', label: getActionLabel('enrich') },
@@ -104,16 +114,24 @@ export function AIStatusContent({
   onLoadMore,
   loadingMore = false,
 }: AIStatusContentProps) {
+  const aiUnshelved = useAiUnshelved()
+  const shown = (key: string) => aiUnshelved || !isShelvedFeature(key)
   /* Show SDK-specific sections (slots, queue) when at least one feature uses SDK mode.
      Defaults to true when featureInfo hasn't loaded yet. */
   const hasSdkFeatures = featureInfo
-    ? Object.values(featureInfo).some((f) => f.mode === 'sdk')
+    ? Object.entries(featureInfo).some(([key, f]) => shown(key) && f.mode === 'sdk')
     : true
 
   return (
     <div className="space-y-6">
       {/* Feature Overview — per-feature mode, provider, and model */}
-      {featureInfo && <FeatureOverviewSection featureInfo={featureInfo} onRefresh={onRefresh} />}
+      {featureInfo && (
+        <FeatureOverviewSection
+          featureInfo={featureInfo}
+          features={FEATURE_DISPLAY_ORDER.filter(shown)}
+          onRefresh={onRefresh}
+        />
+      )}
 
       {/* SDK-specific sections: slots + queue (only when at least one feature uses SDK) */}
       {hasSdkFeatures && (
@@ -131,7 +149,7 @@ export function AIStatusContent({
       {/* Action filter chips */}
       {showFilters && onActionFilterChange && (
         <div className="flex flex-wrap gap-1.5">
-          {ACTION_FILTER_OPTIONS.map((opt) => (
+          {ACTION_FILTER_OPTIONS.filter((opt) => shown(opt.value)).map((opt) => (
             <button
               key={opt.value}
               onClick={() => onActionFilterChange(opt.value)}
@@ -639,9 +657,12 @@ function SdkSlotsSection({
 /** Feature Overview section — shows each AI feature's mode, provider, and model. */
 function FeatureOverviewSection({
   featureInfo,
+  features,
   onRefresh,
 }: {
   featureInfo: FeatureInfoMap
+  /** The features to list, in display order (shelved ones left out). */
+  features: AIFeature[]
   onRefresh: () => void
 }) {
   return (
@@ -654,7 +675,7 @@ function FeatureOverviewSection({
         </Button>
       </div>
       <div className="space-y-2 text-sm">
-        {FEATURE_DISPLAY_ORDER.map((key) => {
+        {features.map((key) => {
           const info = featureInfo[key]
           if (!info) return null
           return (

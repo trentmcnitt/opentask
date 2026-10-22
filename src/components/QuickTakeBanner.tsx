@@ -1,5 +1,10 @@
 'use client'
 
+/**
+ * SHELVED (2026-10-22): Quick Take (this banner) is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
 import { useEffect, useState, useRef } from 'react'
 import { ArrowRight, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'

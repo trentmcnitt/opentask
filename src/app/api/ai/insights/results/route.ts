@@ -1,4 +1,9 @@
 /**
+ * SHELVED (2026-10-22): Insights (this route answers 410 FEATURE_SHELVED) is shelved behind `OPENTASK_AI_UNSHELVE`
+ * (src/core/ai/shelved.ts) until it is redesigned. The code stays in place,
+ * dormant — do not "fix" or re-enable it without Trent.
+ */
+/**
  * GET /api/ai/insights/results — Get cached AI insights results
  *
  * Returns all insights results for the authenticated user, sorted by score desc.
@@ -14,13 +19,18 @@ import {
   getLastInsightsUnscoredCount,
   INSIGHTS_SIGNALS,
 } from '@/core/ai'
-import { success, unauthorized, handleError } from '@/lib/api-response'
+import { success, unauthorized, handleError, featureShelved } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+import { shelvedAiFeaturesOn } from '@/core/ai/shelved'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
+
+    // SHELVED (2026-10-22): src/core/ai/shelved.ts. After auth (a bad token
+    // is still a 401), before the AI-enabled check.
+    if (!shelvedAiFeaturesOn()) return featureShelved()
 
     const { results, generatedAt, signalCounts } = getInsightsResults(user.id)
     const activeSession = getActiveInsightsSession(user.id)
