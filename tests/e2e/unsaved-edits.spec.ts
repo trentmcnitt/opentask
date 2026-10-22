@@ -112,6 +112,61 @@ test.describe('Unsaved edits survive', () => {
     }
   })
 
+  // Every-time mode (editor PR 4c): its draft is an unsaved edit like any other.
+  test('every time: Escape with a changed schedule asks; a refused save keeps the mode and the draft', async ({
+    authenticatedPage: page,
+  }) => {
+    const rrule = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0'
+    const res = await page.request.post('/api/tasks', {
+      data: { title: uniqueTitle('Every-time guard probe'), rrule },
+    })
+    const id = (await res.json()).data.id as number
+    const ruleOf = async () =>
+      (await (await page.request.get(`/api/tasks/${id}`)).json()).data.rrule as string
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        let dialog = await openQuickPanel(page, id)
+        await dialog.locator('[data-quick-panel-repeat-link]').click()
+        let region = dialog.getByRole('region', { name: 'Editing every time' })
+        await region.getByRole('button', { name: 'Saturday' }).click()
+        await page.keyboard.press('Escape')
+        const unsaved = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+        await expect(unsaved).toBeVisible()
+        await unsaved.getByRole('button', { name: "Don't Save" }).click()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        expect(await ruleOf()).toBe(rrule)
+
+        dialog = await openQuickPanel(page, id)
+        await dialog.locator('[data-quick-panel-repeat-link]').click()
+        region = dialog.getByRole('region', { name: 'Editing every time' })
+        await region.getByRole('button', { name: 'Saturday' }).click()
+        await page.route(`**/api/tasks/${id}`, (route) =>
+          route.request().method() === 'PATCH'
+            ? route.fulfill({
+                status: 400,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: 'Refused by the test', code: 'VALIDATION_ERROR' }),
+              })
+            : route.fallback(),
+        )
+        const save = region.getByRole('button', { name: 'Save', exact: true })
+        await save.click()
+        await expect(page.getByText('Refused by the test')).toBeVisible()
+        await expect(region).toBeVisible()
+        await expect(region.getByRole('button', { name: 'Saturday' })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        )
+        await page.unroute(`**/api/tasks/${id}`)
+        await save.click()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        await expect.poll(ruleOf).toBe('FREQ=WEEKLY;BYDAY=FR,SA;BYHOUR=16;BYMINUTE=0')
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
   test('a failed create keeps the title and says why', async ({ authenticatedPage: page }) => {
     // The full add form, reached the way a phone reaches it: `+` focuses the
     // add field at the top, and its "Open full add form" button carries the
