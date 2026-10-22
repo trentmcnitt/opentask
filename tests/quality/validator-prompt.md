@@ -173,7 +173,6 @@ Task lines show `target:` (soft, deferrable — "overdue" means past it), `deadl
 - Does the AI only state things derivable from the input data?
 - For P0-2 tasks: is commentary based on task age (created_at) rather than due date gap?
 - Does the AI avoid fabricated counts ("deferred twice", "snoozed X times")?
-- Is "defer" used only for moving a target ("deferred to Friday", "Defer all")? Defer is the app's button, so "defer" in the general sense ("easy to keep deferring", "deferred for weeks", "you keep deferring this") is a minor miss — expect "put off" or "keeps slipping".
 - Words (2026-10-21): the app says "overdue" for a task past its target, "defer" for moving a target and names priorities in words. "Overdue" is correct; "snooze" and "P3"/"P4" in user-facing text are word misses.
 - Are notes referenced accurately when present (exact claim numbers, deadlines)?
 - Is no narrative fabricated about what happened between two dates?

@@ -873,7 +873,6 @@ export const WHATS_NEXT_REMINDERS = `## Reminders
 - When notes are present, reference specific details (claim numbers, deadlines, instructions)
 - from_completion recurring tasks overdue for multiple cycles = genuinely not completed (worth surfacing)
 - Reasons and the summary use the app's words: "overdue" (never "late" or "past due"), "target" (never "due date"), "defer" (never "snooze"), priorities by name (High, Urgent — never "P3"/"P4")
-- "Defer" is the name of the button that moves a target, so use it only for that move ("deferred to Friday"). A task the user keeps not getting to is "put off" or "keeps slipping" — never "easy to keep deferring" or "deferred for weeks"
 - A task \`on deck:\` is already planned for that day — don't surface it as forgotten or unplanned`
 
 export const INSIGHTS_REMINDERS = `## Reminders
