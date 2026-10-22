@@ -14,8 +14,10 @@
  *  - the rule is bound to the deadline's time: a timeless rule takes it, a
  *    rule at another time is refused;
  *  - the relative target: as sent; else the inverse of a `target_at` sent
- *    with it (`relativeTargetOf`); else the default (`defaultRelativeTarget`,
- *    A1). Validated (`relativeTargetProblem`): never after the deadline,
+ *    with it (`relativeTargetOf`); else — task-queue switch OFF — the default
+ *    (`defaultRelativeTarget`, A1), or — switch ON (the deadlines page,
+ *    2026-10-22, L1) — NONE: no fake target, each occurrence goes on the
+ *    deadlines page from its lead day (`lead_from`). Validated (`relativeTargetProblem`): never after the deadline,
  *    never on or before the previous deadline;
  *  - never on a reminder or a quota (their date is their occurrence / they
  *    have none), never without a rule or a deadline; the offsets only with
@@ -138,7 +140,8 @@ export function assertRuleOnDeadline(
  *  - `sent`: the caller's own offsets;
  *  - else `targetAt` (a first target sent with the deadline `givenDeadline`):
  *    its inverse (`relativeTargetOf`) — refused when after the deadline;
- *  - else the default (`defaultRelativeTarget`, A1).
+ *  - else, with `leads` (the deadlines page, switch on — L1): null, NO
+ *    relative target; without, the default (`defaultRelativeTarget`, A1).
  */
 export function resolveRelativeTarget(opts: {
   sent: RelativeTarget | null
@@ -148,7 +151,8 @@ export function resolveRelativeTarget(opts: {
   firstDeadline: string
   timezone: string
   morningTime: string
-}): RelativeTarget {
+  leads?: boolean
+}): RelativeTarget | null {
   const { rule, firstDeadline, timezone } = opts
   let offset = opts.sent
   if (!offset && opts.targetAt) {
@@ -156,6 +160,7 @@ export function resolveRelativeTarget(opts: {
     if (!offset) throw new ValidationError(TARGET_AFTER_DEADLINE_MESSAGE)
   }
   // One walk of the rule for both the default and the validation.
+  if (!offset && opts.leads) return null
   const walk = deadlineWalk(rule, firstDeadline, timezone)
   offset ??= defaultRelativeTarget(rule, firstDeadline, timezone, opts.morningTime, walk)
   const problem = relativeTargetProblem(offset, rule, firstDeadline, timezone, walk)
@@ -220,9 +225,11 @@ export type RepeatPlan =
   | {
       kind: 'deadline'
       rrule: string | undefined
-      relative: RelativeTarget
+      /** Null: no relative target (the deadlines page holds each occurrence, L1). */
+      relative: RelativeTarget | null
       occurrenceAt: string
-      dueAt: string | undefined
+      /** null: this occurrence is left with no target (A5, or no relative target). */
+      dueAt: string | null | undefined
       /** The target the caller sent stopped at the deadline (`capped_at_deadline`). */
       capped: boolean
     }
@@ -231,6 +238,12 @@ interface PlanContext extends RowKind {
   timezone: string
   morningTime: string
   now: Date
+  /**
+   * The deadlines page (task-queue switch on, 2026-10-22): no default
+   * relative target (L1), and `target_at: null` removes THIS occurrence's
+   * target (A5: it goes on the deadlines page) instead of a 400.
+   */
+  leads?: boolean
 }
 
 /** The facts every branch reads. */
@@ -360,7 +373,9 @@ interface DeadlineSchedule {
 function planDeadlineAnchored(req: Request, becoming: boolean): RepeatPlan {
   const { input } = req
   if (input.deadline_at === null) throw new ValidationError(DEADLINE_CLEAR_MESSAGE)
-  if (input.due_at === null) throw new ValidationError(REPEAT_TARGET_CLEAR_MESSAGE)
+  if (input.due_at === null && !req.ctx.leads) {
+    throw new ValidationError(REPEAT_TARGET_CLEAR_MESSAGE)
+  }
   const schedule = deadlineRule(req, becoming)
   const occurrenceAt = occurrenceFor(req, schedule, becoming)
   const { relative, validated } = relativeFor(req, schedule, occurrenceAt, becoming)
@@ -447,7 +462,7 @@ function relativeFor(
   schedule: DeadlineSchedule,
   occurrenceAt: string,
   becoming: boolean,
-): { relative: RelativeTarget; validated: boolean } {
+): { relative: RelativeTarget | null; validated: boolean } {
   const days = sent(input.target_days_before, task.target_days_before)
   const time = sent(input.target_time, task.target_time)
   if ((days === null) !== (time === null)) throw new ValidationError(RELATIVE_TARGET_PAIR_MESSAGE)
@@ -464,6 +479,7 @@ function relativeFor(
       firstDeadline: occurrenceAt,
       timezone: ctx.timezone,
       morningTime: ctx.morningTime,
+      leads: ctx.leads,
     })
     return { relative, validated }
   }
@@ -490,12 +506,15 @@ function targetFor(
   plan: {
     schedule: DeadlineSchedule
     occurrenceAt: string
-    relative: RelativeTarget
+    relative: RelativeTarget | null
     changed: boolean
     becoming: boolean
   },
-): { dueAt: string | undefined; capped: boolean } {
+): { dueAt: string | null | undefined; capped: boolean } {
   const cap = (at: string) => capAtDeadline(at, plan.occurrenceAt, ctx.now)
+  // A5 (2026-10-22, switch on): Remove target on ONE occurrence — it goes on
+  // the deadlines page; the next advance re-derives the series' target.
+  if (input.due_at === null) return { dueAt: null, capped: false }
   if (input.due_at != null) {
     const dueAt = cap(input.due_at)
     return { dueAt, capped: dueAt !== input.due_at }
@@ -508,8 +527,8 @@ function targetFor(
     {
       rrule: plan.schedule.ruleFields.rrule,
       repeat_anchor: 'deadline',
-      target_days_before: plan.relative.days_before,
-      target_time: plan.relative.time,
+      target_days_before: plan.relative?.days_before ?? null,
+      target_time: plan.relative?.time ?? null,
     },
     plan.occurrenceAt,
     ctx.timezone,

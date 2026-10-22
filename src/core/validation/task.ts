@@ -288,6 +288,12 @@ function deckWithoutRule(data: { on_deck_day?: string | null; rrule?: string | n
  */
 const repeatAnchor = z.enum(['target', 'deadline'])
 const targetDaysBefore = z.number().int().min(0).max(366)
+/**
+ * The deadlines page's lead override (2026-10-22): local days before the
+ * deadline's day a deadline task with no target goes on the page; null = the
+ * default table. Clamped to D−1 at the near end (`leadFrom`).
+ */
+const leadDays = z.number().int().min(1).max(90)
 const targetTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected a time (HH:MM)')
 
 /**
@@ -346,6 +352,8 @@ export const taskCreateSchema = z
     repeat_anchor: repeatAnchor.optional(),
     target_days_before: targetDaysBefore.optional(),
     target_time: targetTime.optional(),
+    // The deadlines page (2026-10-22): the lead override; null = the default.
+    lead_days: leadDays.nullable().optional(),
     // Repeat ends (2026-10-22): one or the other; checked in `createTask`.
     repeat_count: repeatCount.optional(),
     repeat_until: repeatUntil.optional(),
@@ -408,6 +416,9 @@ export const taskUpdateSchema = z
     repeat_anchor: repeatAnchor.optional(),
     target_days_before: targetDaysBefore.nullable().optional(),
     target_time: targetTime.nullable().optional(),
+    // The deadlines page (2026-10-22): the lead override (series-level on a
+    // repeat); null = the default table. Re-derives `lead_from`.
+    lead_days: leadDays.nullable().optional(),
     // Repeat ends (2026-10-22): setting one clears the other; null clears it;
     // `rrule: null` clears both (`collectRepeatEnds`).
     repeat_count: repeatCount.optional(),

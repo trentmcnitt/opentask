@@ -223,6 +223,18 @@ export interface Task {
    */
   on_deck_day: string | null
   queued_from_deck_day: string | null
+  /**
+   * THE DEADLINES PAGE (2026-10-22, docs/TASK-MODEL.md § The deadlines page).
+   * `lead_from`: the local OpenTask day (yyyy-MM-dd) a deadline task with no
+   * target goes on the deadlines page — this instance's; derived on every
+   * deadline write and advance (`leadFor`), moved by Defer
+   * (`POST /api/task-segments/defer-lead`). Set on an ordinary task with a
+   * deadline and no relative target, dormant while it has a target; else
+   * null. `lead_days`: the user's override of the lead (local days before the
+   * deadline's day), series-level on a repeat; null = the default table.
+   */
+  lead_days: number | null
+  lead_from: string | null
 
   // Notifications
   last_notified_at: string | null

@@ -437,6 +437,14 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // The deadlines page (2026-10-22). Backfilled by `migrateDeadlineLeads`
+  // (task-queue switch on).
+  if (!hasColumn(database, 'tasks', 'lead_days')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN lead_days INTEGER DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'tasks', 'lead_from')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN lead_from TEXT DEFAULT NULL')
+  }
   // Deadline-anchored repeats (2026-10-21). NOT NULL DEFAULT 'target': every
   // existing repeat is target-anchored as it stands, so no backfill — the one
   // data step is `migrateRepeatAnchors`, for repeats that carry a deadline.

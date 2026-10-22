@@ -62,10 +62,11 @@ export type QueueKind = (typeof QUEUE_KINDS)[number]
 
 /**
  * A task segment's identity: a horizon, Upcoming (2026-10-12, the heads-up
- * segment — `upcomingState`, below), or one of the queue's two panels. In the
- * API, `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"`.
+ * segment — `upcomingState`, below), one of the queue's two panels, or the
+ * DEADLINES page (2026-10-22, `deadlinePlace` below). In the API,
+ * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"`.
  */
-export type SegmentKind = HorizonValue | 'upcoming' | QueueKind
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines'
 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
@@ -73,11 +74,14 @@ export function isQueueKind(kind: SegmentKind): kind is QueueKind {
 }
 
 /**
- * The order the screens walk the segments: the queue's two panels FIRST (spec
- * rule 6: "the first and foremost thing to handle"), then Upcoming directly
- * after Days and before Weeks, on a check-in day too (spec §2).
+ * The order the screens walk the segments: the DEADLINES page first (Trent,
+ * 10-22: "the deadlines page is FIRST in the queue carousel" — it is the only
+ * queue page that nags), then the queue's two panels (spec rule 6: "the first
+ * and foremost thing to handle"), then Upcoming directly after Days and before
+ * Weeks, on a check-in day too (spec §2).
  */
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
+  'deadlines',
   'queue_today',
   'queue_previous',
   'days',
@@ -251,6 +255,14 @@ export interface TargetWrite {
    * occurrence is their target.
    */
   autoEligible: boolean
+  /**
+   * THE DEADLINES PAGE (2026-10-22; the task-queue switch on — the server
+   * passes `taskQueueEnabled()`, plan A1): no automatic target is ever
+   * written. A deadline with no target is left target-less: its LEAD day
+   * (`lead_from`, `leadFor`) puts it on the deadlines page instead. Off: the
+   * automatic target, as before (kept one release, then deleted).
+   */
+  leads?: boolean
 }
 
 export interface ResolvedTarget {
@@ -294,7 +306,10 @@ export function resolveTarget(
     dueAt = null
     auto = false
   }
-  if (w.autoEligible && w.deadlineAt !== null && dueAt === null) {
+  // The deadlines page (switch on): a deadline with no target stays without
+  // one — clearing a target on a deadline task is a real Remove target, and a
+  // leftover automatic target (an old undo entry) goes with its deadline.
+  if (!w.leads && w.autoEligible && w.deadlineAt !== null && dueAt === null) {
     return { dueAt: autoTargetAt(w.deadlineAt, ctx, now), auto: true, capped: false }
   }
   if (dueAt !== null && capsAt(dueAt, w.deadlineAt, now)) {
@@ -903,13 +918,48 @@ export interface RepeatSchedule {
   repeat_anchor: RepeatAnchor | null
   target_days_before: number | null
   target_time: string | null
+  /**
+   * The deadlines page (2026-10-22): a target-less deadline-anchored repeat's
+   * lead override (`lead_days`, series-level), and the rule fields its
+   * default lead walks (`defaultLeadDays`). Read only for `leadFrom`.
+   */
+  lead_days?: number | null
+  recurrence_mode?: 'from_due' | 'from_completion' | null
+  anchor_time?: string | null
 }
 
-/** The dates of one occurrence (UTC ISO). `deadlineAt` is null on a target-anchored one. */
+/**
+ * The dates of one occurrence (UTC ISO). `deadlineAt` is null on a
+ * target-anchored one. `targetAt` is null on a deadline-anchored repeat with
+ * NO relative target (2026-10-22, plan L1: no fake targets) — its occurrence
+ * goes on the deadlines page from `leadFrom` (yyyy-MM-dd, the owner's
+ * OpenTask day) instead; `leadFrom` is null on every other occurrence, and
+ * when the caller passed no `LeadContext`.
+ */
 export interface OccurrenceDates {
   occurrenceAt: string
-  targetAt: string
+  targetAt: string | null
   deadlineAt: string | null
+  leadFrom: string | null
+}
+
+/**
+ * What `occurrenceDates` needs to derive a lead day: the owner's rollover
+ * time (the deadline's OpenTask day, `deadlineDay`) and the write's moment
+ * (a lead day is never before the day it is written). Every ADVANCE writer
+ * passes it (done, skip, skip until, put-back): each new occurrence gets its
+ * lead day re-derived, so a deferral never carries over.
+ */
+export interface LeadContext {
+  rolloverTime: string | null
+  now: Date
+}
+
+/** Whether a deadline-anchored schedule has a relative target (both offsets). */
+export function hasRelativeTarget(
+  schedule: Pick<RepeatSchedule, 'target_days_before' | 'target_time'>,
+): boolean {
+  return schedule.target_days_before !== null && schedule.target_time !== null
 }
 
 /** A deadline-anchored repeat's target, relative to its deadline. */
@@ -940,16 +990,29 @@ function localHHMM(at: DateTime): string {
  *    the deadline — the target is never after it (§8.2). Write-time validation
  *    (`relativeTargetProblem`) refuses an offset that would put it there, so
  *    the clamp only ever absorbs a DST hour.
- * A deadline-anchored row missing its offsets (the server never writes one)
- * reads as the deadline itself.
+ * A deadline-anchored row with no offsets (2026-10-22, the deadlines page:
+ * written with the task-queue switch on) has NO target — `targetAt` null —
+ * and, given a `LeadContext`, its lead day (`leadFrom`).
  */
 export function occurrenceDates(
   schedule: RepeatSchedule,
   occurrenceAt: string,
   timezone: string,
+  lead?: LeadContext,
 ): OccurrenceDates {
   if (!isDeadlineAnchored(schedule)) {
-    return { occurrenceAt, targetAt: occurrenceAt, deadlineAt: null }
+    return { occurrenceAt, targetAt: occurrenceAt, deadlineAt: null, leadFrom: null }
+  }
+  // NO RELATIVE TARGET (L1, 2026-10-22): the occurrence has no target at all
+  // — never "the deadline itself", which would be a fake target at the
+  // deadline. It goes on the deadlines page from its lead day.
+  if (!hasRelativeTarget(schedule)) {
+    return {
+      occurrenceAt,
+      targetAt: null,
+      deadlineAt: occurrenceAt,
+      leadFrom: lead ? repeatLeadFrom(schedule, occurrenceAt, timezone, lead) : null,
+    }
   }
   const deadline = DateTime.fromISO(occurrenceAt, { zone: 'utc' }).setZone(timezone)
   const day = deadline.startOf('day').minus({ days: schedule.target_days_before ?? 0 })
@@ -959,7 +1022,7 @@ export function occurrenceDates(
     timezone,
   )
   const targetAt = target.getTime() < deadline.toMillis() ? target.toISOString() : occurrenceAt
-  return { occurrenceAt, targetAt, deadlineAt: occurrenceAt }
+  return { occurrenceAt, targetAt, deadlineAt: occurrenceAt, leadFrom: null }
 }
 
 /**
@@ -993,6 +1056,8 @@ export function targetMoved(
 ): boolean {
   if (!task.rrule || !task.due_at || !task.occurrence_at) return false
   const derived = occurrenceDates(task, task.occurrence_at, timezone).targetAt
+  // A target on an occurrence that has none of its own (L1) is a pick.
+  if (derived === null) return true
   return Date.parse(task.due_at) !== Date.parse(derived)
 }
 
@@ -1379,7 +1444,7 @@ export function relativeTargetProblem(
   }
   const deadlines = walk
   for (let i = 1; i < deadlines.length; i++) {
-    const target = occurrenceDates(schedule, deadlines[i].toISOString(), timezone).targetAt
+    const target = occurrenceDates(schedule, deadlines[i].toISOString(), timezone).targetAt!
     if (Date.parse(target) <= deadlines[i - 1].getTime()) return 'overlaps_previous'
   }
   return null
@@ -1444,6 +1509,329 @@ export function defaultRelativeTarget(
   }
   if (wait === Infinity) wait = HEADS_UP_LONG_WAIT
   return leadTargetFor(wait, localHHMM(days[0]), morningTime)
+}
+
+/**
+ * The WAIT of a repeat's rule (A1, 2026-10-21): the smallest local-day gap
+ * between consecutive deadlines in the walk from `firstDeadline` — a
+ * twice-weekly rule (gaps of 3 and 4) waits 3, a monthly one 28. A rule with
+ * no second occurrence within the walk (yearly) reads as the longest wait.
+ */
+function ruleWait(
+  rule: RepeatRule,
+  firstDeadline: string,
+  timezone: string,
+  walk?: Date[],
+): number {
+  const days = (walk ?? deadlineWalk(rule, firstDeadline, timezone)).map((d) =>
+    DateTime.fromJSDate(d).setZone(timezone).startOf('day'),
+  )
+  let wait = Infinity
+  for (let i = 1; i < days.length; i++) wait = Math.min(wait, waitDays(days[i], days[i - 1]))
+  return wait === Infinity ? HEADS_UP_LONG_WAIT : wait
+}
+
+// ===========================================================================
+// THE DEADLINES PAGE — lead days (2026-10-22; docs/TASK-MODEL.md § The
+// deadlines page)
+// ===========================================================================
+
+/**
+ * THE DEADLINES PAGE replaces the deadline's automatic target (task-queue
+ * switch on; plan "Deadlines page", rulings 10-22). A deadline task with NO
+ * target is never over target; instead, from its LEAD DAY on, it sits on the
+ * deadlines page ("TASK QUEUE · DEADLINES"), and from the day before its
+ * deadline (D−1) the SAFETY NET holds it there — seen or not, only a target
+ * or done takes it off.
+ *
+ * `lead_from` (yyyy-MM-dd, the owner's OPENTASK day — rollover to rollover)
+ * is STORED, per instance: written whenever the deadline is (a create, a
+ * deadline change, each advance of a repeat), so a Defer (`POST
+ * /api/task-segments/defer-lead`) is a plain column write and "deferred" is
+ * `lead_from` ≠ what `leadFor` derives. `lead_days` is the user's override
+ * (NULL = the table below), series-level on a repeat.
+ *
+ * THE DAY: the deadline's OpenTask day D (`deadlineDay`) minus the lead —
+ * `lead_days`, else `deadlineLeadDays(wait)`: the one lead table the
+ * automatic target used, no new numbers. Never before today (the day it is
+ * written), never after D−1 (a lead under 1 is D−1); when D−1 has already
+ * come, D; a deadline already past, D (the page holds it at once).
+ *  - a one-off's WAIT is from today (the write's OpenTask day) to D, as the
+ *    automatic target counted it;
+ *  - a repeat's is its rule's (`defaultLeadDays`): the smallest gap between
+ *    consecutive deadlines.
+ *
+ * Only on an ordinary task with a deadline and no relative target: a
+ * deadline-anchored repeat WITH offsets has a real target every occurrence
+ * (ruling 2: a relative target is not a lead) and no lead day.
+ */
+export const LEAD_DAY_FORMAT = 'yyyy-MM-dd'
+
+/** The deadline's OPENTASK day (yyyy-MM-dd): the local day of `deadline − rollover time`. */
+export function deadlineDay(
+  deadlineAt: string,
+  timezone: string,
+  rolloverTime: string | null,
+): string {
+  return repeatingDeadlineDay(deadlineAt, timezone, rolloverTime)
+}
+
+/** Today as the owner's OpenTask day (the calendar day with no rollover time). */
+export function openTaskToday(timezone: string, now: Date, rolloverTime: string | null): string {
+  return rolloverTime ? openTaskDayOf(now, timezone, rolloverTime) : calendarToday(timezone, now)
+}
+
+/** `day` (yyyy-MM-dd) moved by `days` calendar days. */
+export function shiftDay(day: string, days: number, timezone: string): string {
+  return DateTime.fromISO(day, { zone: timezone }).plus({ days }).toFormat(LEAD_DAY_FORMAT)
+}
+
+/** Whole days from `from` to `to` (both yyyy-MM-dd). */
+function dayGap(to: string, from: string, timezone: string): number {
+  return waitDays(
+    DateTime.fromISO(to, { zone: timezone }),
+    DateTime.fromISO(from, { zone: timezone }),
+  )
+}
+
+/**
+ * THE LEAD DAY (pure): `leadDays` before the deadline's OpenTask day,
+ * clamped to [today, D−1] — or D once D−1 has come (see above).
+ */
+export function leadFrom(
+  deadlineAt: string,
+  leadDays: number,
+  timezone: string,
+  rolloverTime: string | null,
+  now: Date,
+): string {
+  const d = deadlineDay(deadlineAt, timezone, rolloverTime)
+  const today = openTaskToday(timezone, now, rolloverTime)
+  let day = shiftDay(d, -Math.max(leadDays, 1), timezone)
+  if (day < today) day = today
+  return day > d ? d : day
+}
+
+/**
+ * The default lead of a repeat's rule (`ruleWait` → `deadlineLeadDays`): the
+ * day before for a weekly rule, 3 days for a fortnightly one, 4 for a monthly
+ * one. Replaces `defaultRelativeTarget` (A1's fake target) with the switch on.
+ */
+export function defaultLeadDays(
+  rule: RepeatRule,
+  firstDeadline: string,
+  timezone: string,
+  walk?: Date[],
+): number {
+  return deadlineLeadDays(ruleWait(rule, firstDeadline, timezone, walk))
+}
+
+/** A target-less deadline-anchored repeat's lead day for the occurrence `occurrenceAt`. */
+function repeatLeadFrom(
+  schedule: RepeatSchedule,
+  occurrenceAt: string,
+  timezone: string,
+  lead: LeadContext,
+): string {
+  const days =
+    schedule.lead_days ??
+    defaultLeadDays(
+      {
+        rrule: schedule.rrule!,
+        recurrence_mode: schedule.recurrence_mode ?? 'from_due',
+        anchor_time: schedule.anchor_time ?? null,
+      },
+      occurrenceAt,
+      timezone,
+    )
+  return leadFrom(occurrenceAt, days, timezone, lead.rolloverTime, lead.now)
+}
+
+/** The fields `leadFor` reads (a task, or the row a write leaves). */
+export interface LeadFields extends RepeatSchedule {
+  deadline_at: string | null
+  occurrence_at?: string | null
+  is_reminder?: boolean
+  is_tracked?: boolean
+  progress_target?: number
+}
+
+/**
+ * THE LEAD DAY A ROW CARRIES (`lead_from`), derived now, or null: no
+ * deadline, a reminder or a quota, a deadline-anchored repeat WITH a relative
+ * target, or a target-anchored repeat (a legacy row the anchor migration
+ * skipped). A one-off: its wait from today; a target-less deadline-anchored
+ * repeat: its rule's, for the current occurrence (its deadline).
+ */
+export function leadFor(task: LeadFields, timezone: string, lead: LeadContext): string | null {
+  if (!task.deadline_at) return null
+  if (task.is_reminder || task.is_tracked || (task.progress_target ?? 1) > 1) return null
+  if (task.rrule) {
+    if (!isDeadlineAnchored(task) || hasRelativeTarget(task)) return null
+    return repeatLeadFrom(task, task.occurrence_at ?? task.deadline_at, timezone, lead)
+  }
+  const d = deadlineDay(task.deadline_at, timezone, lead.rolloverTime)
+  const wait = dayGap(d, openTaskToday(timezone, lead.now, lead.rolloverTime), timezone)
+  const days = task.lead_days ?? deadlineLeadDays(wait)
+  return leadFrom(task.deadline_at, days, timezone, lead.rolloverTime, lead.now)
+}
+
+/** The fields the page reads. */
+export interface DeadlinePageFields {
+  due_at: string | null
+  deadline_at: string | null
+  lead_from?: string | null
+  on_deck_day?: string | null
+  last_considered_at: string | null
+  target_set_at: string | null
+  created_at: string
+  rrule?: string | null
+  last_completed_at?: string | null
+}
+
+/** Where a target-less deadline task stands today (`deadlinePlace`). */
+export type DeadlinePlace =
+  /** On the deadlines page. `seen`: considered this OpenTask day. */
+  | { kind: 'page'; state: SegmentState; safetyNet: boolean; seen: boolean }
+  /** Before its lead day: an Upcoming heads-up, counted to the lead day. */
+  | { kind: 'upcoming'; state: SegmentState; target: string }
+  /** A future deck before the window (its deck's own Upcoming row decides). */
+  | { kind: 'deck' }
+  /** Nowhere today: before any heads-up, or the On deck section holds it. */
+  | null
+
+/** Whether a task belongs to the page's rules: a deadline, and no target. */
+export function isDeadlinePageTask(task: {
+  due_at: string | null
+  deadline_at: string | null
+}): boolean {
+  return task.deadline_at !== null && task.due_at === null
+}
+
+/**
+ * Whether the deadline's SAFETY NET holds the task today: from D−1 (the day
+ * before the deadline's OpenTask day) on, past the deadline included (A8).
+ */
+export function inSafetyNet(
+  deadlineAt: string,
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): boolean {
+  const d = deadlineDay(deadlineAt, timezone, rolloverTime)
+  return openTaskToday(timezone, now, rolloverTime) >= shiftDay(d, -1, timezone)
+}
+
+/**
+ * WHERE A TARGET-LESS DEADLINE TASK STANDS TODAY (the caller has already
+ * chosen an open, ordinary, unqueued task with a deadline and no target —
+ * `isDeadlinePageTask`). Every "today" here is the OPENTASK day (A7; ruling
+ * 3: one day boundary everywhere), so the page and its Upcoming hand-off
+ * never meet on the same day (TM-INV-09):
+ *
+ *  - IN THE WINDOW — `lead_from` ≤ today, or the safety net (D−1 on, also
+ *    when `lead_from` is missing): the page. State: in the safety net always
+ *    'waiting' (seeing does not silence it; `seen` says it was seen), else
+ *    'considered' when seen today, else 'waiting'. A deck does not take it
+ *    off — except ON the deck day itself outside the safety net, when the On
+ *    deck section holds it (null: rule 7's de-duplication). In the safety net
+ *    the page always shows it; the deck does not count there.
+ *  - BEFORE THE WINDOW: a future deck's own Upcoming row (`deck`); else the
+ *    Upcoming heads-ups counted to the lead day from `target_set_at` (ruling
+ *    3: counting to the deadline would land inside the window) — the same
+ *    rule as a picked target's (`headsUpDays`), the same carry-over.
+ */
+export function deadlinePlace(
+  task: DeadlinePageFields,
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): DeadlinePlace {
+  const today = openTaskToday(timezone, now, rolloverTime)
+  const dayOf = (iso: string) => openTaskToday(timezone, new Date(iso), rolloverTime)
+  const safetyNet = inSafetyNet(task.deadline_at!, timezone, now, rolloverTime)
+  const seen = !!task.last_considered_at && dayOf(task.last_considered_at) === today
+  const leadDay = task.lead_from ?? null
+  if (safetyNet || (leadDay !== null && leadDay <= today)) {
+    if (!safetyNet && deckIsToday(task, timezone, now)) return null
+    const state: SegmentState = !safetyNet && seen ? 'considered' : 'waiting'
+    return { kind: 'page', state, safetyNet, seen }
+  }
+  if (task.on_deck_day) return { kind: 'deck' }
+  if (leadDay === null) return null
+  return leadHeadsUp(task, leadDay, today, seen, timezone, dayOf)
+}
+
+/** The Upcoming heads-up counted to the lead day (`deadlinePlace`, before the window). */
+function leadHeadsUp(
+  task: DeadlinePageFields,
+  leadDay: string,
+  today: string,
+  seen: boolean,
+  timezone: string,
+  dayOf: (iso: string) => string,
+): DeadlinePlace {
+  const at = (day: string) => DateTime.fromISO(day, { zone: timezone })
+  const setAt = targetSetAtOf({ ...task, rrule: task.rrule ?? null, segment_deferred_at: null })
+  const heads = headsUpDays(at(leadDay), at(dayOf(setAt)))
+  const latest = [...heads].reverse().find((d) => d <= at(today))
+  if (!latest) return null
+  const target = at(leadDay).toUTC().toISO()!
+  if (seen) return { kind: 'upcoming', state: 'considered', target }
+  if (task.last_considered_at && at(dayOf(task.last_considered_at)) >= latest) return null
+  return { kind: 'upcoming', state: 'waiting', target }
+}
+
+/**
+ * The page's order (A4, APPROVED 10-22): priority, highest first; then the
+ * NEAREST deadline; then id.
+ */
+export function compareDeadlineRows(
+  a: { id: number; priority: number; deadline_at: string | null },
+  b: { id: number; priority: number; deadline_at: string | null },
+): number {
+  if (a.priority !== b.priority) return b.priority - a.priority
+  const da = a.deadline_at ? Date.parse(a.deadline_at) : Infinity
+  const db = b.deadline_at ? Date.parse(b.deadline_at) : Infinity
+  if (da !== db) return da < db ? -1 : 1
+  return a.id - b.id
+}
+
+/** Why a Defer of the lead day is refused for one task (`refused[].reason`). */
+export type LeadDeferRefusal = 'safety_net' | 'after_safety_net' | 'not_later' | 'not_on_page'
+
+export const LEAD_DEFER_MESSAGES: Record<LeadDeferRefusal, string> = {
+  safety_net: 'The deadline is close: only a target or done takes it off the deadlines page',
+  after_safety_net: 'That day is too close to the deadline: defer at most to two days before it',
+  not_later: 'Defer to a day after today',
+  not_on_page: 'Only a deadline task with no target is on the deadlines page',
+}
+
+/**
+ * DEFER (plan §3): moves THIS instance's lead day to `day` — later than
+ * today, and at most D−2 (the safety net's start minus one). Refused once
+ * the safety net holds the task (today ≥ D−1). Null when allowed.
+ */
+export function leadDeferRefusal(
+  task: { due_at: string | null; deadline_at: string | null },
+  day: string,
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): LeadDeferRefusal | null {
+  if (!isDeadlinePageTask(task)) return 'not_on_page'
+  if (inSafetyNet(task.deadline_at!, timezone, now, rolloverTime)) return 'safety_net'
+  if (day <= openTaskToday(timezone, now, rolloverTime)) return 'not_later'
+  return day > lastDeferDay(task.deadline_at!, timezone, rolloverTime) ? 'after_safety_net' : null
+}
+
+/** The latest day a Defer may pick (D−2), for the day menu. */
+export function lastDeferDay(
+  deadlineAt: string,
+  timezone: string,
+  rolloverTime: string | null,
+): string {
+  return shiftDay(deadlineDay(deadlineAt, timezone, rolloverTime), -2, timezone)
 }
 
 // ===========================================================================
@@ -1772,45 +2160,31 @@ export function deckSkip(task: {
 }
 
 /**
- * A1 (red team, APPROVED 2026-10-20): a deadline task goes on deck only while
- * its AUTOMATIC target is still ahead, and only BEFORE that target's
- * local day — so a deck never nags and Snooze-all never meets one.
- *  - `deadline_nagging`: the automatic target has arrived (or the deadline
- *    has passed) — "This deadline is close and already reminding you — use
- *    Today."
- *  - `after_auto_target`: the day is ON OR AFTER the automatic target's day
- *    (strict, review 2026-10-20: on its own day the deck would meet the nag).
- * The automatic target is the one the deck leaves: the stored one when the
- * target already is automatic, else (decking drops a picked target) the one
- * "Back to auto" computes now. No deadline: never refused.
- *
- * A REPEATING task (2026-10-20) has no automatic target — its deadline is per
- * occurrence — so it is judged against the deadline itself: refused once the
- * deadline has passed (`deadline_nagging`), or for a day on or after the
- * deadline's day (`after_auto_target`; the same two reasons, so the API's
- * enum is unchanged). `deckLimit` (the web's greyed days) matches.
+ * A1, THE DEADLINES PAGE'S RULE (2026-10-22, plan §5 — replaces the 10-20
+ * "before the automatic target's day" rule): a deadline task, one-off or
+ * repeating, goes on deck for any day up to and INCLUDING its deadline's
+ * OpenTask day D (`repeatingDeadlineDay`), while the deadline is ahead:
+ *  - `deadline_nagging` (the API enum, kept): the deadline has passed —
+ *    "This deadline has passed";
+ *  - `after_auto_target` (the enum, kept): the day is after D — "That day is
+ *    after this task's deadline".
+ * A deck on D itself is allowed: a target-less deadline task's safety net
+ * (from D−1) still holds it on the deadlines page, deck or not. No deadline:
+ * never refused. Decks exist only with the task-queue switch on, so this is
+ * the only rule there is. `rolloverTime` (the owner's, `deckRolloverTime`)
+ * makes D the OpenTask day; without one, the calendar day.
  */
 export function deckRefusal(
-  task: Pick<TargetFields, 'due_at' | 'deadline_at' | 'target_auto' | 'rrule'>,
+  task: Pick<TargetFields, 'deadline_at'>,
   day: string,
   ctx: TargetContext,
   now: Date,
-  /** The owner's rollover time, for a repeating task's deadline day (`repeatingDeadlineDay`). */
   rolloverTime: string | null = null,
 ): DeckRefusal | null {
   if (!task.deadline_at) return null
-  if (task.rrule) {
-    if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'
-    const deadlineDay = repeatingDeadlineDay(task.deadline_at, ctx.timezone, rolloverTime)
-    return day >= deadlineDay ? 'after_auto_target' : null
-  }
-  const auto =
-    task.target_auto && task.due_at ? task.due_at : autoTargetAt(task.deadline_at, ctx, now)
-  if (Date.parse(auto) <= now.getTime()) return 'deadline_nagging'
-  const autoDay = DateTime.fromISO(auto, { zone: 'utc' })
-    .setZone(ctx.timezone)
-    .toFormat(DECK_DAY_FORMAT)
-  return day >= autoDay ? 'after_auto_target' : null
+  if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'
+  const deadlineDay = repeatingDeadlineDay(task.deadline_at, ctx.timezone, rolloverTime)
+  return day > deadlineDay ? 'after_auto_target' : null
 }
 
 /**
@@ -1833,8 +2207,8 @@ export function repeatingDeadlineDay(
 
 /** The refusal's words (the API's `refused[].message`; D2's toast reads the first). */
 export const DECK_REFUSAL_MESSAGES: Record<DeckRefusal, string> = {
-  deadline_nagging: 'This deadline is close and already reminding you — use Today.',
-  after_auto_target: 'That day is after this deadline starts reminding you.',
+  deadline_nagging: 'This deadline has passed.',
+  after_auto_target: "That day is after this task's deadline.",
 }
 
 /**

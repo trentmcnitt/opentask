@@ -215,7 +215,10 @@ export function occurrenceDiffers(
   const occurrence = DateTime.fromISO(task.occurrence_at, { zone: 'utc' }).setZone(timezone)
   const day = occurrence.toFormat('ccc LLL d')
   if (task.repeat_anchor !== 'deadline') return day
-  const target = task.due_at ?? occurrenceDates(schedule, task.occurrence_at, timezone).targetAt
+  const target =
+    task.due_at ??
+    occurrenceDates(schedule, task.occurrence_at, timezone).targetAt ??
+    task.occurrence_at
   const targetDay = DateTime.fromISO(target, { zone: 'utc' }).setZone(timezone)
   return targetDay.hasSame(occurrence, 'day') ? day : `${day} (deadline)`
 }

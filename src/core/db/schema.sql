@@ -304,6 +304,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- rollover remembered when it sent an undone deck to the queue.
   on_deck_day TEXT DEFAULT NULL,
   queued_from_deck_day TEXT DEFAULT NULL,
+  -- THE DEADLINES PAGE (2026-10-22, docs/TASK-MODEL.md § The deadlines page):
+  -- lead_from = the owner's OpenTask day (yyyy-MM-dd) a deadline task with no
+  -- target goes on the deadlines page (this instance's; derived on every
+  -- deadline write and advance, moved by Defer — leadFor in
+  -- src/lib/task-segments.ts). lead_days = the user's override of the lead
+  -- (days before the deadline's day); NULL = the default table.
+  lead_days INTEGER DEFAULT NULL,
+  lead_from TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

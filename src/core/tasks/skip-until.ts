@@ -376,7 +376,9 @@ function targetOnOrAfter(
   walked: { landing: string; skipped: number },
 ): { landing: string; skipped: number } {
   let { landing, skipped } = walked
-  while (Date.parse(occurrenceDates(task, landing, timezone).targetAt) < untilStart.getTime()) {
+  // An occurrence with no target (L1) is judged by its deadline.
+  const nagsAt = (at: string) => occurrenceDates(task, at, timezone).targetAt ?? at
+  while (Date.parse(nagsAt(landing)) < untilStart.getTime()) {
     if (++skipped > MAX_SKIPPED) throw tooManySkips()
     landing = nextLanding({ ...task, occurrence_at: landing }, timezone, new Date(landing))
   }

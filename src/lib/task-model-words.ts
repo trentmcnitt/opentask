@@ -76,6 +76,9 @@ export const UPCOMING_LABEL = 'Upcoming'
  * things that were taken off and that potentially will stay off." Display
  * text only: the kind strings the API sends do not change.
  */
+/** The deadlines page's title word (2026-10-22): "Task queue · Deadlines". */
+export const DEADLINES_PAGE_TITLE = 'Deadlines'
+
 export const QUEUE_PANEL_TITLES = {
   queue_today: "Today's pulls",
   queue_previous: 'Previous pulls',

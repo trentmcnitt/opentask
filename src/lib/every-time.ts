@@ -126,6 +126,13 @@ export interface EveryTimeContext {
   /** The user's Morning time (HH:MM), the default target time. */
   morningTime: string
   now: Date
+  /**
+   * The deadlines page is on (the task-queue switch, 2026-10-22, plan L1): a
+   * one-off with a deadline and no target turned into a deadline-anchored
+   * repeat gets NO default relative target (`noTarget`) — its occurrences go
+   * on the deadlines page from their lead day instead.
+   */
+  leads?: boolean
 }
 
 /** The schedule being edited (plan §4.2). */
@@ -140,6 +147,12 @@ export interface EveryTimeDraft {
   deadlineTime: string | null
   /** Local days from the deadline back to the target (deadline-anchored only). */
   daysBefore: number
+  /**
+   * Deadline-anchored with NO relative target (2026-10-22, L1: the deadlines
+   * page holds each occurrence): `targetTime` / `daysBefore` are only the
+   * picker's starting point and are not sent. Picking either sets a target.
+   */
+  noTarget?: boolean
   mode: Mode
   /** "Stop repeating" is staged. */
   stop: boolean
@@ -258,6 +271,9 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
         deadlineTime: ruleTime,
         targetTime: task.target_time ?? ruleTime,
         daysBefore: task.target_days_before ?? 0,
+        ...(task.target_days_before === null || task.target_time === null
+          ? { noTarget: true }
+          : {}),
       }
     }
     return { ...base, anchor: 'target', targetTime: ruleTime, deadlineTime: null, daysBefore: 0 }
@@ -301,6 +317,17 @@ function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft
     : null
   if (offset && relativeTargetProblem(offset, fields, task.deadline_at, timezone, walk)) {
     offset = null
+  }
+  // L1 (2026-10-22): with the deadlines page, no default — no fake target.
+  if (!offset && ctx.leads) {
+    return {
+      ...base,
+      anchor: 'deadline',
+      deadlineTime,
+      targetTime: deadlineTime,
+      daysBefore: 0,
+      noTarget: true,
+    }
   }
   offset ??= defaultRelativeTarget(fields, task.deadline_at, timezone, ctx.morningTime, walk)
   return {
@@ -429,11 +456,13 @@ function scheduleAction(d: EveryTimeDraft, action: DraftAction): EveryTimeDraft 
   const deadline = d.anchor === 'deadline'
   switch (action.type) {
     case 'targetTime':
-      return { ...d, targetTime: action.time }
+      return { ...d, targetTime: action.time, noTarget: false }
     case 'deadlineTime':
       return deadline ? { ...d, deadlineTime: action.time } : d
     case 'daysBefore':
-      return deadline ? { ...d, daysBefore: Math.max(0, Math.floor(action.days)) } : d
+      return deadline
+        ? { ...d, daysBefore: Math.max(0, Math.floor(action.days)), noTarget: false }
+        : d
     case 'addDeadline':
       return deadline ? d : addDeadline(d, action.time, action.ctx)
     case 'anchor':
@@ -623,9 +652,10 @@ function deadlinePatch(
   const patch: EveryTimePatch = {}
   const wasDeadline = isDeadlineAnchored(task)
   const offsetsChanged =
-    !wasDeadline ||
-    draft.daysBefore !== task.target_days_before ||
-    draft.targetTime !== task.target_time
+    !draft.noTarget &&
+    (!wasDeadline ||
+      draft.daysBefore !== task.target_days_before ||
+      draft.targetTime !== task.target_time)
   if (offsetsChanged) {
     patch.target_days_before = draft.daysBefore
     patch.target_time = draft.targetTime
@@ -924,7 +954,8 @@ function deadlineStart(
 }
 
 export interface NextDate {
-  targetAt: string
+  /** Null on a deadline-anchored schedule with no relative target (L1). */
+  targetAt: string | null
   /** Null on a target-anchored schedule. */
   deadlineAt: string | null
   /** The series ends with this one (its end, judged by `repeatStep`). */
@@ -962,8 +993,8 @@ export function nextDates(
   const schedule = {
     rrule,
     repeat_anchor: draft.anchor,
-    target_days_before: draft.daysBefore,
-    target_time: draft.targetTime,
+    target_days_before: draft.noTarget ? null : draft.daysBefore,
+    target_time: draft.noTarget ? null : draft.targetTime,
   }
   const dates = walkInSeries(task, draft, first, walk, count, ctx).map(({ at, last }) => {
     const o = occurrenceDates(schedule, at, ctx.timezone)
@@ -1028,6 +1059,12 @@ function walkInSeries(
  */
 export function nextDateWords(date: NextDate, timezone: string): string {
   const last = date.last ? ' · last one' : ''
+  // No target of its own (L1, the deadlines page): the deadline alone.
+  if (date.targetAt === null) {
+    return date.deadlineAt
+      ? `deadline ${local(date.deadlineAt, timezone).toFormat('ccc LLL d')}${last}`
+      : ''
+  }
   const target = local(date.targetAt, timezone)
   if (!date.deadlineAt) return `${target.toFormat('ccc LLL d')}${last}`
   const deadline = local(date.deadlineAt, timezone)

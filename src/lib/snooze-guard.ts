@@ -119,7 +119,8 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
         target_days_before: task.target_days_before ?? null,
         target_time: task.target_time ?? null,
       }
-      return new Date(occurrenceDates(schedule, next.toISOString(), timezone).targetAt)
+      // No target of its own (L1): the occurrence (its deadline) is the limit.
+      return new Date(occurrenceDates(schedule, next.toISOString(), timezone).targetAt ?? next)
     }
     const next = computeNextOccurrence({
       rrule: task.rrule,

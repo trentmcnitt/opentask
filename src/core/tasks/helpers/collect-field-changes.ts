@@ -32,7 +32,11 @@ import {
   deckRefusal,
   deckSkip,
   hasPickedTarget,
+  hasRelativeTarget,
+  isDeadlineAnchored,
+  leadFor,
   occurrenceDates,
+  openTaskToday,
   occurrenceDayAtRuleTime,
   occurrenceIsPersonal,
   resolveTarget,
@@ -44,6 +48,7 @@ import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
 import { collectDeckClear, deckRolloverTime } from '../deck-clear'
 import { taskQueueEnabled } from '../task-queue'
+import { rolloverTimeForUser } from '../rollover-time'
 import {
   REPEAT_END_MESSAGES,
   planRepeatSchedule,
@@ -202,6 +207,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     timezone: userTimezone,
     morningTime: ctx.morningTime,
     now,
+    leads: taskQueueEnabled(),
   })
   const retired = withRuleTime(
     task,
@@ -274,6 +280,13 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   if (target.auto !== task.target_auto) {
     trackField(data, 'target_auto', task.target_auto, target.auto, undefined, target.auto ? 1 : 0)
   }
+  // The deadlines page (2026-10-22): the lead override and the lead day.
+  collectLead(data, task, input, {
+    isReminder: willBeReminder,
+    isTracked: willBeTracked,
+    timezone: userTimezone,
+    now,
+  })
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
@@ -430,6 +443,8 @@ function resolveTargetInput(
       deadlineAt,
       deadlineChanged: deadlineAt !== task.deadline_at,
       autoEligible: !rrule && !opts.willBeReminder && !opts.willBeTracked,
+      // The deadlines page (switch on): no automatic target is written.
+      leads: taskQueueEnabled(),
     },
     opts.ctx,
     opts.now,
@@ -498,12 +513,11 @@ function prepareDeck(
   }
   const problem = deckDayProblem(day, opts.ctx.timezone, opts.now)
   if (problem) throw new ValidationError(problem)
-  // A1 against the RESULTING deadline: a new one re-derives its automatic
-  // target, so the stored target says nothing about it.
-  const judged =
-    input.deadline_at !== undefined
-      ? { deadline_at: input.deadline_at, due_at: null, target_auto: false, rrule: task.rrule }
-      : task
+  // A1 (2026-10-22) against the RESULTING deadline: the deck day at most its
+  // OpenTask day, while it is ahead.
+  const judged = {
+    deadline_at: input.deadline_at !== undefined ? input.deadline_at : task.deadline_at,
+  }
   const refusal = deckRefusal(judged, day, opts.ctx, opts.now, deckRolloverTime(task))
   if (refusal) {
     throw new ValidationError(
@@ -594,10 +608,92 @@ function collectRepeatingUndeck(
     target_time: after('target_time'),
   }
   const restored = occurrenceDates(schedule, occurrence, left.timezone).targetAt
+  // No relative target (L1): the occurrence has none to come back — it stays
+  // target-less, on the deadlines page from its lead day.
+  if (restored === null) return
   trackField(data, 'due_at', task.due_at, restored)
   if (task.original_due_at !== restored && !data.fieldsChanged.includes('original_due_at')) {
     trackField(data, 'original_due_at', task.original_due_at, restored)
   }
+}
+
+/** The fields whose change re-derives the lead day (`collectLead`). */
+const LEAD_INPUTS = [
+  'deadline_at',
+  'rrule',
+  'repeat_anchor',
+  'target_days_before',
+  'target_time',
+  'occurrence_at',
+  'is_reminder',
+  'is_tracked',
+  'progress_target',
+  'lead_days',
+]
+
+/**
+ * THE DEADLINES PAGE (2026-10-22; docs/TASK-MODEL.md § The deadlines page):
+ * `lead_days` as sent (the override; a reminder or a quota keeps none), and
+ * `lead_from` — this instance's lead day — RE-DERIVED (`leadFor`, from now)
+ * whenever the write changes the deadline, the schedule, the row's kind or
+ * the override: a deferral is dropped, as a deadline change used to re-derive
+ * the automatic target. Also filled when the row it leaves is a target-less
+ * deadline task that has none (a row from before the column).
+ *
+ * A5 (switch on): a deadline-anchored repeat WITH a relative target whose
+ * target this write REMOVES (`target_at: null`) goes on the page today; the
+ * next advance gives the next occurrence its derived target again.
+ *
+ * Written whatever the task-queue switch says (dormant while the task has a
+ * target); only the page itself, and the automatic target's absence, ride
+ * the switch.
+ */
+function collectLead(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  left: { isReminder: boolean; isTracked: boolean; timezone: string; now: Date },
+): void {
+  const after = <K extends keyof Task>(field: K): Task[K] =>
+    data.afterState[field] !== undefined ? (data.afterState[field] as Task[K]) : task[field]
+  const ordinary = !left.isReminder && !left.isTracked
+  if (input.lead_days !== undefined) {
+    const leadDays = ordinary ? input.lead_days : null
+    if (leadDays !== task.lead_days) trackField(data, 'lead_days', task.lead_days, leadDays)
+  } else if (!ordinary && task.lead_days !== null) {
+    trackField(data, 'lead_days', task.lead_days, null)
+  }
+  const row = {
+    rrule: after('rrule'),
+    repeat_anchor: after('repeat_anchor'),
+    target_days_before: after('target_days_before'),
+    target_time: after('target_time'),
+    recurrence_mode: after('recurrence_mode'),
+    anchor_time: after('anchor_time'),
+    lead_days: after('lead_days'),
+    deadline_at: after('deadline_at'),
+    occurrence_at: after('occurrence_at'),
+    is_reminder: left.isReminder,
+    is_tracked: left.isTracked,
+  }
+  const dueAt = after('due_at')
+  const changed = LEAD_INPUTS.some((f) => data.fieldsChanged.includes(f))
+  const targetLess = row.deadline_at !== null && dueAt === null
+  const removedRepeatTarget =
+    ordinary &&
+    targetLess &&
+    task.due_at !== null &&
+    data.fieldsChanged.includes('due_at') &&
+    !after('on_deck_day') &&
+    isDeadlineAnchored(row) &&
+    hasRelativeTarget(row)
+  if (!changed && !removedRepeatTarget && !(targetLess && task.lead_from === null)) return
+  const rolloverTime = rolloverTimeForUser(task.user_id)
+  const lead = { rolloverTime, now: left.now }
+  const next = removedRepeatTarget
+    ? openTaskToday(left.timezone, left.now, rolloverTime)
+    : leadFor(row, left.timezone, lead)
+  if (next !== task.lead_from) trackField(data, 'lead_from', task.lead_from, next)
 }
 
 /**
@@ -642,8 +738,8 @@ function collectRepeatSchedule(data: FieldChangeData, task: Task, repeat: Repeat
     repeat.kind === 'deadline'
       ? {
           repeat_anchor: 'deadline' as const,
-          target_days_before: repeat.relative.days_before,
-          target_time: repeat.relative.time,
+          target_days_before: repeat.relative?.days_before ?? null,
+          target_time: repeat.relative?.time ?? null,
         }
       : { repeat_anchor: 'target' as const, target_days_before: null, target_time: null }
   if (after.repeat_anchor !== task.repeat_anchor) {
@@ -1416,7 +1512,8 @@ function keepPersonalOccurrence(
     const scheduled = computeFirstOccurrence(rrule, anchorTime, left.timezone).toISOString()
     return { changed: true, scheduled }
   }
-  const target = occurrenceDates(task, task.occurrence_at!, left.timezone).targetAt
+  const target =
+    occurrenceDates(task, task.occurrence_at!, left.timezone).targetAt ?? task.occurrence_at!
   const scheduled = occurrenceDayAtRuleTime(
     target,
     { rrule, anchor_time: anchorTime },

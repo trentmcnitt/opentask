@@ -30,6 +30,7 @@ import {
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
   QUEUE_PANEL_TITLES,
+  DEADLINES_PAGE_TITLE,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
   taskQueueTitle,
@@ -146,6 +147,7 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
  */
 export function segmentTitle(kind: SegmentKind): string {
   if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
+  if (kind === 'deadlines') return taskQueueTitle(DEADLINES_PAGE_TITLE)
   return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
 }
 

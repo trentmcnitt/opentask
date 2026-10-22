@@ -72,6 +72,10 @@ const VALID_TASK_COLUMNS = new Set([
   // over now's deck strip all put these in undo snapshots.
   'on_deck_day',
   'queued_from_deck_day',
+  // The deadlines page (2026-10-22): a deadline write re-derives the lead
+  // day, Defer moves it, PATCH sets the override — all in undo snapshots.
+  'lead_days',
+  'lead_from',
   // Retired 2026-10-12 but KEPT: undo entries written before then name them,
   // and an unknown field throws (wedging the stack — see `is_tracked`).
   'deadline_nag_off',
