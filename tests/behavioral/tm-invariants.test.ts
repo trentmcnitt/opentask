@@ -978,3 +978,118 @@ describe('TM-INV: deadline-anchored repeats (seeded random)', () => {
     expect(ruleChanges).toBeGreaterThan(10)
   }, 30_000)
 })
+
+describe('TM-INV: repeat ends (seeded random)', () => {
+  afterAll(() => teardownTestDb())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  /**
+   * TM-INV-09 (repeat ends, 2026-10-22; docs/TASK-MODEL.md § Repeat ends):
+   * random repeating tasks of both anchors with a count or a date, through
+   * random done, skip, skip until, moves, put-backs and rollovers. After
+   * every write:
+   *  1. `repeat_count_used` ≤ `repeat_count`;
+   *  2. a COUNT series is closed (done, or archived by a skip) exactly when
+   *     its count is used up — never `done=1` with used < count;
+   *  3. an open DATE series' occurrence is on or before its last day;
+   *  4. a closed series refuses done and skip (400).
+   */
+  test('TM-INV-09: the end is honoured, whatever the writes', () => {
+    const SEED9 = SEED + 9
+    const r = rng(SEED9)
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setupTestDb()
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, 'Morning', '06:30', 0)",
+    ).run(TEST_USER_ID)
+    const RULES = [
+      'FREQ=DAILY;BYHOUR=17;BYMINUTE=0',
+      'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
+      'FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=21;BYMINUTE=0',
+    ]
+    let closed = 0
+    for (let c = 0; c < 40; c++) {
+      let clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
+        minutes: Math.floor(r() * 10 * 24 * 60),
+      })
+      vi.setSystemTime(clock.toJSDate())
+      db.prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?').run(
+        clock.minus({ days: 1 }).toISODate(),
+        TEST_USER_ID,
+      )
+      const rrule = pick(RULES)
+      const first = clock.plus({ days: 1 + Math.floor(r() * 5) }).set({
+        hour: Number(/BYHOUR=(\d+)/.exec(rrule)![1]),
+        minute: 0,
+      })
+      const byCount = r() < 0.5
+      const end = byCount
+        ? { repeat_count: 1 + Math.floor(r() * 5) }
+        : { repeat_until: first.plus({ days: Math.floor(r() * 20) }).toISODate()! }
+      const dated =
+        r() < 0.5 ? { deadline_at: first.toUTC().toISO()! } : { due_at: first.toUTC().toISO()! }
+      const t = createTask({ ...u, input: { title: `re ${c}`, rrule, ...dated, ...end } })
+      const label = (step: string) => `seed ${SEED9} case ${c} ${step}`
+      const check = (step: string) => {
+        const task = getTaskById(t.id)!
+        const l = label(step)
+        const isClosed = task.done || task.archived_at !== null
+        if (task.repeat_count !== null) {
+          expect(task.repeat_count_used, `${l}: used ≤ count`).toBeLessThanOrEqual(
+            task.repeat_count,
+          )
+          expect(isClosed, `${l}: closed iff the count is used`).toBe(
+            task.repeat_count_used === task.repeat_count,
+          )
+        } else if (!isClosed) {
+          const day = DateTime.fromISO(task.occurrence_at!, { zone: 'utc' })
+            .setZone(tz)
+            .toISODate()!
+          expect(day <= task.repeat_until!, `${l}: open past the end`).toBe(true)
+        }
+        if (isClosed) {
+          expect(() => markDone({ ...u, taskId: t.id }), `${l}: done again`).toThrow(
+            ValidationError,
+          )
+          expect(() => skipOccurrence({ ...u, taskId: t.id }), `${l}: skip again`).toThrow(
+            ValidationError,
+          )
+        }
+        return isClosed
+      }
+      check('create')
+      for (let s = 0; s < 10; s++) {
+        clock = clock.plus({ minutes: Math.floor(r() * 3 * 24 * 60) })
+        vi.setSystemTime(clock.toJSDate())
+        const before = getTaskById(t.id)!
+        if (before.done || before.archived_at) break
+        const op = Math.floor(r() * 5)
+        if (op === 0) markDone({ ...u, taskId: t.id })
+        else if (op === 1) skipOccurrence({ ...u, taskId: t.id })
+        else if (op === 2) {
+          const until = clock.plus({ days: 1 + Math.floor(r() * 15) }).toISODate()!
+          skipUntil({ ...u, taskIds: [t.id], until })
+        } else if (op === 3) {
+          // A move of the target: never the schedule, never the end.
+          const to = clock.plus({ hours: 1 + Math.floor(r() * 48) })
+          try {
+            updateTask({ ...u, taskId: t.id, input: { due_at: to.toUTC().toISO()! } })
+          } catch (err) {
+            if (!(err instanceof ValidationError)) throw err
+          }
+        } else runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
+        if (check(`op ${s}:${op}`)) {
+          closed++
+          break
+        }
+      }
+    }
+    // The seed closes plenty of series by each path.
+    expect(closed).toBeGreaterThan(10)
+  }, 30_000)
+})

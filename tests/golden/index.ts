@@ -10,6 +10,7 @@ import { taskQueueScenarios } from './task-queue'
 import { onDeckScenarios } from './on-deck'
 import { onDeckRepeatingScenarios } from './on-deck-repeating'
 import { repeatAnchorScenarios } from './repeat-anchor'
+import { repeatEndsScenarios } from './repeat-ends'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -23,4 +24,5 @@ export const goldenScenarios = [
   ...onDeckScenarios,
   ...onDeckRepeatingScenarios,
   ...repeatAnchorScenarios,
+  ...repeatEndsScenarios,
 ]

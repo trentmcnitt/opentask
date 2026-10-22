@@ -617,8 +617,8 @@ function untilProblem(
   now: Date,
 ): RepeatEndProblem | null {
   if (check.untilWritten) {
-    const day = DateTime.fromFormat(until, 'yyyy-MM-dd', { zone: timezone })
-    if (!day.isValid) return 'until_invalid'
+    const day = parseLocalDay(until, timezone)
+    if (!day) return 'until_invalid'
     const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
     if (day < today) return 'until_past'
     if (day > today.plus({ years: MAX_REPEAT_UNTIL_YEARS })) return 'until_too_far'
@@ -630,4 +630,14 @@ function untilProblem(
     if (occurrenceDay > until) return 'until_before_occurrence'
   }
   return null
+}
+
+/** A yyyy-MM-dd day in the zone, or null when it isn't a real date (Luxon may throw on one). */
+function parseLocalDay(day: string, timezone: string): DateTime | null {
+  try {
+    const parsed = DateTime.fromFormat(day, 'yyyy-MM-dd', { zone: timezone })
+    return parsed.isValid ? parsed : null
+  } catch {
+    return null
+  }
 }
