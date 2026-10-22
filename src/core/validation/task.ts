@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { ValidationError } from '@/core/errors'
 import { isValidRRule, isPeriodRRule, normalizeRRule } from '@/core/recurrence/rrule-builder'
+import { MAX_REPEAT_COUNT, REPEAT_END_MESSAGES } from '@/core/tasks/repeat-schedule'
 
 /**
  * ISO 8601 datetime string validator
@@ -289,6 +290,33 @@ const repeatAnchor = z.enum(['target', 'deadline'])
 const targetDaysBefore = z.number().int().min(0).max(366)
 const targetTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected a time (HH:MM)')
 
+/**
+ * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends): "After N
+ * times" and "On date" (a local calendar date). Only the shapes here; the
+ * rest — a rule, the row's kind, N above the used count, the date today or
+ * later and not before the occurrence — needs the row and the owner's zone
+ * (`repeatEndProblem`, src/core/tasks/repeat-schedule.ts). COUNT / UNTIL
+ * sent inside `rrule` are lifted into these first (`liftRuleEnd`).
+ */
+const repeatCount = z
+  .number({ message: REPEAT_END_MESSAGES.count_range })
+  .int(REPEAT_END_MESSAGES.count_range)
+  .min(1, REPEAT_END_MESSAGES.count_range)
+  .max(MAX_REPEAT_COUNT, REPEAT_END_MESSAGES.count_range)
+  .nullable()
+const repeatUntil = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, REPEAT_END_MESSAGES.until_invalid)
+  .nullable()
+
+/** A bulk edit never sets an end (A11). */
+export const BULK_ENDS_MESSAGE =
+  'Repeat ends are set per task: send repeat_count / repeat_until (or COUNT / UNTIL in rrule) to PATCH /api/tasks/{id}'
+
+function oneEnd(data: { repeat_count?: number | null; repeat_until?: string | null }): boolean {
+  return !(data.repeat_count != null && data.repeat_until != null)
+}
+
 export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
@@ -318,6 +346,9 @@ export const taskCreateSchema = z
     repeat_anchor: repeatAnchor.optional(),
     target_days_before: targetDaysBefore.optional(),
     target_time: targetTime.optional(),
+    // Repeat ends (2026-10-22): one or the other; checked in `createTask`.
+    repeat_count: repeatCount.optional(),
+    repeat_until: repeatUntil.optional(),
     project_id: z.number().int().positive().optional(),
     priority: priority.default(0).optional(),
     labels: labels.default([]).optional(),
@@ -342,6 +373,7 @@ export const taskCreateSchema = z
     on_deck_day: deckDay.nullable().optional(),
   })
   .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })
+  .refine(oneEnd, { message: REPEAT_END_MESSAGES.both_ends, path: ['repeat_count'] })
   .refine((data) => !(data.on_deck_day && data.due_at !== undefined && data.due_at !== null), {
     message: CREATE_DECK_WITH_TARGET_MESSAGE,
     path: ['on_deck_day'],
@@ -376,6 +408,10 @@ export const taskUpdateSchema = z
     repeat_anchor: repeatAnchor.optional(),
     target_days_before: targetDaysBefore.nullable().optional(),
     target_time: targetTime.nullable().optional(),
+    // Repeat ends (2026-10-22): setting one clears the other; null clears it;
+    // `rrule: null` clears both (`collectRepeatEnds`).
+    repeat_count: repeatCount.optional(),
+    repeat_until: repeatUntil.optional(),
     project_id: z.number().int().positive().optional(),
     priority: priority.optional(),
     labels: labels.optional(),
@@ -406,6 +442,7 @@ export const taskUpdateSchema = z
   // A PATCH carrying a bare period rule must say the task is tracked in the
   // same request (is_tracked or progress_target); the schema has no task to ask.
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
+  .refine(oneEnd, { message: REPEAT_END_MESSAGES.both_ends, path: ['repeat_count'] })
   .refine(deckAlone, { message: DECK_WITH_DATE_MESSAGE, path: ['on_deck_day'] })
   .refine(deckWithoutRule, { message: DECK_WITH_RULE_MESSAGE, path: ['on_deck_day'] })
 
@@ -537,6 +574,12 @@ export const bulkEditSchema = z
     message: DECK_WITH_DATE_MESSAGE,
     path: ['changes', 'on_deck_day'],
   })
+  // Repeat ends (2026-10-22, A11): ends are set per task — one bulk "6 more"
+  // would give every task its own six.
+  .refine(
+    (data) => data.changes.repeat_count === undefined && data.changes.repeat_until === undefined,
+    { message: BULK_ENDS_MESSAGE, path: ['changes', 'repeat_count'] },
+  )
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>
 
@@ -629,12 +672,76 @@ export function normalizeTargetAliases(input: unknown): unknown {
   return out
 }
 
+export const RULE_END_CONFLICT_MESSAGE =
+  'The rule says one end and repeat_count / repeat_until another: send the end once'
+
+/** The rule's COUNT / UNTIL, if any, and the rule without them. */
+function splitRuleEnd(rrule: string): {
+  rule: string
+  count: number | null | undefined
+  until: string | null | undefined
+} {
+  let count: number | null | undefined
+  let until: string | null | undefined
+  const kept: string[] = []
+  for (const part of rrule.split(';')) {
+    const [key, value = ''] = part.split('=')
+    const name = key.trim().toUpperCase()
+    if (name === 'COUNT') {
+      if (!/^\d+$/.test(value.trim())) throw new ValidationError(REPEAT_END_MESSAGES.count_range)
+      count = parseInt(value, 10)
+    } else if (name === 'UNTIL') {
+      // YYYYMMDD taken LITERALLY as the local last day, with or without a
+      // time ("T235959Z" is the end of the day in UTC, which is the wrong
+      // day in most zones — the date is what the caller picked).
+      const m = value.trim().match(/^(\d{4})(\d{2})(\d{2})(T\d{6}Z?)?$/i)
+      if (!m) throw new ValidationError(REPEAT_END_MESSAGES.until_invalid)
+      until = `${m[1]}-${m[2]}-${m[3]}`
+    } else kept.push(part)
+  }
+  return { rule: kept.join(';'), count, until }
+}
+
+/** Whether a rule carries COUNT or UNTIL. */
+export function ruleHasEnd(rrule: unknown): boolean {
+  return typeof rrule === 'string' && /(^|;)\s*(COUNT|UNTIL)=/i.test(rrule)
+}
+
+/**
+ * REPEAT ENDS SENT AS SHORTHAND (2026-10-22): COUNT / UNTIL inside an
+ * incoming `rrule` — the legacy picker, the editor's draft and RFC clients
+ * send them that way — are LIFTED into `repeat_count` / `repeat_until`, and
+ * the rule is stored end-free. Runs before the rule is validated
+ * (`isValidRRule` refuses a stored rule with an end, so a past UNTIL would
+ * otherwise read as "Invalid RRULE format"). An end the same body also sends
+ * as a field must agree (else 400); COUNT and UNTIL together are `both_ends`.
+ * A rule sent WITHOUT an end leaves the stored end alone: responses return
+ * the rule end-free, so a client echoing it back must not wipe the end.
+ */
+export function liftRuleEnd(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const body = input as Record<string, unknown>
+  if (!ruleHasEnd(body.rrule)) return input
+  const { rule, count, until } = splitRuleEnd(body.rrule as string)
+  if (count !== undefined && until !== undefined) {
+    throw new ValidationError(REPEAT_END_MESSAGES.both_ends)
+  }
+  const out: Record<string, unknown> = { ...body, rrule: rule }
+  const lift = (field: 'repeat_count' | 'repeat_until', value: unknown) => {
+    if (field in body && body[field] !== value) throw new ValidationError(RULE_END_CONFLICT_MESSAGE)
+    out[field] = value
+  }
+  if (count !== undefined) lift('repeat_count', count)
+  if (until !== undefined) lift('repeat_until', until)
+  return out
+}
+
 export function validateTaskCreate(input: unknown): TaskCreateInput {
-  return taskCreateSchema.parse(normalizeTargetAliases(input))
+  return taskCreateSchema.parse(liftRuleEnd(normalizeTargetAliases(input)))
 }
 
 export function validateTaskUpdate(input: unknown): TaskUpdateInput {
-  return taskUpdateSchema.parse(normalizeTargetAliases(input))
+  return taskUpdateSchema.parse(liftRuleEnd(normalizeTargetAliases(input)))
 }
 
 export function validateSnooze(input: unknown): SnoozeInput {
@@ -650,6 +757,18 @@ export function validateBulkSnooze(input: unknown): BulkSnoozeInput {
 }
 
 export function validateBulkEdit(input: unknown): BulkEditInput {
+  // Repeat ends are set per task (A11): an end inside a shared or per-task
+  // rule is refused with the reason, not "Invalid RRULE format".
+  if (input && typeof input === 'object') {
+    const { changes, per_task } = input as { changes?: { rrule?: unknown }; per_task?: unknown }
+    const perTask =
+      per_task && typeof per_task === 'object'
+        ? Object.values(per_task as Record<string, { rrule?: unknown } | null>)
+        : []
+    if (ruleHasEnd(changes?.rrule) || perTask.some((p) => ruleHasEnd(p?.rrule))) {
+      throw new ValidationError(BULK_ENDS_MESSAGE)
+    }
+  }
   const body =
     input && typeof input === 'object' && 'changes' in input
       ? {

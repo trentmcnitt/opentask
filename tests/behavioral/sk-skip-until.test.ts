@@ -356,6 +356,7 @@ describe('Skip until: batches, undo and checks', () => {
       landing: at('2026-04-15T09:00'),
       skipped: 89,
       keepDeck: false,
+      ended: false,
     })
     expect(task(t.id).skip_count ?? 0).toBe(0)
   })
@@ -432,6 +433,7 @@ describe('Skip until: targets, far dates and rule times', () => {
       landing: at('2028-01-16T09:00'),
       skipped: 730,
       keepDeck: false,
+      ended: false,
     })
   })
 

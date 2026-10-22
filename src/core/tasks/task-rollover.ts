@@ -87,7 +87,13 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { DateTime } from 'luxon'
 import { isEarlyMorningPick, latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
-import { effectiveAttempts, occurrenceDates, QUEUE_KEEP_PRIORITY } from '@/lib/task-segments'
+import {
+  effectiveAttempts,
+  occurrenceDates,
+  QUEUE_KEEP_PRIORITY,
+  repeatEndOf,
+  repeatStep,
+} from '@/lib/task-segments'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { TARGET_SET_FIELD } from './target-set'
 import { taskQueueEnabled } from './task-queue'
@@ -315,7 +321,8 @@ export function applyRollover(
   const released = new Set<number>()
   const waits = db
     .prepare(
-      `SELECT id, title, due_at, occurrence_at, skip_count FROM tasks
+      `SELECT id, title, due_at, occurrence_at, skip_count,
+              repeat_count, repeat_count_used, repeat_until FROM tasks
         WHERE user_id = ? AND rrule IS NOT NULL AND queued_at IS NOT NULL
           AND ${TARGET_ANCHORED_SQL}
           AND due_at IS NOT NULL AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
@@ -328,7 +335,7 @@ export function applyRollover(
       if (pre) ctx.collect.before.set(w.id, pre)
       ctx.collect.ids.released.push(w.id)
     }
-    const skipped = release(w, user.id, nowStr, ctx)
+    const skipped = release(w, user, nowStr, ctx)
     run.hooks.push({ id: w.id, previousDueAt: w.due_at, skipped })
     released.add(w.id)
     result.released++
@@ -528,8 +535,25 @@ function strip(
  * occurrence (never its moved target, §6). `skipped`: an occurrence before M
  * was passed over (the missed one). An occurrence still at or after M (a
  * target moved ahead of an occurrence not yet come) is itself the answer.
+ *
+ * REPEAT ENDS (2026-10-22, ruling A4): a roll closes one occurrence, judged
+ * by `repeatStep`. When that would END the series — the missed occurrence
+ * was the last — this returns null and the task is left untouched: the last
+ * occurrence stays over target as debt and nags at its priority. The
+ * rollover never ends a series (no undo entry would say so).
  */
 function occurrenceFrom(
+  task: Task,
+  timezone: string,
+  m: Date,
+): { at: string; skipped: boolean } | null {
+  const next = landingFrom(task, timezone, m)
+  if (!next || !next.skipped) return next
+  return repeatStep(repeatEndOf(task), next.at, 1, timezone).ended ? null : next
+}
+
+/** `occurrenceFrom`'s landing, end-blind. */
+function landingFrom(
   task: Task,
   timezone: string,
   m: Date,
@@ -579,6 +603,9 @@ interface WaitRow {
   due_at: string
   occurrence_at: string | null
   skip_count: number | null
+  repeat_count: number | null
+  repeat_count_used: number | null
+  repeat_until: string | null
 }
 
 /**
@@ -592,31 +619,63 @@ interface WaitRow {
  * target is already that occurrence (a from_completion rule's was stepped
  * from the missed one, so nothing re-anchors here either).
  */
-function release(w: WaitRow, userId: number, nowStr: string, ctx: ApplyCtx): boolean {
+function release(w: WaitRow, user: UserRow, nowStr: string, ctx: ApplyCtx): boolean {
+  const userId = user.id
   // Only a stored occurrence BEFORE the one it is released onto was passed
   // over. One still at or after it (a target the user pulled earlier and
   // missed, the occurrence itself not yet come) was never skipped: the wait
   // just ends — no skip_count, attempts kept, no 'skip'.
   const skipped = w.occurrence_at !== null && Date.parse(w.occurrence_at) < Date.parse(w.due_at)
   const db = getDb()
-  if (skipped) {
-    const skipCount = (w.skip_count ?? 0) + 1
+  // REPEAT ENDS (2026-10-22): an end set during the wait can leave the
+  // occurrence it waits for outside the series. Then the wait's skip would
+  // END it, which the rollover never does (A4): the DEBT RETURNS instead —
+  // the target goes back to the missed occurrence (a target-anchored wait:
+  // the occurrence is its target), the queue state is cleared, no skip.
+  if (skipped && repeatStep(repeatEndOf(w), w.due_at, 1, user.timezone).ended) {
     db.prepare(
       `UPDATE tasks
-          SET occurrence_at = due_at, original_due_at = due_at, skip_count = ?,
-              attempts = 0, attempts_counted_through = NULL,
+          SET due_at = occurrence_at, original_due_at = occurrence_at,
               queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
               rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
-    ).run(skipCount, nowStr, nowStr, w.id)
+    ).run(nowStr, nowStr, w.id)
     logRollover(
       userId,
       w.id,
       w.title,
       'released',
-      ['occurrence_at', 'skip_count', 'queued_at', 'queued_from_due_at'],
-      { occurrence_at: w.occurrence_at, skip_count: w.skip_count ?? 0 },
-      { occurrence_at: w.due_at, skip_count: skipCount, queued_at: null },
+      ['due_at', 'original_due_at', 'queued_at', 'queued_from_due_at'],
+      { due_at: w.due_at },
+      { due_at: w.occurrence_at, queued_at: null },
+      { skipped: false, series_end_debt: true, ...ctxMeta(ctx) },
+    )
+    return false
+  }
+  if (skipped) {
+    const skipCount = (w.skip_count ?? 0) + 1
+    // Repeat ends: the missed occurrence is closed (one, like `skip_count`).
+    const used = (w.repeat_count_used ?? 0) + 1
+    db.prepare(
+      `UPDATE tasks
+          SET occurrence_at = due_at, original_due_at = due_at, skip_count = ?,
+              repeat_count_used = ?, attempts = 0, attempts_counted_through = NULL,
+              queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
+              rolled_over_at = ?, updated_at = ?
+        WHERE id = ?`,
+    ).run(skipCount, used, nowStr, nowStr, w.id)
+    logRollover(
+      userId,
+      w.id,
+      w.title,
+      'released',
+      ['occurrence_at', 'skip_count', 'repeat_count_used', 'queued_at', 'queued_from_due_at'],
+      {
+        occurrence_at: w.occurrence_at,
+        skip_count: w.skip_count ?? 0,
+        repeat_count_used: w.repeat_count_used ?? 0,
+      },
+      { occurrence_at: w.due_at, skip_count: skipCount, repeat_count_used: used, queued_at: null },
       { skipped: true, ...ctxMeta(ctx) },
       'skip',
     )
@@ -668,12 +727,15 @@ function rollRepeating(
     // occurrence not yet come (a target pulled ahead of it and missed) keeps
     // its attempts, checkpointed as of M.
     const skipCount = (task.skip_count ?? 0) + (next.skipped ? 1 : 0)
+    // Repeat ends: the missed occurrence is closed — one, like `skip_count`.
+    const used = (task.repeat_count_used ?? 0) + (next.skipped ? 1 : 0)
     const counted = next.skipped
       ? { attempts: 0, countedThrough: null }
       : checkpoint(row, task, user, rolloverTime, m)
     db.prepare(
       `UPDATE tasks
           SET due_at = ?, occurrence_at = ?, original_due_at = ?, skip_count = ?,
+              repeat_count_used = ?,
               ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
               queue_mark = 0, try_tomorrow = 0, queued_at = NULL, queued_from_due_at = NULL,
               rolled_over_at = ?, updated_at = ?
@@ -683,6 +745,7 @@ function rollRepeating(
       next.at,
       next.at,
       skipCount,
+      used,
       nowStr,
       counted.attempts,
       counted.countedThrough,
@@ -695,9 +758,14 @@ function rollRepeating(
       task.id,
       task.title,
       'rolled',
-      ['due_at', 'occurrence_at', 'skip_count', TARGET_SET_FIELD],
-      { due_at: task.due_at, occurrence_at: task.occurrence_at, skip_count: task.skip_count },
-      { due_at: next.at, occurrence_at: next.at, skip_count: skipCount },
+      ['due_at', 'occurrence_at', 'skip_count', 'repeat_count_used', TARGET_SET_FIELD],
+      {
+        due_at: task.due_at,
+        occurrence_at: task.occurrence_at,
+        skip_count: task.skip_count,
+        repeat_count_used: task.repeat_count_used,
+      },
+      { due_at: next.at, occurrence_at: next.at, skip_count: skipCount, repeat_count_used: used },
       { skipped: next.skipped, ...ctxMeta(ctx) },
       next.skipped ? 'skip' : 'edit',
     )

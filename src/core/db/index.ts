@@ -452,6 +452,17 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'target_time')) {
     database.exec('ALTER TABLE tasks ADD COLUMN target_time TEXT DEFAULT NULL')
   }
+  // Repeat ends (2026-10-22, docs/TASK-MODEL.md § Repeat ends). No backfill
+  // beyond `liftRuleEnds` below: a rule stored with COUNT/UNTIL (none on prod).
+  if (!hasColumn(database, 'tasks', 'repeat_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN repeat_count INTEGER DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'tasks', 'repeat_count_used')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN repeat_count_used INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn(database, 'tasks', 'repeat_until')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN repeat_until TEXT DEFAULT NULL')
+  }
   if (!hasColumn(database, 'completions', 'occurrence_at_next')) {
     database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_next TEXT DEFAULT NULL')
   }
@@ -496,6 +507,72 @@ function runMigrations(database: Database.Database): void {
   logTargetMigration(migrateDeadlineTargets(database))
   // After the pull-back above: a converted row's moved target is already capped.
   logRepeatAnchorMigration(migrateRepeatAnchors(database))
+  // After the end columns exist (above).
+  const lifted = liftRuleEnds(database)
+  if (lifted > 0)
+    log.info('db', `repeat ends (2026-10-22): lifted ${lifted} rule end(s) into columns`)
+}
+
+/**
+ * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends): a stored rule
+ * is END-FREE — the end lives in `repeat_count` / `repeat_until`. A row
+ * whose rule still carries COUNT or UNTIL (validation refused them until
+ * now; another install may have some by hand or by an old import) has the
+ * end LIFTED into the columns and stripped from the rule: COUNT=n →
+ * `repeat_count` n (counting from now: `repeat_count_used` 0, A3), UNTIL's
+ * YYYYMMDD → `repeat_until`, taken literally as the local last day. A column
+ * already set wins; COUNT wins over UNTIL when a rule has both (they are
+ * exclusive); a value out of range (COUNT outside 1..999, a malformed
+ * UNTIL) is dropped with the rest of the end. Idempotent: a lifted rule no
+ * longer matches. Returns how many rows it rewrote.
+ */
+export function liftRuleEnds(database: Database.Database): number {
+  const rows = database
+    .prepare(
+      `SELECT id, rrule, repeat_count, repeat_until FROM tasks
+        WHERE rrule IS NOT NULL AND (rrule LIKE '%COUNT=%' OR rrule LIKE '%UNTIL=%')`,
+    )
+    .all() as {
+    id: number
+    rrule: string
+    repeat_count: number | null
+    repeat_until: string | null
+  }[]
+  const write = database.prepare(
+    `UPDATE tasks
+        SET rrule = ?, repeat_count = ?, repeat_until = ?,
+            repeat_count_used = CASE WHEN ? THEN 0 ELSE repeat_count_used END
+      WHERE id = ?`,
+  )
+  let lifted = 0
+  database.transaction(() => {
+    for (const row of rows) {
+      let count: number | null = null
+      let until: string | null = null
+      const kept: string[] = []
+      for (const part of row.rrule.split(';')) {
+        const [key, value = ''] = part.split('=')
+        const name = key.trim().toUpperCase()
+        if (name === 'COUNT') {
+          const n = /^\d+$/.test(value.trim()) ? parseInt(value, 10) : NaN
+          if (n >= 1 && n <= 999) count = n
+        } else if (name === 'UNTIL') {
+          const m = value.trim().match(/^(\d{4})(\d{2})(\d{2})/)
+          if (m) until = `${m[1]}-${m[2]}-${m[3]}`
+        } else kept.push(part)
+      }
+      if (row.repeat_count !== null || row.repeat_until !== null) {
+        count = row.repeat_count
+        until = row.repeat_until
+      } else if (count !== null) {
+        until = null
+      }
+      const changedEnd = count !== row.repeat_count || until !== row.repeat_until
+      write.run(kept.join(';'), count, until, changedEnd ? 1 : 0, row.id)
+      lifted++
+    }
+  })()
+  return lifted
 }
 
 /** Log what the deadline-anchor step did (2026-10-21), only when it did something. */

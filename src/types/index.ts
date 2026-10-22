@@ -107,6 +107,29 @@ export interface Task {
   repeat_anchor: RepeatAnchor | null
   target_days_before: number | null
   target_time: string | null
+  /**
+   * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends). The stored
+   * `rrule` never carries COUNT or UNTIL; the end lives here and ONE pure
+   * judge reads it (`repeatStep` in src/lib/task-segments.ts):
+   *  - `repeat_count`: "After N times" — occurrences in the series (1..999);
+   *  - `repeat_count_used`: occurrences closed (done or skipped) since the
+   *    count was set — every done and skip of a repeating task adds one;
+   *  - `repeat_until`: "On date" — the last LOCAL day (yyyy-MM-dd, the
+   *    owner's zone), inclusive: an occurrence on or before it is in the series.
+   * Count and date are exclusive. Only on an ordinary repeating task. When
+   * the series ends the task is archived (done=1 for a done, done=0 for a skip).
+   */
+  repeat_count: number | null
+  repeat_count_used: number
+  repeat_until: string | null
+  /**
+   * Derived on read (`isLastOccurrence`), only on a row with an end: closing
+   * the current occurrence ends the series. Absent on a row read without its
+   * owner's zone; the API response always carries it (`formatTaskResponse`).
+   */
+  repeat_last?: boolean
+  /** Derived on read: `repeat_count − repeat_count_used` (the current one included), else null. */
+  repeat_remaining?: number | null
 
   // The FIRST-TARGET date (2026-10-10): kept by every move, set when a task
   // with no target gets one, cleared with the target, and reset to the next

@@ -50,8 +50,12 @@ import {
 } from './quota-prompt-actions'
 
 interface ValidateBulkTasksOptions {
-  /** Skip tasks that are done AND non-recurring (used by bulkDone) */
-  excludeDoneNonRecurring?: boolean
+  /**
+   * Refuse tasks that cannot be completed (used by bulkDone): done — a
+   * one-off, or (repeat ends, 2026-10-22) a repeat whose series ended on a
+   * done — and a repeat whose series ended on a skip (archived).
+   */
+  excludeClosed?: boolean
   /** Skip tasks that are done (used by bulkSnooze) */
   excludeDone?: boolean
 }
@@ -80,7 +84,7 @@ function validateBulkTasks(
       failedIds.push(taskId)
       continue
     }
-    if (options.excludeDoneNonRecurring && task.done && !isRecurring(task.rrule)) {
+    if (options.excludeClosed && (task.done || (isRecurring(task.rrule) && task.archived_at))) {
       failedIds.push(taskId)
       continue
     }
@@ -120,6 +124,8 @@ export interface BulkDoneOptions {
 export interface BulkDoneResult {
   tasksAffected: number
   recurringCount: number
+  /** Repeat ends (2026-10-22): repeats whose last occurrence this batch completed (in `recurringCount`). */
+  seriesEndedCount: number
   oneOffCount: number
   /** Quotas left alone because `closePeriod` was not set. */
   quotaSkipped: number
@@ -145,6 +151,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     return {
       tasksAffected: 0,
       recurringCount: 0,
+      seriesEndedCount: 0,
       oneOffCount: 0,
       quotaSkipped: 0,
       promptsConsidered: 0,
@@ -157,7 +164,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 
   // Validate all tasks exist and user has access before starting transaction (BO-002: atomic)
   const validated =
-    taskIds.length > 0 ? validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true }) : []
+    taskIds.length > 0 ? validateBulkTasks(taskIds, userId, { excludeClosed: true }) : []
   // Prompt keys too: a stale or foreign key refuses the whole batch.
   const plannedPrompts = planPromptActions(userId, userTimezone, prompts, completedAt)
 
@@ -179,6 +186,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
   let recurringCount = 0
+  let seriesEndedCount = 0
   let oneOffCount = 0
   // The undo entry's `fieldsChanged` is the union of what each completion
   // changed, taken from `computeMarkDone` itself rather than restated here. A
@@ -192,9 +200,10 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
       const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
       computation.fieldsChanged.forEach((f) => fieldsChanged.add(f))
 
-      // Track counts
-      if (computation.type === 'recurring') {
+      // Track counts (an ended series counts as recurring — repeat ends)
+      if (computation.type !== 'one_off') {
         recurringCount++
+        if (computation.type === 'series_end') seriesEndedCount++
       } else {
         oneOffCount++
       }
@@ -213,8 +222,9 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
         before: snapshot.before_state,
         after: snapshot.after_state,
         metadata: {
-          recurring: computation.type === 'recurring',
+          recurring: computation.type !== 'one_off',
           ...(computation.type === 'recurring' ? { next_due_at: computation.nextDueAt } : {}),
+          ...(computation.type === 'series_end' ? { series_ended: true } : {}),
         },
       })
     }
@@ -262,6 +272,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     return {
       tasksAffected: tasks.length,
       recurringCount,
+      seriesEndedCount,
       oneOffCount,
       quotaSkipped,
       promptsConsidered: prompted.considered,
@@ -284,6 +295,8 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.completed', {
         task: formatTaskResponse(fresh, userTimezone),
+        // Repeat ends: a repeating task left done is a series that ended here.
+        ...(fresh.done && fresh.rrule ? { series_ended: true } : {}),
       })
     }
   }
@@ -651,11 +664,15 @@ function planLanding(task: Task, landing: string, ctx: DeferContext): Landing {
  * one a skip would land on (`nextOccurrenceAfterSkip`): from its scheduled
  * occurrence, never its moved target (§6), and that occurrence's own target
  * (`occurrenceDates`; a deadline-anchored repeat's lies before its deadline —
- * whose cap, with the lead shorter than the gap, always binds first).
+ * whose cap, with the lead shorter than the gap, always binds first). Null
+ * when the current occurrence is the series' last (repeat ends).
  */
 function nextOccurrenceOf(task: Task, timezone: string, now: Date): string | null {
   if (!task.rrule) return null
-  return occurrenceDates(task, nextOccurrenceAfterSkip(task, timezone, now), timezone).targetAt
+  // Repeat ends (2026-10-22): on the last occurrence there is no next one,
+  // so there is no cap (`nextOccurrenceAfterSkip` → null).
+  const next = nextOccurrenceAfterSkip(task, timezone, now)
+  return next ? occurrenceDates(task, next, timezone).targetAt : null
 }
 
 /**

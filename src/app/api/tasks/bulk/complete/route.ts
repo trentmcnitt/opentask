@@ -43,6 +43,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     return success({
       tasks_affected: result.tasksAffected,
       recurring_count: result.recurringCount,
+      series_ended_count: result.seriesEndedCount,
       one_off_count: result.oneOffCount,
       quota_skipped: result.quotaSkipped,
       prompts_considered: result.promptsConsidered,

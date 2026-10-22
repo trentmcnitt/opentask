@@ -168,6 +168,16 @@ CREATE TABLE IF NOT EXISTS tasks (
   repeat_anchor TEXT NOT NULL DEFAULT 'target' CHECK (repeat_anchor IN ('target', 'deadline')),
   target_days_before INTEGER DEFAULT NULL,
   target_time   TEXT DEFAULT NULL,
+  -- REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends). The stored
+  -- rrule never carries COUNT or UNTIL: the end lives here, read by ONE pure
+  -- judge (`repeatStep` in src/lib/task-segments.ts).
+  --  repeat_count      "After N times": occurrences in the series, 1..999.
+  --  repeat_count_used occurrences closed (done OR skipped) since the count was set.
+  --  repeat_until      "On date": the last LOCAL day (yyyy-MM-dd, owner's zone), inclusive.
+  -- The count and the date are exclusive. Only on an ordinary repeating task.
+  repeat_count      INTEGER DEFAULT NULL,
+  repeat_count_used INTEGER NOT NULL DEFAULT 0,
+  repeat_until      TEXT DEFAULT NULL,
 
   -- Snooze tracking (stores the original due_at when task is first snoozed)
   original_due_at  TEXT,

@@ -10,7 +10,12 @@
 import { getDb } from '@/core/db'
 import type { QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import { normalizeDayState } from '@/lib/quota-prompts'
-import { effectiveAttempts } from '@/lib/task-segments'
+import {
+  effectiveAttempts,
+  hasRepeatEnd,
+  isLastOccurrence,
+  repeatRemaining,
+} from '@/lib/task-segments'
 import { quotaPeriodFields } from '@/lib/track'
 import { coerceWeekStart } from '@/lib/week-start'
 import { getCurrentlyDueTaskIds } from './currently-due'
@@ -39,6 +44,9 @@ const TASK_COLUMNS = [
   'repeat_anchor',
   'target_days_before',
   'target_time',
+  'repeat_count',
+  'repeat_count_used',
+  'repeat_until',
   'original_due_at',
   'deadline_at',
   'horizon',
@@ -297,6 +305,9 @@ export interface TaskRow {
   repeat_anchor?: string | null
   target_days_before?: number | null
   target_time?: string | null
+  repeat_count?: number | null
+  repeat_count_used?: number | null
+  repeat_until?: string | null
   original_due_at: string | null
   deadline_at: string | null
   horizon: string | null
@@ -381,6 +392,12 @@ export function rowToTask(row: TaskRow): Task {
     )
     task.attempts = attempts
     task.attempts_counted_through = countedThrough
+    // Repeat ends (2026-10-22): judged in the owner's zone, only on a row
+    // with an end (one O(1) engine call, and only for a date end).
+    if (hasRepeatEnd(task)) {
+      task.repeat_last = isLastOccurrence(task, row.owner_timezone, new Date())
+      task.repeat_remaining = repeatRemaining(task)
+    }
     // Interval quotas (2026-10-16): the current period, served — see
     // `quotaPeriodFields`. Every row carries the four keys (null on anything
     // but a quota), so the response has one shape.
@@ -424,11 +441,23 @@ function queueFields(
 /** A repeating task's anchor and relative target (2026-10-21, `Task.repeat_anchor`). */
 function repeatFields(
   row: TaskRow,
-): Pick<Task, 'repeat_anchor' | 'target_days_before' | 'target_time'> {
+): Pick<
+  Task,
+  | 'repeat_anchor'
+  | 'target_days_before'
+  | 'target_time'
+  | 'repeat_count'
+  | 'repeat_count_used'
+  | 'repeat_until'
+> {
   return {
     repeat_anchor: row.repeat_anchor === 'deadline' ? 'deadline' : 'target',
     target_days_before: row.target_days_before ?? null,
     target_time: row.target_time ?? null,
+    // Repeat ends (2026-10-22): defaulted for a row from before the columns.
+    repeat_count: row.repeat_count ?? null,
+    repeat_count_used: row.repeat_count_used ?? 0,
+    repeat_until: row.repeat_until ?? null,
   }
 }
 

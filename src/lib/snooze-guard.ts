@@ -30,7 +30,13 @@
  */
 
 import { computeNextOccurrence } from '@/core/recurrence/compute-next'
-import { isDeadlineAnchored, occurrenceDates, scheduleBase } from '@/lib/task-segments'
+import {
+  isDeadlineAnchored,
+  occurrenceDates,
+  repeatEndOf,
+  repeatStep,
+  scheduleBase,
+} from '@/lib/task-segments'
 import type { Task } from '@/types'
 
 export type SnoozeGuard =
@@ -43,7 +49,18 @@ export type SnoozeGuard =
 
 /** The subset of a task the guard needs. Keeps callers free of full Task objects in tests. */
 export type SnoozeGuardTask = Pick<Task, 'due_at' | 'rrule' | 'recurrence_mode' | 'anchor_time'> &
-  Partial<Pick<Task, 'occurrence_at' | 'repeat_anchor' | 'target_days_before' | 'target_time'>>
+  Partial<
+    Pick<
+      Task,
+      | 'occurrence_at'
+      | 'repeat_anchor'
+      | 'target_days_before'
+      | 'target_time'
+      | 'repeat_count'
+      | 'repeat_count_used'
+      | 'repeat_until'
+    >
+  >
 
 /**
  * Compute a task's next scheduled occurrence strictly after its current due_at.
@@ -54,6 +71,8 @@ export type SnoozeGuardTask = Pick<Task, 'due_at' | 'rrule' | 'recurrence_mode' 
  *   "the next occurrence" is not a fact about them yet. Guessing one would
  *   invent a schedule the task does not have.
  * - a malformed rrule should never block a snooze the user asked for
+ * - (repeat ends, 2026-10-22) the current occurrence is the series' last:
+ *   there is no next one to pass (`repeatStep`)
  *
  * Reuses `computeNextOccurrence` rather than re-deriving the schedule — §4.6 is
  * explicit that there must be exactly one rrule evaluator, and that it must
@@ -93,6 +112,7 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
         prevDueAt: occurrence,
         anchorAt: occurrence,
       })
+      if (repeatStep(repeatEndOf(task), next.toISOString(), 1, timezone).ended) return null
       const schedule = {
         rrule: task.rrule,
         repeat_anchor: task.repeat_anchor ?? null,
@@ -101,7 +121,7 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
       }
       return new Date(occurrenceDates(schedule, next.toISOString(), timezone).targetAt)
     }
-    return computeNextOccurrence({
+    const next = computeNextOccurrence({
       rrule: task.rrule,
       recurrenceMode: 'from_due',
       anchorTime: task.anchor_time,
@@ -112,6 +132,7 @@ export function nextScheduledOccurrence(task: SnoozeGuardTask, timezone: string)
       // from a moved target.
       anchorAt: new Date(task.occurrence_at ?? task.due_at),
     })
+    return repeatStep(repeatEndOf(task), next.toISOString(), 1, timezone).ended ? null : next
   } catch {
     // A schedule we can't evaluate is not grounds for blocking the user.
     return null

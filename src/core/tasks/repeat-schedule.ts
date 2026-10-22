@@ -27,6 +27,7 @@
  * in helpers/collect-field-changes.ts writes what it decides.
  */
 
+import { DateTime } from 'luxon'
 import { ValidationError } from '@/core/errors'
 import {
   computeFirstOccurrence,
@@ -519,4 +520,114 @@ function targetFor(
 /** A timeless rule with the deadline's local time (`ensureRuleTime`). */
 function fillFromDeadline(rule: string, deadline: string, timezone: string): string {
   return ensureRuleTime(rule, localTime(deadline, timezone))
+}
+
+// ===========================================================================
+// REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends)
+// ===========================================================================
+
+/** How far ahead an end date may be — the same reach as skip until's date (`MAX_UNTIL_YEARS`). */
+export const MAX_REPEAT_UNTIL_YEARS = 10
+/** The largest "After N times". */
+export const MAX_REPEAT_COUNT = 999
+
+export type RepeatEndProblem =
+  | 'count_range'
+  | 'count_spent'
+  | 'until_invalid'
+  | 'until_past'
+  | 'until_too_far'
+  | 'until_before_occurrence'
+  | 'both_ends'
+  | 'ends_kind'
+  | 'ends_need_rule'
+
+/** The 400 for each `repeatEndProblem`. */
+export const REPEAT_END_MESSAGES: Record<RepeatEndProblem, string> = {
+  count_range: `repeat_count must be a whole number from 1 to ${MAX_REPEAT_COUNT}`,
+  count_spent:
+    'repeat_count must be more than the occurrences this series has already used (repeat_count_used)',
+  until_invalid: 'repeat_until must be a date (yyyy-MM-dd)',
+  until_past: 'repeat_until is in the past',
+  until_too_far: `repeat_until is more than ${MAX_REPEAT_UNTIL_YEARS} years ahead`,
+  until_before_occurrence:
+    'repeat_until is before the current occurrence: the series would have no occurrence left',
+  both_ends:
+    'Send repeat_count or repeat_until, not both: a repeat ends after N times or on a date',
+  ends_kind:
+    'Only an ordinary repeating task can have an end: a reminder rolls forward on its own, and a quota counts within periods',
+  ends_need_rule: 'An end (repeat_count / repeat_until) needs a repeat (rrule)',
+}
+
+/** What `repeatEndProblem` judges: the end the write LEAVES, and what it wrote. */
+export interface RepeatEndCheck {
+  count: number | null
+  until: string | null
+  /** `repeat_count_used` after the write. */
+  used: number
+  countWritten: boolean
+  untilWritten: boolean
+  /** The rule's walk changed (a new rule, mode or anchor). */
+  walkWritten: boolean
+  /** The occurrence the write leaves (a deadline-anchored repeat's: its deadline). */
+  occurrenceAt: string | null
+  hasRule: boolean
+  isReminder: boolean
+  isTracked: boolean
+}
+
+/**
+ * THE END'S VALIDATION (pure — the POST, the PATCH and the editor's draft
+ * share it). Judged on the RESULTING row:
+ *  - an end needs a rule, and only an ordinary task has one (`ends_kind`,
+ *    also when a write turns an ending task into a reminder or a quota);
+ *  - one end at a time (`both_ends`);
+ *  - a count written: 1..999, and more than the occurrences already used;
+ *  - a date written: a real day, today or later (local), at most 10 years on;
+ *  - a date written, or the rule's walk changed: not before the local date
+ *    of the occurrence the write leaves. A reschedule of THIS occurrence's
+ *    deadline past the end is not refused — that occurrence is already in
+ *    the series.
+ */
+export function repeatEndProblem(
+  check: RepeatEndCheck,
+  timezone: string,
+  now: Date,
+): RepeatEndProblem | null {
+  const { count, until } = check
+  if (count !== null && until !== null) return 'both_ends'
+  if (count === null && until === null) return null
+  if (!check.hasRule) return 'ends_need_rule'
+  if (check.isReminder || check.isTracked) return 'ends_kind'
+  if (count !== null) return check.countWritten ? countProblem(count, check.used) : null
+  return untilProblem(until!, check, timezone, now)
+}
+
+/** A count written: 1..999, and more than the occurrences already used (A7). */
+function countProblem(count: number, used: number): RepeatEndProblem | null {
+  if (!Number.isInteger(count) || count < 1 || count > MAX_REPEAT_COUNT) return 'count_range'
+  return count <= used ? 'count_spent' : null
+}
+
+/** A date end: a real day, today or later, not too far; not before the occurrence. */
+function untilProblem(
+  until: string,
+  check: RepeatEndCheck,
+  timezone: string,
+  now: Date,
+): RepeatEndProblem | null {
+  if (check.untilWritten) {
+    const day = DateTime.fromFormat(until, 'yyyy-MM-dd', { zone: timezone })
+    if (!day.isValid) return 'until_invalid'
+    const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+    if (day < today) return 'until_past'
+    if (day > today.plus({ years: MAX_REPEAT_UNTIL_YEARS })) return 'until_too_far'
+  }
+  if ((check.untilWritten || check.walkWritten) && check.occurrenceAt) {
+    const occurrenceDay = DateTime.fromISO(check.occurrenceAt, { zone: 'utc' })
+      .setZone(timezone)
+      .toISODate()!
+    if (occurrenceDay > until) return 'until_before_occurrence'
+  }
+  return null
 }

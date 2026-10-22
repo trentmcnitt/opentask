@@ -15,7 +15,13 @@ import {
   type RelativeTarget,
   type TargetContext,
 } from '@/lib/task-segments'
-import { assertRuleOnDeadline, createAnchor, resolveRelativeTarget } from './repeat-schedule'
+import {
+  REPEAT_END_MESSAGES,
+  assertRuleOnDeadline,
+  createAnchor,
+  repeatEndProblem,
+  resolveRelativeTarget,
+} from './repeat-schedule'
 import { taskQueueEnabled } from './task-queue'
 import { getDb, withTransaction } from '@/core/db'
 import type { RepeatAnchor, Task, TaskCreateInput } from '@/types'
@@ -308,6 +314,8 @@ export function createTask(options: CreateTaskOptions): Task {
       : targetAnchoredDates(input, rrule, tracked, targetCtx, userTimezone)
   const dueAt = first.dueAt
   const relative = first.relative ?? { days_before: null, time: null }
+  // Repeat ends (2026-10-22): judged against the first occurrence.
+  assertCreateEnd(input, rrule, first.occurrenceAt, tracked, userTimezone)
 
   // Derive anchor fields from rrule
   let anchorTime: string | null = null
@@ -365,10 +373,11 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, short_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        repeat_anchor, target_days_before, target_time, auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
+        repeat_anchor, target_days_before, target_time, repeat_count, repeat_until,
+        auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
         target_auto, occurrence_at, progress_period_start, on_deck_day, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -388,6 +397,8 @@ export function createTask(options: CreateTaskOptions): Task {
         anchor,
         relative.days_before,
         relative.time,
+        input.repeat_count ?? null,
+        input.repeat_until ?? null,
         input.auto_snooze_minutes ?? null,
         labelsJson,
         input.notes ?? null,
@@ -440,6 +451,8 @@ export function createTask(options: CreateTaskOptions): Task {
         'horizon',
         'on_deck_day',
         'rrule',
+        'repeat_count',
+        'repeat_until',
         'priority',
         'labels',
         'notes',
@@ -512,6 +525,39 @@ function assertCreateDeck(
     now,
   )
   if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
+}
+
+/**
+ * REPEAT ENDS on create (2026-10-22): the end sent, judged against the
+ * FIRST occurrence (after a passed first date rolled on, `firstDueAt`);
+ * the count starts at 0 used (`repeatEndProblem`, every 400).
+ */
+function assertCreateEnd(
+  input: TaskCreateInput,
+  rrule: string | null | undefined,
+  firstOccurrence: string | null,
+  tracked: boolean,
+  timezone: string,
+): void {
+  const count = input.repeat_count ?? null
+  const until = input.repeat_until ?? null
+  const problem = repeatEndProblem(
+    {
+      count,
+      until,
+      used: 0,
+      countWritten: count !== null,
+      untilWritten: until !== null,
+      walkWritten: true,
+      occurrenceAt: firstOccurrence,
+      hasRule: !!rrule,
+      isReminder: !!input.is_reminder,
+      isTracked: tracked,
+    },
+    timezone,
+    new Date(),
+  )
+  if (problem) throw new ValidationError(REPEAT_END_MESSAGES[problem])
 }
 
 /**

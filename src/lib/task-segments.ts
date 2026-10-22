@@ -1100,6 +1100,174 @@ export function scheduleBase(
   }).toISOString()
 }
 
+/**
+ * REPEAT ENDS (2026-10-22; docs/TASK-MODEL.md § Repeat ends). "Ends: never /
+ * after N times / on date" lives in three columns, never in the rule — the
+ * stored rrule is end-free (validation lifts a COUNT/UNTIL sent in it):
+ *  - `repeat_count`: the occurrences in the series (1..999);
+ *  - `repeat_count_used`: occurrences CLOSED since the count was set — done
+ *    or skipped, one each (a skip-until passing k occurrences closes k; a
+ *    rollover roll closes one). Every writer of `completion_count` or
+ *    `skip_count` on a repeating task writes it (guard RE-G01);
+ *  - `repeat_until`: the last LOCAL day (yyyy-MM-dd, the owner's zone),
+ *    inclusive. An occurrence is in the series when its local date is on or
+ *    before it — a deadline-anchored repeat's occurrence is its DEADLINE.
+ *
+ * ONE JUDGE, `repeatStep`: an advance asks the engine where it would land
+ * (`computeNextOccurrence`, which never knows about ends — several callers
+ * ask it questions that are not advances: `scheduleBase`, today's
+ * occurrence, the deadline walk, the first occurrence) and then asks this
+ * whether that landing is still in the series. `nextOrEnd` is the pair for
+ * a one-occurrence advance (done, skip, the snooze guard, the defer cap).
+ */
+export interface RepeatEnd {
+  repeat_count: number | null
+  repeat_count_used: number
+  repeat_until: string | null
+}
+
+export type RepeatStep =
+  /** The series goes on: land on `occurrenceAt`; `used` is the count after this write. */
+  | { ended: false; occurrenceAt: string; used: number }
+  /**
+   * The series ends with this write. `consumed`: the occurrences that existed
+   * to close (≤ `closes` — a skip until past a count closes only what was left).
+   */
+  | { ended: true; used: number; consumed: number }
+
+/** The end fields as any reader holds them (a row, a task, a client object), each optional. */
+export interface RepeatEndFields {
+  repeat_count?: number | null
+  repeat_count_used?: number | null
+  repeat_until?: string | null
+}
+
+/** A task's end fields, defaulted (a row or object from before the columns has none). */
+export function repeatEndOf(task: RepeatEndFields): RepeatEnd {
+  return {
+    repeat_count: task.repeat_count ?? null,
+    repeat_count_used: task.repeat_count_used ?? 0,
+    repeat_until: task.repeat_until ?? null,
+  }
+}
+
+/** Whether the task's repeat has an end (a count or a date). */
+export function hasRepeatEnd(task: RepeatEndFields): boolean {
+  return (task.repeat_count ?? null) !== null || (task.repeat_until ?? null) !== null
+}
+
+/** The local calendar date (yyyy-MM-dd) of an instant. */
+function localDateOf(iso: string, timezone: string): string {
+  return DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toISODate()!
+}
+
+/**
+ * THE END OF A REPEAT (pure): what closing `closes` occurrences leaves.
+ * `landing` is the engine's candidate for the next occurrence (null = the
+ * rule has none). Ends when `used + closes >= count`, or the landing's LOCAL
+ * date is after `until`, or there is no landing.
+ */
+export function repeatStep(
+  end: RepeatEnd,
+  landing: string | null,
+  closes: number,
+  timezone: string,
+): RepeatStep {
+  const used = end.repeat_count_used
+  if (end.repeat_count !== null) {
+    const left = Math.max(0, end.repeat_count - used)
+    if (closes >= left) {
+      const consumed = Math.min(closes, left)
+      return { ended: true, used: used + consumed, consumed }
+    }
+  }
+  if (landing === null) return { ended: true, used: used + closes, consumed: closes }
+  if (end.repeat_until !== null && localDateOf(landing, timezone) > end.repeat_until) {
+    return { ended: true, used: used + closes, consumed: closes }
+  }
+  return { ended: false, occurrenceAt: landing, used: used + closes }
+}
+
+/** What an advance reads of the task: its schedule, and its end. */
+export type AdvanceTask = Parameters<typeof scheduleBase>[0] & RepeatEndFields
+
+/**
+ * WHERE A ONE-OCCURRENCE ADVANCE LANDS, end-blind: the rule's next occurrence
+ * after the scheduled one (`scheduleBase`), counted from `completedAt` when
+ * that is later (a from_completion rule: from `completedAt`). Done, skip,
+ * the defer cap and the snooze guard all ask this — through `nextOrEnd`.
+ */
+export function nextLanding(task: AdvanceTask, timezone: string, completedAt: Date): string {
+  const prev = scheduleBase(task, timezone)
+  return computeNextOccurrence({
+    rrule: task.rrule!,
+    recurrenceMode: task.recurrence_mode ?? 'from_due',
+    anchorTime: task.anchor_time,
+    timezone,
+    completedAt,
+    prevDueAt: prev ? new Date(prev) : null,
+    // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
+    anchorAt: prev ? new Date(prev) : null,
+  }).toISOString()
+}
+
+/**
+ * THE ADVANCE WITH ITS END: `nextLanding` judged by `repeatStep`. A count
+ * that ends here never asks the engine (a rule with no next would throw).
+ */
+export function nextOrEnd(
+  task: AdvanceTask,
+  timezone: string,
+  opts: { completedAt: Date; closes?: number },
+): RepeatStep {
+  const end = repeatEndOf(task)
+  const closes = opts.closes ?? 1
+  const countEnds = end.repeat_count !== null && end.repeat_count_used + closes >= end.repeat_count
+  const landing = countEnds ? null : nextLanding(task, timezone, opts.completedAt)
+  return repeatStep(end, landing, closes, timezone)
+}
+
+/**
+ * Is the CURRENT occurrence the last? Closing it once ends the series — as
+ * if done at max(occurrence, now). False with no end, and on a closed row
+ * (done, or archived by the skip of the last). Pure.
+ */
+export function isLastOccurrence(
+  task: AdvanceTask & { done?: boolean; archived_at?: string | null },
+  timezone: string,
+  now: Date,
+): boolean {
+  if (!task.rrule || task.done || task.archived_at || !hasRepeatEnd(task)) return false
+  const occurrence = task.occurrence_at ?? task.due_at
+  const at = occurrence && Date.parse(occurrence) > now.getTime() ? new Date(occurrence) : now
+  try {
+    return nextOrEnd(task, timezone, { completedAt: at }).ended
+  } catch {
+    // A rule with no next occurrence: this one is the last there is.
+    return true
+  }
+}
+
+/** `repeat_count − repeat_count_used` (the current one included), or null with no count. */
+export function repeatRemaining(task: RepeatEndFields): number | null {
+  const end = repeatEndOf(task)
+  return end.repeat_count === null ? null : Math.max(0, end.repeat_count - end.repeat_count_used)
+}
+
+/**
+ * The words for the occurrence that ENDED a series (history, toasts):
+ * "the last of 6", "the last; it ended Dec 31", or "the last".
+ */
+export function seriesEndWords(task: RepeatEndFields): string {
+  const end = repeatEndOf(task)
+  if (end.repeat_count !== null) return `the last of ${end.repeat_count}`
+  if (end.repeat_until !== null) {
+    const day = DateTime.fromISO(end.repeat_until, { zone: 'utc' }).toFormat('LLL d')
+    return `the last; it ended ${day}`
+  }
+  return 'the last'
+}
+
 /** The rule fields the occurrence walk reads. */
 export interface RepeatRule {
   rrule: string

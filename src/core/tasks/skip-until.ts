@@ -89,10 +89,18 @@ import { taskWord } from '@/lib/utils'
 import type { Task, UndoSnapshot } from '@/types'
 import { canUserAccessTask } from './access'
 import { getTaskById } from './read'
-import { nextOccurrenceAfterSkip, writeRecurringSkip } from './skip'
+import { seriesEndSkipWords, writeRecurringSkip, writeSeriesEndSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
 import { collectDeckClear } from './deck-clear'
-import { isDeadlineAnchored, occurrenceDates, occurrenceTarget } from '@/lib/task-segments'
+import {
+  isDeadlineAnchored,
+  nextLanding,
+  nextOrEnd,
+  occurrenceDates,
+  occurrenceTarget,
+  repeatEndOf,
+  repeatStep,
+} from '@/lib/task-segments'
 
 /**
  * The guard on how many occurrences one task may pass over. A daily rule
@@ -112,8 +120,14 @@ export type SkipUntilLeaveReason =
   | 'already_clear'
 
 export type SkipUntilPlan =
-  /** `keepDeck`: the task's deck day is on or after the date, so the deck stays. */
-  | { kind: 'skip'; landing: string; skipped: number; keepDeck: boolean }
+  /**
+   * `keepDeck`: the task's deck day is on or after the date, so the deck
+   * stays. `ended` (repeat ends, 2026-10-22): the skip passes the series'
+   * end — `skipped` is then only the occurrences that were left to close
+   * (`repeatStep`'s `consumed`), and there is no landing.
+   */
+  | { kind: 'skip'; landing: string; skipped: number; keepDeck: boolean; ended: false }
+  | { kind: 'skip'; landing: null; skipped: number; keepDeck: false; ended: true }
   /** Nothing to skip, but the target was pulled before the date: it goes back to the occurrence. */
   | { kind: 'retarget'; landing: string }
   | { kind: 'leave'; reason: SkipUntilLeaveReason }
@@ -136,6 +150,9 @@ type PlanTask = Pick<
   | 'repeat_anchor'
   | 'target_days_before'
   | 'target_time'
+  | 'repeat_count'
+  | 'repeat_count_used'
+  | 'repeat_until'
 >
 
 /** Why a task in the batch is not one skip-until moves, or null when it is. */
@@ -166,7 +183,7 @@ function walkFromDue(
   untilStart: Date,
   now: Date,
 ): { landing: string; skipped: number } {
-  const first = new Date(nextOccurrenceAfterSkip(task, timezone, now))
+  const first = new Date(nextLanding(task, timezone, now))
   if (first >= untilStart) return { landing: first.toISOString(), skipped: 1 }
   const { count, firstOnOrAfter } = occurrencesFromDue({
     rrule: task.rrule!,
@@ -200,25 +217,10 @@ function walkFromCompletion(
   untilDay: DateTime,
   now: Date,
 ): { landing: string; skipped: number } {
-  const step = (from: Date) =>
-    computeNextOccurrence({
-      rrule: task.rrule!,
-      recurrenceMode: 'from_completion',
-      anchorTime: task.anchor_time,
-      timezone,
-      completedAt: from,
-    })
-  // The floor: exactly where "skip this occurrence" lands.
-  const plain = new Date(nextOccurrenceAfterSkip(task, timezone, now))
-  // The count: interval steps from the current occurrence (from now, when it has passed).
-  const current = task.occurrence_at ?? task.due_at
-  const untilStart = untilDay.toMillis()
-  let at = step(current && Date.parse(current) > now.getTime() ? new Date(current) : now)
-  let skipped = 1
-  while (at.getTime() < untilStart) {
-    if (++skipped > MAX_SKIPPED) throw tooManySkips()
-    at = step(at)
-  }
+  // The floor: exactly where "skip this occurrence" lands (end-blind; the end
+  // is judged on the landing in `planSkipUntil`).
+  const plain = new Date(nextLanding(task, timezone, now))
+  const skipped = completionSkipsBefore(task, timezone, untilDay.toJSDate(), now)
   const { hour, minute } = ruleTimeOfDay(task.rrule!, task.anchor_time)
   // A deadline-anchored repeat's occurrence is its deadline: it lands
   // `target_days_before` days on, so its derived target is on the date.
@@ -229,6 +231,74 @@ function walkFromCompletion(
     .toJSDate()
   const landing = onTheDay > plain ? onTheDay : plain
   return { landing: landing.toISOString(), skipped }
+}
+
+/**
+ * A from_completion rule's skips before `before`: interval steps from the
+ * current occurrence (from now, when it has passed), as if each had been
+ * done on time — the current occurrence is the first.
+ */
+function completionSkipsBefore(task: PlanTask, timezone: string, before: Date, now: Date): number {
+  const step = (from: Date) =>
+    computeNextOccurrence({
+      rrule: task.rrule!,
+      recurrenceMode: 'from_completion',
+      anchorTime: task.anchor_time,
+      timezone,
+      completedAt: from,
+    })
+  const current = task.occurrence_at ?? task.due_at
+  let at = step(current && Date.parse(current) > now.getTime() ? new Date(current) : now)
+  let skipped = 1
+  while (at.getTime() < before.getTime()) {
+    if (++skipped > MAX_SKIPPED) throw tooManySkips()
+    at = step(at)
+  }
+  return skipped
+}
+
+/** The occurrences a skip closes before `before`, the current one included (either mode). */
+function skipsBefore(task: PlanTask, timezone: string, before: Date, now: Date): number {
+  if (task.recurrence_mode === 'from_completion') {
+    return completionSkipsBefore(task, timezone, before, now)
+  }
+  return walkFromDue(task, timezone, before, now).skipped
+}
+
+/**
+ * REPEAT ENDS (2026-10-22): the walk's landing judged by `repeatStep`, with
+ * the `skipped` occurrences it closes. Past the end, the skip closes only
+ * what the series had left: a count's `consumed` (`count − used`), or — a
+ * date end — the occurrences before the day after `repeat_until`, re-counted.
+ * The skip then ends the series (`writeSeriesEndSkip`).
+ */
+function judgeSkip(
+  task: PlanTask,
+  timezone: string,
+  walked: { landing: string; skipped: number },
+  keepDeck: boolean,
+  now: Date,
+): SkipUntilPlan {
+  const end = repeatEndOf(task)
+  const step = repeatStep(end, walked.landing, walked.skipped, timezone)
+  if (!step.ended) {
+    return {
+      kind: 'skip',
+      landing: walked.landing,
+      skipped: walked.skipped,
+      keepDeck,
+      ended: false,
+    }
+  }
+  let consumed = step.consumed
+  if (end.repeat_count === null && end.repeat_until !== null) {
+    const dayAfter = DateTime.fromISO(end.repeat_until, { zone: timezone })
+      .startOf('day')
+      .plus({ days: 1 })
+      .toJSDate()
+    consumed = Math.min(walked.skipped, skipsBefore(task, timezone, dayAfter, now))
+  }
+  return { kind: 'skip', landing: null, skipped: consumed, keepDeck: false, ended: true }
 }
 
 /**
@@ -251,12 +321,11 @@ export function planSkipUntil(
   const reason = leaveReason(task)
   if (reason) return { kind: 'leave', reason }
   if (until === null) {
-    return {
-      kind: 'skip',
-      landing: nextOccurrenceAfterSkip(task, timezone, now),
-      skipped: 1,
-      keepDeck: false,
-    }
+    // Exactly `skipOccurrence`: one occurrence, judged by `nextOrEnd`.
+    const step = nextOrEnd(task, timezone, { completedAt: now })
+    return step.ended
+      ? { kind: 'skip', landing: null, skipped: step.consumed, keepDeck: false, ended: true }
+      : { kind: 'skip', landing: step.occurrenceAt, skipped: 1, keepDeck: false, ended: false }
   }
   const untilDay = DateTime.fromISO(until, { zone: timezone }).startOf('day')
   const untilStart = untilDay.toJSDate()
@@ -283,7 +352,13 @@ export function planSkipUntil(
     task.recurrence_mode === 'from_completion'
       ? walkFromCompletion(task, timezone, untilDay, now)
       : walkFromDue(task, timezone, untilStart, now)
-  return { kind: 'skip', ...targetOnOrAfter(task, timezone, untilStart, walked), keepDeck }
+  return judgeSkip(
+    task,
+    timezone,
+    targetOnOrAfter(task, timezone, untilStart, walked),
+    keepDeck,
+    now,
+  )
 }
 
 /**
@@ -303,11 +378,7 @@ function targetOnOrAfter(
   let { landing, skipped } = walked
   while (Date.parse(occurrenceDates(task, landing, timezone).targetAt) < untilStart.getTime()) {
     if (++skipped > MAX_SKIPPED) throw tooManySkips()
-    landing = nextOccurrenceAfterSkip(
-      { ...task, occurrence_at: landing },
-      timezone,
-      new Date(landing),
-    )
+    landing = nextLanding({ ...task, occurrence_at: landing }, timezone, new Date(landing))
   }
   return { landing, skipped }
 }
@@ -365,6 +436,12 @@ export interface SkipUntilResult {
   skippedInactive: number
   /** Target and occurrence already on or after the date: nothing before it. */
   alreadyClear: number
+  /**
+   * Repeat ends (2026-10-22): skipped tasks whose series ended — the skip
+   * passed the last occurrence (in `tasksAffected`; archived, see
+   * `writeSeriesEndSkip`).
+   */
+  seriesEnded: number
   /** The toast: what was skipped and what was not. */
   summary: string
 }
@@ -400,6 +477,9 @@ function summaryLead(
 ): string[] {
   const occ = (n: number) => `${n} ${n === 1 ? 'occurrence' : 'occurrences'}`
   const skippedTasks = r.tasksAffected - r.targetsMoved
+  if (r.tasksAffected === 1 && r.seriesEnded === 1) {
+    return [seriesEndSkipWords(r.tasks[0])]
+  }
   if (r.tasksAffected === 1) {
     const t = r.tasks[0]
     // The landing occurrence's TARGET day (a deadline-anchored repeat's lies
@@ -436,6 +516,7 @@ export function skipUntilSummary(
   timezone: string,
 ): string {
   const parts = summaryLead(r, until, timezone)
+  if (r.seriesEnded > 0 && r.tasksAffected > 1) parts.push(`${r.seriesEnded} ended`)
   if (r.skippedNotRepeating > 0) parts.push(`${r.skippedNotRepeating} not repeating`)
   if (r.alreadyClear > 0) {
     const on = until ? untilLabel(until) : 'that day'
@@ -467,10 +548,13 @@ type LeaveCounts = Pick<
 /** One task's write: a skip (`skipped` ≥ 1) or a retarget to its occurrence (`skipped` 0). */
 interface PlannedWrite {
   task: Task
-  landing: string
+  /** Null when the skip ends the series (`ended`). */
+  landing: string | null
   skipped: number
   /** A skip that keeps the task's deck (its day on or after the date). */
   keepDeck: boolean
+  /** Repeat ends: the skip passes the series' end (`writeSeriesEndSkip`). */
+  ended: boolean
 }
 
 /** Skip every repeating task in the batch to `until` (or past this occurrence). */
@@ -491,16 +575,30 @@ export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
   for (const task of batch) {
     const plan = planSkipUntil(task, userTimezone, until, now)
     if (plan.kind === 'skip') {
-      planned.push({ task, landing: plan.landing, skipped: plan.skipped, keepDeck: plan.keepDeck })
+      planned.push({
+        task,
+        landing: plan.landing,
+        skipped: plan.skipped,
+        keepDeck: plan.keepDeck,
+        ended: plan.ended,
+      })
     } else if (plan.kind === 'retarget') {
-      planned.push({ task, landing: plan.landing, skipped: 0, keepDeck: false })
+      planned.push({ task, landing: plan.landing, skipped: 0, keepDeck: false, ended: false })
     } else counts[LEAVE_COUNTER[plan.reason]] += 1
   }
 
   const occurrencesSkipped = planned.reduce((sum, p) => sum + p.skipped, 0)
-  const targetsMoved = planned.filter((p) => p.skipped === 0).length
+  const targetsMoved = planned.filter((p) => !p.ended && p.skipped === 0).length
+  const seriesEnded = planned.filter((p) => p.ended).length
   const tasks = planned.length > 0 ? writeSkips(userId, userTimezone, until, planned) : []
-  const result = { tasks, tasksAffected: tasks.length, occurrencesSkipped, targetsMoved, ...counts }
+  const result = {
+    tasks,
+    tasksAffected: tasks.length,
+    occurrencesSkipped,
+    targetsMoved,
+    seriesEnded,
+    ...counts,
+  }
   const summary = skipUntilSummary(result, until, userTimezone)
   if (tasks.length === 0) return { ...result, summary }
 
@@ -510,10 +608,11 @@ export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
     userId,
     tasks.map((t) => t.id),
   )
-  planned.forEach(({ skipped }, i) => {
+  planned.forEach(({ skipped, ended }, i) => {
     const task = formatTaskResponse(tasks[i], userTimezone)
     // §7.5: a skip is NOT a completion; a retarget is a plain update.
-    if (skipped > 0) dispatchWebhookEvent(userId, 'task.skipped', { task })
+    if (ended) dispatchWebhookEvent(userId, 'task.skipped', { task, series_ended: true })
+    else if (skipped > 0) dispatchWebhookEvent(userId, 'task.skipped', { task })
     else dispatchWebhookEvent(userId, 'task.updated', { task })
   })
   return { ...result, summary }
@@ -573,9 +672,10 @@ function writeSkips(
     const activity: ActivityEntry[] = []
     const afters: Task[] = []
     let fields: string[] = []
-    for (const { task, landing, skipped, keepDeck } of planned) {
-      const { after, fieldsChanged } =
-        skipped > 0
+    for (const { task, landing, skipped, keepDeck, ended } of planned) {
+      const { after, fieldsChanged } = ended
+        ? writeSeriesEndSkip(tx, { task, skipsAdded: skipped, nowStr })
+        : skipped > 0
           ? writeRecurringSkip(tx, {
               task,
               nextOccurrenceAt: landing,
@@ -584,32 +684,39 @@ function writeSkips(
               timezone,
               keepDeck,
             })
-          : writeRetarget(tx, task, landing, nowStr, timezone)
+          : writeRetarget(tx, task, landing!, nowStr, timezone)
       snapshots.push(createTaskSnapshot(task, after, fieldsChanged))
       fields = [...new Set([...fields, ...fieldsChanged])]
       activity.push({
         userId,
         taskId: task.id,
-        action: skipped > 0 ? 'skip' : 'edit',
+        action: ended || skipped > 0 ? 'skip' : 'edit',
         source: planned.length > 1 ? 'bulk' : 'single',
         batchId,
         fields: fieldsChanged,
         before: { id: task.id, due_at: task.due_at, skip_count: task.skip_count },
         after: { id: task.id, due_at: after.due_at, skip_count: after.skip_count },
-        metadata: { recurring: true, skip_until: until, occurrences_skipped: skipped },
+        metadata: {
+          recurring: true,
+          skip_until: until,
+          occurrences_skipped: skipped,
+          ...(ended ? { series_ended: true } : {}),
+        },
       })
       afters.push(after)
     }
     const to = until ? ` until ${untilLabel(until)}` : ''
     // The undo / History words match the toast: a batch that only moved
     // targets back onto their occurrences says so.
-    const onlyMoved = planned.every((p) => p.skipped === 0)
+    const onlyMoved = planned.every((p) => !p.ended && p.skipped === 0)
     const description = onlyMoved
       ? planned.length === 1
         ? `Moved "${planned[0].task.title}" to its occurrence`
         : `Moved ${planned.length} tasks to their occurrence`
       : planned.length === 1
-        ? `Skipped "${planned[0].task.title}"${to}`
+        ? planned[0].ended
+          ? seriesEndSkipWords(planned[0].task)
+          : `Skipped "${planned[0].task.title}"${to}`
         : `Skipped ${planned.length} tasks${to}`
     logAction(userId, 'bulk_skip', description, fields, snapshots)
     logActivityBatch(activity)

@@ -5,7 +5,7 @@
  */
 
 import { attemptsRolloverTime } from './rollover-time'
-import { occurrenceDates, putBackCountedThrough } from '@/lib/task-segments'
+import { occurrenceDates, putBackCountedThrough, seriesEndWords } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
@@ -25,6 +25,9 @@ import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
 import { DECK_CLEAR_SQL } from './deck-clear'
 
+/** A series ended by skipping its last occurrence (repeat ends, 2026-10-22). */
+export const REPEAT_ENDED_MESSAGE = 'This repeat has ended'
+
 export interface MarkDoneOptions {
   userId: number
   userTimezone: string
@@ -40,6 +43,8 @@ export interface MarkDoneResult {
   task: Task
   wasRecurring: boolean
   nextDueAt?: string | null
+  /** Repeat ends (2026-10-22): this completion closed the last occurrence. */
+  seriesEnded: boolean
 }
 
 /**
@@ -64,9 +69,15 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
     throw new ValidationError(QUOTA_DONE_MESSAGE)
   }
 
-  // Cannot mark already done one-off task done again
-  if (task.done && !isRecurring(task.rrule)) {
+  // Cannot mark a done task done again — a one-off, or a repeat whose series
+  // has ended (repeat ends, 2026-10-22: an ended series is done=1, and
+  // advancing it would start it again).
+  if (task.done) {
     throw new ValidationError('Task is already done')
+  }
+  // A series ended by skipping its last occurrence is archived, not done.
+  if (isRecurring(task.rrule) && task.archived_at) {
+    throw new ValidationError(REPEAT_ENDED_MESSAGE)
   }
 
   const completedAt = new Date()
@@ -80,7 +91,11 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
     const { snapshot } = executeMarkDone(tx, task, computation, userId, nowStr)
 
     // Log to undo
-    logAction(userId, 'done', `Marked "${task.title}" done`, computation.fieldsChanged, [snapshot])
+    const ended = computation.type === 'series_end'
+    const description = ended
+      ? `Marked "${task.title}" done — ${seriesEndWords(task)}`
+      : `Marked "${task.title}" done`
+    logAction(userId, 'done', description, computation.fieldsChanged, [snapshot])
 
     logActivity({
       userId,
@@ -90,8 +105,9 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
       before: snapshot.before_state,
       after: snapshot.after_state,
       metadata: {
-        recurring: computation.type === 'recurring',
+        recurring: computation.type !== 'one_off',
         ...(computation.type === 'recurring' ? { next_due_at: computation.nextDueAt } : {}),
+        ...(ended ? { series_ended: true } : {}),
       },
     })
 
@@ -109,11 +125,16 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
         task: updatedTask,
         wasRecurring: true,
         nextDueAt: computation.nextDueAt,
+        seriesEnded: false,
       }
+    } else if (ended) {
+      // The series ended: no next occurrence.
+      return { task: updatedTask, wasRecurring: true, nextDueAt: null, seriesEnded: true }
     } else {
       return {
         task: updatedTask,
         wasRecurring: false,
+        seriesEnded: false,
       }
     }
   })
@@ -123,6 +144,7 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   dismissNotificationsForTasks(userId, [taskId])
   dispatchWebhookEvent(userId, 'task.completed', {
     task: formatTaskResponse(result.task, userTimezone),
+    ...(result.seriesEnded ? { series_ended: true } : {}),
   })
   return result
 }
@@ -158,7 +180,14 @@ export function markUndone(options: MarkDoneOptions): Task {
     )
   }
 
-  if (isRecurring(task.rrule)) {
+  // REPEAT ENDS (2026-10-22): an open repeat puts back its latest
+  // completion; a DONE one is an ended series, reopened by the one-off branch
+  // below on the occurrence it ended on (done kept its dates).
+  const recurring = isRecurring(task.rrule)
+  if (recurring && !task.done) {
+    // A series ended by SKIPPING its last occurrence is archived, not done:
+    // nothing to put back (undo reverses the skip).
+    if (task.archived_at) throw new ValidationError('Task is not done')
     return putBackLatestOccurrence(task, userId, options.userTimezone)
   }
 
@@ -174,6 +203,8 @@ export function markUndone(options: MarkDoneOptions): Task {
   const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
   const restoredLastCompleted = restoredCount === 0 ? null : task.last_completed_at
 
+  // An ended series reopens on its last occurrence, which it uses again.
+  const restoredUsed = recurring ? Math.max(0, task.repeat_count_used - 1) : task.repeat_count_used
   const fieldsChanged = [
     'done',
     'done_at',
@@ -183,6 +214,7 @@ export function markUndone(options: MarkDoneOptions): Task {
     'last_completed_at',
     'attempts',
     'attempts_counted_through',
+    ...(recurring ? ['repeat_count_used'] : []),
   ]
 
   // §7: the attempts come back from the completion row it deletes (done
@@ -214,7 +246,7 @@ export function markUndone(options: MarkDoneOptions): Task {
       UPDATE tasks
       SET done = 0, done_at = NULL, archived_at = NULL,
           completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-          attempts = ?, attempts_counted_through = ?,
+          attempts = ?, attempts_counted_through = ?, repeat_count_used = ?,
           updated_at = ?
       WHERE id = ?
     `,
@@ -224,6 +256,7 @@ export function markUndone(options: MarkDoneOptions): Task {
       restoredLastCompleted,
       restoredAttempts,
       restoredThrough,
+      restoredUsed,
       nowStr,
       taskId,
     )
@@ -247,6 +280,7 @@ export function markUndone(options: MarkDoneOptions): Task {
         last_completed_at: task.last_completed_at,
         attempts: task.attempts,
         attempts_counted_through: task.attempts_counted_through,
+        repeat_count_used: task.repeat_count_used,
       },
       {
         id: taskId,
@@ -259,6 +293,7 @@ export function markUndone(options: MarkDoneOptions): Task {
         last_completed_at: restoredLastCompleted,
         attempts: restoredAttempts,
         attempts_counted_through: restoredThrough,
+        repeat_count_used: restoredUsed,
       },
       fieldsChanged,
     )
@@ -358,6 +393,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const restoredDeadline = restored ? restored.deadlineAt : task.deadline_at
   // §7: the occurrence's attempts come back from its completion row.
   const restoredAttempts = latest.attempts ?? 0
+  const restoredUsed = Math.max(0, task.repeat_count_used - 1)
   const restoredThrough = putBackCountedThrough(
     latest.completed_at,
     restoredTarget,
@@ -366,26 +402,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     attemptsRolloverTime(task.user_id),
   )
   const queueClear = queueStateToClear(task)
-  const fieldsChanged = [
-    'due_at',
-    'occurrence_at',
-    'original_due_at',
-    'deadline_at',
-    'completion_count',
-    'first_completed_at',
-    'last_completed_at',
-    // Upcoming (2026-10-12): the put-back sets the target again (normally an
-    // occurrence already arrived, so over target, never Upcoming).
-    TARGET_SET_FIELD,
-    'attempts',
-    'attempts_counted_through',
-    // The task queue (2026-10-19): setting the target again clears the queue
-    // state (normally already clear: done cleared it).
-    ...queueClear.fields,
-    // On deck (2026-10-20): a deck put on the NEXT occurrence since goes with
-    // it (DECK_CLEAR_SQL) — undo of the put-back brings it back.
-    ...(task.on_deck_day ? ['on_deck_day'] : []),
-  ]
+  const fieldsChanged = putBackFields(task, queueClear.fields)
 
   const updatedTask = withTransaction((tx) => {
     tx.prepare(
@@ -393,7 +410,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?,
             ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-            ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
+            repeat_count_used = ?, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
         WHERE id = ?`,
     ).run(
       restoredTarget,
@@ -406,6 +423,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
       restoredCount,
       restoredFirstCompleted,
       restoredLastCompleted,
+      restoredUsed,
       nowStr,
       task.id,
     )
@@ -429,6 +447,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         completion_count: task.completion_count,
         first_completed_at: task.first_completed_at,
         last_completed_at: task.last_completed_at,
+        repeat_count_used: task.repeat_count_used,
         on_deck_day: task.on_deck_day,
       },
       {
@@ -446,6 +465,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         completion_count: restoredCount,
         first_completed_at: restoredFirstCompleted,
         last_completed_at: restoredLastCompleted,
+        repeat_count_used: restoredUsed,
       },
       fieldsChanged,
       latest.id,
@@ -481,4 +501,30 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
 
   emitSyncEvent(userId)
   return updatedTask
+}
+
+/** What a put-back changes (`putBackLatestOccurrence`). */
+function putBackFields(task: Task, queueFields: string[]): string[] {
+  return [
+    'due_at',
+    'occurrence_at',
+    'original_due_at',
+    'deadline_at',
+    'completion_count',
+    'first_completed_at',
+    'last_completed_at',
+    // Repeat ends (2026-10-22): the occurrence comes back, so it is open again.
+    'repeat_count_used',
+    // Upcoming (2026-10-12): the put-back sets the target again (normally an
+    // occurrence already arrived, so over target, never Upcoming).
+    TARGET_SET_FIELD,
+    'attempts',
+    'attempts_counted_through',
+    // The task queue (2026-10-19): setting the target again clears the queue
+    // state (normally already clear: done cleared it).
+    ...queueFields,
+    // On deck (2026-10-20): a deck put on the NEXT occurrence since goes with
+    // it (DECK_CLEAR_SQL) — undo of the put-back brings it back.
+    ...(task.on_deck_day ? ['on_deck_day'] : []),
+  ]
 }

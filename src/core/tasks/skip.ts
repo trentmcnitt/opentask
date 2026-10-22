@@ -19,11 +19,17 @@
  * that completions stay honest, NOT so anyone can infer avoidance from it.
  */
 
-import { occurrenceDates, scheduleBase } from '@/lib/task-segments'
+import {
+  nextOrEnd,
+  occurrenceDates,
+  repeatEndOf,
+  seriesEndWords,
+  type AdvanceTask,
+} from '@/lib/task-segments'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
-import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
+import { nowUtc, isRecurring } from '@/core/recurrence'
 import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
@@ -35,6 +41,19 @@ import type Database from 'better-sqlite3'
 import type { Task } from '@/types'
 import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
 import { DECK_CLEAR_SQL } from './deck-clear'
+import { REPEAT_ENDED_MESSAGE } from './mark-done'
+
+/**
+ * A1 — SKIPPING THE LAST OCCURRENCE of a series with an end (repeat ends,
+ * 2026-10-22; PENDING Trent). false (the recommendation): the series ends
+ * ARCHIVED with done=0 — the one-off skip's write: a skip is never a
+ * completion. true: it ends done=1 (done_at set) like a done of the last,
+ * still without a completion row or completion_count. Flipping this is the
+ * whole change: `writeSeriesEndSkip` is the one writer of that end
+ * (`skipOccurrence` and `skipUntil` both call it; the rollover never ends a
+ * series).
+ */
+export const SKIPPED_LAST_MARKS_DONE = false
 
 export interface SkipOccurrenceOptions {
   userId: number
@@ -46,6 +65,8 @@ export interface SkipOccurrenceResult {
   task: Task
   wasRecurring: boolean
   description: string
+  /** Repeat ends (2026-10-22): the skip closed the series' last occurrence. */
+  seriesEnded: boolean
 }
 
 /**
@@ -74,26 +95,44 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       'Reminders cannot be skipped — a missed one rolls forward on its own; complete it to mark it considered',
     )
   }
-  if (task.done && !isRecurring(task.rrule)) {
+  // A done task — a one-off, or (repeat ends, 2026-10-22) a repeat whose
+  // series has ended — has nothing to skip; nor does a series ended by a skip.
+  if (task.done) {
     throw new ValidationError('Task is already done')
   }
+  const recurring = isRecurring(task.rrule)
+  if (recurring && task.archived_at) throw new ValidationError(REPEAT_ENDED_MESSAGE)
 
   const nowStr = nowUtc()
   const skipCount = (task.skip_count ?? 0) + 1
-  const recurring = isRecurring(task.rrule)
+  // §5: a quota has no date to advance — see the same guard in
+  // `computeMarkDone`. Skipping one is still a period boundary, so the
+  // progress reset in `writeRecurringSkip` stands. Repeat ends: the landing
+  // is judged by `nextOrEnd`; skipping the last occurrence ends the series.
+  const step =
+    recurring && !isTracked(task)
+      ? nextOrEnd(task, userTimezone, { completedAt: new Date() })
+      : null
+  const seriesEnded = step?.ended === true
+
+  const description = seriesEnded
+    ? seriesEndSkipWords(task)
+    : recurring
+      ? `Skipped "${task.title}"`
+      : `Skipped and archived "${task.title}"`
 
   const result = withTransaction((tx) => {
     let after: Task
     let fieldsChanged: string[]
 
-    if (recurring) {
-      // §5: a quota has no date to advance — see the same guard in
-      // `computeMarkDone`. Skipping one is still a period boundary, so the
-      // progress reset in `writeRecurringSkip` stands.
-      const nextOccurrenceAt = isTracked(task) ? null : nextOccurrenceAfterSkip(task, userTimezone)
+    if (step?.ended) {
+      const write = writeSeriesEndSkip(tx, { task, skipsAdded: step.consumed, nowStr })
+      after = write.after
+      fieldsChanged = write.fieldsChanged
+    } else if (recurring) {
       const write = writeRecurringSkip(tx, {
         task,
-        nextOccurrenceAt,
+        nextOccurrenceAt: step ? step.occurrenceAt : null,
         skipsAdded: 1,
         nowStr,
         timezone: userTimezone,
@@ -110,7 +149,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       fieldsChanged = ['archived_at', 'skip_count']
     }
 
-    logAction(userId, 'skip', `Skipped "${task.title}"`, fieldsChanged, [
+    logAction(userId, 'skip', description, fieldsChanged, [
       createTaskSnapshot(task, after, fieldsChanged),
     ])
 
@@ -121,7 +160,7 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
       fields: fieldsChanged,
       before: { id: taskId, due_at: task.due_at, skip_count: task.skip_count },
       after: { id: taskId, due_at: after.due_at, skip_count: skipCount },
-      metadata: { recurring },
+      metadata: { recurring, ...(seriesEnded ? { series_ended: true } : {}) },
     })
 
     return after
@@ -133,13 +172,19 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
 
   // §7.5: a skip is NOT a completion. Anything downstream that counts
   // completions must never see this as one.
-  dispatchWebhookEvent(userId, 'task.skipped', { task: formatTaskResponse(result, userTimezone) })
+  dispatchWebhookEvent(userId, 'task.skipped', {
+    task: formatTaskResponse(result, userTimezone),
+    ...(seriesEnded ? { series_ended: true } : {}),
+  })
 
-  return {
-    task: result,
-    wasRecurring: recurring,
-    description: recurring ? `Skipped "${task.title}"` : `Skipped and archived "${task.title}"`,
-  }
+  return { task: result, wasRecurring: recurring, description, seriesEnded }
+}
+
+/** "Skipped "X" — the last of 6; the repeat has ended" / "… — the last; it ended Dec 31". */
+export function seriesEndSkipWords(task: Task): string {
+  const words = seriesEndWords(task)
+  const tail = task.repeat_count !== null ? '; the repeat has ended' : ''
+  return `Skipped "${task.title}" — ${words}${tail}`
 }
 
 /**
@@ -148,27 +193,16 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
  * schedule. Counted from now when the occurrence has already passed, so an
  * over-target task lands on its next one still ahead (the rule's
  * `max(prevDueAt, completedAt)`). Not for a quota (no date to advance).
+ * REPEAT ENDS (2026-10-22): null when the skip would END the series — the
+ * current occurrence is the last (`nextOrEnd`).
  */
 export function nextOccurrenceAfterSkip(
-  task: Pick<
-    Task,
-    'rrule' | 'recurrence_mode' | 'anchor_time' | 'occurrence_at' | 'due_at' | 'repeat_anchor'
-  >,
+  task: AdvanceTask,
   timezone: string,
   now: Date = new Date(),
-): string {
-  // From the rule's own instant (`scheduleBase`; a rescheduled deadline).
-  const prevOccurrence = scheduleBase(task, timezone)
-  return computeNextOccurrence({
-    rrule: task.rrule!,
-    recurrenceMode: task.recurrence_mode,
-    anchorTime: task.anchor_time,
-    timezone,
-    completedAt: now,
-    prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
-    // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
-    anchorAt: prevOccurrence ? new Date(prevOccurrence) : null,
-  }).toISOString()
+): string | null {
+  const step = nextOrEnd(task, timezone, { completedAt: now })
+  return step.ended ? null : step.occurrenceAt
 }
 
 export interface RecurringSkipWrite {
@@ -215,14 +249,26 @@ export function writeRecurringSkip(
 
   // §5: advancing the occurrence is a period boundary, so a tracked task's
   // progress resets here exactly as it would on completion.
+  // Repeat ends (2026-10-22): every occurrence passed over is closed.
+  const used = repeatEndOf(task).repeat_count_used + skipsAdded
   tx.prepare(
     `UPDATE tasks
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, skip_count = ?,
-            progress_current = 0, ${TARGET_SET_FIELD} = ?,
+            repeat_count_used = ?, progress_current = 0, ${TARGET_SET_FIELD} = ?,
             attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}${deckClear},
             updated_at = ?
       WHERE id = ?`,
-  ).run(nextDueAt, nextOccurrenceAt, nextTarget, nextDeadlineAt, skipCount, nowStr, nowStr, task.id)
+  ).run(
+    nextDueAt,
+    nextOccurrenceAt,
+    nextTarget,
+    nextDeadlineAt,
+    skipCount,
+    used,
+    nowStr,
+    nowStr,
+    task.id,
+  )
 
   const queue = queueStateToClear(task)
   const after: Task = {
@@ -232,6 +278,7 @@ export function writeRecurringSkip(
     original_due_at: nextTarget,
     deadline_at: nextDeadlineAt,
     skip_count: skipCount,
+    repeat_count_used: used,
     progress_current: 0,
     // Upcoming (2026-10-12): the next occurrence's wait counts from the skip.
     target_set_at: nowStr,
@@ -251,12 +298,50 @@ export function writeRecurringSkip(
     'original_due_at',
     'deadline_at',
     'skip_count',
+    'repeat_count_used',
     'progress_current',
     TARGET_SET_FIELD,
     'attempts',
     'attempts_counted_through',
     ...queue.fields,
     ...(task.on_deck_day && !keep ? ['on_deck_day'] : []),
+  ]
+  return { after, fieldsChanged }
+}
+
+/**
+ * THE SKIP THAT ENDS A SERIES (repeat ends, 2026-10-22): the current
+ * occurrence was the last (or skip until passed the end). The one-off skip's
+ * write — archived, `skip_count` += the occurrences closed, never a
+ * completion — plus `repeat_count_used`. The occurrence, target, deadline
+ * and any deck stay, so undo restores them exactly. done=0 or done=1 is A1:
+ * `SKIPPED_LAST_MARKS_DONE`, the one place it is decided.
+ */
+export function writeSeriesEndSkip(
+  tx: Database.Database,
+  { task, skipsAdded, nowStr }: { task: Task; skipsAdded: number; nowStr: string },
+): { after: Task; fieldsChanged: string[] } {
+  const skipCount = (task.skip_count ?? 0) + skipsAdded
+  const used = repeatEndOf(task).repeat_count_used + skipsAdded
+  const done = SKIPPED_LAST_MARKS_DONE
+  tx.prepare(
+    `UPDATE tasks
+        SET archived_at = ?, skip_count = ?, repeat_count_used = ?, done = ?, done_at = ?,
+            updated_at = ?
+      WHERE id = ?`,
+  ).run(nowStr, skipCount, used, done ? 1 : 0, done ? nowStr : null, nowStr, task.id)
+  const after: Task = {
+    ...task,
+    archived_at: nowStr,
+    skip_count: skipCount,
+    repeat_count_used: used,
+    ...(done ? { done: true, done_at: nowStr } : {}),
+  }
+  const fieldsChanged = [
+    'archived_at',
+    'skip_count',
+    'repeat_count_used',
+    ...(done ? ['done', 'done_at'] : []),
   ]
   return { after, fieldsChanged }
 }

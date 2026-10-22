@@ -38,6 +38,9 @@ export const FIELD_LABELS: Record<string, string> = {
   is_reminder: 'reminder',
   // On deck (2026-10-20): putting a task on deck, or a pick that takes it off.
   on_deck_day: 'on deck',
+  // Repeat ends (2026-10-22): "After N times" / "On date".
+  repeat_count: 'repeat end',
+  repeat_until: 'repeat end',
 }
 
 /**
@@ -51,9 +54,14 @@ export const FIELD_LABELS: Record<string, string> = {
  * - No user-facing fields: null
  */
 export function formatFieldSummary(fieldsChanged: string[]): string | null {
-  const labels = fieldsChanged
-    .map((f) => FIELD_LABELS[f])
-    .filter((label): label is string => label !== undefined)
+  // Deduplicated: two columns can share a label (the repeat end's count and date).
+  const labels = [
+    ...new Set(
+      fieldsChanged
+        .map((f) => FIELD_LABELS[f])
+        .filter((label): label is string => label !== undefined),
+    ),
+  ]
 
   if (labels.length === 0) return null
   if (labels.length === 1) return labels[0]
@@ -145,8 +153,11 @@ export function formatEditDescription(
 ): string {
   const { beforeState, afterState, userTimezone } = context
 
-  // Get user-facing fields only
-  const userFields = fieldsChanged.filter((f) => FIELD_LABELS[f])
+  // Get user-facing fields only. The repeat end's two columns are one setting
+  // (setting one clears the other): one fragment, from `repeat_count`'s case.
+  const userFields = fieldsChanged
+    .filter((f) => FIELD_LABELS[f])
+    .filter((f) => f !== 'repeat_until' || !fieldsChanged.includes('repeat_count'))
 
   if (userFields.length === 0) {
     return `Edited "${truncateTitle(title)}"`
@@ -235,9 +246,27 @@ function buildFieldFragment(
       return afterState.is_reminder ? 'Moved to Reminders' : 'Removed from Reminders'
     case 'on_deck_day':
       return buildDeckFragment(afterState, userTimezone)
+    case 'repeat_count':
+    case 'repeat_until':
+      return buildRepeatEndFragment(afterState)
     default:
       return null
   }
+}
+
+/**
+ * Repeat ends (2026-10-22): "Ends after 6 times", "Ends on Dec 31, 2026" or
+ * "Ends never" — the end the write leaves.
+ */
+function buildRepeatEndFragment(afterState: Partial<Record<string, unknown>>): string {
+  const count = afterState.repeat_count
+  const until = afterState.repeat_until
+  if (typeof count === 'number') return `Ends after ${count} ${count === 1 ? 'time' : 'times'}`
+  if (typeof until === 'string') {
+    const day = DateTime.fromISO(until, { zone: 'utc' })
+    return `Ends on ${day.isValid ? day.toFormat('LLL d, yyyy') : until}`
+  }
+  return 'Ends never'
 }
 
 /**
