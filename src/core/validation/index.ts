@@ -22,6 +22,7 @@ export {
   validateSegmentIds,
   validateSegmentTarget,
   validateDeck,
+  validateDeferLead,
   // Repeat ends (2026-10-22)
   liftRuleEnd,
   ruleHasEnd,

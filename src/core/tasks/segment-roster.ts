@@ -67,8 +67,12 @@ export function rosterLeftRows(
 ): Map<SegmentKind, LeftRow[]> {
   const rolloverTime = rolloverTimeForUser(userId)
   const calendarDay = (d: Date) => DateTime.fromJSDate(d).setZone(timezone).toISODate()!
+  // The queue's panels and the deadlines page (2026-10-22) run on the
+  // OpenTask day; the rest on the calendar day.
   const dayOf = (kind: SegmentKind, d: Date) =>
-    isQueueKind(kind) ? openTaskDayOf(d, timezone, rolloverTime) : calendarDay(d)
+    isQueueKind(kind) || kind === 'deadlines'
+      ? openTaskDayOf(d, timezone, rolloverTime)
+      : calendarDay(d)
   const queueDay = openTaskDayOf(now, timezone, rolloverTime)
   const today = calendarDay(now)
   const db = getDb()

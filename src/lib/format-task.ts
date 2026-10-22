@@ -87,6 +87,8 @@ export interface FormattedTask extends Task {
  *
  * - false for nearly every task: a deadline task's stored target is at or
  *   before its deadline, which their rule honors as set;
+ * - TRUE for a one-off with a deadline and NO target (the deadlines page,
+ *   2026-10-22): their rule would invent one;
  * - TRUE for a one-off whose deadline has PASSED and whose target is after it
  *   (Trent's ruling, 2026-10-12: once the deadline has passed any target can
  *   be picked). Their rule implies a target 4 days before the deadline for a
@@ -94,7 +96,13 @@ export interface FormattedTask extends Task {
  *   deadline has passed, in which case it leaves the task to its own target.
  */
 function nativeNagOff(task: Task, now: Date): boolean {
-  if (task.rrule !== null || task.deadline_at === null || task.due_at === null) return false
+  if (task.rrule !== null || task.deadline_at === null) return false
+  // THE DEADLINES PAGE (2026-10-22, plan L5): a one-off with a deadline and NO
+  // target. Builds installed 10-10..10-12 imply a target 4 days before the
+  // deadline whenever `due_at` is nil and the nag is not off
+  // (`TargetAge.impliedTargetDate`, fe6e8daf), and would show such a task
+  // overdue at once. The nag-off flag turns their rule off.
+  if (task.due_at === null) return true
   const deadline = Date.parse(task.deadline_at)
   return deadline <= now.getTime() && Date.parse(task.due_at) > deadline
 }

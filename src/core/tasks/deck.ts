@@ -42,12 +42,15 @@ import {
   deckSummary,
   type DeckRefusal,
   type DeckResultCounts,
+  inSafetyNet,
+  isDeadlinePageTask,
 } from '@/lib/task-segments'
 import { bulkEdit, cancelPendingEnrichment } from './bulk'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { getTargetContext } from './target-context'
 import { taskQueueEnabled } from './task-queue'
 import { deckRolloverTime } from './deck-clear'
+import { rolloverTimeForUser } from './rollover-time'
 
 export interface DeckTasksOptions {
   userId: number
@@ -170,5 +173,12 @@ export function onDeckToday(userId: number, timezone: string, now: Date = new Da
         ORDER BY priority DESC, id ASC`,
     )
     .all(userId, calendarToday(timezone, now), now.toISOString()) as TaskRow[]
-  return rows.map(rowToTask)
+  const tasks = rows.map(rowToTask)
+  // The deadlines page (2026-10-22, plan §4): in its SAFETY NET a target-less
+  // deadline task is on the page, deck or not — never in both places.
+  if (!taskQueueEnabled()) return tasks
+  const rolloverTime = rolloverTimeForUser(userId)
+  return tasks.filter(
+    (t) => !isDeadlinePageTask(t) || !inSafetyNet(t.deadline_at!, timezone, now, rolloverTime),
+  )
 }

@@ -31,6 +31,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // Upcoming row ("On deck Sat Oct 24"). Without it a decked task is simply
     // absent from Upcoming — a shipped native build would draw a dateless row.
     const deckRows = request.nextUrl.searchParams.get('deck') === '1'
+    // `?deadlines=1` (the deadlines page, 2026-10-22): this client draws the
+    // `deadlines` segment and the lead day's Upcoming rows. Without it (a
+    // shipped native build, whose SegmentKind would list an unknown kind as a
+    // page) a target-less deadline one-off stays in its horizon segment.
+    const deadlineRows = request.nextUrl.searchParams.get('deadlines') === '1'
     // `?handled=1` (2026-10-22, the day roster — src/core/tasks/segment-roster.ts):
     // this client keeps a segment's "N of M" fixed for the day. Rows that left a
     // segment today handled (decked, targeted, done) come back as considered
@@ -89,9 +94,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         queuePanels,
         deckRows,
         handledRows,
+        deadlineRows,
       }).map((seg) => ({
         horizon: seg.horizon,
-        tasks: seg.tasks.map(({ task, state, left }) => ({
+        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen }) => ({
           ...formatTaskResponse(task, user.timezone),
           segment_state: state,
           // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
@@ -103,6 +109,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
           // only): 'done' | 'deck' | 'target' | 'considered'. Such a row is
           // `considered`, counted in the segment's N and M, with no put-back.
           ...(left ? { segment_left: left } : {}),
+          // The deadlines page (`?deadlines=1` only, 2026-10-22): `safety_net`
+          // — from the day before the deadline, seeing the row does not
+          // silence it (draw the circle non-silencing; Defer hidden); `seen`
+          // — considered this OpenTask day.
+          ...(seg.horizon === 'deadlines' ? { safety_net: !!safetyNet, seen: !!seen } : {}),
         })),
         waiting: seg.waiting,
         considered: seg.considered,

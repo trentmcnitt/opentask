@@ -610,6 +610,17 @@ export function validateDeck(input: unknown): { ids: number[]; day?: string | nu
   return deckSchema.parse(input)
 }
 
+/**
+ * POST /api/task-segments/defer-lead (the deadlines page, 2026-10-22):
+ * `{ ids, day? }` — `day` the OpenTask day (yyyy-MM-dd) the lead moves to;
+ * omitted = tomorrow.
+ */
+export const deferLeadSchema = z.object({ ids: bulkIds, day: deckDay.optional() })
+
+export function validateDeferLead(input: unknown): { ids: number[]; day?: string } {
+  return deferLeadSchema.parse(input)
+}
+
 export function validateSegmentIds(input: unknown): { ids: number[] } {
   return segmentIdsSchema.parse(input)
 }

@@ -8,17 +8,21 @@
  *
  * 1. over target — `isOverdue`, the top bar's red-pill definition;
  * 2. targeted today — its target falls on the user's local today, later
- *    today included (`targetIsToday`, the task segments' own test). A
- *    deadline's AUTOMATIC target counts once its day comes: that is when the
- *    task starts to nag;
+ *    today included (`targetIsToday`, the task segments' own test). (With the
+ *    task queue off, a deadline's AUTOMATIC target counts once its day comes:
+ *    that is when the task starts to nag.)
  * 3. in today's Upcoming heads-up — exactly the Upcoming task segment's rule
  *    (`upcomingState` in `src/lib/task-segments.ts`), a picked target on one
  *    of its heads-up days (or carried over from one). Considered today still
  *    counts, as the segment still lists it, ticked; Defer All today ('deferred')
  *    does not — deferring says "not today";
- * 4. undated High or Urgent — priority 3 or 4 with no target at all. (A
- *    deadline task always carries a target, its automatic one, so "undated"
- *    means no dates at all.) Not while it is in the task queue (A8, 2026-10-20).
+ * 4. undated High or Urgent — priority 3 or 4 with no target at all. Not
+ *    while it is in the task queue (A8, 2026-10-20).
+ *
+ * THE DEADLINES PAGE (2026-10-22, queue on): a deadline task with no target
+ * is held by the deadlines page — relevant here ONLY in its safety net (from
+ * the day before its deadline's OpenTask day, past the deadline included),
+ * whatever its priority, like A8 for the queue.
  *
  * ON DECK (2026-10-20): a task on deck for today (or an earlier day not yet
  * stripped) is NOT relevant here — it belongs to the On deck section — unless
@@ -52,7 +56,13 @@
  */
 import type { Task } from '@/types'
 import { isOverdue } from '@/lib/task-counts'
-import { deckIsToday, targetIsToday, upcomingState } from '@/lib/task-segments'
+import {
+  deckIsToday,
+  inSafetyNet,
+  isDeadlinePageTask,
+  targetIsToday,
+  upcomingState,
+} from '@/lib/task-segments'
 
 /** High (3) and Urgent (4): the priorities an undated task needs to be relevant now. */
 export const NOW_PRIORITY_MIN = 3
@@ -65,6 +75,12 @@ export const NOW_PRIORITY_MIN = 3
  */
 export interface NowOptions {
   queue?: boolean
+  /**
+   * The user's rollover time (GET /api/user/preferences): the deadlines
+   * page's safety net starts on the deadline's OpenTask day minus one. Absent:
+   * calendar days.
+   */
+  rolloverTime?: string | null
 }
 
 export function isRelevantNow(
@@ -77,6 +93,11 @@ export function isRelevantNow(
   // whose automatic target has arrived, but one that nags is relevant, deck
   // or not.
   if (task.due_at !== null && isOverdue(task, now)) return true
+  // The deadlines page (queue on): a target-less deadline task, deck or not,
+  // is relevant only in its safety net.
+  if (opts.queue && isDeadlinePageTask(task)) {
+    return inSafetyNet(task.deadline_at!, timezone, now, opts.rolloverTime ?? null)
+  }
   // ON DECK (2026-10-20, A13). Today's decks (and yesterday's leftovers until
   // the rollover strips them, A2) are not relevant in their project group:
   // they live in the On deck section (D2), and fold behind "+ N more" here so
