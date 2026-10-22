@@ -295,6 +295,8 @@ describe('OD-RP: the deck write', () => {
       on_deck_day: '2026-10-22',
       due_at: null,
       occurrence_at: at('2026-10-20T08:00'),
+      // Decking took the origin with the target; the rule change leaves it.
+      original_due_at: null,
     })
   })
 
@@ -643,11 +645,13 @@ describe('OD-RP: a schedule change keeps the deck (PR 4a)', () => {
     const { fieldsChanged } = updateTask({ ...u, taskId: t.id, input: { rrule: MONDAY_6PM } })
     expect(fieldsChanged).not.toContain('due_at')
     expect(fieldsChanged).not.toContain('on_deck_day')
+    expect(fieldsChanged).not.toContain('original_due_at')
     expect(task(t.id)).toMatchObject({
       rrule: MONDAY_6PM,
       on_deck_day: '2026-10-22',
       due_at: null,
       occurrence_at: at('2026-10-20T18:00'),
+      original_due_at: before.original_due_at,
     })
     expect(due()).not.toContain(t.id)
 
@@ -680,17 +684,20 @@ describe('OD-RP: a schedule change keeps the deck (PR 4a)', () => {
   test('OD-RP51: bulk edit — the same (collectFieldChanges is shared)', () => {
     const t = daily()
     deck([t.id], '2026-10-22')
+    const origin = task(t.id).original_due_at
     bulkEdit({ ...u, taskIds: [t.id], changes: { rrule: MONDAY_6PM } })
     expect(task(t.id)).toMatchObject({
       on_deck_day: '2026-10-22',
       due_at: null,
       occurrence_at: at('2026-10-20T18:00'),
+      original_due_at: origin,
     })
   })
 
   test('OD-RP52: deadline-anchored — a rule, offsets and mode change keep the deck; the deadline is re-timed', () => {
     const t = fridayDeadline()
     expect(deck([t.id], '2026-10-22').decked).toBe(1)
+    const origin = task(t.id).original_due_at
     updateTask({ ...u, taskId: t.id, input: { rrule: FRIDAY_7PM } })
     expect(task(t.id)).toMatchObject({
       rrule: FRIDAY_7PM,
@@ -698,6 +705,7 @@ describe('OD-RP: a schedule change keeps the deck (PR 4a)', () => {
       due_at: null,
       occurrence_at: at('2026-10-23T19:00'),
       deadline_at: at('2026-10-23T19:00'),
+      original_due_at: origin,
     })
     updateTask({ ...u, taskId: t.id, input: { target_days_before: 1, target_time: '09:00' } })
     expect(task(t.id)).toMatchObject({
@@ -772,6 +780,21 @@ describe('OD-RP: a schedule change keeps the deck (PR 4a)', () => {
       due_at: null,
       deadline_at: at('2026-10-24T17:00'),
       occurrence_at: at('2026-10-24T17:00'),
+    })
+  })
+
+  test('OD-RP57: deadline-anchored — a moved target kept across a rule change keeps its origin', () => {
+    // Moved this occurrence to Wed Oct 21 12:00, then the deadline re-timed to 19:00.
+    const t = fridayDeadline()
+    updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-10-21T12:00') } })
+    const moved = task(t.id)
+    expect(moved.original_due_at).not.toBeNull()
+    const { fieldsChanged } = updateTask({ ...u, taskId: t.id, input: { rrule: FRIDAY_7PM } })
+    expect(fieldsChanged).not.toContain('original_due_at')
+    expect(task(t.id)).toMatchObject({
+      due_at: at('2026-10-21T12:00'),
+      deadline_at: at('2026-10-23T19:00'),
+      original_due_at: moved.original_due_at,
     })
   })
 

@@ -663,6 +663,10 @@ describe('RD-016: a moved target survives a rule change (target-anchored)', () =
       anchor_dow: 3,
     })
     expect(targetMoved(after, TEST_TIMEZONE)).toBe(true)
+    // The same occurrence: its origin (the age clock) stays with it.
+    expect(before.original_due_at).toBe(at('2026-01-16T16:00'))
+    expect(after.original_due_at).toBe(before.original_due_at)
+    expect(fieldsChanged).not.toContain('original_due_at')
 
     executeUndo(TEST_USER_ID)
     const undone = getTaskById(before.id)!
@@ -687,16 +691,21 @@ describe('RD-016: a moved target survives a rule change (target-anchored)', () =
     expect(getTaskById(t.id)).toMatchObject({
       due_at: at('2026-01-17T10:00'),
       occurrence_at: at('2026-01-15T16:00'),
+      original_due_at: t.original_due_at,
     })
+    expect(t.original_due_at).not.toBeNull()
   })
 
-  test('RD-018: an occurrence on its schedule still moves with it', () => {
+  test('RD-018: an occurrence on its schedule still moves with it (and drops its origin, as before)', () => {
     const t = createTask({ ...u, input: { title: 'Bins', rrule: FRIDAY_4PM } })
     expect(occurrenceIsPersonal(t, TEST_TIMEZONE)).toBeNull()
+    updateTask({ ...u, taskId: t.id, input: { due_at: at('2026-01-16T16:00') } })
+    getDb().prepare('UPDATE tasks SET original_due_at = due_at WHERE id = ?').run(t.id)
     updateTask({ ...u, taskId: t.id, input: { rrule: THURSDAY_4PM } })
     expect(getTaskById(t.id)).toMatchObject({
       due_at: at('2026-01-15T16:00'),
       occurrence_at: at('2026-01-15T16:00'),
+      original_due_at: null,
     })
   })
 
