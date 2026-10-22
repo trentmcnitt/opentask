@@ -64,8 +64,8 @@ export function JustAddedCard({
 }: JustAddedCardProps) {
   const [showDecks, setShowDecks] = useState(false)
   if (entries.length === 0) return null
-  const deckUpdates = entries.filter((e) => isDeckUpdate(e, now)).length
-  const listed = showDecks ? entries : entries.filter((e) => !isDeckUpdate(e, now))
+  const deckUpdates = entries.filter((e) => isDeckUpdate(e)).length
+  const listed = showDecks ? entries : entries.filter((e) => !isDeckUpdate(e))
   return (
     <section
       aria-label="Just now"

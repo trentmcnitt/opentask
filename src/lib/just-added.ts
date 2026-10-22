@@ -127,10 +127,12 @@ export function selectJustAddedEntries(tasks: Task[], now: number): JustAddedEnt
  * Taking a task off deck stamps nothing (`collectDeckChange` clears the deck's
  * Just now stamp), so there is no "deck removed" entry to fold.
  */
-export function isDeckUpdate(entry: JustAddedEntry, now: number): boolean {
+export function isDeckUpdate(entry: JustAddedEntry): boolean {
   if (entry.kind !== 'decked') return false
   const created = Date.parse(entry.task.created_at)
-  return Number.isNaN(created) || created <= now - JUST_ADDED_WINDOW_MS
+  // Against the deck's own moment, not now, so an entry never moves behind
+  // the fold while it is listed.
+  return Number.isNaN(created) || created <= entry.at - JUST_ADDED_WINDOW_MS
 }
 
 /** What "Clear" remembers an entry by: a new event for the same task is a new key. */

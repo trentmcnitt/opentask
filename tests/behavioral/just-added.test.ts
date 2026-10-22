@@ -277,13 +277,13 @@ describe('deck updates fold (isDeckUpdate, Trent 2026-10-22)', () => {
   test('a task decked inside the window, created before it, is a deck update', () => {
     const [entry] = selectJustAddedEntries([decked(1, HOUR, '2026-01-16')], NOW)
     expect(entry.kind).toBe('decked')
-    expect(isDeckUpdate(entry, NOW)).toBe(true)
+    expect(isDeckUpdate(entry)).toBe(true)
   })
 
   test('created and decked inside the window: new, never folded', () => {
     const [entry] = selectJustAddedEntries([decked(2, 3 * MIN, '2026-01-15')], NOW)
     expect(entry.kind).toBe('decked')
-    expect(isDeckUpdate(entry, NOW)).toBe(false)
+    expect(isDeckUpdate(entry)).toBe(false)
   })
 
   test('added and targeted entries are never deck updates', () => {
@@ -295,7 +295,7 @@ describe('deck updates fold (isDeckUpdate, Trent 2026-10-22)', () => {
       NOW,
     )
     expect(entries.map((e) => e.kind).sort()).toEqual(['added', 'targeted'])
-    expect(entries.some((e) => isDeckUpdate(e, NOW))).toBe(false)
+    expect(entries.some((e) => isDeckUpdate(e))).toBe(false)
   })
 })
 
