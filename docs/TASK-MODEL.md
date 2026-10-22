@@ -549,10 +549,39 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 **Native builds** decode with defaults and read `due_at` (the derived target), `deadline_at` and `occurrence_at`; none compares `due_at` to `occurrence_at`. The rule summary on an Upcoming row shows the deadline's time.
 
+## Repeat ends
+
+"Ends: never / after N times / on date" (2026-10-22, PR A — the server; the editor is PR 4c, enrichment PR 5). The end lives in three columns, **never in the stored rule**:
+
+| Column              | Meaning                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repeat_count`      | "After N times": the occurrences in the series, 1..999, counted from when the count was set — the current occurrence is #1 (A3).                                   |
+| `repeat_count_used` | Occurrences **closed** since then: every done and every skip adds one (A2: skips count, like RFC COUNT); a skip until passing k adds k; a put-back takes one back. |
+| `repeat_until`      | "On date": the last **local** calendar day (yyyy-MM-dd, the owner's zone), inclusive. An occurrence is in the series when its local date is on or before it.       |
+
+The count and the date are exclusive. Only an ordinary repeating task has an end: a reminder (its missed occurrences roll forward at read time, so nothing would consume a count — a date end for reminders is a follow-up) and a quota (its rule is a period) are 400s, and so is a one-off. Responses also carry two derived fields: `repeat_last` (closing the current occurrence ends the series) and `repeat_remaining` (`count − used`, the current one included).
+
+**One judge.** `repeatStep(end, landing, closes, timezone)` in `src/lib/task-segments.ts` (pure, browser-safe) says what closing `closes` occurrences leaves: the series ends when `used + closes >= count`, or the landing's local date is after `until`, or there is no landing; otherwise it lands. `nextOrEnd(task, tz, { completedAt, closes })` is the one-occurrence advance (`scheduleBase` + `computeNextOccurrence` + `repeatStep`), and `isLastOccurrence(task, tz, now)` asks it as if done at max(occurrence, now). **The engine never knows about ends** — `computeNextOccurrence` answers questions that are not advances too (`scheduleBase`, today's occurrence, the deadline walk, the first occurrence), and an end must not turn those into null. Guard RE-G01 (`tests/behavioral/rd-repeat-ends.test.ts`): every caller of the end-blind engine imports the judge or is on a short exempt list, and every SQL writer of `skip_count` / `completion_count` writes `repeat_count_used` too.
+
+**What ends a series:**
+
+- **Done on the last occurrence**: the one-off's write — `done=1`, `done_at`, `archived_at`, stats, attempts reset, queue mark cleared — plus `used + 1`. `due_at`, `occurrence_at`, the deadline and any deck **stay**, so `POST /undone` (the native DONE row) and undo reopen it exactly, `used − 1`. The completion row records the occurrence it closed and no next one. `/done` answers `series_ended: true`, `next_due_at: null`; the history reads "Marked "X" done — the last of 6" (or "— the last; it ended Dec 31"); `task.completed` carries `series_ended`. Done on an ended series is a 400.
+- **Skip of the last occurrence** (A1, pending Trent — `SKIPPED_LAST_MARKS_DONE` in `src/core/tasks/skip.ts`, the one switch): the one-off skip's write — archived, `done=0`, `skip_count + 1`, never a completion — plus `used + 1`. "Skipped "X" — the last of 6; the repeat has ended". Done, skip and `/undone` on it are 400s; undo reverses the skip.
+- **Skip until past the end**: skips what the series had left — a count's `count − used`; a date's occurrences on or before it, re-counted — then ends as a skip (`series_ended` in the response, "· N ended" in the summary).
+
+**What never ends a series:** the rollover (A4). A roll closes one occurrence (a skip, `used + 1`); when that would end the series the task is left **untouched** — the last occurrence stays over target as debt and nags at its priority until the user closes it. A wait released onto an occurrence that an end set during the wait leaves outside the series gives the debt back instead (the target returns to the missed occurrence, the queue state is cleared, no skip). Nor the snooze guard or the bulk defer cap: on the last occurrence there is no next one, so no guard and no cap.
+
+**Writing an end** (POST, PATCH; `repeatEndProblem` in `src/core/tasks/repeat-schedule.ts`, pure, judged on the resulting row): `repeat_count` / `repeat_until`, or **COUNT / UNTIL inside `rrule` as shorthand** — lifted into the fields before the rule is validated (`liftRuleEnd` in `src/core/validation/task.ts`), UNTIL's `YYYYMMDD` taken literally as the local day with or without `T…Z` (`T235959Z` is the end of the day in UTC, the wrong day in most zones). A rule sent **without** an end leaves the stored end alone: responses return the rule end-free, so a client echoing it back must not wipe the end. A count set where there was none starts `used` at 0; changing N keeps `used` and must stay above it (A7); setting one end clears the other; `rrule: null` clears all three; a rule change keeps them. The date must be today or later, at most 10 years ahead, and — when it or the rule's walk is written — not before the local date of the occurrence the write leaves (a deadline-anchored repeat's: its deadline, A5; a reschedule of this occurrence's deadline past the end is allowed). Bulk edit never sets an end (A11): its `changes.repeat_*` and any COUNT/UNTIL in a bulk rule are 400s. `liftRuleEnds` (a `runMigrations` data step, idempotent) lifts any stored rule's COUNT/UNTIL into the columns at startup.
+
+**Modes and anchors.** from_completion with a count: each done or skip uses one. from_completion with a date: ends when the next occurrence, counted from the actual completion, falls after it (A6). A deadline-anchored repeat is judged on its occurrence — its deadline — and `scheduleBase` is unchanged.
+
+**Not touched:** Upcoming, notifications and attempts (the last occurrence has a target and behaves normally; an ended series is `done=1` or archived, which every reader already filters out), `todaysOccurrence` / `effectiveDueAt` (reminders only), enrichment and its prompts (PR 5).
+
 ## Completion Behavior
 
 - **Recurring tasks** advance in place: completing a daily task moves `due_at` forward and leaves `done=0`
 - **One-off (non-recurring) tasks**: when completed, the app sets `done=1` and `archived_at` to the current time
+- **A repeat with an end** completed on its last occurrence ends like a one-off — `done=1`, archived, its occurrence kept (§ Repeat ends)
 
 ## Skip until
 
