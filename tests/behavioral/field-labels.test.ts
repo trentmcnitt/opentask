@@ -234,6 +234,38 @@ describe('formatEditDescription', () => {
     expect(result).toBe('Recurrence cleared \u2014 "Buy groceries"')
   })
 
+  // --- Every-time mode (editor PR 4c): the relative target, the anchor ---
+
+  test('a deadline-anchored target: one fragment for its two columns', () => {
+    const result = formatEditDescription('Craft', ['target_days_before', 'target_time'], {
+      isSnooze: false,
+      beforeState: { id: 1, target_days_before: 1, target_time: '18:00' },
+      afterState: { id: 1, target_days_before: 2, target_time: '18:00' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Target 2 days before at 6:00 PM \u2014 "Craft"')
+  })
+
+  test('only the days changed: the target it moves is not a field of its own', () => {
+    const result = formatEditDescription('Craft', ['target_days_before', 'due_at'], {
+      isSnooze: false,
+      beforeState: { id: 1, target_days_before: 1, due_at: '2026-11-06T00:00:00Z' },
+      afterState: { id: 1, target_days_before: 2, due_at: '2026-11-05T00:00:00Z' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Target 2 days before — "Craft"')
+  })
+
+  test('the anchor switch names what repeats', () => {
+    const result = formatEditDescription('Craft', ['repeat_anchor'], {
+      isSnooze: false,
+      beforeState: { id: 1, repeat_anchor: 'target' },
+      afterState: { id: 1, repeat_anchor: 'deadline' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Repeats on its deadline \u2014 "Craft"')
+  })
+
   // --- Project fragment ---
 
   test('project change with name', () => {

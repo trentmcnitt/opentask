@@ -209,3 +209,43 @@ test.describe('Task detail', () => {
     }
   })
 })
+
+test.describe('Task detail: every time', () => {
+  // Every-time mode on the task page (editor PR 4c): its Save stays on the
+  // page and comes back to this one; a changed schedule left unsaved is an
+  // unsaved edit like any other, and save-and-leave stores it.
+  test('every time: Save returns to this one; save-and-leave stores a changed schedule', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, 'Every-time page probe', {
+      rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0',
+    })
+    try {
+      await page.goto(`/tasks/${id}`)
+      const link = page.locator('[data-quick-panel-repeat-link]')
+      await link.click()
+      let region = page.getByRole('region', { name: 'Editing every time' })
+      await region.getByRole('button', { name: 'Saturday' }).click()
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(region).toHaveCount(0)
+      await expect(page).toHaveURL(`/tasks/${id}`)
+      await expect(link).toContainText('F, Sa at 4:00 PM')
+      expect(await taskField(page, id, 'rrule')).toBe(
+        'FREQ=WEEKLY;BYDAY=FR,SA;BYHOUR=16;BYMINUTE=0',
+      )
+
+      await link.click()
+      region = page.getByRole('region', { name: 'Editing every time' })
+      await region.getByRole('button', { name: 'Sunday' }).click()
+      await page.getByRole('button', { name: 'Back to dashboard' }).click()
+      const dialog = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await page.waitForURL('/')
+      expect(await taskField(page, id, 'rrule')).toBe(
+        'FREQ=WEEKLY;BYDAY=FR,SA,SU;BYHOUR=16;BYMINUTE=0',
+      )
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+})

@@ -17,6 +17,7 @@ import {
   type TargetFields,
 } from '@/lib/task-segments'
 import { DEADLINE_DAY } from '@/lib/task-model-words'
+import { formatRRuleCompact } from '@/lib/format-rrule'
 import type { RepeatAnchor } from '@/types'
 
 export interface AutoTargetLabel {
@@ -245,45 +246,6 @@ function rescheduledOffRule(
 }
 
 /**
- * A repeating task whose target has been moved off its scheduled occurrence
- * (§6, 2026-10-12; `targetMoved`): the editor names the occurrence's own
- * target — "This week's: Sun, Oct 18, 12:00 PM" — so a moved target never
- * reads as a changed schedule. For a deadline-anchored repeat (2026-10-21)
- * that is the target derived from its deadline (`occurrenceDates`). Null
- * when the target is not moved (or the task is not repeating).
- */
-export function movedOccurrenceLabel(
-  task: {
-    rrule: string | null | undefined
-    due_at: string | null
-    occurrence_at?: string | null
-    queued_at?: string | null
-    repeat_anchor?: RepeatAnchor | null
-    target_days_before?: number | null
-    target_time?: string | null
-  },
-  timezone: string,
-): string | null {
-  if (!task.rrule || !task.occurrence_at || !task.due_at) return null
-  if (queuedRepeatOccurrence(task)) return null
-  const schedule = {
-    rrule: task.rrule,
-    repeat_anchor: task.repeat_anchor ?? null,
-    target_days_before: task.target_days_before ?? null,
-    target_time: task.target_time ?? null,
-  }
-  if (
-    !targetMoved({ ...schedule, due_at: task.due_at, occurrence_at: task.occurrence_at }, timezone)
-  )
-    return null
-  return DateTime.fromISO(occurrenceDates(schedule, task.occurrence_at, timezone).targetAt, {
-    zone: 'utc',
-  })
-    .setZone(timezone)
-    .toFormat('ccc, LLL d, h:mm a')
-}
-
-/**
  * A repeating task WAITING in the task queue (B3, task queue PR 2): the
  * rollover moved its target (`due_at`) on to the next occurrence and kept
  * `occurrence_at` on the one it missed, which is the one the queue row stands
@@ -295,9 +257,8 @@ export function movedOccurrenceLabel(
  * The occurrence (UTC ISO) for such a task, else null. Keyed on the queue
  * state itself — `queued_at` set on a repeating task — which the rollover
  * clears when the wait ends (`release`), and a new target clears on any
- * write (`stampTargetSet`). A repeating task NOT in the queue whose target the
- * user moved keeps its "Occurrence … · target moved" line
- * (`movedOccurrenceLabel`).
+ * write (`stampTargetSet`). The editor names that occurrence on its "This is
+ * the Fri Oct 16 one" line (`occurrenceDiffers`, (c)).
  */
 export function queuedRepeatOccurrence(task: {
   rrule: string | null | undefined
@@ -330,30 +291,34 @@ export function pickerBaseDueAt(
 }
 
 /**
- * The Quick panel's Repeat button (2026-10-20): whether it reads ACTIVE — a
- * rule is set — and its label. `rule` is the staged or stored rule; pass
- * undefined in a multi-selection with nothing staged, where every selected
- * task must repeat. Active leads the label with the rule ("Repeats: Fridays at
- * 4:00 PM · Edit recurrence"); the button never claims `aria-pressed`, since a
- * tap opens the editor and never switches the rule off (see the button).
+ * THE EDITOR'S RULE IN WORDS (2026-10-22, editor PR 4c): the this-one link's
+ * "↻ Repeats — Fridays at 4:00 PM · edit every time ›". A deadline-anchored
+ * rule's time is its deadline's, so it says so ("Monthly on the 1st Sat,
+ * deadline 8:00 AM"); an end is said exactly — "6 times", "until Dec 31, 2026" (Trent's
+ * ruling: never "until December").
  */
-export function repeatButtonState({
-  rule,
-  selectedTasks,
-  recurrenceText,
-  editing,
-}: {
-  rule: string | null | undefined
-  selectedTasks: { rrule: string | null }[] | undefined
-  recurrenceText: string | null
-  editing: boolean
-}): { repeatActive: boolean; repeatButtonLabel: string } {
-  const repeatActive =
-    selectedTasks && rule === undefined
-      ? selectedTasks.length > 0 && selectedTasks.every((t) => !!t.rrule)
-      : !!rule
-  if (editing) return { repeatActive, repeatButtonLabel: 'Close recurrence editor' }
-  if (!repeatActive) return { repeatActive, repeatButtonLabel: 'Edit recurrence' }
-  const what = recurrenceText && recurrenceText !== '—' ? `: ${recurrenceText}` : ''
-  return { repeatActive, repeatButtonLabel: `Repeats${what} · Edit recurrence` }
+export function repeatWords(task: {
+  rrule: string
+  anchor_time?: string | null
+  repeat_anchor?: RepeatAnchor | null
+  repeat_count?: number | null
+  repeat_until?: string | null
+}): string {
+  const compact = formatRRuleCompact(task.rrule, task.anchor_time ?? null)
+  const timed = / at (\d{1,2}:\d{2} [AP]M)$/
+  const base =
+    task.repeat_anchor !== 'deadline'
+      ? compact
+      : timed.test(compact)
+        ? compact.replace(timed, ', deadline $1')
+        : `${compact}, deadline`
+  const count = task.repeat_count ?? null
+  const until = task.repeat_until ?? null
+  const end =
+    count !== null
+      ? `, ${count} ${count === 1 ? 'time' : 'times'}`
+      : until !== null
+        ? `, until ${DateTime.fromISO(until, { zone: 'utc' }).toFormat('LLL d, yyyy')}`
+        : ''
+  return `${base}${end}`
 }

@@ -27,9 +27,20 @@
  *  - `thisOneHint`: what a Save does to THIS occurrence (§5.6);
  *  - `bulkEveryTimeGate` / `draftToBulkChanges`: the limited bulk mode (A11).
  *
- * ENDS (A10, RT-5): the server refuses COUNT and UNTIL (`isValidRRule`:
- * OpenTask only supports infinite recurrence), so a draft that ends is a
- * problem (`ENDS_UNSUPPORTED`), never a 400.
+ * ENDS (repeat ends, 2026-10-22; plan-repeat-ends §7 item 3 — A10 is
+ * superseded): Never / After N times / On date. The stored rule is end-free:
+ * the end is the task's `repeat_count` (+ `repeat_count_used`) or
+ * `repeat_until`, never COUNT/UNTIL in the rule (`buildRule` writes neither).
+ *  - `draftFromTask` reads the end from those fields;
+ *  - `draftToPatch` sends `repeat_count` / `repeat_until` only when the end
+ *    changed — the rule text is compared on its own, so an unchanged pattern
+ *    is never re-sent (a target-anchored rule change re-dates the target);
+ *  - `draftProblem` asks the server's own end check (`repeatEndProblem`, the
+ *    same pure function the PATCH runs) — the planner doesn't judge ends;
+ *  - `nextDates` cuts the walk with the server's end judge (`repeatStep`):
+ *    the Next list stops at the last occurrence and marks it "· last one".
+ *    COUNTING: the first Next date is the current occurrence (#used+1), so
+ *    "After 3 times" set fresh (used 0) shows three dates, the third the last.
  */
 
 import { DateTime } from 'luxon'
@@ -43,8 +54,11 @@ import { isValidRRule } from '@/core/recurrence/rrule-builder'
 import { setRuleTime } from '@/core/recurrence/rule-time'
 import { shiftRuleDays, shiftedRuleHolds } from '@/core/recurrence/rule-shift'
 import {
+  REPEAT_END_MESSAGES,
   TARGET_AFTER_DEADLINE_MESSAGE,
   planRepeatSchedule,
+  repeatEndProblem,
+  type RepeatEndProblem,
   type RepeatPlan,
   type ScheduleInput,
 } from '@/core/tasks/repeat-schedule'
@@ -55,6 +69,7 @@ import {
   buildRule,
   parseHHMM,
   parseRule,
+  ruleDraftable,
   toHHMM,
   weeklyDayMissing,
   type RuleDraft,
@@ -69,6 +84,8 @@ import {
   relativeTargetOf,
   relativeTargetProblem,
   occurrenceIsPersonal,
+  repeatEndOf,
+  repeatStep,
   type RelativeTarget,
   type RelativeTargetProblem,
   type RepeatRule,
@@ -97,6 +114,10 @@ export type EveryTimeTask = Pick<
 > & {
   queued_at?: string | null
   done?: boolean
+  /** The repeat's end (repeat ends, 2026-10-22); absent reads as none. */
+  repeat_count?: number | null
+  repeat_count_used?: number | null
+  repeat_until?: string | null
 }
 
 /** What the module needs besides the task. `now` is injectable for tests. */
@@ -140,6 +161,10 @@ export interface EveryTimePatch {
   deadline_at?: string | null
   target_days_before?: number
   target_time?: string
+  /** "After N times" (null: no count). Sent only when the end changed. */
+  repeat_count?: number | null
+  /** "On date": the last local day, yyyy-MM-dd (null: no date). */
+  repeat_until?: string | null
 }
 
 // ===========================================================================
@@ -215,7 +240,7 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
   const { timezone } = ctx
   const mode = storedMode(task)
   if (task.rrule) {
-    const rule = parseRule(task.rrule)!
+    const rule = withStoredEnd(parseRule(task.rrule)!, task)
     const { hour, minute } = ruleTimeOfDay(task.rrule, task.anchor_time)
     const ruleTime = toHHMM(hour, minute)
     const day = task.occurrence_at ?? task.due_at
@@ -238,6 +263,23 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
     return { ...base, anchor: 'target', targetTime: ruleTime, deadlineTime: null, daysBefore: 0 }
   }
   return oneOffDraft(task, ctx)
+}
+
+/** The draft's end, from the task's end fields (never from the rule text). */
+function withStoredEnd(rule: RuleDraft, task: EveryTimeTask): RuleDraft {
+  const end = repeatEndOf(task)
+  if (end.repeat_count !== null) return { ...rule, endType: 'count', endCount: end.repeat_count }
+  if (end.repeat_until !== null) return { ...rule, endType: 'date', endDate: end.repeat_until }
+  return { ...rule, endType: 'never' }
+}
+
+/** The end a draft asks for, as the two fields. A date end with no date yet is none. */
+export function draftEnd(draft: EveryTimeDraft): { count: number | null; until: string | null } {
+  if (draft.rule.endType === 'count') return { count: draft.rule.endCount, until: null }
+  if (draft.rule.endType === 'date' && draft.rule.endDate) {
+    return { count: null, until: draft.rule.endDate }
+  }
+  return { count: null, until: null }
 }
 
 function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft {
@@ -291,6 +333,16 @@ export function createModeTask(staged: {
     target_time: null,
     on_deck_day: null,
   }
+}
+
+/**
+ * Whether every-time mode can edit the task's schedule: no rule yet, or one
+ * the draft holds part for part (`ruleDraftable`). Otherwise the mode shows
+ * the rule read-only — "This repeat can't be edited here" — with Stop
+ * repeating only, and nothing ever rebuilds it.
+ */
+export function scheduleEditable(task: Pick<EveryTimeTask, 'rrule'>): boolean {
+  return !task.rrule || ruleDraftable(task.rrule)
 }
 
 /** Two drafts that save the same thing (the panel's dirty test). `refusal` is not compared. */
@@ -529,7 +581,9 @@ export function draftToPatch(
   ctx: EveryTimeContext,
 ): EveryTimePatch {
   if (draft.stop) return task.rrule ? { rrule: null } : {}
-  const patch: EveryTimePatch = {}
+  // A rule the draft can't hold is never rebuilt (only Stop repeating).
+  if (!scheduleEditable(task)) return {}
+  const patch: EveryTimePatch = endPatch(task, draft)
   const rrule = draftRule(draft)
   const wasDeadline = isDeadlineAnchored(task)
   const switching = !!task.rrule && wasDeadline !== (draft.anchor === 'deadline')
@@ -541,6 +595,23 @@ export function draftToPatch(
     return !task.rrule && task.deadline_at ? { ...patch, deadline_at: null } : patch
   }
   return { ...patch, ...deadlinePatch(task, draft, ctx) }
+}
+
+/**
+ * The end fields a Save sends — only when the end changed. Setting one end
+ * clears the other on the server (`resultingEnd`), so one field is enough;
+ * back to Never sends the stored one as null.
+ */
+function endPatch(task: EveryTimeTask, draft: EveryTimeDraft): EveryTimePatch {
+  // "On date…" chosen with no date yet is no change — never a removal of the
+  // stored end (a host's save-and-leave could otherwise send it).
+  if (draft.rule.endType === 'date' && !draft.rule.endDate) return {}
+  const { count, until } = draftEnd(draft)
+  const stored = repeatEndOf(task)
+  if (count === stored.repeat_count && until === stored.repeat_until) return {}
+  if (count !== null) return { repeat_count: count }
+  if (until !== null) return { repeat_until: until }
+  return stored.repeat_count !== null ? { repeat_count: null } : { repeat_until: null }
 }
 
 /** The deadline-anchored half of `draftToPatch`: the offsets, and the switch's own fields. */
@@ -598,8 +669,7 @@ export function draftToCreateFields(
 // draftProblem (§6)
 // ===========================================================================
 
-export const ENDS_UNSUPPORTED =
-  "Ending a repeat isn't supported yet — it repeats until you stop it."
+export const NO_END_DATE_PROBLEM = 'Pick the date it ends on.'
 export const NO_DAY_PROBLEM = 'Pick at least one day.'
 export const NO_DEADLINE_TIME_PROBLEM = 'Pick a deadline time.'
 export const NEVER_OCCURS_PROBLEM = 'This repeat never comes round — check its days and months.'
@@ -672,7 +742,7 @@ export function draftProblem(
 ): string | null {
   if (draft.stop) return null
   if (weeklyDayMissing(draft.rule, draft.mode)) return NO_DAY_PROBLEM
-  if (draft.rule.endType !== 'never') return ENDS_UNSUPPORTED
+  if (draft.rule.endType === 'date' && !draft.rule.endDate) return NO_END_DATE_PROBLEM
   if (draft.anchor === 'deadline' && !draft.deadlineTime) return NO_DEADLINE_TIME_PROBLEM
   const rrule = draftRule(draft)
   if (!isValidRRule(rrule)) {
@@ -683,7 +753,82 @@ export function draftProblem(
   const planned = planDraft(task, draft, ctx)
   if ('error' in planned) return problemWords(planned.error, draft)
   if (draft.anchor === 'target' && !firstFromNow(rrule, ctx)) return NEVER_OCCURS_PROBLEM
-  return null
+  const end = endProblem(task, draft, ctx, planned)
+  return end ? endProblemWords(end, task) : null
+}
+
+/** The used count a Save leaves: a count set where there was none starts at 0 (A3). */
+function usedAfter(task: EveryTimeTask, draft: EveryTimeDraft): number {
+  const stored = repeatEndOf(task)
+  const { count } = draftEnd(draft)
+  return count !== null && stored.repeat_count === null ? 0 : stored.repeat_count_used
+}
+
+const WALK_FIELDS = ['rrule', 'recurrence_mode', 'repeat_anchor'] as const
+
+/**
+ * The occurrence a Save leaves (what an end must not be before): the
+ * planner's on a deadline-anchored result; a target-anchored rule left as it
+ * is keeps its own; a changed one starts from its first (`scheduleStart`).
+ */
+function occurrenceLeft(
+  task: EveryTimeTask,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+  planned: { plan: RepeatPlan; patch: EveryTimePatch },
+): string | null {
+  if (planned.plan.kind === 'deadline') return planned.plan.occurrenceAt
+  const walked = WALK_FIELDS.some((f) => f in planned.patch)
+  if (task.rrule && !walked) return task.occurrence_at ?? task.due_at
+  return scheduleStart(task, draft, ctx)
+}
+
+/**
+ * The server's own end check on the draft (`repeatEndProblem`, which the
+ * PATCH runs in `collectRepeatEnds` — the planner doesn't), with the same
+ * "written = changed" reading, so an end the user didn't touch is never
+ * re-judged.
+ */
+function endProblem(
+  task: EveryTimeTask,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+  planned: { plan: RepeatPlan; patch: EveryTimePatch },
+): RepeatEndProblem | null {
+  const { count, until } = draftEnd(draft)
+  const stored = repeatEndOf(task)
+  const patch = planned.patch
+  return repeatEndProblem(
+    {
+      count,
+      until,
+      used: usedAfter(task, draft),
+      countWritten: 'repeat_count' in patch && count !== stored.repeat_count,
+      untilWritten: 'repeat_until' in patch && until !== stored.repeat_until,
+      walkWritten: WALK_FIELDS.some((f) => f in patch),
+      occurrenceAt: occurrenceLeft(task, draft, ctx, planned),
+      hasRule: true,
+      isReminder: false,
+      isTracked: false,
+    },
+    ctx.timezone,
+    ctx.now,
+  )
+}
+
+/** The end refusals in the panel's words (the server's own text for the rest). */
+export function endProblemWords(problem: RepeatEndProblem, task: EveryTimeTask): string {
+  const used = repeatEndOf(task).repeat_count_used
+  const times = used === 1 ? 'time' : 'times'
+  const words: Partial<Record<RepeatEndProblem, string>> = {
+    count_range: 'Pick from 1 to 999 times.',
+    count_spent: `It has already come round ${used} ${times} — pick more than ${used}.`,
+    until_invalid: NO_END_DATE_PROBLEM,
+    until_past: 'That end date has passed.',
+    until_too_far: 'Pick an end date within 10 years.',
+    until_before_occurrence: "That's before this one's date — pick a later end.",
+  }
+  return words[problem] ?? REPEAT_END_MESSAGES[problem]
 }
 
 // ===========================================================================
@@ -782,6 +927,8 @@ export interface NextDate {
   targetAt: string
   /** Null on a target-anchored schedule. */
   deadlineAt: string | null
+  /** The series ends with this one (its end, judged by `repeatStep`). */
+  last: boolean
 }
 
 export interface NextDates {
@@ -811,18 +958,68 @@ export function nextDates(
   const first = scheduleStart(task, draft, ctx)
   if (!first) return { dates: [], ends: true, problem: ENDS_BEFORE_NEXT }
   const rrule = draftRule(draft)
-  const walk = memoWalk(ruleFields(rrule, draft.mode), first, ctx.timezone).slice(0, count)
+  const walk = memoWalk(ruleFields(rrule, draft.mode), first, ctx.timezone)
   const schedule = {
     rrule,
     repeat_anchor: draft.anchor,
     target_days_before: draft.daysBefore,
     target_time: draft.targetTime,
   }
-  const dates = walk.map((d) => {
-    const o = occurrenceDates(schedule, d.toISOString(), ctx.timezone)
-    return { targetAt: o.targetAt, deadlineAt: o.deadlineAt }
+  const dates = walkInSeries(task, draft, first, walk, count, ctx).map(({ at, last }) => {
+    const o = occurrenceDates(schedule, at, ctx.timezone)
+    return { targetAt: o.targetAt, deadlineAt: o.deadlineAt, last }
   })
-  return { dates, ends: dates.length < count, problem: null }
+  const cut = dates.some((d) => d.last)
+  return { dates, ends: cut || dates.length < count, problem: null }
+}
+
+/**
+ * The walk cut by the series' end — the server's judge, `repeatStep`, asked
+ * as each advance asks it: landing on `walk[i]` closes `i` occurrences (one
+ * more when the walk starts after the current occurrence — an over-target
+ * one still open). The first landing that ENDS the series makes the one
+ * before it the last. Up to `count` occurrences.
+ */
+function walkInSeries(
+  task: EveryTimeTask,
+  draft: EveryTimeDraft,
+  first: string,
+  walk: Date[],
+  count: number,
+  ctx: EveryTimeContext,
+): Array<{ at: string; last: boolean }> {
+  const timezone = ctx.timezone
+  const { count: total, until } = draftEnd(draft)
+  const end = {
+    repeat_count: total,
+    repeat_count_used: usedAfter(task, draft),
+    repeat_until: until,
+  }
+  // The walk starts AFTER the current occurrence only when the schedule is
+  // left as it is and that one is still open over target: Next then begins
+  // with the next after now (`scheduleStart`). A changed schedule replaces
+  // the current occurrence with its first (the server writes it).
+  const walked = WALK_FIELDS.some((f) => f in draftToPatch(task, draft, ctx))
+  const current = task.rrule && !walked ? task.occurrence_at : null
+  const now = ctx.now.getTime()
+  const before =
+    current &&
+    Date.parse(current) < now &&
+    Date.parse(first) > now &&
+    local(current, timezone).toISODate() !== local(first, timezone).toISODate()
+      ? 1
+      : 0
+  const kept: Array<{ at: string; last: boolean }> = []
+  for (let i = 0; i <= count; i++) {
+    const landing = walk[i] ? walk[i].toISOString() : null
+    const step = repeatStep(end, landing, i + before, timezone)
+    if (step.ended) {
+      if (kept.length > 0) kept[kept.length - 1].last = true
+      break
+    }
+    if (i < count) kept.push({ at: step.occurrenceAt, last: false })
+  }
+  return kept
 }
 
 /**
@@ -830,13 +1027,14 @@ export function nextDates(
  * 9:00 AM → 5:00 PM" when both fall on one day, "Fri Oct 23" with no deadline.
  */
 export function nextDateWords(date: NextDate, timezone: string): string {
+  const last = date.last ? ' · last one' : ''
   const target = local(date.targetAt, timezone)
-  if (!date.deadlineAt) return target.toFormat('ccc LLL d')
+  if (!date.deadlineAt) return `${target.toFormat('ccc LLL d')}${last}`
   const deadline = local(date.deadlineAt, timezone)
   if (target.hasSame(deadline, 'day')) {
-    return `${target.toFormat('ccc LLL d, h:mm a')} → ${deadline.toFormat('h:mm a')}`
+    return `${target.toFormat('ccc LLL d, h:mm a')} → ${deadline.toFormat('h:mm a')}${last}`
   }
-  return `${target.toFormat('ccc LLL d')} → ${deadline.toFormat('ccc LLL d')}`
+  return `${target.toFormat('ccc LLL d')} → ${deadline.toFormat('ccc LLL d')}${last}`
 }
 
 export interface DaysBeforeChoice {
@@ -951,6 +1149,12 @@ export function thisOneHint(
         : 'no target'
     const deadline = task.deadline_at ? `, deadline ${whenWords(task.deadline_at, tz)}` : ''
     return `This one stays as a one-time task: ${what}${deadline}.`
+  }
+  // A one-off with a deadline made target-anchored: a target-anchored repeat
+  // has no deadline (L9), so the Save removes it — said before Save.
+  if (!task.rrule && task.deadline_at && draft.anchor === 'target') {
+    const day = local(task.deadline_at, tz).toFormat('ccc LLL d')
+    return `The deadline (${day}) will be removed.`
   }
   if (occurrenceKeepsItsOwn(task, ctx)) {
     return task.on_deck_day ? KEEPS_ITS_DECK : KEEPS_ITS_OWN_TARGET

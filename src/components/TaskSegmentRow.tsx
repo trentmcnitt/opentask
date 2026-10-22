@@ -1102,7 +1102,7 @@ function UpcomingMeta({
 
 /**
  * The horizon, visible and changeable (spec §3), in the editor
- * (`TaskModelFields`): its word and a chevron, opening the shared horizon menu
+ * (`ThisOneFields`): its word and a chevron, opening the shared horizon menu
  * (`HorizonMenuContent`, each option with its dot). Unset is never reported as
  * if the user had said "weeks". The rows use the dot itself instead
  * (`HorizonDotButton`).

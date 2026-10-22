@@ -30,7 +30,12 @@ export function NotesInlineSection({
   onCollapse: () => void
   onChange: (value: string | null | undefined) => void
 }) {
-  const [draft, setDraft] = useState('')
+  // Seeded from what is shown when the section mounts already open — the
+  // panel's every-time mode unmounts it, and an empty draft then would make
+  // Done stage notes: null (PR 4c review).
+  const [draft, setDraft] = useState(() =>
+    expanded ? ((pendingNotes !== undefined ? pendingNotes : currentNotes) ?? '') : '',
+  )
   const [readExpanded, setReadExpanded] = useState(false)
   const textRef = useRef<HTMLParagraphElement>(null)
   const [isClamped, setIsClamped] = useState(false)

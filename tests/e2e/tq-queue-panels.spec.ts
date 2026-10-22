@@ -264,19 +264,20 @@ test('a waiting repeating row and its details show the occurrence, not the moved
     await openDetails(r)
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
-    await expect(dialog.locator('[data-queued-occurrence]')).toContainText(
-      occurrence.toFormat('LLL d'),
+    // The occurrence it stands for is named under the title (editor PR 4c:
+    // "This is the Fri Oct 16 one"); the Target row has no live target.
+    await expect(dialog.locator('[data-occurrence-differs]')).toHaveText(
+      `This is the ${occurrence.toFormat('ccc LLL d')} one`,
     )
-    await expect(dialog.locator('[data-quick-panel-date]')).not.toContainText(/Target|\bin \d/)
-    await expect(dialog.locator('[data-occurrence-line]')).toHaveCount(0)
+    await expect(dialog.locator('[data-quick-panel-date]')).toHaveText('No target')
     await expect(dialog).not.toContainText('target moved')
     // The controls start from NOW (the task has no live target): "+1 day"
     // stages about this time tomorrow — not the day after the missed
     // occurrence (a past date), not the moved target plus a day.
     await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
     const line = dialog.locator('[data-quick-panel-date]')
-    await expect(dialog.locator('[data-queued-occurrence]')).toHaveCount(0)
-    await expect(line).toContainText('Target')
+    await expect(dialog.locator('[data-occurrence-differs]')).toHaveCount(0)
+    await expect(line).not.toContainText('No target')
     await expect(line).not.toContainText('ago')
     await expect(line).not.toContainText(occurrence.plus({ days: 1 }).toFormat('LLL d'))
     await expect(line).not.toContainText(target.plus({ days: 1 }).toFormat('LLL d'))
