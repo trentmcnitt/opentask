@@ -866,19 +866,19 @@ export function targetTimeRefused(draft: EveryTimeDraft, time: string): boolean 
 
 /**
  * Whether THIS occurrence has something of its own a schedule change keeps:
- * a deck, a target the USER moved (`targetMoved`), or an arrived target
- * (over target — the server's debt branch keeps it). It mirrors the server's
- * keep rule for a schedule change (editor PR 4a's personal occurrence —
- * deck or moved — in `collect-field-changes.ts` and `targetFor` in
- * repeat-schedule.ts, plus the existing debt branch).
+ * a deck, or a target the USER moved (`targetMoved`). It mirrors the
+ * server's keep rule for a schedule change (editor PR 4a's personal
+ * occurrence — deck or moved — in `collect-field-changes.ts` and `targetFor`
+ * in repeat-schedule.ts).
  *
  * A QUEUED repeat is NOT personal: the rollover moved its target, not the
- * user, so a schedule change recomputes it (the on-schedule hint).
+ * user, so a schedule change recomputes it (the on-schedule hint). An
+ * arrived target (over target) is not either: the server's debt branch keeps
+ * it on a RULE change only — `thisOneHint` asks the planner for that case.
  */
 export function occurrenceKeepsItsOwn(task: EveryTimeTask, ctx: EveryTimeContext): boolean {
   if (!task.rrule) return false
   if (task.on_deck_day) return true
-  if (task.due_at && Date.parse(task.due_at) < ctx.now.getTime()) return true
   if (task.queued_at) return false
   return targetMoved(
     {
@@ -950,6 +950,10 @@ export function thisOneHint(
   }
   const at = thisOneTarget(task, draft, ctx)
   if (!at) return 'Changes apply to every occurrence.'
+  // Over target: the server keeps the arrived target on a rule change (the
+  // debt) but re-derives it on, say, new offsets — say whichever it does.
+  const arrived = task.due_at !== null && Date.parse(task.due_at) < ctx.now.getTime()
+  if (arrived && Date.parse(at) === Date.parse(task.due_at!)) return KEEPS_ITS_OWN_TARGET
   return `Changes apply to every occurrence, starting with this one: ${whenWords(at, tz)}.`
 }
 

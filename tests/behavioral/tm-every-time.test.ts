@@ -97,6 +97,29 @@ const ONE_OFF_DEADLINE: EveryTimeTask = {
   deadline_at: at('2026-10-30T17:00'),
 }
 
+/** Personal and off-schedule variants (the hint's branches; the property loop runs them too). */
+const OVER_FRIDAYS: EveryTimeTask = {
+  ...FRIDAYS,
+  due_at: at('2026-10-16T16:00'),
+  occurrence_at: at('2026-10-16T16:00'),
+}
+const DECKED_FRIDAYS: EveryTimeTask = { ...FRIDAYS, due_at: null, on_deck_day: '2026-10-22' }
+/** The rollover kept the missed Fri Oct 16 occurrence and moved the target to the next one. */
+const QUEUED_FRIDAYS: EveryTimeTask = {
+  ...FRIDAYS,
+  occurrence_at: at('2026-10-16T16:00'),
+  due_at: at('2026-10-23T16:00'),
+  queued_at: at('2026-10-17T06:00'),
+}
+/** Home Depot's October occurrence, never done: over target and over deadline. */
+const OVER_HOME_DEPOT: EveryTimeTask = {
+  ...HOME_DEPOT,
+  deadline_at: at('2026-10-03T08:00'),
+  occurrence_at: at('2026-10-03T08:00'),
+  due_at: at('2026-10-02T18:00'),
+}
+const DECKED_HOME_DEPOT: EveryTimeTask = { ...HOME_DEPOT, due_at: null, on_deck_day: '2026-10-22' }
+
 const run = (draft: EveryTimeDraft, ...actions: DraftAction[]) =>
   actions.reduce(draftReducer, draft)
 const plan = (task: EveryTimeTask, patch: object) =>
@@ -515,7 +538,18 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
     const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]
     const time = () =>
       `${String(Math.floor(rand() * 24)).padStart(2, '0')}:${pick(['00', '15', '30', '45'])}`
-    const tasks = [FRIDAYS, HOME_DEPOT, ONE_OFF, ONE_OFF_DEADLINE, BASE]
+    const tasks = [
+      FRIDAYS,
+      HOME_DEPOT,
+      ONE_OFF,
+      ONE_OFF_DEADLINE,
+      BASE,
+      OVER_FRIDAYS,
+      DECKED_FRIDAYS,
+      QUEUED_FRIDAYS,
+      OVER_HOME_DEPOT,
+      DECKED_HOME_DEPOT,
+    ]
     const action = (): DraftAction => {
       switch (Math.floor(rand() * 11)) {
         case 0:
@@ -656,21 +690,31 @@ describe('TM-EVERY-07: thisOneHint', () => {
     )
   })
 
-  test('this one has something of its own: a moved target, a deck, over target', () => {
+  test('this one has something of its own (4a’s personal: deck or moved)', () => {
     const moved = { ...FRIDAYS, due_at: at('2026-10-24T10:00') }
     expect(occurrenceKeepsItsOwn(moved, ctx)).toBe(true)
     expect(thisOneHint(moved, draftFromTask(moved, ctx), ctx)).toBe(KEEPS_ITS_OWN_TARGET)
-    const decked = { ...FRIDAYS, due_at: null, on_deck_day: '2026-10-22' }
-    expect(thisOneHint(decked, draftFromTask(decked, ctx), ctx)).toBe(KEEPS_ITS_DECK)
-    const over = {
-      ...FRIDAYS,
-      due_at: at('2026-10-16T16:00'),
-      occurrence_at: at('2026-10-16T16:00'),
-    }
-    expect(occurrenceKeepsItsOwn(over, ctx)).toBe(true)
-    expect(thisOneHint(over, draftFromTask(over, ctx), ctx)).toBe(KEEPS_ITS_OWN_TARGET)
+    expect(thisOneHint(DECKED_FRIDAYS, draftFromTask(DECKED_FRIDAYS, ctx), ctx)).toBe(
+      KEEPS_ITS_DECK,
+    )
     expect(occurrenceKeepsItsOwn(FRIDAYS, ctx)).toBe(false)
     expect(occurrenceKeepsItsOwn(HOME_DEPOT, ctx)).toBe(false)
+  })
+
+  test('over target: kept on a RULE change (the debt), re-derived on new offsets — the hint says which', () => {
+    expect(occurrenceKeepsItsOwn(OVER_FRIDAYS, ctx)).toBe(false)
+    const thu = run(draftFromTask(OVER_FRIDAYS, ctx), { type: 'toggleDay', day: 'TH' })
+    expect(thisOneHint(OVER_FRIDAYS, thu, ctx)).toBe(KEEPS_ITS_OWN_TARGET)
+    // Deadline-anchored, new offsets: the server re-derives this one's target.
+    const offsets = run(draftFromTask(OVER_HOME_DEPOT, ctx), { type: 'daysBefore', days: 2 })
+    const p = plan(OVER_HOME_DEPOT, draftToPatch(OVER_HOME_DEPOT, offsets, ctx))
+    expect(p).toMatchObject({ kind: 'deadline', dueAt: at('2026-10-01T18:00') })
+    expect(thisOneHint(OVER_HOME_DEPOT, offsets, ctx)).toBe(
+      'Changes apply to every occurrence, starting with this one: Thu Oct 1, 6:00 PM.',
+    )
+    // Deadline-anchored, a rule change: the debt is kept.
+    const time = run(draftFromTask(OVER_HOME_DEPOT, ctx), { type: 'deadlineTime', time: '09:00' })
+    expect(thisOneHint(OVER_HOME_DEPOT, time, ctx)).toBe(KEEPS_ITS_OWN_TARGET)
   })
 
   test('a QUEUED repeat is not personal: the rollover moved its target, so the change recomputes it', () => {
