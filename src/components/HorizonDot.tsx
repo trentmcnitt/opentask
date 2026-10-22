@@ -237,7 +237,7 @@ export function HorizonDotButton({
  * offered on a one-off: with a target of its own the horizon decides nothing
  * until the target goes (spec §1), but it is still the task's pace, and
  * setting it then is how it is ready for when the target is removed — the
- * line under the chips says it isn't in effect meanwhile (`TaskModelFields`).
+ * line under the chips says it isn't in effect meanwhile (`ThisOneFields`).
  * Staged like the other chips: a blue dot while dirty, saved with the rest.
  */
 export function HorizonPicker({

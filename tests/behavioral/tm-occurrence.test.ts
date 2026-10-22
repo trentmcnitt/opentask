@@ -18,7 +18,7 @@ import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getTaskSegments, targetTasksToday } from '@/core/tasks/task-segments'
 import { formatTaskResponse } from '@/lib/format-task'
 import { upcomingRowActions } from '@/lib/task-segments'
-import { movedOccurrenceLabel } from '@/lib/editor-target-labels'
+import { occurrenceDiffers } from '@/lib/editor-target-labels'
 import { REMINDER_SNOOZE_MESSAGE } from '@/core/validation'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -201,9 +201,9 @@ describe('TM6: the occurrence apart from the target', () => {
 
     test('TM6-024: the helper names the occurrence while the target is moved', () => {
       const t = movedWeekly()
-      expect(movedOccurrenceLabel(getTaskById(t.id)!, tz)).toBe('Sun, Oct 18, 12:00 PM')
+      expect(occurrenceDiffers(getTaskById(t.id)!, tz, false)).toBe('Sun Oct 18')
       done(t.id)
-      expect(movedOccurrenceLabel(getTaskById(t.id)!, tz)).toBeNull()
+      expect(occurrenceDiffers(getTaskById(t.id)!, tz, false)).toBeNull()
     })
   })
 

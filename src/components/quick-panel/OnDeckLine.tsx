@@ -30,6 +30,7 @@ export function OnDeckLine({
   shadowed,
   limit,
   onStage,
+  showLabel = true,
 }: {
   task: Task
   timezone: string
@@ -45,6 +46,8 @@ export function OnDeckLine({
    * to the deck (review #3), and so does staging a new deck day.
    */
   onStage: (day: string | null | undefined, clearTarget: boolean) => void
+  /** False inside the editor's labelled rows (`ThisOneFields`), whose label column says "On deck". */
+  showLabel?: boolean
 }) {
   const now = new Date()
   const shown = shadowed ? null : staged !== undefined ? staged : task.on_deck_day
@@ -59,7 +62,7 @@ export function OnDeckLine({
       ? DateTime.fromISO(task.queued_from_deck_day).toFormat('ccc LLL d')
       : null
   return (
-    <div data-quick-panel-deck className="mt-0.5 flex items-center gap-1 text-xs">
+    <div data-quick-panel-deck className="flex items-center gap-1 text-xs">
       <OnDeckButton
         task={{ ...task, on_deck_day: shown }}
         timezone={timezone}
@@ -68,7 +71,7 @@ export function OnDeckLine({
         className="-my-1 -ml-1 size-6"
         iconClassName="size-3.5"
       />
-      <span className="text-muted-foreground/70">On deck</span>
+      {showLabel && <span className="text-muted-foreground/70">On deck</span>}
       <span
         data-quick-panel-deck-day
         className={cn(

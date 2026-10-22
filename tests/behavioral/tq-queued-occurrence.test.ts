@@ -8,10 +8,9 @@
 import { describe, test, expect, afterEach, vi } from 'vitest'
 import { adjustDate, initWorkingDate } from '@/lib/quick-select-dates'
 import {
-  movedOccurrenceLabel,
+  occurrenceDiffers,
   pickerBaseDueAt,
   queuedRepeatOccurrence,
-  repeatButtonState,
 } from '@/lib/editor-target-labels'
 
 const tz = 'America/Chicago'
@@ -24,13 +23,14 @@ describe('queuedRepeatOccurrence', () => {
   test('a waiting repeating task: its occurrence, and no moved-target line', () => {
     const task = { rrule, due_at: next, occurrence_at: missed, queued_at: '2026-10-20T11:30:00Z' }
     expect(queuedRepeatOccurrence(task)).toBe(missed)
-    expect(movedOccurrenceLabel(task, tz)).toBeNull()
+    // The editor names the occurrence it stands for (4c: "This is the Fri Oct 16 one").
+    expect(occurrenceDiffers(task, tz, true)).toBe('Fri Oct 16')
   })
 
   test('a repeating task NOT in the queue with a moved target keeps today’s display', () => {
     const task = { rrule, due_at: next, occurrence_at: missed, queued_at: null }
     expect(queuedRepeatOccurrence(task)).toBeNull()
-    expect(movedOccurrenceLabel(task, tz)).toBe('Fri, Oct 16, 4:00 PM')
+    expect(occurrenceDiffers(task, tz, true)).toBe('Fri Oct 16')
   })
 
   test('a queued one-off (stripped) is not this case', () => {
@@ -41,61 +41,6 @@ describe('queuedRepeatOccurrence', () => {
         queued_at: '2026-10-20T11:30:00Z',
       }),
     ).toBeNull()
-  })
-})
-
-describe('repeatButtonState (the Quick panel Repeat button)', () => {
-  test('a repeating task reads active and leads its label with the rule', () => {
-    expect(
-      repeatButtonState({
-        rule: rrule,
-        selectedTasks: undefined,
-        recurrenceText: 'Fridays at 4:00 PM',
-        editing: false,
-      }),
-    ).toEqual({
-      repeatActive: true,
-      repeatButtonLabel: 'Repeats: Fridays at 4:00 PM · Edit recurrence',
-    })
-  })
-
-  test('a one-off reads plain', () => {
-    expect(
-      repeatButtonState({
-        rule: null,
-        selectedTasks: undefined,
-        recurrenceText: 'One time',
-        editing: false,
-      }),
-    ).toEqual({ repeatActive: false, repeatButtonLabel: 'Edit recurrence' })
-  })
-
-  test('open editor: the label says what a tap does, the rule state stays', () => {
-    expect(
-      repeatButtonState({
-        rule: rrule,
-        selectedTasks: undefined,
-        recurrenceText: null,
-        editing: true,
-      }),
-    ).toEqual({ repeatActive: true, repeatButtonLabel: 'Close recurrence editor' })
-  })
-
-  test('multi-selection: active only when every task repeats (or a rule is staged)', () => {
-    const both = [{ rrule }, { rrule: 'FREQ=DAILY' }]
-    const mixed = [{ rrule }, { rrule: null }]
-    const base = { recurrenceText: '—', editing: false }
-    expect(repeatButtonState({ ...base, rule: undefined, selectedTasks: both })).toEqual({
-      repeatActive: true,
-      repeatButtonLabel: 'Repeats · Edit recurrence',
-    })
-    expect(repeatButtonState({ ...base, rule: undefined, selectedTasks: mixed }).repeatActive).toBe(
-      false,
-    )
-    expect(repeatButtonState({ ...base, rule: rrule, selectedTasks: mixed }).repeatActive).toBe(
-      true,
-    )
-    expect(repeatButtonState({ ...base, rule: null, selectedTasks: both }).repeatActive).toBe(false)
   })
 })
 

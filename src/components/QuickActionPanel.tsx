@@ -2,13 +2,11 @@
 
 import { isDeadlineAnchored, targetReset, type HorizonValue } from '@/lib/task-segments'
 import { HorizonPicker } from '@/components/HorizonDot'
-import { BACK_TO_AUTO, DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
-import { TaskModelFields } from '@/components/TaskModelFields'
+import { BACK_TO_AUTO } from '@/lib/task-model-words'
 import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
 import { deckLimit } from '@/lib/deck-menu'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
-  Repeat,
   Timer,
   TimerOff,
   Trash2,
@@ -21,7 +19,6 @@ import {
   XCircle,
   RotateCcw,
   Sparkles,
-  CalendarDays,
   Mic,
   Lightbulb,
   SkipForward,
@@ -54,7 +51,7 @@ import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { useStagedEditor } from '@/hooks/useStagedEditor'
-import { formatRRuleCompact, formatBulkRecurrence } from '@/lib/format-rrule'
+import { useEveryTime } from '@/hooks/useEveryTime'
 import { formatClockTime } from '@/lib/time-utils'
 import {
   INCREMENTS,
@@ -62,11 +59,7 @@ import {
   SMART_BUTTONS,
   snapToNearestFiveMinutes,
   snapToNextHour,
-  formatQuickSelectHeader,
 } from '@/lib/quick-select-dates'
-import { RecurrencePicker } from '@/components/RecurrencePicker'
-import { computeRecurrencePreview } from '@/lib/recurrence-preview'
-import { DateTime } from 'luxon'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import {
   useLabelConfig,
@@ -76,32 +69,34 @@ import {
   useTaskQueue,
 } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { formatDateTime, formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
+import { formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
 import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
-import { DateTimePicker } from '@/components/DateTimePicker'
 import { isPickedReschedule } from '@/lib/picked-reschedule'
 import { isTracked } from '@/lib/track'
 import { GridButton } from '@/components/quick-panel/GridButton'
 import { SinceAge } from '@/components/quick-panel/SinceAge'
 import { NotesInlineSection } from '@/components/quick-panel/NotesInlineSection'
+import { ThisOneFields } from '@/components/quick-panel/ThisOneFields'
+import { EveryTimePanel } from '@/components/quick-panel/EveryTimePanel'
 import {
-  RecurrenceSummaryLine,
-  RECURRENCE_EDITOR_ID,
-} from '@/components/quick-panel/RecurrenceSummaryLine'
-import { AutoTargetText } from '@/components/quick-panel/AutoTargetText'
+  deadlineRowFor,
+  repeatLinkFor,
+  scrollParentToTop,
+  targetValueFor,
+} from '@/components/quick-panel/this-one-props'
 import { SkipUntilDialog } from '@/components/SkipUntilDialog'
 import { canSkipUntil } from '@/lib/skip-until'
 import {
   deadlineDayPick,
-  deadlineRepeatLabel,
-  movedOccurrenceLabel,
+  occurrenceDiffers,
   pickerBaseDueAt,
   queuedRepeatOccurrence,
-  repeatButtonState,
+  relativeTargetWords,
   stagedAutoTarget,
 } from '@/lib/editor-target-labels'
+import { draftRule, draftToCreateFields } from '@/lib/every-time'
 import type { Task, Project, RepeatAnchor } from '@/types'
 
 /**
@@ -154,6 +149,9 @@ export interface QuickActionPanelChanges {
   repeat_anchor?: RepeatAnchor
   target_days_before?: number
   target_time?: string
+  /** Repeat ends (every-time mode's Ends row): "After N times" / "On date". Single-task only. */
+  repeat_count?: number | null
+  repeat_until?: string | null
 }
 
 export interface QuickActionPanelProps {
@@ -225,8 +223,7 @@ type DirtyField =
   | 'title'
   | 'priority'
   | 'labels'
-  | 'rrule'
-  | 'recurrenceMode'
+  | 'everyTime'
   | 'project'
   | 'dueAtCleared'
   | 'autoSnooze'
@@ -238,16 +235,16 @@ type DirtyField =
 
 /**
  * The fields that make create mode dirty (besides the title, which is compared
- * against initialTitle on its own). recurrenceMode, isReminder and dueAtCleared
- * are deliberately left out: create mode has never counted them as a
- * change from its defaults, and this list keeps that membership as it was.
+ * against initialTitle on its own). isReminder and dueAtCleared are
+ * deliberately left out: create mode has never counted them as a change from
+ * its defaults. 'everyTime' is a schedule staged by every-time mode's Done.
  */
 const CREATE_MODE_DIRTY_FIELDS: readonly DirtyField[] = [
   'deadline',
   'horizon',
   'priority',
   'labels',
-  'rrule',
+  'everyTime',
   'project',
   'date',
   'autoSnooze',
@@ -322,9 +319,6 @@ export function QuickActionPanel({
   // Otherwise project, priority, labels and recurrence render read-only.
   const canEdit = !!onSaveAll || isCreateMode
 
-  // State for expandable recurrence picker
-  const [editingRecurrence, setEditingRecurrence] = useState(false)
-
   // State for title editing
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -379,14 +373,11 @@ export function QuickActionPanel({
   // each a custom time or a reminder period's start, resolved by the server.
   const padPresets = usePadPresets()
 
-  // Staged changes state - all changes are staged until Save is clicked
-  // undefined means "no change" for rrule (to distinguish from null = "remove recurrence")
+  // Staged changes state - all changes are staged until Save is clicked.
+  // The schedule (the rule, its anchor, its end) is not staged here: it is
+  // every-time mode's own draft (`useEveryTime`, below).
   const [pendingPriority, setPendingPriority] = useState<number | null>(null)
   const [pendingLabels, setPendingLabels] = useState<string[] | null>(null)
-  const [pendingRrule, setPendingRrule] = useState<string | null | undefined>(undefined)
-  const [pendingRecurrenceMode, setPendingRecurrenceMode] = useState<
-    'from_due' | 'from_completion' | null
-  >(null)
   const [pendingProject, setPendingProject] = useState<number | null>(null)
   // pendingTitle stages title changes (previously auto-saved on blur)
   const [pendingTitle, setPendingTitle] = useState<string | null>(null)
@@ -479,54 +470,49 @@ export function QuickActionPanel({
     () => pendingLabels ?? effectiveTask?.labels ?? (isBulkMode ? bulkCommonLabels : []),
     [pendingLabels, effectiveTask?.labels, isBulkMode, bulkCommonLabels],
   )
-  const displayRrule = pendingRrule !== undefined ? pendingRrule : effectiveTask?.rrule
   const displayProject = pendingProject ?? effectiveTask?.project_id
   // §6 Reminders flag — staged value wins, otherwise the task's stored flag.
   const displayIsReminder = pendingIsReminder ?? effectiveTask?.is_reminder ?? false
   // Reminders and quotas carry no deadline or horizon (2026-10-10).
   const isReminderLike = displayIsReminder || (effectiveTask ? isTracked(effectiveTask) : false)
-  // DEADLINE-ANCHORED REPEATS (2026-10-21) — until the editor's anchor switch
-  // (PR 4): a repeat whose rule walks its DEADLINE keeps the deadline line (a
-  // deadline edit reschedules this one occurrence) and its rule's time reads
-  // "Deadline". Any other repeat — a target-anchored one, or a rule staged on
-  // a task being made — offers no deadline: the API refuses a deadline on a
-  // target-anchored repeat (L9), and the editor can't yet say which date the
-  // rule walks.
-  const deadlineAnchored =
-    !!displayRrule && !!effectiveTask?.rrule && isDeadlineAnchored(effectiveTask)
-  const offersDeadline = !displayRrule || deadlineAnchored
 
-  // Preview of new due_at when changing recurrence for non-overdue tasks
-  // This helps users understand what date the task will move to with the new schedule
-  const previewDueAt = useMemo(() => {
-    // Only show preview when user is actively changing recurrence
-    if (pendingRrule === undefined || !pendingRrule || !effectiveTask) return null
-
-    // Don't preview for overdue tasks - they stay overdue until dealt with
-    const isOverdue = effectiveTask.due_at && new Date(effectiveTask.due_at) < new Date()
-    if (isOverdue) return null
-
-    // Use timezone-aware preview computation (mirrors server-side "naive local" approach)
-    return computeRecurrencePreview(pendingRrule, timezone)
-  }, [pendingRrule, effectiveTask, timezone])
-
-  // Compute RRULE day abbreviation from task's due date for auto-selecting in RecurrencePicker
-  const defaultDayOfWeek = useMemo(() => {
-    if (!effectiveTask?.due_at) return undefined
-    const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
-    const weekday = DateTime.fromISO(effectiveTask.due_at).setZone(timezone).weekday // 1=Mon..7=Sun
-    return RRULE_DAYS[weekday - 1]
-  }, [effectiveTask, timezone])
-
-  // The recurrence picker's starting time — the server's own order for a rule
-  // sent without one (`ruleTimeFor`, 2026-10-12): the task's anchor, else its
-  // date's time (a one-off at 3 PM made repeating keeps 3 PM), else the user's
-  // Morning time. Every repeating task has a time; the picker always writes one.
-  const recurrenceInitialTime =
-    effectiveTask?.anchor_time ??
-    (effectiveTask?.due_at
-      ? DateTime.fromISO(effectiveTask.due_at).setZone(timezone).toFormat('HH:mm')
-      : morningTime)
+  // THE TWO MODES (2026-10-22, editor plan §2; PR 4c): THIS ONE (this
+  // occurrence: the rows below, the pad, the chips) and EVERY TIME (the
+  // schedule: `EveryTimePanel`), each with its own staged changes — one Save
+  // is one mode's one PATCH. See `useEveryTime`.
+  const everyTime = useEveryTime({
+    variant: isCreateMode ? 'create' : isBulkMode ? 'bulk' : 'single',
+    task: effectiveTask,
+    selectedTasks: selectedTasks ?? [],
+    createStaged: {
+      dueAt: pendingDueAt ?? (singleHook.isDirty ? singleHook.workingDate : null),
+      deadlineAt: pendingDeadline ?? null,
+    },
+    timezone,
+    morningTime,
+  })
+  // Create mode: the schedule Done staged in every-time mode, and what Create
+  // Task sends for it (`draftToCreateFields`).
+  const stagedSchedule = isCreateMode ? everyTime.staged : null
+  const stagedCreateFields = stagedSchedule
+    ? draftToCreateFields(
+        {
+          dueAt: pendingDueAt ?? (singleHook.isDirty ? singleHook.workingDate : null),
+          deadlineAt: pendingDeadline ?? null,
+        },
+        stagedSchedule.draft,
+        stagedSchedule.ctx,
+      )
+    : null
+  // The rule shown: the task's (a saved one), or create mode's staged one.
+  const displayRrule = stagedSchedule
+    ? draftRule(stagedSchedule.draft)
+    : (effectiveTask?.rrule ?? null)
+  // A repeat whose rule walks its DEADLINE (2026-10-21): this occurrence's
+  // deadline is a picker that reschedules it, and has no Clear.
+  const deadlineAnchored = stagedSchedule
+    ? stagedSchedule.draft.anchor === 'deadline'
+    : !!effectiveTask?.rrule && isDeadlineAnchored(effectiveTask)
 
   // Per-field dirty flags, one per staged field. Each drives that field's blue
   // "modified" indicator; fieldDirty below combines them into the panel's dirty
@@ -555,7 +541,6 @@ export function QuickActionPanel({
     pendingTitle !== null || (editingTitle && titleDraft.trim() !== (effectiveTask?.title ?? ''))
   const isPriorityDirty = pendingPriority !== null
   const isLabelsDirty = pendingLabels !== null
-  const isRruleDirty = pendingRrule !== undefined
   const isProjectDirty = pendingProject !== null
   const isReminderDirty = pendingIsReminder !== null
   const fieldDirty: Record<DirtyField, boolean> = {
@@ -563,8 +548,8 @@ export function QuickActionPanel({
     title: isTitleDirty,
     priority: isPriorityDirty,
     labels: isLabelsDirty,
-    rrule: isRruleDirty,
-    recurrenceMode: pendingRecurrenceMode !== null,
+    // Every-time mode's unsaved draft, or create mode's staged schedule.
+    everyTime: everyTime.dirty || stagedSchedule !== null,
     project: isProjectDirty,
     dueAtCleared: pendingDueAtCleared,
     autoSnooze: pendingAutoSnooze !== undefined,
@@ -576,6 +561,9 @@ export function QuickActionPanel({
   }
   // Edit mode: any staged field at all.
   const hasPendingChanges = Object.values(fieldDirty).some(Boolean)
+  // This-one mode's own staged edits (everything but the every-time draft):
+  // while there are any, the way into every-time mode is disabled (§2.3).
+  const thisOneDirty = Object.entries(fieldDirty).some(([k, v]) => k !== 'everyTime' && v)
   // Create mode, non-title fields only (see CREATE_MODE_DIRTY_FIELDS) — controls the
   // Reset button, since the title is preserved on reset.
   const createModeNonTitleDirty =
@@ -585,24 +573,6 @@ export function QuickActionPanel({
   const createModeDirty =
     isCreateMode && (createTitle.trim() !== (initialTitle ?? '').trim() || createModeNonTitleDirty)
   const isDirty = isCreateMode ? createModeDirty : hasPendingChanges
-
-  // Recurrence is invalid when FREQ=WEEKLY has no BYDAY in from_due mode.
-  // Only check when the user has the recurrence picker open or modified the rrule,
-  // so existing legacy data without BYDAY doesn't block unrelated edits.
-  const isRecurrenceInvalid = useMemo(() => {
-    if (!editingRecurrence && pendingRrule === undefined) return false
-    const rruleToCheck = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
-    if (!rruleToCheck) return false
-    const mode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode ?? 'from_due'
-    if (mode === 'from_completion') return false
-    return rruleToCheck.includes('FREQ=WEEKLY') && !rruleToCheck.includes('BYDAY=')
-  }, [
-    editingRecurrence,
-    pendingRrule,
-    pendingRecurrenceMode,
-    effectiveTask?.rrule,
-    effectiveTask?.recurrence_mode,
-  ])
 
   const headerText = isBulkMode ? bulkHook.headerText : singleHook.headerText
   const relativeText = isBulkMode ? bulkHook.relativeText : singleHook.relativeText
@@ -650,7 +620,7 @@ export function QuickActionPanel({
   // before deadline)", read with the STAGED values so it shows what Save would
   // produce — see `stagedAutoTarget`.
   const { label: autoTarget, staged: autoTargetStaged } =
-    isBulkMode || isReminderLike || displayRrule
+    isBulkMode || isReminderLike || !!displayRrule
       ? { label: null, staged: false }
       : stagedAutoTarget(
           effectiveTask,
@@ -661,10 +631,6 @@ export function QuickActionPanel({
           },
           timezone,
         )
-  // The … menu's target reset (§8.3, ruling Q9): "Remove target", "Back to
-  // auto" (a deadline one-off whose target the user picked), or nothing (an
-  // automatic target, or no target). A repeating task's target goes with its
-  // recurrence ("Remove target & recurrence").
   // The target picker's "Deadline day" (ruling Q8): single task, deadline ahead.
   const pickerDeadlineDay = isBulkMode
     ? null
@@ -672,15 +638,20 @@ export function QuickActionPanel({
         pendingDeadline !== undefined ? pendingDeadline : effectiveTask?.deadline_at,
         { timezone, morningTime },
       )
-  const movedOccurrence =
-    !isBulkMode && !isCreateMode && effectiveTask && !isDateDirty && !isRruleDirty
-      ? movedOccurrenceLabel(effectiveTask, timezone)
+  // "THIS IS THE FRI OCT 16 ONE" (§7, A4): which occurrence the rows edit,
+  // when it differs from what its rule alone says (decked, moved, queued,
+  // rescheduled off its rule).
+  const occurrenceLine =
+    !isBulkMode && !isCreateMode && effectiveTask && !isDateDirty
+      ? occurrenceDiffers(effectiveTask, timezone, queueEnabled)
       : null
-  const singleTargetReset: 'auto' | 'remove' | null = !effectiveTask
-    ? null
-    : effectiveTask.rrule
-      ? 'remove'
-      : targetReset(effectiveTask)
+  // The … menu's target reset (§8.3, ruling Q9): "Remove target", "Back to
+  // auto" (a deadline one-off whose target the user picked), or nothing (an
+  // automatic target, or no target). Never on a repeating task (§3): its
+  // target can't be cleared, and nothing in this mode removes its rule —
+  // that is every-time mode's "Stop repeating".
+  const singleTargetReset: 'auto' | 'remove' | null =
+    !effectiveTask || displayRrule ? null : targetReset(effectiveTask)
 
   // Only show delta when task originally had a due date. When due_at is null,
   // initWorkingDate generates a near-now default (5-min snap) and showing a delta
@@ -699,21 +670,19 @@ export function QuickActionPanel({
 
   // ON DECK (D2): staging a deck drops a staged target (rule 1 — a task has
   // one or the other); a target staged after it wins (`deckShadowed`). A
-  // repeating task shows the line too (2026-10-20: the deck is for its current
-  // occurrence) — but never while a recurrence change is staged: a new rule
-  // schedules its own date, and the server refuses a rule with a deck.
+  // repeating task shows the row too (2026-10-20: the deck is for its current
+  // occurrence). A schedule change is every-time mode's, never staged with a
+  // deck (RT-4): the way in is disabled while a deck is staged.
   const showDeckLine =
     queueEnabled &&
     !isBulkMode &&
     !isCreateMode &&
     !isReminderLike &&
-    !isRruleDirty &&
     !!effectiveTask &&
     !effectiveTask.done
-  // A deck staged while the line is shown, then hidden (a recurrence or the
-  // Reminder toggle staged after it): the deck goes too — never sent for a
-  // task that can't be on deck, nor with a rule (adjusted during render, not
-  // in an effect).
+  // A deck staged while the row is shown, then hidden (the Reminder toggle
+  // staged after it): the deck goes too — never sent for a task that can't be
+  // on deck (adjusted during render, not in an effect).
   if (!showDeckLine && pendingDeck !== undefined) setPendingDeck(undefined)
   // `clearTarget`: the deck wins over a staged target (a tap on the line, or
   // the hold menu's stored day, after a target was staged — review #3).
@@ -796,16 +765,15 @@ export function QuickActionPanel({
   )
 
   // Single-task date picker: a picked date is a reschedule (pendingDatePicked →
-  // reset_original_due_at on save); Clear drops the date and any recurrence.
+  // reset_original_due_at on save); Clear drops the target. Clear NEVER
+  // removes a rule (PR 4c — it used to: the "Clear deletes the repeat" bug): a
+  // repeating task's picker has no Clear at all.
   const handleSinglePickerChange = useCallback(
     (isoUtc: string | null) => {
       if (isoUtc === null) {
         setPendingDueAtCleared(true)
         setPendingDueAt(null)
         setPendingDatePicked(false)
-        if (effectiveTask?.rrule || pendingRrule) {
-          setPendingRrule(null)
-        }
       } else {
         setPendingDueAtCleared(false)
         // In create mode, the hook's initial date is a synthetic snap-to-now value,
@@ -816,7 +784,7 @@ export function QuickActionPanel({
         singleHook.setWorkingDate(isoUtc)
       }
     },
-    [effectiveTask?.rrule, pendingRrule, isCreateMode, singleHook],
+    [isCreateMode, singleHook],
   )
 
   // Multi-task "clear due date" (the date picker's Clear and the "…" menu item).
@@ -900,9 +868,10 @@ export function QuickActionPanel({
     }
     if (pendingDueAtCleared) {
       changes.due_at = null
-      changes.rrule = null
+      // Only the multi-task "Remove targets & recurrence" takes the rules too
+      // (§9). A single task's cleared target never removes its rule.
+      if (isBulkMode && (selectedTasks?.length ?? 0) > 1) changes.rrule = null
     } else {
-      if (pendingRrule !== undefined) changes.rrule = pendingRrule
       if (isBulkMode) {
         // Bulk mode: read the staged date op from bulkHook and emit either an
         // absolute `due_at` or a relative `delta_minutes`. For single-task bulk
@@ -927,7 +896,6 @@ export function QuickActionPanel({
         changes.due_at = singleHook.workingDate
       }
     }
-    if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
     if (pendingProject !== null) changes.project_id = pendingProject
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
     // A picked date is a reminder's explicit reschedule (see pendingDatePicked;
@@ -962,11 +930,9 @@ export function QuickActionPanel({
     pendingPriority,
     pendingLabels,
     pendingDueAtCleared,
-    pendingRrule,
     pendingDueAt,
     singleHook.isDirty,
     singleHook.workingDate,
-    pendingRecurrenceMode,
     pendingProject,
     pendingAutoSnooze,
     pendingDatePicked,
@@ -985,8 +951,6 @@ export function QuickActionPanel({
     setPendingTitle(null)
     setPendingPriority(null)
     setPendingLabels(null)
-    setPendingRrule(undefined)
-    setPendingRecurrenceMode(null)
     setPendingProject(null)
     setPendingDueAt(null)
     setPendingDueAtCleared(false)
@@ -1007,15 +971,34 @@ export function QuickActionPanel({
   const handleCreate = useCallback(async () => {
     if (!onCreate) return
     const changes = collectPendingChanges()
+    if (stagedSchedule && stagedCreateFields) {
+      // A schedule staged in every-time mode (§8): the rule and its fields.
+      // Deadline-anchored: the offsets set the target (no `due_at`), the
+      // first deadline comes from the draft. Target-anchored: a repeat with
+      // no deadline (L9). Never a deck with a rule (create mode has none).
+      if (stagedSchedule.draft.anchor === 'deadline') delete changes.due_at
+      else delete changes.deadline_at
+      Object.assign(changes, stagedCreateFields)
+    }
     try {
       await onCreate({ ...changes, title: createTitle.trim() })
     } catch {
       return
     }
     resetAllPending()
+    everyTime.setStaged(null)
     setCreateTitle('')
     singleHook.reset()
-  }, [onCreate, collectPendingChanges, createTitle, resetAllPending, singleHook])
+  }, [
+    onCreate,
+    collectPendingChanges,
+    createTitle,
+    resetAllPending,
+    singleHook,
+    stagedSchedule,
+    stagedCreateFields,
+    everyTime,
+  ])
 
   // Shared save logic: sends all pending changes in one batched onSaveAll call.
   // Used by both save and handleSaveAndDone to avoid duplicating the dispatch logic.
@@ -1027,9 +1010,22 @@ export function QuickActionPanel({
     }
   }, [onSaveAll, collectPendingChanges])
 
+  // EVERY-TIME MODE'S SAVE: one PATCH (`draftToPatch`), or one bulk/edit
+  // (`draftToBulkChanges`) — never with this-one's fields (RT-4). No
+  // optimistic patch (the server derives the dates, §13); the host's toast
+  // carries the server's description and Undo. A refusal (a race) keeps the
+  // panel in every-time with the draft.
+  const saveEveryTime = useCallback(async () => {
+    const changes = isBulkMode ? everyTime.bulkChanges : everyTime.patch
+    if (onSaveAll && changes && Object.keys(changes).length > 0) {
+      await onSaveAll(changes as QuickActionPanelChanges)
+    }
+  }, [isBulkMode, everyTime.bulkChanges, everyTime.patch, onSaveAll])
+
   const save = useCallback(async () => {
     try {
-      await applyAllPendingChanges()
+      if (everyTime.session) await saveEveryTime()
+      else await applyAllPendingChanges()
     } catch {
       // A host that rejects has already reported the failure (the dashboard's
       // popover and selection sheet, the task page: each toasts the server's
@@ -1037,13 +1033,14 @@ export function QuickActionPanel({
       // (which closes or leaves) is not called.
       return
     }
+    everyTime.leave()
     resetAllPending()
     // Reset whichever date hook is active (bulk or single) so the panel's
     // staged state clears on save — otherwise a re-open of the same selection
     // would show stale delta/absolute indicators.
     reset()
     onSave?.()
-  }, [applyAllPendingChanges, resetAllPending, reset, onSave])
+  }, [everyTime, saveEveryTime, applyAllPendingChanges, resetAllPending, reset, onSave])
 
   // Dirty report (and clean on unmount), beforeunload while dirty, the saveRef
   // a host's unsaved-changes dialog commits through, and the in-flight guard
@@ -1058,15 +1055,19 @@ export function QuickActionPanel({
   const handleCancel = useCallback(() => {
     reset()
     resetAllPending()
+    everyTime.leave()
+    everyTime.setStaged(null)
     if (isCreateMode) setCreateTitle(initialTitle ?? '')
     onCancel?.()
-  }, [reset, resetAllPending, onCancel, isCreateMode, initialTitle])
+  }, [reset, resetAllPending, everyTime, onCancel, isCreateMode, initialTitle])
 
-  // Reset handler for the Reset button - clears all pending changes
+  // Reset handler for the Reset button - clears all pending changes (create
+  // mode: a staged schedule too)
   const handleReset = useCallback(() => {
     reset()
     resetAllPending()
-  }, [reset, resetAllPending])
+    everyTime.setStaged(null)
+  }, [reset, resetAllPending, everyTime])
 
   // In sheet mode with selectedCount, SelectionActionSheet owns title and quick-links
   const isSelectionSheetMode = mode === 'sheet' && selectedCount !== undefined
@@ -1097,46 +1098,88 @@ export function QuickActionPanel({
       ? savedOriginal
       : null
 
-  // Compute recurrence text for header display
-  // In SelectionActionSheet (sheet mode with selectedCount), use the recurrenceSummary prop
-  // In other modes, compute from displayRrule (pending or current) or selectedTasks
-  // For single non-recurring tasks, show "One time" indicator
-  const recurrenceText = (() => {
-    if (isSelectionSheetMode) {
-      return recurrenceSummary ?? null
-    }
-    if (isBulkMode) {
-      return formatBulkRecurrence(selectedTasks ?? [])
-    }
-    if (!displayRrule) return 'One time'
-    return formatRRuleCompact(displayRrule, effectiveTask?.anchor_time)
-  })()
-
-  // Determine if recurrence is "One time" for styling purposes
-  const isOneTime = !isBulkMode && !isSelectionSheetMode && !displayRrule
-
-  // Whether the Repeat button reads active: the (staged) rule is set — in a
-  // multi-selection, every selected task repeats (or a rule is staged for
-  // them all). See the button for why it is a tint, not a toggle.
-  const { repeatActive, repeatButtonLabel } = repeatButtonState({
-    rule: isBulkMode && pendingRrule === undefined ? undefined : displayRrule,
-    selectedTasks: isBulkMode ? selectedTasks : undefined,
-    recurrenceText,
-    editing: editingRecurrence,
+  // THE WAY INTO EVERY-TIME MODE (§2.2, A8): "↻ Repeats — <rule> · edit
+  // every time ›" or "↻ Make it repeat ›" — the only way in (the grey
+  // recurrence box and the Repeat button are gone). Not for a reminder or a
+  // quota (A12: their own editors own their schedules), nor a done task.
+  // Disabled while this mode has unsaved edits (§2.3), and in bulk unless
+  // every selected task can take one rule (A11, `bulkEveryTimeGate`).
+  const editingBlocked = thisOneDirty && !isCreateMode
+  const repeatLink = repeatLinkFor({
+    canEdit,
+    isBulkMode,
+    isCreateMode,
+    task: effectiveTask,
+    isReminderLike,
+    selectedTasks: selectedTasks ?? [],
+    bulkSummary: isSelectionSheetMode ? (recurrenceSummary ?? null) : null,
+    staged: stagedSchedule,
+    editingBlocked,
+    onOpen: () => everyTime.enter(),
   })
 
-  // Task age — "since X" text shown on the recurrence line, for a single
-  // existing task only. The anchor rules live in formatTaskSince. The text is
+  // Task age — "since X" text shown beside the link, for a single existing
+  // task only. The anchor rules live in formatTaskSince. The text is
   // computed when the task or timezone changes, not on a clock tick.
   const sinceInfo = useMemo(() => {
     if (!effectiveTask || isBulkMode || isSelectionSheetMode || isCreateMode) return null
     return formatTaskSince(effectiveTask, timezone)
   }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone])
 
-  // Toggle the expandable recurrence picker
-  const handleRecurrenceToggle = useCallback(() => {
-    setEditingRecurrence((prev) => !prev)
-  }, [])
+  // THE DEADLINE ROW and THE TARGET ROW's value (§3) — see `ThisOneFields`.
+  const stagedDeadlineValue =
+    pendingDeadline !== undefined ? pendingDeadline : (effectiveTask?.deadline_at ?? null)
+  const deadlineRow = deadlineRowFor({
+    hidden: isBulkMode || isReminderLike,
+    task: effectiveTask,
+    stagedAnchor: stagedSchedule?.draft.anchor ?? null,
+    stagedFirstDeadline: stagedCreateFields?.deadline_at ?? null,
+    rule: displayRrule,
+    deadlineAnchored,
+    editingBlocked,
+    value: stagedDeadlineValue,
+    dirty: pendingDeadline !== undefined,
+    onChange: setPendingDeadline,
+    onOpenEveryTime: () => everyTime.enter({ focusDeadline: true }),
+  })
+  const targetValue = targetValueFor({
+    timezone,
+    queued: !!queuedOccurrence,
+    dateDirty: isDateDirty,
+    auto: autoTarget ? { label: autoTarget, dirty: autoTargetStaged } : null,
+    none: showsNoTarget ? { dirty: pendingDueAtCleared || (deckStaged && !allNoDueDate) } : null,
+    header: headerText,
+    relative: relativeText,
+    past: isPast,
+    delta: effectiveDeltaDisplay,
+    staged: isBulkMode ? null : (pendingDueAt ?? (isDateDirty ? workingDate : null)),
+    deadline: stagedDeadlineValue,
+  })
+  // Create mode with a staged deadline-anchored repeat: the offsets set the
+  // target (`draftToCreateFields` sends no `due_at`) — said in words, no pad.
+  const targetText =
+    stagedSchedule?.draft.anchor === 'deadline'
+      ? relativeTargetWords(stagedSchedule.draft.daysBefore, stagedSchedule.draft.targetTime)
+      : null
+
+  // Focus and scroll when the mode changes (§11, §12): into every-time, the
+  // banner heading takes focus and a scrolled sheet goes back to its top;
+  // back, the link takes it again. A polite live region names the mode.
+  const everyTimeHeadingRef = useRef<HTMLHeadingElement>(null)
+  const repeatLinkRef = useRef<HTMLButtonElement>(null)
+  const inEveryTime = everyTime.mode === 'everyTime'
+  const wasEveryTime = useRef(false)
+  useEffect(() => {
+    if (inEveryTime === wasEveryTime.current) return
+    wasEveryTime.current = inEveryTime
+    if (inEveryTime) {
+      const heading = everyTimeHeadingRef.current
+      scrollParentToTop(heading)
+      heading?.focus({ preventScroll: true })
+    } else {
+      repeatLinkRef.current?.focus({ preventScroll: true })
+    }
+  }, [inEveryTime])
 
   // Handle title editing - stages the change for the batched save
   const handleTitleSave = useCallback(() => {
@@ -1222,6 +1265,72 @@ export function QuickActionPanel({
       !displayLabels.some((l) => l.toLowerCase() === c.name.toLowerCase()) &&
       c.name.toLowerCase().includes(labelInput.toLowerCase()),
   )
+
+  // EVERY-TIME MODE replaces the whole body (mock E): its own framed card,
+  // with no pad, no chip row and no notes. See `EveryTimePanel`.
+  if (everyTime.session) {
+    const s = everyTime.session
+    const everyTimeTitle = isCreateMode ? createTitle.trim() || 'New task' : title
+    return (
+      <div className="space-y-3">
+        <span className="sr-only" aria-live="polite">
+          Editing every time
+        </span>
+        <EveryTimePanel
+          variant={isCreateMode ? 'create' : isBulkMode ? 'bulk' : 'single'}
+          title={
+            everyTimeTitle ? (
+              <p
+                className={cn(
+                  'font-medium break-words',
+                  titleVariant === 'prominent' ? 'text-lg' : 'text-sm',
+                )}
+              >
+                {everyTimeTitle}
+              </p>
+            ) : null
+          }
+          task={s.task}
+          initial={s.initial}
+          draft={s.draft}
+          dispatch={everyTime.dispatch}
+          ctx={s.ctx}
+          bulkCount={selectedTasks?.length ?? 0}
+          focusDeadline={s.focusDeadline}
+          canStop={
+            isCreateMode
+              ? !!stagedSchedule
+              : isBulkMode
+                ? (selectedTasks ?? []).some((t) => !!t.rrule)
+                : !!effectiveTask?.rrule
+          }
+          saveable={everyTime.saveable}
+          saving={saving}
+          headingRef={everyTimeHeadingRef}
+          onBack={everyTime.back}
+          onSave={isCreateMode ? everyTime.stage : () => void handleSave()}
+          onReset={everyTime.reset}
+          onCancel={handleCancel}
+        />
+        <AlertDialog open={everyTime.confirmBack} onOpenChange={everyTime.setConfirmBack}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Discard changes to every time?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Your changes to the schedule haven&apos;t been saved.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogAction variant="outline" onClick={everyTime.leave}>
+                Discard
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
@@ -1348,192 +1457,84 @@ export function QuickActionPanel({
             </Badge>
           )}
           {/*
-            Date display — tapping it opens the calendar/time picker, in single
-            and multi-task mode alike. In bulk mode a picked date stages an
+            THIS ONE (§3): the Target / Deadline / On deck rows, the "This is
+            the … one" line and the way into every-time mode — see
+            `ThisOneFields`. The Target row's picker works in single and
+            multi-task mode alike: in bulk mode a picked date stages an
             ABSOLUTE target for every selected task (bulkHook.setAbsoluteTarget),
-            exactly like the 9:00 AM / Now presets, so it saves through the same
-            path: bulk/snooze (or bulk/edit alongside other fields) with
+            exactly like the 9:00 AM / Now presets, so it saves through the
+            same path: bulk/snooze (or bulk/edit alongside other fields) with
             include_task_ids, behind the same "Confirm date change" dialog.
           */}
-          <DateTimePicker
-            value={
-              isBulkMode
-                ? (bulkHook.presetTime ?? bulkHook.earliestDueAt)
-                : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null)
-            }
+          <ThisOneFields
             timezone={timezone}
-            // A deadline task's Clear is "Back to auto" (§8.3), and an
-            // automatic target has nothing to clear (ruling Q9).
-            allowClear={
-              isBulkMode ? canBulkClearDueDate : singleTargetReset !== null || !autoTarget
+            occurrence={occurrenceLine}
+            target={{
+              readonlyText: targetText,
+              picker: {
+                value: isBulkMode
+                  ? (bulkHook.presetTime ?? bulkHook.earliestDueAt)
+                  : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null),
+                timezone,
+                // A deadline task's Clear is "Back to auto" (§8.3), and an
+                // automatic target has nothing to clear (ruling Q9). A
+                // repeating task's target has no Clear at all (§3).
+                allowClear: isBulkMode
+                  ? canBulkClearDueDate
+                  : !displayRrule && (singleTargetReset !== null || !autoTarget),
+                clearLabel: singleTargetReset === 'auto' ? BACK_TO_AUTO : undefined,
+                quickPick: pickerDeadlineDay,
+                emptyDefault: isBulkMode ? 'now' : 'tomorrow',
+                onChange: isBulkMode ? handleBulkPickerChange : handleSinglePickerChange,
+              },
+              value: targetValue,
+            }}
+            deadline={deadlineRow}
+            // A one-off with a target the user picked is quiet until its
+            // date (spec §1/§8.5, 2026-10-12): its horizon decides nothing
+            // until the target is removed, and the rows say so. An automatic
+            // deadline target keeps the horizon working. Read from the target
+            // row's own (staged) value, so Remove target or Back to auto
+            // staged brings the horizon back at once. Only a REAL target:
+            // `workingDate` is the picker's working value and is set even
+            // with no target, so it counts only once a date is staged
+            // (`isDateDirty`) — it made a task with no target read "quiet
+            // until <today>" (2026-10-15).
+            quietUntil={
+              isBulkMode || isReminderLike || displayRrule || autoTarget || showsNoTarget
+                ? null
+                : (pendingDueAt ??
+                  (isDateDirty ? workingDate : null) ??
+                  effectiveTask?.due_at ??
+                  null)
             }
-            clearLabel={singleTargetReset === 'auto' ? BACK_TO_AUTO : undefined}
-            quickPick={pickerDeadlineDay}
-            emptyDefault={isBulkMode ? 'now' : 'tomorrow'}
-            onChange={isBulkMode ? handleBulkPickerChange : handleSinglePickerChange}
-          >
-            <p
-              data-quick-panel-date
-              className="inline-flex cursor-pointer flex-wrap items-center gap-x-1 text-xs select-text"
-            >
-              <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
-              {queuedOccurrence && !isDateDirty ? (
-                // A waiting repeating task: the occurrence's date alone — no
-                // "Target", no "in 3 days" (see `queuedOccurrence`).
-                <span data-queued-occurrence className="text-muted-foreground">
-                  {formatQuickSelectHeader(queuedOccurrence, timezone)}
-                </span>
-              ) : (
-                <span className="text-muted-foreground/70">{TARGET_WORD}</span>
-              )}
-              {queuedOccurrence && !isDateDirty ? null : autoTarget ? (
-                <AutoTargetText label={autoTarget} timezone={timezone} dirty={autoTargetStaged} />
-              ) : showsNoTarget ? (
-                <span
-                  className={cn(
-                    'font-medium',
-                    pendingDueAtCleared || (deckStaged && !allNoDueDate)
-                      ? 'text-blue-500'
-                      : 'text-muted-foreground',
-                  )}
-                >
-                  No target
-                </span>
-              ) : (
-                <>
-                  <span
-                    className={cn(
-                      isDateDirty ? 'font-bold text-blue-500' : 'text-muted-foreground',
-                    )}
-                  >
-                    {headerText}
-                  </span>
-                  <span
-                    className={cn(
-                      isDateDirty ? 'mx-1 text-blue-500' : 'text-muted-foreground mx-1',
-                    )}
-                  >
-                    &middot;
-                  </span>
-                  <span
-                    className={cn(
-                      isDateDirty
-                        ? 'font-bold text-blue-500'
-                        : isPast
-                          ? 'text-over-target font-medium'
-                          : 'text-muted-foreground',
-                    )}
-                  >
-                    {relativeText}
-                  </span>
-                  {effectiveDeltaDisplay && (
-                    <span className="ml-1 font-medium text-blue-500">
-                      ({effectiveDeltaDisplay})
-                    </span>
-                  )}
-                </>
-              )}
-            </p>
-          </DateTimePicker>
-          {/* A repeating task whose target was moved off its scheduled
-              occurrence (§6, 2026-10-12) names the occurrence under the
-              target, so a moved target never reads as a changed schedule:
-              done still brings the next one round from the occurrence. */}
-          {movedOccurrence && (
-            <p data-occurrence-line className="text-muted-foreground/70 mt-0.5 text-xs">
-              Occurrence {movedOccurrence} · target moved
-            </p>
-          )}
-          {/* Deadline + horizon (2026-10-10): their own lines, never moved by a
-              snooze button. Ordinary tasks only — a reminder or a quota has
-              neither — and one task at a time (Process sets horizons in bulk). */}
-          {!isBulkMode && !isReminderLike && offersDeadline && (
-            <TaskModelFields
-              deadline={
-                pendingDeadline !== undefined
-                  ? pendingDeadline
-                  : (effectiveTask?.deadline_at ?? null)
-              }
-              deadlineDirty={pendingDeadline !== undefined}
-              timezone={timezone}
-              onDeadline={setPendingDeadline}
-              repeatLabel={deadlineRepeatLabel({
-                rrule: displayRrule,
-                repeat_anchor: effectiveTask?.repeat_anchor ?? null,
-                target_days_before: effectiveTask?.target_days_before ?? null,
-                target_time: effectiveTask?.target_time ?? null,
-              })}
-              showHorizon={!displayRrule}
-              // A one-off with a target the user picked is quiet until its
-              // date (spec §1/§8.5, 2026-10-12): its horizon decides nothing
-              // until the target is removed, so the row is greyed and says so.
-              // An automatic deadline target keeps the horizon working. Read
-              // from the target line's own (staged) value, so Remove target or
-              // Back to auto staged brings the horizon back at once.
-              // Only a REAL target: `workingDate` is the picker's working
-              // value and is set even with no target, so it counts only once
-              // a date is staged (`isDateDirty`) — it made a task with no
-              // target read "quiet until <today>" (2026-10-15).
-              quietUntil={
-                displayRrule || autoTarget || showsNoTarget
-                  ? null
-                  : (pendingDueAt ??
-                    (isDateDirty ? workingDate : null) ??
-                    effectiveTask?.due_at ??
-                    null)
-              }
-              emptyAnchor={
-                displayRrule ? (pendingDueAt ?? effectiveTask?.due_at ?? workingDate) : null
-              }
-            />
-          )}
-          {/* ON DECK (D2, spec rule 8): not a reminder or quota (rule 6), one
-              task at a time, with the task queue on, no recurrence change
-              staged. */}
-          {showDeckLine && effectiveTask && (
-            <OnDeckLine
-              task={effectiveTask}
-              timezone={timezone}
-              staged={pendingDeck}
-              shadowed={deckShadowed}
-              limit={stagedDeckLimit}
-              onStage={stageDeck}
-            />
-          )}
-          {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
-          {previewDueAt && (
-            <p className="mt-0.5 text-xs font-medium text-blue-500">
-              → {formatDateTime(previewDueAt, timezone)}
-            </p>
-          )}
-          {/* Recurrence summary line: "One time", the rule ("Target Sundays at
-              9:00 AM") or the selection's summary, plus the "since X" age when
-              there is one. Tapping it opens the recurrence editor — see
-              RecurrenceSummaryLine for why the text, not the Repeat button, is
-              the way in. */}
-          {recurrenceText && (
-            <RecurrenceSummaryLine
-              text={recurrenceText}
-              word={deadlineAnchored ? DEADLINE_WORD : TARGET_WORD}
-              isRecurring={!isBulkMode && !!displayRrule}
-              isOneTime={isOneTime}
-              dirty={isRruleDirty}
-              canEdit={canEdit}
-              expanded={editingRecurrence}
-              onToggle={handleRecurrenceToggle}
-              className={isSelectionSheetMode ? 'mt-0.5' : 'mt-1'}
-              since={
-                sinceInfo &&
-                !isRruleDirty && (
-                  <SinceAge
-                    label={sinceInfo.label}
-                    timeAgo={sinceInfo.timeAgo}
-                    fullDate={sinceInfo.fullDate}
-                  />
-                )
-              }
-            />
-          )}
+            deck={
+              // ON DECK (D2, spec rule 8): not a reminder or quota (rule 6),
+              // one task at a time, with the task queue on.
+              showDeckLine && effectiveTask ? (
+                <OnDeckLine
+                  task={effectiveTask}
+                  timezone={timezone}
+                  staged={pendingDeck}
+                  shadowed={deckShadowed}
+                  limit={stagedDeckLimit}
+                  onStage={stageDeck}
+                  showLabel={false}
+                />
+              ) : null
+            }
+            link={repeatLink}
+            linkRef={repeatLinkRef}
+            since={
+              sinceInfo && (
+                <SinceAge
+                  label={sinceInfo.label}
+                  timeAgo={sinceInfo.timeAgo}
+                  fullDate={sinceInfo.fullDate}
+                />
+              )
+            }
+          />
           {/* Project + Priority row */}
           {(effectiveTask || isBulkMode || isCreateMode) && (
             <div className="mt-1 flex items-center gap-1.5">
@@ -1786,44 +1787,6 @@ export function QuickActionPanel({
               )}
               {/* Action icons — right-aligned */}
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {/* Recurrence button (when editable). Two states:
-                    - whether a rule is set (`repeatActive`): the panel's own
-                      neutral "selected" look — the light grey fill and full
-                      foreground of the recurrence line when it is open
-                      (RecurrenceSummaryLine) — and the label leads with the
-                      rule ("Repeats: Fridays at 4:00 PM · Edit recurrence");
-                      no rule: the muted icon;
-                    - whether the editor is open: `aria-expanded`, the same
-                      fill, and the label says what a tap does ("Close
-                      recurrence editor").
-                    Rulings: SOLID blue whenever the task recurred read as an
-                    on/off toggle a tap would switch off (Trent, 2026-10-12),
-                    so it lost any rule state and then looked the same on a
-                    one-off and a repeating task (Trent, 2026-10-20). Neutral,
-                    not blue (designer, 2026-10-20): blue in this panel means
-                    "unsaved change", and Trent's one-accent-hue rule wins. No
-                    `aria-pressed`: a tap opens the editor, never switches the
-                    rule off. */}
-                {canEdit && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    data-repeat-active={repeatActive ? '' : undefined}
-                    className={cn(
-                      'size-8',
-                      repeatActive || editingRecurrence
-                        ? 'bg-accent text-foreground dark:bg-accent'
-                        : 'text-muted-foreground',
-                    )}
-                    onClick={handleRecurrenceToggle}
-                    aria-expanded={editingRecurrence}
-                    aria-controls={RECURRENCE_EDITOR_ID}
-                    aria-label={repeatButtonLabel}
-                    title={repeatButtonLabel}
-                  >
-                    <Repeat className="size-4" />
-                  </Button>
-                )}
                 {/* Auto-snooze picker — per-task notification repeat interval */}
                 {(() => {
                   // In bulk mode, compute common auto-snooze across selected tasks
@@ -1927,11 +1890,11 @@ export function QuickActionPanel({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-                      {/* Clear the target — single task. A one-off with a
+                      {/* Clear the target — a single one-off. A one-off with a
                           deadline never loses its target (§8.3): its picked
                           target goes "Back to auto", and an automatic target
-                          offers neither (ruling Q9). A repeating task's goes
-                          with its recurrence. */}
+                          offers neither (ruling Q9). Not on a repeating task:
+                          nothing in this mode removes a rule (§3). */}
                       {isSingleTask && singleTargetReset && !pendingDueAtCleared && (
                         <DropdownMenuItem
                           // `inset` matches the left padding DropdownMenuCheckboxItem
@@ -1940,21 +1903,14 @@ export function QuickActionPanel({
                           // and due date are not aligned right").
                           inset
                           data-target-reset={singleTargetReset}
-                          onClick={() => {
-                            setPendingDueAtCleared(true)
-                            if (effectiveTask?.rrule) {
-                              setPendingRrule(null)
-                            }
-                          }}
+                          onClick={() => setPendingDueAtCleared(true)}
                         >
                           {singleTargetReset === 'auto' ? (
                             <RotateCcw className="mr-2 size-4" />
                           ) : (
                             <XCircle className="mr-2 size-4" />
                           )}
-                          {singleTargetReset === 'auto'
-                            ? BACK_TO_AUTO
-                            : `Remove target${effectiveTask?.rrule ? ' & recurrence' : ''}`}
+                          {singleTargetReset === 'auto' ? BACK_TO_AUTO : 'Remove target'}
                         </DropdownMenuItem>
                       )}
                       {/* Skip until (task queue PR 4; spec rule 10). An
@@ -2023,74 +1979,55 @@ export function QuickActionPanel({
         </div>
       </div>
 
-      {/* Expandable recurrence editor, opened from the summary line or the
-          Repeat button. It opens right under them, ABOVE the snooze grid, so
-          a tap visibly opens something where the finger is (2026-10-12: below
-          the grid it could land off-screen on a phone, and the tap looked like
-          it did nothing). Uses displayRrule (pending or current) and stages
-          changes via setPendingRrule. */}
-      {editingRecurrence && canEdit && (
-        <div id={RECURRENCE_EDITOR_ID} className="rounded-lg border p-3">
-          <RecurrencePicker
-            value={displayRrule}
-            recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
-            initialTime={recurrenceInitialTime}
-            defaultDayOfWeek={defaultDayOfWeek}
-            timeLabel={deadlineAnchored ? DEADLINE_WORD : TARGET_WORD}
-            onChange={(rrule, mode) => {
-              setPendingRrule(rrule)
-              if (mode) setPendingRecurrenceMode(mode)
-            }}
-          />
+      {/* 4x3 Date grid — this occurrence's target. Not while a staged
+          deadline-anchored repeat sets the target (create mode). */}
+      {!targetText && (
+        <div className="grid grid-cols-4 gap-1.5">
+          {/* Row 1: Preset times (Settings → Number pad). Keyed by position:
+            two buttons may resolve to the same time, and both still show. */}
+          {padPresets.map((preset, index) => {
+            const [hour, minute] = preset.time.split(':').map(Number)
+            return (
+              <GridButton
+                key={index}
+                label={formatClockTime(preset.time)}
+                onClick={() => handlePresetClick(hour, minute)}
+              />
+            )
+          })}
+
+          {/* Row 2: Increments */}
+          {INCREMENTS.map((inc) => (
+            <GridButton
+              key={inc.label}
+              label={inc.label}
+              onClick={() => handleIncrementClick(inc)}
+              variant="increment"
+            />
+          ))}
+
+          {/* Row 3: Decrements */}
+          {DECREMENTS.map((dec) => (
+            <GridButton
+              key={dec.label}
+              label={dec.label}
+              onClick={() => handleIncrementClick(dec)}
+              variant="decrement"
+            />
+          ))}
+
+          {/* Row 4: Smart buttons */}
+          {SMART_BUTTONS.map((btn) => (
+            <GridButton
+              key={btn.type}
+              label={smartButtonLabels[btn.type]}
+              onClick={() => handleSmartButtonClick(btn.type)}
+              variant="smart"
+              span={2}
+            />
+          ))}
         </div>
       )}
-
-      {/* 4x3 Date grid */}
-      <div className="grid grid-cols-4 gap-1.5">
-        {/* Row 1: Preset times (Settings → Number pad). Keyed by position:
-            two buttons may resolve to the same time, and both still show. */}
-        {padPresets.map((preset, index) => {
-          const [hour, minute] = preset.time.split(':').map(Number)
-          return (
-            <GridButton
-              key={index}
-              label={formatClockTime(preset.time)}
-              onClick={() => handlePresetClick(hour, minute)}
-            />
-          )
-        })}
-
-        {/* Row 2: Increments */}
-        {INCREMENTS.map((inc) => (
-          <GridButton
-            key={inc.label}
-            label={inc.label}
-            onClick={() => handleIncrementClick(inc)}
-            variant="increment"
-          />
-        ))}
-
-        {/* Row 3: Decrements */}
-        {DECREMENTS.map((dec) => (
-          <GridButton
-            key={dec.label}
-            label={dec.label}
-            onClick={() => handleIncrementClick(dec)}
-            variant="decrement"
-          />
-        ))}
-
-        {/* Row 4: Smart buttons */}
-        {SMART_BUTTONS.map((btn) => (
-          <GridButton
-            key={btn.type}
-            label={smartButtonLabels[btn.type]}
-            onClick={() => handleSmartButtonClick(btn.type)}
-            variant="smart"
-            span={2}
-          />
-        ))}
-      </div>
 
       {/* AI annotation — shown between date grid and action buttons */}
       {annotation && (
@@ -2115,7 +2052,7 @@ export function QuickActionPanel({
             variant="default"
             size="sm"
             onClick={handleCreate}
-            disabled={!createTitle.trim() || isRecurrenceInvalid}
+            disabled={!createTitle.trim()}
             className="flex-1"
           >
             Create Task
@@ -2125,7 +2062,7 @@ export function QuickActionPanel({
             variant="default"
             size="sm"
             onClick={() => void handleSave()}
-            disabled={!isDirty || isRecurrenceInvalid || saving}
+            disabled={!isDirty || saving}
             className="flex-1"
           >
             Save

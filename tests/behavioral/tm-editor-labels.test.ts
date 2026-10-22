@@ -13,6 +13,7 @@ import {
   occurrenceDiffers,
   relativeDaysWords,
   relativeTargetWords,
+  repeatWords,
 } from '@/lib/editor-target-labels'
 import { DateTime } from 'luxon'
 
@@ -212,6 +213,23 @@ describe('occurrenceDiffers — "This is the Fri Oct 23 one" (editor plan §7, A
     ).toBe(null)
     expect(occurrenceDiffers({ ...fridays, occurrence_at: null, on_deck_day: 'x' }, TZ, true)).toBe(
       null,
+    )
+  })
+})
+
+describe('repeatWords — the this-one link (editor PR 4c)', () => {
+  test('the rule; a deadline-anchored one says its time is the deadline; ends exactly', () => {
+    const fri = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0'
+    expect(repeatWords({ rrule: fri })).toBe('Fridays at 4:00 PM')
+    expect(
+      repeatWords({
+        rrule: 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=8;BYMINUTE=0',
+        repeat_anchor: 'deadline',
+      }),
+    ).toBe('Monthly on the 1st Sat, deadline 8:00 AM')
+    expect(repeatWords({ rrule: fri, repeat_count: 6 })).toBe('Fridays at 4:00 PM, 6 times')
+    expect(repeatWords({ rrule: fri, repeat_until: '2026-12-31' })).toBe(
+      'Fridays at 4:00 PM, until Dec 31, 2026',
     )
   })
 })

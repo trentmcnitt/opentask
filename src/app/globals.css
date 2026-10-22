@@ -60,6 +60,13 @@
   --segment-title-queue_today: #0a6670;
   --segment-title-queue_previous: #0a6670;
   --badge-neutral: oklch(0.368 0 0);
+  /* Every-time mode (2026-10-22, editor PR 4c; Trent: "Teal's fine"): the
+     Quick panel's framed "EDITING EVERY TIME" banner and frame. A MODE, not a
+     state — so not blue (blue in the panel means an unsaved change) and not a
+     horizon segment's teal (those mean pace). Deep green-teal from the mock;
+     white on it ≈5.4:1. */
+  --every-time: #0f766e;
+  --every-time-foreground: #ffffff;
   /* Reminders get their own hue rather than the neutral grey: §6 says a waiting
      thought is never overdue, so it must not be red, but grey read as disabled
      next to a live count (Trent, 2026-09-06). Violet is the surface's own
@@ -115,6 +122,9 @@
   --segment-title-queue_today: var(--segment-queue_today);
   --segment-title-queue_previous: var(--segment-queue_previous);
   --badge-neutral: oklch(0.803 0 0);
+  /* The same deep teal: white on it ≈5.4:1, its frame ≈3.4:1 on the dark card. */
+  --every-time: #0f766e;
+  --every-time-foreground: #ffffff;
   --badge-reminders: oklch(0.62 0.19 295);
   --ai-glow: oklch(0.6 0.18 270);
   --ai-glow-shadow: rgba(129, 140, 248, 0.4);
@@ -165,6 +175,8 @@
   --color-segment-queue_today: var(--segment-queue_today);
   --color-segment-queue_previous: var(--segment-queue_previous);
   --color-badge-neutral: var(--badge-neutral);
+  --color-every-time: var(--every-time);
+  --color-every-time-foreground: var(--every-time-foreground);
   --color-badge-reminders: var(--badge-reminders);
   --color-border: var(--border);
   --color-input: var(--input);

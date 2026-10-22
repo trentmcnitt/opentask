@@ -130,6 +130,15 @@ function buildCreateBody(fields: QuickActionPanelChanges & { title: string }) {
   if (fields.rrule) {
     body.rrule = fields.rrule
     if (fields.recurrence_mode) body.recurrence_mode = fields.recurrence_mode
+    // Every-time mode's staged schedule (editor plan §8, `draftToCreateFields`):
+    // a deadline-anchored repeat's anchor and target offsets, and an end.
+    if (fields.repeat_anchor) body.repeat_anchor = fields.repeat_anchor
+    if (fields.target_days_before !== undefined) {
+      body.target_days_before = fields.target_days_before
+    }
+    if (fields.target_time !== undefined) body.target_time = fields.target_time
+    if (fields.repeat_count != null) body.repeat_count = fields.repeat_count
+    if (fields.repeat_until != null) body.repeat_until = fields.repeat_until
   }
   if (fields.project_id) body.project_id = fields.project_id
   if (fields.auto_snooze_minutes !== undefined && fields.auto_snooze_minutes !== null) {

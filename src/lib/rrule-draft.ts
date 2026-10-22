@@ -6,10 +6,9 @@
  * (the target, or a deadline-anchored repeat's deadline), so the caller
  * passes it (`src/lib/every-time.ts` binds it, RT-2).
  *
- * Taken out of `RecurrencePicker.tsx` (its `parseInitialState` and
- * `useRRuleBuilder`), which now calls these, so the picker and the
- * every-time editor share one parse and one build. The text the picker emits
- * is unchanged, part for part:
+ * Taken out of the old `RecurrencePicker.tsx` (its `parseInitialState` and
+ * `useRRuleBuilder`; the picker was deleted in PR 4c, the every-time editor
+ * builds rules with these). The text is the picker's, part for part:
  *   FREQ ; INTERVAL (>1) ; BYDAY (weekly) | BYDAY[;BYSETPOS] | BYMONTHDAY
  *   (monthly) | BYMONTH[;BYMONTHDAY] (yearly) ; BYHOUR ; BYMINUTE
  * BYHOUR/BYMINUTE are always written: every non-quota rule has a time
