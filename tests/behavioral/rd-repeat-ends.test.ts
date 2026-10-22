@@ -850,6 +850,10 @@ describe('RE-G01: every advance goes through the end judge', () => {
     'src/core/recurrence/occurrence.ts': 'reminders (never end)',
     // Enrichment sets a first occurrence, never an advance; ends are PR 5.
     'src/core/ai/enrichment.ts': 'first occurrence only (PR 5)',
+    // The editor's preview walk (Next dates, the days-before checks) over a
+    // DRAFT, whose ends it still refuses (ENDS_UNSUPPORTED); 4c cuts the walk
+    // with `repeatStep` when it wires ends into the editor.
+    'src/lib/every-time.ts': "the editor's draft preview (4c)",
   }
 
   test('RE-G01a: a caller of the end-blind engine imports the judge, or is exempt', () => {

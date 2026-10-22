@@ -5,8 +5,10 @@
  * picker's output is byte-identical to before; and the day shift both the
  * migration and every-time mode use (`src/core/recurrence/rule-shift.ts`).
  *
- * RT-5: COUNT/UNTIL round-trip through the draft, but the server refuses
- * both, and on a legacy row that holds one the engine ignores it.
+ * RT-5: COUNT/UNTIL round-trip through the draft; the server (repeat ends,
+ * 2026-10-22, docs/TASK-MODEL.md § Repeat ends) takes them as shorthand —
+ * lifted into `repeat_count` / `repeat_until`, the stored rule end-free — and
+ * a legacy row that holds one is lifted at startup (`liftRuleEnds`) and ends.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { ZodError } from 'zod'
@@ -21,8 +23,9 @@ import {
 import { shiftRuleDays, shiftedRuleHolds } from '@/core/recurrence/rule-shift'
 import { computeFirstOccurrence, isValidRRule } from '@/core/recurrence'
 import { validateTaskCreate, validateTaskUpdate } from '@/core/validation'
-import { getDb } from '@/core/db'
+import { getDb, liftRuleEnds } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
+import { ValidationError } from '@/core/errors'
 import { markDone } from '@/core/tasks/mark-done'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -46,7 +49,7 @@ describe('RD-DRAFT: parse and build round-trip', () => {
     'FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15;BYHOUR=9;BYMINUTE=0',
     // A yearly rule's date is carried through (the picker used to drop it).
     'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0',
-    // Ends parse and build (RT-5: the server refuses them, see below).
+    // Ends parse and build (RT-5: the server lifts them into fields, see below).
     'FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0;COUNT=5',
     'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=20261231T235959Z',
   ])('%s', (rrule) => {
@@ -176,12 +179,31 @@ describe('RT-5: a repeat that ends', () => {
   const COUNT = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;COUNT=2'
   const UNTIL = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=20261023T235959Z'
 
-  test('RT-5-01: the server refuses COUNT and UNTIL on create and edit', () => {
-    for (const rrule of [COUNT, UNTIL]) {
-      expect(isValidRRule(rrule), rrule).toBe(false)
-      expect(() => validateTaskCreate({ title: 'x', rrule })).toThrow(ZodError)
-      expect(() => validateTaskUpdate({ rrule })).toThrow(ZodError)
-    }
+  const DAILY = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0'
+
+  test('RT-5-01: the server accepts COUNT and UNTIL as shorthand, lifted into the end fields', () => {
+    // A STORED rule never carries an end…
+    for (const rrule of [COUNT, UNTIL]) expect(isValidRRule(rrule), rrule).toBe(false)
+    // …so the shorthand is lifted before the rule is validated: the rule goes
+    // in end-free, the end as a field (UNTIL's date taken literally).
+    expect(validateTaskCreate({ title: 'x', rrule: COUNT })).toMatchObject({
+      rrule: DAILY,
+      repeat_count: 2,
+    })
+    expect(validateTaskUpdate({ rrule: UNTIL })).toMatchObject({
+      rrule: DAILY,
+      repeat_until: '2026-10-23',
+    })
+    // Sending the shorthand and a different explicit end is still refused.
+    expect(() => validateTaskCreate({ title: 'x', rrule: COUNT, repeat_count: 3 })).toThrow(
+      ValidationError,
+    )
+    expect(() => validateTaskCreate({ title: 'x', rrule: COUNT, repeat_count: 0 })).toThrow(
+      ValidationError,
+    )
+    expect(() => validateTaskCreate({ title: 'x', rrule: DAILY, repeat_count: 0 })).toThrow(
+      ZodError,
+    )
   })
 
   describe('a legacy row that holds one', () => {
@@ -195,30 +217,33 @@ describe('RT-5: a repeat that ends', () => {
       const task = createTask({
         userId: TEST_USER_ID,
         userTimezone: TEST_TIMEZONE,
-        input: { title: `legacy ${rrule}`, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
+        input: { title: `legacy ${rrule}`, rrule: DAILY },
       })
       getDb().prepare('UPDATE tasks SET rrule = ? WHERE id = ?').run(rrule, task.id)
       return task.id
     }
 
     test.each([
-      ['UNTIL', UNTIL],
-      ['COUNT', COUNT],
-    ])(
-      'RT-5-02 (%s): done and skip past its last occurrence keep repeating — the end is ignored',
-      (_name, rrule) => {
-        const id = legacy(rrule)
-        // UNTIL's last day is Oct 23; COUNT=2 would be spent after two.
-        for (let i = 0; i < 3; i++) {
-          markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: id })
-        }
-        skipOccurrence({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: id })
-        const after = getTaskById(id)!
-        expect(after.done).toBe(false)
-        expect(after.rrule).toBe(rrule)
-        // Four advances from Oct 22 9:00 Chicago — through UNTIL's Oct 23 and on: Oct 26.
-        expect(after.occurrence_at).toBe('2026-10-26T14:00:00.000Z')
-      },
-    )
+      ['UNTIL', UNTIL, { repeat_until: '2026-10-23' }],
+      ['COUNT', COUNT, { repeat_count: 2 }],
+    ])('RT-5-02 (%s): a lifted legacy row ends', (_name, rrule, end) => {
+      const id = legacy(rrule)
+      liftRuleEnds(getDb())
+      expect(getTaskById(id)).toMatchObject({ rrule: DAILY, ...end })
+      const u = { userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: id }
+      // From Oct 22 9:00 Chicago: done → Oct 23, the last (UNTIL's day; COUNT's second).
+      expect(markDone(u).seriesEnded).toBe(false)
+      expect(getTaskById(id)).toMatchObject({
+        occurrence_at: '2026-10-23T14:00:00.000Z',
+        repeat_last: true,
+      })
+      expect(markDone(u).seriesEnded).toBe(true)
+      const after = getTaskById(id)!
+      expect(after.done).toBe(true)
+      expect(after.occurrence_at).toBe('2026-10-23T14:00:00.000Z')
+      // Ended: neither done nor skip starts it again.
+      expect(() => markDone(u)).toThrow(ValidationError)
+      expect(() => skipOccurrence(u)).toThrow(ValidationError)
+    })
   })
 })
