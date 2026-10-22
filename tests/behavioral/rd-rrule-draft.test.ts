@@ -49,11 +49,19 @@ describe('RD-DRAFT: parse and build round-trip', () => {
     'FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15;BYHOUR=9;BYMINUTE=0',
     // A yearly rule's date is carried through (the picker used to drop it).
     'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0',
-    // Ends parse and build (RT-5: the server lifts them into fields, see below).
-    'FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0;COUNT=5',
-    'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=20261231T235959Z',
   ])('%s', (rrule) => {
     expect(roundTrip(rrule)).toBe(rrule)
+  })
+
+  test('a legacy end (COUNT / UNTIL) is read, but never written — ends travel as fields (4c)', () => {
+    expect(roundTrip('FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0;COUNT=5')).toBe(
+      'FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;BYMINUTE=0',
+    )
+    expect(roundTrip('FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=20261231T235959Z')).toBe(
+      'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+    )
+    const ending = { ...parseRule('FREQ=DAILY')!, endType: 'count' as const, endCount: 3 }
+    expect(buildRule(ending, '09:00')).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
   })
 
   test('BYHOUR/BYMINUTE are always written — from the time passed', () => {

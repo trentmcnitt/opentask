@@ -11,8 +11,7 @@
  * every-time editor share one parse and one build. The text the picker emits
  * is unchanged, part for part:
  *   FREQ ; INTERVAL (>1) ; BYDAY (weekly) | BYDAY[;BYSETPOS] | BYMONTHDAY
- *   (monthly) | BYMONTH[;BYMONTHDAY] (yearly) ; BYHOUR ; BYMINUTE ;
- *   COUNT | UNTIL
+ *   (monthly) | BYMONTH[;BYMONTHDAY] (yearly) ; BYHOUR ; BYMINUTE
  * BYHOUR/BYMINUTE are always written: every non-quota rule has a time
  * (`src/core/recurrence/rule-time.ts`).
  *
@@ -24,10 +23,12 @@
  *    used to drop it, which left a bare FREQ=YEARLY floating on whatever date
  *    the engine's grid started from.
  *
- * ENDS: COUNT and UNTIL are parsed and built so a rule round-trips, but the
- * server REFUSES both today (`isValidRRule`: OpenTask only supports infinite
- * recurrence), and the engine ignores them on a legacy row. The every-time
- * editor reports a draft that ends as a problem (`draftProblem`).
+ * ENDS (repeat ends, 2026-10-22): the stored rule is end-free — an end lives
+ * in the task's `repeat_count` / `repeat_until` fields. The draft still holds
+ * the end (`endType` / `endCount` / `endDate`, filled from those fields by
+ * `draftFromTask`), and `parseRule` still reads a legacy COUNT / UNTIL, but
+ * `buildRule` NEVER writes one: the editor sends the end as its fields
+ * (`draftToPatch`), so the rule text alone says whether the pattern changed.
  */
 
 import { formatTime, monthlyDay, parseRRuleParts } from '@/lib/format-rrule'
@@ -183,11 +184,8 @@ export function buildRule(
   if (draft.freq === 'YEARLY' && draft.yearDate) parts.push(draft.yearDate)
   parts.push(`BYHOUR=${hour}`)
   parts.push(`BYMINUTE=${minute}`)
-  if (draft.endType === 'count' && draft.endCount > 0) {
-    parts.push(`COUNT=${draft.endCount}`)
-  } else if (draft.endType === 'date' && draft.endDate) {
-    parts.push(`UNTIL=${draft.endDate.replace(/-/g, '')}T235959Z`)
-  }
+  // Never COUNT / UNTIL: an end travels as `repeat_count` / `repeat_until`
+  // (see the module doc), so the rule text is the pattern alone.
   return parts.join(';')
 }
 
@@ -245,10 +243,6 @@ export function describeRuleDraft(
       break
   }
   base += ` at ${formatTime(time.hour, time.minute)}`
-  if (draft.endType === 'count') base += `, ${draft.endCount} times`
-  else if (draft.endType === 'date' && draft.endDate) {
-    base += `, until ${new Date(draft.endDate).toLocaleDateString()}`
-  }
   return base
 }
 

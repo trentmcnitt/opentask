@@ -20,7 +20,7 @@ import {
   ADD_DEADLINE_REFUSAL,
   BULK_DEADLINE_REASON,
   BULK_KIND_REASON,
-  ENDS_UNSUPPORTED,
+  NO_END_DATE_PROBLEM,
   KEEPS_ITS_DECK,
   KEEPS_ITS_OWN_TARGET,
   LEAVE_DEADLINE_REFUSAL,
@@ -459,13 +459,28 @@ describe('TM-EVERY-04: draftProblem', () => {
     expect(draftProblem(FRIDAYS, d, ctx)).toBe(NO_DAY_PROBLEM)
   })
 
-  test('A10 / RT-5: an end is not supported (the server refuses COUNT/UNTIL)', () => {
-    const d = run(draftFromTask(FRIDAYS, ctx), {
-      type: 'ends',
-      endType: 'date',
-      endDate: '2027-01-01',
-    })
-    expect(draftProblem(FRIDAYS, d, ctx)).toBe(ENDS_UNSUPPORTED)
+  test('ends (4c): a valid end is no problem; a past, missing or spent one is', () => {
+    const base = draftFromTask(FRIDAYS, ctx)
+    const end = (a: Partial<Extract<DraftAction, { type: 'ends' }>>) =>
+      run(base, { type: 'ends', endType: 'date', ...a })
+    expect(draftProblem(FRIDAYS, end({ endDate: '2027-01-01' }), ctx)).toBeNull()
+    expect(draftProblem(FRIDAYS, end({ endType: 'count', endCount: 3 }), ctx)).toBeNull()
+    expect(draftProblem(FRIDAYS, end({ endDate: '' }), ctx)).toBe(NO_END_DATE_PROBLEM)
+    expect(draftProblem(FRIDAYS, end({ endDate: '2026-10-21' }), ctx)).toBe(
+      'That end date has passed.',
+    )
+    // Today, but before this occurrence (Fri Oct 23).
+    expect(draftProblem(FRIDAYS, end({ endDate: '2026-10-22' }), ctx)).toBe(
+      "That's before this one's date — pick a later end.",
+    )
+    const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
+    const spent = run(draftFromTask(counted, ctx), { type: 'ends', endType: 'count', endCount: 2 })
+    expect(draftProblem(counted, spent, ctx)).toBe(
+      'It has already come round 2 times — pick more than 2.',
+    )
+    // An end the user didn't touch is never re-judged (a date passed while its last is debt).
+    const passed = { ...OVER_FRIDAYS, repeat_until: '2026-10-16' }
+    expect(draftProblem(passed, draftFromTask(passed, ctx), ctx)).toBeNull()
   })
 
   test('after_deadline: the same day, the target later than the deadline', () => {
@@ -556,7 +571,7 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
       DECKED_HOME_DEPOT,
     ]
     const action = (): DraftAction => {
-      switch (Math.floor(rand() * 11)) {
+      switch (Math.floor(rand() * 12)) {
         case 0:
           return { type: 'freq', freq: pick(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] as const) }
         case 1:
@@ -577,6 +592,13 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
           return { type: 'anchor', anchor: pick(['target', 'deadline'] as const), ctx }
         case 9:
           return { type: 'addDeadline', time: time(), ctx }
+        case 10:
+          return pick([
+            { type: 'ends', endType: 'never' },
+            { type: 'ends', endType: 'count', endCount: 1 + Math.floor(rand() * 5) },
+            { type: 'ends', endType: 'date', endDate: '2027-03-01' },
+            { type: 'ends', endType: 'date', endDate: '2026-10-01' },
+          ] as const)
         default:
           return { type: 'stop', stop: rand() < 0.3 }
       }
@@ -611,7 +633,7 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
       // Next agrees: a valid draft always has dates.
       if (!draft.stop) expect(nextDates(task, draft, ctx).dates.length, label).toBeGreaterThan(0)
     }
-    expect(seen.size).toBe(tasks.length * 11)
+    expect(seen.size).toBe(tasks.length * 12)
     expect(valid).toBeGreaterThan(DRAFTS / 3)
     expect(refused).toBeGreaterThan(10)
   }, 30_000)
@@ -659,9 +681,64 @@ describe('TM-EVERY-06: nextDates', () => {
     )
   })
 
-  test('an end (A10) shows no dates — its problem instead', () => {
-    const d = run(draftFromTask(FRIDAYS, ctx), { type: 'ends', endType: 'count', endCount: 2 })
-    expect(nextDates(FRIDAYS, d, ctx)).toEqual({ dates: [], ends: true, problem: ENDS_UNSUPPORTED })
+  test('ends: "After 3 times" shows three, the third the last; "On date" stops on it', () => {
+    const three = run(draftFromTask(FRIDAYS, ctx), {
+      type: 'ends',
+      endType: 'count',
+      endCount: 3,
+    })
+    const next = nextDates(FRIDAYS, three, ctx)
+    expect(next.ends).toBe(true)
+    expect(next.dates.map((d) => nextDateWords(d, TZ))).toEqual([
+      'Fri Oct 23',
+      'Fri Oct 30',
+      'Fri Nov 6 · last one',
+    ])
+    const two = run(three, { type: 'ends', endType: 'count', endCount: 2 })
+    expect(nextDates(FRIDAYS, two, ctx).dates.map((d) => nextDateWords(d, TZ))).toEqual([
+      'Fri Oct 23',
+      'Fri Oct 30 · last one',
+    ])
+    // 2 of 6 used: the current one is the 3rd — four left.
+    const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
+    const left = nextDates(counted, draftFromTask(counted, ctx), ctx, 5)
+    expect(left.dates.map((d) => nextDateWords(d, TZ))).toEqual([
+      'Fri Oct 23',
+      'Fri Oct 30',
+      'Fri Nov 6',
+      'Fri Nov 13 · last one',
+    ])
+    const until = run(draftFromTask(FRIDAYS, ctx), {
+      type: 'ends',
+      endType: 'date',
+      endDate: '2026-10-30',
+    })
+    expect(nextDates(FRIDAYS, until, ctx).dates.map((d) => nextDateWords(d, TZ))).toEqual([
+      'Fri Oct 23',
+      'Fri Oct 30 · last one',
+    ])
+    // A far end: no "last one" in the first three.
+    const far = run(until, { type: 'ends', endType: 'date', endDate: '2027-06-01' })
+    const farNext = nextDates(FRIDAYS, far, ctx)
+    expect(farNext.ends).toBe(false)
+    expect(farNext.dates.some((d) => d.last)).toBe(false)
+  })
+
+  test('ends: a deadline-anchored date end is judged on the DEADLINE (A5)', () => {
+    // Home Depot's Nov occurrence: target Fri Nov 6, deadline Sat Nov 7.
+    const d = run(draftFromTask(HOME_DEPOT, ctx), {
+      type: 'ends',
+      endType: 'date',
+      endDate: '2026-12-05',
+    })
+    expect(nextDates(HOME_DEPOT, d, ctx).dates.map((x) => nextDateWords(x, TZ))).toEqual([
+      'Fri Nov 6 → Sat Nov 7',
+      'Fri Dec 4 → Sat Dec 5 · last one',
+    ])
+    const early = run(d, { type: 'ends', endType: 'date', endDate: '2026-11-06' })
+    expect(draftProblem(HOME_DEPOT, early, ctx)).toBe(
+      "That's before this one's date — pick a later end.",
+    )
   })
 
   test('days-before choices: monthly allows a week, the same day refused at 6 PM', () => {
@@ -845,5 +922,54 @@ describe('TM-EVERY-G01 (RT-11): planRepeatSchedule and every-time import no data
     if (file !== 'lib/rrule-draft.ts') {
       expect(all.some((f) => f.endsWith('compute-next.ts'))).toBe(true)
     }
+  })
+})
+
+// ===========================================================================
+// Ends travel as fields (4c; plan-repeat-ends §7 item 3)
+// ===========================================================================
+
+describe('TM-EVERY-10: an end is sent as repeat_count / repeat_until, never in the rule', () => {
+  test('setting an end on an unchanged rule sends the end alone — no rrule', () => {
+    const d = run(draftFromTask(FRIDAYS, ctx), { type: 'ends', endType: 'count', endCount: 6 })
+    expect(draftToPatch(FRIDAYS, d, ctx)).toEqual({ repeat_count: 6 })
+    const until = run(d, { type: 'ends', endType: 'date', endDate: '2026-12-31' })
+    expect(draftToPatch(FRIDAYS, until, ctx)).toEqual({ repeat_until: '2026-12-31' })
+  })
+
+  test('a stored end opens in the draft and an untouched one is not re-sent', () => {
+    const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
+    const d = draftFromTask(counted, ctx)
+    expect(d.rule).toMatchObject({ endType: 'count', endCount: 6 })
+    expect(draftToPatch(counted, d, ctx)).toEqual({})
+    // A rule change keeps the end: the rule alone, end-free.
+    const sat = run(d, { type: 'toggleDay', day: 'SA' })
+    expect(draftToPatch(counted, sat, ctx)).toEqual({
+      rrule: 'FREQ=WEEKLY;BYDAY=FR,SA;BYHOUR=16;BYMINUTE=0',
+    })
+    const dated = { ...FRIDAYS, repeat_until: '2026-12-31' }
+    expect(draftFromTask(dated, ctx).rule).toMatchObject({ endType: 'date', endDate: '2026-12-31' })
+  })
+
+  test('back to Never clears the stored end', () => {
+    const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
+    const never = run(draftFromTask(counted, ctx), { type: 'ends', endType: 'never' })
+    expect(draftToPatch(counted, never, ctx)).toEqual({ repeat_count: null })
+    const dated = { ...FRIDAYS, repeat_until: '2026-12-31' }
+    const never2 = run(draftFromTask(dated, ctx), { type: 'ends', endType: 'never' })
+    expect(draftToPatch(dated, never2, ctx)).toEqual({ repeat_until: null })
+  })
+
+  test('a one-off made repeating with an end; create carries it too', () => {
+    const d = run(draftFromTask(ONE_OFF, ctx), { type: 'ends', endType: 'count', endCount: 3 })
+    expect(draftToPatch(ONE_OFF, d, ctx)).toMatchObject({ repeat_count: 3 })
+    expect(draftToPatch(ONE_OFF, d, ctx).rrule).not.toMatch(/COUNT|UNTIL/)
+    expect(draftToCreateFields({ dueAt: null }, d, ctx)).toMatchObject({ repeat_count: 3 })
+  })
+
+  test('Stop repeating sends the rule alone (the server clears the end)', () => {
+    const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
+    const d = run(draftFromTask(counted, ctx), { type: 'stop', stop: true })
+    expect(draftToPatch(counted, d, ctx)).toEqual({ rrule: null })
   })
 })
