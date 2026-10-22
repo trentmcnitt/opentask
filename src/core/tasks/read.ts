@@ -393,7 +393,8 @@ export function rowToTask(row: TaskRow): Task {
     task.attempts = attempts
     task.attempts_counted_through = countedThrough
     // Repeat ends (2026-10-22): judged in the owner's zone, only on a row
-    // with an end (one O(1) engine call, and only for a date end).
+    // with an end. A count is arithmetic; a date end asks the engine once
+    // (`isLastOccurrence`).
     if (hasRepeatEnd(task)) {
       task.repeat_last = isLastOccurrence(task, row.owner_timezone, new Date())
       task.repeat_remaining = repeatRemaining(task)

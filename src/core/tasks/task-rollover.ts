@@ -631,21 +631,24 @@ function release(w: WaitRow, user: UserRow, nowStr: string, ctx: ApplyCtx): bool
   // occurrence it waits for outside the series. Then the wait's skip would
   // END it, which the rollover never does (A4): the DEBT RETURNS instead —
   // the target goes back to the missed occurrence (a target-anchored wait:
-  // the occurrence is its target), the queue state is cleared, no skip.
+  // the occurrence is its target), the queue state is cleared, no skip. The
+  // target is SET now (`target_set_at`): attempts count from today, so the
+  // days it waited in the queue — never shown over target — are not attempts
+  // (the wait's checkpoint keeps the ones before it).
   if (skipped && repeatStep(repeatEndOf(w), w.due_at, 1, user.timezone).ended) {
     db.prepare(
       `UPDATE tasks
-          SET due_at = occurrence_at, original_due_at = occurrence_at,
+          SET due_at = occurrence_at, original_due_at = occurrence_at, ${TARGET_SET_FIELD} = ?,
               queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
               rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
-    ).run(nowStr, nowStr, w.id)
+    ).run(nowStr, nowStr, nowStr, w.id)
     logRollover(
       userId,
       w.id,
       w.title,
       'released',
-      ['due_at', 'original_due_at', 'queued_at', 'queued_from_due_at'],
+      ['due_at', 'original_due_at', TARGET_SET_FIELD, 'queued_at', 'queued_from_due_at'],
       { due_at: w.due_at },
       { due_at: w.occurrence_at, queued_at: null },
       { skipped: false, series_end_debt: true, ...ctxMeta(ctx) },

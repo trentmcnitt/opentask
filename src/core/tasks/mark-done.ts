@@ -203,10 +203,33 @@ export function markUndone(options: MarkDoneOptions): Task {
 
   const nowStr = nowUtc()
 
-  // Compute restored completion stats
+  // The completion this reopen deletes: the latest row, read in full so the
+  // undo snapshot can carry it (`_completion` + `completion_id`) — undo then
+  // re-inserts it with its id and redo deletes it by id, exactly as the
+  // recurring put-back does. (Before 2026-10-22 this deleted "the latest row"
+  // blind and carried nothing: undo lost the row, and the next reopen deleted
+  // an EARLIER completion — harmless on a one-off's single row, not on an
+  // ended series with one row per occurrence.)
+  const completion = getDb()
+    .prepare(
+      `SELECT id, completed_at, due_at_was, due_at_next, occurrence_at_was, occurrence_at_next, attempts
+         FROM completions WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(taskId, userId) as CompletionRow | undefined
+  const previous = completion
+    ? (getDb()
+        .prepare(
+          `SELECT completed_at FROM completions
+            WHERE task_id = ? AND user_id = ? AND id < ? ORDER BY id DESC LIMIT 1`,
+        )
+        .get(taskId, userId, completion.id) as { completed_at: string } | undefined)
+    : undefined
+
+  // Compute restored completion stats. `last_completed_at` comes from the
+  // completion before the deleted one, as the recurring put-back does.
   const restoredCount = Math.max(0, task.completion_count - 1)
   const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
-  const restoredLastCompleted = restoredCount === 0 ? null : task.last_completed_at
+  const restoredLastCompleted = restoredCount === 0 ? null : (previous?.completed_at ?? null)
 
   // An ended series reopens on its last occurrence, which it uses again.
   const restoredUsed = recurring ? Math.max(0, task.repeat_count_used - 1) : task.repeat_count_used
@@ -224,14 +247,6 @@ export function markUndone(options: MarkDoneOptions): Task {
 
   // §7: the attempts come back from the completion row it deletes (done
   // reset them), checkpointed so the days it sat done don't count.
-  const completion = getDb()
-    .prepare(
-      `SELECT completed_at, due_at_was, attempts FROM completions
-        WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1`,
-    )
-    .get(taskId, userId) as
-    | { completed_at: string; due_at_was: string | null; attempts: number | null }
-    | undefined
   const restoredAttempts = completion?.attempts ?? 0
   const restoredThrough = completion
     ? putBackCountedThrough(
@@ -267,11 +282,7 @@ export function markUndone(options: MarkDoneOptions): Task {
     )
 
     // Delete the completion record created when the task was marked done
-    tx.prepare(
-      `DELETE FROM completions WHERE id = (
-        SELECT id FROM completions WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1
-      )`,
-    ).run(taskId, userId)
+    if (completion) tx.prepare('DELETE FROM completions WHERE id = ?').run(completion.id)
 
     const snapshot = createTaskSnapshot(
       {
@@ -301,7 +312,14 @@ export function markUndone(options: MarkDoneOptions): Task {
         repeat_count_used: restoredUsed,
       },
       fieldsChanged,
+      completion?.id,
     )
+    if (completion) {
+      snapshot.before_state = {
+        ...snapshot.before_state,
+        _completion: completionCopy(userId, completion),
+      } as typeof snapshot.before_state
+    }
     logAction(userId, 'undone', `Reopened "${task.title}"`, fieldsChanged, [snapshot])
 
     logActivity({
@@ -477,14 +495,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     )
     snapshot.before_state = {
       ...snapshot.before_state,
-      _completion: {
-        user_id: userId,
-        completed_at: latest.completed_at,
-        due_at_was: latest.due_at_was,
-        due_at_next: latest.due_at_next,
-        occurrence_at_was: latest.occurrence_at_was,
-        attempts: latest.attempts,
-      },
+      _completion: completionCopy(userId, latest),
     } as typeof snapshot.before_state
     logAction(userId, 'undone', `Put back "${task.title}"`, fieldsChanged, [snapshot])
     logActivity({
@@ -532,4 +543,17 @@ function putBackFields(task: Task, queueFields: string[]): string[] {
     // it (DECK_CLEAR_SQL) — undo of the put-back brings it back.
     ...(task.on_deck_day ? ['on_deck_day'] : []),
   ]
+}
+
+/** A completion row as an undo snapshot carries it (`reinsertCompletion`). */
+function completionCopy(userId: number, row: CompletionRow) {
+  return {
+    user_id: userId,
+    completed_at: row.completed_at,
+    due_at_was: row.due_at_was,
+    due_at_next: row.due_at_next,
+    occurrence_at_was: row.occurrence_at_was,
+    occurrence_at_next: row.occurrence_at_next,
+    attempts: row.attempts,
+  }
 }

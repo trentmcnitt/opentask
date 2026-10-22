@@ -1231,6 +1231,12 @@ export function nextOrEnd(
  * Is the CURRENT occurrence the last? Closing it once ends the series — as
  * if done at max(occurrence, now). False with no end, and on a closed row
  * (done, or archived by the skip of the last). Pure.
+ *
+ * A COUNT is decided by arithmetic alone (`used + 1 >= count`), never the
+ * engine: the only thing the engine could add is "the rule has no next
+ * occurrence", which validation refuses at write time (`isValidRRule`'s
+ * `everOccurs`, 2026-10-21) — on a legacy row that has one, the done itself
+ * answers (NEVER_OCCURS). Only a DATE end asks the engine: one call.
  */
 export function isLastOccurrence(
   task: AdvanceTask & { done?: boolean; archived_at?: string | null },
@@ -1238,6 +1244,8 @@ export function isLastOccurrence(
   now: Date,
 ): boolean {
   if (!task.rrule || task.done || task.archived_at || !hasRepeatEnd(task)) return false
+  const end = repeatEndOf(task)
+  if (end.repeat_count !== null) return end.repeat_count_used + 1 >= end.repeat_count
   const occurrence = task.occurrence_at ?? task.due_at
   const at = occurrence && Date.parse(occurrence) > now.getTime() ? new Date(occurrence) : now
   try {

@@ -371,7 +371,9 @@ describe('RE: fields, shorthand and the 400s', () => {
     expect(task(t.id)).toMatchObject({ repeat_count: 5, repeat_count_used: 2, repeat_remaining: 3 })
     expect(message(() => patch(t.id, { is_reminder: true }))).toBe(REPEAT_END_MESSAGES.ends_kind)
   })
+})
 
+describe('RE: edits', () => {
   test('RE-006: edits — one end clears the other, a count from none restarts used, rrule null clears', () => {
     const t = fridays()
     done(t.id) // used 1, with no end set
@@ -414,6 +416,24 @@ describe('RE: fields, shorthand and the 400s', () => {
     expect(message(() => patch(t.id, { rrule: MONDAY_8 }))).toBe(
       REPEAT_END_MESSAGES.until_before_occurrence,
     )
+  })
+
+  test('RE-010: an unchanged end echoed back is not re-judged (a passed date on a debt row)', () => {
+    // Through Oct 20: today's occurrence is the last; missed, it stays as debt.
+    const t = daily({ repeat_until: '2026-10-20' })
+    setClock('2026-10-23T10:00')
+    // The editor saves the whole draft: the same end comes back with a title.
+    patch(t.id, { title: 'Renamed', repeat_until: '2026-10-20' })
+    expect(task(t.id)).toMatchObject({ title: 'Renamed', repeat_until: '2026-10-20' })
+    // A CHANGED date is judged: still in the past.
+    expect(message(() => patch(t.id, { repeat_until: '2026-10-21' }))).toBe(
+      REPEAT_END_MESSAGES.until_past,
+    )
+    // Likewise a count sent equal to the stored one.
+    const c = fridays({ repeat_count: 2 })
+    done(c.id)
+    patch(c.id, { title: 'Again', repeat_count: 2 })
+    expect(task(c.id).repeat_count).toBe(2)
   })
 
   test('RE-008: bulk edit never sets an end (A11)', () => {
@@ -574,6 +594,59 @@ describe('RE: done, put-back, undo', () => {
     expect(task(t.id)).toMatchObject({ done: true, repeat_count_used: 2 })
     expect(completions(t.id)).toHaveLength(2)
   })
+})
+
+describe('RE: completion rows across put-back and undo', () => {
+  test('RE-W06: put-back, undo, put-back of the final done — every completion row survives', () => {
+    const t = daily({ repeat_count: 2 })
+    const rows = () =>
+      getDb()
+        .prepare('SELECT id, completed_at FROM completions WHERE task_id = ? ORDER BY id')
+        .all(t.id) as { id: number; completed_at: string }[]
+    setClock('2026-10-20T10:00')
+    done(t.id) // the Oct 20 occurrence
+    setClock('2026-10-21T10:00')
+    done(t.id) // the Oct 21 occurrence: the last
+    const [first, last] = rows()
+    expect(rows()).toHaveLength(2)
+    expect(task(t.id)).toMatchObject({ done: true, last_completed_at: last.completed_at })
+
+    // Put back: the last row goes; last_completed_at is the one before it.
+    markUndone({ ...u, taskId: t.id })
+    expect(rows()).toEqual([first])
+    expect(task(t.id)).toMatchObject({
+      done: false,
+      completion_count: 1,
+      last_completed_at: first.completed_at,
+      repeat_count_used: 1,
+    })
+    // Undo of the put-back: the same row comes back, with its id.
+    executeUndo(TEST_USER_ID)
+    expect(rows()).toEqual([first, last])
+    expect(task(t.id)).toMatchObject({ done: true, completion_count: 2 })
+    // Put back again: the LAST row goes again — never the Oct 20 one.
+    markUndone({ ...u, taskId: t.id })
+    expect(rows()).toEqual([first])
+    // Redo of an undone put-back deletes by id, too.
+    executeUndo(TEST_USER_ID)
+    executeRedo(TEST_USER_ID)
+    expect(rows()).toEqual([first])
+  })
+
+  test('RE-W07: a one-off reopened, undone and reopened keeps its rows straight too', () => {
+    const t = make({ due_at: at('2026-10-20T09:00') })
+    done(t.id)
+    markUndone({ ...u, taskId: t.id })
+    done(t.id)
+    const rows = () =>
+      getDb().prepare('SELECT id FROM completions WHERE task_id = ? ORDER BY id').all(t.id)
+    expect(rows()).toHaveLength(1)
+    markUndone({ ...u, taskId: t.id })
+    expect(rows()).toHaveLength(0)
+    executeUndo(TEST_USER_ID)
+    expect(rows()).toHaveLength(1)
+    expect(task(t.id).done).toBe(true)
+  })
 
   test('RE-W05: bulk done of a mix — one series ends, one advances, a one-off is done', () => {
     const last = fridays({ repeat_count: 1 })
@@ -721,6 +794,23 @@ describe('RE: the rollover (A4)', () => {
       repeat_last: true,
     })
   })
+
+  test('RE-W33: the days a wait spent in the queue are not attempts when the debt returns', () => {
+    const t = repeating(MONDAY_8, '2026-10-19T07:00')
+    // Over target Mon Oct 19 and Tue Oct 20 (OpenTask days): 2.
+    setClock('2026-10-20T21:00')
+    expect(task(t.id).attempts).toBe(2)
+    roll('2026-10-21T06:30')
+    // Waiting: frozen at its checkpoint.
+    setClock('2026-10-25T21:00')
+    expect(task(t.id).attempts).toBe(2)
+    patch(t.id, { repeat_count: 1 })
+    roll('2026-10-26T06:30')
+    // The debt is back: today counts (it nags today), the five days in the
+    // queue (Oct 21–25, never shown as over target) do not.
+    setClock('2026-10-26T07:00')
+    expect(task(t.id).attempts).toBe(3)
+  })
 })
 
 describe('RE: decks, modes, deadline-anchored', () => {
@@ -809,7 +899,19 @@ describe('RE: the startup lift (liftRuleEnds)', () => {
     )
     // A column already set wins over the rule's end.
     db.prepare('UPDATE tasks SET rrule = ? WHERE id = ?').run(`${FRIDAY_9};COUNT=9`, c.id)
-    expect(liftRuleEnds(db)).toBe(3)
+    // A reminder and a quota can't end: their rule's end is stripped, not lifted.
+    const reminder = make({ rrule: DAILY_8, is_reminder: true })
+    const quota = make({ rrule: 'FREQ=WEEKLY', is_tracked: true, progress_target: 3 })
+    db.prepare('UPDATE tasks SET rrule = ? WHERE id = ?').run(
+      `${DAILY_8};UNTIL=20261231`,
+      reminder.id,
+    )
+    db.prepare('UPDATE tasks SET rrule = ? WHERE id = ?').run('FREQ=WEEKLY;COUNT=4', quota.id)
+    expect(liftRuleEnds(db)).toEqual({ lifted: 3, stripped: [reminder.id, quota.id] })
+    expect(task(reminder.id)).toMatchObject({ rrule: DAILY_8, repeat_until: null })
+    expect(task(quota.id)).toMatchObject({ rrule: 'FREQ=WEEKLY', repeat_count: null })
+    // …so they stay editable.
+    patch(reminder.id, { title: 'Still a reminder' })
     expect(task(a.id)).toMatchObject({ rrule: FRIDAY_9, repeat_count: 6, repeat_count_used: 0 })
     expect(task(b.id)).toMatchObject({
       rrule: FRIDAY_9,
@@ -818,7 +920,7 @@ describe('RE: the startup lift (liftRuleEnds)', () => {
     })
     expect(task(c.id)).toMatchObject({ rrule: FRIDAY_9, repeat_count: 4 })
     // Idempotent.
-    expect(liftRuleEnds(db)).toBe(0)
+    expect(liftRuleEnds(db)).toEqual({ lifted: 0, stripped: [] })
   })
 
   test('RE-M02: a lifted legacy row ends (its UNTIL already passed: the next done ends it)', () => {

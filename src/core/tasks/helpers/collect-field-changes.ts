@@ -732,8 +732,11 @@ function collectRepeatEnds(
         count,
         until,
         used,
-        countWritten: input.repeat_count !== undefined,
-        untilWritten: input.repeat_until !== undefined,
+        // Written = CHANGED: a client echoing the stored end back (the editor
+        // saves the whole draft) is not re-judged — a date already passed
+        // while its last occurrence is debt must not 400 a title edit.
+        countWritten: input.repeat_count !== undefined && input.repeat_count !== task.repeat_count,
+        untilWritten: input.repeat_until !== undefined && input.repeat_until !== task.repeat_until,
         walkWritten: ['rrule', 'recurrence_mode', 'repeat_anchor'].some((f) =>
           data.fieldsChanged.includes(f),
         ),

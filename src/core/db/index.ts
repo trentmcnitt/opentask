@@ -508,9 +508,14 @@ function runMigrations(database: Database.Database): void {
   // After the pull-back above: a converted row's moved target is already capped.
   logRepeatAnchorMigration(migrateRepeatAnchors(database))
   // After the end columns exist (above).
-  const lifted = liftRuleEnds(database)
-  if (lifted > 0)
-    log.info('db', `repeat ends (2026-10-22): lifted ${lifted} rule end(s) into columns`)
+  const ends = liftRuleEnds(database)
+  if (ends.lifted > 0 || ends.stripped.length > 0) {
+    log.info(
+      'db',
+      `repeat ends (2026-10-22): lifted ${ends.lifted} rule end(s) into columns; ` +
+        `stripped from reminders/quotas: ${JSON.stringify(ends.stripped)}`,
+    )
+  }
 }
 
 /**
@@ -523,13 +528,17 @@ function runMigrations(database: Database.Database): void {
  * YYYYMMDD → `repeat_until`, taken literally as the local last day. A column
  * already set wins; COUNT wins over UNTIL when a rule has both (they are
  * exclusive); a value out of range (COUNT outside 1..999, a malformed
- * UNTIL) is dropped with the rest of the end. Idempotent: a lifted rule no
- * longer matches. Returns how many rows it rewrote.
+ * UNTIL) is dropped with the rest of the end. A REMINDER or a QUOTA can't
+ * have an end (`ends_kind`), so its rule's end is STRIPPED and not lifted —
+ * lifted, every later edit of the row would be refused — and its id logged.
+ * Idempotent: a stripped rule no longer matches. Returns the rows lifted, and
+ * the ids only stripped.
  */
-export function liftRuleEnds(database: Database.Database): number {
+export function liftRuleEnds(database: Database.Database): { lifted: number; stripped: number[] } {
   const rows = database
     .prepare(
-      `SELECT id, rrule, repeat_count, repeat_until FROM tasks
+      `SELECT id, rrule, repeat_count, repeat_until, is_reminder, is_tracked, progress_target
+         FROM tasks
         WHERE rrule IS NOT NULL AND (rrule LIKE '%COUNT=%' OR rrule LIKE '%UNTIL=%')`,
     )
     .all() as {
@@ -537,6 +546,9 @@ export function liftRuleEnds(database: Database.Database): number {
     rrule: string
     repeat_count: number | null
     repeat_until: string | null
+    is_reminder: number
+    is_tracked: number
+    progress_target: number
   }[]
   const write = database.prepare(
     `UPDATE tasks
@@ -545,6 +557,7 @@ export function liftRuleEnds(database: Database.Database): number {
       WHERE id = ?`,
   )
   let lifted = 0
+  const stripped: number[] = []
   database.transaction(() => {
     for (const row of rows) {
       let count: number | null = null
@@ -561,6 +574,12 @@ export function liftRuleEnds(database: Database.Database): number {
           if (m) until = `${m[1]}-${m[2]}-${m[3]}`
         } else kept.push(part)
       }
+      // A reminder or a quota (`isTracked`'s rule): the end goes, nothing lifted.
+      if (row.is_reminder === 1 || row.is_tracked === 1 || row.progress_target > 1) {
+        database.prepare('UPDATE tasks SET rrule = ? WHERE id = ?').run(kept.join(';'), row.id)
+        stripped.push(row.id)
+        continue
+      }
       if (row.repeat_count !== null || row.repeat_until !== null) {
         count = row.repeat_count
         until = row.repeat_until
@@ -572,7 +591,7 @@ export function liftRuleEnds(database: Database.Database): number {
       lifted++
     }
   })()
-  return lifted
+  return { lifted, stripped }
 }
 
 /** Log what the deadline-anchor step did (2026-10-21), only when it did something. */
