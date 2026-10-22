@@ -620,9 +620,9 @@ export function TaskRow({
             >
               <span
                 data-just-added-badge
-                className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] leading-none font-semibold whitespace-nowrap text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"
+                className="rounded bg-indigo-50 px-1.5 py-0.5 text-center text-[11px] leading-none font-semibold whitespace-nowrap text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"
               >
-                {justAddedBadge}
+                <JustAddedTagText tag={justAddedBadge} />
               </span>
             </span>
           )}
@@ -843,6 +843,25 @@ function dayControlClasses(onTouch: boolean, visible: boolean): string {
   return cn(
     'hidden size-9 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-fine:flex',
     visible ? 'opacity-100' : 'opacity-0',
+  )
+}
+
+/**
+ * The just-now tag's words. A deck for a later day (2026-10-22: "On deck
+ * tomorrow", "On deck Oct 27", `deckTagLabel`) is twice as wide as the other
+ * tags, and on a phone, beside the corner's reserve, it squeezed the title
+ * until words were cut mid-letter. So below `sm` it stacks on two lines —
+ * "On deck" over the day — which at 11px still fits inside the title's first
+ * line (`h-[1lh]`), so the row keeps its height. One line from `sm` up.
+ */
+function JustAddedTagText({ tag }: { tag: string }) {
+  const day = tag.startsWith('On deck ') ? tag.slice('On deck '.length) : null
+  if (!day) return <>{tag}</>
+  return (
+    <>
+      On deck
+      <br className="sm:hidden" /> {day}
+    </>
   )
 }
 
