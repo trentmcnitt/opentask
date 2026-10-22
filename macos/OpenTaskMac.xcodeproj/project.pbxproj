@@ -226,6 +226,7 @@
 		CC872E7AB664DA45E1E086FE /* NotificationActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE74638B34B5131EFCBDEF6A /* NotificationActionRunner.swift */; };
 		CC88FF8A161D084268B43BEE /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		CD60D00E79DF062274372897 /* PadPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9DBFA5C3F04DA1B616E7D4 /* PadPresetStore.swift */; };
+		CD8E81DAEB1E28E56FDFE007 /* task-repeat-ends.json in Resources */ = {isa = PBXBuildFile; fileRef = F52EC97D7A87C3AAC7D4B546 /* task-repeat-ends.json */; };
 		CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */; };
 		CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */; };
 		D09FE2DF9244C2099B0FA227 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
@@ -438,6 +439,7 @@
 		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
 		F18E00062C7779D38C364472 /* task-counts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-counts.json"; sourceTree = "<group>"; };
 		F1B46ABD580807D58325D969 /* TaskDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDayProgress.swift; sourceTree = "<group>"; };
+		F52EC97D7A87C3AAC7D4B546 /* task-repeat-ends.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-repeat-ends.json"; sourceTree = "<group>"; };
 		F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidgetViews.swift; sourceTree = "<group>"; };
 		F781F8F4FFD0805CBC5D5068 /* completions.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = completions.json; sourceTree = "<group>"; };
 		F7BE26DEC5BFD175EB325C40 /* ReminderDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderDayProgress.swift; sourceTree = "<group>"; };
@@ -489,6 +491,7 @@
 				96556AA531B7928B74E717D5 /* task-deadline-anchored.json */,
 				921B76E2529F1F4C5642DE21 /* task-interval-quota.json */,
 				225E098B934AE9962181E731 /* task-progress.json */,
+				F52EC97D7A87C3AAC7D4B546 /* task-repeat-ends.json */,
 				0FB8808D7E3324C55F3E06A1 /* task-segments-consider.json */,
 				5EC6908F672BD8B854E45E9F /* task-segments-target-today-repeating.json */,
 				6676B0D8909B96B0AAA98C71 /* tasks.json */,
@@ -874,6 +877,7 @@
 				3FA4C1C7984CD8BD06B1188A /* task-deadline-anchored.json in Resources */,
 				5A0333B4EF13096F70EEC7D8 /* task-interval-quota.json in Resources */,
 				6C9D68D7C9F41059603C40A8 /* task-progress.json in Resources */,
+				CD8E81DAEB1E28E56FDFE007 /* task-repeat-ends.json in Resources */,
 				DFD0535376C465799D675624 /* task-segments-consider.json in Resources */,
 				422D698F05972EA445D2250C /* task-segments-target-today-repeating.json in Resources */,
 				DBCA794BCC63F980AE658F47 /* tasks.json in Resources */,
