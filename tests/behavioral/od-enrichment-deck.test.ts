@@ -453,6 +453,55 @@ describe('D3 ruling: "remind me <day>" is a target at the default time', () => {
   })
 })
 
+describe('"nag me <day>" is a target at the default time, like "remind me" (2026-10-22)', () => {
+  test('"nag me Monday about the invoice" → Monday 9:00 (bare or timed answer)', () => {
+    expect(pipe('nag me Monday about the invoice', { due_at: '2026-10-26' })).toEqual(
+      target('2026-10-26T09:00:00'),
+    )
+    expect(pipe('nag me Monday about the invoice', { due_at: '2026-10-26T09:00:00' })).toEqual(
+      target('2026-10-26T09:00:00'),
+    )
+  })
+  test('"nag me on Friday" and "nag me next Monday" → that day at 9:00', () => {
+    expect(pipe('nag me on Friday to send the invoice', { due_at: '2026-10-23' })).toEqual(
+      target('2026-10-23T09:00:00'),
+    )
+    expect(pipe('Nag me next Monday about the lease', { due_at: '2026-10-26' })).toEqual(
+      target('2026-10-26T09:00:00'),
+    )
+  })
+  test('"nag me tomorrow" at 00:30 → the calendar today at 9:00 (A4)', () => {
+    const AT_0030 = new Date('2026-10-21T00:30:00-05:00')
+    expect(
+      pipe('nag me tomorrow about the invoice', { due_at: '2026-10-22' }, { now: AT_0030 }),
+    ).toEqual(target('2026-10-21T09:00:00'))
+  })
+  test('"don\'t nag me" asks for no nag: a bare day beside it still decks', () => {
+    expect(pipe("call the bank Thursday, don't nag me", { due_at: '2026-10-22' })).toEqual(
+      deck('2026-10-22'),
+    )
+    expect(pipe('call the bank Thursday, don’t nag me', { due_at: '2026-10-22' })).toEqual(
+      deck('2026-10-22'),
+    )
+    expect(pipe('do not nag me, call the bank Thursday', { due_at: '2026-10-22' })).toEqual(
+      deck('2026-10-22'),
+    )
+  })
+  test('"nag me every <interval>" is the nag interval, not a day cue: the bare day decks', () => {
+    expect(
+      pipe('call Dave Thursday, nag me every 30 minutes', {
+        due_at: '2026-10-22',
+        auto_snooze_minutes: 30,
+      }),
+    ).toEqual(deck('2026-10-22'))
+  })
+  test('nagging someone else is the task: "nag Dave Monday" still decks', () => {
+    expect(pipe('nag Dave Monday about the invoice', { due_at: '2026-10-26' })).toEqual(
+      deck('2026-10-26'),
+    )
+  })
+})
+
 describe('deckDayAsTarget (the fallback when the deck cannot be written)', () => {
   test('today → the "Target today" time; another day → the default task time', () => {
     expect(deckDayAsTarget('2026-10-20', TZ, '09:00', TODAY_TARGET, TUE_2PM)).toBe(TODAY_TARGET)

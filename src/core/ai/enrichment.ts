@@ -1090,9 +1090,10 @@ const IN_MINUTES_CUE =
   /\bin (a few|a couple( of)?|an?|\d{1,3}|five|ten|fifteen|twenty|thirty|forty|forty-five|fifty) (minutes?|mins?)\b/i
 
 /**
- * Words that say WHEN in the day: a clock time, a part of day, "remind me"
- * (D3 ruling: the one phrase that asks for a nag), or a count from now (in
- * hours or minutes). A bare date from such words is a target, never a deck.
+ * Words that say WHEN in the day: a clock time, a part of day, "remind me" or
+ * "nag me" (D3 ruling, and 2026-10-22: the phrases that ask for a nag), or a
+ * count from now (in hours or minutes). A bare date from such words is a
+ * target, never a deck.
  */
 function saysATime(inputText: string): boolean {
   return [
@@ -1106,8 +1107,17 @@ function saysATime(inputText: string): boolean {
   ].some((re) => re.test(inputText))
 }
 
-/** "remind me Monday" asks for a nag at a time: a target at the default time, not a deck. */
-const REMIND_ME = /\bremind me\b/i
+/**
+ * "remind me Monday" and "nag me Monday" (Trent, 2026-10-22; also "nag me on
+ * Monday", "nag me next Monday") ask for a nag at a time: a target at the
+ * default time, not a deck. "nag me" is also the nag-interval phrase, so two
+ * forms are left out: the off switch ("don't nag me", "do not nag me", "never
+ * nag me" — the user asked for NO nag, so a bare day still decks) and an
+ * interval ("nag me every 30 minutes" sets `auto_snooze_minutes`; a bare day
+ * beside it decks as before).
+ */
+const REMIND_ME =
+  /\bremind me\b|(?<!\b(?:don['’]?t|do not|never|no need to) )\bnag me\b(?!\s+every\b)/i
 
 /** Day phrases with numbers in them, taken out before `mayStateATime` looks for a number. */
 const DAY_NUMBER_PHRASES = [
@@ -1220,7 +1230,7 @@ export function resolveDeckDay(
   if (!day.isValid) return { ...enrichment, due_at: null }
   // A1 / repeating: the target it always was (the floor's datetime already is one).
   // So is a bare date from words that say when in the day (D3 review): "Friday
-  // evening", "Saturday at 3pm", "remind me Monday" go to the target path.
+  // evening", "Saturday at 3pm", "remind me Monday", "nag me Monday" go to the target path.
   if (enrichment.rrule || enrichment.deadline_at || saysATime(inputText)) return asTarget()
 
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
