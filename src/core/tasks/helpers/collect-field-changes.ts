@@ -677,17 +677,9 @@ function collectLead(
     is_reminder: left.isReminder,
     is_tracked: left.isTracked,
   }
-  const dueAt = after('due_at')
   const changed = LEAD_INPUTS.some((f) => data.fieldsChanged.includes(f))
-  const targetLess = row.deadline_at !== null && dueAt === null
-  const removedRepeatTarget =
-    ordinary &&
-    targetLess &&
-    task.due_at !== null &&
-    data.fieldsChanged.includes('due_at') &&
-    !after('on_deck_day') &&
-    isDeadlineAnchored(row) &&
-    hasRelativeTarget(row)
+  const targetLess = row.deadline_at !== null && after('due_at') === null
+  const removedRepeatTarget = ordinary && targetLess && removesRepeatTarget(data, task, input, row)
   if (!changed && !removedRepeatTarget && !(targetLess && task.lead_from === null)) return
   const rolloverTime = rolloverTimeForUser(task.user_id)
   const lead = { rolloverTime, now: left.now }
@@ -695,6 +687,27 @@ function collectLead(
     ? openTaskToday(left.timezone, left.now, rolloverTime)
     : leadFor(row, left.timezone, lead)
   if (next !== task.lead_from) trackField(data, 'lead_from', task.lead_from, next)
+}
+
+/**
+ * A5 (`collectLead`): this write REMOVES the target of a deadline-anchored
+ * repeat WITH a relative target — not by a deck (the deck the write leaves,
+ * read from the input: the after-state does not have it yet).
+ */
+function removesRepeatTarget(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  row: Parameters<typeof isDeadlineAnchored>[0] & Parameters<typeof hasRelativeTarget>[0],
+): boolean {
+  const deck = input.on_deck_day !== undefined ? input.on_deck_day : task.on_deck_day
+  return (
+    task.due_at !== null &&
+    data.fieldsChanged.includes('due_at') &&
+    !deck &&
+    isDeadlineAnchored(row) &&
+    hasRelativeTarget(row)
+  )
 }
 
 /**

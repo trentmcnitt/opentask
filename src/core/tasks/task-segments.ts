@@ -258,14 +258,19 @@ export function getTaskSegments(
       add('deadlines', { task, state: entry.state, safetyNet: entry.safetyNet, seen: entry.seen })
     }
   })
-  for (const task of eligibleTasks(userId)) {
+  // The queue's panels first (rule 7), then the deadlines page: a task one
+  // of them takes is in no other segment. True when it was taken (or hidden).
+  const placeFirst = (task: Task): boolean => {
     const queued = place(task)
-    if (queued === 'hidden') continue
+    if (queued === 'hidden') return true
     if (queued) {
       add(queued.kind, queued.entry)
-      continue
+      return true
     }
-    if (placeDeadline(task)) continue
+    return placeDeadline(task)
+  }
+  for (const task of eligibleTasks(userId)) {
+    if (placeFirst(task)) continue
     // ON DECK (B6): quiet like a picked target — in no horizon segment; a
     // future deck in Upcoming on its heads-up days (for a caller that draws
     // deck rows); today's in the On deck section (`onDeckToday`), not here.
@@ -281,13 +286,7 @@ export function getTaskSegments(
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
   for (const task of repeatingTasks(userId)) {
-    const queued = place(task)
-    if (queued === 'hidden') continue
-    if (queued) {
-      add(queued.kind, queued.entry)
-      continue
-    }
-    if (placeDeadline(task)) continue
+    if (placeFirst(task)) continue
     // A decked repeating task (2026-10-20), as a one-off's deck above: a
     // future deck's Upcoming row only for a caller that draws deck rows.
     if (task.on_deck_day) {

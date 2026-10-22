@@ -135,6 +135,8 @@ interface FirstDates {
   relative: RelativeTarget | null
   /** The deadlines page's lead day (2026-10-22, `leadFor`), or null. */
   leadFrom: string | null
+  /** The lead override (`lead_days`) — never on a reminder or a quota. */
+  leadDays: number | null
 }
 
 /**
@@ -194,6 +196,7 @@ function deadlineAnchoredDates(
     auto: false,
     relative,
     leadFrom: dates.leadFrom,
+    leadDays: input.lead_days ?? null,
   }
 }
 
@@ -273,6 +276,7 @@ function targetAnchoredDates(
     auto: target.auto,
     relative: null,
     leadFrom,
+    leadDays: tracked || input.is_reminder ? null : (input.lead_days ?? null),
   }
 }
 
@@ -348,9 +352,7 @@ export function createTask(options: CreateTaskOptions): Task {
   })
   const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone, anchor)
   const onDeckDay = input.on_deck_day ?? null
-  if (onDeckDay) {
-    assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx, rolloverTimeForUser(userId))
-  }
+  if (onDeckDay) assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx, userId)
 
   const lead: LeadContext = { rolloverTime: rolloverTimeForUser(userId), now: new Date() }
   const first =
@@ -472,7 +474,7 @@ export function createTask(options: CreateTaskOptions): Task {
         // On deck (2026-10-20): checked by `assertCreateDeck` above.
         onDeckDay,
         // The deadlines page (2026-10-22): the override and the lead day.
-        tracked || input.is_reminder ? null : (input.lead_days ?? null),
+        first.leadDays,
         first.leadFrom,
         now,
         now,
@@ -550,7 +552,7 @@ function assertCreateDeck(
   rrule: string | null | undefined,
   tracked: boolean,
   ctx: TargetContext,
-  rolloverTime: string,
+  userId: number,
 ): void {
   if (!taskQueueEnabled()) {
     throw new AppError('On deck needs the task queue, which is off on this server', 409, 'CONFLICT')
@@ -574,7 +576,7 @@ function assertCreateDeck(
     day,
     ctx,
     now,
-    rolloverTime,
+    rolloverTimeForUser(userId),
   )
   if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
 }

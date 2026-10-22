@@ -456,12 +456,17 @@ function scheduleAction(d: EveryTimeDraft, action: DraftAction): EveryTimeDraft 
   const deadline = d.anchor === 'deadline'
   switch (action.type) {
     case 'targetTime':
-      return { ...d, targetTime: action.time, noTarget: false }
+      // Picking a time sets a target (only a draft that had none changes key).
+      return { ...d, targetTime: action.time, ...(d.noTarget ? { noTarget: false } : {}) }
     case 'deadlineTime':
       return deadline ? { ...d, deadlineTime: action.time } : d
     case 'daysBefore':
       return deadline
-        ? { ...d, daysBefore: Math.max(0, Math.floor(action.days)), noTarget: false }
+        ? {
+            ...d,
+            daysBefore: Math.max(0, Math.floor(action.days)),
+            ...(d.noTarget ? { noTarget: false } : {}),
+          }
         : d
     case 'addDeadline':
       return deadline ? d : addDeadline(d, action.time, action.ctx)

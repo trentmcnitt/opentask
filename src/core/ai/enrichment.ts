@@ -2651,20 +2651,12 @@ function collectEnrichmentTarget(
     changes.fieldsChanged.push('target_auto')
   }
   const rolloverTime = rolloverTimeForUser(opts.userId)
-  // A deadline the AI found on a one-off: its lead day (the deadlines page,
-  // `leadFor`), as any deadline write derives it.
-  if (deadlineAt !== task.deadline_at && !rrule && !task.is_reminder && !opts.tracked) {
-    const leadFrom = leadFor(
-      { ...ONE_OFF, deadline_at: deadlineAt, lead_days: task.lead_days },
-      targetCtx.timezone,
-      { rolloverTime, now: new Date() },
-    )
-    if (leadFrom !== task.lead_from) {
-      changes.setClauses.push('lead_from = ?')
-      changes.values.push(leadFrom)
-      changes.fieldsChanged.push('lead_from')
-    }
-  }
+  collectEnrichmentLead(
+    task,
+    { deadlineAt, rrule, tracked: opts.tracked, timezone: targetCtx.timezone },
+    rolloverTime,
+    changes,
+  )
   // On deck (2026-10-20, B1): a target the AI set is a pick, and a pick takes
   // the deck off (rule 1); a deadline it found leaves an automatic target, and
   // the deck stays (`deck-clear.ts`).
@@ -2698,6 +2690,34 @@ function collectEnrichmentTarget(
     changes.fieldsChanged.push('occurrence_at')
   }
   return deck.decked
+}
+
+/**
+ * A deadline the AI found on a one-off: its lead day (the deadlines page,
+ * 2026-10-22, `leadFor`), as any deadline write derives it.
+ */
+function collectEnrichmentLead(
+  task: Task,
+  left: {
+    deadlineAt: string | null
+    rrule: string | null | undefined
+    tracked: boolean
+    timezone: string
+  },
+  rolloverTime: string,
+  changes: FieldChanges,
+): void {
+  const { deadlineAt } = left
+  if (deadlineAt === task.deadline_at || left.rrule || task.is_reminder || left.tracked) return
+  const leadFrom = leadFor(
+    { ...ONE_OFF, deadline_at: deadlineAt, lead_days: task.lead_days },
+    left.timezone,
+    { rolloverTime, now: new Date() },
+  )
+  if (leadFrom === task.lead_from) return
+  changes.setClauses.push('lead_from = ?')
+  changes.values.push(leadFrom)
+  changes.fieldsChanged.push('lead_from')
 }
 
 /** A one-off's schedule fields, for `leadFor`. */

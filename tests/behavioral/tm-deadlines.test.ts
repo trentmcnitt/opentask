@@ -343,6 +343,21 @@ describe('DL-W: every writer, switch on', () => {
       lead_from: '2026-10-20',
     })
     expect(placesOf(t.id)).toEqual(['deadlines'])
+    // Decking an offset repeat drops its target too, but it is no Remove
+    // target: no lead day, and not on the page while the deck is ahead.
+    const decked = make({
+      rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=12;BYMINUTE=0',
+      deadline_at: at('2026-10-31T12:00'),
+      target_days_before: 1,
+      target_time: '18:00',
+    })
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [decked.id], day: '2026-10-22' })
+    expect(task(decked.id)).toMatchObject({
+      on_deck_day: '2026-10-22',
+      due_at: null,
+      lead_from: null,
+    })
+    expect(placesOf(decked.id)).not.toContain('deadlines')
     // The next advance gives the next occurrence its derived target again.
     markDone({ ...u, taskId: t.id })
     expect(task(t.id)).toMatchObject({ due_at: at('2026-10-30T18:00'), lead_from: null })
@@ -678,6 +693,77 @@ function rng(seed: number): () => number {
   }
 }
 
+/** One random write on a task (TM-INV-10/11): a refusal (400) is part of the contract. */
+function randomWrite(id: number, r: () => number, clock: DateTime): void {
+  const t = task(id)
+  if (t.done || t.archived_at || r() < 0.6) return
+  const op = Math.floor(r() * 8)
+  const day = (from: number, span: number) =>
+    clock.plus({ days: from + Math.floor(r() * span) }).toISODate()!
+  const writes: (() => unknown)[] = [
+    () => considerTasks(TEST_USER_ID, [id]),
+    () => deferLeads(TEST_USER_ID, tz, [id], day(1, 4)),
+    () => deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day: day(0, 4) }),
+    () => targetTasksToday(TEST_USER_ID, tz, [id], clock.plus({ hours: 2 }).toUTC().toISO()!),
+    () => t.rrule || updateTask({ ...u, taskId: id, input: { due_at: null } }),
+    () =>
+      t.rrule ||
+      updateTask({
+        ...u,
+        taskId: id,
+        input: {
+          deadline_at: clock
+            .plus({ days: Math.floor(r() * 12) - 2, hours: 5 })
+            .toUTC()
+            .toISO()!,
+        },
+      }),
+    () => markDone({ ...u, taskId: id }),
+    () => undefined,
+  ]
+  try {
+    writes[op]()
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err
+  }
+}
+
+/** Read one tick and check TM-INV-10 and TM-INV-11 for every task. */
+function checkTick(ids: number[], clock: DateTime, at: string): { checks: number; onPage: number } {
+  const now = clock.toJSDate()
+  const segs = getTaskSegments(TEST_USER_ID, tz, now, ALL)
+  const idsOf = (kind: string) =>
+    new Set(segs.find((s) => s.horizon === kind)?.tasks.map((x) => x.task.id))
+  const pageIds = idsOf('deadlines')
+  const upcomingIds = idsOf('upcoming')
+  const due = new Set(getCurrentlyDueTaskIds(TEST_USER_ID, now))
+  const today = openTaskToday(tz, now, ROLLOVER)
+  let checks = 0
+  let onPage = 0
+  for (const id of ids) {
+    const l = `${at} task ${id}`
+    if (pageIds.has(id)) {
+      onPage++
+      expect(due.has(id), `${l}: on the page AND over target (TM-INV-10)`).toBe(false)
+      expect(upcomingIds.has(id), `${l}: on the page AND in Upcoming (TM-INV-10)`).toBe(false)
+    }
+    const t = task(id)
+    const open = !t.done && !t.archived_at && !t.deleted_at
+    const targetLess = open && t.deadline_at !== null && t.due_at === null
+    // A repeat WITH a relative target has no lead day (ruling 2).
+    if (!targetLess || (t.rrule && t.target_days_before !== null)) continue
+    expect(
+      t.lead_from,
+      `${l}: target-less deadline task with no lead day (TM-INV-11)`,
+    ).not.toBeNull()
+    const lastDay = shiftDay(deadlineDay(t.deadline_at!, tz, ROLLOVER), -1, tz)
+    const ok = t.lead_from! <= today || t.lead_from! <= lastDay
+    expect(ok, `${l}: a future lead day after D−1 (TM-INV-11)`).toBe(true)
+    checks++
+  }
+  return { checks, onPage }
+}
+
 describe('TM-INV: the deadlines page (seeded random)', () => {
   hooks()
 
@@ -727,73 +813,11 @@ describe('TM-INV: the deadlines page (seeded random)', () => {
         vi.setSystemTime(clock.toJSDate())
         if (hour === 10) {
           runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
-          for (const id of ids) {
-            const t = task(id)
-            if (t.done || t.archived_at || r() < 0.6) continue
-            const op = Math.floor(r() * 8)
-            try {
-              if (op === 0) considerTasks(TEST_USER_ID, [id])
-              else if (op === 1) {
-                deferLeads(
-                  TEST_USER_ID,
-                  tz,
-                  [id],
-                  clock.plus({ days: 1 + Math.floor(r() * 4) }).toISODate()!,
-                )
-              } else if (op === 2) {
-                deckTasks({
-                  userId: TEST_USER_ID,
-                  timezone: tz,
-                  ids: [id],
-                  day: clock.plus({ days: Math.floor(r() * 4) }).toISODate()!,
-                })
-              } else if (op === 3) {
-                targetTasksToday(TEST_USER_ID, tz, [id], clock.plus({ hours: 2 }).toUTC().toISO()!)
-              } else if (op === 4 && !t.rrule) {
-                updateTask({ ...u, taskId: id, input: { due_at: null } })
-              } else if (op === 5 && !t.rrule) {
-                const to = clock.plus({ days: Math.floor(r() * 12) - 2, hours: 5 })
-                updateTask({ ...u, taskId: id, input: { deadline_at: to.toUTC().toISO()! } })
-              } else if (op === 6) markDone({ ...u, taskId: id })
-            } catch (err) {
-              if (!(err instanceof ValidationError)) throw err
-            }
-          }
+          for (const id of ids) randomWrite(id, r, clock)
         }
-        const now = clock.toJSDate()
-        const segs = getTaskSegments(TEST_USER_ID, tz, now, ALL)
-        const pageIds = new Set(
-          segs.find((s) => s.horizon === 'deadlines')?.tasks.map((x) => x.task.id),
-        )
-        const upcomingIds = new Set(
-          segs.find((s) => s.horizon === 'upcoming')?.tasks.map((x) => x.task.id),
-        )
-        const due = new Set(getCurrentlyDueTaskIds(TEST_USER_ID, now))
-        const today = openTaskToday(tz, now, ROLLOVER)
-        for (const id of ids) {
-          const l = `seed ${SEED} ${clock.toISO()} task ${id}`
-          if (pageIds.has(id)) {
-            onPage++
-            expect(due.has(id), `${l}: on the page AND over target (TM-INV-10)`).toBe(false)
-            expect(upcomingIds.has(id), `${l}: on the page AND in Upcoming (TM-INV-10)`).toBe(false)
-          }
-          const t = task(id)
-          if (t.done || t.archived_at || t.deleted_at || !t.deadline_at || t.due_at !== null)
-            continue
-          const relative = t.rrule && t.target_days_before !== null
-          if (relative) continue
-          expect(
-            t.lead_from,
-            `${l}: target-less deadline task with no lead day (TM-INV-11)`,
-          ).not.toBeNull()
-          if (t.lead_from! > today) {
-            const lastDay = shiftDay(deadlineDay(t.deadline_at, tz, ROLLOVER), -1, tz)
-            expect(t.lead_from! <= lastDay, `${l}: a future lead day after D−1 (TM-INV-11)`).toBe(
-              true,
-            )
-          }
-          checks++
-        }
+        const tick = checkTick(ids, clock, `seed ${SEED} ${clock.toISO()}`)
+        checks += tick.checks
+        onPage += tick.onPage
       }
       clock = clock.plus({ days: 1 })
     }
