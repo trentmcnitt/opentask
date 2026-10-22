@@ -443,7 +443,8 @@ export function TaskList({
   const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
   const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
-  const newBadge = (task: Task) => (justAddedSource ? justAddedTag(task, justAddedNow) : undefined)
+  const newBadge = (task: Task) =>
+    justAddedSource ? justAddedTag(task, justAddedNow, timezone) : undefined
 
   /**
    * `inDeck`: a row of Now's On deck section — no "On deck" just-now pill

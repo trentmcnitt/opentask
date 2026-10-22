@@ -47,6 +47,8 @@
  * still in, and still ages out fifteen minutes after it. Entries leave without
  * a reload — see `useJustAddedClock`.
  */
+import { DateTime } from 'luxon'
+import { parseDeckDay } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
 /** 10 until 2026-10-12, when Trent widened it. The enrichment-success push
@@ -190,9 +192,38 @@ export function formatJustAddedLabel(entry: JustAddedEntry, now: number): string
   return `${verb} ${formatJustAddedAge(entry.task, now)}`
 }
 
-/** The tag on the task's real row: "New" for an add, "Targeted" for a targeting, "On deck" for a deck. */
-export function justAddedTag(task: Task, now: number): string | undefined {
+/**
+ * The tag on the task's real row: "New" for an add, "Targeted" for a
+ * targeting, and for a deck its day — "On deck" today, "On deck tomorrow",
+ * else "On deck Nov 15" (`deckTagLabel`).
+ */
+export function justAddedTag(task: Task, now: number, timezone?: string): string | undefined {
   const event = justAddedEvent(task, now)
   if (!event) return undefined
-  return { targeted: 'Targeted', decked: 'On deck', added: 'New' }[event.kind]
+  if (event.kind === 'decked') return deckTagLabel(task.on_deck_day, timezone, now)
+  return { targeted: 'Targeted', added: 'New' }[event.kind]
+}
+
+/**
+ * A deck's tag on a dashboard row (Trent's phone review, 2026-10-22: a row
+ * decked for a later day read just "On deck", as if it were today's). Today's
+ * deck stays "On deck" — Now's On deck section and the filled button already
+ * say which day; tomorrow is "On deck tomorrow", the segment row's own button
+ * name; a later day is "On deck Nov 15" — the dashboard rows' date chips'
+ * format ("Nov 1 9:00 AM": month and day, no weekday). The date is shown
+ * rather than the tag dropped: the tag is the row's "it landed" mark.
+ * Without a zone (or with a day that does not parse) it says "On deck".
+ */
+export function deckTagLabel(
+  day: string | null | undefined,
+  timezone: string | undefined,
+  now: number,
+): string {
+  if (!day || !timezone) return 'On deck'
+  const deck = parseDeckDay(day, timezone)
+  if (!deck) return 'On deck'
+  const today = DateTime.fromMillis(now).setZone(timezone).startOf('day')
+  if (deck <= today) return 'On deck'
+  if (+deck === +today.plus({ days: 1 })) return 'On deck tomorrow'
+  return `On deck ${deck.toFormat('LLL d')}`
 }
