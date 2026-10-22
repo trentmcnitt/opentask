@@ -69,6 +69,7 @@ import {
   buildRule,
   parseHHMM,
   parseRule,
+  ruleDraftable,
   toHHMM,
   weeklyDayMissing,
   type RuleDraft,
@@ -334,6 +335,16 @@ export function createModeTask(staged: {
   }
 }
 
+/**
+ * Whether every-time mode can edit the task's schedule: no rule yet, or one
+ * the draft holds part for part (`ruleDraftable`). Otherwise the mode shows
+ * the rule read-only — "This repeat can't be edited here" — with Stop
+ * repeating only, and nothing ever rebuilds it.
+ */
+export function scheduleEditable(task: Pick<EveryTimeTask, 'rrule'>): boolean {
+  return !task.rrule || ruleDraftable(task.rrule)
+}
+
 /** Two drafts that save the same thing (the panel's dirty test). `refusal` is not compared. */
 export function draftsEqual(a: EveryTimeDraft, b: EveryTimeDraft): boolean {
   const key = (d: EveryTimeDraft) => JSON.stringify({ ...d, refusal: null })
@@ -570,6 +581,8 @@ export function draftToPatch(
   ctx: EveryTimeContext,
 ): EveryTimePatch {
   if (draft.stop) return task.rrule ? { rrule: null } : {}
+  // A rule the draft can't hold is never rebuilt (only Stop repeating).
+  if (!scheduleEditable(task)) return {}
   const patch: EveryTimePatch = endPatch(task, draft)
   const rrule = draftRule(draft)
   const wasDeadline = isDeadlineAnchored(task)
@@ -590,6 +603,9 @@ export function draftToPatch(
  * back to Never sends the stored one as null.
  */
 function endPatch(task: EveryTimeTask, draft: EveryTimeDraft): EveryTimePatch {
+  // "On date…" chosen with no date yet is no change — never a removal of the
+  // stored end (a host's save-and-leave could otherwise send it).
+  if (draft.rule.endType === 'date' && !draft.rule.endDate) return {}
   const { count, until } = draftEnd(draft)
   const stored = repeatEndOf(task)
   if (count === stored.repeat_count && until === stored.repeat_until) return {}
@@ -1133,6 +1149,12 @@ export function thisOneHint(
         : 'no target'
     const deadline = task.deadline_at ? `, deadline ${whenWords(task.deadline_at, tz)}` : ''
     return `This one stays as a one-time task: ${what}${deadline}.`
+  }
+  // A one-off with a deadline made target-anchored: a target-anchored repeat
+  // has no deadline (L9), so the Save removes it — said before Save.
+  if (!task.rrule && task.deadline_at && draft.anchor === 'target') {
+    const day = local(task.deadline_at, tz).toFormat('ccc LLL d')
+    return `The deadline (${day}) will be removed.`
   }
   if (occurrenceKeepsItsOwn(task, ctx)) {
     return task.on_deck_day ? KEEPS_ITS_DECK : KEEPS_ITS_OWN_TARGET

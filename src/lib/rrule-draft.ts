@@ -256,3 +256,51 @@ export function weeklyDayMissing(
 ): boolean {
   return draft.freq === 'WEEKLY' && mode !== 'from_completion' && draft.days.length === 0
 }
+
+const PLAIN_DAY = /^(MO|TU|WE|TH|FR|SA|SU)$/
+const ORDINAL_DAY = /^[+-]?\d{1,2}(MO|TU|WE|TH|FR|SA|SU)$/
+const SINGLE_INT = /^-?\d+$/
+const ALWAYS_OK = new Set(['FREQ', 'INTERVAL', 'BYHOUR', 'BYMINUTE', 'COUNT', 'UNTIL'])
+const ALLOWED_BY_FREQ: Record<string, string[]> = {
+  DAILY: [],
+  WEEKLY: ['BYDAY'],
+  MONTHLY: ['BYDAY', 'BYMONTHDAY', 'BYSETPOS'],
+  YEARLY: ['BYMONTH', 'BYMONTHDAY'],
+}
+
+/**
+ * WHETHER A RULE FITS THE DRAFT (2026-10-22, editor PR 4c review): a rule
+ * the editor can't represent part for part must never be rebuilt — `parseRule`
+ * would quietly lose what it can't hold (`parseInt('1,15')` makes
+ * BYMONTHDAY=1,15 the 1st). The shapes a `RuleDraft` holds exactly:
+ *  - DAILY: no BY-day parts;
+ *  - WEEKLY: BYDAY of plain days;
+ *  - MONTHLY: one BYMONTHDAY (a day or -1); or one BYDAY — an ordinal weekday
+ *    ("1SA"), or a plain one with a single BYSETPOS;
+ *  - YEARLY: at most one BYMONTH and one BYMONTHDAY;
+ * plus FREQ, INTERVAL, one BYHOUR, one BYMINUTE, and a legacy COUNT/UNTIL.
+ * Anything else (several month days, several months, BYWEEKNO, BYYEARDAY,
+ * WKST, a list of hours, …) every-time mode shows read-only.
+ */
+export function ruleDraftable(rrule: string): boolean {
+  const parts = parseRRuleParts(rrule)
+  const freq = parts.FREQ ?? ''
+  const allowed = ALLOWED_BY_FREQ[freq]
+  if (!allowed) return false
+  if (parts.INTERVAL && !/^\d+$/.test(parts.INTERVAL)) return false
+  if ([parts.BYHOUR, parts.BYMINUTE].some((v) => v && !SINGLE_INT.test(v))) return false
+  const extra = Object.keys(parts).filter((k) => !ALWAYS_OK.has(k))
+  if (extra.some((k) => !allowed.includes(k))) return false
+  if (freq === 'WEEKLY')
+    return !parts.BYDAY || parts.BYDAY.split(',').every((d) => PLAIN_DAY.test(d))
+  if (freq === 'MONTHLY') return monthlyDraftable(parts)
+  return [parts.BYMONTH, parts.BYMONTHDAY].every((v) => !v || SINGLE_INT.test(v))
+}
+
+function monthlyDraftable(parts: Record<string, string>): boolean {
+  const { BYDAY, BYMONTHDAY, BYSETPOS } = parts
+  if (BYMONTHDAY) return !BYDAY && !BYSETPOS && SINGLE_INT.test(BYMONTHDAY)
+  if (!BYDAY) return !BYSETPOS
+  if (BYSETPOS) return PLAIN_DAY.test(BYDAY) && SINGLE_INT.test(BYSETPOS)
+  return ORDINAL_DAY.test(BYDAY)
+}

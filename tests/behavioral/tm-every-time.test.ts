@@ -39,6 +39,7 @@ import {
   nextDateWords,
   nextDates,
   occurrenceKeepsItsOwn,
+  scheduleEditable,
   targetTimeRefused,
   thisOneHint,
   type DraftAction,
@@ -47,6 +48,7 @@ import {
   type EveryTimeTask,
 } from '@/lib/every-time'
 import { RELATIVE_TARGET_MESSAGES } from '@/lib/task-segments'
+import { ruleDraftable } from '@/lib/rrule-draft'
 
 const TZ = 'America/Chicago'
 /** Thu Oct 22 2026, 10:00 AM Chicago (CDT). */
@@ -971,5 +973,55 @@ describe('TM-EVERY-10: an end is sent as repeat_count / repeat_until, never in t
     const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
     const d = run(draftFromTask(counted, ctx), { type: 'stop', stop: true })
     expect(draftToPatch(counted, d, ctx)).toEqual({ rrule: null })
+  })
+})
+
+// ===========================================================================
+// Review fixes (4c): nothing silently lost
+// ===========================================================================
+
+describe('TM-EVERY-11: a save never loses what the draft can not say', () => {
+  test('"On date…" with no date picked is no change — never a removal of the stored end', () => {
+    const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
+    const d = run(draftFromTask(counted, ctx), { type: 'ends', endType: 'date', endDate: '' })
+    expect(draftToPatch(counted, d, ctx)).toEqual({})
+    expect(draftProblem(counted, d, ctx)).toBe(NO_END_DATE_PROBLEM)
+  })
+
+  test('ruleDraftable: the shapes a draft holds exactly, and the ones it would lose', () => {
+    const yes = [
+      'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR;BYHOUR=9;BYMINUTE=0',
+      'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=8;BYMINUTE=0',
+      'FREQ=MONTHLY;BYDAY=FR;BYSETPOS=-1;BYHOUR=17;BYMINUTE=0',
+      'FREQ=MONTHLY;BYMONTHDAY=-1;BYHOUR=12;BYMINUTE=0',
+      'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0',
+    ]
+    const no = [
+      'FREQ=MONTHLY;BYMONTHDAY=1,15;BYHOUR=9;BYMINUTE=0',
+      'FREQ=YEARLY;BYMONTH=3,9;BYHOUR=9;BYMINUTE=0',
+      'FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=1;BYHOUR=9;BYMINUTE=0',
+      'FREQ=MONTHLY;BYDAY=1MO,3MO;BYHOUR=9;BYMINUTE=0',
+      'FREQ=DAILY;BYHOUR=9,17;BYMINUTE=0',
+      'FREQ=WEEKLY;WKST=SU;BYDAY=MO;BYHOUR=9;BYMINUTE=0',
+      'FREQ=HOURLY;INTERVAL=4',
+    ]
+    for (const r of yes) expect(ruleDraftable(r), r).toBe(true)
+    for (const r of no) expect(ruleDraftable(r), r).toBe(false)
+  })
+
+  test('BYMONTHDAY=1,15 is never rebuilt: edits send nothing, Stop repeating still works', () => {
+    const twice = { ...FRIDAYS, rrule: 'FREQ=MONTHLY;BYMONTHDAY=1,15;BYHOUR=16;BYMINUTE=0' }
+    expect(scheduleEditable(twice)).toBe(false)
+    const d = run(draftFromTask(twice, ctx), { type: 'targetTime', time: '17:00' })
+    expect(draftToPatch(twice, d, ctx)).toEqual({})
+    const stop = run(draftFromTask(twice, ctx), { type: 'stop', stop: true })
+    expect(draftToPatch(twice, stop, ctx)).toEqual({ rrule: null })
+  })
+
+  test('a one-off with a deadline made target-anchored: the hint says the deadline goes', () => {
+    const d = run(draftFromTask(ONE_OFF_DEADLINE, ctx), { type: 'anchor', anchor: 'target', ctx })
+    expect(draftToPatch(ONE_OFF_DEADLINE, d, ctx)).toMatchObject({ deadline_at: null })
+    expect(thisOneHint(ONE_OFF_DEADLINE, d, ctx)).toBe('The deadline (Fri Oct 30) will be removed.')
   })
 })
