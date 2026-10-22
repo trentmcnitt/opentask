@@ -415,6 +415,13 @@ export interface SegmentTaskFields {
 
 export type SegmentState = 'waiting' | 'considered' | 'deferred'
 
+/**
+ * How a row that LEFT its segment today was handled (the day roster,
+ * src/core/tasks/segment-roster.ts; the API's `segment_left`): done, decked,
+ * targeted (Today), or considered out of the queue. Such a row is considered.
+ */
+export type SegmentLeft = 'done' | 'deck' | 'target' | 'considered'
+
 /** The local start of the day `iso` falls on, in `timezone`. */
 export function localDay(iso: string, timezone: string): DateTime {
   return DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).startOf('day')

@@ -62,10 +62,16 @@ import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
 import { latestRollover, rolloverMoment } from '@/lib/opentask-day'
+import { rosterLeftRows, type SegmentLeft } from './segment-roster'
 
 export interface SegmentTask {
   task: Task
   state: SegmentState
+  /**
+   * A row that LEFT the segment today, handled (`segment-roster.ts`): sent
+   * as a considered row, saying how it left. Only with `handledRows`.
+   */
+  left?: SegmentLeft
 }
 
 export { SEGMENT_ORDER, type SegmentKind }
@@ -165,6 +171,7 @@ export function getTaskSegments(
   {
     queuePanels = false,
     deckRows = false,
+    handledRows = false,
   }: {
     queuePanels?: boolean
     /**
@@ -174,6 +181,14 @@ export function getTaskSegments(
      * would draw a dateless row. A deck is in no horizon segment either way.
      */
     deckRows?: boolean
+    /**
+     * The day roster (2026-10-22, `segment-roster.ts`; `GET
+     * /api/reminders?handled=1`): rows that left a segment today handled —
+     * decked, targeted, done — stay in it as considered rows (`left`), so
+     * "N of M" keeps M fixed for the day. Without it the segments are as
+     * before: a native build, the day simulator and the golden suite.
+     */
+    handledRows?: boolean
   } = {},
 ): TaskSegment[] {
   const byKind = new Map<SegmentKind, SegmentTask[]>()
@@ -239,6 +254,7 @@ export function getTaskSegments(
       upcoming.map(({ task, state }) => ({ task, state })),
     )
   }
+  if (handledRows) addLeftRows(userId, timezone, now, byKind)
   return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
     const tasks = byKind.get(kind)!
     if (kind === 'queue_today' || kind === 'queue_previous') {
@@ -248,6 +264,27 @@ export function getTaskSegments(
     }
     return segmentOf(kind, tasks)
   })
+}
+
+/**
+ * The day roster's rows (`segment-roster.ts`): remember what each segment
+ * lists now, and add back, as considered rows marked `left`, the ones that
+ * left it today handled. After Upcoming's sort, so they never move its dated
+ * rows; the other segments sort them in with the rest (they are listed
+ * apart, behind "Show N considered", either way).
+ */
+function addLeftRows(
+  userId: number,
+  timezone: string,
+  now: Date,
+  byKind: Map<SegmentKind, SegmentTask[]>,
+): void {
+  const listed = new Map([...byKind].map(([kind, rows]) => [kind, rows.map((r) => r.task)]))
+  for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
+    const list = byKind.get(kind) ?? []
+    for (const { task, left } of rows) list.push({ task, state: 'considered', left })
+    byKind.set(kind, list)
+  }
 }
 
 /**

@@ -38,6 +38,7 @@ import {
   isQueueKind,
   type HorizonValue,
   type SegmentKind,
+  type SegmentLeft,
 } from '@/lib/task-segments'
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
@@ -97,9 +98,16 @@ export function handledRows(segment: SegmentView): SegmentRow[] {
 
 /**
  * "X of Y" for a segment, the slots' count (Trent, 2026-10-11): X is what was
- * handled today — considered, or deferred by Defer all — and Y the segment's
- * size today, so the number climbs rather than counting down. A task marked
- * done leaves the segment altogether, so it is in neither.
+ * handled today and Y everything that came round today, so the number climbs
+ * rather than counting down. ONE rule for every panel (the queue's two,
+ * Upcoming, the horizons; /reminders sections and the dashboard pager alike).
+ *
+ * Since 2026-10-22 (Trent's phone review, "29 of 44" → "29 of 43" after a
+ * deck): handled is considered, deferred, AND decked, targeted (Today) or
+ * done — a row that leaves the segment that way stays in it as a considered
+ * row (`left`, the server's day roster, src/core/tasks/segment-roster.ts), so
+ * acting on a row raises X and never shrinks Y. Only a row that left
+ * unhandled (trashed, its heads-up over) drops out of Y.
  */
 export function segmentCounts(segment: SegmentView): { handled: number; total: number } {
   return { handled: segment.considered + segment.deferred, total: segment.rows.length }
@@ -1102,6 +1110,13 @@ export function HorizonChip({
   )
 }
 
+/** How a row that left its segment today was handled, after its title. */
+const LEFT_WORDS: Record<Exclude<SegmentLeft, 'considered'>, string> = {
+  done: 'done',
+  deck: 'on deck',
+  target: 'targeted',
+}
+
 /**
  * One considered (or deferred) task behind a segment's "Show N considered" —
  * the slots' considered row on each surface (`ConsideredRow` on /reminders,
@@ -1118,27 +1133,38 @@ export function ConsideredSegmentRow({
   panel: boolean
   onPutBack: (task: Task) => void
 }) {
-  const { task, state } = row
+  const { task, state, left } = row
+  const circle = cn(
+    'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
+    panel ? 'size-[19px]' : 'mt-[3px] size-6',
+  )
   return (
     <li
       data-considered-task-id={task.id}
+      data-segment-left={left}
       className={cn(
         'flex items-start rounded-xl border border-transparent',
         panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
       )}
     >
-      <button
-        type="button"
-        onClick={() => onPutBack(task)}
-        aria-label={`Put back "${task.title}"`}
-        title="Put back"
-        className={cn(
-          'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50',
-          panel ? 'size-[19px]' : 'mt-[3px] size-6',
-        )}
-      >
-        <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
-      </button>
+      {left ? (
+        // Left the segment handled (the day roster): no put-back — a consider
+        // stamp is all put-back clears, and this row's way back is the toast's
+        // Undo. A plain filled circle, the same place and size.
+        <span className={circle} aria-hidden>
+          <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onPutBack(task)}
+          aria-label={`Put back "${task.title}"`}
+          title="Put back"
+          className={cn(circle, 'transition-colors hover:bg-green-600/50')}
+        >
+          <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
+        </button>
+      )}
       <p
         className={cn(
           'text-muted-foreground min-w-0 flex-1 text-pretty',
@@ -1147,6 +1173,9 @@ export function ConsideredSegmentRow({
       >
         {task.title}
         {state === 'deferred' && <span className="ml-1.5 text-xs">· deferred</span>}
+        {left && left !== 'considered' && (
+          <span className="ml-1.5 text-xs">· {LEFT_WORDS[left]}</span>
+        )}
       </p>
     </li>
   )

@@ -646,3 +646,18 @@ CREATE TABLE IF NOT EXISTS progress_periods (
   closed_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_progress_periods_task ON progress_periods(task_id, period_start);
+
+-- Task segments' day roster (2026-10-22, src/core/tasks/segment-roster.ts):
+-- every task a segment listed on a day, so the segment's "N of M" keeps M
+-- fixed for the day — a row decked, targeted or done leaves the list but
+-- still counts, as handled. Bookkeeping only: written by GET /api/reminders,
+-- never in the undo log; rows older than yesterday are dropped on write.
+-- `day` is the segment's day (yyyy-MM-dd): the OpenTask day for the queue's
+-- panels, the calendar day for the rest.
+CREATE TABLE IF NOT EXISTS segment_roster (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day      TEXT NOT NULL,
+  kind     TEXT NOT NULL,
+  task_id  INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, day, kind, task_id)
+);
