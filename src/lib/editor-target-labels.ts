@@ -11,6 +11,7 @@ import {
   autoTargetAt,
   deadlineDayTarget,
   occurrenceDates,
+  scheduleBase,
   targetMoved,
   type TargetContext,
   type TargetFields,
@@ -138,10 +139,109 @@ export function deadlineRepeatLabel(task: {
 }): string | null {
   if (!task.rrule || task.repeat_anchor !== 'deadline') return null
   if (task.target_days_before == null || !task.target_time) return null
-  const at = DateTime.fromFormat(task.target_time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
-  const days = task.target_days_before
-  const when = days === 0 ? 'the same day' : days === 1 ? 'the day before' : `${days} days before`
-  return `target ${when} at ${at}`
+  return `target ${relativeTargetWords(task.target_days_before, task.target_time)}`
+}
+
+/**
+ * A relative target in words (2026-10-22, editor plan §2.1): "the same day at
+ * 12:00 PM", "the day before at 6:00 PM", "3 days before at 9:00 AM". Shared
+ * by the deadline line (`deadlineRepeatLabel`) and every-time mode's Target
+ * row, so both say it the same way.
+ */
+export function relativeTargetWords(daysBefore: number, time: string): string {
+  const at = DateTime.fromFormat(time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
+  return `${relativeDaysWords(daysBefore)} at ${at}`
+}
+
+/** "the same day", "the day before", "3 days before" — the days-before select's choices. */
+export function relativeDaysWords(daysBefore: number): string {
+  if (daysBefore === 0) return 'the same day'
+  return daysBefore === 1 ? 'the day before' : `${daysBefore} days before`
+}
+
+/**
+ * "THIS IS THE FRI OCT 16 ONE" (2026-10-22, editor plan §7, A4): the line
+ * under a repeating task's title naming WHICH occurrence the this-one rows
+ * edit — shown only when the occurrence differs from what its rule alone
+ * would say, i.e. when any of:
+ *  (a) it is ON DECK (`on_deck_day`): its target is cleared, the deck names a day;
+ *  (b) its target was MOVED this occurrence (`targetMoved`);
+ *  (c) it is QUEUED (`queuedRepeatOccurrence`, with the queue switch on): the
+ *      stored target has moved on to the next occurrence;
+ *  (d) it was RESCHEDULED off its rule — a deadline-anchored, from_due repeat
+ *      whose deadline was moved for this occurrence (`scheduleBase` differs
+ *      from `occurrence_at`).
+ * NOT for plain over-target debt (the Target row already says "5 days ago" in
+ * red) nor an occurrence on its rule. Never for a done task or a one-off.
+ *
+ * Names `occurrence_at`'s local day ("Fri Oct 16") — on a deadline-anchored
+ * repeat that is the DEADLINE's day, so it reads "Sat Nov 7 (deadline)" when
+ * the target (moved, or derived) falls on another day.
+ */
+export function occurrenceDiffers(
+  task: {
+    rrule: string | null | undefined
+    done?: boolean
+    due_at: string | null
+    occurrence_at?: string | null
+    queued_at?: string | null
+    on_deck_day?: string | null
+    recurrence_mode?: 'from_due' | 'from_completion' | null
+    anchor_time?: string | null
+    repeat_anchor?: RepeatAnchor | null
+    target_days_before?: number | null
+    target_time?: string | null
+  },
+  timezone: string,
+  queueEnabled: boolean,
+): string | null {
+  if (!task.rrule || task.done || !task.occurrence_at) return null
+  const schedule = {
+    rrule: task.rrule,
+    repeat_anchor: task.repeat_anchor ?? null,
+    target_days_before: task.target_days_before ?? null,
+    target_time: task.target_time ?? null,
+  }
+  const differs =
+    !!task.on_deck_day ||
+    targetMoved(
+      { ...schedule, due_at: task.due_at, occurrence_at: task.occurrence_at },
+      timezone,
+    ) ||
+    (queueEnabled && queuedRepeatOccurrence(task) !== null) ||
+    rescheduledOffRule(task, timezone)
+  if (!differs) return null
+  const occurrence = DateTime.fromISO(task.occurrence_at, { zone: 'utc' }).setZone(timezone)
+  const day = occurrence.toFormat('ccc LLL d')
+  if (task.repeat_anchor !== 'deadline') return day
+  const target = task.due_at ?? occurrenceDates(schedule, task.occurrence_at, timezone).targetAt
+  const targetDay = DateTime.fromISO(target, { zone: 'utc' }).setZone(timezone)
+  return targetDay.hasSame(occurrence, 'day') ? day : `${day} (deadline)`
+}
+
+/** (d): a deadline-anchored from_due occurrence moved off its rule (`scheduleBase`). */
+function rescheduledOffRule(
+  task: Parameters<typeof occurrenceDiffers>[0],
+  timezone: string,
+): boolean {
+  if (task.repeat_anchor !== 'deadline' || task.recurrence_mode === 'from_completion') return false
+  try {
+    const base = scheduleBase(
+      {
+        rrule: task.rrule ?? null,
+        repeat_anchor: task.repeat_anchor,
+        recurrence_mode: task.recurrence_mode,
+        anchor_time: task.anchor_time ?? null,
+        occurrence_at: task.occurrence_at,
+        due_at: task.due_at,
+      },
+      timezone,
+    )
+    return base !== null && Date.parse(base) !== Date.parse(task.occurrence_at!)
+  } catch {
+    // A rule with no next occurrence: nothing to compare against.
+    return false
+  }
 }
 
 /**
