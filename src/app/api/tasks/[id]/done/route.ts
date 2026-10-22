@@ -50,6 +50,9 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       task: formatTaskResponse(result.task, user.timezone),
       was_recurring: result.wasRecurring,
       next_due_at: result.nextDueAt,
+      // Repeat ends (2026-10-22): this done closed the last occurrence — the
+      // task is now done and archived, with no next occurrence.
+      series_ended: result.seriesEnded,
     })
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/done error:', err)

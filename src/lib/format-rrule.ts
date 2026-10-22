@@ -331,3 +331,52 @@ export function formatBulkRecurrence(
   }
   return '—'
 }
+
+const END_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+]
+
+/**
+ * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends): the end's
+ * words — "6 times (2 left)", "until Dec 31" (the year added when it is not
+ * this one) — or null with no end. Appended to a rule's words with " · "
+ * (`withRepeatEnd`): "Weekly on Fri · 6 times (2 left)". `left` counts the
+ * current occurrence.
+ */
+export function formatRepeatEnd(
+  end: {
+    repeat_count?: number | null
+    repeat_count_used?: number | null
+    repeat_until?: string | null
+  },
+  now: Date = new Date(),
+): string | null {
+  if (end.repeat_count != null) {
+    const n = end.repeat_count
+    const left = Math.max(0, n - (end.repeat_count_used ?? 0))
+    return `${n} ${n === 1 ? 'time' : 'times'} (${left} left)`
+  }
+  if (end.repeat_until != null) {
+    const [y, m, d] = end.repeat_until.split('-').map(Number)
+    const year = y !== now.getFullYear() ? `, ${y}` : ''
+    return `until ${END_MONTHS[m - 1]} ${d}${year}`
+  }
+  return null
+}
+
+/** A rule's words with its end, if any: "Weekly on Fri · until Dec 31". */
+export function withRepeatEnd(text: string, end: Parameters<typeof formatRepeatEnd>[0]): string {
+  const words = formatRepeatEnd(end)
+  return words ? `${text} · ${words}` : text
+}

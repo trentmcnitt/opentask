@@ -22,6 +22,11 @@ export {
   validateSegmentIds,
   validateSegmentTarget,
   validateDeck,
+  // Repeat ends (2026-10-22)
+  liftRuleEnd,
+  ruleHasEnd,
+  BULK_ENDS_MESSAGE,
+  RULE_END_CONFLICT_MESSAGE,
   DECK_WITH_DATE_MESSAGE,
   DECK_WITH_RULE_MESSAGE,
   validateBulkSnoozeOverdue,

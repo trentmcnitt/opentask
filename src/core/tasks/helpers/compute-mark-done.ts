@@ -7,8 +7,8 @@
  */
 
 import type { Task } from '@/types'
-import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
-import { occurrenceDates, scheduleBase } from '@/lib/task-segments'
+import { isRecurring } from '@/core/recurrence'
+import { nextOrEnd, occurrenceDates, repeatEndOf } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import { TARGET_SET_FIELD, queueStateToClear } from '../target-set'
 
@@ -35,6 +35,24 @@ export interface RecurringComputation {
   prevDueAt: string | null
   /** The occurrence this completion closes (`completions.occurrence_at_was`). */
   prevOccurrenceAt: string | null
+  /** Repeat ends (2026-10-22): `repeat_count_used` after this completion. */
+  usedAfter: number
+  stats: MarkDoneStats
+  fieldsChanged: string[]
+}
+
+/**
+ * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends): done on the
+ * LAST occurrence of a series with an end. The one-off write (done, archived,
+ * stats, attempts, queue mark) plus `repeat_count_used`; the occurrence, its
+ * target and any deck stay as they are, so a put-back or an undo restores
+ * the occurrence exactly.
+ */
+export interface SeriesEndComputation {
+  type: 'series_end'
+  /** The occurrence this completion closes (`completions.occurrence_at_was`). */
+  prevOccurrenceAt: string | null
+  usedAfter: number
   stats: MarkDoneStats
   fieldsChanged: string[]
 }
@@ -45,7 +63,7 @@ export interface OneOffComputation {
   fieldsChanged: string[]
 }
 
-export type MarkDoneComputation = RecurringComputation | OneOffComputation
+export type MarkDoneComputation = RecurringComputation | SeriesEndComputation | OneOffComputation
 
 /**
  * Compute the state changes needed for marking a task done
@@ -89,21 +107,13 @@ export function computeMarkDone(
     // occurrence after now: no catch-up, no double row.
     // From the rule's own instant for this occurrence (`scheduleBase`: a
     // rescheduled deadline never makes a second occurrence in its period).
-    const prevOccurrence = scheduleBase(task, userTimezone)
-    const nextOccurrence = isTracked(task)
-      ? null
-      : computeNextOccurrence({
-          rrule: task.rrule!,
-          recurrenceMode: task.recurrence_mode,
-          anchorTime: task.anchor_time,
-          timezone: userTimezone,
-          completedAt,
-          prevDueAt: prevOccurrence ? new Date(prevOccurrence) : null,
-          // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
-          anchorAt: prevOccurrence ? new Date(prevOccurrence) : null,
-        })
-
-    const nextOccurrenceAt = nextOccurrence?.toISOString() ?? null
+    // REPEAT ENDS (2026-10-22): the landing is judged by the one end judge
+    // (`nextOrEnd` = `scheduleBase` + the engine + `repeatStep`); done on the
+    // last occurrence ends the series instead of advancing it.
+    const step = isTracked(task) ? null : nextOrEnd(task, userTimezone, { completedAt })
+    if (step?.ended) return seriesEnd(task, step.used, stats)
+    const usedAfter = step ? step.used : repeatEndOf(task).repeat_count_used
+    const nextOccurrenceAt = step ? step.occurrenceAt : null
     // The next occurrence's dates (2026-10-21): its derived target and, on a
     // deadline-anchored repeat, its deadline. Nothing a move did carries over.
     const next = nextOccurrenceAt ? occurrenceDates(task, nextOccurrenceAt, userTimezone) : null
@@ -116,6 +126,7 @@ export function computeMarkDone(
       nextDeadlineAt,
       prevDueAt: task.due_at,
       prevOccurrenceAt: task.occurrence_at,
+      usedAfter,
       stats,
       fieldsChanged: [
         'due_at',
@@ -129,6 +140,8 @@ export function computeMarkDone(
         'completion_count',
         'first_completed_at',
         'last_completed_at',
+        // Repeat ends (2026-10-22): every completion closes one occurrence.
+        'repeat_count_used',
         // Upcoming (2026-10-12): the advance sets the next occurrence's
         // target, so its wait counts from the completion.
         TARGET_SET_FIELD,
@@ -161,5 +174,27 @@ export function computeMarkDone(
         ...queueStateToClear(task, { includeQueued: false }).fields,
       ],
     }
+  }
+}
+
+/** Done on the last occurrence: the one-off's fields plus `repeat_count_used`. */
+function seriesEnd(task: Task, usedAfter: number, stats: MarkDoneStats): SeriesEndComputation {
+  return {
+    type: 'series_end',
+    prevOccurrenceAt: task.occurrence_at,
+    usedAfter,
+    stats,
+    fieldsChanged: [
+      'done',
+      'done_at',
+      'archived_at',
+      'completion_count',
+      'first_completed_at',
+      'last_completed_at',
+      'repeat_count_used',
+      'attempts',
+      'attempts_counted_through',
+      ...queueStateToClear(task, { includeQueued: false }).fields,
+    ],
   }
 }

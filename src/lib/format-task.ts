@@ -8,9 +8,15 @@
 import type { Task } from '@/types'
 import type { SortOption } from '@/lib/task-grouping'
 import { formatDueTimeParts } from '@/lib/format-date'
-import { formatRRule } from '@/lib/format-rrule'
+import { formatRRule, withRepeatEnd } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
-import { ageLabel, attemptsLabel, attemptsOffer } from '@/lib/task-segments'
+import {
+  ageLabel,
+  attemptsLabel,
+  attemptsOffer,
+  isLastOccurrence,
+  repeatRemaining,
+} from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 
 export interface ClipboardGroup {
@@ -33,6 +39,13 @@ const CLIPBOARD_SORT_LABELS: Record<SortOption, { default: string; reversed: str
 
 export interface FormattedTask extends Task {
   is_recurring: boolean
+  /**
+   * REPEAT ENDS (2026-10-22, `isLastOccurrence`): closing the current
+   * occurrence ends the series. False with no end, and on a closed row.
+   */
+  repeat_last: boolean
+  /** `repeat_count − repeat_count_used` (the current one included); null with no count. */
+  repeat_remaining: number | null
   /**
    * The TARGET (2026-10-10): when nagging starts. The primary name; `due_at`
    * is the same value under its deprecated name, kept for older clients.
@@ -104,6 +117,10 @@ export function formatTaskResponse(task: Task, timezone: string): FormattedTask 
     is_recurring: task.rrule !== null,
     // 2026-10-21: null on a one-off — it has no rule for the anchor to describe.
     repeat_anchor: task.rrule !== null ? task.repeat_anchor : null,
+    // Repeat ends (2026-10-22): `rowToTask` derives them in the owner's zone;
+    // a row read without it is judged here, in the reader's.
+    repeat_last: task.repeat_last ?? isLastOccurrence(task, timezone, now),
+    repeat_remaining: task.repeat_remaining ?? repeatRemaining(task),
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),
     // Task queue on: no "Remove target?" on a strippable task (resolution 1).
@@ -133,7 +150,7 @@ function formatTaskMeta(task: Task, timezone: string, projectName?: string): str
   }
 
   if (task.rrule) {
-    parts.push(formatRRule(task.rrule, task.anchor_time))
+    parts.push(withRepeatEnd(formatRRule(task.rrule, task.anchor_time), task))
   }
 
   if (task.priority > 0) {

@@ -25,7 +25,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     const taskId = parseRouteId(id)
     if (taskId === null) return badRequest('Invalid task ID')
 
-    const { task, wasRecurring, description } = skipOccurrence({
+    const { task, wasRecurring, description, seriesEnded } = skipOccurrence({
       userId: user.id,
       userTimezone: user.timezone,
       taskId,
@@ -35,6 +35,8 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       ...formatTaskResponse(task, user.timezone),
       was_recurring: wasRecurring,
       description,
+      // Repeat ends (2026-10-22): the skip closed the series' last occurrence.
+      series_ended: seriesEnded,
     })
   } catch (err) {
     if (!(err instanceof AppError))

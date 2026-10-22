@@ -89,6 +89,11 @@
  *     GET  /api/reminders?queue=1&deck=1        → reminders-deck.json
  *     (and the form without `deck=1`: the decked task in no segment —
  *     asserted, not captured)
+ * 17. A deadline-anchored repeat (2026-10-21)
+ *     GET  /api/tasks/{id}                      → task-deadline-anchored.json
+ * 18. Repeat ends (2026-10-22): a counted repeat (2 times) done once, so on
+ *     its last occurrence
+ *     GET  /api/tasks/{id}                      → task-repeat-ends.json
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -822,6 +827,24 @@ describe('contract fixtures (native clients)', () => {
     captured['task-deadline-anchored'] = await call(`/api/tasks/${res.data.id}`)
   })
 
+  // 18. Repeat ends (2026-10-22): a counted repeat ON ITS LAST OCCURRENCE, as
+  //     GET /api/tasks/{id} returns it — every 7 days at 9 AM, 2 times, one
+  //     done: `repeat_count` 2, `repeat_count_used` 1, `repeat_last` true,
+  //     `repeat_remaining` 1, `repeat_until` null, the rule end-free. Its own
+  //     hook, last, so no earlier placeholder moves.
+  beforeAll(async () => {
+    const placeholder = 101 + Object.keys(created).length
+    const res = (await call('/api/tasks', {
+      title: 'Physio exercises',
+      rrule: 'FREQ=DAILY;INTERVAL=7;BYHOUR=9;BYMINUTE=0',
+      repeat_count: 2,
+    })) as { data: { id: number } }
+    created.repeatEnds = res.data.id
+    ids.register('task', res.data.id, placeholder)
+    await call(`/api/tasks/${res.data.id}/done`, {})
+    captured['task-repeat-ends'] = await call(`/api/tasks/${res.data.id}`)
+  })
+
   test('without ?deck=1 a decked task is in no segment; with it, an Upcoming row', () => {
     type Segs = {
       data: {
@@ -881,6 +904,7 @@ describe('contract fixtures (native clients)', () => {
     'reminders-queue',
     'reminders-deck',
     'task-deadline-anchored',
+    'task-repeat-ends',
   ]
 
   for (const name of names) {

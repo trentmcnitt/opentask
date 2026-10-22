@@ -1027,9 +1027,10 @@ describe('Completions', () => {
       expect(taskRow.first_completed_at).not.toBeNull()
       expect(taskRow.last_completed_at).not.toBeNull()
 
-      // Known limitation: completion record is NOT restored by undo of markUndone
-      // (the 'undone' snapshot doesn't track _completion data for recreation)
-      expect(getCompletions(task.id)).toHaveLength(0)
+      // The completion record comes back too (2026-10-22, repeat ends): the
+      // 'undone' snapshot carries the row it deleted (`_completion`, by id),
+      // as the recurring put-back's always did.
+      expect(getCompletions(task.id)).toHaveLength(1)
     })
 
     test('redo of markUndone re-applies the undone state', () => {

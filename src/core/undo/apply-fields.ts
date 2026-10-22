@@ -37,6 +37,11 @@ const VALID_TASK_COLUMNS = new Set([
   'repeat_anchor',
   'target_days_before',
   'target_time',
+  // Repeat ends (2026-10-22): done, skip and the end edits write these, and
+  // their undo puts them back — missing here would throw and wedge the stack.
+  'repeat_count',
+  'repeat_count_used',
+  'repeat_until',
   'original_due_at',
   // Task model (2026-10-10). Must be here: this allowlist throws on an unknown
   // field, and a throw inside undoEntry wedges the stack (see is_tracked below).

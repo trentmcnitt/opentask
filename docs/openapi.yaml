@@ -361,6 +361,11 @@ paths:
         For recurring tasks, advances due_at to the next occurrence.
         For one-off tasks, sets done=true and archives.
 
+        **Repeat ends** (`repeat_count` / `repeat_until`): done on the LAST
+        occurrence ends the series — done=true and archived like a one-off,
+        the occurrence and its dates kept, `series_ended: true`. Done on an
+        ended series is a 400.
+
         **Quotas** are refused (400) unless the body has `close_period: true`.
         Completing a quota closes its period early and resets
         `progress_current` to 0; to log one, use
@@ -396,6 +401,12 @@ paths:
                           next_due_at:
                             type: [string, 'null']
                             format: date-time
+                          series_ended:
+                            type: boolean
+                            description: >
+                              REPEAT ENDS: this done closed the series' last occurrence — the
+                              task is now done and archived on that occurrence, and
+                              `next_due_at` is null. `POST /api/tasks/{id}/undone` reopens it.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -416,6 +427,10 @@ paths:
         completion counts roll back one. Refuses (400) when the task's due date
         has changed since that completion, or when there is nothing to put back.
         Logged as an undoable action either way.
+
+        A repeat whose series ENDED on a done (done=true) is reopened on the
+        occurrence it ended on, `repeat_count_used` back one. One that ended on
+        a skip (archived, done=false) is a 400 — undo reverses the skip.
 
         Refuses (400) a quota (2026-09-24): a quota's completions are the period
         rollover's record of a met period, and putting one back deleted that
@@ -660,6 +675,10 @@ paths:
         without being marked done. Dispatches `task.skipped`, never
         `task.completed`.
 
+        **Repeat ends:** skipping the LAST occurrence ends the series the way
+        a one-off skip does — archived, `done` false, `series_ended: true`.
+        Skipping an ended series is a 400.
+
         Named `skip-occurrence` rather than `skip` because the review API
         already uses "skip" for a no-op review acknowledgment.
 
@@ -684,6 +703,12 @@ paths:
                             type: boolean
                           description:
                             type: string
+                          series_ended:
+                            type: boolean
+                            description: >
+                              REPEAT ENDS: the skip closed the series' last occurrence — the
+                              task is archived, never done (`done` stays false, no
+                              completion), `skip_count` + 1.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1803,6 +1828,14 @@ paths:
                       already_clear:
                         type: integer
                         description: Target and occurrence already on or after `until`
+                      series_ended:
+                        type: integer
+                        description: |
+                          REPEAT ENDS: skipped tasks whose series the skip ended — it
+                          passed their last occurrence (included in `tasks_affected`).
+                          Only the occurrences the series had left are skipped
+                          (counted in `occurrences_skipped`); the task is archived,
+                          never done. The summary adds "· N ended".
                       task_ids:
                         type: array
                         items:
@@ -1878,6 +1911,11 @@ paths:
                         type: integer
                       recurring_count:
                         type: integer
+                      series_ended_count:
+                        type: integer
+                        description: |
+                          REPEAT ENDS: repeats whose last occurrence this batch
+                          completed (included in `recurring_count`): done and archived.
                       one_off_count:
                         type: integer
                       quota_skipped:
@@ -5473,6 +5511,40 @@ components:
           description: >
             A deadline-anchored repeat's target time of day (HH:MM, the owner's local time). Null
             unless `repeat_anchor` is `deadline`.
+        repeat_count:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 999
+          description: >
+            REPEAT ENDS (2026-10-22): "After N times" — the occurrences in the series, counted
+            from when the count was set (the current occurrence is #1). Null: no count. Exclusive
+            with `repeat_until`. The stored `rrule` never carries COUNT or UNTIL.
+        repeat_count_used:
+          type: integer
+          minimum: 0
+          description: >
+            Occurrences closed since the count was set — every done and every skip of a repeating
+            task (a skip until passing k occurrences closes k; a rollover roll closes one) adds
+            one, a put-back takes one back. Kept with no count too; setting a count where there
+            was none starts it at 0.
+        repeat_until:
+          type: [string, 'null']
+          format: date
+          description: >
+            "On date": the last LOCAL calendar day (yyyy-MM-dd, the owner's zone), inclusive — an
+            occurrence whose local date is on or before it is in the series (a deadline-anchored
+            repeat's occurrence is its deadline). Null: no date. Exclusive with `repeat_count`.
+        repeat_last:
+          type: boolean
+          description: >
+            Derived: closing the current occurrence (done or skip) ends the series — the count's
+            last, or the next occurrence (as if done now, or on the occurrence if later) would fall
+            after `repeat_until`. False with no end, and on a closed row.
+        repeat_remaining:
+          type: [integer, 'null']
+          description: >
+            Derived: `repeat_count − repeat_count_used`, the current occurrence included. Null with
+            no count.
         original_due_at:
           type: [string, 'null']
           format: date-time
@@ -5893,6 +5965,24 @@ components:
           type: string
           pattern: '^([01]\d|2[0-3]):[0-5]\d$'
           description: The target's local time of day (HH:MM), with `target_days_before`.
+        repeat_count:
+          type: integer
+          minimum: 1
+          maximum: 999
+          description: >
+            REPEAT ENDS: end the repeat after this many occurrences (done or skipped). Needs
+            `rrule`; never with `repeat_until`. COUNT=n inside `rrule` is accepted as shorthand and
+            lifted here (the rule is stored without it); sending both with different values is a
+            400. 400s: out of 1..999; on a one-off, a reminder or a quota.
+        repeat_until:
+          type: string
+          format: date
+          description: >
+            REPEAT ENDS: the last local day (yyyy-MM-dd) of the series, inclusive. Needs `rrule`;
+            never with `repeat_count`. UNTIL=YYYYMMDD (with or without `T…Z`) inside `rrule` is
+            accepted as shorthand: its date is taken LITERALLY as this local day. 400s: before
+            today, more than 10 years ahead, before the first occurrence's local date, or on a
+            one-off, a reminder or a quota.
         labels:
           type: array
           items:
@@ -6168,6 +6258,25 @@ components:
           type: [string, 'null']
           pattern: '^([01]\d|2[0-3]):[0-5]\d$'
           description: The relative target's local time of day (HH:MM); see `target_days_before`.
+        repeat_count:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 999
+          description: >
+            REPEAT ENDS (see TaskCreate). Set where there was none: the count starts now
+            (`repeat_count_used` 0, the current occurrence #1). Changed: `repeat_count_used` is
+            kept, and the new count must be more than it (400). Setting it clears `repeat_until`;
+            `null` removes the end. `rrule: null` clears every end field; a rule change keeps
+            them. A `rrule` sent WITHOUT COUNT/UNTIL leaves the stored end alone (responses return
+            the rule end-free). Not accepted by bulk edit (ends are set per task).
+        repeat_until:
+          type: [string, 'null']
+          format: date
+          description: >
+            REPEAT ENDS (see TaskCreate): setting it clears `repeat_count`; `null` removes the
+            end. 400 when before today, more than 10 years ahead, or — when it or the rule's walk
+            (rule, mode, anchor) is written — before the local date of the occurrence the write
+            leaves. A reschedule of this occurrence's deadline past it is allowed.
         labels:
           type: array
           items:

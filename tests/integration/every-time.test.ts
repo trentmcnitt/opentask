@@ -67,15 +67,31 @@ describe('Every-time mode over HTTP', () => {
     await resetTestData()
   })
 
-  test('RT-5: a rule that ends (COUNT / UNTIL) is a 400 on POST and PATCH', async () => {
-    const until = day(10, 9).toFormat("yyyyLLdd'T'235959'Z'")
-    for (const rrule of [
-      'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;COUNT=3',
-      `FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=${until}`,
-    ]) {
-      const post = await send('/api/tasks', 'POST', { title: 'ends', rrule })
-      expect(post.status, rrule).toBe(400)
-    }
+  test('RT-5: a rule that ends (COUNT / UNTIL) is lifted into the end fields on POST and PATCH', async () => {
+    // Repeat ends (2026-10-22, docs/TASK-MODEL.md § Repeat ends): the
+    // shorthand the picker and the draft send is accepted; the rule is stored
+    // end-free and the end goes into `repeat_count` / `repeat_until`.
+    const untilDay = day(10, 9)
+    const until = untilDay.toFormat("yyyyLLdd'T'235959'Z'")
+    const counted = await send('/api/tasks', 'POST', {
+      title: 'ends',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;COUNT=3',
+    })
+    expect(counted.status).toBe(201)
+    expect(await get(counted.body.data.id)).toMatchObject({
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      repeat_count: 3,
+      repeat_until: null,
+    })
+    const dated = await send('/api/tasks', 'POST', {
+      title: 'ends',
+      rrule: `FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=${until}`,
+    })
+    expect(dated.status).toBe(201)
+    expect(await get(dated.body.data.id)).toMatchObject({
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      repeat_until: untilDay.toFormat('yyyy-MM-dd'),
+    })
     const t = await send('/api/tasks', 'POST', {
       title: 'et ends',
       rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
@@ -84,7 +100,11 @@ describe('Every-time mode over HTTP', () => {
     const patch = await send(`/api/tasks/${t.body.data.id}`, 'PATCH', {
       rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0;COUNT=3',
     })
-    expect(patch.status).toBe(400)
+    expect(patch.status).toBe(200)
+    expect(await get(t.body.data.id)).toMatchObject({
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      repeat_count: 3,
+    })
   })
 
   test('§5.3 "+ Add" a deadline earlier than the target: next day, target kept; one undo restores', async () => {

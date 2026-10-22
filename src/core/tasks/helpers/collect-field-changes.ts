@@ -44,7 +44,12 @@ import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
 import { collectDeckClear, deckRolloverTime } from '../deck-clear'
 import { taskQueueEnabled } from '../task-queue'
-import { planRepeatSchedule, type RepeatPlan } from '../repeat-schedule'
+import {
+  REPEAT_END_MESSAGES,
+  planRepeatSchedule,
+  repeatEndProblem,
+  type RepeatPlan,
+} from '../repeat-schedule'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -258,6 +263,13 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // §6: a repeating task's scheduled occurrence, apart from its target.
   collectOccurrence(data, task, input, rrule, willBeTracked, willBeReminder, repeat)
   collectRepeatSchedule(data, task, repeat)
+  // Repeat ends (2026-10-22): judged once the occurrence is decided.
+  collectRepeatEnds(data, task, input, {
+    isReminder: willBeReminder,
+    isTracked: willBeTracked,
+    timezone: userTimezone,
+    now,
+  })
   // §8: whether the target the write leaves is the deadline's automatic one.
   if (target.auto !== task.target_auto) {
     trackField(data, 'target_auto', task.target_auto, target.auto, undefined, target.auto ? 1 : 0)
@@ -685,6 +697,86 @@ function collectOccurrence(
     next = task.due_at ?? dueAfter ?? null
   } else return
   if (next !== task.occurrence_at) trackField(data, 'occurrence_at', task.occurrence_at, next)
+}
+
+/**
+ * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends): the end this
+ * write leaves, judged on the RESULTING row (`repeatEndProblem`, every 400):
+ *  - `rrule: null` (stop repeating) clears all three columns;
+ *  - a count set where there was none starts the count: `used` = 0, the
+ *    current occurrence is #1 (A3); changing N keeps `used` (N > used, A7);
+ *  - setting one end clears the other; null clears it;
+ *  - a rule change keeps the end and `used` (a rule sent without an end —
+ *    validation lifted any COUNT/UNTIL — leaves the stored end alone).
+ */
+function collectRepeatEnds(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  left: { isReminder: boolean; isTracked: boolean; timezone: string; now: Date },
+): void {
+  const rule = input.rrule !== undefined ? input.rrule : task.rrule
+  if (!rule && (input.repeat_count != null || input.repeat_until != null)) {
+    throw new ValidationError(REPEAT_END_MESSAGES.ends_need_rule)
+  }
+  const { count, until, used } = rule
+    ? resultingEnd(task, input)
+    : { count: null, until: null, used: 0 }
+  if (rule) {
+    const occurrenceAt =
+      data.afterState.occurrence_at !== undefined
+        ? data.afterState.occurrence_at
+        : task.occurrence_at
+    const problem = repeatEndProblem(
+      {
+        count,
+        until,
+        used,
+        // Written = CHANGED: a client echoing the stored end back (the editor
+        // saves the whole draft) is not re-judged — a date already passed
+        // while its last occurrence is debt must not 400 a title edit.
+        countWritten: input.repeat_count !== undefined && input.repeat_count !== task.repeat_count,
+        untilWritten: input.repeat_until !== undefined && input.repeat_until !== task.repeat_until,
+        walkWritten: ['rrule', 'recurrence_mode', 'repeat_anchor'].some((f) =>
+          data.fieldsChanged.includes(f),
+        ),
+        occurrenceAt: occurrenceAt ?? null,
+        hasRule: true,
+        isReminder: left.isReminder,
+        isTracked: left.isTracked,
+      },
+      left.timezone,
+      left.now,
+    )
+    if (problem) throw new ValidationError(REPEAT_END_MESSAGES[problem])
+  }
+  if (count !== task.repeat_count) trackField(data, 'repeat_count', task.repeat_count, count)
+  if (until !== task.repeat_until) trackField(data, 'repeat_until', task.repeat_until, until)
+  if (used !== task.repeat_count_used) {
+    trackField(data, 'repeat_count_used', task.repeat_count_used, used)
+  }
+}
+
+/** The end a write leaves on a repeating task (`collectRepeatEnds`'s rules). */
+function resultingEnd(
+  task: Task,
+  input: FieldChangesInput,
+): { count: number | null; until: string | null; used: number } {
+  const countWritten = input.repeat_count !== undefined
+  const untilWritten = input.repeat_until !== undefined
+  let count = task.repeat_count
+  let until = task.repeat_until
+  let used = task.repeat_count_used
+  if (countWritten) {
+    if (input.repeat_count !== null && task.repeat_count === null) used = 0
+    count = input.repeat_count ?? null
+    if (count !== null && !untilWritten) until = null
+  }
+  if (untilWritten) {
+    until = input.repeat_until ?? null
+    if (until !== null && !countWritten) count = null
+  }
+  return { count, until, used }
 }
 
 /**

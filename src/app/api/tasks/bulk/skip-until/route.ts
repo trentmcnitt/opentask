@@ -42,6 +42,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       skipped_quotas: result.skippedQuotas,
       skipped_inactive: result.skippedInactive,
       already_clear: result.alreadyClear,
+      // Repeat ends (2026-10-22): tasks whose series the skip ended.
+      series_ended: result.seriesEnded,
       task_ids: result.tasks.map((t) => t.id),
       summary: result.summary,
     })
