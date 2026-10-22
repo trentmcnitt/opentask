@@ -50,10 +50,16 @@ export function LabelBadges({
                 colorClasses && `${colorClasses} border-0`,
                 onLabelClick && 'cursor-pointer',
               )}
-              onClick={(e) => {
-                e.stopPropagation()
-                onLabelClick?.(label)
-              }}
+              // Only a row that acts on a label keeps the tap; elsewhere (a
+              // segment row) a tap on a chip is a tap on the row.
+              onClick={
+                onLabelClick
+                  ? (e) => {
+                      e.stopPropagation()
+                      onLabelClick(label)
+                    }
+                  : undefined
+              }
             >
               {label}
             </Badge>
