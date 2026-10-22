@@ -550,6 +550,7 @@ function validateAiFields(
     'ai_quicktake_mode',
     'ai_whats_next_mode',
     'ai_insights_mode',
+    'ai_process_mode',
   ]
   for (const field of featureModeFields) {
     const err = validateFeatureMode(body, field, changes)
@@ -753,6 +754,9 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
     ai_quicktake_mode: row.ai_quicktake_mode as FeatureMode,
     ai_whats_next_mode: row.ai_whats_next_mode as FeatureMode,
     ai_insights_mode: row.ai_insights_mode as FeatureMode,
+    // Process's AI (project recommendations, duplicate groups) — its own
+    // mode since 2026-10-22, and not shelved (src/core/ai/process.ts).
+    ai_process_mode: row.ai_process_mode as FeatureMode,
     ai_wn_commentary_unfiltered: row.ai_wn_commentary_unfiltered !== 0,
     ai_wn_highlight: row.ai_wn_highlight !== 0,
     ai_insights_signal_chips: row.ai_insights_signal_chips !== 0,
@@ -768,6 +772,7 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
       quick_take: getFeatureInfo('quick_take', row.ai_quicktake_mode as FeatureMode),
       whats_next: getFeatureInfo('whats_next', row.ai_whats_next_mode as FeatureMode),
       insights: getFeatureInfo('insights', row.ai_insights_mode as FeatureMode),
+      process: getFeatureInfo('process', row.ai_process_mode as FeatureMode),
     },
   }
 }
@@ -781,6 +786,7 @@ const DEMO_PROTECTED_FIELDS = [
   'ai_quicktake_mode',
   'ai_whats_next_mode',
   'ai_insights_mode',
+  'ai_process_mode',
   'ai_enrichment_timeout_ms',
   'ai_quicktake_timeout_ms',
   'ai_whats_next_timeout_ms',

@@ -11,14 +11,44 @@
  *
  * This split allows a deployment to serve SDK-mode users (Claude models) and
  * API-mode users (any provider's models) simultaneously for the same feature.
+ *
+ * **Fallback features** (`FEATURE_FALLBACK`): Process (project recommendations
+ * and duplicate groups, src/core/ai/process.ts) ran on the Insights config
+ * until 2026-10-22, when it got a mode of its own. So that a deployment that
+ * only ever set the INSIGHTS vars keeps the same model and provider, every
+ * Process env var falls back to its Insights twin when unset:
+ * OPENTASK_AI_PROCESS_MODEL → OPENTASK_AI_INSIGHTS_MODEL,
+ * OPENTASK_AI_PROCESS_SDK_MODEL → OPENTASK_AI_INSIGHTS_SDK_MODEL → global SDK,
+ * and OPENTASK_AI_PROCESS_{PROVIDER,API_KEY,BASE_URL} → the INSIGHTS ones →
+ * the global provider. The fallback is per variable.
  */
 
 import { isSdkAvailableSync } from './provider'
 import type { FeatureMode } from './user-context'
 
-export type AIFeature = 'enrichment' | 'quick_take' | 'whats_next' | 'insights'
+export type AIFeature = 'enrichment' | 'quick_take' | 'whats_next' | 'insights' | 'process'
 
-export const AI_FEATURES: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
+export const AI_FEATURES: AIFeature[] = [
+  'enrichment',
+  'quick_take',
+  'whats_next',
+  'insights',
+  'process',
+]
+
+/**
+ * A feature whose env vars fall back to another feature's when unset (see the
+ * header). Process is not shelved: it only borrows the Insights *config*.
+ */
+const FEATURE_FALLBACK: Partial<Record<AIFeature, AIFeature>> = { process: 'insights' }
+
+/** Read a per-feature env var, falling back to the fallback feature's twin. */
+function featureEnv(feature: AIFeature, vars: Record<AIFeature, string>): string | undefined {
+  const own = process.env[vars[feature]]
+  if (own) return own
+  const fallback = FEATURE_FALLBACK[feature]
+  return fallback ? process.env[vars[fallback]] || undefined : undefined
+}
 
 /** Env vars for API-mode models (provider-specific model names, e.g., 'grok-4-1-fast'). */
 export const FEATURE_ENV_VARS: Record<AIFeature, string> = {
@@ -26,6 +56,7 @@ export const FEATURE_ENV_VARS: Record<AIFeature, string> = {
   quick_take: 'OPENTASK_AI_QUICKTAKE_MODEL',
   whats_next: 'OPENTASK_AI_WHATS_NEXT_MODEL',
   insights: 'OPENTASK_AI_INSIGHTS_MODEL',
+  process: 'OPENTASK_AI_PROCESS_MODEL',
 }
 
 /** Env vars for SDK-mode models (Claude model names, e.g., 'sonnet', 'haiku'). */
@@ -34,6 +65,7 @@ export const FEATURE_SDK_ENV_VARS: Record<AIFeature, string> = {
   quick_take: 'OPENTASK_AI_QUICKTAKE_SDK_MODEL',
   whats_next: 'OPENTASK_AI_WHATS_NEXT_SDK_MODEL',
   insights: 'OPENTASK_AI_INSIGHTS_SDK_MODEL',
+  process: 'OPENTASK_AI_PROCESS_SDK_MODEL',
 }
 
 /**
@@ -41,7 +73,7 @@ export const FEATURE_SDK_ENV_VARS: Record<AIFeature, string> = {
  * Returns the per-feature env var value, or null if not set.
  */
 export function resolveFeatureModel(feature: AIFeature): string | null {
-  return process.env[FEATURE_ENV_VARS[feature]] || null
+  return featureEnv(feature, FEATURE_ENV_VARS) || null
 }
 
 /**
@@ -64,7 +96,7 @@ export function requireFeatureModel(feature: AIFeature): string {
  * Always returns a valid Claude model name (never null, never throws).
  */
 export function resolveSDKModel(feature: AIFeature): string {
-  return process.env[FEATURE_SDK_ENV_VARS[feature]] || process.env.OPENTASK_AI_SDK_MODEL || 'sonnet'
+  return featureEnv(feature, FEATURE_SDK_ENV_VARS) || process.env.OPENTASK_AI_SDK_MODEL || 'sonnet'
 }
 
 // --- Per-feature provider resolution ---
@@ -83,6 +115,7 @@ const FEATURE_ENV_PREFIXES: Record<AIFeature, string> = {
   quick_take: 'OPENTASK_AI_QUICKTAKE',
   whats_next: 'OPENTASK_AI_WHATS_NEXT',
   insights: 'OPENTASK_AI_INSIGHTS',
+  process: 'OPENTASK_AI_PROCESS',
 }
 
 /**
@@ -95,12 +128,18 @@ const FEATURE_ENV_PREFIXES: Record<AIFeature, string> = {
  */
 export function resolveFeatureProvider(feature: AIFeature): FeatureProviderConfig | null {
   const prefix = FEATURE_ENV_PREFIXES[feature]
+  const fallbackPrefix =
+    FEATURE_FALLBACK[feature] && FEATURE_ENV_PREFIXES[FEATURE_FALLBACK[feature]]
+  const env = (suffix: string): string | undefined =>
+    process.env[`${prefix}${suffix}`] ||
+    (fallbackPrefix ? process.env[`${fallbackPrefix}${suffix}`] : undefined) ||
+    undefined
 
   // Per-feature provider type
-  const perFeatureProvider = process.env[`${prefix}_PROVIDER`] as FeatureProviderType | undefined
+  const perFeatureProvider = env('_PROVIDER') as FeatureProviderType | undefined
   // Per-feature API key and base URL
-  const perFeatureKey = process.env[`${prefix}_API_KEY`]
-  const perFeatureBaseUrl = process.env[`${prefix}_BASE_URL`]
+  const perFeatureKey = env('_API_KEY')
+  const perFeatureBaseUrl = env('_BASE_URL')
 
   // If per-feature provider is explicitly set, use it
   if (perFeatureProvider === 'anthropic' || perFeatureProvider === 'openai') {

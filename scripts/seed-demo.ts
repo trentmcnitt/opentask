@@ -1062,7 +1062,8 @@ export function seedDemoData(
   // configured API provider (e.g., xAI/Grok) without requiring Claude Code installed.
   db.prepare(
     `UPDATE users SET ai_mode = 'on', ai_enrichment_mode = 'api',
-     ai_quicktake_mode = 'api', ai_whats_next_mode = 'api', ai_insights_mode = 'api'
+     ai_quicktake_mode = 'api', ai_whats_next_mode = 'api', ai_insights_mode = 'api',
+     ai_process_mode = 'api'
      WHERE id = ?`,
   ).run(userId)
   console.log(`  AI features set to API mode`)

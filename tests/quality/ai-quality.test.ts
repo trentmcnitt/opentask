@@ -885,8 +885,8 @@ Score every task above. Return one entry per task in "tasks".`
 /**
  * Process (2026-10-10) — the production prompt builders, schemas and
  * sanitizers from src/core/ai/process.ts; only the DB lookups are replaced by
- * the scenario's own projects and tasks. Model: the Insights feature's, as in
- * production.
+ * the scenario's own projects and tasks. Model: the Process feature's, as in
+ * production (OPENTASK_AI_PROCESS_MODEL, falling back to the Insights one).
  */
 async function runProcessQuery<T>(
   prompt: string,
@@ -902,7 +902,7 @@ async function runProcessQuery<T>(
   const result = await aiQuery({
     prompt,
     outputSchema: z.toJSONSchema(schema) as Record<string, unknown>,
-    model: getModelForFeature('insights'),
+    model: getModelForFeature('process'),
     maxTurns: provider === 'sdk' ? 3 : 1,
     userId: QUALITY_TEST_USER_ID,
     action,
@@ -1690,7 +1690,13 @@ function getTestProvider(): 'sdk' | 'anthropic' | 'openai' {
 }
 
 function getModelForFeature(feature: string): string {
-  const validFeatures: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
+  const validFeatures: AIFeature[] = [
+    'enrichment',
+    'quick_take',
+    'whats_next',
+    'insights',
+    'process',
+  ]
   const f: AIFeature = validFeatures.includes(feature as AIFeature)
     ? (feature as AIFeature)
     : 'enrichment'

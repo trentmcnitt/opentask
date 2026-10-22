@@ -19,9 +19,15 @@
  * Process modal simply has no AI step to show. A failed or unparseable model
  * call is `{ status: 'failed' }` (the routes answer 503).
  *
- * Model/mode/timeout come from the Insights feature: Process is the same kind
- * of on-demand backlog review, and a fifth AI feature would mean new user
- * columns and a new Settings row for two buttons inside one modal.
+ * Process is its own AI feature (2026-10-22, Trent): the user's
+ * `ai_process_mode` (Settings → AI, the Process row), the `'process'` model
+ * config, and the Process default timeout. Until then it rode on the Insights
+ * mode, which the AI shelve (src/core/ai/shelved.ts) hid, leaving no way to
+ * turn Process on. Process is NOT shelved: nothing under
+ * `OPENTASK_AI_UNSHELVE` gates it. Its env vars fall back to the Insights
+ * ones when unset (`FEATURE_FALLBACK` in src/core/ai/models.ts), and the
+ * column was backfilled from each user's Insights mode, so nobody's Process
+ * behaviour changed with the split.
  *
  * Everything the model returns is checked against what it was given: a task id
  * that was not asked about, or a project id that is not one of the user's, is
@@ -256,12 +262,12 @@ interface ProcessAIConfig {
 /** The AI for Process, or null when AI is off for this user. */
 function processAI(userId: number): ProcessAIConfig | null {
   if (!isAIEnabled()) return null
-  const mode = getUserFeatureModes(userId).insights
+  const mode = getUserFeatureModes(userId).process
   if (mode === 'off') return null
 
   return {
     async run({ prompt, schema, action, inputText }) {
-      const config = resolveFeatureAIConfig('insights', mode)
+      const config = resolveFeatureAIConfig('process', mode)
       const result = await aiQuery({
         prompt,
         outputSchema: z.toJSONSchema(schema) as Record<string, unknown>,
@@ -271,7 +277,7 @@ function processAI(userId: number): ProcessAIConfig | null {
         userId,
         action,
         inputText,
-        timeoutMs: resolveFeatureTimeout(userId, 'insights', mode),
+        timeoutMs: resolveFeatureTimeout(userId, 'process', mode),
         provider: config.provider,
         providerConfig: config.providerConfig,
       })

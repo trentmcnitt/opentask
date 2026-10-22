@@ -17,12 +17,14 @@ import { showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { AI_CONTEXT_MAX_LENGTH } from '@/lib/ai-context'
 import { aiContextAgeLabel, isAiContextStale } from '@/lib/ai-context-staleness'
+import { SHELVED_AI_FEATURES } from '@/core/ai/shelved'
 import { SettingsSection } from './SettingsSection'
 
-type FeatureKey = 'enrichment' | 'quicktake' | 'whats_next' | 'insights'
+type FeatureKey = 'enrichment' | 'process' | 'quicktake' | 'whats_next' | 'insights'
 
 const FEATURE_FIELD: Record<FeatureKey, string> = {
   enrichment: 'ai_enrichment_mode',
+  process: 'ai_process_mode',
   quicktake: 'ai_quicktake_mode',
   whats_next: 'ai_whats_next_mode',
   insights: 'ai_insights_mode',
@@ -39,8 +41,9 @@ const showDemoToast = () => {
  */
 export function AiSection({ isDemo }: { isDemo: boolean }) {
   // SHELVED (2026-10-22; src/core/ai/shelved.ts): with Quick Take, What's
-  // Next and Insights shelved, enrichment is the only AI feature, so the
-  // description names only it and FeatureModes lists only its row.
+  // Next and Insights shelved, Enrichment and Process are the AI features
+  // left, so the description names only them and FeatureModes lists only
+  // their rows.
   const aiUnshelved = useAiUnshelved()
   return (
     <SettingsSection
@@ -49,12 +52,12 @@ export function AiSection({ isDemo }: { isDemo: boolean }) {
         aiUnshelved ? (
           <>
             Help the AI understand your situation. This context is included in all AI features
-            (enrichment, what&apos;s next, insights) to improve relevance.
+            (enrichment, Process, what&apos;s next, insights) to improve relevance.
           </>
         ) : (
           <>
             Help the AI understand your situation. This context is included when AI enriches your
-            new tasks, to improve relevance.
+            new tasks and when Process suggests projects, to improve relevance.
           </>
         )
       }
@@ -213,6 +216,8 @@ function FeatureModes({ isDemo }: { isDemo: boolean }) {
     setAiWhatsNextMode,
     aiInsightsMode,
     setAiInsightsMode,
+    aiProcessMode,
+    setAiProcessMode,
     aiSdkAvailable,
     aiApiAvailable,
   } = useAiPreferences()
@@ -248,6 +253,14 @@ function FeatureModes({ isDemo }: { isDemo: boolean }) {
       infoKey: 'enrichment',
     },
     {
+      label: 'Process',
+      desc: 'Suggests projects and spots duplicates in Process',
+      mode: aiProcessMode,
+      setter: setAiProcessMode,
+      key: 'process' as const,
+      infoKey: 'process',
+    },
+    {
       label: 'Quick Take',
       desc: 'One-line AI observation when you add a task',
       mode: aiQuickTakeMode,
@@ -272,9 +285,12 @@ function FeatureModes({ isDemo }: { isDemo: boolean }) {
       infoKey: 'insights',
     },
   ] as const
-  // Shelved: only Enrichment's row. The other three modes stay saved as they
-  // are — nothing here writes them — for when the features come back.
-  const shownFeatures = aiUnshelved ? features : features.filter((f) => f.key === 'enrichment')
+  // Shelved: only Enrichment's and Process's rows (Process is not shelved —
+  // it has its own mode, src/core/ai/process.ts). The other three modes stay
+  // saved as they are — nothing here writes them — for when they come back.
+  const shownFeatures = aiUnshelved
+    ? features
+    : features.filter((f) => !(SHELVED_AI_FEATURES as readonly string[]).includes(f.infoKey))
 
   return (
     <div className="mt-4 space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
@@ -389,6 +405,8 @@ function FeatureModeRow({
         <div className="text-xs text-zinc-500 dark:text-zinc-400">{desc}</div>
       </div>
       <div
+        role="group"
+        aria-label={`${label} mode`}
         className={cn(
           'flex rounded-md border border-zinc-200 dark:border-zinc-700',
           disabled && 'opacity-50',
@@ -400,6 +418,8 @@ function FeatureModeRow({
           return (
             <button
               key={opt}
+              type="button"
+              aria-pressed={active}
               onClick={() => onModeChange(opt)}
               disabled={disabled}
               className={cn(

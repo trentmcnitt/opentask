@@ -99,6 +99,7 @@ export interface Prefs {
   aiQuickTakeMode: FeatureMode
   aiWhatsNextMode: FeatureMode
   aiInsightsMode: FeatureMode
+  aiProcessMode: FeatureMode
   aiWnCommentaryUnfiltered: boolean
   aiWnHighlight: boolean
   aiInsightsSignalChips: boolean
@@ -191,6 +192,7 @@ export const DEFAULT_PREFS: Prefs = {
   aiQuickTakeMode: 'api',
   aiWhatsNextMode: 'api',
   aiInsightsMode: 'api',
+  aiProcessMode: 'api',
   aiWnCommentaryUnfiltered: false,
   aiWnHighlight: true,
   aiInsightsSignalChips: true,
@@ -280,6 +282,7 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   take(out, 'aiQuickTakeMode', featureMode(data.ai_quicktake_mode))
   take(out, 'aiWhatsNextMode', featureMode(data.ai_whats_next_mode))
   take(out, 'aiInsightsMode', featureMode(data.ai_insights_mode))
+  take(out, 'aiProcessMode', featureMode(data.ai_process_mode))
   take(out, 'aiWnCommentaryUnfiltered', data.ai_wn_commentary_unfiltered)
   take(out, 'aiWnHighlight', data.ai_wn_highlight)
   take(out, 'aiInsightsSignalChips', data.ai_insights_signal_chips)

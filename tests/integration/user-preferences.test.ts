@@ -9,7 +9,9 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { DateTime } from 'luxon'
-import { apiFetch, resetTestData } from './helpers'
+import path from 'path'
+import Database from 'better-sqlite3'
+import { apiFetch, apiFetchB, resetTestData } from './helpers'
 
 beforeAll(async () => {
   await resetTestData()
@@ -344,6 +346,73 @@ describe('per-feature AI mode preferences', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toContain('ai_quicktake_mode')
+  })
+})
+
+/**
+ * Process's own AI mode (2026-10-22): `ai_process_mode`, validated like the
+ * other modes, independent of `ai_insights_mode`, reported with its feature
+ * info, and closed to the demo account like every AI mode.
+ */
+describe('ai_process_mode preference', () => {
+  test('GET reports it (default api) with its feature info', async () => {
+    const { data } = await (await apiFetch('/api/user/preferences')).json()
+    expect(data.ai_process_mode).toBe('api')
+    expect(data.ai_feature_info.process).toMatchObject({ mode: 'api' })
+  })
+
+  test.each(['off', 'sdk', 'api'] as const)('PATCH %s saves and reads back', async (mode) => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_process_mode: mode },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.ai_process_mode).toBe(mode)
+    expect(body.data.ai_feature_info.process.mode).toBe(mode)
+    const { data } = await (await apiFetch('/api/user/preferences')).json()
+    expect(data.ai_process_mode).toBe(mode)
+  })
+
+  test('it is independent of ai_insights_mode', async () => {
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_process_mode: 'api', ai_insights_mode: 'off' },
+    })
+    const { data } = await (await apiFetch('/api/user/preferences')).json()
+    expect(data.ai_process_mode).toBe('api')
+    expect(data.ai_insights_mode).toBe('off')
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_insights_mode: 'api' },
+    })
+  })
+
+  test.each([['on'], [''], [null], [1]])('PATCH %j → 400 naming the field', async (value) => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { ai_process_mode: value },
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('ai_process_mode must be "off", "sdk", or "api"')
+  })
+
+  test('the demo account may not change it (403), like the other AI modes', async () => {
+    const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
+    try {
+      db.prepare('UPDATE users SET is_demo = 1 WHERE id = 2').run()
+      const res = await apiFetchB('/api/user/preferences', {
+        method: 'PATCH',
+        body: { ai_process_mode: 'off' },
+      })
+      expect(res.status).toBe(403)
+      expect(db.prepare('SELECT ai_process_mode FROM users WHERE id = 2').get()).toEqual({
+        ai_process_mode: 'api',
+      })
+    } finally {
+      db.prepare('UPDATE users SET is_demo = 0 WHERE id = 2').run()
+      db.close()
+    }
   })
 })
 

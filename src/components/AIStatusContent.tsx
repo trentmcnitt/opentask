@@ -54,21 +54,33 @@ const FEATURE_LABELS: Record<string, string> = {
   quick_take: 'Quick Take',
   whats_next: "What's Next",
   insights: 'Insights',
+  process: 'Process',
 }
 
 /** Map action keys (used in activity log) to feature keys (used in FEATURE_LABELS). */
-const ACTION_TO_FEATURE: Record<string, string> = { enrich: 'enrichment' }
+const ACTION_TO_FEATURE: Record<string, string> = {
+  enrich: 'enrichment',
+  process_projects: 'process',
+  process_duplicates: 'process',
+}
 
 function getActionLabel(action: string): string {
   const featureKey = ACTION_TO_FEATURE[action] || action
   return FEATURE_LABELS[featureKey] || action
 }
 
-const FEATURE_DISPLAY_ORDER: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
+const FEATURE_DISPLAY_ORDER: AIFeature[] = [
+  'enrichment',
+  'process',
+  'quick_take',
+  'whats_next',
+  'insights',
+]
 
 /**
  * SHELVED (2026-10-22; src/core/ai/shelved.ts): while Quick Take, What's Next
- * and Insights are shelved, AI Status lists only Enrichment — in Features,
+ * and Insights are shelved, AI Status lists only Enrichment and Process (not
+ * shelved, its own mode) — in Features,
  * the SDK check and the activity filter chips. Their past activity rows still
  * show under All: that is history, not a feature that runs.
  */
@@ -77,6 +89,8 @@ const isShelvedFeature = (key: string) => (SHELVED_AI_FEATURES as readonly strin
 const ACTION_FILTER_OPTIONS = [
   { value: '', label: 'All' },
   { value: 'enrich', label: getActionLabel('enrich') },
+  // Both of Process's logged actions (`ACTION_GROUPS` in src/core/ai/activity.ts).
+  { value: 'process', label: getActionLabel('process') },
   { value: 'quick_take', label: getActionLabel('quick_take') },
   { value: 'whats_next', label: getActionLabel('whats_next') },
   { value: 'insights', label: getActionLabel('insights') },

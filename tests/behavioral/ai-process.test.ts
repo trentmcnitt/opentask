@@ -9,9 +9,14 @@
  * - the prompt carries project descriptions and the user's ai_context
  * - duplicates only consider open one-off tasks, and groups are cleaned up
  * - nothing is written
+ * - Process is its own AI feature (2026-10-22): its own mode
+ *   (`ai_process_mode`), model config and default timeout — independent of
+ *   Insights — and it runs with the AI shelve switch unset
  */
 
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { shelvedAiFeaturesOn } from '@/core/ai/shelved'
+import { logAIActivity, getAIActivity } from '@/core/ai/activity'
 import {
   setupTestDb,
   teardownTestDb,
@@ -76,7 +81,7 @@ beforeAll(() => {
     'Client deliverables and invoices',
     WORK,
   )
-  db.prepare('UPDATE users SET ai_context = ?, ai_insights_mode = ? WHERE id = ?').run(
+  db.prepare('UPDATE users SET ai_context = ?, ai_process_mode = ? WHERE id = ?').run(
     'I freelance as a designer',
     'api',
     TEST_USER_ID,
@@ -89,7 +94,13 @@ afterEach(() => {
   mockAiQuery.mockReset()
   mockIsAIEnabled.mockReset()
   mockIsAIEnabled.mockReturnValue(true)
-  getDb().prepare("UPDATE users SET ai_insights_mode = 'api' WHERE id = ?").run(TEST_USER_ID)
+  getDb()
+    .prepare(
+      `UPDATE users SET ai_process_mode = 'api', ai_insights_mode = 'api',
+         ai_insights_timeout_ms = NULL WHERE id = ?`,
+    )
+    .run(TEST_USER_ID)
+  vi.unstubAllEnvs()
 })
 
 describe('recommendProjects', () => {
@@ -101,8 +112,8 @@ describe('recommendProjects', () => {
     expect(mockAiQuery).not.toHaveBeenCalled()
   })
 
-  test("the user's own AI mode off → disabled", async () => {
-    getDb().prepare("UPDATE users SET ai_insights_mode = 'off' WHERE id = ?").run(TEST_USER_ID)
+  test("the user's own Process mode off → disabled", async () => {
+    getDb().prepare("UPDATE users SET ai_process_mode = 'off' WHERE id = ?").run(TEST_USER_ID)
     const t = task('Send the invoice to Acme')
 
     expect(await recommendProjects(TEST_USER_ID, [t.id])).toEqual({ status: 'disabled' })
@@ -290,5 +301,109 @@ describe('findDuplicates', () => {
         new Set([1, 2, 3, 4]),
       ),
     ).toEqual([{ task_ids: [1, 2], reason: 'x' }])
+  })
+})
+
+describe('Process is its own AI feature (2026-10-22)', () => {
+  const setModes = (process_: string, insights: string) =>
+    getDb()
+      .prepare('UPDATE users SET ai_process_mode = ?, ai_insights_mode = ? WHERE id = ?')
+      .run(process_, insights, TEST_USER_ID)
+
+  test('Insights off does not turn Process off', async () => {
+    setModes('api', 'off')
+    const t = task('Send the invoice to Acme')
+    mockAiQuery.mockResolvedValueOnce(answer({ recommendations: [] }))
+    expect((await recommendProjects(TEST_USER_ID, [t.id])).status).toBe('ok')
+    mockAiQuery.mockResolvedValueOnce(answer({ groups: [] }))
+    expect((await findDuplicates(TEST_USER_ID)).status).toBe('ok')
+    expect(mockAiQuery).toHaveBeenCalledTimes(2)
+  })
+
+  test('Process off turns both steps off, whatever Insights says', async () => {
+    setModes('off', 'api')
+    const t = task('Send the invoice to Acme')
+    expect(await recommendProjects(TEST_USER_ID, [t.id])).toEqual({ status: 'disabled' })
+    expect(await findDuplicates(TEST_USER_ID)).toEqual({ status: 'disabled' })
+    expect(mockAiQuery).not.toHaveBeenCalled()
+  })
+
+  test('the model is OPENTASK_AI_PROCESS_MODEL, else the Insights one', async () => {
+    mockAiQuery.mockResolvedValue(answer({ groups: [] }))
+    await findDuplicates(TEST_USER_ID)
+    expect(mockAiQuery.mock.calls[0][0].model).toBe('test-model') // the Insights model
+
+    vi.stubEnv('OPENTASK_AI_PROCESS_MODEL', 'process-model')
+    await findDuplicates(TEST_USER_ID)
+    expect(mockAiQuery.mock.calls[1][0].model).toBe('process-model')
+    expect(mockAiQuery.mock.calls[1][0].provider).toBe('anthropic')
+  })
+
+  test('SDK mode: the Process SDK model, falling back to the Insights one', async () => {
+    setModes('sdk', 'off')
+    vi.stubEnv('OPENTASK_AI_INSIGHTS_SDK_MODEL', 'opus')
+    mockAiQuery.mockResolvedValue(answer({ groups: [] }))
+    await findDuplicates(TEST_USER_ID)
+    expect(mockAiQuery.mock.calls[0][0]).toMatchObject({
+      provider: 'sdk',
+      model: 'opus',
+      maxTurns: 3,
+      timeoutMs: 300_000,
+    })
+    vi.stubEnv('OPENTASK_AI_PROCESS_SDK_MODEL', 'haiku')
+    await findDuplicates(TEST_USER_ID)
+    expect(mockAiQuery.mock.calls[1][0].model).toBe('haiku')
+  })
+
+  test("its timeout is Process's default, never the user's Insights override", async () => {
+    getDb()
+      .prepare('UPDATE users SET ai_insights_timeout_ms = 1200000 WHERE id = ?')
+      .run(TEST_USER_ID)
+    mockAiQuery.mockResolvedValueOnce(answer({ groups: [] }))
+    await findDuplicates(TEST_USER_ID)
+    expect(mockAiQuery.mock.calls[0][0].timeoutMs).toBe(180_000)
+  })
+
+  test("runs with the AI shelve switch unset (What's Next/Insights/Quick Take shelved)", async () => {
+    vi.stubEnv('OPENTASK_AI_UNSHELVE', '')
+    expect(shelvedAiFeaturesOn()).toBe(false)
+    setModes('api', 'api')
+    const t = task('Send the invoice to Acme')
+    mockAiQuery.mockResolvedValueOnce(
+      answer({ recommendations: [{ task_id: t.id, project_id: WORK, reason: 'Invoice' }] }),
+    )
+    expect(await recommendProjects(TEST_USER_ID, [t.id])).toEqual({
+      status: 'ok',
+      items: [{ task_id: t.id, project_id: WORK, reason: 'Invoice' }],
+    })
+    mockAiQuery.mockResolvedValueOnce(answer({ groups: [] }))
+    expect(await findDuplicates(TEST_USER_ID)).toEqual({ status: 'ok', items: [] })
+  })
+})
+
+describe("AI Status's Process filter", () => {
+  test('`process` matches both of its logged actions, nothing else', () => {
+    const log = (action: string) =>
+      logAIActivity({
+        user_id: TEST_USER_ID,
+        task_id: null,
+        action,
+        status: 'success',
+        input: null,
+        output: null,
+        model: 'm',
+        duration_ms: 1,
+        error: null,
+        provider: 'anthropic',
+      })
+    log('process_projects')
+    log('process_duplicates')
+    log('enrich')
+
+    const actions = getAIActivity(TEST_USER_ID, { action: 'process' }).map((e) => e.action)
+    expect(actions.sort()).toEqual(['process_duplicates', 'process_projects'])
+    expect(getAIActivity(TEST_USER_ID, { action: 'enrich' }).map((e) => e.action)).toEqual([
+      'enrich',
+    ])
   })
 })

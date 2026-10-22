@@ -4,14 +4,14 @@ _Version 1.0 — 2026-03_
 
 This is the authoritative reference for AI integration in OpenTask. It covers principles, architecture, failure handling, and the feature catalog.
 
-> **SHELVED (2026-10-22, Trent): What's Next, Insights and Quick Take.** The whole set is shelved until it is redesigned; **enrichment is the only one of the four AI features that runs**. Process's on-demand AI suggestions (`process.ts`) are NOT shelved by this change — pending Trent. One server-wide switch, `OPENTASK_AI_UNSHELVE=1`, brings all three back. Unset (the default, and production):
+> **SHELVED (2026-10-22, Trent): What's Next, Insights and Quick Take.** The whole set is shelved until it is redesigned; **enrichment is the only one of the four AI features that runs**. Process's on-demand AI suggestions (`process.ts`) are NOT shelved: Process is its own AI feature with its own mode (`ai_process_mode`, the Process row in Settings → AI), shown and running whatever the switch says (see [Process](#process)). One server-wide switch, `OPENTASK_AI_UNSHELVE=1`, brings all three back. Unset (the default, and production):
 >
 > - the 03:00 What's Next and 03:30 Insights jobs are never scheduled (`src/instrumentation.ts` logs one line, "What's Next and Insights are shelved (OPENTASK_AI_UNSHELVE unset)"), and `runScheduledWhatsNext` / `runScheduledInsights` return at once;
 > - `GET /api/ai/whats-next`, `POST /api/ai/insights/generate`, `GET /api/ai/insights/results`, `GET /api/ai/insights/status`, `POST /api/ai/quick-take`, and `POST /api/ai/test` for those three features answer `410 { "error": "What's Next, Insights and Quick Take are shelved", "code": "FEATURE_SHELVED" }` (after auth, before the AI-enabled check);
 > - `GET /api/user/preferences` reports `ai_unshelved: false`; the web hides the dashboard's AI chip, the What's Next and Insights filter chips, score and signal chips, row commentary and highlights, the AI Score sort, the Quick Take banner (a quick add is the plain create), their rows in Settings → AI and AI Status, and the demo tour's Insights steps;
 > - their quality scenarios are skipped (`OPENTASK_AI_ENABLED=true OPENTASK_AI_UNSHELVE=1 npm run test:quality` includes them).
 >
-> Nothing writes a user's `ai_*_mode` or view preferences, so the switch restores exactly what each user had. Quick Take never shared a call, prompt or code path with enrichment: the dashboard created the task (the server queues enrichment) and then made a separate `POST /api/ai/quick-take`; shelved, only that second call and its banner are gone. Note that Process reads the **Insights** mode (`ai_insights_mode`) for its model and on/off, and that row is hidden in Settings while shelved — Process behaves as the saved mode says, but nobody can change that mode from Settings until the decision on Process is made.
+> Nothing writes a user's `ai_*_mode` or view preferences, so the switch restores exactly what each user had. Quick Take never shared a call, prompt or code path with enrichment: the dashboard created the task (the server queues enrichment) and then made a separate `POST /api/ai/quick-take`; shelved, only that second call and its banner are gone. Process read the **Insights** mode until 2026-10-22 — with that row hidden, nobody could turn Process on — so it got its own mode the same day (Trent: keep Process AI).
 >
 > The code below stays in place, dormant, with `SHELVED (2026-10-22)` headers. **Do not "fix", re-enable or delete it without Trent.** Switch: `src/core/ai/shelved.ts`.
 
@@ -346,7 +346,7 @@ Shared utilities for warm slot infrastructure: `SlotState` type, `BaseSlotStats`
 - `findDuplicates(userId)` — groups of open one-off tasks that look like the same work. Never writes
 - `buildRecommendProjectsPrompt()` / `buildDuplicatesPrompt()` — pure prompt builders shared with the quality harness
 - `sanitizeRecommendations()` / `sanitizeDuplicateGroups()` — drop anything the model was not given (unknown task ids, a project the user doesn't have, groups under two tasks, a task in two groups)
-- Returns `{ status: 'ok' | 'disabled' | 'failed' }`; uses the Insights feature's mode, model and timeout
+- Returns `{ status: 'ok' | 'disabled' | 'failed' }`; uses the `process` feature's mode (`ai_process_mode`), model and timeout
 
 ### `parse-helpers.ts`
 
@@ -419,7 +419,7 @@ The Quick Take, What's Next and Insights rows are SHELVED (2026-10-22) — see t
 | Quick Take  | One-liner commentary on task creation                | Sonnet        | Task creation (async, after enrichment) | —                        |
 | What's Next | Surface easily overlooked tasks                      | Haiku         | 3 AM cron + on-demand                   | ai_activity_log (daily)  |
 | Insights    | Batch task scoring, commentary, and signal detection | Opus          | On-demand + nightly cron                | ai_insights_results (DB) |
-| Process     | Project recommendations and duplicate groups         | (Insights')   | On-demand (Process button)              | —                        |
+| Process     | Project recommendations and duplicate groups         | Opus          | On-demand (Process button)              | —                        |
 
 ### Enrichment
 
@@ -472,7 +472,15 @@ The AI half of the Process button (spec §5): two read-only endpoints the Proces
 - `POST /api/process/recommend-projects` — body `{ ids }` (1–100 task ids) → `{ recommendations: [{ task_id, project_id | null, reason }] }`. Topic-based suggestion is allowed here, unlike in enrichment, because the user picks: the modal shows every project in a fixed order with the recommendation highlighted. The prompt gives each project's `description` (what belongs there; `projects.description`) and the user's global `ai_context`. Candidates are the user's own and shared projects minus the Inbox; a recommended id outside that set is dropped, so the task simply has no recommendation.
 - `GET /api/process/duplicates` → `{ groups: [{ task_ids, reason }] }` — possible duplicates among the newest 600 open one-off tasks (no recurring tasks, reminders or quotas). Conservative by design; ids not in the candidate list are dropped, a task appears in at most one group, and groups under two tasks are discarded.
 
-AI disabled (server-wide, or the user's Insights mode off) returns an empty list with 200 — never an error. A failed model call returns 503. Both use the Insights feature's mode, model and timeout rather than a feature of their own (a fifth feature would need new user columns and Settings UI for two buttons inside one modal).
+AI disabled (server-wide, or the user's Process mode off) returns an empty list with 200 — never an error. A failed model call returns 503.
+
+**Its own feature (2026-10-22).** Process is the `process` AI feature: the user's `ai_process_mode` (`off` / `sdk` / `api`, the Process row in Settings → AI, `PATCH /api/user/preferences`), and its own model config. It is **not shelved** — nothing under `OPENTASK_AI_UNSHELVE` gates it, and its Settings row and AI Status entry show either way. Until that day it read the Insights mode, model and timeout, so the split keeps everyone where they were:
+
+- `ai_process_mode` was backfilled once from each user's `ai_insights_mode` when the column was added (`runMigrations()`); afterwards the two are independent.
+- Every Process env var falls back to its Insights twin when unset (`FEATURE_FALLBACK` in `models.ts`): `OPENTASK_AI_PROCESS_MODEL` → `OPENTASK_AI_INSIGHTS_MODEL`, `OPENTASK_AI_PROCESS_SDK_MODEL` → `OPENTASK_AI_INSIGHTS_SDK_MODEL` → `OPENTASK_AI_SDK_MODEL`, and `OPENTASK_AI_PROCESS_PROVIDER` / `_API_KEY` / `_BASE_URL` → the `INSIGHTS` ones → the global provider.
+- There is no per-user Process timeout: it uses the built-in default (180 s API, 300 s SDK — Insights' defaults). A user's `ai_insights_timeout_ms` no longer applies to it.
+
+AI Status lists Process among the features, and its activity filter has a Process chip that matches both logged actions (`process_projects`, `process_duplicates`).
 
 ---
 
@@ -501,8 +509,11 @@ AI disabled (server-wide, or the user's Insights mode off) returns an empty list
 | `OPENTASK_AI_QUICKTAKE_MODEL`  | `sonnet`              | Model for Quick Take      |
 | `OPENTASK_AI_WHATS_NEXT_MODEL` | `haiku`               | Model for What's Next     |
 | `OPENTASK_AI_INSIGHTS_MODEL`   | `claude-opus-4-6`     | Model for Insights        |
+| `OPENTASK_AI_PROCESS_MODEL`    | (the Insights model)  | Model for Process         |
 
 Short names (`haiku`, `sonnet`, `opus`) are mapped to full Anthropic model IDs automatically. OpenAI model strings pass through as-is.
+
+Each feature also has an SDK-mode model (`OPENTASK_AI_<FEATURE>_SDK_MODEL`, falling back to `OPENTASK_AI_SDK_MODEL`, then `sonnet`) and optional per-feature provider routing (`OPENTASK_AI_<FEATURE>_PROVIDER`, `_API_KEY`, `_BASE_URL`); `<FEATURE>` is `ENRICHMENT`, `QUICKTAKE`, `WHATS_NEXT`, `INSIGHTS` or `PROCESS`. Every `PROCESS` variable falls back to its `INSIGHTS` twin when unset (see [Process](#process)).
 
 ### Which Claude Code CLI runs
 
@@ -582,20 +593,20 @@ OPENTASK_AI_ENABLED=true
 
 Every AI operation is logged in the `ai_activity_log` table:
 
-| Column        | Type    | Description                                                              |
-| ------------- | ------- | ------------------------------------------------------------------------ |
-| `id`          | INTEGER | Primary key                                                              |
-| `user_id`     | INTEGER | Who owns the task                                                        |
-| `task_id`     | INTEGER | Which task (nullable for non-task operations)                            |
-| `action`      | TEXT    | Operation type: `'enrich'`, `'whats_next'`, `'insights'`, `'quick_take'` |
-| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                                      |
-| `input`       | TEXT    | Raw input (e.g., original task text)                                     |
-| `output`      | TEXT    | JSON result from AI                                                      |
-| `model`       | TEXT    | Which model was used                                                     |
-| `duration_ms` | INTEGER | How long the query took                                                  |
-| `error`       | TEXT    | Error message if failed                                                  |
-| `provider`    | TEXT    | Which provider was used: `'sdk'`, `'anthropic'`, `'openai'`              |
-| `created_at`  | TEXT    | ISO 8601 timestamp                                                       |
+| Column        | Type    | Description                                                                                                                      |
+| ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | INTEGER | Primary key                                                                                                                      |
+| `user_id`     | INTEGER | Who owns the task                                                                                                                |
+| `task_id`     | INTEGER | Which task (nullable for non-task operations)                                                                                    |
+| `action`      | TEXT    | Operation type: `'enrich'`, `'whats_next'`, `'insights'`, `'quick_take'`, `'process_projects'`, `'process_duplicates'`, `'test'` |
+| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                                                                                              |
+| `input`       | TEXT    | Raw input (e.g., original task text)                                                                                             |
+| `output`      | TEXT    | JSON result from AI                                                                                                              |
+| `model`       | TEXT    | Which model was used                                                                                                             |
+| `duration_ms` | INTEGER | How long the query took                                                                                                          |
+| `error`       | TEXT    | Error message if failed                                                                                                          |
+| `provider`    | TEXT    | Which provider was used: `'sdk'`, `'anthropic'`, `'openai'`                                                                      |
+| `created_at`  | TEXT    | ISO 8601 timestamp                                                                                                               |
 
 The What's Next feature uses this table for cache persistence.
 

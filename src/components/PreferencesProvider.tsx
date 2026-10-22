@@ -116,6 +116,8 @@ interface PreferencesContextValue {
   setAiWhatsNextMode: (mode: FeatureMode) => void
   aiInsightsMode: FeatureMode
   setAiInsightsMode: (mode: FeatureMode) => void
+  aiProcessMode: FeatureMode
+  setAiProcessMode: (mode: FeatureMode) => void
   aiWnCommentaryUnfiltered: boolean
   setAiWnCommentaryUnfiltered: (show: boolean) => void
   aiWnHighlight: boolean
@@ -204,6 +206,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiWhatsNextMode: () => {},
   aiInsightsMode: 'api',
   setAiInsightsMode: () => {},
+  aiProcessMode: 'api',
+  setAiProcessMode: () => {},
   aiWnCommentaryUnfiltered: false,
   setAiWnCommentaryUnfiltered: () => {},
   aiWnHighlight: true,
@@ -324,6 +328,7 @@ function makeFieldSetters(set: FieldSet) {
     setAiQuickTakeMode: field('aiQuickTakeMode'),
     setAiWhatsNextMode: field('aiWhatsNextMode'),
     setAiInsightsMode: field('aiInsightsMode'),
+    setAiProcessMode: field('aiProcessMode'),
     setAiWnCommentaryUnfiltered: field('aiWnCommentaryUnfiltered'),
     setAiWnHighlight: field('aiWnHighlight'),
     setAiInsightsSignalChips: field('aiInsightsSignalChips'),
@@ -722,6 +727,8 @@ export function useAiPreferences() {
     setAiWhatsNextMode,
     aiInsightsMode,
     setAiInsightsMode,
+    aiProcessMode,
+    setAiProcessMode,
     aiWnCommentaryUnfiltered,
     setAiWnCommentaryUnfiltered,
     aiWnHighlight,
@@ -748,6 +755,8 @@ export function useAiPreferences() {
     setAiWhatsNextMode,
     aiInsightsMode,
     setAiInsightsMode,
+    aiProcessMode,
+    setAiProcessMode,
     aiWnCommentaryUnfiltered,
     setAiWnCommentaryUnfiltered,
     aiWnHighlight,

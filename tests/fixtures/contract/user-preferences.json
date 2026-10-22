@@ -54,6 +54,7 @@
     "ai_quicktake_mode": "api",
     "ai_whats_next_mode": "api",
     "ai_insights_mode": "api",
+    "ai_process_mode": "api",
     "ai_wn_commentary_unfiltered": false,
     "ai_wn_highlight": true,
     "ai_insights_signal_chips": true,
