@@ -288,6 +288,42 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
     // MARK: Task segments (2026-10-10)
 
+    /// THE DEADLINES PAGE (2026-10-22), `GET /api/reminders?…&deadlines=1`:
+    /// a build that predates it still decodes the payload — the unknown
+    /// `deadlines` kind decodes (no `SegmentKind`), which is why the server
+    /// sends it only to a caller that opts in (plan L5). Its rows carry no
+    /// target, and the one-offs read `deadline_nag_off` true, so a build
+    /// from 10-10..10-12 implies no target of its own.
+    func testRemindersDeadlinesPageDecodes() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-deadlines")
+        let page = try XCTUnwrap(payload.taskSegments.first)
+        XCTAssertEqual(page.horizon, "deadlines")
+        XCTAssertNil(page.kind, "a kind this build does not know")
+        XCTAssertEqual(
+            page.tasks.map(\.id),
+            [Fixtures.deadlinePassed, Fixtures.deadlineRepeatTargetless, Fixtures.deadlineWindow]
+        )
+        for row in page.tasks {
+            XCTAssertNil(row.task.dueAt, "a deadlines-page row has no target")
+            XCTAssertEqual(row.task.deadlineAt, Fixtures.pinnedTimestamp)
+            XCTAssertFalse(row.task.targetAuto)
+        }
+        // `deadline_nag_off` is no longer decoded (this build has no implied
+        // target); read it raw — the field the 10-10..10-12 builds decode.
+        let raw = try Fixtures.object("reminders-deadlines")
+        let rawPage = try XCTUnwrap((raw["task_segments"] as? [[String: Any]])?.first)
+        let rawRows = try XCTUnwrap(rawPage["tasks"] as? [[String: Any]])
+        let oneOffs = rawRows.filter { $0["rrule"] is NSNull }
+        XCTAssertEqual(oneOffs.count, 2)
+        XCTAssertTrue(oneOffs.allSatisfy { $0["deadline_nag_off"] as? Bool == true })
+        XCTAssertEqual(rawRows.map { $0["safety_net"] as? Bool }, [true, false, false])
+        // The other segments are unchanged by the opt-in.
+        XCTAssertEqual(
+            payload.taskSegments.dropFirst().map(\.horizon),
+            ["queue_today", "queue_previous", "days", "upcoming", "weeks"]
+        )
+    }
+
     /// `GET /api/reminders` after the segment row was considered: the
     /// top-level `task_segments`, never inside a group.
     func testRemindersTaskSegments() throws {

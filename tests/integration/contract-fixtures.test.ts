@@ -94,6 +94,16 @@
  * 18. Repeat ends (2026-10-22): a counted repeat (2 times) done once, so on
  *     its last occurrence
  *     GET  /api/tasks/{id}                      → task-repeat-ends.json
+ * 19. The deadlines page (2026-10-22), switch on: three deadline tasks with
+ *     NO target — a one-off whose lead day is today (`lead_days` 10, clamped
+ *     to today; its deadline six days out), a one-off whose deadline passed
+ *     yesterday (the safety net), and a deadline-anchored repeat with no
+ *     relative target (lead today the same way)
+ *     GET  /api/reminders?queue=1&deck=1&deadlines=1 → reminders-deadlines.json
+ *     (the `deadlines` segment FIRST, rows with `safety_net` and `seen`; and
+ *     the form without `deadlines=1`: no `deadlines` kind — asserted)
+ *     POST /api/task-segments/defer-lead [the first, to tomorrow]
+ *                                               → task-segments-defer-lead.json
  *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
@@ -238,6 +248,10 @@ function normaliseString(value: string, ids: IdMap, key?: string): string {
   if (key === 'period_label' && value.startsWith('by ')) return PINNED_PERIOD_LABEL
   const pk = PROMPT_KEY.exec(value)
   if (pk) return `q:${ids.map('task', Number(pk[1]))}:${pk[2]}:${PINNED_DATE}`
+  // The deadlines page's Defer summary names its day in words (2026-10-22).
+  if (key === 'summary' && /^Deferred \d+ tasks? to /.test(value)) {
+    return value.replace(/ to .*$/, ' to <day>')
+  }
   if (ISO_DATETIME.test(value)) return PINNED_TIMESTAMP
   if (ISO_DATE.test(value)) return PINNED_DATE
   return value
@@ -512,6 +526,46 @@ async function deckRows(
   }
 }
 
+/**
+ * Step 19. The deadlines page (2026-10-22), switch on. Clock-independent:
+ * the in-window rows have `lead_days` 10, which the lead day clamps to TODAY
+ * (their deadlines are three and six days out, never inside the safety net),
+ * and the safety-net row's deadline passed yesterday. Sorted by the nearest
+ * deadline (all priority 0): the passed one, the repeat, the one-off.
+ */
+async function deadlineRows(
+  make: (name: string, body: Record<string, unknown>) => Promise<void>,
+  created: Record<string, number>,
+): Promise<{ withDeadlines: Json; plain: Json; deferred: Json }> {
+  await setTaskQueue(true)
+  try {
+    const ny = () => DateTime.now().setZone('America/New_York')
+    const at = (days: number, hour: number) =>
+      ny().plus({ days }).set({ hour, minute: 0, second: 0, millisecond: 0 }).toUTC().toISO()!
+    await make('deadlineWindow', {
+      title: 'File the quarterly report',
+      deadline_at: at(6, 23),
+      lead_days: 10,
+    })
+    await make('deadlinePassed', { title: 'Return the permit form', deadline_at: at(-1, 17) })
+    await make('deadlineRepeat', {
+      title: 'Submit the expense sheet',
+      rrule: 'FREQ=DAILY;INTERVAL=7;BYHOUR=17;BYMINUTE=0',
+      deadline_at: at(3, 17),
+      lead_days: 10,
+    })
+    const withDeadlines = await call('/api/reminders?queue=1&deck=1&deadlines=1')
+    const plain = await call('/api/reminders?queue=1&deck=1')
+    const deferred = await call('/api/task-segments/defer-lead', {
+      ids: [created.deadlineWindow],
+      day: ny().plus({ days: 1 }).toISODate(),
+    })
+    return { withDeadlines, plain, deferred }
+  } finally {
+    await setTaskQueue(false)
+  }
+}
+
 async function snoozeOverdueWithQueue(): Promise<Json> {
   await setTaskQueue(true)
   try {
@@ -561,6 +615,7 @@ describe('contract fixtures (native clients)', () => {
   const created: Record<string, number> = {}
   let plainWithQueueOn: Json = null
   let plainWithoutDeck: Json = null
+  let plainWithoutDeadlines: Json = null
 
   beforeAll(async () => {
     await resetTestData()
@@ -845,6 +900,38 @@ describe('contract fixtures (native clients)', () => {
     captured['task-repeat-ends'] = await call(`/api/tasks/${res.data.id}`)
   })
 
+  // 19. The deadlines page (`deadlineRows`). Its own hook, last.
+  beforeAll(async () => {
+    let placeholder = 101 + Object.keys(created).length
+    const make = async (name: string, body: Record<string, unknown>) => {
+      const res = (await call('/api/tasks', body)) as { data: { id: number } }
+      created[name] = res.data.id
+      ids.register('task', res.data.id, placeholder++)
+    }
+    const forms = await deadlineRows(make, created)
+    captured['reminders-deadlines'] = forms.withDeadlines
+    captured['task-segments-defer-lead'] = forms.deferred
+    plainWithoutDeadlines = forms.plain
+  })
+
+  test('the deadlines page: first, opt-in, the safety net flagged, nearest deadline first', () => {
+    type Row = { id: number; segment_state: string; safety_net?: boolean; seen?: boolean }
+    type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
+    const segs = (captured['reminders-deadlines'] as unknown as Segs).data.task_segments
+    expect(segs[0].horizon).toBe('deadlines')
+    expect(segs[0].tasks.map((t) => [t.id, t.safety_net, t.seen])).toEqual([
+      [created.deadlinePassed, true, false],
+      [created.deadlineRepeat, false, false],
+      [created.deadlineWindow, false, false],
+    ])
+    const plain = (plainWithoutDeadlines as unknown as Segs).data.task_segments
+    expect(plain.map((s) => s.horizon)).not.toContain('deadlines')
+    const deferred = captured['task-segments-defer-lead'] as unknown as {
+      data: { deferred: number; refused: unknown[] }
+    }
+    expect(deferred.data).toMatchObject({ deferred: 1, refused: [] })
+  })
+
   test('without ?deck=1 a decked task is in no segment; with it, an Upcoming row', () => {
     type Segs = {
       data: {
@@ -905,6 +992,8 @@ describe('contract fixtures (native clients)', () => {
     'reminders-deck',
     'task-deadline-anchored',
     'task-repeat-ends',
+    'reminders-deadlines',
+    'task-segments-defer-lead',
   ]
 
   for (const name of names) {
