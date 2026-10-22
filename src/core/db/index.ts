@@ -7,6 +7,8 @@ import { log } from '@/lib/logger'
 import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
 import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
 import { migrateRepeatAnchors, type RepeatAnchorCounts } from './migrate-repeat-anchor'
+import { migrateDeadlineLeads } from './migrate-deadline-leads'
+import { taskQueueEnabled } from '@/core/tasks/task-queue'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -512,9 +514,19 @@ function runMigrations(database: Database.Database): void {
   stampRolloverDates(database)
   clearQuotaDueDates(database)
   restoreProjectGrouping(database)
-  logTargetMigration(migrateDeadlineTargets(database))
+  // The deadlines page (2026-10-22, plan A1/L7) rides the task-queue switch:
+  // on, no automatic target is created at startup either.
+  const leads = taskQueueEnabled()
+  logTargetMigration(migrateDeadlineTargets(database, new Date(), { leads }))
   // After the pull-back above: a converted row's moved target is already capped.
   logRepeatAnchorMigration(migrateRepeatAnchors(database))
+  // After the anchor migration: a converted repeat keeps its offsets (A6).
+  if (leads) {
+    const leadCounts = migrateDeadlineLeads(database)
+    if (Object.values(leadCounts).some((n) => n > 0)) {
+      log.info('db', `deadlines page migration (2026-10-22): ${JSON.stringify(leadCounts)}`)
+    }
+  }
   // After the end columns exist (above).
   const ends = liftRuleEnds(database)
   if (ends.lifted > 0 || ends.stripped.length > 0) {

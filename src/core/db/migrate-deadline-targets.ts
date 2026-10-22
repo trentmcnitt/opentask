@@ -31,6 +31,12 @@
  * restored later is caught by the next start. Ordinary tasks only: never a
  * reminder or a quota.
  *
+ * THE DEADLINES PAGE (2026-10-22, plan L7): with the task-queue switch ON
+ * (`leads`) no automatic target is ever written again, so steps 2 and 4 would
+ * re-create one at every start. With `leads` step 4 is skipped and step 2
+ * only clears the retired flag (the task stays target-less: the deadlines
+ * page holds it, `migrateDeadlineLeads`). Switch off: as before.
+ *
  * COUNTING (Trent runs it on a read-only copy): `planDeadlineTargetMigration`
  * returns each step's task ids without writing anything, and
  * `scripts/count-target-migration.ts` prints them for any database file.
@@ -105,6 +111,7 @@ function ids(db: Database.Database, where: string, ...params: unknown[]): number
 export function planDeadlineTargetMigration(
   db: Database.Database,
   now: Date = new Date(),
+  { leads = false }: { leads?: boolean } = {},
 ): TargetMigrationPlan {
   const columns = (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map(
     (c) => c.name,
@@ -116,7 +123,7 @@ export function planDeadlineTargetMigration(
     ),
     nagOffToAuto: ids(db, NAG_OFF_NO_TARGET_WHERE),
     nagOffKeptTarget: ids(db, NAG_OFF_KEEP_TARGET_WHERE),
-    deadlineNoTargetToAuto: ids(db, NO_TARGET_WHERE),
+    deadlineNoTargetToAuto: leads ? [] : ids(db, NO_TARGET_WHERE),
     pullBackToDeadline: ids(db, PULL_BACK_WHERE, now.toISOString()),
   }
 }
@@ -147,6 +154,7 @@ function ctxOf(row: AutoRow): TargetContext {
 export function migrateDeadlineTargets(
   db: Database.Database,
   now: Date = new Date(),
+  { leads = false }: { leads?: boolean } = {},
 ): TargetMigrationCounts {
   return db.transaction(() => {
     // UPDATE … AS t (SQLite 3.33+), so the WHEREs are shared with the plan.
@@ -170,14 +178,18 @@ export function migrateDeadlineTargets(
       }
       return rows.length
     }
-    const nagOffToAuto = applyAuto(autoRows(db, NAG_OFF_NO_TARGET_WHERE))
+    const nagOffToAuto = leads
+      ? db
+          .prepare(`UPDATE tasks AS t SET deadline_nag_off = 0 WHERE ${NAG_OFF_NO_TARGET_WHERE}`)
+          .run().changes
+      : applyAuto(autoRows(db, NAG_OFF_NO_TARGET_WHERE))
     const nagOffKeptTarget = db
       .prepare(
         `UPDATE tasks AS t SET deadline_nag_off = 0, target_auto = 0
           WHERE ${NAG_OFF_KEEP_TARGET_WHERE}`,
       )
       .run().changes
-    const deadlineNoTargetToAuto = applyAuto(autoRows(db, NO_TARGET_WHERE))
+    const deadlineNoTargetToAuto = leads ? 0 : applyAuto(autoRows(db, NO_TARGET_WHERE))
 
     const pullBackToDeadline = db
       .prepare(`UPDATE tasks AS t SET due_at = t.deadline_at WHERE ${PULL_BACK_WHERE}`)
