@@ -404,6 +404,8 @@ test.describe('Every-time mode', () => {
     authenticatedPage: page,
   }) => {
     const title = uniqueTitle('Water the plants')
+    // The full add form, the way a phone reaches it (as unsaved-edits.spec).
+    await page.setViewportSize({ width: 375, height: 812 })
     await page.goto('/')
     await page.waitForSelector('[id^="task-row-"], .text-4xl, [data-now-summary]')
     await page.getByRole('button', { name: 'Add', exact: true }).click()
@@ -425,7 +427,8 @@ test.describe('Every-time mode', () => {
     await form.getByRole('button', { name: 'Create Task' }).click()
     const body = (await posted).postDataJSON()
     expect(body.rrule).toMatch(/^FREQ=DAILY;BYHOUR=\d+;BYMINUTE=\d+$/)
-    expect(body.recurrence_mode).toBe('from_due')
+    // A fixed schedule is the default: only a change of mode is sent.
+    expect(body.recurrence_mode).toBeUndefined()
     await expect(form).toHaveCount(0)
     const found = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
     const tasks = (await found.json()).data.tasks as { id: number; rrule: string }[]
