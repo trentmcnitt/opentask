@@ -7,6 +7,7 @@ import {
   effectiveHorizon,
   type HorizonValue,
   type SegmentKind,
+  type SegmentLeft,
   type SegmentState,
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
@@ -61,13 +62,24 @@ import type { Task } from '@/types'
  *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
  */
 
-type Overlay = SegmentState | 'gone'
+/**
+ * What a tap made of a row until the refresh. `{ left }` (the day roster,
+ * 2026-10-22): the row LEFT the segment handled — decked, targeted or done —
+ * so it is listed as considered, counted in N and M, as the server will send
+ * it (`segment_left`). 'gone': it left unhandled (trashed), out of M.
+ */
+type Overlay = SegmentState | 'gone' | { left: SegmentLeft }
 
 export interface SegmentRow {
   task: Task
   state: SegmentState
   /** A repeating task's occurrence (Upcoming): circle and done only. */
   recurring: boolean
+  /**
+   * How a row that LEFT the segment today was handled (the day roster,
+   * src/core/tasks/segment-roster.ts): considered, with no put-back.
+   */
+  left?: SegmentLeft
 }
 
 export interface SegmentView {
@@ -117,30 +129,7 @@ export function useTaskSegments({
     if (overlay.size > 0) setOverlay(new Map())
   }
 
-  const view: SegmentView[] = useMemo(
-    () =>
-      segments
-        .map((seg) => {
-          const rows = seg.tasks
-            .map((t) => ({
-              task: t as Task,
-              state: overlay.get(t.id) ?? t.segment_state,
-              recurring: t.recurring ?? t.rrule !== null,
-            }))
-            .filter((r): r is SegmentRow => r.state !== 'gone')
-          const count = (s: SegmentState) => rows.filter((r) => r.state === s).length
-          return {
-            horizon: seg.horizon,
-            rows,
-            waiting: count('waiting'),
-            considered: count('considered'),
-            deferred: count('deferred'),
-            nudge: seg.nudge,
-          }
-        })
-        .filter((seg) => seg.rows.length > 0),
-    [segments, overlay],
-  )
+  const view = useMemo(() => segmentViews(segments, overlay), [segments, overlay])
 
   const run = useCallback(
     async (ids: number[], to: Overlay, send: () => Promise<unknown>, message: string) => {
@@ -184,14 +173,19 @@ export function useTaskSegments({
   )
   const done = useCallback(
     (task: Task) =>
-      run([task.id], 'gone', () => post(`/api/tasks/${task.id}/done`, {}), `Done: “${task.title}”`),
+      run(
+        [task.id],
+        { left: 'done' },
+        () => post(`/api/tasks/${task.id}/done`, {}),
+        `Done: “${task.title}”`,
+      ),
     [run],
   )
   const targetToday = useCallback(
     (task: Task) =>
       run(
         [task.id],
-        'gone',
+        { left: 'target' },
         () => post('/api/task-segments/target-today', { ids: [task.id] }),
         // Says what did NOT happen: Today sits beside Done, and a mis-tap
         // read as a check-off until the toast (2026-10-12).
@@ -261,6 +255,42 @@ export function useTaskSegments({
     ...peek,
     refresh,
   }
+}
+
+/**
+ * The segments as drawn: the payload with each tap's overlay over its row. A
+ * `{ left }` overlay is a considered row that left the segment handled (the
+ * day roster); 'gone' drops the row. A segment with no rows left is not drawn.
+ */
+function segmentViews(
+  segments: TaskSegmentPayload[],
+  overlay: Map<number, Overlay>,
+): SegmentView[] {
+  return segments
+    .map((seg) => {
+      const rows = seg.tasks
+        .map((t) => {
+          const o = overlay.get(t.id)
+          const left = typeof o === 'object' ? o.left : o === undefined ? t.segment_left : undefined
+          return {
+            task: t as Task,
+            state: typeof o === 'object' ? 'considered' : (o ?? t.segment_state),
+            recurring: t.recurring ?? t.rrule !== null,
+            ...(left ? { left } : {}),
+          }
+        })
+        .filter((r): r is SegmentRow => r.state !== 'gone')
+      const count = (s: SegmentState) => rows.filter((r) => r.state === s).length
+      return {
+        horizon: seg.horizon,
+        rows,
+        waiting: count('waiting'),
+        considered: count('considered'),
+        deferred: count('deferred'),
+        nudge: seg.nudge,
+      }
+    })
+    .filter((seg) => seg.rows.length > 0)
 }
 
 /**
@@ -380,7 +410,12 @@ function useDeck(
           next.delete(task.id)
           return next
         })
-      setOverlay((prev) => new Map(prev).set(task.id, 'gone'))
+      // Decked: handled today, counted (the day roster). Taken off deck (an
+      // Upcoming deck row): the deck's consider stamp stays, so the server
+      // keeps it here as handled (`segment_left: 'considered'`) — the same.
+      setOverlay((prev) =>
+        new Map(prev).set(task.id, { left: day === null ? 'considered' : 'deck' }),
+      )
       inFlight.current++
       try {
         const result = await sendDeck([task.id], day)
@@ -462,8 +497,9 @@ function useTargetPicker(run: RunSegmentAction, timezone: string) {
         [task.id],
         // Any day: the row leaves. A targeted one-off is in no horizon
         // segment (spec §1, 2026-10-12), and one targeted today has no
-        // heads-up today — the refresh shows the same.
-        'gone',
+        // heads-up today — the refresh shows the same. It still counts, as
+        // handled today (the day roster).
+        { left: 'target' },
         () => post('/api/task-segments/target-today', { ids: [task.id], at }),
         `Targeted ${targetWhen(when, today)}: “${task.title}”`,
       )

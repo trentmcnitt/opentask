@@ -2422,6 +2422,20 @@ paths:
             with `on_deck_day` set and no target; "On deck Sat Oct 24"), on the heads-up days a
             picked target would get. Omitted: a decked task is in no segment at all (a client
             that predates decks would draw a dateless row). A deck is never in a horizon segment.
+        - name: handled
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1` (the day roster, 2026-10-22): this client keeps each segment's "N of M" fixed for
+            the day. Every row a segment lists is remembered for that segment's day (the OpenTask
+            day for the queue's panels, the calendar day for the rest); a remembered row that has
+            since left the segment HANDLED that day (done, decked, targeted with Today, or
+            considered out of the queue) comes back as a `considered` row with `segment_left`,
+            so it counts in both numbers. One that left unhandled (trashed, its heads-up over)
+            drops out. Omitted: the segments hold only the rows listed now. The web sends it.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -2524,6 +2538,14 @@ paths:
                                           Clients offer no Remove target on it (its target goes with
                                           its recurrence); Today and its picker move only its target
                                           (spec §6).
+                                      segment_left:
+                                        type: string
+                                        enum: [done, deck, target, considered]
+                                        description: >
+                                          Only with `?handled=1`, on a row that LEFT the segment today
+                                          handled: how. Such a row's `segment_state` is
+                                          `considered`; clients list it with the considered rows and
+                                          offer no put-back (its way back is Undo).
                             waiting:
                               type: integer
                             considered:

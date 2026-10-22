@@ -1,6 +1,6 @@
 'use client'
 
-import type { SegmentKind, SegmentState } from '@/lib/task-segments'
+import type { SegmentKind, SegmentLeft, SegmentState } from '@/lib/task-segments'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -171,8 +171,11 @@ export interface UseRemindersReturn {
  * `task_segments` altogether, for native builds that predate the queue.
  * It draws a future deck's Upcoming row ("On deck Sat Oct 24", On deck D2)
  * too (`?deck=1`); without it a decked task is left out of Upcoming.
+ * And it keeps each segment's "N of M" fixed for the day (`?handled=1`, the
+ * day roster, 2026-10-22): rows decked, targeted or done today come back as
+ * considered rows with `segment_left` (src/core/tasks/segment-roster.ts).
  */
-const REMINDERS_URL = '/api/reminders?queue=1&deck=1'
+const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1'
 
 export interface ReminderCreateInput {
   title: string
@@ -214,8 +217,9 @@ interface RemindersCache {
 export interface TaskSegmentPayload {
   /** A horizon, or `upcoming` (2026-10-12, the heads-up segment). */
   horizon: SegmentKind
-  /** `recurring`: a repeating task's occurrence (Upcoming only) — no Today, no Remove target. */
-  tasks: (Task & { segment_state: SegmentState; recurring?: boolean })[]
+  /** `recurring`: a repeating task's occurrence (Upcoming only) — no Today, no Remove target.
+   *  `segment_left`: how a row that left the segment today was handled (`?handled=1`). */
+  tasks: (Task & { segment_state: SegmentState; recurring?: boolean; segment_left?: SegmentLeft })[]
   waiting: number
   considered: number
   deferred: number

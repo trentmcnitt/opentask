@@ -47,6 +47,8 @@
  * still in, and still ages out fifteen minutes after it. Entries leave without
  * a reload — see `useJustAddedClock`.
  */
+import { DateTime } from 'luxon'
+import { parseDeckDay } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
 /** 10 until 2026-10-12, when Trent widened it. The enrichment-success push
@@ -113,6 +115,26 @@ export function selectJustAddedEntries(tasks: Task[], now: number): JustAddedEnt
   return entries.sort((a, b) => b.at - a.at || b.task.id - a.task.id)
 }
 
+/**
+ * A DECK UPDATE (Trent, 2026-10-22, phone review): an entry whose only news is
+ * that the task went on deck — listed under its deck, for a task created
+ * before the window. Decking is done in runs (a queue panel's rows, one tap
+ * each), and each one used to take a full entry, pushing what was actually
+ * added off the card. The card folds these behind "Show N on deck updates".
+ * A task created AND decked inside the window is not one: it is new, and a
+ * new task must never be folded away ("did it land?" is the card's question).
+ *
+ * Taking a task off deck stamps nothing (`collectDeckChange` clears the deck's
+ * Just now stamp), so there is no "deck removed" entry to fold.
+ */
+export function isDeckUpdate(entry: JustAddedEntry): boolean {
+  if (entry.kind !== 'decked') return false
+  const created = Date.parse(entry.task.created_at)
+  // Against the deck's own moment, not now, so an entry never moves behind
+  // the fold while it is listed.
+  return Number.isNaN(created) || created <= entry.at - JUST_ADDED_WINDOW_MS
+}
+
 /** What "Clear" remembers an entry by: a new event for the same task is a new key. */
 export function justAddedEntryKey(entry: { task: Task; at: number }): string {
   return `${entry.task.id}:${entry.at}`
@@ -172,9 +194,38 @@ export function formatJustAddedLabel(entry: JustAddedEntry, now: number): string
   return `${verb} ${formatJustAddedAge(entry.task, now)}`
 }
 
-/** The tag on the task's real row: "New" for an add, "Targeted" for a targeting, "On deck" for a deck. */
-export function justAddedTag(task: Task, now: number): string | undefined {
+/**
+ * The tag on the task's real row: "New" for an add, "Targeted" for a
+ * targeting, and for a deck its day — "On deck" today, "On deck tomorrow",
+ * else "On deck Nov 15" (`deckTagLabel`).
+ */
+export function justAddedTag(task: Task, now: number, timezone?: string): string | undefined {
   const event = justAddedEvent(task, now)
   if (!event) return undefined
-  return { targeted: 'Targeted', decked: 'On deck', added: 'New' }[event.kind]
+  if (event.kind === 'decked') return deckTagLabel(task.on_deck_day, timezone, now)
+  return { targeted: 'Targeted', added: 'New' }[event.kind]
+}
+
+/**
+ * A deck's tag on a dashboard row (Trent's phone review, 2026-10-22: a row
+ * decked for a later day read just "On deck", as if it were today's). Today's
+ * deck stays "On deck" — Now's On deck section and the filled button already
+ * say which day; tomorrow is "On deck tomorrow", the segment row's own button
+ * name; a later day is "On deck Nov 15" — the dashboard rows' date chips'
+ * format ("Nov 1 9:00 AM": month and day, no weekday). The date is shown
+ * rather than the tag dropped: the tag is the row's "it landed" mark.
+ * Without a zone (or with a day that does not parse) it says "On deck".
+ */
+export function deckTagLabel(
+  day: string | null | undefined,
+  timezone: string | undefined,
+  now: number,
+): string {
+  if (!day || !timezone) return 'On deck'
+  const deck = parseDeckDay(day, timezone)
+  if (!deck) return 'On deck'
+  const today = DateTime.fromMillis(now).setZone(timezone).startOf('day')
+  if (deck <= today) return 'On deck'
+  if (+deck === +today.plus({ days: 1 })) return 'On deck tomorrow'
+  return `On deck ${deck.toFormat('LLL d')}`
 }
