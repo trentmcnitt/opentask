@@ -16,6 +16,8 @@ import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
+import { useLabelConfig } from '@/components/PreferencesProvider'
+import { LabelBadges } from '@/components/LabelBadges'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -941,7 +943,29 @@ function TaskSegmentMeta({
           age: the queue is read at a glance. A waiting repeating task keeps a
           target (its next occurrence) and its count, so it would read "226×". */}
       {!isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />}
+      <SegmentLabels task={task} />
     </div>
+  )
+}
+
+/**
+ * The task's labels on a segment row's meta line (Trent's phone review,
+ * 2026-10-22), with the dashboard row's chips (`LabelBadges`: two, then
+ * "+N"). LAST on the line and never on a line of their own: a zero basis that
+ * grows into what the line has left, clipped there with a short fade — so a
+ * row's height never changes because of its labels, and a long label can't
+ * push the row past the screen's edge on a phone. Nothing when the task has
+ * none to show.
+ */
+function SegmentLabels({ task }: { task: Task }) {
+  const { labelConfig } = useLabelConfig()
+  if (!task.labels.some((l) => l !== 'ai-to-process')) return null
+  return (
+    <LabelBadges
+      labels={task.labels}
+      labelConfig={labelConfig}
+      className="min-w-0 shrink grow basis-0 overflow-hidden [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)]"
+    />
   )
 }
 
@@ -1070,6 +1094,7 @@ function UpcomingMeta({
         </span>
       )}
       <BadgeChips task={task} timezone={timezone} />
+      <SegmentLabels task={task} />
     </div>
   )
 }
