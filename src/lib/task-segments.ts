@@ -433,9 +433,12 @@ export type SegmentState = 'waiting' | 'considered' | 'deferred'
 /**
  * How a row that LEFT its segment today was handled (the day roster,
  * src/core/tasks/segment-roster.ts; the API's `segment_left`): done, decked,
- * targeted (Today), or considered out of the queue. Such a row is considered.
+ * targeted (Today), considered out of the queue, or — the deadlines page
+ * (2026-10-22) — its lead day DEFERRED (Defer is acting: nag-map ruling 3,
+ * "silencing = acting"; the row reads "· deferred to Thu" from `lead_from`).
+ * Such a row is considered.
  */
-export type SegmentLeft = 'done' | 'deck' | 'target' | 'considered'
+export type SegmentLeft = 'done' | 'deck' | 'target' | 'considered' | 'deferred'
 
 /** The local start of the day `iso` falls on, in `timezone`. */
 export function localDay(iso: string, timezone: string): DateTime {

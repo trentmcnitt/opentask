@@ -641,7 +641,7 @@ function NextLine({
       ) : (
         <>
           {next.dates.map((d, i) => (
-            <span key={d.targetAt} data-next-date>
+            <span key={d.targetAt ?? d.deadlineAt ?? ''} data-next-date>
               {i > 0 && <span aria-hidden> · </span>}
               {nextDateWords({ ...d, last: false }, timezone)}
               {d.last && (

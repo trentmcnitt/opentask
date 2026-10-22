@@ -1139,10 +1139,20 @@ export function HorizonChip({
 }
 
 /** How a row that left its segment today was handled, after its title. */
-const LEFT_WORDS: Record<Exclude<SegmentLeft, 'considered'>, string> = {
+const LEFT_WORDS: Record<Exclude<SegmentLeft, 'considered' | 'deferred'>, string> = {
   done: 'done',
   deck: 'on deck',
   target: 'targeted',
+}
+
+/**
+ * The words for a row that left today: "done", "on deck", "targeted", or —
+ * the deadlines page's Defer (2026-10-22) — "deferred to Thu" (its lead day).
+ */
+function leftWords(left: Exclude<SegmentLeft, 'considered'>, task: Task): string {
+  if (left !== 'deferred') return LEFT_WORDS[left]
+  const day = task.lead_from ? DateTime.fromISO(task.lead_from) : null
+  return day?.isValid ? `deferred to ${day.toFormat('ccc')}` : 'deferred'
 }
 
 /**
@@ -1202,7 +1212,7 @@ export function ConsideredSegmentRow({
         {task.title}
         {state === 'deferred' && <span className="ml-1.5 text-xs">· deferred</span>}
         {left && left !== 'considered' && (
-          <span className="ml-1.5 text-xs">· {LEFT_WORDS[left]}</span>
+          <span className="ml-1.5 text-xs">· {leftWords(left, task)}</span>
         )}
       </p>
     </li>

@@ -456,6 +456,28 @@ describe('DL-D: defer-lead', () => {
     expect([task(a.id).lead_from, task(b.id).lead_from]).toEqual(['2026-10-27', '2026-10-28'])
   })
 
+  test('DL-D03: a deferred row counts as handled in the day roster ("· deferred to Wed")', () => {
+    // Its lead day is today (lead_days 10 clamps to today), outside the net.
+    const t = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 10 })
+    const other = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 10 })
+    const read = () =>
+      getTaskSegments(TEST_USER_ID, tz, new Date(), { ...ALL, handledRows: true }).find(
+        (s) => s.horizon === 'deadlines',
+      )!
+    expect(read().tasks.map((r) => r.task.id)).toEqual([t.id, other.id]) // remembered
+    deferLeads(TEST_USER_ID, tz, [t.id], '2026-10-21')
+    const page = read()
+    // Still in M, now in N: a considered row that left deferred.
+    expect(page.tasks.map((r) => [r.task.id, r.state, r.left ?? null])).toEqual([
+      [t.id, 'considered', 'deferred'],
+      [other.id, 'waiting', null],
+    ])
+    expect([page.considered, page.waiting]).toEqual([1, 1])
+    expect(task(t.id).lead_from).toBe('2026-10-21')
+    // Without the roster (a native build): simply off the page.
+    expect(placesOf(t.id)).toEqual([])
+  })
+
   test('DL-D02: from tomorrow to D−2; nothing moved → no undo entry', () => {
     const t = make({ deadline_at: at('2026-10-30T23:59') })
     const before = undoCount()

@@ -130,6 +130,15 @@ export function rosterLeftRows(
   return out
 }
 
+/**
+ * A target-less deadline task whose lead day a Defer moved past the segment's
+ * day, that day (`deferLeads` stamps `target_set_at` with the move).
+ */
+function leadDeferred(task: Task, onDay: (iso: string | null) => boolean): boolean {
+  if (task.deadline_at === null || task.due_at !== null || !task.lead_from) return false
+  return onDay(task.target_set_at)
+}
+
 /** How the task was handled on the segment's day, or null when it was not. */
 function howItLeft(task: Task, onDay: (iso: string | null) => boolean): SegmentLeft | null {
   // `last_completed_at` for a repeating task only: an undone one-off keeps it.
@@ -140,6 +149,9 @@ function howItLeft(task: Task, onDay: (iso: string | null) => boolean): SegmentL
     return 'done'
   }
   if (onDay(task.segment_targeted_at)) return task.on_deck_day ? 'deck' : 'target'
+  // The deadlines page (2026-10-22): Defer moved the lead day past today and
+  // stamped `target_set_at` — acting, so handled (nag-map ruling 3).
+  if (leadDeferred(task, onDay)) return 'deferred'
   if (onDay(task.last_considered_at)) return 'considered'
   return null
 }

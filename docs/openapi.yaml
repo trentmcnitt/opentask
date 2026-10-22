@@ -2638,7 +2638,7 @@ paths:
                                           (outside the safety net that is the `considered` state).
                                       segment_left:
                                         type: string
-                                        enum: [done, deck, target, considered]
+                                        enum: [done, deck, target, considered, deferred]
                                         description: >
                                           Only with `?handled=1`, on a row that LEFT the segment today
                                           handled: how. Such a row's `segment_state` is
