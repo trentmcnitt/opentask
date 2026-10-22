@@ -2223,6 +2223,73 @@ paths:
                     type: object
                     properties:
                       deferred: { type: integer }
+  /api/task-segments/defer-lead:
+    post:
+      summary: Defer a deadlines-page row's lead day
+      operationId: taskSegmentDeferLead
+      tags: [Reminders]
+      description: >
+        The deadlines page (2026-10-22; task-queue switch on, else 409): moves THIS instance's
+        lead day (`lead_from`) to `day`, so the row leaves the `deadlines` segment until then
+        (the next advance of a repeat re-derives it; a deadline change drops the deferral).
+        Also stamps `target_set_at`, so the lead day's Upcoming heads-ups count from the defer.
+        `day` is an OpenTask day (yyyy-MM-dd) from tomorrow to two days before the deadline's
+        day; omitted = tomorrow. Refused PER TASK (never the whole request) once the safety net
+        holds it (from the day before the deadline), for a later day, or for a task that is not
+        a deadline task with no target. One undo entry (`task_segment`) for the tasks it moved,
+        none when every one was refused. The caller's own open tasks only; anything else
+        refuses the whole request (400).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+                day:
+                  type: string
+                  format: date
+                  description: The OpenTask day to move the lead day to. Omitted = tomorrow.
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [day, deferred, refused, summary]
+                    properties:
+                      day:
+                        type: string
+                        format: date
+                      deferred:
+                        type: integer
+                      refused:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            reason:
+                              type: string
+                              enum: [safety_net, after_safety_net, not_later, not_on_page]
+                            message: { type: string }
+                      summary:
+                        type: string
+                        description: '"Deferred 2 tasks to Wed Oct 21", or the first refusal.'
+        '400':
+          description: A malformed body or day, or an id that is not the caller's open task
+        '409':
+          description: The task queue is off on this server
   /api/task-segments/restore:
     post:
       summary: Put task-segment rows back
@@ -2422,6 +2489,23 @@ paths:
             with `on_deck_day` set and no target; "On deck Sat Oct 24"), on the heads-up days a
             picked target would get. Omitted: a decked task is in no segment at all (a client
             that predates decks would draw a dateless row). A deck is never in a horizon segment.
+        - name: deadlines
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1` (the deadlines page, 2026-10-22; task-queue switch on): this client draws the
+            `deadlines` segment — FIRST in `task_segments` — and the lead day's Upcoming rows. A
+            deadline task with NO target (a one-off, or a deadline-anchored repeat with no
+            relative target) is on it from its lead day (`lead_from`); from the day before its
+            deadline's OpenTask day, and after the deadline, in the SAFETY NET (`safety_net`:
+            seeing it does not silence it). Sorted priority, then the nearest deadline, then id.
+            Before its lead day it shows in Upcoming on the heads-up days counted to the lead
+            day. Omitted: a target-less deadline one-off stays in its horizon segment (the
+            deadline pulling it in) and no `deadlines` kind is sent (a client that predates the
+            page would list it as a page of its own).
         - name: handled
           in: query
           required: false
@@ -2513,6 +2597,7 @@ paths:
                               type: string
                               enum:
                                 [
+                                  deadlines,
                                   queue_today,
                                   queue_previous,
                                   days,
@@ -2538,6 +2623,19 @@ paths:
                                           Clients offer no Remove target on it (its target goes with
                                           its recurrence); Today and its picker move only its target
                                           (spec §6).
+                                      safety_net:
+                                        type: boolean
+                                        description: >
+                                          `deadlines` rows only (`?deadlines=1`, 2026-10-22): the
+                                          safety net holds the row — from the day before its
+                                          deadline's OpenTask day, and after the deadline. Its
+                                          `segment_state` stays `waiting` even when seen: only a
+                                          target or done takes it off; clients hide Defer.
+                                      seen:
+                                        type: boolean
+                                        description: >
+                                          `deadlines` rows only: considered this OpenTask day
+                                          (outside the safety net that is the `considered` state).
                                       segment_left:
                                         type: string
                                         enum: [done, deck, target, considered]
@@ -5731,6 +5829,24 @@ components:
           type: [string, 'null']
           format: date
           description: The deck day the rollover remembered when it sent the undone deck to the task queue. Server-set.
+        lead_days:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 90
+          description: >
+            The deadlines page (2026-10-22): the user's override of the lead — local days before
+            the deadline's day a deadline task with no target goes on the deadlines page.
+            Series-level on a repeat. Null = the default table (by the wait: under 2 days the
+            day before the deadline, up to a week the day before, then 3 days, from 16 days 4).
+            Writable on create, PATCH and bulk edit.
+        lead_from:
+          type: [string, 'null']
+          format: date
+          description: >
+            The deadlines page (2026-10-22): the OpenTask day (yyyy-MM-dd) this instance goes on
+            the deadlines page — derived on every deadline write and advance, moved by
+            `POST /api/task-segments/defer-lead`. Set on an ordinary task with a deadline and no
+            relative target (dormant while it has a target); else null. Server-set.
         auto_snooze_minutes:
           type: [integer, 'null']
         deleted_at:
@@ -5903,6 +6019,13 @@ components:
             (else 400). With `target_at` / `due_at` it is a 400 (a task is on deck or has a
             target). A deck counts as structured input: the task is not sent for AI
             enrichment. 409 when the server's task queue is off.
+        lead_days:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 90
+          description: >
+            The deadlines page (2026-10-22): the lead override (days before the deadline's day);
+            null = the default table. Re-derives `lead_from`.
         deadline_at:
           type: [string, 'null']
           format: date-time
@@ -6216,6 +6339,13 @@ components:
             day marks the task considered (as the deck endpoint does); taking a one-off off deck
             stamps nothing, taking a repeating task off puts its target back on its occurrence. Also accepted in bulk edit `changes`. 409 (putting on deck) when
             the server's task queue is off.
+        lead_days:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 90
+          description: >
+            The deadlines page (2026-10-22): the lead override (days before the deadline's day);
+            null = the default table. Re-derives `lead_from`.
         allow_past_deadline:
           type: boolean
           deprecated: true
