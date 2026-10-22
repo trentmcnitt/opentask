@@ -9,6 +9,7 @@ import {
   JUST_ADDED_WINDOW_MS,
   formatJustAddedAge,
   formatJustAddedLabel,
+  isDeckUpdate,
   isJustAdded,
   justAddedEntryKey,
   justAddedEvent,
@@ -265,6 +266,35 @@ describe('the targeted event drives the clock, the tag and Clear', () => {
     expect(justAddedEntryKey(before)).not.toBe(justAddedEntryKey(after))
     expect(formatJustAddedLabel(before, NOW)).toBe('Added 5m ago')
     expect(formatJustAddedLabel(after, NOW)).toBe('Targeted just now')
+  })
+})
+
+describe('deck updates fold (isDeckUpdate, Trent 2026-10-22)', () => {
+  const decked = (id: number, createdAgo: number, day: string) =>
+    makeTask({ id, created_at: ago(createdAgo), segment_targeted_at: ago(MIN), on_deck_day: day })
+
+  test('a task decked inside the window, created before it, is a deck update', () => {
+    const [entry] = selectJustAddedEntries([decked(1, HOUR, '2026-01-16')], NOW)
+    expect(entry.kind).toBe('decked')
+    expect(isDeckUpdate(entry, NOW)).toBe(true)
+  })
+
+  test('created and decked inside the window: new, never folded', () => {
+    const [entry] = selectJustAddedEntries([decked(2, 3 * MIN, '2026-01-15')], NOW)
+    expect(entry.kind).toBe('decked')
+    expect(isDeckUpdate(entry, NOW)).toBe(false)
+  })
+
+  test('added and targeted entries are never deck updates', () => {
+    const entries = selectJustAddedEntries(
+      [
+        makeTask({ id: 3, created_at: ago(2 * MIN) }),
+        makeTask({ id: 4, created_at: ago(HOUR), segment_targeted_at: ago(MIN) }),
+      ],
+      NOW,
+    )
+    expect(entries.map((e) => e.kind).sort()).toEqual(['added', 'targeted'])
+    expect(entries.some((e) => isDeckUpdate(e, NOW))).toBe(false)
   })
 })
 

@@ -113,6 +113,24 @@ export function selectJustAddedEntries(tasks: Task[], now: number): JustAddedEnt
   return entries.sort((a, b) => b.at - a.at || b.task.id - a.task.id)
 }
 
+/**
+ * A DECK UPDATE (Trent, 2026-10-22, phone review): an entry whose only news is
+ * that the task went on deck — listed under its deck, for a task created
+ * before the window. Decking is done in runs (a queue panel's rows, one tap
+ * each), and each one used to take a full entry, pushing what was actually
+ * added off the card. The card folds these behind "Show N on deck updates".
+ * A task created AND decked inside the window is not one: it is new, and a
+ * new task must never be folded away ("did it land?" is the card's question).
+ *
+ * Taking a task off deck stamps nothing (`collectDeckChange` clears the deck's
+ * Just now stamp), so there is no "deck removed" entry to fold.
+ */
+export function isDeckUpdate(entry: JustAddedEntry, now: number): boolean {
+  if (entry.kind !== 'decked') return false
+  const created = Date.parse(entry.task.created_at)
+  return Number.isNaN(created) || created <= now - JUST_ADDED_WINDOW_MS
+}
+
 /** What "Clear" remembers an entry by: a new event for the same task is a new key. */
 export function justAddedEntryKey(entry: { task: Task; at: number }): string {
   return `${entry.task.id}:${entry.at}`

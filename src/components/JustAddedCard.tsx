@@ -1,11 +1,18 @@
 'use client'
 
+import { useState } from 'react'
 import { Folder, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { getPriorityOption } from '@/lib/priority'
-import { formatJustAddedLabel, justAddedEntryKey, type JustAddedEntry } from '@/lib/just-added'
+import {
+  formatJustAddedLabel,
+  isDeckUpdate,
+  justAddedEntryKey,
+  type JustAddedEntry,
+} from '@/lib/just-added'
+import { SLOT_FOOTER_TOGGLE_CLASS } from '@/components/reminders/ReminderSlotGroup'
 import type { Project, Task } from '@/types'
 
 interface JustAddedCardProps {
@@ -40,6 +47,12 @@ interface JustAddedCardProps {
  * Entries are not check-offs (a project-coloured dot, not a checkbox): the
  * card only points at tasks. "Clear" hides what is listed now; a task added
  * (or re-targeted) after that shows again.
+ *
+ * DECK UPDATES FOLD (Trent, 2026-10-22): entries that only say a task went on
+ * deck (`isDeckUpdate`) sit behind "Show N on deck updates" / "Show less",
+ * folded on every load — the segments' "Show N considered" toggle, in its
+ * place and style. Added and targeted entries always show. Unfolded, every
+ * entry is listed in its usual newest-first order.
  */
 export function JustAddedCard({
   entries,
@@ -49,7 +62,10 @@ export function JustAddedCard({
   onShow,
   onClear,
 }: JustAddedCardProps) {
+  const [showDecks, setShowDecks] = useState(false)
   if (entries.length === 0) return null
+  const deckUpdates = entries.filter((e) => isDeckUpdate(e, now)).length
+  const listed = showDecks ? entries : entries.filter((e) => !isDeckUpdate(e, now))
   return (
     <section
       aria-label="Just now"
@@ -69,7 +85,7 @@ export function JustAddedCard({
         </button>
       </div>
       <ul className="space-y-0.5">
-        {entries.map((entry) => (
+        {listed.map((entry) => (
           <li key={justAddedEntryKey(entry)}>
             <JustAddedRow
               entry={entry}
@@ -81,6 +97,21 @@ export function JustAddedCard({
           </li>
         ))}
       </ul>
+      {deckUpdates > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowDecks((s) => !s)}
+          aria-expanded={showDecks}
+          data-just-added-deck-toggle
+          // The slots' footer toggle, without its row-circle indent: the
+          // card's entries start at the dot.
+          className={cn(SLOT_FOOTER_TOGGLE_CLASS, 'pl-1.5 sm:pl-2')}
+        >
+          {showDecks
+            ? 'Show less'
+            : `Show ${deckUpdates} on deck update${deckUpdates === 1 ? '' : 's'}`}
+        </button>
+      )}
     </section>
   )
 }
