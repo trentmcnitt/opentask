@@ -3,8 +3,7 @@
  * 2026-10-22; `deckTagLabel`, src/lib/just-added.ts): a row decked for a
  * later day read just "On deck", as if it were today's. Now: "On deck
  * tomorrow", "On deck Nov 15" (month and day, the dashboard date chips'
- * format), and today's deck — in Now's On deck section — keeps no tag there
- * (the heading says it).
+ * format); today's deck keeps the plain "On deck".
  *
  * The queue's own user (decks need the task-queue switch, on for this file,
  * off after it), the flat Newest view so every row is on screen. Isolation:
@@ -89,10 +88,8 @@ test('a future deck\'s tag says the day: "On deck tomorrow", "On deck Nov 15"', 
         await page.goto('/')
         await expect(badge(page, tomorrow)).toHaveText('On deck tomorrow')
         await expect(badge(page, later)).toHaveText(`On deck ${laterWords}`)
-        // Today's deck is in Now's On deck section (Newest too), where the
-        // heading says it: no tag on that row.
-        await expect(page.locator(`[data-deck-section] #task-row-${today}`)).toBeVisible()
-        await expect(badge(page, today)).toHaveCount(0)
+        // Today's deck keeps the plain tag.
+        await expect(badge(page, today)).toHaveText('On deck')
       }
     })
   } finally {
