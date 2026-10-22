@@ -4,14 +4,14 @@ _Version 1.0 — 2026-03_
 
 This is the authoritative reference for AI integration in OpenTask. It covers principles, architecture, failure handling, and the feature catalog.
 
-> **SHELVED (2026-10-22, Trent): What's Next, Insights and Quick Take.** The whole set is shelved until it is redesigned; **enrichment is the only AI feature that runs** (Process keeps its on-demand suggestions). One server-wide switch, `OPENTASK_AI_UNSHELVE=1`, brings all three back. Unset (the default, and production):
+> **SHELVED (2026-10-22, Trent): What's Next, Insights and Quick Take.** The whole set is shelved until it is redesigned; **enrichment is the only one of the four AI features that runs**. Process's on-demand AI suggestions (`process.ts`) are NOT shelved by this change — pending Trent. One server-wide switch, `OPENTASK_AI_UNSHELVE=1`, brings all three back. Unset (the default, and production):
 >
 > - the 03:00 What's Next and 03:30 Insights jobs are never scheduled (`src/instrumentation.ts` logs one line, "What's Next and Insights are shelved (OPENTASK_AI_UNSHELVE unset)"), and `runScheduledWhatsNext` / `runScheduledInsights` return at once;
 > - `GET /api/ai/whats-next`, `POST /api/ai/insights/generate`, `GET /api/ai/insights/results`, `GET /api/ai/insights/status`, `POST /api/ai/quick-take`, and `POST /api/ai/test` for those three features answer `410 { "error": "What's Next, Insights and Quick Take are shelved", "code": "FEATURE_SHELVED" }` (after auth, before the AI-enabled check);
 > - `GET /api/user/preferences` reports `ai_unshelved: false`; the web hides the dashboard's AI chip, the What's Next and Insights filter chips, score and signal chips, row commentary and highlights, the AI Score sort, the Quick Take banner (a quick add is the plain create), their rows in Settings → AI and AI Status, and the demo tour's Insights steps;
 > - their quality scenarios are skipped (`OPENTASK_AI_ENABLED=true OPENTASK_AI_UNSHELVE=1 npm run test:quality` includes them).
 >
-> Nothing writes a user's `ai_*_mode` or view preferences, so the switch restores exactly what each user had. Quick Take never shared a call, prompt or code path with enrichment: the dashboard created the task (the server queues enrichment) and then made a separate `POST /api/ai/quick-take`; shelved, only that second call and its banner are gone. Note that Process reads the **Insights** mode (`ai_insights_mode`) for its model and on/off, and that row is hidden in Settings while shelved — Process behaves as the saved mode says.
+> Nothing writes a user's `ai_*_mode` or view preferences, so the switch restores exactly what each user had. Quick Take never shared a call, prompt or code path with enrichment: the dashboard created the task (the server queues enrichment) and then made a separate `POST /api/ai/quick-take`; shelved, only that second call and its banner are gone. Note that Process reads the **Insights** mode (`ai_insights_mode`) for its model and on/off, and that row is hidden in Settings while shelved — Process behaves as the saved mode says, but nobody can change that mode from Settings until the decision on Process is made.
 >
 > The code below stays in place, dormant, with `SHELVED (2026-10-22)` headers. **Do not "fix", re-enable or delete it without Trent.** Switch: `src/core/ai/shelved.ts`.
 
