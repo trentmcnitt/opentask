@@ -246,6 +246,16 @@ describe('formatEditDescription', () => {
     expect(result).toBe('Target 2 days before at 6:00 PM \u2014 "Craft"')
   })
 
+  test('only the days changed: the target it moves is not a field of its own', () => {
+    const result = formatEditDescription('Craft', ['target_days_before', 'due_at'], {
+      isSnooze: false,
+      beforeState: { id: 1, target_days_before: 1, due_at: '2026-11-06T00:00:00Z' },
+      afterState: { id: 1, target_days_before: 2, due_at: '2026-11-05T00:00:00Z' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Target 2 days before — "Craft"')
+  })
+
   test('the anchor switch names what repeats', () => {
     const result = formatEditDescription('Craft', ['repeat_anchor'], {
       isSnooze: false,

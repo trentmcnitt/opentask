@@ -160,11 +160,15 @@ export function formatEditDescription(
 
   // Get user-facing fields only. The repeat end's two columns are one setting
   // (setting one clears the other): one fragment, from `repeat_count`'s case.
-  // The relative target's two columns, likewise (from `target_days_before`'s).
+  // The relative target's two columns, likewise (from `target_days_before`'s);
+  // the target they move (`due_at`) is derived from them, so it isn't its own.
+  const relative = ['target_days_before', 'target_time', 'repeat_anchor']
+  const derivedTarget = fieldsChanged.some((f) => relative.includes(f))
   const userFields = fieldsChanged
     .filter((f) => FIELD_LABELS[f])
     .filter((f) => f !== 'repeat_until' || !fieldsChanged.includes('repeat_count'))
     .filter((f) => f !== 'target_time' || !fieldsChanged.includes('target_days_before'))
+    .filter((f) => f !== 'due_at' || !derivedTarget)
 
   if (userFields.length === 0) {
     return `Edited "${truncateTitle(title)}"`
@@ -288,12 +292,24 @@ function buildRepeatEndFragment(afterState: Partial<Record<string, unknown>>): s
  * 6:00 PM" — the pair the write leaves (either may be the one that changed).
  */
 function buildRelativeTargetFragment(afterState: Partial<Record<string, unknown>>): string {
+  // Only the changed column is in `afterState`: say what is known.
   const days = afterState.target_days_before
   const time = afterState.target_time
-  if (typeof days !== 'number' || typeof time !== 'string') return 'Target updated'
-  const at = DateTime.fromFormat(time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
-  const when = days === 0 ? 'the same day' : days === 1 ? 'the day before' : `${days} days before`
-  return `Target ${when} at ${at}`
+  const when =
+    typeof days !== 'number'
+      ? null
+      : days === 0
+        ? 'the same day'
+        : days === 1
+          ? 'the day before'
+          : `${days} days before`
+  const at =
+    typeof time === 'string'
+      ? DateTime.fromFormat(time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
+      : null
+  if (when && at) return `Target ${when} at ${at}`
+  if (when) return `Target ${when}`
+  return at ? `Target at ${at}` : 'Target updated'
 }
 
 /**

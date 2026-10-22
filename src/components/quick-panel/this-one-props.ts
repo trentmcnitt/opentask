@@ -117,6 +117,8 @@ export function deadlineRowFor({
   if (hidden) return null
   if (stagedAnchor === 'deadline') return { kind: 'text', value: stagedFirstDeadline }
   if (rule && !deadlineAnchored) {
+    // A done task has no every-time mode: its row just says there is none.
+    if (task?.done) return { kind: 'text', value: null }
     return {
       kind: 'everyTime',
       onOpen: onOpenEveryTime,
