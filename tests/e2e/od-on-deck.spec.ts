@@ -396,21 +396,19 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
   }
 })
 
-test('A1: a deadline already reminding refuses On deck with the toast', async ({ page }) => {
+test('A1: a deadline that has passed refuses On deck with the toast', async ({ page }) => {
   const ids: number[] = []
   try {
     const title = uniqueTitle('OD deadline')
-    // A deadline an hour ago: reminding whatever the time of day (a near one's
-    // automatic target is the morning since 2026-10-21's one lead table).
+    // A deadline an hour ago: passed whatever the time of day (the deadlines
+    // page's A1, 2026-10-22: any day up to the deadline's own, while it is ahead).
     const id = await create(page, { title, deadline_at: daysFromNow(-1 / 24) })
     ids.push(id)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
     await dashRow(page, id).hover()
     await dashRow(page, id).locator('[data-on-deck]').click()
-    await expect(
-      toast(page, 'This deadline is close and already reminding you — use Today.'),
-    ).toBeVisible()
+    await expect(toast(page, 'This deadline has passed.')).toBeVisible()
     expect(await deckOf(page, id)).toBeNull()
     await expect(dashRow(page, id)).toBeVisible()
   } finally {
@@ -560,14 +558,12 @@ test('panel: a staged deadline and deck save in ONE request; the menu greys from
     const id = await create(page, { title: uniqueTitle('OD panel deadline'), priority: 3 })
     ids.push(id)
     const dialog = await openPanel(page, id)
-    // A deadline six days out reminds from three days before it: the later
-    // days are greyed, with the reason.
-    await stageDeadline(page, dialog, 6)
+    // A deadline three days out: the days after it are greyed, with the
+    // reason (the deadlines page's A1, 2026-10-22).
+    await stageDeadline(page, dialog, 3)
     await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'On deck options' })
-    await expect(menu.locator('[data-option-caption]').first()).toHaveText(
-      /^deadline reminds from \w{3}$/,
-    )
+    await expect(menu.locator('[data-option-caption]').first()).toHaveText(/^deadline \w{3}$/)
     const greyed = menu.locator('[role="menuitem"][aria-disabled="true"]')
     expect(await greyed.count()).toBeGreaterThan(0)
     await menu.getByRole('menuitem', { name: /^Tomorrow/ }).click()
@@ -598,16 +594,13 @@ test('panel: a refused deck saves nothing — the error shows and the panel stay
     const id = await create(page, { title: uniqueTitle('OD panel refused'), priority: 3 })
     ids.push(id)
     const dialog = await openPanel(page, id)
-    // Today: its automatic target is today (the deadline day, 2026-10-21's one
-    // lead table) — arrived or not, a deck for today is refused (A1).
-    await stageDeadline(page, dialog, 0)
+    // Yesterday: a deadline that has passed refuses every deck (A1, 2026-10-22).
+    await stageDeadline(page, dialog, -1)
     await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
     const day = dialog.locator('[data-quick-panel-deck-day]')
     await expect(day).toHaveText('today')
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(
-      toast(page, /already reminding you|after this deadline starts reminding you/),
-    ).toBeVisible()
+    await expect(toast(page, /has passed|after this task's deadline/)).toBeVisible()
     await expect(dialog).toBeVisible()
     await expect(day).toHaveClass(/text-blue-500/)
     await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
