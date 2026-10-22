@@ -41,6 +41,11 @@ export const FIELD_LABELS: Record<string, string> = {
   // Repeat ends (2026-10-22): "After N times" / "On date".
   repeat_count: 'repeat end',
   repeat_until: 'repeat end',
+  // Every-time mode (2026-10-22, editor PR 4c): what a repeat walks, and a
+  // deadline-anchored target's place before its deadline (one setting).
+  repeat_anchor: 'what repeats',
+  target_days_before: 'target',
+  target_time: 'target',
 }
 
 /**
@@ -155,9 +160,11 @@ export function formatEditDescription(
 
   // Get user-facing fields only. The repeat end's two columns are one setting
   // (setting one clears the other): one fragment, from `repeat_count`'s case.
+  // The relative target's two columns, likewise (from `target_days_before`'s).
   const userFields = fieldsChanged
     .filter((f) => FIELD_LABELS[f])
     .filter((f) => f !== 'repeat_until' || !fieldsChanged.includes('repeat_count'))
+    .filter((f) => f !== 'target_time' || !fieldsChanged.includes('target_days_before'))
 
   if (userFields.length === 0) {
     return `Edited "${truncateTitle(title)}"`
@@ -249,6 +256,13 @@ function buildFieldFragment(
     case 'repeat_count':
     case 'repeat_until':
       return buildRepeatEndFragment(afterState)
+    case 'repeat_anchor':
+      return afterState.repeat_anchor === 'deadline'
+        ? 'Repeats on its deadline'
+        : 'Repeats on its target'
+    case 'target_days_before':
+    case 'target_time':
+      return buildRelativeTargetFragment(afterState)
     default:
       return null
   }
@@ -267,6 +281,19 @@ function buildRepeatEndFragment(afterState: Partial<Record<string, unknown>>): s
     return `Ends on ${day.isValid ? day.toFormat('LLL d, yyyy') : until}`
   }
   return 'Ends never'
+}
+
+/**
+ * A deadline-anchored repeat's target (2026-10-22): "Target the day before at
+ * 6:00 PM" — the pair the write leaves (either may be the one that changed).
+ */
+function buildRelativeTargetFragment(afterState: Partial<Record<string, unknown>>): string {
+  const days = afterState.target_days_before
+  const time = afterState.target_time
+  if (typeof days !== 'number' || typeof time !== 'string') return 'Target updated'
+  const at = DateTime.fromFormat(time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
+  const when = days === 0 ? 'the same day' : days === 1 ? 'the day before' : `${days} days before`
+  return `Target ${when} at ${at}`
 }
 
 /**
