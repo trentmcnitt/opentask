@@ -5182,11 +5182,15 @@ components:
           readOnly: true
           example: '06:30'
           description: |
-            The user's rollover time (HH:MM): the start of their first
+            The user's rollover time (HH:MM): their "Day starts at"
+            (`day_start_time`, resolved) — unset, the start of their first
             reminder period, else `morning_time`. With `task_queue` on, the
-            OpenTask day runs from one rollover to the next, and a client that
-            counts attempts itself counts those days (the server's own rule,
-            its early-morning-pick exception included). Ignored on PATCH.
+            OpenTask day runs from one rollover to the next — the task queue,
+            attempts, and (2026-10-23) the Reminders screen's day: its roster,
+            "considered today", quota prompts and their `prompt_key` dates, a
+            daily quota's count, the slot nag. A client that counts attempts
+            or a reminders day itself counts those days (the server's own
+            rule, its early-morning-pick exception included). Ignored on PATCH.
         default_grouping:
           type: string
           enum: [project, new, unified]
@@ -5367,6 +5371,35 @@ components:
         sleep_slot_id:
           type: [integer, 'null']
           description: The period Sleep follows, or `null`; as `morning_slot_id`.
+        day_start_time:
+          type: [string, 'null']
+          example: '03:00'
+          description: |
+            "Day starts at" (HH:MM, 2026-10-23): when the OpenTask day turns
+            (see `rollover_time`, which is the same resolved time). GET always
+            returns the resolved time — a custom time, a linked period's
+            start, or, by default (`day_start_first_period`), the first
+            period's start (else `morning_time`). PATCH `"HH:MM"` sets a
+            custom time and unlinks (a time after midnight but before the
+            first period keeps a late night with the day before); PATCH
+            `null` (without `day_start_slot_id`) goes back to the default,
+            following the first period.
+        day_start_slot_id:
+          type: [integer, 'null']
+          description: |
+            The reminder period the day start is linked to, or `null` (a
+            custom time, or the default). PATCH rules as `morning_slot_id`:
+            an id of one of the user's own periods links (with a
+            `day_start_time` too it must be the period's start); `null`
+            unlinks at the time it reads now. Deleting the period keeps its
+            start as a custom time (`settings_converted`: "Day start time").
+        day_start_first_period:
+          type: boolean
+          readOnly: true
+          description: |
+            True while "Day starts at" is unset — the default, following
+            whichever period starts first (the rollover every user had before
+            the setting). Ignored on PATCH (send `day_start_time: null`).
         pad_presets:
           type: array
           minItems: 4

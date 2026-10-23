@@ -3,15 +3,23 @@
  * day, picks and defers).
  *
  * The day runs from ROLLOVER to rollover, not midnight to midnight. The
- * rollover is the start of the user's first reminder period (Trent's is
- * 6:30), or their `morning_time` when they have no periods. The stretch from
+ * rollover is the user's "Day starts at" (2026-10-23, `resolveDayStart` in
+ * src/lib/anchor-times.ts): unset — the default — the start of their first
+ * reminder period, or their `morning_time` when they have no periods; or a
+ * custom time (Trent's 3:00 AM) or a linked period's start. The stretch from
  * midnight to the rollover belongs to the day before: a night owl's 2 AM
  * target is part of the evening's day.
  *
- * Used, for now, by the defer rule in `bulkSnooze` (a Snooze-all landing at or
- * after the next rollover marks the task for the queue) and, from task-queue
- * PR 2, by the rollover job and attempts. "Today" in the Now view, the Today
- * pill, Upcoming and check_in_day stay on midnight (build-plan resolution 4).
+ * ONE DAY BOUNDARY (Trent, 2026-10-23): with the task queue's switch on,
+ * everything keyed to "today" runs on this day — the defer rule in
+ * `bulkSnooze`, the rollover job, attempts, decks, the deadlines page, the
+ * queue panels' day roster, and (from 2026-10-23) the Reminders screen: its
+ * roster and "considered today", quota prompts and their day keys, a daily
+ * quota's count, and the slot nag (`dayBoundaryForUser` in
+ * src/core/tasks/rollover-time.ts is their read; with the switch off it is
+ * midnight, `CALENDAR_DAY_START`). "Today" in the Now view, the Today pill,
+ * Upcoming, the horizon segments and check_in_day stay on midnight
+ * (build-plan resolution 4).
  *
  * Pure: no database, no clock of its own. Every function takes the instant it
  * is asked about.
@@ -78,6 +86,60 @@ export function openTaskDayOf(instant: Date, timezone: string, rolloverTime: str
   const date = local.toISODate()!
   if (instant.getTime() >= rolloverMoment(date, timezone, rolloverTime).getTime()) return date
   return local.minus({ days: 1 }).toISODate()!
+}
+
+/**
+ * Midnight as a day start: the calendar day, as an OpenTask day. What the
+ * day-keyed surfaces run on with the task queue's switch off
+ * (`dayBoundaryForUser`), so one code path serves both.
+ */
+export const CALENDAR_DAY_START = '00:00'
+
+/** One OpenTask day: its date, and the instants it runs between, `[start, end)`. */
+export interface OpenTaskDaySpan {
+  /** yyyy-MM-dd — the local date the day is named by (`openTaskDayOf`). */
+  date: string
+  start: Date
+  end: Date
+}
+
+/**
+ * The OpenTask day `now` belongs to, as a span: from its rollover to the
+ * next date's. With `CALENDAR_DAY_START` it is the local calendar day.
+ */
+export function openTaskDaySpan(
+  now: Date,
+  timezone: string,
+  rolloverTime: string,
+): OpenTaskDaySpan {
+  const date = openTaskDayOf(now, timezone, rolloverTime)
+  const next = DateTime.fromISO(date, { zone: timezone }).plus({ days: 1 }).toISODate()!
+  return {
+    date,
+    start: rolloverMoment(date, timezone, rolloverTime),
+    end: rolloverMoment(next, timezone, rolloverTime),
+  }
+}
+
+/**
+ * When a reminder period (`start`, HH:MM) opens within the OpenTask day
+ * `date`: on that date when it starts at or after the rollover, else on the
+ * next date — a 1:00 AM period, with the day starting at 3:00, is the END of
+ * the day, not its beginning.
+ */
+export function periodOpensAt(
+  date: string,
+  start: string,
+  timezone: string,
+  rolloverTime: string,
+): Date {
+  const startMin = parseHHMM(start)
+  const rolloverMin = parseHHMM(rolloverTime)
+  const onDate =
+    startMin === null || rolloverMin === null || startMin >= rolloverMin
+      ? date
+      : DateTime.fromISO(date, { zone: timezone }).plus({ days: 1 }).toISODate()!
+  return localMoment(onDate, start, timezone)
 }
 
 /**

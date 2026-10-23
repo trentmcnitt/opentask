@@ -45,7 +45,7 @@ import {
   brokenDids,
   dayStateFor,
   didApplied,
-  localDate,
+  promptDate,
   parsePromptKey,
   withoutKeys,
   type ParsedPromptKey,
@@ -55,6 +55,7 @@ import type { QuotaDayState, Task, UndoSnapshot } from '@/types'
 import { getTaskById } from './create'
 import { rolloverQuotaNow } from './period-rollover'
 import { isDailyQuota } from './quota-prompts'
+import { dayBoundaryForUser } from './rollover-time'
 import { DEFAULT_PROGRESS_SOURCE, type ClientProgressSource } from '@/lib/progress-source'
 
 /** One action on one prompt. `did: false` is "consider". */
@@ -72,7 +73,7 @@ interface PlannedAction extends ParsedPromptKey {
  * Check every key before anything is written — the batch is all or nothing.
  *
  * Refused: a malformed key; a key for another day (a stale payload from
- * before midnight must not act on today); a task that is not the user's own,
+ * before the day turned must not act on today — the OpenTask day, `promptDate`); a task that is not the user's own,
  * live quota (prompts are never shown for someone else's shared quota, so an
  * action on one is a forged or stale request); a daily number outside 1..N, or
  * a non-zero number on a quota that prompts once a day.
@@ -83,7 +84,7 @@ export function planPromptActions(
   actions: PromptAction[],
   now: Date = new Date(),
 ): PlannedAction[] {
-  const today = localDate(timezone, now)
+  const today = promptDate(timezone, dayBoundaryForUser(userId), now)
   const bad: string[] = []
   const planned: PlannedAction[] = []
   for (const action of actions) {
@@ -231,7 +232,7 @@ export function executePromptActions(
   now: Date = new Date(),
   source: ClientProgressSource = DEFAULT_PROGRESS_SOURCE,
 ): ExecutedPromptActions {
-  const today = localDate(timezone, now)
+  const today = promptDate(timezone, dayBoundaryForUser(userId), now)
   const nowStr = now.toISOString()
   const out: ExecutedPromptActions = {
     snapshots: [],
@@ -384,7 +385,7 @@ export function restorePrompts(options: {
     keys.map((key) => ({ key, did: false })),
     now,
   )
-  const today = localDate(userTimezone, now)
+  const today = promptDate(userTimezone, dayBoundaryForUser(userId), now)
   const nowStr = now.toISOString()
   const taskIds = [...new Set(planned.map((p) => p.taskId))]
 

@@ -84,11 +84,16 @@ function anchorOf(task: OccurrenceTask): Date | null {
  * Returns null for non-recurring items (they have no schedule) and for
  * `from_completion` items — those genuinely have no scheduled occurrence until
  * they are completed, so asserting one would invent a schedule they don't have.
+ *
+ * "Today" is the local calendar day, or `day` when given — the Reminders
+ * screen passes its OpenTask day (2026-10-23, `openTaskDaySpan`), so with the
+ * day starting at 3:00 a 2:00 AM occurrence belongs to the evening before.
  */
 export function todaysOccurrence(
   task: OccurrenceTask,
   timezone: string,
   now: Date = new Date(),
+  day?: { start: Date; end: Date },
 ): Date | null {
   if (!task.rrule) return null
   if (task.recurrence_mode === 'from_completion') return null
@@ -96,9 +101,10 @@ export function todaysOccurrence(
   const localNow = DateTime.fromJSDate(now).setZone(timezone)
   if (!localNow.isValid) return null
 
-  // Search from just before midnight local so the first result is today's
+  // Search from just before the day's start so the first result is today's
   // occurrence if one exists.
-  const justBeforeToday = localNow.startOf('day').minus({ milliseconds: 1 }).toJSDate()
+  const dayStart = day ? DateTime.fromJSDate(day.start) : localNow.startOf('day')
+  const justBeforeToday = dayStart.minus({ milliseconds: 1 }).toJSDate()
 
   let next: Date
   try {
@@ -122,6 +128,7 @@ export function todaysOccurrence(
   const localNext = DateTime.fromJSDate(next).setZone(timezone)
   if (!localNext.isValid) return null
 
+  if (day) return next.getTime() < day.end.getTime() ? next : null
   return localNext.hasSame(localNow, 'day') ? next : null
 }
 

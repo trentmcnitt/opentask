@@ -69,7 +69,7 @@ import {
   assignDailyNumbers,
   dayStateFor,
   isDailyQuota,
-  localDate,
+  promptDate,
   promptEnabled,
   promptKey,
   resolvePromptSlot,
@@ -79,6 +79,7 @@ import { effectiveProgress, isTracked, quotaLabelOf, quotaPeriodOf } from '@/lib
 import { coerceWeekStart, type WeekStart } from '@/lib/week-start'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 import { getTasks } from './create'
+import { dayBoundaryForUser } from './rollover-time'
 
 // The prompt's shape lives in the client-safe half, so the web surfaces and
 // the server agree on one definition.
@@ -166,7 +167,8 @@ export function getQuotaPromptsBySlot(
   if (!settings.enabled) return bySlot
 
   const slots = listTimeSlots(userId)
-  const date = localDate(timezone, now)
+  const dayStart = dayBoundaryForUser(userId)
+  const date = promptDate(timezone, dayStart, now)
   const quotas = getTasks({ userId, done: false, kind: 'quota', limit: 1000 }).filter(
     (t) => isTracked(t) && t.user_id === userId && promptEnabled(t),
   )
@@ -178,7 +180,7 @@ export function getQuotaPromptsBySlot(
   }
 
   for (const task of quotas) {
-    const current = effectiveProgress(task, timezone, now, settings.weekStart)
+    const current = effectiveProgress(task, timezone, now, settings.weekStart, dayStart)
     const target = Math.max(1, task.progress_target ?? 1)
     const day = dayStateFor(task.quota_day_state, date)
     const base = {

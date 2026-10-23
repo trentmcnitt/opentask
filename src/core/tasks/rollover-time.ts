@@ -4,6 +4,7 @@
  * bundle reaches the switch through `format-task.ts`.
  */
 import { getDayStart } from '@/core/users/anchor-times'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import {
   hasRelativeTarget,
   isDeadlineAnchored,
@@ -21,6 +22,19 @@ import { taskQueueEnabled } from './task-queue'
  */
 export function rolloverTimeForUser(userId: number): string {
   return getDayStart(userId).time
+}
+
+/**
+ * THE DAY BOUNDARY of the day-keyed surfaces (2026-10-23, "one day boundary
+ * everywhere"): the Reminders screen's roster and "considered today", quota
+ * prompts and their day keys, a daily quota's count, and the slot nag. With
+ * the task queue's switch on it is the user's day start
+ * (`rolloverTimeForUser`); off, midnight (`CALENDAR_DAY_START`) — the switch
+ * keeps a server without the queue exactly as it was, like attempts
+ * (`attemptsRolloverTime`).
+ */
+export function dayBoundaryForUser(userId: number): string {
+  return taskQueueEnabled() ? rolloverTimeForUser(userId) : CALENDAR_DAY_START
 }
 
 /**

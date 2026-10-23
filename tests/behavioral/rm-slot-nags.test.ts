@@ -186,8 +186,11 @@ describe('Unfinished-slot nag — the OpenTask day', () => {
 
   /**
    * RN-008: a daily reminder left undone nags into the night, goes quiet from
-   * local midnight to the rollover (nothing of the new OpenTask day has opened),
-   * and starts again when the slot reopens.
+   * local midnight to its first slot (with the task queue's switch off — this
+   * suite's default — the Reminders day is the calendar day, and nothing of
+   * the new one has opened), and starts again when the slot reopens. With the
+   * switch on the evening's day runs to the day start and keeps nagging
+   * there: TQ-D06 in tq-day-start-boundary.test.ts.
    */
   test('RN-008: silent between midnight and the rollover; the new day re-arms it', () => {
     makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { rrule: 'FREQ=DAILY' })

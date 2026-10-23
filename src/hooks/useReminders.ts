@@ -671,8 +671,9 @@ export function useReminders({
         // A refresh after a confirmed completion converges the cache with the
         // server (the recurring case: a considered reminder is gone until its next
         // occurrence, which only the server knows). After a FAILURE too when
-        // prompts were involved: the likeliest cause is a page left open over
-        // midnight, whose prompt keys are yesterday's and are refused — without
+        // prompts were involved: the likeliest cause is a page left open past
+        // the day's turn (midnight, or the user's "Day starts at" with the task
+        // queue on), whose prompt keys are yesterday's and are refused — without
         // a refresh every tap would fail the same way until something else
         // reloaded the list.
         if (settledOk || keys.length > 0) void refresh()
@@ -1047,7 +1048,8 @@ function usePutBack({
  * count is the server's to change (a did-it's progress comes off, exactly
  * what it added), so the refresh after the request brings the new count.
  * It refreshes after a failure too: the likeliest cause is a page left open
- * over midnight, whose keys are yesterday's and are refused, and only the
+ * past the day's turn (midnight, or the day start), whose keys are
+ * yesterday's and are refused, and only the
  * server has today's.
  */
 function usePutBackPrompt({

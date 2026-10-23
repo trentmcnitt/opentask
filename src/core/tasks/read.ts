@@ -17,6 +17,7 @@ import {
   repeatRemaining,
 } from '@/lib/task-segments'
 import { quotaPeriodFields } from '@/lib/track'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { coerceWeekStart } from '@/lib/week-start'
 import { getCurrentlyDueTaskIds } from './currently-due'
 import { taskQueueEnabled } from './task-queue'
@@ -416,6 +417,9 @@ export function rowToTask(row: TaskRow): Task {
         row.owner_timezone,
         new Date(),
         coerceWeekStart(row.owner_week_start),
+        // A daily quota's day ends at the owner's day start with the queue's
+        // switch on (2026-10-23, `dayBoundaryForUser`'s rule), else midnight.
+        rolloverTime ?? CALENDAR_DAY_START,
       ),
     )
   }
