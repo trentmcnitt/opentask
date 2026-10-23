@@ -326,6 +326,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     // /?task=<id>: DashboardClient brings the row into view
                     // and selects it (no editor).
                     WebViewManager.shared.navigateToTask(taskId)
+                case .openDeadlines:
+                    // The deadlines nag: the Tasks card on the deadlines page.
+                    WebViewManager.shared.navigate(path: DeepLinkRouter.notificationDeadlinesPath)
                 default:
                     break
                 }

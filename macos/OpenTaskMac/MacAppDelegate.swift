@@ -264,6 +264,9 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                     await WebViewManager.shared.navigate(path: "/")
                 case .openTask(let taskId):
                     await WebViewManager.shared.navigateToTask(taskId)
+                case .openDeadlines:
+                    // The deadlines nag: the Tasks card on the deadlines page.
+                    await WebViewManager.shared.navigate(path: DeepLinkRouter.notificationDeadlinesPath)
                 default:
                     break
                 }

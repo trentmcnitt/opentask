@@ -268,6 +268,30 @@ final class NotificationActionRunnerTests: XCTestCase {
         XCTAssertEqual(outcome, .taskUpdated(taskId: 42))
     }
 
+    // MARK: - The deadlines-page nag (2026-10-22)
+
+    /// No category (an empty identifier on the device), `kind: "deadlines"`,
+    /// no `taskId`: the body tap opens the deadlines page and calls nothing.
+    func testDeadlinesNagBodyTapOpensTheDeadlinesPage() async throws {
+        let outcome = try await run("", .bodyTap, userInfo: ["kind": "deadlines"])
+        XCTAssertEqual(outcome, .openDeadlines)
+        XCTAssertEqual(api.calls, [])
+        XCTAssertEqual(NotificationActionRunner.deadlinesKind, "deadlines")
+    }
+
+    /// It has no buttons; one that somehow arrives does nothing.
+    func testDeadlinesNagIgnoresButtons() async throws {
+        let outcome = try await run("", .button(NotificationAction.done), userInfo: ["kind": "deadlines"])
+        XCTAssertEqual(outcome, .ignored)
+        XCTAssertEqual(api.calls, [])
+    }
+
+    /// The other kinds without a task (the deadline cap) are unchanged.
+    func testOtherTasklessKindsStillSendNothing() async throws {
+        let outcome = try await run("", .bodyTap, userInfo: ["kind": "deadline-cap"])
+        XCTAssertEqual(outcome, .missingTaskId)
+    }
+
     func testUnknownButtonOnATaskSendsNothing() async throws {
         let outcome = try await run(task, .button("NOT_AN_ACTION"), userInfo: taskInfo)
         XCTAssertEqual(outcome, .ignored)
