@@ -14,6 +14,7 @@ import {
   deckReplaces,
   deckTapDay,
   deckTomorrowDay,
+  deferLeadDays,
   offersDeck,
   todayReplaces,
 } from '@/lib/deck-menu'
@@ -253,6 +254,31 @@ describe('OD-UI-02b: what a deck or Today replaces (plan §5, the faded buttons)
   })
 })
 
+describe('OD-UI-02c: the deadlines page Defer menu (tomorrow … D−2)', () => {
+  // NOW is Thu Jan 15 2026, 10:00 Chicago.
+  const at = (local: string) => DateTime.fromISO(local, { zone: TZ }).toUTC().toISO()!
+
+  test('tomorrow to two days before the deadline, the last one marked', () => {
+    const days = deferLeadDays(at('2026-01-20T17:00'), TZ, NOW, null)
+    expect(days.map((d) => d.day)).toEqual(['2026-01-16', '2026-01-17', '2026-01-18'])
+    expect(days[0].label).toBe('Tomorrow')
+    expect(days[1].label).toBe('Saturday')
+    expect(days[2].caption).toBe('2 days before the deadline')
+  })
+
+  test('a far deadline: the next six days, then its last allowed day', () => {
+    const days = deferLeadDays(at('2026-02-10T17:00'), TZ, NOW, null)
+    expect(days).toHaveLength(7)
+    expect(days[6]).toMatchObject({ day: '2026-02-08', label: 'Sun Feb 8' })
+  })
+
+  test('only days after the current lead day; none once tomorrow is D−1', () => {
+    const days = deferLeadDays(at('2026-01-20T17:00'), TZ, NOW, null, '2026-01-16')
+    expect(days.map((d) => d.day)).toEqual(['2026-01-17', '2026-01-18'])
+    expect(deferLeadDays(at('2026-01-17T17:00'), TZ, NOW, null)).toEqual([])
+  })
+})
+
 describe("OD-UI-03: Now's On deck section", () => {
   const projects = [
     { id: 1, name: 'Inbox', sort_order: 0 },
@@ -302,6 +328,17 @@ describe("OD-UI-03: Now's On deck section", () => {
     })
     expect(inDeckSection(nagging, TZ, NOW)).toBe(false)
     expect(inDeckSection(makeTask({ on_deck_day: '2026-01-15' }), TZ, NOW)).toBe(true)
+  })
+
+  test('the deadlines page (queue on): a target-less deadline task in its safety net is the page’s, not the section’s', () => {
+    const opts = { queue: true, rolloverTime: null }
+    const inNet = makeTask({ on_deck_day: '2026-01-15', deadline_at: local(1, 17) })
+    expect(inDeckSection(inNet, TZ, NOW, opts)).toBe(false)
+    // Further out the deck day is the section's (the page suppresses it that day).
+    const ahead = makeTask({ on_deck_day: '2026-01-15', deadline_at: local(5, 17) })
+    expect(inDeckSection(ahead, TZ, NOW, opts)).toBe(true)
+    // Queue off: as before.
+    expect(inDeckSection(inNet, TZ, NOW)).toBe(true)
   })
 })
 
