@@ -50,6 +50,7 @@ import { useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
+import { DeadlineChip } from '@/components/DeadlineChip'
 
 /**
  * A TASK SEGMENT's rows (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -870,10 +871,11 @@ function DeckSlotSpacer({ panel, empty = false }: { panel: boolean; empty?: bool
 }
 
 /**
- * The second line, only when there is something to say: a future target date
- * ("Nov 1") — a waiting repeating task's occurrence instead
- * (`queuedRepeatOccurrence`) — or a deadline. Without either the row is one line, a reminder row's
- * height — the segment stays bite-size.
+ * The second line, only when there is something to say: the DEADLINE first
+ * (`DeadlineChip`, 2026-10-22 — red passed, amber in the safety net), a
+ * future target date ("Nov 1") — a waiting repeating task's occurrence
+ * instead (`queuedRepeatOccurrence`). Without either the row is one line, a
+ * reminder row's height — the segment stays bite-size.
  *
  * With the task queue on (PR 3) the horizon is here too, as the row corner's
  * dot (`showsHorizonDot`, the dashboard row's rule: a one-off with no picked
@@ -906,11 +908,11 @@ function TaskSegmentMeta({
   const queuedOccurrence = queueOn ? queuedRepeatOccurrence(task) : null
   const shownAt = queuedOccurrence ?? task.due_at
   const target = shownAt ? DateTime.fromISO(shownAt).setZone(timezone) : null
-  const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null
-  // The dashboard row's context, compactly (Trent, 10-11): the project, the
-  // priority, a future target and the deadline.
+  // The dashboard row's context, compactly (Trent, 10-11): the deadline (first,
+  // 2026-10-22), the project, the priority and a future target.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
@@ -945,11 +947,6 @@ function TaskSegmentMeta({
               {recurrenceSummary(task.rrule, task.anchor_time)}
             </span>
           )}
-        </span>
-      )}
-      {deadline && (
-        <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
-          deadline {deadline.toFormat('LLL d')}
         </span>
       )}
       {/* No badges on a queue row (designer, 10-19) — neither attempts nor
@@ -1020,9 +1017,10 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
 }
 
 /**
- * An UPCOMING row's second line (2026-10-12, spec §2): the gap text —
- * "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" — after the project and
- * priority. The "Target …" part is a chip that opens a one-item menu
+ * An UPCOMING row's second line (2026-10-12, spec §2): the deadline chip
+ * first (2026-10-22), the project and priority, then "Target Tue Nov 3" —
+ * or, for a target-less deadline task before its lead day (the deadlines
+ * page's hand-off, plan §4), "on the deadlines page from Tue Oct 20". The "Target …" part is a chip that opens a one-item menu
  * (`targetReset`): "Remove target" — back to its horizon segment, or, with a
  * deadline (2026-10-22, it replaced "Back to auto"), onto the deadlines page
  * from its lead day. Undo on the toast. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
@@ -1045,11 +1043,18 @@ function UpcomingMeta({
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const gap = upcomingGap(task, timezone)
   const reset = readOnly ? null : upcomingRowActions(row).reset
+  // The deadlines page's hand-off (plan §4): a target-less deadline task's
+  // heads-up counts to its lead day — "on the deadlines page from Tue Oct 20".
+  const leadFrom =
+    !gap.target && task.deadline_at && task.lead_from
+      ? DateTime.fromISO(task.lead_from, { zone: timezone }).toFormat('ccc LLL d')
+      : null
   return (
     <div
       data-upcoming-gap
       className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
     >
+      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
@@ -1059,6 +1064,11 @@ function UpcomingMeta({
       {priority && (
         <span data-segment-priority className={priority.color}>
           {priority.label}
+        </span>
+      )}
+      {leadFrom && (
+        <span data-lead-from className="text-foreground/70">
+          on the deadlines page from {leadFrom}
         </span>
       )}
       {gap.target &&
@@ -1092,16 +1102,6 @@ function UpcomingMeta({
             )}
           </span>
         ))}
-      {gap.target && gap.deadline && (
-        <span aria-hidden className="-mx-1">
-          ·
-        </span>
-      )}
-      {gap.deadline && (
-        <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
-          {gap.deadline}
-        </span>
-      )}
       <BadgeChips task={task} timezone={timezone} />
       <SegmentLabels task={task} />
     </div>

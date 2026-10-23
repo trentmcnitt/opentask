@@ -39,6 +39,7 @@ import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/
 import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
+import { DeadlineChip } from '@/components/DeadlineChip'
 import { offersDeck } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -887,11 +888,17 @@ function TaskRowMeta({
   onSnooze: (taskId: number, until: string) => void
   onRemoveTarget?: (task: Task) => void
 }) {
-  if (segments.length === 0 && !offer) return null
+  // The deadline chip leads the line (2026-10-22, `DeadlineChip`) — not on a
+  // quota, which carries no deadline.
+  const deadline = task.deadline_at && !isTracked(task) ? task.deadline_at : null
+  if (segments.length === 0 && !offer && !deadline) return null
   // The segments after the target time, or all of them when it is plain text.
   const rest = timeControl ? segments.filter((seg) => !seg.target) : segments
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
+      {deadline && (
+        <DeadlineChip deadlineAt={deadline} timezone={timezone} className="mr-0.5 text-xs" />
+      )}
       {timeControl && (
         <TargetTimeText
           task={task}
@@ -985,11 +992,10 @@ function buildMetaSegments(
     segments.push({ text: formatRRuleCompact(task.rrule, task.anchor_time) })
   }
 
-  // The deadline (2026-10-10): its own field now, never moved by a snooze.
-  // Past it, the row says so — nagging continues (Trent: "sometimes it's for a
-  // client and you're in a rush"), and this marker is the honest label.
-  const deadline = deadlineSegment(task, timezone)
-  if (deadline) segments.push(deadline)
+  // The deadline (2026-10-10) is not a segment since 2026-10-22: it leads the
+  // line as the deadline chip (`DeadlineChip`, in `TaskRowMeta`) — red once
+  // passed (nagging continues; Trent: "sometimes it's for a client and you're
+  // in a rush"), amber in the safety net.
 
   // AGE (spec §7, 2026-10-12; replaced the "Xd old" text every row had): only
   // on a task with neither a target nor a deadline, and only once it is past
@@ -1000,26 +1006,6 @@ function buildMetaSegments(
   if (age) segments.push({ text: age, className: 'text-muted-foreground/70', ageLabel: true })
 
   return segments
-}
-
-/**
- * The deadline (2026-10-10): its own field now, never moved by a snooze.
- * Past it, the row says so — nagging continues (Trent: "sometimes it's for a
- * client and you're in a rush"), and this marker is the honest label.
- */
-function deadlineSegment(task: Task, timezone: string): MetaSegment | null {
-  if (!task.deadline_at) return null
-  const when = formatDueTimeParts(task.deadline_at, timezone)
-  if (isPastDeadline(task.deadline_at, new Date())) {
-    return {
-      text: `past deadline ${when.absolute || when.relative}`,
-      className: 'text-destructive font-semibold',
-    }
-  }
-  return {
-    text: `deadline ${when.relative}`,
-    className: 'text-amber-700 dark:text-amber-400 font-medium',
-  }
 }
 
 /**
