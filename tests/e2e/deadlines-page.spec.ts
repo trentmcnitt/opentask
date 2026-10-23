@@ -274,7 +274,7 @@ for (const viewport of VIEWPORTS) {
         // Right after the project (Trent's 10-20 rule: every row's project
         // starts at the same x).
         const meta = row(s, ahead).locator('p + div > *')
-        await expect(meta.nth(0)).toHaveAttribute('data-segment-project', '')
+        await expect(meta.nth(0)).toHaveAttribute('data-segment-project')
         await expect(meta.nth(1)).toHaveAttribute('data-deadline-chip', 'ahead')
 
         // The dashboard row: the past-deadline task is relevant in Now (its

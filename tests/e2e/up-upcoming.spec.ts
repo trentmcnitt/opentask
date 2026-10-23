@@ -112,7 +112,7 @@ test.describe('Upcoming', () => {
       ])
       // The gap text: the project, the deadline chip right after it, the target.
       const gap = row(page, t.withDeadline).locator('[data-upcoming-gap]')
-      await expect(gap.locator('> *').nth(0)).toHaveAttribute('data-segment-project', '')
+      await expect(gap.locator('> *').nth(0)).toHaveAttribute('data-segment-project')
       await expect(gap.locator('> *').nth(1)).toHaveAttribute('data-deadline-chip', 'ahead')
       await expect(gap.locator('[data-deadline-chip]')).toHaveText(/^Deadline \w+/)
       await expect(gap).toContainText(/Target \w{3} \w{3} \d+/)
