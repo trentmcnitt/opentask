@@ -28,20 +28,26 @@
  * ON DECK RIDES ALONG (2026-10-20, red-team B10/A12). A push that already
  * fires appends today's undone deck count ("3 reminders waiting · 5 on
  * deck"). Decks never make a slot notify (an empty slot stays silent), never
- * join the hourly nag or its "unfinished" test (`waitingBySlot` does not
+ * join the slot nag or its "unfinished" test (`waitingBySlot` does not
  * count them), and never count toward `reminder_count`; the payload carries
  * them as `deck_count`. Slot pushes are APNs-only, so a user with no periods
  * or with Web Push only gets no count — accepted.
  *
- * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces an unfinished
- * slot on the hour, at most three times a day, at Trent's request (2026-09-21).
- * It still writes nothing, still never marks anything overdue or badged, and
- * still never fires for a slot that has not opened. Read that module's header
+ * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces unfinished
+ * slots at Trent's request (2026-09-21), paced since 2026-10-22 by the nag
+ * ladder at the shortest rung among the waiting items' priorities. It still
+ * writes nothing, still never marks anything overdue or badged, and still
+ * never fires for a slot that has not opened. Read that module's header
  * before concluding the "no catch-up" claim above has been violated.
+ *
+ * NO SOUND (ruling 5, Trent 2026-10-22: sound only on overdue): the slot-open
+ * push is a silent banner, like the nag (`buildSlotReminderNotification`).
  */
 
 import { log } from '@/lib/logger'
 import { DateTime } from 'luxon'
+import { getDb } from '@/core/db'
+import type { QuotaPrompt } from '@/lib/quota-prompts'
 import { sendApnsSlotReminder, isApnsConfigured } from '@/core/notifications/apns'
 import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts'
 import { getRemindersBySlot } from '@/core/tasks/reminders'
@@ -65,6 +71,27 @@ export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): Tim
 export interface SlotWaiting {
   reminders: number
   prompts: number
+  /**
+   * The priority of every waiting item — each reminder's own, and each
+   * prompt's quota task's — which the slot nag paces by (the shortest rung
+   * wins, `slot-nags.ts`). One entry per item, reminders first.
+   */
+  priorities: number[]
+}
+
+/**
+ * The priority of each quota behind a list of prompts, by task id. Read here
+ * rather than carried on `QuotaPrompt`, which is the wire shape of
+ * `GET /api/reminders` (and the native apps' contract): the slot nag is the
+ * only reader, so the API stays as it is.
+ */
+function quotaPriorities(taskIds: number[]): Map<number, number> {
+  if (taskIds.length === 0) return new Map()
+  const unique = [...new Set(taskIds)]
+  const rows = getDb()
+    .prepare(`SELECT id, priority FROM tasks WHERE id IN (${unique.map(() => '?').join(',')})`)
+    .all(...unique) as { id: number; priority: number | null }[]
+  return new Map(rows.map((r) => [r.id, r.priority ?? 0]))
 }
 
 /**
@@ -75,31 +102,46 @@ export interface SlotWaiting {
  *
  * A prompt is waiting while it is neither considered nor done (`promptWaiting`,
  * the same test every client uses). Prompts come from the phase-1 computation
- * as-is — one quota query per call. Called only for a user whose slot opens
- * this minute, or whose slot nag is due by `nag_sends`; never once a minute
- * for every user.
+ * as-is — one quota query per call, and one more for the waiting prompts'
+ * quota priorities. Called only for a user whose slot opens this minute, or
+ * whose slot nag could be due by `nag_sends` at its fastest rung; never once
+ * a minute for every user.
  */
 export function waitingBySlot(
   userId: number,
   timezone: string,
   now: Date,
 ): Map<number | null, SlotWaiting> {
-  const prompts = getQuotaPromptsBySlot(userId, timezone, now)
-  const waiting = new Map<number | null, SlotWaiting>()
+  const waitingPrompts = new Map<number | null, QuotaPrompt[]>()
+  for (const [id, list] of getQuotaPromptsBySlot(userId, timezone, now)) {
+    waitingPrompts.set(id, list.filter(promptWaiting))
+  }
+  const quotaPriority = quotaPriorities(
+    [...waitingPrompts.values()].flatMap((list) => list.map((p) => p.task_id)),
+  )
+  const promptPriorities = (list: QuotaPrompt[]) =>
+    list.map((p) => quotaPriority.get(p.task_id) ?? 0)
 
+  const waiting = new Map<number | null, SlotWaiting>()
   for (const group of getRemindersBySlot(userId, timezone, now)) {
     const id = group.slot?.id ?? null
+    const prompts = waitingPrompts.get(id) ?? []
     waiting.set(id, {
       reminders: group.reminders.length,
-      prompts: (prompts.get(id) ?? []).filter(promptWaiting).length,
+      prompts: prompts.length,
+      priorities: [...group.reminders.map((t) => t.priority ?? 0), ...promptPriorities(prompts)],
     })
   }
   // `getRemindersBySlot` returns every slot plus the un-slotted group, so a
   // prompt's slot is always already there; this only guards a slot deleted
   // between the two reads.
-  for (const [id, list] of prompts) {
+  for (const [id, prompts] of waitingPrompts) {
     if (!waiting.has(id)) {
-      waiting.set(id, { reminders: 0, prompts: list.filter(promptWaiting).length })
+      waiting.set(id, {
+        reminders: 0,
+        prompts: prompts.length,
+        priorities: promptPriorities(prompts),
+      })
     }
   }
   return waiting

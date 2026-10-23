@@ -1,11 +1,13 @@
 /**
- * Unfinished-slot nag behavioral tests (RN-001 … RN-021)
+ * Unfinished-slot nag behavioral tests (RN-001 … RN-027)
  *
  * The nag is a CONSCIOUS EXCEPTION to §6's "a reminder carries no debt" (see
- * `src/core/notifications/slot-nags.ts`). Since Trent's 2026-10-22 ruling ("one
- * considering ladder, no special cases") it is paced by the nag ladder alone:
- * the user's Unset tier ×2 (60 minutes by default) after the slot's own push or
- * the last nag — no daily cap, no derived gap, no evening reserve, no Wake–Sleep
+ * `src/core/notifications/slot-nags.ts`). Since Trent's 2026-10-22 rulings ("one
+ * considering ladder, no special cases"; priority paces the slot nag) it is
+ * paced by the nag ladder alone: the shortest considering rung (the user's
+ * tier ×2) among the waiting reminders and quota prompts — 60 minutes by
+ * default when everything is Unset — after the slot's own push or the last
+ * nag. No daily cap, no derived gap, no evening reserve, no Wake–Sleep
  * window, no top-of-the-hour alignment. These tests pin that, and the parts
  * that did not change: ONE notification per user, naming the latest unfinished
  * slot; never a slot that hasn't opened; silent once the slot is finished; the
@@ -138,7 +140,10 @@ describe('Unfinished-slot nag — the ladder paces it', () => {
     expect(tick(at(8))).toHaveLength(1)
   })
 
-  /** RN-004: the interval is the user's Unset tier ×2 (the ladder's slot_nag row). */
+  /**
+   * RN-004: with only Unset reminders waiting, the interval is the user's
+   * Unset tier ×2 (the ladder's slot_nag row).
+   */
   test("RN-004: the user's Unset tier moves the pace", () => {
     makeReminder(7)
     getDb().prepare('UPDATE users SET auto_snooze_minutes = 45 WHERE id = ?').run(TEST_USER_ID)
@@ -252,11 +257,11 @@ describe('Unfinished-slot nag — what it sends', () => {
   })
 
   /**
-   * RN-013b: the nag is a SILENT banner (ruling 5: sound only on overdue); the
-   * slot-open push keeps its sound. Same category, thread, collapse id and
-   * userInfo either way, so the nag still replaces the slot's banner.
+   * RN-013b: the nag AND the slot-open push are SILENT banners (ruling 5:
+   * sound only on overdue). Same category, thread, collapse id and userInfo
+   * either way, so the nag still replaces the slot's banner.
    */
-  test('RN-013b: the nag payload has no sound; the slot-open payload is unchanged', () => {
+  test('RN-013b: neither the slot-open nor the nag payload has a sound', () => {
     const open = buildSlotReminderNotification('tok', 'io.mcnitt.opentask', {
       slotId: 7,
       slotLabel: 'Morning',
@@ -268,7 +273,6 @@ describe('Unfinished-slot nag — what it sends', () => {
         alert: { title: 'Morning', body: '3 reminders · 1 quota waiting' },
         category: 'SLOT_REMINDER',
         'thread-id': 'ot-reminders',
-        sound: 'default',
         'interruption-level': 'active',
       },
       slot_id: 7,
@@ -285,7 +289,6 @@ describe('Unfinished-slot nag — what it sends', () => {
       count: 3,
       promptCount: 1,
       body: slotNagBody(3, 1, 1),
-      silent: true,
     })
     const { aps, ...data } = nag.buildApnsOptions() as { aps: Record<string, unknown> }
     expect(aps).not.toHaveProperty('sound')
@@ -384,5 +387,108 @@ describe('Unfinished-slot nag — who and where', () => {
     tick(at(8))
     const rows = db.prepare('SELECT COUNT(*) AS n FROM slot_nags').get() as { n: number }
     expect(rows.n).toBe(1)
+  })
+})
+
+/** A weekly quota (it prompts in Early morning, 07:00, by default). */
+function makeQuota(priority: number) {
+  return createTask({
+    userId: TEST_USER_ID,
+    userTimezone: TEST_TIMEZONE,
+    input: {
+      title: 'Cook vegetables',
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 3,
+      is_tracked: true,
+      priority,
+    },
+  })
+}
+
+/**
+ * Trent, 2026-10-22: reminder and quota priority paces the slot nag. The
+ * interval is the SHORTEST considering rung (the user's tier ×2: Urgent 10,
+ * High 30, Medium 120, Low 480, Unset 60 by default) among the waiting
+ * reminders and quota prompts — each prompt at its quota's priority — across
+ * every unfinished slot the one nag covers.
+ */
+describe('Unfinished-slot nag — priority paces it', () => {
+  freezeAndSeed()
+
+  /** RN-021: everything Unset — a reminder and a quota prompt — is the Unset rung. */
+  test('RN-021: all Unset waiting → every 60', () => {
+    makeReminder(7)
+    makeQuota(0)
+    tick(at(7))
+    expect(pendingSlotNags(at(7, 59))).toHaveLength(0)
+    expect(pendingSlotNags(at(8))).toMatchObject([
+      { count: 1, promptCount: 1, intervalMinutes: 60 },
+    ])
+  })
+
+  /** RN-022: one High reminder among Unset ones sets the pace: the High rung, 30. */
+  test('RN-022: one High reminder waiting → every 30', () => {
+    makeReminder(7)
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    expect(firingMinutes(at(7), at(8, 59))).toEqual(['15 07:30', '15 08:00', '15 08:30'])
+    expect(pendingSlotNags(at(9))).toMatchObject([{ count: 2, intervalMinutes: 30 }])
+  })
+
+  /** RN-023: a quota prompt paces at its QUOTA's priority — Urgent, 10. */
+  test('RN-023: an Urgent quota prompt waiting → every 10', () => {
+    makeReminder(7)
+    makeQuota(4)
+    expect(firingMinutes(at(7), at(7, 30))).toEqual(['15 07:10', '15 07:20', '15 07:30'])
+    expect(pendingSlotNags(at(7, 40))).toMatchObject([{ promptCount: 1, intervalMinutes: 10 }])
+  })
+
+  /** RN-024: Low only is the slowest rung, 480 — slower than Unset, on purpose. */
+  test('RN-024: only a Low reminder waiting → every 480', () => {
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 1 })
+    tick(at(7))
+    expect(pendingSlotNags(at(14, 59))).toHaveLength(0)
+    expect(pendingSlotNags(at(15))).toMatchObject([{ intervalMinutes: 480 }])
+  })
+
+  /**
+   * RN-025: finishing the High item drops the pace back to the next rung —
+   * the Unset one left, 60 — counted from the last send.
+   */
+  test('RN-025: finishing the High item drops back to the next rung', () => {
+    makeReminder(7)
+    const high = makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    tick(at(7))
+    expect(tick(at(7, 30))).toMatchObject([{ intervalMinutes: 30 }])
+
+    vi.setSystemTime(at(7, 35))
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: high.id })
+
+    expect(pendingSlotNags(at(8))).toHaveLength(0)
+    expect(pendingSlotNags(at(8, 29))).toHaveLength(0)
+    expect(pendingSlotNags(at(8, 30))).toMatchObject([{ count: 1, intervalMinutes: 60 }])
+  })
+
+  /** RN-026: the rung is the user's own tier ×2 — moving the High tier moves it. */
+  test("RN-026: the user's tier change moves the pace", () => {
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    tick(at(7))
+    getDb().prepare('UPDATE users SET auto_snooze_high_minutes = 20 WHERE id = ?').run(TEST_USER_ID)
+    expect(pendingSlotNags(at(7, 30))).toHaveLength(0)
+    expect(pendingSlotNags(at(7, 39))).toHaveLength(0)
+    expect(pendingSlotNags(at(7, 40))).toMatchObject([{ intervalMinutes: 40 }])
+  })
+
+  /**
+   * RN-027: the one nag covers every unfinished slot, so an earlier slot's
+   * High reminder paces it even while the nag names a later slot.
+   */
+  test('RN-027: the shortest rung across every slot the nag covers', () => {
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    makeReminder(12)
+    tick(at(12))
+    expect(pendingSlotNags(at(12, 29))).toHaveLength(0)
+    expect(pendingSlotNags(at(12, 30))).toMatchObject([
+      { slotLabel: 'Midday', otherSlots: 1, intervalMinutes: 30 },
+    ])
   })
 })

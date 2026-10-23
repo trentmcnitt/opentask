@@ -156,6 +156,7 @@ describe('Quota prompts — local day', () => {
     expect(waitingBySlot(TEST_USER_ID, TEST_TIMEZONE, at(23, 30)).get(slotId('Evening'))).toEqual({
       reminders: 0,
       prompts: 0,
+      priorities: [],
     })
   })
 })

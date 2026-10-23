@@ -337,22 +337,17 @@ export interface ApnsSlotReminderPayload {
   /**
    * Alert body override. Defaults to `slotWaitingBody(count, promptCount)`.
    *
-   * The hourly nag (`slot-nags.ts`) sends through this same function so it
+   * The slot nag (`slot-nags.ts`) sends through this same function so it
    * inherits the category, the checklist and the action buttons, but its body
    * has to say more — it speaks for the other unfinished slots too.
    */
   body?: string
-  /**
-   * No sound: the nag only (ruling 5, sound only on overdue). The slot-open
-   * push leaves it unset and keeps the default sound.
-   */
-  silent?: boolean
 }
 
 /**
  * What a slot says is waiting: "3 reminders waiting", "2 quotas waiting", or
  * both, "3 reminders · 2 quotas waiting". One phrase for the slot-open push
- * and the hourly nag (`slotNagBody` builds on it), so the two never word the
+ * and the slot nag (`slotNagBody` builds on it), so the two never word the
  * same slot differently. A zero side is left out rather than said — "0 quotas"
  * is chrome for something that isn't there. The prompt side says "quotas":
  * a period shows at most one prompt per quota, so the two counts agree.
@@ -372,10 +367,9 @@ export function withDeckCount(body: string, decks: number): string {
 }
 
 /**
- * The slot push as APNs sends it (pure, so the payload is testable). The
- * slot-OPEN push plays the default sound; the NAG passes `silent` and plays
- * none — ruling 5 (2026-10-22): sound only on overdue, nags are silent
- * banners. Whether the slot-open push keeps its sound is Trent's open call.
+ * The slot push as APNs sends it (pure, so the payload is testable). No
+ * sound, for the slot-open push and the nag alike — ruling 5 (Trent,
+ * 2026-10-22): sound only on overdue. Both are silent banners.
  */
 export function buildSlotReminderNotification(
   deviceToken: string,
@@ -390,7 +384,6 @@ export function buildSlotReminderNotification(
     topic,
     category: 'SLOT_REMINDER',
     threadId: NOTIFICATION_THREADS.reminders,
-    ...(payload.silent ? {} : { sound: 'default' }),
     collapseId: `slot-${payload.slotId}`,
     data: {
       slot_id: payload.slotId,
@@ -419,7 +412,7 @@ export async function sendApnsSlotReminder(
     (devices) => {
       log.info(
         'apns',
-        `Sending slot ${payload.silent ? 'nag' : 'reminder'} "${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
+        `Sending slot ${payload.body !== undefined ? 'nag' : 'reminder'}"${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
       )
     },
   )

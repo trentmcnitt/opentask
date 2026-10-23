@@ -30,8 +30,8 @@ enum WidgetTheme {
         }
     }
 
-    /// §6: "priority is prominence, not interruption" — a high-priority row is
-    /// heavier and darker, never louder. The server pre-sorts, so weight only
+    /// §6: "priority is prominence" — a high-priority row is heavier and
+    /// darker, never louder (it only paces its slot's one nag, server-side). The server pre-sorts, so weight only
     /// has to confirm the ordering the eye already sees.
     static func priorityWeight(_ priority: Int) -> Font.Weight {
         switch priority {
