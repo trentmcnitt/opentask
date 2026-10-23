@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
@@ -28,6 +28,11 @@ import { usePanelPager } from '@/hooks/usePanelPager'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
+import {
+  TASKS_PANEL_PARAM,
+  tasksPanelLinkIndex,
+  withoutTasksPanelParam,
+} from '@/lib/tasks-panel-link'
 
 /**
  * The dashboard's TASKS card, directly beneath the Reminders card (2026-10-11).
@@ -56,9 +61,12 @@ import { onlyWithQueue } from '@/lib/task-segments'
 export function DashboardTasksPanel({
   actions,
   timezone,
+  hydrated,
 }: {
   actions: TaskSegmentActions
   timezone: string
+  /** The reminders fetch has landed (`useReminders().hydrated`): the segments are today's. */
+  hydrated: boolean
 }) {
   const pages = actions.segments.map((segment) => {
     const { handled, total } = segmentCounts(segment)
@@ -76,6 +84,39 @@ export function DashboardTasksPanel({
   // No page is a slot: the natural page is the first segment still waiting.
   const pager = usePanelPager(pages, 0, 0)
   const queue = useTaskQueue()
+  const sectionRef = useRef<HTMLElement>(null)
+  const scrollPending = useRef(false)
+  const linkDone = useRef(false)
+  // `/?tasks=<kind>` (src/lib/tasks-panel-link.ts): the deadlines nag's tap
+  // opens this card on the deadlines page and brings it into view. Read once,
+  // after the fetch has landed (`hydrated`, not the module cache's instant
+  // paint — the same trap `?reminder=` avoids in RemindersView), straight
+  // from window.location, and stripped with a raw history rewrite (never
+  // router.replace — see DashboardClient's `?task=`). A kind the card isn't
+  // showing today is consumed and ignored.
+  useEffect(() => {
+    if (linkDone.current || !hydrated) return
+    linkDone.current = true
+    const search = window.location.search
+    if (!new URLSearchParams(search).has(TASKS_PANEL_PARAM)) return
+    const index = tasksPanelLinkIndex(
+      search,
+      pages.map((p) => p.key),
+    )
+    if (index !== null && pager) {
+      pager.goTo(index)
+      scrollPending.current = true
+    }
+    const rest = withoutTasksPanelParam(search)
+    window.history.replaceState(window.history.state, '', window.location.pathname + rest)
+  })
+  // Bring the card into view, once (the link's page is shown on it; with
+  // every page finished the one-line card has no ref and nothing scrolls).
+  useEffect(() => {
+    if (!scrollPending.current) return
+    scrollPending.current = false
+    sectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  })
   if (!pager) return null
   if (pages.every((p) => p.waiting === 0)) {
     return <TasksDoneLine segments={actions.segments} actions={actions} />
@@ -95,6 +136,7 @@ export function DashboardTasksPanel({
   const queueOn = onlyWithQueue(segment.horizon) || (queue.loaded && queue.enabled)
   return (
     <section
+      ref={sectionRef}
       aria-label="Tasks"
       data-tasks-panel
       data-tasks-page={page.key}
