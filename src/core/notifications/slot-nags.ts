@@ -61,13 +61,13 @@
 
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
-import { getAnchorTimes } from '@/core/users/anchor-times'
+import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import { log } from '@/lib/logger'
 import { isApnsConfigured, sendApnsSlotReminder, slotWaitingBody } from '@/core/notifications/apns'
 import { pendingSlotNotifications, waitingBySlot } from '@/core/notifications/slot-reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
-import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
+import { openTaskDayOf } from '@/lib/opentask-day'
 import { notifiableUsers, type NotifiableUser } from '@/core/notifications/notifiable-users'
 import { nagIntervalMinutes, userNagTiers, type NagTiers } from '@/core/notifications/nag-ladder'
 import { claimNagSend, nagSendDue, SLOT_NAG_KEY } from '@/core/notifications/nag-sends'
@@ -146,7 +146,7 @@ function usersNotifiedThisMinute(now: Date): Set<number> {
 function openedMinute(user: NotifiableUser, slots: TimeSlot[], now: Date): number | null {
   const local = DateTime.fromJSDate(now).setZone(user.timezone)
   if (!local.isValid) return null
-  const rollover = rolloverTimeOf(slots, getAnchorTimes(user.id, slots).morning.time)
+  const rollover = rolloverTimeForUser(user.id)
   if (openTaskDayOf(now, user.timezone, rollover) !== local.toISODate()) return null
   return local.hour * 60 + local.minute
 }

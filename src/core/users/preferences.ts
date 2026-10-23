@@ -54,6 +54,13 @@ export interface PreferencesRow {
   sleep_slot_id: number | null
   /** The number pad's four buttons as stored JSON, or null for the defaults. */
   pad_presets: string | null
+  /**
+   * "Day starts at" (2026-10-23, `src/lib/anchor-times.ts`): a custom time
+   * (slot id null), a link to a period (time = its start as of the link), or
+   * both null — the default, the first period's start.
+   */
+  day_start_time: string | null
+  day_start_slot_id: number | null
   notifications_enabled: number
   enrichment_notifications_enabled: number
   sweep_feedback_notifications_enabled: number
@@ -121,6 +128,8 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   wake_slot_id: null,
   sleep_slot_id: null,
   pad_presets: null,
+  day_start_time: null,
+  day_start_slot_id: null,
   notifications_enabled: 1,
   enrichment_notifications_enabled: 1,
   sweep_feedback_notifications_enabled: 1,
@@ -198,8 +207,8 @@ function syncLabelRegistry(userId: number, oldJson: string | undefined, newJson:
  *
  * A new `label_config` also updates the label registry (`syncLabelRegistry`).
  *
- * A new first day of the week moves every weekly quota's boundary. Close
- * what that ends now (it may be in the past — flipping to Monday on a
+ * A new first day of the week moves every weekly quota's boundary (a new
+ * "Day starts at", every daily one's). Close what that ends now (it may be in the past — flipping to Monday on a
  * Wednesday ends a Sunday-anchored week at Monday), so the Quotas panel
  * shows the new week at once instead of after the next cron tick.
  *
@@ -240,10 +249,21 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
     })
   }
 
-  // Its activity rows are `system` (the rollover runs as the system itself).
-  if (changes.week_start !== undefined) rolloverTrackedPeriods(new Date(), userId)
+  // A new day start ("Day starts at", 2026-10-23) moves every daily quota's
+  // boundary the same way, and what today's reminders are.
+  const dayStartChanged =
+    changes.day_start_time !== undefined || changes.day_start_slot_id !== undefined
 
-  if (columns.length > 0) emitSyncEvent(userId, { widgets: labelConfigChanged })
+  // Its activity rows are `system` (the rollover runs as the system itself).
+  if (changes.week_start !== undefined || dayStartChanged) {
+    rolloverTrackedPeriods(new Date(), userId)
+  }
+
+  // The Reminders widget and the watch draw the server's roster for the day,
+  // which a new day start can change: that one spends a widget push too.
+  if (columns.length > 0) {
+    emitSyncEvent(userId, { widgets: labelConfigChanged || dayStartChanged })
+  }
 
   return readPreferencesRow(userId) as PreferencesRow
 }

@@ -104,15 +104,18 @@ export function taskColumns(alias?: string): string {
   // And the owner's first day of the week, for a quota's served period
   // (`quotaPeriodFields`): a week ends at the owner's boundary, like the rollover.
   const ownerWeekStart = `(SELECT week_start FROM users WHERE users.id = ${table}.user_id) AS owner_week_start`
-  // And the owner's ROLLOVER TIME (task queue, 2026-10-19): the earliest
-  // period's start, else morning_time — `rolloverTimeOf` in SQL (start_time
-  // is validated zero-padded HH:MM, so MIN sorts as time; the index on
-  // (user_id, start_time) answers it). Read only with the switch on, when
-  // attempts count OpenTask days (`effectiveAttempts`). The raw morning_time
-  // column is safe here though Morning may link to a period (anchor times,
-  // 2026-10-21): it is read only when the owner has NO periods, and then
-  // nothing can link to one, so the column is the resolved Morning.
-  const ownerRollover = `COALESCE((SELECT MIN(start_time) FROM time_slots WHERE time_slots.user_id = ${table}.user_id),(SELECT morning_time FROM users WHERE users.id = ${table}.user_id)) AS owner_rollover_time`
+  // And the owner's ROLLOVER TIME (task queue, 2026-10-19): their "Day
+  // starts at" (2026-10-23) — `dayStartTimeOf` in SQL, in its order: a live
+  // link's period start; the stored time (a custom time, or a gone link's
+  // snapshot); unset, the earliest period's start (start_time is validated
+  // zero-padded HH:MM, so MIN sorts as time; the index on (user_id,
+  // start_time) answers it); else morning_time. Read only with the switch
+  // on, when attempts count OpenTask days (`effectiveAttempts`). The raw
+  // morning_time column is safe here though Morning may link to a period
+  // (anchor times, 2026-10-21): it is read only when the owner has NO
+  // periods, and then nothing can link to one, so the column is the
+  // resolved Morning.
+  const ownerRollover = `COALESCE((SELECT s.start_time FROM users u JOIN time_slots s ON s.id = u.day_start_slot_id AND s.user_id = u.id WHERE u.id = ${table}.user_id),(SELECT day_start_time FROM users WHERE users.id = ${table}.user_id),(SELECT MIN(start_time) FROM time_slots WHERE time_slots.user_id = ${table}.user_id),(SELECT morning_time FROM users WHERE users.id = ${table}.user_id)) AS owner_rollover_time`
   return [
     ...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)),
     ownerTz,

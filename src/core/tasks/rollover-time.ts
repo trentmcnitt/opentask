@@ -3,9 +3,7 @@
  * switch (`task-queue.ts`), which must stay free of the database: the browser
  * bundle reaches the switch through `format-task.ts`.
  */
-import { listTimeSlots } from '@/core/time-slots'
-import { getAnchorTimes } from '@/core/users/anchor-times'
-import { rolloverTimeOf } from '@/lib/opentask-day'
+import { getDayStart } from '@/core/users/anchor-times'
 import {
   hasRelativeTarget,
   isDeadlineAnchored,
@@ -15,13 +13,14 @@ import {
 import { taskQueueEnabled } from './task-queue'
 
 /**
- * A user's rollover time (HH:MM): the earliest period's start, else the
- * Morning time. Morning only counts with no periods, when nothing can link to
- * one, but it is still read through the resolver like every other reader.
+ * A user's rollover time (HH:MM): their "Day starts at" (2026-10-23,
+ * `getDayStart`) — a custom time, a linked period's start, or, unset (the
+ * default), the earliest period's start, else the Morning time. Every
+ * day-keyed server reader goes through here (or `openTaskDayStartForUser`),
+ * never `rolloverTimeOf` on its own, which would miss the setting.
  */
 export function rolloverTimeForUser(userId: number): string {
-  const slots = listTimeSlots(userId)
-  return rolloverTimeOf(slots, getAnchorTimes(userId, slots).morning.time)
+  return getDayStart(userId).time
 }
 
 /**

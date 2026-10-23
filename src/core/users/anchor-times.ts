@@ -19,9 +19,11 @@ import {
   DEFAULT_ANCHOR_ROW,
   hasAnyLink,
   resolveAnchorTimes,
+  resolveDayStart,
   settingWrites,
   type AnchorRow,
   type AnchorTimes,
+  type ResolvedDayStart,
   type SettingChange,
 } from '@/lib/anchor-times'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -72,4 +74,16 @@ export function resolveUserAnchorTimes(
   slots?: readonly TimeSlot[],
 ): AnchorTimes {
   return resolveAnchorTimes(row, slots ?? (hasAnyLink(row) ? listTimeSlots(userId) : []))
+}
+
+/**
+ * The user's "Day starts at", resolved (2026-10-23) — the ONE server read of
+ * when the OpenTask day turns. `rolloverTimeForUser` is this time;
+ * everything day-keyed reads it through there. Always reads the periods: the
+ * unset default follows the first one.
+ */
+export function getDayStart(userId: number, slots?: readonly TimeSlot[]): ResolvedDayStart {
+  const row = readAnchorRow(userId)
+  const periods = slots ?? listTimeSlots(userId)
+  return resolveDayStart(row, periods, resolveUserAnchorTimes(userId, row, periods).morning.time)
 }

@@ -37,8 +37,12 @@ import {
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { shelvedAiFeaturesOn } from '@/core/ai/shelved'
-import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
-import { getAnchorTimes, readAnchorRow, resolveUserAnchorTimes } from '@/core/users/anchor-times'
+import {
+  getAnchorTimes,
+  getDayStart,
+  readAnchorRow,
+  resolveUserAnchorTimes,
+} from '@/core/users/anchor-times'
 import {
   ANCHOR_KEYS,
   PAD_PRESET_COUNT,
@@ -420,10 +424,53 @@ function validateAnchorFields(
     changes[fields.slot] = setting.slot_id
   }
 
+  const dayStartErr = validateDayStartFields(body, userId, changes)
+  if (dayStartErr) return dayStartErr
+
   if (body.pad_presets !== undefined && body.pad_preset !== undefined)
     return 'pad_presets and pad_preset both set the number pad — send one'
   if (body.pad_presets !== undefined) return validatePadPresets(body.pad_presets, userId, changes)
   if (body.pad_preset !== undefined) return validatePadPreset(body.pad_preset, userId, changes)
+  return null
+}
+
+/**
+ * "DAY STARTS AT" (2026-10-23, `src/lib/anchor-times.ts`): when the OpenTask
+ * day turns. Morning's wire form, plus one way back to the default:
+ *
+ * - `day_start_time: "HH:MM"` alone — a custom time (and unlinks).
+ * - `day_start_slot_id: <id>` — links to a period (its start stored as the
+ *   snapshot); with a `day_start_time` too, the two must agree.
+ * - `day_start_slot_id: null` — unlinks at `day_start_time` if sent, else
+ *   at the time it reads now, so nothing jumps.
+ * - `day_start_time: null` (no slot id) — back to the default: the first
+ *   period's start, which it then follows.
+ */
+function validateDayStartFields(
+  body: Record<string, unknown>,
+  userId: number,
+  changes: PreferenceChanges,
+): string | null {
+  let time = body.day_start_time
+  const slotId = body.day_start_slot_id
+  if (time === undefined && slotId === undefined) return null
+  if (time === null) {
+    if (slotId !== undefined)
+      return 'day_start_time: null puts the day start back to the first period — send it without day_start_slot_id'
+    changes.day_start_time = null
+    changes.day_start_slot_id = null
+    return null
+  }
+  if (slotId === null && time === undefined) time = getDayStart(userId).time
+  const setting = timeSettingFrom(
+    time,
+    slotId,
+    { time: 'day_start_time', slot: 'day_start_slot_id' },
+    userId,
+  )
+  if (typeof setting === 'string') return setting
+  changes.day_start_time = setting.time
+  changes.day_start_slot_id = setting.slot_id
   return null
 }
 
@@ -688,14 +735,16 @@ function validatePatchFields(
 function formatPreferencesResponse(row: PreferencesRow, userId: number) {
   const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
   const anchors = resolveUserAnchorTimes(userId, row)
+  const dayStart = getDayStart(userId)
   return {
     // The task queue (task-queue PR 3, read-only): the server's switch
     // (`OPENTASK_TASK_QUEUE`, which gates the queue UI) and the user's
-    // rollover time (HH:MM — the first period's start, else morning_time).
+    // rollover time (HH:MM — their "Day starts at", `getDayStart`: unset, the
+    // first period's start, else morning_time).
     // With the switch on a client counts attempts in OpenTask days from that
     // time, exactly as the server does; off, in calendar days.
     task_queue: taskQueueEnabled(),
-    rollover_time: rolloverTimeForUser(userId),
+    rollover_time: dayStart.time,
     ai_available: isAIEnabled(),
     // SHELVED (2026-10-22, read-only): the server's `OPENTASK_AI_UNSHELVE`
     // switch. False (the default) while What's Next, Insights and Quick Take
@@ -739,6 +788,12 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
     sleep_time: anchors.sleep.time,
     sleep_slot_id: anchors.sleep.slot_id,
     pad_presets: anchors.pad.map((p) => ({ slot_id: p.slot_id, time: p.time })),
+    // "Day starts at" (2026-10-23): the resolved time (= `rollover_time`),
+    // the period it is linked to (null: custom, or the default), and whether
+    // it is the default — following the first period, whichever that is.
+    day_start_time: dayStart.time,
+    day_start_slot_id: dayStart.first_period ? null : dayStart.slot_id,
+    day_start_first_period: dayStart.first_period,
     notifications_enabled: row.notifications_enabled !== 0,
     enrichment_notifications_enabled: row.enrichment_notifications_enabled !== 0,
     sweep_feedback_notifications_enabled: row.sweep_feedback_notifications_enabled !== 0,

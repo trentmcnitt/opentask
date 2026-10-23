@@ -4,7 +4,8 @@ import fs from 'fs'
 import path from 'path'
 import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
 import { log } from '@/lib/logger'
-import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
+import { openTaskDayOf } from '@/lib/opentask-day'
+import { dayStartTimeOf } from '@/lib/anchor-times'
 import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
 import { migrateRepeatAnchors, type RepeatAnchorCounts } from './migrate-repeat-anchor'
 import { migrateDeadlineLeads } from './migrate-deadline-leads'
@@ -98,6 +99,14 @@ function migrateAnchorTimes(database: Database.Database): void {
   }
   if (!hasColumn(database, 'users', 'pad_presets')) {
     database.exec('ALTER TABLE users ADD COLUMN pad_presets TEXT DEFAULT NULL')
+  }
+  // "Day starts at" (2026-10-23): both NULL = the first period's start, the
+  // rollover every user had before, so no backfill.
+  for (const column of ['day_start_time TEXT', 'day_start_slot_id INTEGER']) {
+    const [name] = column.split(' ')
+    if (!hasColumn(database, 'users', name)) {
+      database.exec(`ALTER TABLE users ADD COLUMN ${column} DEFAULT NULL`)
+    }
   }
 }
 
@@ -647,20 +656,30 @@ function logTargetMigration(counts: TargetMigrationCounts): void {
  * (a user created after this ran), so NULL never means "never ran".
  */
 export function stampRolloverDates(database: Database.Database, now: Date = new Date()): number {
-  // The raw morning_time is the no-periods fallback only, where nothing can
-  // link to a period (anchor times, 2026-10-21), so it needs no resolving —
-  // and this runs at startup, below the layer `getAnchorTimes` lives in.
+  // The day start through `dayStartTimeOf` (the resolver's rule over bare
+  // rows): this runs at startup, below the layer `getDayStart` lives in. The
+  // raw morning_time is the no-periods fallback only, where nothing can link
+  // to a period (anchor times, 2026-10-21), so it needs no resolving.
   const users = database
-    .prepare('SELECT id, timezone, morning_time FROM users WHERE last_rollover_date IS NULL')
-    .all() as { id: number; timezone: string; morning_time: string | null }[]
+    .prepare(
+      'SELECT id, timezone, morning_time, day_start_time, day_start_slot_id FROM users WHERE last_rollover_date IS NULL',
+    )
+    .all() as {
+    id: number
+    timezone: string
+    morning_time: string | null
+    day_start_time: string | null
+    day_start_slot_id: number | null
+  }[]
   if (users.length === 0) return 0
-  const slots = database.prepare('SELECT start_time FROM time_slots WHERE user_id = ?')
+  const slots = database.prepare('SELECT id, start_time FROM time_slots WHERE user_id = ?')
   const stamp = database.prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?')
   let stamped = 0
   for (const u of users) {
     try {
-      const time = rolloverTimeOf(
-        slots.all(u.id) as { start_time: string }[],
+      const time = dayStartTimeOf(
+        u,
+        slots.all(u.id) as { id: number; start_time: string }[],
         u.morning_time ?? '09:00',
       )
       stamp.run(openTaskDayOf(now, u.timezone, time), u.id)

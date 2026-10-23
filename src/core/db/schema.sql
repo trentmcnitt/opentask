@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS users (
   wake_slot_id    INTEGER DEFAULT NULL,
   sleep_slot_id   INTEGER DEFAULT NULL,
   pad_presets     TEXT DEFAULT NULL,
+  -- "Day starts at" (2026-10-23, src/lib/anchor-times.ts): when the OpenTask
+  -- day turns. Both NULL (the default) = the first period's start, else
+  -- morning_time — the rollover as it always was. A custom time: slot id
+  -- NULL. Linked: the period's id, and day_start_time its start as of the
+  -- link (a snapshot, like the anchor times').
+  day_start_time    TEXT DEFAULT NULL,
+  day_start_slot_id INTEGER DEFAULT NULL,
   ai_context    TEXT,
   -- When ai_context last changed (2026-10-10): the staleness warning reads it.
   ai_context_updated_at TEXT,
