@@ -9,6 +9,7 @@ import { computeSnoozeTime } from '@/lib/snooze'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
+import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import type { Task } from '@/types'
 
 /**
@@ -120,11 +121,18 @@ export function TargetTodayButton({
   iconClassName,
   boxClassName,
   showLabel = false,
+  replaces = null,
 }: {
   task: Task
   timezone: string
   onTargetToday: (task: Task) => void
   onTargetAt: (task: Task, at: string) => void
+  /**
+   * What a target would replace (the deadlines page, 2026-10-22, plan §5 —
+   * `todayReplaces`: "On deck Sat"): the button is FADED and a tap (or a
+   * time from the hold menu) asks first — a target takes the task off deck.
+   */
+  replaces?: string | null
   /** Layout and hit-target classes of the button. */
   className?: string
   iconClassName?: string
@@ -139,9 +147,13 @@ export function TargetTodayButton({
   showLabel?: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // What a replacing target waits on the confirm with: today (no `at`) or a time.
+  const [pending, setPending] = useState<{ at?: string } | null>(null)
+  const today = () => (replaces ? setPending({}) : onTargetToday(task))
+  const pick = (at: string) => (replaces ? setPending({ at }) : onTargetAt(task, at))
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => onTargetToday(task),
+    onShortPress: today,
     // The tap can take the row off its list; acting on pointerup let the
     // click that follows land on the next row's Today (see `tapOn`).
     tapOn: 'click',
@@ -157,51 +169,97 @@ export function TargetTodayButton({
         timezone={timezone}
         open={menuOpen}
         onOpenChange={setMenuOpen}
-        onPick={(at) => onTargetAt(task, at)}
+        onPick={pick}
       >
-        <button
-          type="button"
-          data-target-today
-          data-no-row-press
-          onClick={(e) => {
-            e.stopPropagation()
-            press.onClick()
-          }}
-          onPointerDown={press.onPointerDown}
-          onPointerUp={press.onPointerUp}
-          onPointerLeave={press.onPointerLeave}
-          onPointerMove={press.onPointerMove}
-          onPointerCancel={press.onPointerCancel}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setMenuOpen(true)
-          }}
-          title="Target today · hold for a time"
-          aria-label={`Target "${task.title}" today (hold for a time)`}
-          // No text selection or iOS callout under a held finger.
-          className={cn(
-            'text-muted-foreground hover:text-foreground flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
-            boxClassName ? 'group/today' : 'hover:bg-foreground/5',
-            className,
-          )}
+        <MaybeReplaceTarget
+          replaces={replaces}
+          pending={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={(p) => (p.at ? onTargetAt(task, p.at) : onTargetToday(task))}
         >
-          {boxClassName ? (
-            <span
-              data-target-today-box
-              className={cn(
-                'group-hover/today:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
-                boxClassName,
-              )}
-            >
+          <button
+            type="button"
+            data-target-today
+            data-replaces={replaces ? '' : undefined}
+            data-no-row-press
+            onClick={(e) => {
+              e.stopPropagation()
+              press.onClick()
+            }}
+            onPointerDown={press.onPointerDown}
+            onPointerUp={press.onPointerUp}
+            onPointerLeave={press.onPointerLeave}
+            onPointerMove={press.onPointerMove}
+            onPointerCancel={press.onPointerCancel}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuOpen(true)
+            }}
+            title={
+              replaces
+                ? `Target today — replaces ${replaces} · hold for a time`
+                : 'Target today · hold for a time'
+            }
+            aria-label={`Target "${task.title}" today (hold for a time)`}
+            // No text selection or iOS callout under a held finger.
+            className={cn(
+              'text-muted-foreground hover:text-foreground flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
+              boxClassName ? 'group/today' : 'hover:bg-foreground/5',
+              // Faded: it would take the task off deck (plan §5).
+              replaces && 'opacity-45 hover:opacity-100',
+              className,
+            )}
+          >
+            {boxClassName ? (
+              <span
+                data-target-today-box
+                className={cn(
+                  'group-hover/today:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
+                  boxClassName,
+                )}
+              >
+                <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
+              </span>
+            ) : (
               <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
-            </span>
-          ) : (
-            <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
-          )}
-        </button>
+            )}
+          </button>
+        </MaybeReplaceTarget>
       </TargetMenu>
     </span>
+  )
+}
+
+/** Today's confirm (`ReplaceConfirm`) when it would replace a deck, else the button alone. */
+function MaybeReplaceTarget({
+  replaces,
+  pending,
+  onCancel,
+  onConfirm,
+  children,
+}: {
+  replaces: string | null
+  pending: { at?: string } | null
+  onCancel: () => void
+  onConfirm: (pending: { at?: string }) => void
+  children: React.ReactNode
+}) {
+  if (!replaces) return <>{children}</>
+  return (
+    <ReplaceConfirm
+      open={pending !== null}
+      onOpenChange={(open) => {
+        if (!open) onCancel()
+      }}
+      message={`Replaces ${replaces}`}
+      confirmLabel={pending?.at ? 'Target' : 'Today'}
+      onConfirm={() => {
+        if (pending) onConfirm(pending)
+      }}
+    >
+      {children}
+    </ReplaceConfirm>
   )
 }
 

@@ -19,6 +19,7 @@ import { useCheckInDay, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { deckLimit, deckMenuDays, deckTapDay, type DeckLimit } from '@/lib/deck-menu'
 import { DECK_DAY_FORMAT, calendarToday, deckIsToday } from '@/lib/task-segments'
+import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import type { Task } from '@/types'
 
 /**
@@ -46,6 +47,12 @@ import type { Task } from '@/types'
  * (whose click considers or activates); the pointerdown is NOT stopped (the
  * dashboard row's swipe needs it), and `data-no-row-press` keeps the row from
  * starting its own long-press here.
+ *
+ * `replaces` (the deadlines page, 2026-10-22, plan §5): on a one-off with a
+ * target the user picked (`deckReplaces`: "target Fri 6 PM") the button is
+ * drawn FADED, and a tap — or a day from the hold menu — asks first
+ * (`ReplaceConfirm`: "Replaces target Fri 6 PM", Deck / Cancel): the deck
+ * drops that target.
  */
 export function OnDeckButton({
   task,
@@ -55,10 +62,13 @@ export function OnDeckButton({
   className,
   iconClassName,
   boxClassName,
+  replaces = null,
 }: {
   task: Task
   timezone: string
   onDeck: (task: Task, day: string | null | undefined) => void
+  /** What a deck would replace ("target Fri 6 PM", `deckReplaces`): faded, and it asks. */
+  replaces?: string | null
   /**
    * The A1 limit for the hold menu (`deckLimit`). Omitted: worked out from
    * the task. The Quick panel passes it from a STAGED deadline.
@@ -70,9 +80,15 @@ export function OnDeckButton({
   boxClassName?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // The day a replacing deck waits on the confirm with (`replaces`).
+  const [pending, setPending] = useState<{ day: string | null | undefined } | null>(null)
+  const act = (day: string | null | undefined) => {
+    if (replaces) setPending({ day })
+    else onDeck(task, day)
+  }
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => onDeck(task, deckTapDay(task, timezone, new Date())),
+    onShortPress: () => act(deckTapDay(task, timezone, new Date())),
     // The tap can take the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
@@ -80,9 +96,12 @@ export function OnDeckButton({
   // What a tap toggles: on deck for TODAY. A later deck wears the filled icon (the
   // row's only sign of it) but is not "pressed" — a tap moves it to today.
   const forToday = active && deckIsToday(task, timezone, new Date())
-  const title = forToday
-    ? 'On deck — today · tap to take off · hold for a day'
-    : 'On deck — today · hold for a day'
+  const title = replaces
+    ? `On deck — replaces ${replaces} · hold for a day`
+    : forToday
+      ? 'On deck — today · tap to take off · hold for a day'
+      : 'On deck — today · hold for a day'
+  const face = <DeckFace active={active} iconClassName={iconClassName} />
   return (
     <span
       className="contents"
@@ -95,56 +114,101 @@ export function OnDeckButton({
         limit={limit}
         open={menuOpen}
         onOpenChange={setMenuOpen}
-        onPick={(day) => onDeck(task, day)}
+        onPick={act}
       >
-        <button
-          type="button"
-          data-on-deck
-          data-on-deck-active={active ? '' : undefined}
-          data-no-row-press
-          // The state is in aria-pressed; the name stays the same.
-          aria-pressed={forToday}
-          aria-label={`On deck: “${task.title}” (hold for a day)`}
-          onClick={(e) => {
-            e.stopPropagation()
-            press.onClick()
-          }}
-          onPointerDown={press.onPointerDown}
-          onPointerUp={press.onPointerUp}
-          onPointerLeave={press.onPointerLeave}
-          onPointerMove={press.onPointerMove}
-          onPointerCancel={press.onPointerCancel}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setMenuOpen(true)
-          }}
-          title={title}
-          className={cn(
-            'flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
-            active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-            // On deck: a full-strength, FILLED icon (`DeckFace`) — no grey
-            // chip. The hover tint is on the inner box where there is one.
-            boxClassName ? 'group/deck' : 'hover:bg-foreground/5',
-            className,
-          )}
+        <MaybeReplace
+          replaces={replaces}
+          pending={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={(day) => onDeck(task, day)}
         >
-          {boxClassName ? (
-            <span
-              data-on-deck-box
-              className={cn(
-                'group-hover/deck:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
-                boxClassName,
-              )}
-            >
-              <DeckFace active={active} iconClassName={iconClassName} />
-            </span>
-          ) : (
-            <DeckFace active={active} iconClassName={iconClassName} />
-          )}
-        </button>
+          <button
+            type="button"
+            data-on-deck
+            data-on-deck-active={active ? '' : undefined}
+            data-replaces={replaces ? '' : undefined}
+            data-no-row-press
+            // The state is in aria-pressed; the name stays the same.
+            aria-pressed={forToday}
+            aria-label={`On deck: “${task.title}” (hold for a day)`}
+            onClick={(e) => {
+              e.stopPropagation()
+              press.onClick()
+            }}
+            onPointerDown={press.onPointerDown}
+            onPointerUp={press.onPointerUp}
+            onPointerLeave={press.onPointerLeave}
+            onPointerMove={press.onPointerMove}
+            onPointerCancel={press.onPointerCancel}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuOpen(true)
+            }}
+            title={title}
+            className={cn(
+              'flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
+              active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              // Faded: it would replace a target (plan §5).
+              replaces && 'opacity-45 hover:opacity-100',
+              // On deck: a full-strength, FILLED icon (`DeckFace`) — no grey
+              // chip. The hover tint is on the inner box where there is one.
+              boxClassName ? 'group/deck' : 'hover:bg-foreground/5',
+              className,
+            )}
+          >
+            {boxClassName ? (
+              <span
+                data-on-deck-box
+                className={cn(
+                  'group-hover/deck:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
+                  boxClassName,
+                )}
+              >
+                {face}
+              </span>
+            ) : (
+              face
+            )}
+          </button>
+        </MaybeReplace>
       </DeckMenu>
     </span>
+  )
+}
+
+/**
+ * The faded button's confirm (`ReplaceConfirm`), or the button alone when
+ * nothing would be replaced — so an ordinary row's layout never changes.
+ */
+function MaybeReplace({
+  replaces,
+  pending,
+  onCancel,
+  onConfirm,
+  children,
+}: {
+  replaces: string | null
+  pending: { day: string | null | undefined } | null
+  onCancel: () => void
+  onConfirm: (day: string | null | undefined) => void
+  children: React.ReactNode
+}) {
+  if (!replaces) return <>{children}</>
+  return (
+    <ReplaceConfirm
+      open={pending !== null}
+      onOpenChange={(open) => {
+        if (!open) onCancel()
+      }}
+      message={`Replaces ${replaces}`}
+      confirmLabel="Deck"
+      onConfirm={() => {
+        if (pending) onConfirm(pending.day)
+      }}
+    >
+      {children}
+    </ReplaceConfirm>
   )
 }
 

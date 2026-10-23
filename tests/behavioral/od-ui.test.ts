@@ -8,7 +8,15 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
-import { deckLimit, deckMenuDays, deckTapDay, deckTomorrowDay, offersDeck } from '@/lib/deck-menu'
+import {
+  deckLimit,
+  deckMenuDays,
+  deckReplaces,
+  deckTapDay,
+  deckTomorrowDay,
+  offersDeck,
+  todayReplaces,
+} from '@/lib/deck-menu'
 import { deckPickerDefault } from '@/components/OnDeckButton'
 import { deckToastMessage, type DeckResponse } from '@/lib/deck-request'
 import { inDeckSection } from '@/lib/now-view'
@@ -213,16 +221,35 @@ describe('OD-UI-02: the tap and the rows that offer it', () => {
     expect(deckTapDay({ on_deck_day: null }, TZ, NOW)).toBeUndefined()
   })
 
-  test('one-offs with no picked target, repeating tasks, or already on deck', () => {
+  test('every open task but a reminder or quota (2026-10-22: a picked target too)', () => {
     expect(offersDeck(makeTask())).toBe(true)
     expect(offersDeck(makeTask({ due_at: local(1, 9), target_auto: true }))).toBe(true)
-    expect(offersDeck(makeTask({ due_at: local(1, 9) }))).toBe(false)
+    // The deadlines page, plan §5: a deck may replace a target — faded, it asks.
+    expect(offersDeck(makeTask({ due_at: local(1, 9) }))).toBe(true)
     // A repeating task always offers it (2026-10-20): it decks the occurrence.
     expect(offersDeck(makeTask({ rrule: 'FREQ=DAILY', due_at: local(1, 9) }))).toBe(true)
     expect(offersDeck(makeTask({ is_reminder: true }))).toBe(false)
     expect(offersDeck(makeTask({ progress_target: 3 }))).toBe(false)
     expect(offersDeck(makeTask({ done: true }))).toBe(false)
     expect(offersDeck(makeTask({ on_deck_day: '2026-01-16' }))).toBe(true)
+  })
+})
+
+describe('OD-UI-02b: what a deck or Today replaces (plan §5, the faded buttons)', () => {
+  test("a deck replaces a one-off's picked target, said with its day and time", () => {
+    const at = DateTime.fromISO('2026-01-16T18:00', { zone: TZ }).toUTC().toISO()!
+    expect(deckReplaces(makeTask({ due_at: at }), TZ)).toBe('target Fri 6 PM')
+    const half = DateTime.fromISO('2026-01-16T18:30', { zone: TZ }).toUTC().toISO()!
+    expect(deckReplaces(makeTask({ due_at: half }), TZ)).toBe('target Fri 6:30 PM')
+    expect(deckReplaces(makeTask(), TZ)).toBeNull()
+    expect(deckReplaces(makeTask({ due_at: at, target_auto: true }), TZ)).toBeNull()
+    expect(deckReplaces(makeTask({ due_at: at, rrule: 'FREQ=DAILY' }), TZ)).toBeNull()
+  })
+
+  test('Today replaces a deck', () => {
+    expect(todayReplaces({ on_deck_day: '2026-01-17' }, TZ, NOW)).toBe('On deck Sat')
+    expect(todayReplaces({ on_deck_day: '2026-01-15' }, TZ, NOW)).toBe('On deck today')
+    expect(todayReplaces({ on_deck_day: null }, TZ, NOW)).toBeNull()
   })
 })
 

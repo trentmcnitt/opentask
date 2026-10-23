@@ -40,7 +40,7 @@ import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { DeadlineChip } from '@/components/DeadlineChip'
-import { offersDeck } from '@/lib/deck-menu'
+import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
@@ -776,6 +776,8 @@ export function TaskRow({
               task={task}
               timezone={timezone}
               onDeck={(t, day) => onDeck?.(t, day)}
+              // Faded on a picked target, and it asks first (plan §5).
+              replaces={deckReplaces(task, timezone)}
               className={dayControlClasses(
                 dayControlsOnTouch,
                 // A deck stays visible while it is set: the filled icon is
@@ -791,6 +793,8 @@ export function TaskRow({
               timezone={timezone}
               onTargetToday={(t) => onTargetAt?.(t)}
               onTargetAt={(t, at) => onTargetAt?.(t, at)}
+              // Faded on a decked row: a target takes it off deck (plan §5).
+              replaces={todayReplaces(task, timezone)}
               className={dayControlClasses(dayControlsOnTouch, false)}
               iconClassName="size-4"
             />

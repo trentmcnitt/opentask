@@ -27,6 +27,8 @@ import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
   calendarToday,
+  lastDeferDay,
+  openTaskToday,
   repeatingDeadlineDay,
   type CheckInDay,
   type TargetContext,
@@ -159,12 +161,13 @@ export function deckTapDay(
 
 /**
  * Whether a row offers the On deck button: an open task that is not a
- * reminder or quota (rule 6), and — a one-off — has no target the user picked
- * (rule 1: a picked target and a deck never coexist — Today's hover rule,
- * `offersTargetToday`), or one already on deck. A REPEATING task always
- * offers it (2026-10-20): its target is its occurrence, and decking it decks
- * that occurrence (the target goes while decked). The queue switch is the
- * caller's.
+ * reminder or quota (rule 6) — every one since 2026-10-22 (the deadlines
+ * page, plan §5: "Deck may replace a target everywhere"). On a one-off with a
+ * target the user picked the button is FADED and asks first
+ * (`deckReplaces`): a deck drops that target (rule 1, the server's
+ * `prepareDeck`). A REPEATING task decks its current occurrence (2026-10-20;
+ * its target is its occurrence, back when it comes off deck) — no warning.
+ * The queue switch is the caller's.
  */
 export function offersDeck(task: {
   due_at: string | null
@@ -177,7 +180,88 @@ export function offersDeck(task: {
   done?: boolean
 }): boolean {
   if (task.done || task.is_reminder) return false
-  if (task.is_tracked || (task.progress_target ?? 1) > 1) return false
-  if (task.on_deck_day || task.rrule) return true
-  return task.due_at === null || task.target_auto === true
+  return !(task.is_tracked || (task.progress_target ?? 1) > 1)
+}
+
+/**
+ * What a deck would REPLACE (plan §5): the picked target of a one-off —
+ * "target Fri 6 PM" — or null (no target, an automatic one with the task
+ * queue off, a repeating task's occurrence, already on deck). The faded On
+ * deck button's warning reads "Replaces target Fri 6 PM".
+ */
+export function deckReplaces(
+  task: {
+    due_at: string | null
+    target_auto?: boolean
+    on_deck_day?: string | null
+    rrule?: string | null
+  },
+  timezone: string,
+): string | null {
+  if (task.rrule || task.on_deck_day || task.due_at === null || task.target_auto) return null
+  const at = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
+  return `target ${at.toFormat(at.minute === 0 ? 'ccc h a' : 'ccc h:mm a')}`
+}
+
+/**
+ * What Today would REPLACE (plan §5): the deck of a decked task — "On deck
+ * Sat" ("On deck today") — or null. Today is a picked target, so it takes
+ * the task off deck (`deck-clear.ts`); the faded Today button's warning reads
+ * "Replaces On deck Sat".
+ */
+export function todayReplaces(
+  task: { on_deck_day?: string | null },
+  timezone: string,
+  now: Date = new Date(),
+): string | null {
+  if (!task.on_deck_day) return null
+  const day = DateTime.fromISO(task.on_deck_day, { zone: timezone })
+  if (!day.isValid) return 'On deck'
+  return task.on_deck_day === calendarToday(timezone, now)
+    ? 'On deck today'
+    : `On deck ${day.toFormat('ccc')}`
+}
+
+/** One day of the deadlines page's Defer menu (`deferLeadDays`). */
+export interface DeferLeadDay {
+  /** "Tomorrow", "Thursday", "Sat Nov 7". */
+  label: string
+  /** The OpenTask day the lead moves to (yyyy-MM-dd). */
+  day: string
+  /** "2 days before the deadline" on the last day it allows. */
+  caption?: string
+}
+
+/**
+ * THE DEADLINES PAGE'S DEFER MENU (2026-10-22, plan §3; A3: tap + pick): the
+ * days a row's lead day may move to — tomorrow (the OpenTask day after
+ * today) up to two days before the deadline's OpenTask day (D−2, the safety
+ * net's start minus one, `lastDeferDay`) — the next six by name, and the last
+ * allowed day itself when it lies further out. Empty once the safety net
+ * holds the task, or when tomorrow is already D−1: then the row has no Defer.
+ */
+export function deferLeadDays(
+  deadlineAt: string,
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): DeferLeadDay[] {
+  const last = lastDeferDay(deadlineAt, timezone, rolloverTime)
+  const today = DateTime.fromISO(openTaskToday(timezone, now, rolloverTime), { zone: timezone })
+  const days: DeferLeadDay[] = []
+  for (let n = 1; n <= DECK_MENU_NAMED_DAYS; n++) {
+    const d = today.plus({ days: n })
+    const day = d.toFormat(DECK_DAY_FORMAT)
+    if (day > last) return markLast(days, last)
+    days.push({ label: n === 1 ? 'Tomorrow' : d.toFormat('cccc'), day })
+  }
+  const lastDay = DateTime.fromISO(last, { zone: timezone })
+  if (last > days[days.length - 1].day) {
+    days.push({ label: lastDay.toFormat('ccc LLL d'), day: last })
+  }
+  return markLast(days, last)
+}
+
+function markLast(days: DeferLeadDay[], last: string): DeferLeadDay[] {
+  return days.map((d) => (d.day === last ? { ...d, caption: '2 days before the deadline' } : d))
 }
