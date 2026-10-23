@@ -12,13 +12,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import { PriorityChips } from '@/components/PriorityChips'
 import type { ReminderCreateInput } from '@/hooks/useReminders'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useStagedEditor } from '@/hooks/useStagedEditor'
 import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
-import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { resolvePromptSlot } from '@/lib/quota-prompts'
 import { useQuotaPromptPrefs } from '@/hooks/useQuotaPromptPrefs'
@@ -882,11 +882,8 @@ function TimeOfDaySection({
 }
 
 /**
- * The same five values and colours as a task's priority. On this surface it
- * is prominence — order within the slot and weight of the row — and, since
- * 2026-10-22 (Trent), how often the period's one nag repeats while this
- * waits (the shortest rung among the waiting items, `slot-nags.ts`). Never a
- * nag of its own.
+ * The priority row: the chips and hint are `PriorityChips`, shared with the
+ * quota editor; this adds the section heading and its dirty dot.
  */
 function PrioritySection({
   taskId,
@@ -905,28 +902,7 @@ function PrioritySection({
         Priority
         {dirty && <span className="ml-1 text-blue-500">●</span>}
       </SectionHeading>
-      <div className="flex flex-wrap gap-1.5">
-        {PRIORITY_OPTIONS.map((option) => {
-          const selected = value === option.value
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={selected}
-              data-priority-chip={option.value}
-              onClick={() => onSelect(option.value)}
-              className={cn(
-                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                getPriorityBadgeClasses(option.value, selected ? 'included' : 'unselected'),
-              )}
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
-      {/* The slot section's hint, copied: priority's one non-obvious effect. */}
-      <p className="text-muted-foreground text-xs">Also sets how often its period nags.</p>
+      <PriorityChips value={value} onSelect={onSelect} />
     </section>
   )
 }

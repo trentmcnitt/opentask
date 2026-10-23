@@ -286,7 +286,7 @@ describe('Undo and redo of a quota flag', () => {
   })
 
   test('TR-021: the editor path (0 → 1) undoes, and the stack is not wedged', () => {
-    // What QuotaDetail.buildChanges sends whenever the target or period is
+    // What QuotaDetail's quotaChangesFor sends whenever the target or period is
     // touched: `is_tracked: true` on a row whose column is still 0.
     const quota = makeQuota({ title: 'Eggs' })
     expect(getTaskById(quota.id)!.is_tracked).toBe(false)

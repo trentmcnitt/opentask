@@ -412,6 +412,55 @@ test.describe('Track', () => {
     await expect(after.getByRole('button', { name: 'Move to Trash' })).toBeVisible()
   })
 
+  // A quota's priority paces its period's nag while its prompt waits (Trent,
+  // 2026-10-22): the editor has the reminder editor's priority row — the same
+  // chips and hint (`PriorityChips`) — and a save sends priority alone.
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 375, height: 812 },
+  ]) {
+    test(`a quota's priority is the reminder editor's row, saved with an Undo (${viewport.width}px)`, async ({
+      authenticatedPage: page,
+    }) => {
+      await page.setViewportSize(viewport)
+      const id = await createTask(page, {
+        title: 'Water the plants',
+        progress_target: 3,
+        is_tracked: true,
+        rrule: 'FREQ=WEEKLY',
+      })
+      const priorityOf = async () =>
+        (await (await page.request.get(`/api/tasks/${id}`)).json()).data.priority
+
+      await page.goto(`/tasks/${id}`)
+      const editor = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(editor.locator('[data-priority-chip="0"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(editor.getByText('Also sets how often its period nags.')).toBeVisible()
+
+      await editor.locator('[data-priority-chip="3"]').click()
+      await expect(editor.locator('[data-priority-chip="3"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      const saved = page.waitForResponse(
+        (r) => r.url().includes(`/api/tasks/${id}`) && r.request().method() === 'PATCH',
+      )
+      await editor.getByRole('button', { name: 'Save' }).click()
+      const response = await saved
+      expect(response.status()).toBe(200)
+      // Only what was touched travels: no target, rule or label with it.
+      expect(response.request().postDataJSON()).toEqual({ priority: 3 })
+      await expect.poll(priorityOf).toBe(3)
+
+      // The same Undo every quota edit offers.
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect.poll(priorityOf).toBe(0)
+    })
+  }
+
   /**
    * §5, Trent 2026-09-09, choosing variation G of the `track-by-label` mockup:
    * a cluster's heading is a PEER of its chips rather than a box around them
