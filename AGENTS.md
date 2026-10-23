@@ -139,7 +139,7 @@ NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials 
 
 `src/instrumentation.ts` starts every cron job when the server boots:
 
-- **Every minute:** overdue notifications, reminder-period notifications and nags (`src/core/notifications/slot-reminders.ts`, `slot-nags.ts`), and the AI enrichment safety net
+- **Every minute:** overdue notifications, reminder-period notifications (`src/core/notifications/slot-reminders.ts`), the slot nag and the deadlines-page nag (`slot-nags.ts`, `deadline-nags.ts`: both paced by the one nag ladder `nag-ladder.ts` — considering = the user's overdue tier ×2, no quiet hours — and sent when their `nag_sends` row says they are due; every cron sender notifies `notifiableUsers()` only — on, not demo; docs/NOTIFICATIONS.md § The deadlines-page nag), and the AI enrichment safety net
 - **Every 5 minutes (and at startup):** quota period rollover (`src/core/tasks/period-rollover.ts`) — closes a finished period and resets its count
 - **Daily, when AI is enabled — SHELVED (2026-10-22):** What's Next and Insights generation (`src/core/ai/scheduled.ts`), scheduled only with `OPENTASK_AI_UNSHELVE=1`. Shelved (the default), startup logs one line instead and nothing runs nightly — see [Shelved AI features](#architecture)
 - **Purges:** `src/core/undo/purge.ts`, `src/core/stats/purge.ts`, `src/core/tasks/purge-completions.ts`, `src/core/tasks/purge-trash.ts`, `src/core/ai/purge.ts`, `src/core/webhooks/purge.ts`, and the slot-nag purge
@@ -452,7 +452,7 @@ If navigating away triggers a `beforeunload` dialog, either reset dirty state fi
 
 ### Test naming conventions
 
-Behavioral tests use 2-letter prefixes for feature areas: `bo-` bulk ops, `sn-` snooze, `sg-` snooze guard, `sk-` skip, `ur-` undo/redo, `rd-` recurrence, `oc-` occurrences, `di-` data integrity, `ai-` AI features, `tr-`/`tk-` quotas (tracked tasks), `qp-` quota prompts, `qn-` quota-prompt notifications, `rm-` reminders, `ts-` time slots, `tm-` task model (deadline, target, horizon, task segments), `up-` Upcoming, `bg-` badges (attempts, age), `dv-` dashboard views, `lr-` label registry, `gt-` task queries, `pj-` projects, `cl-` cadence ladder. Utility-focused tests use descriptive names without prefixes.
+Behavioral tests use 2-letter prefixes for feature areas: `bo-` bulk ops, `sn-` snooze, `sg-` snooze guard, `sk-` skip, `ur-` undo/redo, `rd-` recurrence, `oc-` occurrences, `di-` data integrity, `ai-` AI features, `tr-`/`tk-` quotas (tracked tasks), `qp-` quota prompts, `qn-` quota-prompt notifications, `dn-` the deadlines nag and the nag ladder, `rm-` reminders, `ts-` time slots, `tm-` task model (deadline, target, horizon, task segments), `up-` Upcoming, `bg-` badges (attempts, age), `dv-` dashboard views, `lr-` label registry, `gt-` task queries, `pj-` projects, `cl-` cadence ladder. Utility-focused tests use descriptive names without prefixes.
 
 ### Time-based testing
 

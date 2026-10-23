@@ -18,6 +18,13 @@ interface PushPayload {
   test?: boolean
   /** Show without sound or vibration (`showNotification`'s `silent`, in public/sw.js). */
   silent?: boolean
+  /**
+   * Alert again when this push REPLACES a banner with the same `tag`
+   * (`showNotification`'s `renotify`). A tagged replacement is silent
+   * otherwise. Only with a `tag` and never with `silent` — the browser throws
+   * a TypeError for either combination, so public/sw.js drops it then.
+   */
+  renotify?: boolean
 }
 
 /**

@@ -20,6 +20,8 @@ import Foundation
 ///   slot's pending reminders (and considers its waiting quota prompts). The
 ///   content extension's staged checklist commit is NOT here — it is its own
 ///   request (`commitSlotChecklist`) and never reaches this runner.
+/// - the deadlines-page nag (`kind: "deadlines"`, no category): a body tap
+///   opens the deadlines page; it has no buttons.
 /// - anything else is a task notification and needs `taskId`: Done, +1hr,
 ///   the custom time, and the bulk snoozes — which pass the task as
 ///   `include_task_ids`, so the task whose banner was tapped moves even when
@@ -72,7 +74,17 @@ enum NotificationActionRunner {
         /// load `DeepLinkRouter.notificationTaskPath`, which brings its row into
         /// view and selects it (no editor).
         case openTask(taskId: Int)
+        /// Body tap on the deadlines-page nag (`kind: "deadlines"`, 2026-10-22):
+        /// the phone and Mac load `DeepLinkRouter.notificationDeadlinesPath`,
+        /// the dashboard with the task queue's Tasks card on the deadlines page.
+        case openDeadlines
     }
+
+    /// `kind` of the deadlines-page nag's payload (`DEADLINES_NAG_KIND`,
+    /// src/core/notifications/apns.ts). It has no category, no `taskId` and
+    /// no buttons, so only its body tap means anything.
+    static let deadlinesKind = "deadlines"
+
 
     /// Make the server call for `action` on a notification of `category`.
     ///
@@ -114,6 +126,12 @@ enum NotificationActionRunner {
             }
 
         default:
+            // Before the taskId guard: the deadlines nag is about a page, not
+            // a task. A build without this case ends at `.missingTaskId`, so
+            // the app just comes forward where it was.
+            if userInfo["kind"] as? String == deadlinesKind {
+                return action == .bodyTap ? .openDeadlines : .ignored
+            }
             guard let taskId = userInfo["taskId"] as? Int else { return .missingTaskId }
             return try await performTask(
                 taskId: taskId,
