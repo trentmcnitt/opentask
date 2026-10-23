@@ -198,7 +198,7 @@ The last value sent per user is kept in memory (`badge-state.ts`, on `globalThis
 
 ### Time-slot notifications (reminders and quota prompts)
 
-Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and a nag re-surfaces unfinished slots (`slot-nags.ts`, § The slot nag below). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. The slot-open push plays the default sound; the nag is a silent banner (ruling 5, 2026-10-22: sound only on overdue — whether the open push keeps its sound is an open question for Trent). The long-press checklist fetches the slot's live group from `GET /api/reminders`.
+Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and a nag re-surfaces unfinished slots (`slot-nags.ts`, § The slot nag below). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. Both are silent banners, with no `sound` (ruling 5, Trent 2026-10-22: sound only on overdue). The long-press checklist fetches the slot's live group from `GET /api/reminders`.
 
 **Quota prompts count exactly like reminders** (2026-09-24, phase 3 of quota reminders). A slot's waiting items are its reminders plus its quota prompts that are neither considered nor done (`waitingBySlot`, reading `getQuotaPromptsBySlot`). So:
 
@@ -394,7 +394,7 @@ Minutes. ONE considering ladder, no special cases (Trent, 2026-10-22): the user'
 - **Pace: the ladder's `slot_nag` row** — the user's Unset tier ×2, 60 minutes by default (reminders have no priority on the ladder yet). Paced by `nag_sends` (key `slot-nag`); the slot-open push stamps it too, so the nag comes one interval after a slot's own banner or the last nag, at any minute — not on the hour.
 - **Gone (Trent, 2026-10-22):** the 3-a-day cap, the derived gap, the evening reserve, the Wake–Sleep window and the top-of-the-hour alignment. OpenTask has no time-of-day behaviour; the phone's sleep mode handles nights. An unfinished slot nags until midnight.
 - **The day: the OpenTask day.** Slots count as opened on the OpenTask day, which starts at the rollover (the earliest period's start), so the nag is silent from local midnight to the rollover. Which reminders are waiting is the Reminders surface's own roster at that moment (the calendar day it shows). Finishing a slot — every reminder and prompt considered or done — silences it until the slot reopens the next day (silencing = acting).
-- **Silent:** no sound (`silent: true` on `sendApnsSlotReminder`, the nag only; ruling 5). The slot-open push keeps the default sound for now.
+- **Silent:** no sound (ruling 5: sound only on overdue), like the slot-open push — `buildSlotReminderNotification` never sets one.
 - Still: never a slot that hasn't opened, never in the badge, never a reminder on its own. A slot opening with items this exact minute stands the nag down (its own banner is up); an empty one doesn't.
 - `slot_nags` (the old per-day claim rows) is no longer written; the weekly purge drains it.
 

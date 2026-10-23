@@ -252,11 +252,11 @@ describe('Unfinished-slot nag — what it sends', () => {
   })
 
   /**
-   * RN-013b: the nag is a SILENT banner (ruling 5: sound only on overdue); the
-   * slot-open push keeps its sound. Same category, thread, collapse id and
-   * userInfo either way, so the nag still replaces the slot's banner.
+   * RN-013b: the nag AND the slot-open push are SILENT banners (ruling 5:
+   * sound only on overdue). Same category, thread, collapse id and userInfo
+   * either way, so the nag still replaces the slot's banner.
    */
-  test('RN-013b: the nag payload has no sound; the slot-open payload is unchanged', () => {
+  test('RN-013b: neither the slot-open nor the nag payload has a sound', () => {
     const open = buildSlotReminderNotification('tok', 'io.mcnitt.opentask', {
       slotId: 7,
       slotLabel: 'Morning',
@@ -268,7 +268,6 @@ describe('Unfinished-slot nag — what it sends', () => {
         alert: { title: 'Morning', body: '3 reminders · 1 quota waiting' },
         category: 'SLOT_REMINDER',
         'thread-id': 'ot-reminders',
-        sound: 'default',
         'interruption-level': 'active',
       },
       slot_id: 7,
@@ -285,7 +284,6 @@ describe('Unfinished-slot nag — what it sends', () => {
       count: 3,
       promptCount: 1,
       body: slotNagBody(3, 1, 1),
-      silent: true,
     })
     const { aps, ...data } = nag.buildApnsOptions() as { aps: Record<string, unknown> }
     expect(aps).not.toHaveProperty('sound')
